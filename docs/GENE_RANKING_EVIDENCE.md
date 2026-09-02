@@ -20,12 +20,12 @@ Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**
 | `buildings-before-projects` | +28 [+5, +51] | 99.2% | 5 | off | **on** |
 | `culture-building-debt` | +26 [+1, +51] | 97.8% | 2 | on | **on** |
 | `engine-faith-price` | +63 [+25, +101] | 99.9% | 1 | on | **on** |
-| `escort-unstick` | +32 [+8, +57] | 99.5% | 5 | on | **on** |
-| `founder-temple` | +19 [+1, +38] | 97.8% | 4 | on | **on** |
+| `escort-unstick` | +32 [+8, +57] | 99.5% | 5 | off | **on** |
+| `founder-temple` | +19 [+1, +38] | 97.8% | 4 | off | **on** |
 | `great-person-housing` | +84 [+64, +105] | 100.0% | 3 | on | **on** |
 | `idle-faith-patronage` | +26 [+11, +40] | 100.0% | 4 | on | **on** |
 | `loyalty-rate-alarm` | +40 [+22, +58] | 100.0% | 5 | on | **on** |
-| `maintenance-aware-deck` | +61 [+24, +99] | 99.9% | 1 | on | **on** |
+| `maintenance-aware-deck` | +61 [+24, +99] | 99.9% | 1 | off | **on** |
 | `opportunistic-war` | +48 [+20, +76] | 100.0% | 3 | on | **on** |
 | `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | off | **on** |
 | `price-the-suzerainty` | +56 [+18, +93] | 99.8% | 1 | on | **on** |
@@ -104,13 +104,15 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 
 | Gene | Posterior (95% CI) | P(>0) | Default | Buys | Pairs to resolve |
 |---|---:|---:|---|---:|---:|
-| `holy-lane-parity` | +32 [-6, +71] | 95.0% | off | +32.4 | 5,971 |
-| `war-economy` | +13 [-89, +115] | 60.1% | off | +25.8 | 116,162 |
 | `camp-party` | +22 [-3, +47] | 96.1% | off | +22.4 | 8,154 |
 | `unit-cost-efficiency` | +17 [-20, +55] | 81.7% | off | +17.6 | 55,043 |
+| `war-reinforcement` | +17 [-4, +37] | 94.7% | off | +16.8 | 24,014 |
+| `competition-victory-points` | +16 [-19, +50] | 81.3% | off | +16.0 | 67,501 |
 | `garrison-under-fire` | +15 [-17, +48] | 82.6% | off | +15.5 | 68,721 |
+| `settlement-gap-target` | +14 [-23, +52] | 77.5% | off | +14.8 | 87,669 |
 | `lane-great-people` | +13 [-22, +48] | 77.0% | off | +13.6 | 103,314 |
 | `lane-policy-deck` | +13 [-16, +42] | 80.9% | off | +12.9 | 103,406 |
+| `war-economy` | +13 [-89, +115] | 60.1% | on | +12.4 | 116,162 |
 | `strike-opening` | +12 [-4, +29] | 92.5% | off | +12.2 | 65,525 |
 | `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
 | `one-launch-pad` | +11 [-5, +28] | 91.6% | off | +11.4 | 81,761 |
@@ -122,6 +124,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `religious-units-heal-first` | +9 [-14, +33] | 78.0% | off | +9.3 | 208,321 |
 | `promote-when-wounded` | +7 [-31, +45] | 64.5% | off | +8.9 | 396,852 |
 | `strategic-wonders` | +9 [-7, +25] | 85.6% | off | +8.8 | 192,886 |
+| `lane-culture-spending` | +9 [-15, +32] | 75.9% | off | +8.6 | 250,826 |
 | `early-contact-window` | +8 [-16, +31] | 73.8% | off | +7.8 | 318,670 |
 | `come-ashore` | +7 [-10, +24] | 79.3% | off | +7.0 | 353,593 |
 | `science-multiplier-payoff` | +6 [-24, +35] | 64.5% | off | +6.6 | 639,181 |
@@ -145,22 +148,19 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `unit-objective-memory` | +10 [-28, +47] | 69.7% | on | +1.1 | 201,764 |
 | `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | off | +1.0 | 1,036,197,883 |
 | `district-planning` | +12 [-25, +49] | 74.1% | on | +0.7 | 125,973 |
-| `settlement-gap-target` | +14 [-23, +52] | 77.5% | on | +0.5 | 87,669 |
 | `siege-commitment` | -2 [-18, +14] | 40.5% | off | +0.3 | 5,199,392 |
-| `competition-victory-points` | +16 [-19, +50] | 81.3% | on | +0.2 | 67,501 |
 | `army-target-weighs-enemy` | +5 [-16, +25] | 67.3% | on | +0.2 | 903,207 |
 | `apostle-promotion-by-role` | +6 [-15, +27] | 71.4% | on | +0.1 | 520,461 |
-| `lane-culture-spending` | +9 [-15, +32] | 75.9% | on | +0.1 | 250,826 |
+| `holy-lane-parity` | +32 [-6, +71] | 95.0% | on | +0.0 | 5,971 |
 | `settler-threat-detour` | +24 [-2, +51] | 96.4% | on | +0.0 | 5,630 |
 | `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
 | `slot-kind-tiebreak` | +9 [-7, +26] | 87.4% | on | +0.0 | 156,019 |
-| `war-reinforcement` | +17 [-4, +37] | 94.7% | on | +0.0 | 24,014 |
 | `amenity-district-path` | +12 [-5, +28] | 91.2% | on | +0.0 | 83,886 |
 
 The top 6 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
 
 ```sh
-gene_screen --genes holy-lane-parity,camp-party,unit-cost-efficiency,settler-threat-detour,barbarian-bargain,war-reinforcement
+gene_screen --genes camp-party,unit-cost-efficiency,war-reinforcement,holy-lane-parity,settler-threat-detour,barbarian-bargain
 ```
 
 `python3 tools/genes.py boundary` prints this list on its own, with `--arm-pairs` and `--max-arm-pairs` to size it.
@@ -175,9 +175,9 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 |---|---|---:|---|---:|---|
 | `lane-great-people` | off | +33 | +0.10 (z +1.26) ~ | +13 [-22, +48] | unresolved |
 | `lane-policy-deck` | off | +29 | +0.08 (z +1.07) ~ | +13 [-16, +42] | unresolved |
-| `lane-culture-spending` | **on** | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
+| `lane-culture-spending` | off | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
 | `lane-space-race` | off | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
-| `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
+| `competition-victory-points` | off | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
 ## Awaiting measurement
 
@@ -192,7 +192,6 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `chase-every-boost` | off (unmeasured) | Hunt every Eureka and Inspiration: the chase table reads every trigger the engine can judge (`Game::boost_progress`), a boost in hand scales the node, a boost one actionable step away is waited for, the beeline walks the goal's prerequisites by their boosted cost, and production, builders and kills are paid the research a trigger earns. | 1 \| 1 |
 | `coalition-before-war-2` | off (unmeasured) | At the ready strike, invite one credible neighbour to a joint war and wait no more than one turn. | 1 \| 2 |
 | `commitment-owner-acts` | off (unmeasured) | Every open settle or improve commitment whose owner the unit pass left with movement and no order acts on it after the pass — found, improve, or the safe route step — or is released with a recorded reason. | 1 \| 1 |
-| `district-planning-2` | off (unmeasured) | `district-planning-2`: the district plan's tile buy competes out of the treasury reserve (never spending below half of it) instead of needing 200 Gold of surplus headroom, and the purchase bars drop to adjacency 2 with an edge of 1 over owned ground. | 1 \| 2 |
 | `first-builder-reserve-2` | off (unmeasured) | Reserve one Builder for an immediately connectable first-copy luxury when Amenities are short and expansion is covered, retaining a lifetime receipt. | 1 \| 2 |
 | `industrial-chain-debt` | off (unmeasured) | `industrial-chain-debt` (OptIn): an Industrial Zone owes its Workshop, Factory and plant the same flat debt a Campus owes its Library, a regional building is worth the production it reaches, and the Factory and plants join the buildings a repeatable project waits behind. | 1 \| 1 |
 | `naval-recon-3` | off (unmeasured) | Version 3 of `naval-recon`: let a simultaneously missing land scout take the idle queue before the one peacetime sea scout. | 1 \| 3 |
@@ -203,7 +202,6 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-walk-deadline` | off (unmeasured) | A Settler out of a city past its deadline founds the best legal site within reach instead of chasing the ranked one it has not reached. | 1 \| 1 |
 | `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
-| `spaceport-surplus-veto` | off (unmeasured) | `spaceport-surplus-veto` (OptIn): the Science strategy's flat per-pad district bonus stops paying once the empire already holds as many Spaceports as the current race stage can use (`science_drive_desired_pads`). | 1 \| 1 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
 | `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
 
@@ -274,9 +272,9 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `governor-victory-lanes` | -110 | 15.57% | 17.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
-| `solvency-first-trade-slot-2` | -110 | 15.57% | 17.13% | `2026-09-01-standard-continuous-14550-total-seats-20260831T233655Z-0374.json` |
 | `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `governor-every-lane` | -173 | 14.93% | 18.38% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `solvency-first-trade-slot-2` | -207 | 14.60% | 17.54% | `2026-09-01-standard-continuous-5424-total-seats-20260901T043243Z-7b6c.json` |
 
 ## How to read this
 
@@ -358,4 +356,4 @@ So the gene stays in the code, `off` and unresolved, and **the cull rule does no
 
 So the rule, for whoever culls next. A cull is not the symmetric opposite of a default. A gene left `off` costs one row in a foldover screen and **no games**, and it can be re-priced by every screen that runs afterwards; a gene removed can never be re-priced by anything, and restoring it costs a dedicated confirmation run (1,200 map pairs for `holy-lane-parity`). So the bar for deleting code is not "the worst reading available" -- `barbarian-hunt`'s -86 was the worst reading in the table and it was still the wrong number. It is **a reading on the instrument the agent is actually being screened on**, and the three questions that establish it: is this column `standard` or `legacy`; is there a screen in flight or unmerged that has already priced this gene (check `batch.source_commit` against the cull date, and check the open pull requests); and does a direct arm against the deployment genome agree. `barbarian-hunt` failed all three.
 
-_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-standard-continuous-38160-total-seats.json` (standard, 38,160 seats). The fixed display batches are: `2026-09-01-standard-continuous-14484-total-seats-20260901T125432Z-eefa.json` (14,484 seats), `2026-09-01-standard-continuous-5424-total-seats-20260901T043243Z-7b6c.json` (5,424 seats), `2026-09-01-standard-continuous-14550-total-seats-20260831T233655Z-0374.json` (14,550 seats). The deployment defaults live in `docs/gene_ledger.json`; the table's batch cells are published evidence; this reporting-only rotation retains the selected deployment defaults._
+_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-standard-continuous-38160-total-seats.json` (standard, 38,160 seats). The fixed display batches are: `2026-09-02-standard-continuous-19734-total-seats-20260901T182621Z-1455.json` (19,734 seats), `2026-09-01-standard-continuous-14484-total-seats-20260901T125432Z-eefa.json` (14,484 seats), `2026-09-01-standard-continuous-5424-total-seats-20260901T043243Z-7b6c.json` (5,424 seats). The deployment defaults live in `docs/gene_ledger.json`; the table's batch cells are published evidence; this reporting-only rotation retains the selected deployment defaults._
