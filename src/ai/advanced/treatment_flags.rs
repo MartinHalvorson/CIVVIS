@@ -4133,6 +4133,19 @@ impl AdvancedAi {
         self.doomed_blow_veto = false;
     }
 
+    /// Stop paying for a city-state race this seat cannot hold: the leading
+    /// rival is a major we are at war with and is level or ahead, or the seat
+    /// has already sunk `CONTESTED_ENVOY_STACK_CAP` envoys and a rival is
+    /// within one. See [`Self::contested_suzerainty_brake`].
+    pub fn enable_contested_suzerainty_brake(&mut self) {
+        self.contested_suzerainty_brake = true;
+    }
+
+    /// The twin of `enable_contested_suzerainty_brake`.
+    pub fn disable_contested_suzerainty_brake(&mut self) {
+        self.contested_suzerainty_brake = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

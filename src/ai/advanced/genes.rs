@@ -2170,6 +2170,16 @@ pub const GENES: &[Gene] = &[
     // intact for its existing screen history; one family version plays at a
     // time. See `advanced/missionary_field.rs`.
     Gene { tag: "missionary-last-charge-explores-2", field: "missionary_last_charge_explores_2", kind: Kind::OptIn, enable: AdvancedAi::enable_missionary_last_charge_explores_2, disable: AdvancedAi::disable_missionary_last_charge_explores_2 },
+    // ⚠ A NARROW SUZERAINTY IS A SUBSCRIPTION, NOT A PURCHASE. `bank_envoys`
+    // brakes only the uncontested overstack and deliberately exempts a
+    // city-state within one envoy of a rival; live run
+    // `civvis-20260902T205532Z` defended exactly that narrow lead at Bologna
+    // seven times, spent 27 envoys, and lost it on t164 to Arabia — whom it
+    // had been at war with since t139 — which then levied Bologna and
+    // suspended every yield those envoys had bought. Peace with a levied
+    // city-state is refused by the engine, so the stake cannot be recovered.
+    // See `contested_suzerainty_brake`.
+    Gene { tag: "contested-suzerainty-brake", field: "contested_suzerainty_brake", kind: Kind::OptIn, enable: AdvancedAi::enable_contested_suzerainty_brake, disable: AdvancedAi::disable_contested_suzerainty_brake },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
