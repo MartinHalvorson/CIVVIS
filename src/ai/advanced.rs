@@ -4744,6 +4744,11 @@ pub struct AdvancedAi {
     /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
     /// `chase-every-boost`; see `advanced/chase_every_boost.rs`.
     chase_every_boost: bool,
+    /// Version 2 of `coalition-before-war`: make one strike-time joint-war
+    /// invitation to a credible partner, with only directly useful military
+    /// alliance and enemy-client Envoy setup.
+    /// Opt-in gene `coalition-before-war-2`; see `advanced/coalition.rs`.
+    coalition_before_war_2: bool,
     /// `campus-through-expansion`: a Science seat prices the Campus and its
     /// buildings in the Science lane while its plan still reads Expansion,
     /// and no city's first specialty district may be an Entertainment
@@ -7244,6 +7249,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             chase_every_boost: false,
+            coalition_before_war_2: false,
             campus_through_expansion: false,
             district_planning_2: false,
             cheapest_wonder_first: false,

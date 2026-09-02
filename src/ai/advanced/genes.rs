@@ -1935,6 +1935,10 @@ pub const GENES: &[Gene] = &[
     // on the top of the roll, remembers raiders in the fog, and screens shooters.
     // See `advanced/wounded_out_of_reach.rs`.
     Gene { tag: "wounded-out-of-reach", field: "wounded_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach, disable: AdvancedAi::disable_wounded_out_of_reach },
+    // Version 2 of `coalition-before-war`: court only a credible military
+    // partner, spend Envoys only to flip the target's client, and make one
+    // joint-war invitation at the ready strike.
+    Gene { tag: "coalition-before-war-2", field: "coalition_before_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_coalition_before_war_2, disable: AdvancedAi::disable_coalition_before_war_2 },
 
     // Forensic of 2026-09-01 over the 08-31 King and 09-01 Emperor live runs
     // (`advanced/settler_walk_deadline.rs`): with every host-only expansion

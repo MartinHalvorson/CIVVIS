@@ -3624,7 +3624,7 @@ mod tests {
         // the weaker generic Galley.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:7c1bacacca3d4120"
+            "fnv1a64:e69039571d195263"
         );
     }
 
@@ -4242,6 +4242,14 @@ mod tests {
             ("saka_horse_archer", "crossbowman"),
             ("winged_hussar", "tank"),
             ("crouching_tiger", "field_cannon"),
+            ("cossack", "helicopter"),
+            ("gaesatae", "man_at_arms"),
+            ("hypaspist", "man_at_arms"),
+            ("mandekalu_cavalry", "cuirassier"),
+            ("rough_rider", "tank"),
+            ("samurai", "musketman"),
+            ("varu", "cuirassier"),
+            ("voi_chien", "field_cannon"),
         ]
         .into_iter()
         .collect();
@@ -4279,7 +4287,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 93);
+        assert_eq!(rules.units.len(), 101);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
