@@ -100,7 +100,7 @@
 //! rows in `genes.rs`, byte-identical when off, and priced apart so the
 //! screen says which half pays.
 
-use super::{AdvancedAi, ForceGroup, ForcePosture, StrategicPlan};
+use super::{AdvancedAi, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan};
 use crate::game::{effective_strength, Action, City, Game};
 use crate::think;
 use crate::Pos;
@@ -152,10 +152,20 @@ pub(crate) const CAMPAIGN_PLAN_FRACTION: f64 = 0.75;
 /// A later city of the plan must fit inside this fraction of the army the
 /// plan was drawn with — the first city costs bodies.
 pub(crate) const CAMPAIGN_SEQUEL_FRACTION: f64 = 0.8;
+/// Version two is a finishable opportunity, not a fresh expedition: its sole
+/// objective must be this close to the nearest city of ours. The original's
+/// eighteen tiles is a sound outer campaign reach, but it lets a new plan pull
+/// the whole field army across a frontier before the city is actually staged.
+pub(crate) const CAMPAIGN_V2_REACH: i32 = 12;
 /// No plan before this standard turn, matching the declaration's own floor.
 pub(crate) const CAMPAIGN_MIN_TURN: u32 = 35;
 /// A plan not launched within this many standard turns is dropped.
 pub(crate) const CAMPAIGN_PATIENCE: u32 = 20;
+/// The staged version has no reason to hold Conquest for a full expedition's
+/// twenty turns: five turns cover a Formal War preparation and the force is
+/// already on the ring. Ten gives that clock room while bounding a failed
+/// opportunity before it freezes ordinary development.
+pub(crate) const CAMPAIGN_V2_PATIENCE: u32 = 10;
 /// After a campaign closes in peace — or a plan expires unlaunched — no plan
 /// for this many standard turns (`campaign_retry_after`).
 pub(crate) const CAMPAIGN_REPEAT_COOLDOWN: u32 = 15;
@@ -229,10 +239,17 @@ pub(crate) struct CityRequirement {
 }
 
 impl AdvancedAi {
+    /// Either version of the city-campaign family owns the shared plan.  The
+    /// treatment toggles make the versions exclusive, but spelling the family
+    /// predicate here keeps every consumer of the plan on the same contract.
+    fn city_campaign_active(&self) -> bool {
+        self.city_campaign || self.city_campaign_2
+    }
+
     /// Whether a plan stands to read: the gene is on, the rival is alive and
     /// a legal target, and a planned city is still theirs.
     pub(crate) fn city_campaign_stands(&self, g: &Game, pid: usize) -> bool {
-        self.city_campaign
+        self.city_campaign_active()
             && self.campaign.as_ref().is_some_and(|plan| {
                 g.players
                     .get(plan.target)
@@ -474,6 +491,125 @@ impl AdvancedAi {
         })
     }
 
+    /// The only force version two accepts: the units already on the ordinary
+    /// three-to-five staging ring. The existing `staged_campaign_units` owns
+    /// the terrain, health, domain, and peacetime-access rules, so v2 cannot
+    /// mistake an empire-wide roster or a merely nearby force for readiness.
+    fn campaign_v2_staged_force(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        objective: Pos,
+    ) -> Vec<u32> {
+        self.staged_campaign_units(g, pid, target, objective)
+    }
+
+    /// Version two of `city-campaign`: convert an already staged generic
+    /// Conquest objective into a single, nearby holdable city only when that
+    /// ring clears the city's complete spare-included bill. It deliberately
+    /// never starts an expedition or appends a sequel: v1's screens showed
+    /// many plans and wars but almost no planned captures, so a city that has
+    /// paid is the boundary of the operation rather than permission to extend
+    /// it.
+    pub(crate) fn plan_city_campaign_2(&self, g: &Game, pid: usize) -> Option<CampaignPlan> {
+        if g.turn < g.standard_duration(CAMPAIGN_MIN_TURN) || g.player_city_ids(pid).len() < 2 {
+            return None;
+        }
+        let strategic = self
+            .plan
+            .as_ref()
+            .filter(|plan| plan.strategy == GrandStrategy::Conquest)?;
+        let target = strategic.target_player?;
+        let city_id = strategic.target_city?;
+        let city = g.cities.get(&city_id).filter(|city| city.owner == target)?;
+        if Self::campaign_core_distance(g, pid, city.pos) > CAMPAIGN_V2_REACH {
+            return None;
+        }
+        let appraisal = self.appraise_neighbour(g, pid, target)?;
+        if !appraisal.weak_enough() {
+            return None;
+        }
+        let army = self.campaign_field_army(g, pid);
+        let army_strength = Self::campaign_strength_of(g, &army);
+        let average_body = if army.is_empty() {
+            DEFAULT_BODY_STRENGTH
+        } else {
+            army_strength / army.len() as f64
+        };
+        let requirement = self.campaign_city_requirement(g, pid, city_id, &appraisal, average_body);
+        let staged = self.campaign_v2_staged_force(g, pid, target, city.pos);
+        let staged_strength = Self::campaign_strength_of(g, &staged);
+        let has_capturer = staged
+            .iter()
+            .any(|uid| g.rules.units[g.units[uid].kind].is_melee_capable());
+        if !requirement.holdable
+            || staged_strength + 1e-9 < requirement.strength
+            || staged.len() < requirement.bodies
+            || !has_capturer
+        {
+            return None;
+        }
+        Some(CampaignPlan {
+            target,
+            cities: vec![city_id],
+            requirement: requirement.strength,
+            bodies: requirement.bodies,
+            planned: g.turn,
+            declared: None,
+            taken: 0,
+        })
+    }
+
+    /// Re-price a v2 objective from the current board before letting it keep
+    /// the Conquest posture. The selected city never changes underneath its
+    /// staged force; if its garrison, loyalty, or exact ring no longer clears
+    /// the bill, the opportunity simply disappears instead of becoming the
+    /// next long expedition.
+    fn refresh_city_campaign_2(&self, g: &Game, pid: usize, plan: &mut CampaignPlan) -> bool {
+        let [city_id] = plan.cities.as_slice() else {
+            return false;
+        };
+        let Some(city) = g
+            .cities
+            .get(city_id)
+            .filter(|city| city.owner == plan.target)
+        else {
+            return false;
+        };
+        if Self::campaign_core_distance(g, pid, city.pos) > CAMPAIGN_V2_REACH {
+            return false;
+        }
+        let Some(appraisal) = self.appraise_neighbour(g, pid, plan.target) else {
+            return false;
+        };
+        if !appraisal.weak_enough() {
+            return false;
+        }
+        let army = self.campaign_field_army(g, pid);
+        let army_strength = Self::campaign_strength_of(g, &army);
+        let average_body = if army.is_empty() {
+            DEFAULT_BODY_STRENGTH
+        } else {
+            army_strength / army.len() as f64
+        };
+        let requirement =
+            self.campaign_city_requirement(g, pid, *city_id, &appraisal, average_body);
+        let staged = self.campaign_v2_staged_force(g, pid, plan.target, city.pos);
+        if !requirement.holdable
+            || Self::campaign_strength_of(g, &staged) + 1e-9 < requirement.strength
+            || staged.len() < requirement.bodies
+            || !staged
+                .iter()
+                .any(|uid| g.rules.units[g.units[uid].kind].is_melee_capable())
+        {
+            return false;
+        }
+        plan.requirement = requirement.strength;
+        plan.bodies = requirement.bodies;
+        true
+    }
+
     /// One of the `campaign:*` counters the probe rows read.
     fn campaign_count(g: &mut Game, pid: usize, key: &str, by: i64) {
         *g.players[pid].counters.entry(key.to_string()).or_insert(0) += by;
@@ -483,7 +619,7 @@ impl AdvancedAi {
     /// plan never launched (and hold off the next for the cooldown), and
     /// draw or refresh one while at peace.
     pub(crate) fn maintain_city_campaign(&mut self, g: &mut Game, pid: usize) {
-        if !self.city_campaign {
+        if !self.city_campaign_active() {
             self.campaign = None;
             return;
         }
@@ -544,17 +680,43 @@ impl AdvancedAi {
             self.campaign = None;
             return;
         }
-        let Some(mut fresh) = self.plan_city_campaign(g, pid) else {
+        if self.city_campaign_2 {
+            if let Some(mut plan) = previous.take() {
+                if self.refresh_city_campaign_2(g, pid, &mut plan) {
+                    if g.turn.saturating_sub(plan.planned)
+                        >= g.standard_duration(CAMPAIGN_V2_PATIENCE)
+                    {
+                        self.campaign_retry_after = self.campaign_retry_after.max(cooldown);
+                        self.campaign = None;
+                    } else {
+                        self.campaign = Some(plan);
+                    }
+                    return;
+                }
+            }
+        }
+        let Some(mut fresh) = (if self.city_campaign_2 {
+            self.plan_city_campaign_2(g, pid)
+        } else {
+            self.plan_city_campaign(g, pid)
+        }) else {
             self.campaign = None;
             return;
         };
-        if let Some(plan) = previous.filter(|plan| plan.target == fresh.target) {
-            fresh.planned = plan.planned;
+        if !self.city_campaign_2 {
+            if let Some(plan) = previous.filter(|plan| plan.target == fresh.target) {
+                fresh.planned = plan.planned;
+            }
         }
-        if g.turn.saturating_sub(fresh.planned) >= g.standard_duration(CAMPAIGN_PATIENCE) {
-            // Twenty turns without a launch: the target moved, or the army
-            // never came. Not again for the cooldown — a plan redrawn the
-            // next turn would hold the Conquest posture forever.
+        let patience = if self.city_campaign_2 {
+            CAMPAIGN_V2_PATIENCE
+        } else {
+            CAMPAIGN_PATIENCE
+        };
+        if g.turn.saturating_sub(fresh.planned) >= g.standard_duration(patience) {
+            // The opportunity did not launch before its version's patience
+            // window. Not again for the cooldown — a plan redrawn the next
+            // turn would hold the Conquest posture forever.
             self.campaign_retry_after = self.campaign_retry_after.max(cooldown);
             self.campaign = None;
             return;
@@ -614,7 +776,7 @@ impl AdvancedAi {
     /// The peace desk: a campaign whose every city is ours offers peace,
     /// once, until it is accepted.
     pub(crate) fn city_campaign_diplomacy(&mut self, g: &mut Game, pid: usize) {
-        if !self.city_campaign {
+        if !self.city_campaign_active() {
             return;
         }
         let Some(campaign) = self.campaign.clone() else {
@@ -742,8 +904,17 @@ mod tests {
     use crate::name;
 
     #[test]
-    fn city_campaign_is_a_native_opt_in_off_in_both_controllers() {
+    fn city_campaign_versions_are_native_opt_ins_and_select_one_version() {
         opt_in_off_in_both_controllers("city-campaign", |ai| ai.city_campaign);
+        opt_in_off_in_both_controllers("city-campaign-2", |ai| ai.city_campaign_2);
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign();
+        assert!(ai.city_campaign);
+        assert!(!ai.city_campaign_2);
+        ai.enable_city_campaign_2();
+        assert!(!ai.city_campaign);
+        assert!(ai.city_campaign_2);
     }
 
     #[test]
@@ -939,6 +1110,80 @@ mod tests {
         ai.maintain_city_campaign(&mut game, 0);
         assert!(ai.campaign.is_some(), "and a fresh one after it");
         assert_eq!(game.players[0].counters.get("campaign:planned"), Some(&2));
+    }
+
+    /// Version two refuses a merely empire-wide or nearby army: it needs the
+    /// whole spare-included bill on the existing target's staging ring, then
+    /// names exactly one city even when the neighbour has another nearby city
+    /// to take.
+    #[test]
+    fn v2_requires_a_staged_complete_bill_and_stops_at_one_city() {
+        let mut game = flat_board(80_305, &[(6, 10), (16, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.found_city_for(0, (6, 5), None);
+        warriors(&mut game, 0, home, 6);
+        let first = game.player_city_ids(1)[0];
+        let first_pos = game.cities[&first].pos;
+        warriors(&mut game, 1, first_pos, 1);
+        // This city is close enough to be an ordinary v1 sequel and to prove
+        // that the one-city result is deliberate rather than accidental.
+        let second = game.found_city_for(1, (17, 14), None);
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_2();
+        assert!(!ai.city_campaign);
+        assert!(ai.city_campaign_2);
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(first),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 60,
+            rush: false,
+        });
+        assert!(
+            ai.plan_city_campaign_2(&game, 0).is_none(),
+            "the global army is not a force on the target's staging ring"
+        );
+
+        let appraisal = ai.appraise_neighbour(&game, 0, 1).unwrap();
+        let army = ai.campaign_field_army(&game, 0);
+        let average = AdvancedAi::campaign_strength_of(&game, &army) / army.len() as f64;
+        let bill = ai.campaign_city_requirement(&game, 0, first, &appraisal, average);
+        let ring: Vec<Pos> = game
+            .wring(first_pos, 4)
+            .into_iter()
+            .filter(|pos| {
+                game.wdist(*pos, home) < game.wdist(first_pos, home)
+                    && game.map.tiles[pos].owner_city.is_none()
+                    && game.unit_ids_at(*pos).is_empty()
+            })
+            .collect();
+        assert!(
+            ring.len() >= bill.bodies,
+            "{} staging tiles for {} bodies",
+            ring.len(),
+            bill.bodies
+        );
+        for pos in ring.iter().take(bill.bodies) {
+            let uid = game.spawn_test_unit("warrior", 0, *pos);
+            fresh(&mut game, uid);
+        }
+        ai.maintain_city_campaign(&mut game, 0);
+        let plan = ai.campaign.clone().expect("the staged complete bill plans");
+        assert_eq!(plan.target, 1);
+        assert_eq!(
+            plan.cities,
+            vec![first],
+            "v2 has no automatic sequel to nearby city {second}: {plan:?}"
+        );
+        let staged = ai.campaign_v2_staged_force(&game, 0, plan.target, first_pos);
+        assert!(
+            AdvancedAi::campaign_strength_of(&game, &staged) + 1e-9 >= plan.requirement
+                && staged.len() >= plan.bodies,
+            "the selected objective carries its complete bill on the ring: {plan:?}"
+        );
     }
 
     /// A city the capture cannot hold — the rival's population beside it

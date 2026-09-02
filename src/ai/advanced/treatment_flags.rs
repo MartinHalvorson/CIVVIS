@@ -1980,6 +1980,7 @@ impl AdvancedAi {
     /// `advanced/city_campaign.rs`.
     pub fn enable_city_campaign(&mut self) {
         self.city_campaign = true;
+        self.city_campaign_2 = false;
     }
 
     /// The twin of `enable_city_campaign`.
@@ -4021,6 +4022,21 @@ impl AdvancedAi {
     /// The twin of `enable_war_policy_via_board`.
     pub fn disable_war_policy_via_board(&mut self) {
         self.war_policy_via_board = false;
+    }
+
+    /// Turn an existing Conquest plan into one nearby, holdable city only when
+    /// its complete spare-included bill is already staged. This successor
+    /// replaces v1's multi-city expedition, retains a single objective while
+    /// it stays feasible, and abandons an unlaunched opportunity quickly.
+    /// Opt-in gene `city-campaign-2`; see `advanced/city_campaign.rs`.
+    pub fn enable_city_campaign_2(&mut self) {
+        self.city_campaign = false;
+        self.city_campaign_2 = true;
+    }
+
+    /// The twin of `enable_city_campaign_2`.
+    pub fn disable_city_campaign_2(&mut self) {
+        self.city_campaign_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

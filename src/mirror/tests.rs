@@ -5003,6 +5003,11 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
                 option: 1,
                 target: "".to_string(),
             },
+            StateResolution {
+                kind: "WC_RES_DIPLOVICTORY".to_string(),
+                option: 2,
+                target: "3".to_string(),
+            },
         ]),
         congress_turns_left: Some(11),
         cities: vec![StateCity {
@@ -5093,7 +5098,9 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     );
     // The host's Congress is the model's Congress: Trade Policy A on our
     // seat, Luxury Policy B on silk, and the resolution the model has no
-    // rule for is reported rather than guessed.
+    // rule for is reported rather than guessed. Diplomatic Victory is the
+    // exception: its standing is imported through `congress_dvp`, so the
+    // resolution row is a known no-op for active model effects.
     assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
     assert!(mirror
         .game
@@ -5109,6 +5116,14 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
             .iter()
             .any(|issue| issue == "congress:WC_RES_ARMS_CONTROL:1:"),
         "unmapped: {:?}",
+        mirror.unmapped
+    );
+    assert!(
+        !mirror
+            .unmapped
+            .iter()
+            .any(|issue| issue.starts_with("congress:WC_RES_DIPLOVICTORY:")),
+        "a resolution represented by congress_dvp is not a bridge gap: {:?}",
         mirror.unmapped
     );
     // The model pays the +4 itself, so the correction it derives is the
@@ -5324,6 +5339,15 @@ fn host_resolutions_translate_into_the_models_congress_vocabulary() {
         Some(("heritage_organization".into(), "A".into(), "writing".into()))
     );
     assert_eq!(
+        map(
+            "WC_RES_HERITAGE_ORG",
+            1,
+            "LOC_GREAT_WORK_OBJECT_WRITING_NAME"
+        ),
+        Some(("heritage_organization".into(), "A".into(), "writing".into())),
+        "the host's localized Great Work key uses underscores in OBJECT"
+    );
+    assert_eq!(
         map("WC_RES_DEFORESTATION_TREATY", 1, "FEATURE_FOREST"),
         Some(("deforestation_treaty".into(), "A".into(), "forest".into()))
     );
@@ -5376,6 +5400,11 @@ fn host_resolutions_translate_into_the_models_congress_vocabulary() {
         map("WC_RES_SOVEREIGNTY", 1, "MINOR_CIV_TRADE"),
         None,
         "no model rule, no effect"
+    );
+    assert_eq!(
+        map("WC_RES_DIPLOVICTORY", 2, "4"),
+        None,
+        "Diplomatic Victory is represented by the separate congress standing export"
     );
 }
 

@@ -4943,6 +4943,13 @@ pub struct AdvancedAi {
     /// speculative joint-war offer, Envoy diversion, or declaration delay.
     /// Opt-in gene `coalition-before-war-3`; see `advanced/coalition.rs`.
     coalition_before_war_3: bool,
+    /// Version 2 of `city-campaign`: one nearby, holdable city only when an
+    /// existing Conquest plan has already staged its complete spare-included
+    /// force. It keeps that exact objective and lets an unlaunched opportunity
+    /// expire quickly, rather than starting a multi-city expedition from an
+    /// empire-wide army count.
+    /// Opt-in gene `city-campaign-2`; see `advanced/city_campaign.rs`.
+    city_campaign_2: bool,
     /// `campus-through-expansion`: a Science seat prices the Campus and its
     /// buildings in the Science lane while its plan still reads Expansion,
     /// and no city's first specialty district may be an Entertainment
@@ -7614,6 +7621,7 @@ impl AdvancedAi {
             chase_every_boost_2: false,
             coalition_before_war_2: false,
             coalition_before_war_3: false,
+            city_campaign_2: false,
             campus_through_expansion: false,
             district_planning_2: false,
             district_planning_3: false,
