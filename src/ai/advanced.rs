@@ -387,6 +387,16 @@ const BORDER_PARITY_RESERVE: f64 = 100.0;
 /// the contact city's defender ahead of whatever it is building; above it,
 /// only an idle queue takes the defender.
 const BORDER_PARITY_SEVERE_RATIO: f64 = 0.5;
+/// `border-parity-3`: two visible non-recon land bodies this close to an
+/// ungarrisoned city are a concrete local staging threat, rather than the
+/// whole-empire power comparison versions one and two used.
+const BORDER_PARITY_LOCAL_THREAT_RADIUS: i32 = 5;
+/// A body within this ring already answers the local garrison debt. Version
+/// three buys or queues at most one answer per exposed city.
+const BORDER_PARITY_LOCAL_GARRISON_RADIUS: i32 = 2;
+/// One passing body is contact, not an army. Requiring a pair keeps version
+/// three out of the ordinary peacetime economy until a rival visibly stages.
+const BORDER_PARITY_LOCAL_THREAT_BODIES: usize = 2;
 /// `age-closer`: the era-point shortfall from a Normal Age at which the seat
 /// spends its bank on a guaranteed Historic Moment. Nine live King games
 /// fell into 15 Dark Ages; ten of the fifteen shortfalls were five points or
@@ -4669,6 +4679,11 @@ pub struct AdvancedAi {
     /// city's idle queue starts the defender instead. See
     /// `border_parity_target` and `advanced_production`.
     border_parity_2: bool,
+    /// `border-parity-3`: replace the whole-empire power ratio with one
+    /// concrete local debt. An ungarrisoned city facing two visible,
+    /// non-recon land bodies from the same peaceful major buys one defender,
+    /// or starts it only from an idle queue. See `border_parity_3_target`.
+    border_parity_3: bool,
     /// `boosted-bargain-first`: a prerequisite-met technology whose Eureka is
     /// in hand and whose remaining cost is at most `BOOSTED_BARGAIN_TURNS` of
     /// science is researched before the lane's beeline resumes. See
@@ -7259,6 +7274,7 @@ impl AdvancedAi {
             battle_planner_recovering: BTreeSet::new(),
             air_surge_2: false,
             border_parity_2: false,
+            border_parity_3: false,
             boosted_bargain_first: false,
             border_parity: false,
             age_closer: false,
@@ -18338,6 +18354,133 @@ impl AdvancedAi {
         true
     }
 
+    /// `border-parity-3`'s local target: a city of ours with no non-recon
+    /// land defender within two tiles and at least two currently visible
+    /// non-recon land units belonging to the same met major within five.
+    ///
+    /// Versions one and two inferred danger from a nearby rival CITY and the
+    /// rival's WHOLE military power. That made a remote navy or army displace
+    /// a local Settler. This version requires the army itself to be on the
+    /// board beside the city, and the first local body closes the debt. The
+    /// tuple is `(visible strength, rival, city, bodies)`; the strongest
+    /// staging group wins, with stable ids breaking ties.
+    fn border_parity_3_target(&self, g: &Game, pid: usize) -> Option<(f64, usize, u32, usize)> {
+        if !self.border_parity_3 {
+            return None;
+        }
+        if g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_barbarian
+                && !player.is_minor
+                && g.is_at_war(pid, player.id)
+        }) {
+            return None;
+        }
+        let visible = g.player_vision_frame(pid);
+        let mut best: Option<(f64, usize, u32, usize)> = None;
+        for cid in g.player_city_ids(pid) {
+            let city_pos = g.cities[&cid].pos;
+            let defended = g.units.values().any(|unit| {
+                if unit.owner != pid
+                    || g.wdist(unit.pos, city_pos) > BORDER_PARITY_LOCAL_GARRISON_RADIUS
+                {
+                    return false;
+                }
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military"
+                    && spec.promotion_class != "recon"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            });
+            if defended {
+                continue;
+            }
+            for rival in g.players.iter().filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_barbarian
+                    && !player.is_minor
+                    && !g.same_team(pid, player.id)
+                    && g.has_met(pid, player.id)
+            }) {
+                let staged: Vec<&crate::game::Unit> = g
+                    .units
+                    .values()
+                    .filter(|unit| unit.owner == rival.id)
+                    .filter(|unit| g.wdist(unit.pos, city_pos) <= BORDER_PARITY_LOCAL_THREAT_RADIUS)
+                    .filter(|unit| g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+                    .filter(|unit| {
+                        let spec = &g.rules.units[unit.kind];
+                        spec.class == "military"
+                            && spec.promotion_class != "recon"
+                            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    })
+                    .collect();
+                if staged.len() < BORDER_PARITY_LOCAL_THREAT_BODIES {
+                    continue;
+                }
+                let strength = staged
+                    .iter()
+                    .map(|unit| {
+                        crate::game::effective_strength(
+                            g.unit_strength(unit, false)
+                                .max(g.unit_ranged_attack_strength(unit)),
+                            unit.hp,
+                        )
+                    })
+                    .sum::<f64>();
+                let candidate = (strength, rival.id, cid, staged.len());
+                if best.is_none_or(|had| {
+                    strength > had.0 + f64::EPSILON
+                        || ((strength - had.0).abs() <= f64::EPSILON
+                            && (cid, rival.id) < (had.2, had.1))
+                }) {
+                    best = Some(candidate);
+                }
+            }
+        }
+        best
+    }
+
+    fn border_parity_3_defender(&self, g: &Game, pid: usize, city: u32) -> Option<String> {
+        self.base
+            .best_military(g, pid, city, Some(true))
+            .or_else(|| self.base.best_military(g, pid, city, Some(false)))
+    }
+
+    fn border_parity_3_purchase(&self, g: &mut Game, pid: usize) -> bool {
+        let Some((strength, rival, city, bodies)) = self.border_parity_3_target(g, pid) else {
+            return false;
+        };
+        let Some(unit) = self.border_parity_3_defender(g, pid, city) else {
+            return false;
+        };
+        let bank = g.players[pid].gold;
+        let Some(cost) = g.unit_purchase_cost(pid, city, &unit, "gold") else {
+            return false;
+        };
+        if bank + f64::EPSILON < BORDER_PARITY_RESERVE + cost {
+            return false;
+        }
+        let action = Action::Buy {
+            city,
+            unit: Name::new(&unit),
+            formation: 0,
+            currency: "gold".to_string(),
+        };
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let city_name = g.cities[&city].name.clone();
+            think!(self.journal(), Economy, Decision,
+                "Buying {unit} for {city_name} against a visible border staging by {}", g.players[rival].civ;
+                "{bodies} combat bodies with {strength:.0} effective strength stand within \
+                 {BORDER_PARITY_LOCAL_THREAT_RADIUS} tiles, and no local garrison does");
+        }
+        true
+    }
+
     /// `border-parity-2` under a SEVERE deficit: our power under
     /// `BORDER_PARITY_SEVERE_RATIO` of the bordering major's while the
     /// contact city builds something that is neither a defender, walls, a
@@ -18405,6 +18548,9 @@ impl AdvancedAi {
             return true;
         }
         if self.border_parity_purchase(g, pid) {
+            return true;
+        }
+        if self.border_parity_3_purchase(g, pid) {
             return true;
         }
         let city_count = g.player_city_ids(pid).len();
@@ -23377,6 +23523,34 @@ impl AdvancedAi {
                             .best_military(g, pid, cid, Some(true))
                             .or_else(|| self.base.best_military(g, pid, cid, Some(false)));
                         if let Some(unit) = defender {
+                            let item = Item::Unit {
+                                unit: Name::new(&unit),
+                            };
+                            if g.can_produce(pid, cid, &item)
+                                && g.apply(
+                                    pid,
+                                    &Action::Produce {
+                                        city: cid,
+                                        item: item.clone(),
+                                    },
+                                )
+                                .is_ok()
+                            {
+                                counts.add_item(g, &item);
+                                self.clear_idle_production_streak(cid);
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+            // `border-parity-3`: only a concrete visible staging group opens
+            // this reserve, and only an idle queue pays it. One local body
+            // closes the debt, so this cannot turn the city into a unit pump.
+            if committed.is_none() && self.border_parity_3 {
+                if let Some((_, _, contact, _)) = self.border_parity_3_target(g, pid) {
+                    if contact == cid {
+                        if let Some(unit) = self.border_parity_3_defender(g, pid, cid) {
                             let item = Item::Unit {
                                 unit: Name::new(&unit),
                             };

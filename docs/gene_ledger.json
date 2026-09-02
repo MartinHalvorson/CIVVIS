@@ -1426,7 +1426,8 @@
         "ships": null,
         "versions": {
           "border-parity": null,
-          "border-parity-2": null
+          "border-parity-2": null,
+          "border-parity-3": null
         }
       },
       "campus-adjacency-threshold": {
