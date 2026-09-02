@@ -161,6 +161,7 @@ class MirrorCheckTest(unittest.TestCase):
         state = {
             "score": 177, "military": 2, "science": 6.75, "culture": 6.03125,
             "gold": 25, "gold_per_turn": -3.25, "faith": 100, "trade_capacity": 3,
+            "tourism_per_turn": 12.5,
             "government": "GOVERNMENT_MONARCHY",
             "dark_age": False, "golden_age": True, "heroic_golden_age": False,
             "public_stats": {
@@ -184,6 +185,7 @@ class MirrorCheckTest(unittest.TestCase):
         board = {"me": {"trade_capacity": 3}, "players": [
             {"id": 0, "score": 177, "military": 2, "observed_military": 2,
              "gold": 25.0, "gold_per_turn": -3.25, "faith": 100.0,
+             "tourism_per_turn": 12.5,
              "government": "monarchy", "age": "golden",
              "cities": 3, "population": 22, "wonder_count": 1, "suzerain_count": 2,
              "nuclear_devices": 0, "thermonuclear_devices": 1,
@@ -227,6 +229,13 @@ class MirrorCheckTest(unittest.TestCase):
         )
         board["players"][1]["tourism_per_turn"] = 61.0
 
+        board["players"][0]["tourism_per_turn"] = 12.0
+        self.assertIn(
+            "seat 0 tourism/turn Civ6=12.5",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][0]["tourism_per_turn"] = 12.5
+
         board["players"][1]["government"] = "democracy"
         self.assertIn(
             "seat 1 government Civ6=fascism",
@@ -255,6 +264,26 @@ class MirrorCheckTest(unittest.TestCase):
         board["players"][0]["yields"]["faith"] = 114.6
         self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
 
+        # Zero is a valid top-bar yield; only the host's negative sentinel is
+        # unavailable. A nonzero reconstructed reading must therefore be named.
+        state["science"] = 0
+        board["players"][0]["yields"]["science"] = 1
+        self.assertIn(
+            "seat 0 science/turn Civ6=0",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        state["science"] = 6.75
+        board["players"][0]["yields"]["science"] = 6.8
+        state["culture"] = 0
+        board["players"][0]["yields"]["culture"] = 1
+        self.assertIn(
+            "seat 0 culture/turn Civ6=0",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        state["culture"] = 6.03125
+        board["players"][0]["yields"]["culture"] = 6.0
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+
     def test_a_stronger_own_strength_model_is_not_a_bridge_disagreement(self) -> None:
         """`military_power` is max(observed, our own sum), so for our OWN seat it
         may legitimately exceed the host. That is a MODEL difference, not a
@@ -274,6 +303,128 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertIn(
             "seat 0 military", civ6_mirror_check.public_fact_mismatches(state, board)[0]
         )
+
+    def test_public_victory_tracker_facts_are_exact(self) -> None:
+        state = {
+            "techs": ["TECH_POTTERY", "TECH_WRITING"],
+            "civics": ["CIVIC_CODE_OF_LAWS", "CIVIC_CRAFTSMANSHIP", "CIVIC_FOREIGN_TRADE"],
+            # Manhattan and Ivy are strategic projects, but not progress through
+            # the four science-victory milestones. Base-game Mars parts count once.
+            "science_projects": [
+                "PROJECT_MANHATTAN_PROJECT", "PROJECT_OPERATION_IVY",
+                "PROJECT_LAUNCH_EARTH_SATELLITE", "PROJECT_LAUNCH_MOON_LANDING",
+                "PROJECT_LAUNCH_MARS_REACTOR", "PROJECT_LAUNCH_MARS_HABITATION",
+                "PROJECT_LAUNCH_MARS_HYDROPONICS", "PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
+            ],
+            "science_victory_points": 17.3,
+            "science_victory_points_per_turn": 1.2,
+            "science_victory_points_needed": 50,
+            "foreign_tourists": 19,
+            "domestic_tourists": 25,
+            "cities_following_religion": 7,
+            "dvp": 4,
+            "rivals": [{
+                # World Rankings wins over the older counted loop when both cross.
+                "player": 17, "techs": 53, "techs_researched": 54, "civics": 44,
+                "science_projects": [
+                    "launch_earth_satellite", "PROJECT_LAUNCH_MARS_REACTOR",
+                    "PROJECT_LAUNCH_MARS_HABITATION", "PROJECT_LAUNCH_MARS_HYDROPONICS",
+                ],
+                "science_victory_points": 6.4,
+                "science_victory_points_per_turn": 0.9,
+                "science_victory_points_needed": 25,
+                "foreign_tourists": 31,
+                "domestic_tourists": 29,
+                "cities_following_religion": 16,
+                "dvp": 13,
+            }],
+        }
+        board = {"players": [
+            {"id": 0, "victories": {
+                "science": {"projects": 4, "distance": 17.3, "speed": 1.2,
+                            "distance_target": 50, "techs": 2},
+                "culture": {"tourists": 19, "domestic": 25, "civics": 3},
+                "religious": {"cities_following": 7},
+                "diplomatic": {"points": 4},
+            }},
+            {"id": 1, "victories": {
+                "science": {"projects": 2, "distance": 6.4, "speed": 0.9,
+                            "distance_target": 25, "techs": 54},
+                "culture": {"tourists": 31, "domestic": 29, "civics": 44},
+                "religious": {"cities_following": 16},
+                "diplomatic": {"points": 13},
+            }},
+        ]}
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+
+        checks = [
+            (0, "science", "projects", 3, "seat 0 science projects Civ6=4"),
+            (0, "science", "distance", 16.0, "seat 0 science distance Civ6=17.3"),
+            (0, "science", "speed", 0.8, "seat 0 science speed Civ6=1.2"),
+            (0, "science", "distance_target", 49, "seat 0 science target Civ6=50"),
+            (0, "science", "techs", 1, "seat 0 techs Civ6=2"),
+            (0, "culture", "tourists", 18, "seat 0 foreign tourists Civ6=19"),
+            (0, "culture", "domestic", 24, "seat 0 domestic tourists Civ6=25"),
+            (0, "culture", "civics", 2, "seat 0 civics Civ6=3"),
+            (0, "religious", "cities_following", 6,
+             "seat 0 cities following religion Civ6=7"),
+            (0, "diplomatic", "points", 3, "seat 0 diplomatic points Civ6=4"),
+            (1, "science", "projects", 1, "seat 1 science projects Civ6=2"),
+            (1, "science", "distance", 6.0, "seat 1 science distance Civ6=6.4"),
+            (1, "science", "speed", 0.7, "seat 1 science speed Civ6=0.9"),
+            (1, "science", "distance_target", 24, "seat 1 science target Civ6=25"),
+            (1, "science", "techs", 53, "seat 1 techs Civ6=54"),
+            (1, "culture", "tourists", 30, "seat 1 foreign tourists Civ6=31"),
+            (1, "culture", "domestic", 28, "seat 1 domestic tourists Civ6=29"),
+            (1, "culture", "civics", 43, "seat 1 civics Civ6=44"),
+            (1, "religious", "cities_following", 15,
+             "seat 1 cities following religion Civ6=16"),
+            (1, "diplomatic", "points", 12, "seat 1 diplomatic points Civ6=13"),
+        ]
+        for seat, lane, field, wrong, expected in checks:
+            value = board["players"][seat]["victories"][lane][field]
+            board["players"][seat]["victories"][lane][field] = wrong
+            self.assertTrue(
+                any(expected in mismatch
+                    for mismatch in civ6_mirror_check.public_fact_mismatches(state, board)),
+                expected,
+            )
+            board["players"][seat]["victories"][lane][field] = value
+
+        # An unavailable ranking counter falls back to the older tree count.
+        state["rivals"][0]["techs_researched"] = -1
+        board["players"][1]["victories"]["science"]["techs"] = 53
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+
+        # The absence of a fresh rival DVP is intentionally filled from the
+        # congress table, so check that exact, potentially stale source too.
+        state["rivals"][0]["dvp"] = None
+        state["congress_dvp"] = {"points": [{"player": 17, "points": 12}]}
+        board["players"][1]["victories"]["diplomatic"]["points"] = 12
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+        board["players"][1]["victories"]["diplomatic"]["points"] = 11
+        self.assertIn(
+            "seat 1 diplomatic points Civ6=12",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][1]["victories"]["diplomatic"]["points"] = 12
+
+        # Old or refused fields are unknown, not a zero that should make the
+        # checker call a reconstructed estimate a data mismatch.
+        unavailable = {
+            "techs": None, "civics": None, "science_projects": None,
+            "science_victory_points": -1, "science_victory_points_per_turn": -1,
+            "science_victory_points_needed": -1, "foreign_tourists": -1,
+            "domestic_tourists": -1, "cities_following_religion": None, "dvp": None,
+            "rivals": [{
+                "techs": -1, "techs_researched": None, "civics": -1,
+                "science_projects": None, "science_victory_points": -1,
+                "science_victory_points_per_turn": -1, "science_victory_points_needed": -1,
+                "foreign_tourists": -1, "domestic_tourists": -1,
+                "cities_following_religion": None, "dvp": None,
+            }],
+        }
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(unavailable, board), [])
 
     def test_city_data_check_covers_non_positional_state(self) -> None:
         state = {"cities": [{
@@ -745,6 +896,27 @@ class MirrorCheckTest(unittest.TestCase):
             "coastal_lowland": 2,
         }
         counts, examples = civ6_mirror_check.exact_tile_mismatches([(exact, plot)])
+        self.assertEqual(counts, Counter())
+        self.assertEqual(examples, [])
+
+        mountain_road = {
+            "x": 7,
+            "y": 6,
+            "t": "TERRAIN_PLAINS_MOUNTAIN",
+            "im": "IMPROVEMENT_MOUNTAIN_ROAD",
+        }
+        road_on_board = {
+            "terrain": "mountain",
+            "hills": False,
+            "feature": None,
+            "resource": None,
+            "improvement": "qhapaq_nan",
+            "river": False,
+            "coastal_lowland": 0,
+        }
+        counts, examples = civ6_mirror_check.exact_tile_mismatches(
+            [(road_on_board, mountain_road)]
+        )
         self.assertEqual(counts, Counter())
         self.assertEqual(examples, [])
 

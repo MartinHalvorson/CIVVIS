@@ -2711,8 +2711,8 @@ fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
     }]);
     let mut state = StateSnapshot {
         turn: 40,
-        science: 12.0,
-        culture: 9.0,
+        science: Some(12.0),
+        culture: Some(9.0),
         faith_per_turn: Some(7.0),
         gold: 75,
         gold_per_turn: Some(-4.0),
@@ -3636,12 +3636,19 @@ fn supported_unique_improvements_and_city_religion_are_not_dropped() {
     improved.im = Some("IMPROVEMENT_KURGAN".to_string());
     let mut resort = plot(6, 4, "TERRAIN_GRASS");
     resort.im = Some("IMPROVEMENT_BEACH_RESORT".to_string());
+    let mut mountain_road = plot(7, 4, "TERRAIN_PLAINS_MOUNTAIN");
+    mountain_road.im = Some("IMPROVEMENT_MOUNTAIN_ROAD".to_string());
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
         turn: 50,
         width: 10,
         height: 10,
         chunk: 1,
-        plots: vec![improved, plot(5, 4, "TERRAIN_PLAINS"), resort],
+        plots: vec![
+            improved,
+            plot(5, 4, "TERRAIN_PLAINS"),
+            resort,
+            mountain_road,
+        ],
     }]);
     let state = StateSnapshot {
         turn: 50,
@@ -3667,6 +3674,11 @@ fn supported_unique_improvements_and_city_religion_are_not_dropped() {
     assert_eq!(
         recon.game.map.tiles[&resort].improvement.as_deref(),
         Some("seaside_resort")
+    );
+    let mountain_road = crate::hex::offset_to_axial(7, 4);
+    assert_eq!(
+        recon.game.map.tiles[&mountain_road].improvement.as_deref(),
+        Some("qhapaq_nan")
     );
     let city = recon
         .game
@@ -3962,8 +3974,8 @@ fn host_economy_loyalty_and_city_defense_survive_the_mirror_save() {
     }]);
     let state = StateSnapshot {
         turn: 50,
-        science: 6.75,
-        culture: 6.03125,
+        science: Some(6.75),
+        culture: Some(6.03125),
         trade_capacity: Some(3),
         cities: vec![StateCity {
             id: 10,
@@ -4007,6 +4019,64 @@ fn host_economy_loyalty_and_city_defense_survive_the_mirror_save() {
 }
 
 #[test]
+fn zero_host_science_and_culture_override_live_city_yields() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 50,
+        width: 10,
+        height: 10,
+        chunk: 1,
+        plots: vec![plot(5, 4, "TERRAIN_PLAINS")],
+    }]);
+    let city_yields = crate::rules::Yields {
+        science: 6.75,
+        culture: 6.03125,
+        ..crate::rules::Yields::default()
+    };
+    let mut state = StateSnapshot {
+        turn: 50,
+        science: Some(city_yields.science),
+        culture: Some(city_yields.culture),
+        cities: vec![StateCity {
+            id: 10,
+            name: "Istanbul".to_string(),
+            x: 5,
+            y: 4,
+            pop: 9,
+            yields: Some(city_yields),
+            ..StateCity::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let initial = crate::obs::observation_spectator(&mirror.game, 0);
+    assert_eq!(
+        initial["players"][0]["yields"]["science"],
+        serde_json::json!(6.8)
+    );
+    assert_eq!(
+        initial["players"][0]["yields"]["culture"],
+        serde_json::json!(6.0)
+    );
+
+    // Zero is a valid early-game host result. Retain the positive city reading
+    // so this proves the top-bar zero installs its needed negative correction,
+    // rather than merely matching a model that happened to yield zero already.
+    state.turn = 51;
+    state.science = Some(0.0);
+    state.culture = Some(0.0);
+    mirror.sync(&snapshot, &state, 0);
+    let zeroed = crate::obs::observation_spectator(&mirror.game, 0);
+    assert_eq!(
+        zeroed["players"][0]["yields"]["science"],
+        serde_json::json!(0.0)
+    );
+    assert_eq!(
+        zeroed["players"][0]["yields"]["culture"],
+        serde_json::json!(0.0)
+    );
+}
+
+#[test]
 fn exact_city_economy_and_great_work_survive_reconstruction() {
     let mut center = plot(5, 4, "TERRAIN_PLAINS");
     center.o = 0;
@@ -4031,8 +4101,8 @@ fn exact_city_economy_and_great_work_survive_reconstruction() {
     };
     let state = StateSnapshot {
         turn: 60,
-        science: host_yields.science,
-        culture: host_yields.culture,
+        science: Some(host_yields.science),
+        culture: Some(host_yields.culture),
         cities: vec![StateCity {
             id: 10,
             name: "Wroclaw".to_string(),
@@ -4925,8 +4995,8 @@ fn corrections_are_measured_after_population_and_dedications_are_on_the_board() 
     }]);
     let mut state = StateSnapshot {
         turn: 90,
-        science: 30.0,
-        culture: 12.0,
+        science: Some(30.0),
+        culture: Some(12.0),
         golden_age: Some(true),
         dark_age: Some(false),
         heroic_golden_age: Some(false),
@@ -5063,8 +5133,8 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     let host_gold = 12.0;
     let mut state = StateSnapshot {
         turn: 90,
-        science: 30.0,
-        culture: 12.0,
+        science: Some(30.0),
+        culture: Some(12.0),
         resolutions: Some(vec![
             StateResolution {
                 kind: "WC_RES_TRADE_TREATY".to_string(),
@@ -7445,8 +7515,8 @@ fn the_drift_attributes_the_civ_ability_it_knows_about() {
     }]);
     let mut state = StateSnapshot {
         turn: 8,
-        science: 5.0,
-        culture: 3.0,
+        science: Some(5.0),
+        culture: Some(3.0),
         ..StateSnapshot::default()
     };
     state.cities.push(StateCity {
@@ -7518,8 +7588,8 @@ fn the_economic_drift_is_reported_and_an_old_export_reads_as_unknown() {
         "no yields exported means no claim about drift"
     );
 
-    state.science = 5.8;
-    state.culture = 7.1;
+    state.science = Some(5.8);
+    state.culture = Some(7.1);
     let drift = economy_drift(&recon.game, &state).expect("yields present");
     assert!(
         drift.contains("science 5.8/"),
