@@ -1819,6 +1819,15 @@
           "rapid-city-expansion-2": null
         }
       },
+      "recovery-reads-the-war": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "recovery-reads-the-war": null,
+          "recovery-reads-the-war-2": null
+        }
+      },
       "science-victory-drive": {
         "rule_on": [
           "science-victory-drive-2"

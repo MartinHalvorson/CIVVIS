@@ -6650,6 +6650,124 @@ fn outgunned_at_war_fixture() -> (Game, AdvancedAi) {
     (game, AdvancedAi::new())
 }
 
+fn recovery_hostile_side_fixture() -> Game {
+    let mut game = Game::new(4, 80, 40, 5_151, 250, 0);
+    game.turn = 80;
+    game.found_city_for(0, (10, 20), None);
+    game.found_city_for(1, (18, 20), None);
+    game.found_city_for(2, (25, 20), None);
+    game.found_city_for(3, (64, 20), None);
+    game.players[2].is_minor = true;
+    game.record_contact(0, 3);
+    std::sync::Arc::make_mut(&mut game.observed_military_power).extend([
+        (0, 100.0),
+        (1, 70.0),
+        (2, 70.0),
+        (3, 500.0),
+    ]);
+    for rival in [1, 2] {
+        game.at_war.insert((0, rival));
+        game.at_war.insert((rival, 0));
+    }
+    game
+}
+
+#[test]
+fn recovery_reads_the_war_v2_is_a_reversible_exclusive_opt_in() {
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "recovery-reads-the-war-2")
+        .expect("version two is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+    assert!(!AdvancedAi::new().recovery_reads_the_war_2);
+    assert!(!AdvancedAi::legacy().recovery_reads_the_war_2);
+
+    let mut family = AdvancedAi::new();
+    family.enable_recovery_reads_the_war();
+    assert!(family.recovery_reads_the_war && !family.recovery_reads_the_war_2);
+    family.enable_recovery_reads_the_war_2();
+    assert!(!family.recovery_reads_the_war && family.recovery_reads_the_war_2);
+    family.enable_recovery_reads_the_war();
+    assert!(family.recovery_reads_the_war && !family.recovery_reads_the_war_2);
+    family.enable_recovery_reads_the_war_2();
+    family.disable_recovery_reads_the_war_2();
+    assert!(!family.recovery_reads_the_war && !family.recovery_reads_the_war_2);
+}
+
+#[test]
+fn recovery_v2_does_not_sum_weak_fronts_into_extra_recovery() {
+    let mut game = recovery_hostile_side_fixture();
+    assert!(
+        AdvancedAi::new().threatened_city(&game, 0).is_none(),
+        "the power comparison must be the only Recovery trigger"
+    );
+
+    let stock = AdvancedAi::new();
+    assert_eq!(
+        stock.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "the historical rule reads the peaceful 500-power third party"
+    );
+
+    let mut v1 = AdvancedAi::new();
+    v1.enable_recovery_reads_the_war();
+    assert_ne!(
+        v1.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "version one reads only the 70-power major"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_recovery_reads_the_war_2();
+    assert_ne!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "two individually weaker armies must not be summed into extra Recovery"
+    );
+
+    std::sync::Arc::make_mut(&mut game.observed_military_power).insert(1, 140.0);
+    assert_eq!(
+        v1.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "version one still answers a real gap against the major opponent"
+    );
+    assert_eq!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "version two preserves v1's strongest-current-major trigger"
+    );
+}
+
+#[test]
+fn recovery_v2_keeps_v1s_posture_and_raises_its_research_floor() {
+    let (game, _) = outgunned_at_war_fixture();
+    let mut v1 = AdvancedAi::new();
+    v1.enable_recovery_reads_the_war();
+    assert_eq!(
+        v1.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "the fixture must enter v1's current-opponent Recovery posture"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_recovery_reads_the_war_2();
+    assert_eq!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "v2 must preserve v1's trigger rather than suppressing Recovery"
+    );
+
+    let beaker = Yields {
+        science: 1.0,
+        ..Yields::default()
+    };
+    assert!(
+        v2.yield_value(beaker, GrandStrategy::Recovery)
+            > v1.yield_value(beaker, GrandStrategy::Recovery),
+        "v2 must value the research that unlocks defensive upgrades more than v1"
+    );
+}
+
 #[test]
 fn a_defensive_posture_that_cannot_win_is_not_held_for_ever() {
     let (mut game, ai) = outgunned_at_war_fixture();
@@ -34043,6 +34161,31 @@ fn the_surge_window_is_bounded_by_the_horizon_and_the_clock() {
     air_surge_arm(&mut game);
     assert_eq!(AdvancedAi::air_surge_missing_techs(&game, 0), 0);
     assert!(ai.air_surge_open(&game, 0));
+}
+
+/// An explicit Science race must keep its research lane at peace, where the
+/// surge is elective, but may still use the same package as a defensive
+/// counter against the one civilization already attacking it.
+#[test]
+fn explicit_science_keeps_elective_air_surge_out_but_allows_a_counter() {
+    let (mut game, _, _) = air_surge_fixture(941_116);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_air_surge();
+
+    assert!(!ai.air_surge_open(&game, 0));
+    ai.maintain_air_surge(&game, 0);
+    assert!(!ai.air_surge_active());
+    assert!(ai.air_surge_research_goal(&game, 0).is_none());
+
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert!(ai.air_surge_open(&game, 0), "one front remains a counter");
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active());
+    assert_eq!(
+        ai.air_surge_research_goal(&game, 0),
+        Some(air_surge::AIR_SURGE_GOAL_TECH)
+    );
 }
 
 /// ★★★★ The gate that matters. The seat reaches its closest approach to

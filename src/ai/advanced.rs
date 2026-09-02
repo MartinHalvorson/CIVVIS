@@ -5835,6 +5835,15 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Version two of `recovery_reads_the_war`: keep version one's successful
+    /// comparison against the strongest current major opponent and repair the
+    /// posture it selects. Recovery keeps its defensive production, food and
+    /// gold priorities, but values research and civics at the same floor as
+    /// Conquest so a long defense can unlock its own upgrades, governments and
+    /// economic cards. The trigger and immediate-city override are otherwise
+    /// exactly version one's. One family version plays at a time. Opt-in gene
+    /// `recovery-reads-the-war-2`.
+    recovery_reads_the_war_2: bool,
     /// The Objective Board's shortfall reaches production and the treasury:
     /// an idle city starts the unit a short row asks for (the best worth per
     /// hammer of its kind, not the strongest), Gold buys the top one above
@@ -7701,6 +7710,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            recovery_reads_the_war_2: false,
             requisitions: false,
             requisitions_served: RefCell::new(requisitions::Served::default()),
             reserved_units: BTreeSet::new(),
@@ -10886,18 +10896,23 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
-        // ⚠ `recovery_reads_the_war`: the strongest empire we are ACTUALLY
-        // FIGHTING, for the power-gap Recovery arm alone. Off, this is the
-        // same board-wide maximum as above, which is what that arm has always
-        // compared itself against. See the flag.
-        let strongest_wartime_rival = if self.recovery_reads_the_war {
-            wartime_majors
-                .iter()
-                .map(|o| g.military_power(*o))
-                .fold(0.0_f64, f64::max)
-        } else {
-            strongest_rival
-        };
+        // ⚠ `recovery_reads_the_war`: both family versions read the strongest
+        // major we are fighting. Do not sum armies or discard a remote current
+        // opponent: dedicated screens rejected both alternatives. Summing
+        // cost 2.93 end techs and 36 science/turn versus off across 48 games;
+        // filtering by campaign reach trailed v1 by 8.2 win points and 1.60
+        // score-share points in its 24-game directional block. Off, preserve
+        // the historical board-wide maximum. V2 differs in Recovery's economic
+        // weights, not in whom the war reading sees or when the posture starts.
+        let recovery_opponent_power =
+            if self.recovery_reads_the_war || self.recovery_reads_the_war_2 {
+                wartime_majors
+                    .iter()
+                    .map(|o| g.military_power(*o))
+                    .fold(0.0_f64, f64::max)
+            } else {
+                strongest_rival
+            };
         // ⚠ `elective_war_in_reach`: the weakest rival WE CAN REACH, by the
         // reach the campaign planner already requires. Off, this is the
         // weakest empire anywhere on the board, which is what the branch
@@ -11179,7 +11194,7 @@ impl AdvancedAi {
         // only a city-level threat should interrupt its research lane.
         let (strategy, because) = if at_war
             && (threatened_city.is_some()
-                || (my_power * 1.25 < strongest_wartime_rival
+                || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
                     && !raid_only_war
                     && !science_targeted))
@@ -12646,8 +12661,27 @@ impl AdvancedAi {
                 // but retain a real research/civic floor so a long campaign can unlock
                 // upgrades, governments, and economic cards.
                 GrandStrategy::Conquest if self.victory_planning => (1.2, 2.8, 1.4, 1.9, 1.2, 0.3),
+                // `recovery_reads_the_war_2` leaves v1's successful trigger
+                // alone and repairs the posture's economy. A defender needs
+                // the same research/civic floor as an attacker: both are
+                // trying to unlock upgrades, governments and economic cards.
+                // The first three weights remain Recovery's, so this is still
+                // a defensive production posture rather than Conquest under a
+                // second name. Two preregistered 24-game blocks agreed: over
+                // all 48 games v2 beat v1 by 1.4 win points and 0.35 score-share
+                // points while adding 1.07 techs at turn 150, 3.57 at the end,
+                // and 30 science/turn relative to v1. The result is directional,
+                // not promotion evidence; the gene stays off by default.
+                GrandStrategy::Recovery
+                    if self.recovery_reads_the_war_2 && self.victory_planning =>
+                {
+                    (1.6, 3.2, 1.5, 1.9, 1.2, 0.3)
+                }
                 GrandStrategy::Recovery if self.victory_planning => (1.6, 3.2, 1.5, 1.2, 1.1, 0.3),
                 GrandStrategy::Conquest => (1.2, 2.8, 1.4, 1.7, 0.8, 0.3),
+                GrandStrategy::Recovery if self.recovery_reads_the_war_2 => {
+                    (1.6, 3.2, 1.5, 1.7, 0.8, 0.3)
+                }
                 GrandStrategy::Recovery => (1.6, 3.2, 1.5, 1.0, 0.8, 0.3),
             };
         // The anchor above is the *lane's* opinion of a beaker and is left

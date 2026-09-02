@@ -988,11 +988,26 @@ impl AdvancedAi {
     /// Measure the Recovery power gap against the war we are actually
     /// fighting. See [`Self::recovery_reads_the_war`].
     pub fn enable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war_2 = false;
         self.recovery_reads_the_war = true;
     }
 
     pub fn disable_recovery_reads_the_war(&mut self) {
         self.recovery_reads_the_war = false;
+    }
+
+    /// Measure Recovery against the strongest current major opponent within
+    /// the campaign planner's reach. Enabling version two turns version one
+    /// off; immediate city threats remain a separate trigger. See
+    /// [`Self::recovery_reads_the_war_2`].
+    pub fn enable_recovery_reads_the_war_2(&mut self) {
+        self.recovery_reads_the_war = false;
+        self.recovery_reads_the_war_2 = true;
+    }
+
+    /// The twin of `enable_recovery_reads_the_war_2`.
+    pub fn disable_recovery_reads_the_war_2(&mut self) {
+        self.recovery_reads_the_war_2 = false;
     }
 
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
