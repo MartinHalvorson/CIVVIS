@@ -3886,6 +3886,28 @@ impl AdvancedAi {
         self.objective_board = false;
     }
 
+    /// `requisitions`: the Objective Board's shortfall reaches production
+    /// and the treasury. See `advanced/requisitions.rs`.
+    pub fn enable_requisitions(&mut self) {
+        self.requisitions = true;
+    }
+
+    /// The twin of `enable_requisitions`.
+    pub fn disable_requisitions(&mut self) {
+        self.requisitions = false;
+    }
+
+    /// `war-policy-via-board`: target feasibility, the declaration and the
+    /// peace term read off the board. See `advanced/war_policy.rs`.
+    pub fn enable_war_policy_via_board(&mut self) {
+        self.war_policy_via_board = true;
+    }
+
+    /// The twin of `enable_war_policy_via_board`.
+    pub fn disable_war_policy_via_board(&mut self) {
+        self.war_policy_via_board = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

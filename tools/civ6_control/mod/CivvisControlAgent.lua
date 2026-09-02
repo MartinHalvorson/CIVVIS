@@ -4869,6 +4869,27 @@ local function chooseEnvoy(player, pid, turn)
 	return "envoy_considered";
 end
 
+-- Mark a city-state token prompt as considered without spending anything. This
+-- is the shipped CityStates.lua Close() operation, kept behind a fresh
+-- GetInfluence() handle because GIVE_INFLUENCE_TOKEN rewrites that gameplay
+-- object. A CIVVIS order may deliberately leave a token unspent; that is not
+-- a reason to let the native prompt stop the turn.
+--
+-- A bare global is intentional: the agent's main chunk is at Lua's local-slot
+-- ceiling, and the same small operation is needed by the CIVVIS blocker arm
+-- below without adding another file-scope local.
+CivvisMarkEnvoyConsidered = function(player)
+	local ran, marked = pcall(function()
+		local fresh = player:GetInfluence();
+		if fresh == nil then return false; end
+		if not fresh:IsGivingTokensConsidered() then
+			fresh:SetGivingTokensConsidered(true);
+		end
+		return true;
+	end);
+	return ran and marked == true;
+end
+
 local function currentBlocker(pid)
 	return try(function()
 		return NotificationManager.GetFirstEndTurnBlocking(pid);
@@ -4974,7 +4995,8 @@ local SOFT_BLOCKERS = {
 	-- change, not a code change: place-only, then consider-only, across
 	-- independent random-world samples.
 	-- ⚠ Do it on a throwaway batch, never on a running one. Until then the
-	-- known-stable skip stands, and the ten-minute wedge is the lesser failure.
+	-- no-spend policy stands; the blocker arm safely marks any leftover prompt
+	-- considered and advances the turn without invoking this crash-prone lane.
 	--
 	-- The prize is large: the same agent headless places **18.1 envoys and holds
 	-- 0.71 suzerainties** per seat (74x46, 9 city-states, 200 turns), against a
@@ -12060,9 +12082,10 @@ local function applyOrder(player, pid, row, turn)
 	-- `UI.RequestPlayerOperation` calls that rewrite it. Every read here goes
 	-- through a handle fetched inside this order and nothing is written
 	-- through it after the operation is issued. The prompt-clearing write
-	-- (`SetGivingTokensConsidered`) is deliberately NOT made: with the tokens
-	-- spent the `GIVE_INFLUENCE_TOKEN` blocker is not raised, and when CIVVIS
-	-- keeps one back the known-stable skip in SOFT_BLOCKERS still stands.
+	-- (`SetGivingTokensConsidered`) is deliberately NOT made in this order arm:
+	-- with the token spent the `GIVE_INFLUENCE_TOKEN` blocker is not raised, and
+	-- when CIVVIS keeps one back the blocker arm below marks the prompt considered
+	-- through a fresh handle before forcing the turn forward.
 	--
 	-- Every accessor is the shipped `CityStates.lua`'s: `GetTokensToGive`,
 	-- `CanGiveInfluence`, `CanGiveTokensToPlayer`, and one
@@ -18668,6 +18691,28 @@ local function tick()
 								answered = answered .. "+empty:" .. empty;
 							end
 						end
+					end
+					-- A CIVVIS envoy pass may intentionally keep a token for a
+					-- better claim later. The native consideration prompt is
+					-- optional, but leaving it unanswered can stop publishing the
+					-- next turn. Mark it through a fresh handle, then use the same
+					-- forced request as the unit repair so this first sighting is
+					-- sufficient even when the Game Core goes quiet.
+					if name == "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" then
+						local considered = CivvisMarkEnvoyConsidered(player);
+						answered = answered .. (considered
+							and "+considered" or "+considered_unavailable");
+						local dropped = dismissBlocker(pid, blocker);
+						answered = answered .. "+forced";
+						emit("dismissed", { turn = turn, blocker = name,
+						                    dismissed = dropped, attempts = attempts,
+						                    answered = answered, parked = 0,
+						                    forfeit = 0, forced = true, same_pass = true });
+						same_pass_forced = true;
+						pcall(function()
+							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							                 { REASON = "UserForced" });
+						end);
 					end
 				else
 					-- Bounded per turn. The order pass is the expensive one, and a
