@@ -1376,6 +1376,30 @@ class DialogueCloseConfigTests(unittest.TestCase):
         )
 
 
+class DealSessionConfigTests(unittest.TestCase):
+    """Verification must not open an answer-required diplomacy modal by default."""
+
+    @staticmethod
+    def _config(**changes):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        return civ6_play.build_config(
+            Defaults(tag="t", game_mode=[], dialogue_seconds=0.25,
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN", **changes))
+
+    def test_direct_deals_are_the_safe_verification_default(self):
+        self.assertIs(self._config()["DealSessions"], False)
+
+    def test_interactive_deal_sessions_are_an_explicit_opt_in(self):
+        self.assertIs(self._config(deal_sessions=True)["DealSessions"], True)
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--deal-sessions", action="store_true",', source)
+
+
 class CounterResolutionConfigTests(unittest.TestCase):
     """⚠ A flag the mod never receives is a flag that does nothing."""
 
