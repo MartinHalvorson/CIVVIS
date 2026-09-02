@@ -2068,6 +2068,21 @@ impl AdvancedAi {
         self.expansion_schedule = false;
     }
 
+    /// A Settler out of a city past its deadline founds the best legal site
+    /// within reach instead of chasing the ranked one it has not reached.
+    /// Opt-in gene `settler-walk-deadline`; see
+    /// `advanced/settler_walk_deadline.rs` for the live forensic. Filed above
+    /// the markers: the append-point check reads a method line's first
+    /// identifier.
+    pub fn enable_settler_walk_deadline(&mut self) {
+        self.settler_walk_deadline = true;
+    }
+
+    /// The twin of `enable_settler_walk_deadline`.
+    pub fn disable_settler_walk_deadline(&mut self) {
+        self.settler_walk_deadline = false;
+    }
+
     /// Work food while the opening is behind the pace and no city has reached
     /// the population a Settler needs. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
