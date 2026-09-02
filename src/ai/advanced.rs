@@ -6474,13 +6474,13 @@ mod settler_site_gate;
 /// A Settler is never sent to a site not worth the walk. One opt-in gene;
 /// see `advanced/settler_target_floor.rs`.
 mod settler_target_floor;
+/// An opening Settler that has walked too long founds within reach. One
+/// opt-in gene; see `advanced/settler_walk_deadline.rs`.
+mod settler_walk_deadline;
 /// A barbarian ring on a city's doorstep is answered before anything else
 /// is built, and a Settler's guard cuts down the raider pinning it. Two
 /// genes; see `advanced/siege_response.rs`.
 mod siege_response;
-/// An opening Settler that has walked too long founds within reach. One
-/// opt-in gene; see `advanced/settler_walk_deadline.rs`.
-mod settler_walk_deadline;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
