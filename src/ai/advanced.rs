@@ -2686,12 +2686,12 @@ pub struct AdvancedAi {
     pub score_horizon: bool,
     /// One launch pad, in the city that will actually run the race.
     ///
-    /// ★★★ THE 3,000-POINT FIRST-PAD RUNG IS EMPIRE-WIDE BUT COUNTS ONLY
-    /// FINISHED DISTRICTS, so every city claims it at once. `district_count`
-    /// is how many of MY cities hold the family, and a Spaceport under
-    /// construction holds nothing yet — so the turn Rocketry lands, every city
-    /// in a Science empire reads `district_count == 0` and prices the pad at
-    /// 3,000, twelve times a Campus and twice a Settler. Live run
+    /// ★★★ THE 3,000-POINT FIRST-PAD RUNG IS EMPIRE-WIDE. The old controller
+    /// counted only FINISHED DISTRICTS, so every city claimed it at once.
+    /// `spaceport_count` now includes a queued or placed foundation as well as
+    /// a completed pad; before that correction, the turn Rocketry landed every
+    /// city in a Science empire read `district_count == 0` and priced the pad
+    /// at 3,000, twelve times a Campus and twice a Settler. Live run
     /// civvis-20260817T022159Z: Aquileia started one on t144 at 25 production,
     /// Ostia on t146 at 38, Arretium on t146 at 26, Brundisium on t157 at 25
     /// with four population — **119 city-turns, 11% of everything the empire
@@ -19961,7 +19961,7 @@ impl AdvancedAi {
 
     /// Whether the science victory can still be completed before the turn
     /// limit. Prices the remaining chain against the turns left: production
-    /// of the launch pad (if none stands) and every project not yet completed
+    /// of the launch pad (if no commitment stands) and every project not yet completed
     /// at the empire's best city, research of the unknown ancestors of those
     /// projects' techs at the empire's own pace (both overlap, so the larger
     /// counts), then the fifty light-years at the current expedition speed.
@@ -20013,11 +20013,10 @@ impl AdvancedAi {
             }
         }
         let city_ids = g.player_city_ids(pid);
-        let has_spaceport = city_ids.iter().any(|cid| {
-            g.cities[cid]
-                .districts
-                .contains_key(crate::name!("spaceport"))
-        });
+        let has_spaceport = city_ids
+            .iter()
+            .copied()
+            .any(|cid| Self::city_has_spaceport_commitment(g, cid));
         if !has_spaceport {
             production += g.item_cost(&Item::District {
                 district: crate::name!("spaceport"),
@@ -20056,20 +20055,9 @@ impl AdvancedAi {
     /// once a pad exists or is on its way, which leaves every city on the
     /// ordinary 250. See `one_launch_pad`.
     pub(crate) fn launch_pad_site(&self, g: &Game, pid: usize) -> Option<u32> {
-        let pad = crate::name!("spaceport");
         let mut best: Option<(u32, f64)> = None;
         for cid in g.player_city_ids(pid) {
-            let city = &g.cities[&cid];
-            if city.districts.contains_key(pad) {
-                return None;
-            }
-            // A pad under construction holds nothing yet, so the finished-
-            // district count cannot see it. It is still the pad the empire is
-            // getting, and the whole point of the rung is to buy exactly one.
-            if city.queue.iter().any(|item| {
-                matches!(item, Item::District { district, .. }
-                         if g.district_family(*district) == pad)
-            }) {
+            if Self::city_has_spaceport_commitment(g, cid) {
                 return None;
             }
             let production = g.city_yields(cid).production;
@@ -20643,6 +20631,21 @@ impl AdvancedAi {
             .any(|district| g.district_family(*district) == pad)
     }
 
+    /// A placed district is a commitment before it is a completed district.
+    /// Civilization VI removes the district from the production queue as soon
+    /// as the player chooses its plot, while the host state reports the plot
+    /// as `complete: false`. The mirror preserves that fact on the tile, not
+    /// in `City::districts` or `City::queue`.
+    fn city_has_spaceport_foundation(g: &Game, cid: u32) -> bool {
+        let pad = crate::name!("spaceport");
+        g.cities[&cid].owned_tiles.iter().any(|position| {
+            g.map
+                .get(*position)
+                .and_then(|tile| tile.district_foundation.as_ref())
+                .is_some_and(|foundation| g.district_family(foundation.district) == pad)
+        })
+    }
+
     /// A queued Spaceport is a real future launch site even when another item
     /// precedes it in the city queue.
     fn city_queues_spaceport(g: &Game, cid: u32) -> bool {
@@ -20653,33 +20656,28 @@ impl AdvancedAi {
         })
     }
 
-    /// Count every standing and queued Spaceport. Queue depth matters: a pad
-    /// behind a project still consumes one of the race's deliberately small
-    /// launch-site budget.
+    /// A city can expose the same in-progress pad through both the queue and
+    /// its foundation on a native board. Count the city once, so changing the
+    /// queue item does not turn one placed pad into two commitments.
+    fn city_has_spaceport_commitment(g: &Game, cid: u32) -> bool {
+        Self::city_has_spaceport(g, cid)
+            || Self::city_queues_spaceport(g, cid)
+            || Self::city_has_spaceport_foundation(g, cid)
+    }
+
+    /// Count every standing, placed, and queued Spaceport. Queue depth matters:
+    /// a pad behind a project still consumes one of the race's deliberately
+    /// small launch-site budget, and a placed foundation remains committed
+    /// after Civilization VI removes it from the queue.
     fn science_spaceport_commitments(g: &Game, pid: usize) -> usize {
-        let pad = crate::name!("spaceport");
         g.player_city_ids(pid)
             .into_iter()
-            .map(|cid| {
-                let city = &g.cities[&cid];
-                city.districts
-                    .keys()
-                    .filter(|district| g.district_family(**district) == pad)
-                    .count()
-                    + city
-                        .queue
-                        .iter()
-                        .filter(|item| {
-                            matches!(item, Item::District { district, .. }
-                                if g.district_family(*district) == pad)
-                        })
-                        .count()
-            })
-            .sum()
+            .filter(|cid| Self::city_has_spaceport_commitment(g, *cid))
+            .count()
     }
 
     /// Cities that can carry the still-unfilled Spaceport slots, in production
-    /// order. A queued pad counts as a candidate so an already-good
+    /// order. A queued or placed pad counts as a candidate so an already-good
     /// commitment is retained; a completed pad is permanent and therefore
     /// outside this list.
     fn science_spaceport_candidates(&self, g: &Game, pid: usize) -> Vec<u32> {
@@ -20690,7 +20688,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|cid| {
                 !Self::city_has_spaceport(g, *cid)
-                    && (Self::city_queues_spaceport(g, *cid)
+                    && (Self::city_has_spaceport_commitment(g, *cid)
                         || g.district_sites(*cid, pad).into_iter().any(|pos| {
                             g.can_produce(pid, *cid, &Item::District { district: pad, pos })
                         }))
@@ -20718,10 +20716,28 @@ impl AdvancedAi {
             .science_spaceport_target(g, pid)
             .max(completed)
             .min(SCIENCE_SPACEPORT_CAP);
-        self.science_spaceport_candidates(g, pid)
-            .into_iter()
+        let candidates = self.science_spaceport_candidates(g, pid);
+        let committed: Vec<u32> = candidates
+            .iter()
+            .copied()
+            .filter(|cid| Self::city_has_spaceport_commitment(g, *cid))
+            .collect();
+        // Preserve cities that have already paid the irreversible placement
+        // cost first. Only genuinely uncommitted cities may fill the slots
+        // left after those foundations and queued pads are accounted for.
+        let mut retained: BTreeSet<u32> = committed
+            .iter()
+            .copied()
             .take(target.saturating_sub(completed))
-            .collect()
+            .collect();
+        let open = target.saturating_sub(completed + committed.len());
+        retained.extend(
+            candidates
+                .into_iter()
+                .filter(|cid| !Self::city_has_spaceport_commitment(g, *cid))
+                .take(open),
+        );
+        retained
     }
 
     /// Whether this city is one of the highest-production cities still needed
@@ -20953,7 +20969,7 @@ impl AdvancedAi {
         }
         let mut best: Option<(f64, u32, Pos)> = None;
         for cid in city_ids {
-            if Self::city_has_spaceport(g, cid) || Self::city_queues_spaceport(g, cid) {
+            if Self::city_has_spaceport_commitment(g, cid) {
                 continue;
             }
             if !self.science_spaceport_city_is_admitted(g, pid, cid) {
@@ -25415,13 +25431,6 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if family == "spaceport" {
-                    if Self::city_has_spaceport(g, cid) {
-                        // Multiple Spaceports are rules-legal, but one city
-                        // can execute only one project at a time. Put
-                        // additional launch sites in other cities for actual
-                        // parallelism.
-                        return -10_000.0;
-                    }
                     let races_science = self.science_drive_active()
                         || self.space_race_lane(g, pid)
                         || self.raced_target() == Some(VictoryTarget::Science);
@@ -25430,6 +25439,18 @@ impl AdvancedAi {
                             && matches!(queued, Item::District { district, .. }
                                 if g.district_family(*district) == "spaceport")
                     });
+                    if Self::city_has_spaceport(g, cid)
+                        || (Self::city_has_spaceport_foundation(g, cid)
+                            && !current_queued_spaceport)
+                    {
+                        // Multiple Spaceports are rules-legal, but one city
+                        // can execute only one project at a time. Put
+                        // additional launch sites in other cities for actual
+                        // parallelism. A placed foundation is already that
+                        // city's launch-site commitment, even after its queue
+                        // was switched to another item.
+                        return -10_000.0;
+                    }
                     if races_science
                         && !current_queued_spaceport
                         && !self.science_spaceport_city_is_admitted(g, pid, cid)
@@ -25453,6 +25474,11 @@ impl AdvancedAi {
                                 .any(|built| g.district_family(*built) == family)
                     })
                     .count();
+                let spaceport_count = if family == "spaceport" {
+                    Some(Self::science_spaceport_commitments(g, pid))
+                } else {
+                    None
+                };
                 // ⚠⚠ THIS IS A CLIFF AT HALF THE EMPIRE, AND THE EMPIRE STOPS
                 // THERE. `district_count` is how many of MY cities hold this
                 // family, so the bonus vanishes the moment half of them do.
@@ -25658,20 +25684,20 @@ impl AdvancedAi {
                     // belongs to one city — the one the race would actually be
                     // run in — and it lapses the moment a pad is on its way.
                     (GrandStrategy::Science, "spaceport")
-                        if district_count == 0
+                        if spaceport_count == Some(0)
                             && self.one_launch_pad
                             && self.launch_pad_site(g, pid) != Some(cid) =>
                     {
                         250.0
                     }
-                    (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
+                    (GrandStrategy::Science, "spaceport") if spaceport_count == Some(0) => 3_000.0,
                     // See `spaceport_surplus_veto`: a pad beyond what the
                     // race stage can use is two points of district and a
                     // dead queue — the flat arm below kept paying for a
                     // ninth pad while the launch chain fit in two cities.
                     (GrandStrategy::Science, "spaceport")
                         if self.spaceport_surplus_veto
-                            && district_count
+                            && spaceport_count.unwrap_or(0)
                                 >= Self::science_drive_desired_pads(
                                     &g.players[pid].science_projects,
                                 ) =>
