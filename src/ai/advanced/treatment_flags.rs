@@ -811,11 +811,25 @@ impl AdvancedAi {
     /// arrive along the Congress calendar, not by how many are banked. See
     /// [`Self::diplomatic_lane_forecast`].
     pub fn enable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast_2 = false;
         self.diplomatic_lane_forecast = true;
     }
 
     pub fn disable_diplomatic_lane_forecast(&mut self) {
         self.diplomatic_lane_forecast = false;
+    }
+
+    /// Version 2 waits until a current suzerainty or already-earned Diplomatic
+    /// Victory Point proves a real foothold before projecting Congress turns.
+    /// One version per family is active in a screen.
+    pub fn enable_diplomatic_lane_forecast_2(&mut self) {
+        self.diplomatic_lane_forecast = false;
+        self.diplomatic_lane_forecast_2 = true;
+    }
+
+    /// The twin of `enable_diplomatic_lane_forecast_2`.
+    pub fn disable_diplomatic_lane_forecast_2(&mut self) {
+        self.diplomatic_lane_forecast_2 = false;
     }
 
     /// Count a peacetime major's army massed near one of our cities toward
