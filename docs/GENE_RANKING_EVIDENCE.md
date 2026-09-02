@@ -186,13 +186,22 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-surge-2` | off (unmeasured) | Version 2 of `air_surge`: the science–domination loop. | 1 \| 2 |
+| `boost-wait-research-2` | off (unmeasured) | Wait only on a two-turn node whose final boost trigger is already at the front of an owned city queue, using the boost as a light tie-break. | 1 \| 2 |
 | `campus-through-expansion` | off (unmeasured) | `campus-through-expansion` (OptIn): a Science seat prices the Campus and its buildings in the Science lane while its plan still reads Expansion, and no city's first specialty district may be an Entertainment Complex. | 1 \| 1 |
 | `commitment-owner-acts` | off (unmeasured) | Every open settle or improve commitment whose owner the unit pass left with movement and no order acts on it after the pass — found, improve, or the safe route step — or is released with a recorded reason. | 1 \| 1 |
 | `district-planning-2` | off (unmeasured) | `district-planning-2`: the district plan's tile buy competes out of the treasury reserve (never spending below half of it) instead of needing 200 Gold of surplus headroom, and the purchase bars drop to adjacency 2 with an edge of 1 over owned ground. | 1 \| 2 |
+| `first-builder-reserve-2` | off (unmeasured) | Reserve one Builder for an immediately connectable first-copy luxury when Amenities are short and expansion is covered, retaining a lifetime receipt. | 1 \| 2 |
 | `industrial-chain-debt` | off (unmeasured) | `industrial-chain-debt` (OptIn): an Industrial Zone owes its Workshop, Factory and plant the same flat debt a Campus owes its Library, a regional building is worth the production it reaches, and the Factory and plants join the buildings a repeatable project waits behind. | 1 \| 1 |
+| `naval-recon-3` | off (unmeasured) | Version 3 of `naval-recon`: let a simultaneously missing land scout take the idle queue before the one peacetime sea scout. | 1 \| 3 |
+| `never-an-empty-queue-3` | off (unmeasured) | Version three of `never-an-empty-queue`: tolerate one transient empty turn, then recover a persistent stall with a civilian candidate above the hard veto. | 1 \| 3 |
+| `rapid-city-expansion-2` | off (unmeasured) | Version two of `rapid-city-expansion`: aim at the measured five-city opening band without version one's immediate fifteen-city order, non-empty queue preemption, closest-site override, founding-pantheon override, or automatic conquest pivot. | 1 \| 2 |
 | `settler-site-gate` | off (unmeasured) | `settler-site-gate`: a city starts a Settler only while an acceptable, unclaimed site worth founding exists. | 1 \| 1 |
+| `settler-target-floor` | off (unmeasured) | `settler-target-floor`: a Settler is never sent to a site not worth the walk. | 1 \| 1 |
+| `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
+| `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `spaceport-surplus-veto` | off (unmeasured) | `spaceport-surplus-veto` (OptIn): the Science strategy's flat per-pad district bonus stops paying once the empire already holds as many Spaceports as the current race stage can use (`science_drive_desired_pads`). | 1 \| 1 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
+| `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
 
 ## Removed from the code
 

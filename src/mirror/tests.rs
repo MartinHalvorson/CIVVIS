@@ -162,6 +162,54 @@ fn historical_snapshot_does_not_read_tiles_from_a_future_turn() {
     let _ = std::fs::remove_dir(dir);
 }
 
+/// ★ The mod publishes `state` then `tiles`, so the turn's own sweep and
+/// same-frame deltas sit BELOW the state line they belong to. They are this
+/// board; only a later frame's delta (next test) or a later turn is not.
+#[test]
+fn snapshot_reads_the_selected_turns_tiles_written_below_its_state() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-mirror-tiles-below-state-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    std::fs::write(
+        &path,
+        [
+            r#"{"kind":"state","turn":1,"frame":0}"#,
+            r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","f":"FEATURE_FOREST"}]}"#,
+            r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"delta":true,"plots":[{"x":2,"y":2,"t":"TERRAIN_PLAINS"}]}"#,
+            r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"delta":true,"frame":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","f":null}]}"#,
+            r#"{"kind":"tiles","turn":2,"width":8,"height":8,"chunk":1,"plots":[{"x":7,"y":7,"t":"TERRAIN_DESERT"}]}"#,
+        ]
+        .join("\n"),
+    )
+    .unwrap();
+    let turn_one = snapshot_from_events_at(&path, Some(1)).unwrap();
+    assert_eq!(
+        turn_one.revealed_count(),
+        2,
+        "the turn's sweep and frame-0 delta are its board"
+    );
+    assert_eq!(
+        turn_one.plot((1, 1)).and_then(|plot| plot.f.as_deref()),
+        Some("FEATURE_FOREST"),
+        "the frame-1 delta below a frame-0 state is a later board"
+    );
+    assert!(
+        turn_one.plot((7, 7)).is_none(),
+        "turn 1 must not see turn 2"
+    );
+    let latest = snapshot_from_events(&path).unwrap();
+    assert_eq!(
+        latest.revealed_count(),
+        2,
+        "the latest state is still turn 1 frame 0"
+    );
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_dir(dir);
+}
+
 #[test]
 fn snapshot_stops_at_the_selected_state_before_a_later_mid_turn_delta() {
     let dir = std::env::temp_dir().join(format!(
@@ -1776,6 +1824,7 @@ fn the_real_export_shape_deserializes() {
 fn new_export_fields_are_reported_instead_of_silently_discarded() {
     let raw = r#"{
             "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":7,
+            "t":1788296253, "utc":"2026-09-01T20:57:33.415Z",
             "cities":[{
                 "id":1, "x":2, "y":3, "pantheon_active":"BELIEF_CITY_PATRON_GODDESS",
                 "producing_hash":123, "future_city_fact":9,

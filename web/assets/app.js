@@ -21059,7 +21059,6 @@ function drawScene() {
   // hold one before it can seat their hills low.
   const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const districtBuildings = districtBuildingsByTile();
-  const unitOwnerByTile = new Map(state.units.map(u => [key(u.pos), u.owner]));
   const hl = {};
   if (sel) {
     for (const p of (sel.reachable || [])) hl[key(p)] = 1;
@@ -21107,15 +21106,6 @@ function drawScene() {
       hexPath(x, y, S + 0.15);
       cx.globalAlpha = TERRITORY_TINT_SCALE * 0.11;
       cx.fillStyle = pcol(t.owner);
-      cx.fill();
-    }
-    // Unit presence gets a quiet local wash. Territory has its own continuous
-    // layer below the border network, so it is not painted twice here.
-    const unitOwner = unitOwnerByTile.get(key(t.pos));
-    if (unitOwner !== undefined) {
-      hexPath(x, y, S - 0.5);
-      cx.globalAlpha = 0.20;
-      cx.fillStyle = pcol(unitOwner);
       cx.fill();
     }
     cx.globalAlpha = 1;

@@ -2896,3 +2896,31 @@ class TheBottomStripRunsWhenTheHeadingHidesTheButton(unittest.TestCase):
 
         self.assertEqual(points, [(1088, 491)])
         crop.assert_not_called()
+
+
+class PollCadenceKeepsItsWallClock(unittest.TestCase):
+    """The mod polls for CIVVIS's answer 7.5× as often; nothing else moved.
+
+    Every poll budget the mod reads (`OrdersWaitPolls`, `OrdersFallbackPolls`,
+    `CombatFramePolls`) is a count of polls, so shortening the poll interval
+    without scaling them would have cut the stale-answer, fallback and combat
+    frame allowances to a fraction of their measured wall clock. The products
+    below are the pre-2026-09-01 values (40×30, 120×30, 20×30) in ticks.
+    """
+
+    def test_poll_budgets_keep_their_wall_clock(self) -> None:
+        self.assertEqual(civ6_play.ORDERS_POLL_TICKS * civ6_play.ORDERS_WAIT_POLLS, 1200)
+        self.assertEqual(civ6_play.ORDERS_POLL_TICKS * civ6_play.ORDERS_FALLBACK_POLLS, 3600)
+        self.assertEqual(civ6_play.ORDERS_POLL_TICKS * civ6_play.COMBAT_FRAME_POLLS, 600)
+
+    def test_the_mod_never_polls_on_every_tick(self) -> None:
+        # The every-publish query deadlocked run civvis-20260730T110209Z.
+        self.assertGreaterEqual(civ6_play.ORDERS_POLL_TICKS, 2)
+
+    def test_the_lua_fallbacks_match_the_harness_defaults(self) -> None:
+        lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text()
+        self.assertIn(f"cfg.OrdersPollTicks or {civ6_play.ORDERS_POLL_TICKS};", lua)
+        self.assertIn(f"cfg.OrdersWaitPolls or {civ6_play.ORDERS_WAIT_POLLS})", lua)
+        self.assertIn(f"cfg.OrdersFallbackPolls or {civ6_play.ORDERS_FALLBACK_POLLS})", lua)
+        self.assertIn(f"tonumber(cfg.CombatFramePolls) or {civ6_play.COMBAT_FRAME_POLLS})", lua)

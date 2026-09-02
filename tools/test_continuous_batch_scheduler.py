@@ -746,6 +746,15 @@ class OperatorCommands(unittest.TestCase):
             self.assertTrue((root / batch["directory"] / scheduler.CUT_REQUEST_NAME).is_file())
 
 
+    def test_repeated_tick_outcomes_are_logged_once_with_their_count(self):
+        log = scheduler.OutcomeLog()
+        self.assertTrue(log.note("active_segment").endswith(" active_segment"))
+        self.assertIsNone(log.note("active_segment"))
+        self.assertIsNone(log.note("active_segment"))
+        self.assertTrue(log.note("frozen_deadline").endswith(
+            " frozen_deadline (previous outcome repeated 2 more times)"))
+        self.assertTrue(log.note("awaiting_publication").endswith(" awaiting_publication"))
+
 
 if __name__ == "__main__":
     unittest.main()

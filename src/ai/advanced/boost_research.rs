@@ -60,7 +60,7 @@
 
 use super::deity_habits::EurekaChase;
 use super::AdvancedAi;
-use crate::game::Game;
+use crate::game::{Game, Item};
 use crate::name::Name;
 
 /// The flat credit `tech_value` and `civic_value` pay for a boost in hand.
@@ -93,10 +93,21 @@ pub(super) const BOOST_TURNS_CAP: f64 = 12.0;
 /// gap between two eurekas earned by ordinary building.
 pub(super) const BOOST_WAIT_HORIZON_TURNS: f64 = 6.0;
 
+/// `boost_wait_research-2`: only a node within two turns is close enough to
+/// justify yielding its slot to the final outstanding trigger step. The
+/// broader six-turn v1 window repeatedly delayed useful prerequisites for a
+/// boost whose Builder or queue item never arrived.
+pub(super) const BOOST_WAIT_V2_HORIZON_TURNS: f64 = 2.0;
+
 /// `boost_wait_research`: how much of the boost at risk the wait subtracts.
 /// Half, so the penalty reorders the cheap end of the list against nodes of
 /// comparable value and never outweighs a node that is wanted on its merits.
 pub(super) const BOOST_WAIT_FACTOR: f64 = 0.5;
+
+/// `boost_wait_research-2`: a light tie-break rather than v1's half-boost
+/// veto. The last trigger still has to win its own Builder or production
+/// decision, so its uncertain saving must not overrule a wanted node.
+pub(super) const BOOST_WAIT_V2_FACTOR: f64 = 0.2;
 
 /// `boost_unlock_research`: what a boost this node makes chaseable is worth
 /// against a boost already in hand. Under a third: the permission is not the
@@ -184,7 +195,7 @@ impl AdvancedAi {
     /// lands. Zero with the gene off, for a node nothing buildable can boost,
     /// and for one far enough out that the mid-research credit will reach it.
     fn boost_wait_penalty(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
-        if !self.boost_wait_research {
+        if !self.boost_wait_research && !self.boost_wait_research_2 {
             return 0.0;
         }
         // ⚠ THE RISK TEST COMES FIRST, AND IT IS THE CHEAP ONE. How likely the
@@ -202,7 +213,12 @@ impl AdvancedAi {
         } else {
             g.civic_cost(node)
         };
-        let risk = (1.0 - (cost / rate) / BOOST_WAIT_HORIZON_TURNS).clamp(0.0, 1.0);
+        let horizon = if self.boost_wait_research_2 {
+            BOOST_WAIT_V2_HORIZON_TURNS
+        } else {
+            BOOST_WAIT_HORIZON_TURNS
+        };
+        let risk = (1.0 - (cost / rate) / horizon).clamp(0.0, 1.0);
         if risk <= 0.0 {
             return 0.0;
         }
@@ -213,8 +229,43 @@ impl AdvancedAi {
         else {
             return 0.0;
         };
+        if self.boost_wait_research_2
+            && (chase.remaining != 1 || !Self::boost_trigger_is_queued(g, pid, &chase.trigger))
+        {
+            return 0.0;
+        }
         let turns = (chase.research / rate).min(BOOST_TURNS_CAP);
-        turns * BOOST_TURN_VALUE * BOOST_WAIT_FACTOR * risk
+        let factor = if self.boost_wait_research_2 {
+            BOOST_WAIT_V2_FACTOR
+        } else {
+            BOOST_WAIT_FACTOR
+        };
+        turns * BOOST_TURN_VALUE * factor * risk
+    }
+
+    /// Is the final buildable boost trigger already at the front of an owned
+    /// city queue? V2 waits only for work the empire has actually committed,
+    /// never for a hypothetical Builder job or a merely legal queue item.
+    fn boost_trigger_is_queued(g: &Game, pid: usize, trigger: &str) -> bool {
+        g.cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .any(|city| {
+                city.queue
+                    .first()
+                    .is_some_and(|item| match (trigger, item) {
+                        (trigger, Item::Unit { unit } | Item::Formation { unit, .. }) => trigger
+                            .strip_prefix("units_of:")
+                            .is_some_and(|want| unit.as_str() == want),
+                        (trigger, Item::Building { building }) => trigger
+                            .strip_prefix("building:")
+                            .is_some_and(|want| building.as_str() == want),
+                        (trigger, Item::District { district, .. }) => trigger
+                            .strip_prefix("district:")
+                            .is_some_and(|want| g.district_family(*district) == want),
+                        _ => false,
+                    })
+            })
     }
 
     /// `boost_unlock_research`: what the boosts this node makes chaseable are
@@ -388,6 +439,11 @@ mod tests {
     #[test]
     fn boost_wait_research_is_a_native_opt_in_off_in_both_controllers() {
         opt_in_off_in_both_controllers("boost-wait-research", |ai| ai.boost_wait_research);
+    }
+
+    #[test]
+    fn boost_wait_research_2_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("boost-wait-research-2", |ai| ai.boost_wait_research_2);
     }
 
     #[test]
@@ -608,6 +664,50 @@ mod tests {
         };
         std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, slow);
         assert_eq!(waiting.boost_research_value(&game, 0, "masonry", true), 0.0);
+    }
+
+    /// V2 keeps only the high-confidence edge of v1: a short node and the
+    /// final outstanding trigger step, with a smaller penalty that breaks a
+    /// close choice instead of vetoing useful research.
+    #[test]
+    fn boost_wait_research_2_is_a_short_final_step_tiebreak() {
+        let mut game = capital_board(53_014);
+        let mut v1 = AdvancedAi::new();
+        v1.enable_boost_wait_research();
+        let mut v2 = AdvancedAi::new();
+        v2.enable_boost_wait_research_2();
+        let cost = game.tech_cost("engineering");
+        set_science(&mut game, cost);
+
+        assert_eq!(
+            v2.boost_research_value(&game, 0, "engineering", true),
+            0.0,
+            "a merely buildable Wall does not delay Engineering"
+        );
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().queue = vec![Item::Building {
+            building: name!("walls"),
+        }];
+        game.turn += 1;
+        let v1_penalty = v1.boost_research_value(&game, 0, "engineering", true);
+        let v2_penalty = v2.boost_research_value(&game, 0, "engineering", true);
+        assert!(v2_penalty < 0.0, "the queued final Wall can justify a wait");
+        assert!(
+            v2_penalty.abs() < v1_penalty.abs(),
+            "v2 is a tie-break, not v1's broad veto: {v2_penalty} versus {v1_penalty}"
+        );
+
+        set_science(&mut game, cost / (BOOST_WAIT_V2_HORIZON_TURNS * 2.0));
+        assert_eq!(
+            v2.boost_research_value(&game, 0, "engineering", true),
+            0.0,
+            "a node outside v2's short window keeps its place"
+        );
+
+        v1.enable_boost_wait_research_2();
+        assert!(!v1.boost_wait_research && v1.boost_wait_research_2);
+        v1.enable_boost_wait_research();
+        assert!(v1.boost_wait_research && !v1.boost_wait_research_2);
     }
 
     /// A boost already in hand is never waited for — there is nothing left to
