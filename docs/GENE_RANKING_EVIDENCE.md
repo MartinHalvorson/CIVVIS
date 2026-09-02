@@ -208,6 +208,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `objective-board` | off (unmeasured) | The army's turn planned from a ranked Objective Board — rows valued in hammers with a requirement and a deadline — and served by persistent task forces, in place of proximity force groups and the posture ladder; `force_groups` is built from the forces. | 1 \| 1 |
 | `opening-warrior-recon-2` | off (unmeasured) | Before the first city, let only a Warrior directly escorting the Settler reveal terrain first, then reconsider from the ordinary settlement candidates. | 1 \| 2 |
 | `rapid-city-expansion-2` | off (unmeasured) | Version two of `rapid-city-expansion`: aim at the measured five-city opening band without version one's immediate fifteen-city order, non-empty queue preemption, closest-site override, founding-pantheon override, or automatic conquest pivot. | 1 \| 2 |
+| `requisitions` | off (unmeasured) | `requisitions`: the Objective Board's shortfall reaches production and the treasury. | 1 \| 1 |
 | `settler-site-gate` | off (unmeasured) | `settler-site-gate`: a city starts a Settler only while an acceptable, unclaimed site worth founding exists. | 1 \| 1 |
 | `settler-target-floor` | off (unmeasured) | `settler-target-floor`: a Settler is never sent to a site not worth the walk. | 1 \| 1 |
 | `settler-walk-deadline` | off (unmeasured) | A Settler out of a city past its deadline founds the best legal site within reach instead of chasing the ranked one it has not reached. | 1 \| 1 |
