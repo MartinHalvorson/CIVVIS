@@ -62,7 +62,7 @@ impl AdvancedAi {
                 let unit = &g.units[uid];
                 unit.kind == "warrior"
                     && unit.moves_left > 0.0
-                    && escort_limit.map_or(true, |limit| {
+                    && escort_limit.is_none_or(|limit| {
                         settlers
                             .iter()
                             .any(|settler| g.wdist(unit.pos, *settler) <= limit)
