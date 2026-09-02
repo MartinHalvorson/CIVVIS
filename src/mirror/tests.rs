@@ -11818,6 +11818,15 @@ fn a_free_cities_hostile_lands_on_the_free_cities_seat_with_its_hp() {
     // The persistent mirror routes the same way, and on a current mod the
     // unit's own `free` flag is enough — no `minors[]` entry needed.
     let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    let free_host_uid = *mirror
+        .foreign_uid_of
+        .get(&501)
+        .expect("the Free Cities host id is mapped");
+    assert_eq!(
+        mirror.game.host_unit_facts[&free_host_uid].civ6_id,
+        Some(501),
+        "the stable Civ 6 identity survives even when optional unit facts are absent"
+    );
     state.minors.clear();
     state.hostiles[0].free = true;
     state.hostiles[0].hp = 25.0;
