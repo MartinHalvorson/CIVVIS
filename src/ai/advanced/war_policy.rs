@@ -454,7 +454,7 @@ mod tests {
 
     /// A war record between 0 and `other` with `ours` units of ours lost.
     fn record_losses(g: &mut Game, other: usize, ours: u32, theirs: u32) {
-        let key = (0usize.min(other), 0usize.max(other));
+        let key = (0usize, other);
         let mut losses = BTreeMap::new();
         losses.insert(
             0,
