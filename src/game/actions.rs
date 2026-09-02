@@ -1841,7 +1841,12 @@ impl Game {
     /// melee round at the engine's unrandomized centre: the defender takes
     /// `expected_damage(att, def)` and the attacker takes
     /// `expected_damage(def, att)`.
-    pub(crate) fn melee_exchange_strengths(&self, uid: u32, did: u32) -> Option<(f64, f64)> {
+    ///
+    /// `pub`, not `pub(crate)`: this is the engine's own arithmetic, exposed
+    /// for planners and for the divergence instrument
+    /// (`live_divergence::combat_pairs`) so that nothing outside the crate
+    /// re-derives a melee exchange from two bare strengths.
+    pub fn melee_exchange_strengths(&self, uid: u32, did: u32) -> Option<(f64, f64)> {
         let attacker = self.units.get(&uid)?;
         let defender = self.units.get(&did)?;
         let target = defender.pos;
@@ -1877,12 +1882,11 @@ impl Game {
     /// second blow in `do_ranged` for a controller to price, which is why
     /// standing under one is a straight loss and standing under a melee
     /// attack need not be.
-    pub(crate) fn ranged_strike_strengths(
-        &self,
-        uid: u32,
-        did: u32,
-        target: Pos,
-    ) -> Option<(f64, f64)> {
+    ///
+    /// `pub` for the same reason as [`melee_exchange_strengths`]: the
+    /// engine's own arithmetic, exposed for planners and the divergence
+    /// instrument rather than copied by them.
+    pub fn ranged_strike_strengths(&self, uid: u32, did: u32, target: Pos) -> Option<(f64, f64)> {
         let shooter = self.units.get(&uid)?;
         let defender = self.units.get(&did)?;
         let spec = &self.rules.units[shooter.kind];
