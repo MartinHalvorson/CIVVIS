@@ -2109,6 +2109,10 @@ pub const GENES: &[Gene] = &[
     // fronts into extra Recovery; immediate city danger still takes Recovery
     // independently, including city-state pressure. One family version plays.
     Gene { tag: "recovery-reads-the-war-2", field: "recovery_reads_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_reads_the_war_2, disable: AdvancedAi::disable_recovery_reads_the_war_2 },
+    // Version 2 narrows an already-staged Conquest plan to one nearby,
+    // holdable city, then keeps that objective rather than extending a war
+    // from an empire-wide army estimate.
+    Gene { tag: "city-campaign-2", field: "city_campaign_2", kind: Kind::OptIn, enable: AdvancedAi::enable_city_campaign_2, disable: AdvancedAi::disable_city_campaign_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

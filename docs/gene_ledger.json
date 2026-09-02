@@ -1750,6 +1750,15 @@
           "chase-every-boost-2": null
         }
       },
+      "city-campaign": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "city-campaign": null,
+          "city-campaign-2": null
+        }
+      },
       "coalition-before-war": {
         "rule_on": [
           "coalition-before-war"

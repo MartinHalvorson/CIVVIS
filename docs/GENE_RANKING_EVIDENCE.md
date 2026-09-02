@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `chase-every-boost-2` | off (unmeasured) | Version two only lets a city finish the final production trigger for the technology or civic already in progress, before that study ends. | 1 \| 2 |
+| `city-campaign-2` | off (unmeasured) | Turn an existing Conquest plan into one nearby, holdable city only when its complete spare-included bill is already staged. | 1 \| 2 |
 | `coalition-before-war-3` | off (unmeasured) | Recruit only a target neighbour already fighting it. | 1 \| 3 |
 | `native-emergency-purchase-2` | off (unmeasured) | Version two buys the same local answer only for damage this turn or last that a visible at-war military unit can legally follow with a City Center attack. | 1 \| 2 |
 | `recovery-reads-the-war-2` | off (unmeasured) | Measure Recovery against the strongest current major opponent within the campaign planner's reach. | 1 \| 2 |
