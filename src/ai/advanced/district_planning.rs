@@ -38,8 +38,8 @@
 //!
 //! Off, every touched path is unchanged.
 
-use super::{AdvancedAi, EmpireCounts, StrategicPlan};
-use crate::game::{Game, Item};
+use super::{AdvancedAi, EmpireCounts, GrandStrategy, StrategicPlan, VictoryTarget};
+use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::Pos;
 use std::collections::BTreeMap;
@@ -64,6 +64,11 @@ pub(super) const PLAN_BUY_SCORE_FLOOR: f64 = 120.0;
 pub(super) const PLAN_BUY_SITE_SHARE: f64 = 0.35;
 /// Score charged per Gold of plot price, matching the shipped plot scorer.
 pub(super) const PLAN_BUY_COST_CHARGE: f64 = 0.70;
+/// A tile earning this much Science on its own is a durable science asset,
+/// rather than ordinary surplus ground. Five is the yield of one tile beside
+/// the Bermuda Triangle; ordinary one- to three-Science ground still follows
+/// the normal reserve and fallback rules.
+pub(super) const EXCEPTIONAL_SCIENCE_TILE_MINIMUM: f64 = 5.0;
 /// How strongly an unowned plot's price counts against it while plots are
 /// being assigned (lane yield-points per Gold): enough that free ground
 /// wins a near-tie, small enough that a real adjacency edge survives.
@@ -389,5 +394,115 @@ impl AdvancedAi {
         let positional = (unlocked - already) * (7.0 + turns.max(1.0));
         let score = PLAN_BUY_SITE_SHARE * positional - PLAN_BUY_COST_CHARGE * cost;
         (score >= PLAN_BUY_SCORE_FLOOR).then_some(score)
+    }
+
+    /// Price a very high-Science workable tile — or the one cheap border hex
+    /// that opens it — as a strategic asset rather than a surplus plot. This
+    /// is deliberately the version-two route: the original district-planning
+    /// behaviour remains byte-for-byte unchanged.
+    ///
+    /// The generic working reserve protects prospective defenders and future
+    /// deficit recovery across the whole empire. A five-plus-Science plot is
+    /// worth letting a Science seat acquire now, but it may never consume an
+    /// appointed war package or the Gold for an immediate threatened-city
+    /// defender. `workable_tile_yields` is essential here: a live mirror's
+    /// observed host yield, including a natural-wonder correction, is what
+    /// the citizen will actually collect. Civ VI only sells connected land,
+    /// so a promising ring-three tile often needs a low-yield ring-two bridge;
+    /// the bridge is priced with its immediately unlocked science tile and the
+    /// two quotes together, rather than as the empty ground it happens to be.
+    pub(super) fn exceptional_science_plot_score(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        action: &Action,
+    ) -> Option<f64> {
+        let science_lane = plan.strategy == GrandStrategy::Science
+            || (plan.strategy == GrandStrategy::Expansion
+                && self.active_victory_target(g) == Some(VictoryTarget::Science));
+        if !self.district_planning_2 || !science_lane {
+            return None;
+        }
+        let Action::BuyPlot { city, pos, cost } = action else {
+            return None;
+        };
+        let direct_yields = g.workable_tile_yields(*pos);
+        let direct = direct_yields.science + f64::EPSILON >= EXCEPTIONAL_SCIENCE_TILE_MINIMUM;
+        // A purchase only opens ground touching itself. This cheap prefilter
+        // avoids cloning every ordinary border tile just to discover it does
+        // not lead to a high-Science one.
+        let bridge_might_open_science = !direct
+            && g.nbrs(*pos).into_iter().any(|neighbor| {
+                g.map.tiles[&neighbor].owner_city.is_none()
+                    && g.workable_tile_yields(neighbor).science + f64::EPSILON
+                        >= EXCEPTIONAL_SCIENCE_TILE_MINIMUM
+            });
+        if !direct && !bridge_might_open_science {
+            return None;
+        }
+        let mut after = g.speculative_clone();
+        after.apply(pid, action).ok()?;
+        let remaining = after.players[pid].gold;
+        let emergency_floor = self
+            .war_treasury_floor(g, pid)
+            .max(self.threatened_city_gold_floor(g, pid, plan));
+        if remaining + f64::EPSILON < emergency_floor {
+            crate::think!(self.journal(), Economy, Detail,
+                "Keeping Gold instead of buying high-Science tile at {pos:?}";
+                "{:.1} Science, {cost:.0} Gold; {remaining:.0} left is below the {:.0} emergency floor",
+                direct_yields.science, emergency_floor);
+            return None;
+        }
+        let target = if direct {
+            Some((*pos, direct_yields, *cost, remaining))
+        } else {
+            after
+                .nbrs(*pos)
+                .into_iter()
+                .filter_map(|science_pos| {
+                    let science_cost = after.plot_purchase_cost(pid, *city, science_pos)?;
+                    let science_yields = after.workable_tile_yields(science_pos);
+                    (science_yields.science + f64::EPSILON >= EXCEPTIONAL_SCIENCE_TILE_MINIMUM
+                        && remaining + f64::EPSILON >= emergency_floor + science_cost)
+                        .then_some((
+                            science_pos,
+                            science_yields,
+                            *cost + science_cost,
+                            remaining - science_cost,
+                        ))
+                })
+                .max_by(|left, right| {
+                    let left_score = self.yield_value(left.1, GrandStrategy::Science) * 24.0
+                        - PLAN_BUY_COST_CHARGE * left.2;
+                    let right_score = self.yield_value(right.1, GrandStrategy::Science) * 24.0
+                        - PLAN_BUY_COST_CHARGE * right.2;
+                    left_score
+                        .total_cmp(&right_score)
+                        .then_with(|| right.0.cmp(&left.0))
+                })
+        };
+        let (science_pos, science_yields, total_cost, final_gold) = target?;
+        let score = self.yield_value(science_yields, GrandStrategy::Science) * 24.0
+            - PLAN_BUY_COST_CHARGE * total_cost;
+        if score + f64::EPSILON < PLAN_BUY_SCORE_FLOOR {
+            crate::think!(self.journal(), Economy, Detail,
+                "Leaving high-Science ground at {science_pos:?} unbought";
+                "{:.1} Science, {total_cost:.0} Gold through {pos:?}; score {score:.0} is below the {:.0} floor",
+                science_yields.science, PLAN_BUY_SCORE_FLOOR);
+            return None;
+        }
+        if science_pos == *pos {
+            crate::think!(self.journal(), Economy, Detail,
+                "Pricing high-Science tile at {pos:?}";
+                "{:.1} Science, {total_cost:.0} Gold, score {score:.0}; {final_gold:.0} left above the {:.0} emergency floor",
+                science_yields.science, emergency_floor);
+        } else {
+            crate::think!(self.journal(), Economy, Detail,
+                "Pricing bridge tile at {pos:?} for high-Science ground at {science_pos:?}";
+                "{:.1} Science, {total_cost:.0} Gold for both plots, score {score:.0}; {final_gold:.0} left above the {:.0} emergency floor",
+                science_yields.science, emergency_floor);
+        }
+        Some(score)
     }
 }

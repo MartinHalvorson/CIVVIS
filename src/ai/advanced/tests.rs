@@ -17519,6 +17519,11 @@ fn district_project_search_extends_only_concrete_great_person_races() {
         .buildings
         .push(crate::name!("library"));
     let far = ai.production_value(&game, 0, city, &project, &plan, &counts);
+    game.retired_great_people.insert("aryabhata".to_string());
+    assert_eq!(
+        game.current_great_person("scientist").map(|(id, _)| id),
+        Some("euclid")
+    );
     let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
     let cost = game.gp_cost(0, "scientist");
     game.players[0]
@@ -17681,6 +17686,124 @@ fn opening_gpp_projects_wait_except_for_prophets_and_exceptional_scientists() {
     let stock_after_opening =
         ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
     assert_eq!(after_opening, stock_after_opening);
+}
+
+#[test]
+fn project_restraint_v2_reads_first_building_debt_instead_of_a_clock() {
+    let mut game = Game::new(2, 24, 16, 7_106, 200, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "campus");
+    game.players[0].techs.insert(crate::name!("writing"));
+    // Keep the valuation above the restraint cap even in an off-lane plan,
+    // so this test observes the gate rather than an already-cheap project.
+    std::sync::Arc::make_mut(&mut game.rules)
+        .projects
+        .get_mut("campus_research_grants")
+        .unwrap()
+        .ongoing_yields
+        .insert("culture".to_string(), 1_000.0);
+    game.turn = 51;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ordinary = AdvancedAi::new();
+    let mut v1 = AdvancedAi::new();
+    v1.enable_early_project_restraint();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_early_project_restraint_2();
+
+    let scientist_cost = game.gp_cost(0, "scientist");
+    game.players[1]
+        .gpp
+        .insert("scientist".to_string(), scientist_cost - 1.0);
+
+    let stock_debt =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert!(
+        stock_debt > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "the fixture needs a project whose race value can outrun the missing-building penalty"
+    );
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v2 must wait while the Campus can build its first Library"
+    );
+
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        ..plan.clone()
+    };
+    let science_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &science_plan,),
+        science_stock,
+        "a Scientist project must remain live for the Science lane even before its Library"
+    );
+
+    let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
+    let cost = game.gp_cost(0, "scientist");
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), cost - award);
+    assert!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan)
+            > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "any one-project claim must override debt; v1's named exception rejects Euclid"
+    );
+    game.players[0].gpp.insert("scientist".to_string(), 0.0);
+
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    let developed = v2.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    let developed_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert_eq!(developed, developed_stock);
+    assert_eq!(
+        v1.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v1's opening timer must remain measurable and unchanged"
+    );
+
+    game.cities.get_mut(&city).unwrap().buildings.clear();
+    game.turn = game.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS);
+    let late_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert_eq!(
+        v1.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        late_stock,
+        "v1 must release the project at its historical deadline"
+    );
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v2 must keep reading an unpaid, buildable Library debt after the clock expires"
+    );
+
+    let mut family = AdvancedAi::new();
+    family.enable_early_project_restraint();
+    family.enable_early_project_restraint_2();
+    assert!(!family.early_project_restraint && family.early_project_restraint_2);
+    family.enable_early_project_restraint();
+    assert!(family.early_project_restraint && !family.early_project_restraint_2);
 }
 
 #[test]
@@ -35095,6 +35218,224 @@ fn the_plans_buy_spends_into_the_reserve_only_under_version_two() {
     assert!(
         v2_game.players[0].gold >= 150.0 - f64::EPSILON,
         "half the reserve is never spent"
+    );
+}
+
+/// A workable five-plus-Science tile is an asset in a Science race, not
+/// fallback ground. The host correction models Setia's Bermuda Triangle
+/// tiles: the normal plot scorer never reaches them while a unit or building
+/// exists and also requires 200 Gold above the whole reserve.
+#[test]
+fn version_two_promotes_an_exceptional_science_tile_above_the_general_reserve() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
+        .expect("an unowned ring-two plot");
+    game.players[0].explored.insert(target);
+    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
+        target,
+        Yields {
+            science: 10.0,
+            ..Yields::default()
+        },
+    );
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    // This still permits an ordinary Gold purchase, but is well below the
+    // Science reserve plus the generic plot path's extra 200-Gold headroom.
+    game.players[0].gold = cost + 200.0;
+    let plan = district_planning_lane(game.turn);
+    let action = Action::BuyPlot {
+        city,
+        pos: target,
+        cost,
+    };
+
+    let plain = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        plain
+            .legal_purchase_actions(&game, 0)
+            .iter()
+            .any(|candidate| !matches!(candidate, Action::BuyPlot { .. })),
+        "the tile must beat a real non-plot candidate rather than only fill an empty menu"
+    );
+    let mut plain_game = game.clone();
+    plain.advanced_gold_spending(&mut plain_game, 0, &plan);
+    assert_eq!(
+        plain_game.map.tiles[&target].owner_city, None,
+        "without version two, the generic reserve keeps the high-science tile out"
+    );
+
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Science);
+    v2.enable_district_planning_2();
+    let counts = v2.counts(&game, 0);
+    let mut cache = DistrictPlanCache::default();
+    assert_eq!(
+        v2.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache),
+        None,
+        "flat ground is not a district-plan purchase; the science asset path is distinct"
+    );
+    assert!(
+        v2.exceptional_science_plot_score(&game, 0, &plan, &action)
+            .is_some(),
+        "the host-observed ten-Science tile clears the strategic score"
+    );
+    assert!(
+        v2.advanced_gold_spending(&mut game, 0, &plan),
+        "the exceptional tile competes in the main purchase ranking"
+    );
+    assert_eq!(
+        game.map.tiles[&target].owner_city,
+        Some(city),
+        "the science city annexes the exceptional tile"
+    );
+    assert!(
+        game.players[0].gold < 300.0,
+        "the buy is allowed to draw through the broad Science reserve"
+    );
+}
+
+/// Civ VI sells only connected plots. Setia's closest Bermuda tile was in its
+/// third ring, so the first legal purchase was a worthless-looking second-ring
+/// coast tile. Version two prices that bridge with the science tile it unlocks,
+/// then buys the science tile on the following purchase pass.
+#[test]
+fn version_two_buys_the_bridge_to_an_exceptional_science_tile() {
+    let (mut game, city, center) = planning_capital();
+    for pos in game.wdisk(center, 3) {
+        game.players[0].explored.insert(pos);
+    }
+    // Discover the connected route with an unconstrained counterfactual;
+    // the test sets the deliberately tight real treasury below.
+    game.players[0].gold = 1_000.0;
+    let mut route = None;
+    for bridge in game
+        .wdisk(center, 2)
+        .into_iter()
+        .filter(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
+    {
+        let Some(bridge_cost) = game.plot_purchase_cost(0, city, bridge) else {
+            continue;
+        };
+        let mut after = game.speculative_clone();
+        after
+            .apply(
+                0,
+                &Action::BuyPlot {
+                    city,
+                    pos: bridge,
+                    cost: bridge_cost,
+                },
+            )
+            .expect("the bridge quote is legal");
+        let target = after.nbrs(bridge).into_iter().find(|target| {
+            after.wdist(*target, center) == 3
+                && after.map.tiles[target].owner_city.is_none()
+                && game.plot_purchase_cost(0, city, *target).is_none()
+                && after.plot_purchase_cost(0, city, *target).is_some()
+        });
+        if let Some(target) = target {
+            let target_cost = after
+                .plot_purchase_cost(0, city, target)
+                .expect("the bridge opens the third-ring target");
+            route = Some((bridge, bridge_cost, target, target_cost));
+            break;
+        }
+    }
+    let (bridge, bridge_cost, target, target_cost) = route.expect("a ring-two bridge route");
+    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
+        target,
+        Yields {
+            science: 10.0,
+            ..Yields::default()
+        },
+    );
+    // Both quotes fit, but their 125-Gold remainder is well inside the
+    // ordinary Science reserve; a bridge has no generic-yield case to make.
+    game.players[0].gold = bridge_cost + target_cost + 125.0;
+    let plan = district_planning_lane(game.turn);
+    let bridge_action = Action::BuyPlot {
+        city,
+        pos: bridge,
+        cost: bridge_cost,
+    };
+    assert_eq!(
+        game.plot_purchase_cost(0, city, target),
+        None,
+        "the science tile cannot be bought before its bridge"
+    );
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_district_planning_2();
+    assert!(
+        ai.exceptional_science_plot_score(&game, 0, &plan, &bridge_action)
+            .is_some(),
+        "the low-yield bridge inherits the value of the science tile it opens"
+    );
+    assert!(
+        ai.advanced_gold_spending(&mut game, 0, &plan),
+        "the first purchase pass takes the bridge"
+    );
+    assert!(
+        game.nbrs(target)
+            .into_iter()
+            .any(|pos| game.map.tiles[&pos].owner_city == Some(city)),
+        "the chosen bridge now opens the science tile"
+    );
+    assert_eq!(game.map.tiles[&target].owner_city, None);
+    assert!(
+        ai.advanced_gold_spending(&mut game, 0, &plan),
+        "the now-connected science tile is bought on the next pass"
+    );
+    assert_eq!(
+        game.map.tiles[&target].owner_city,
+        Some(city),
+        "the city reaches its exceptional science terrain"
+    );
+}
+
+/// Drawing through the broad reserve does not mean spending the money a
+/// threatened city needs for an immediate defender.
+#[test]
+fn exceptional_science_tile_keeps_the_threatened_city_defender_floor() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
+        .expect("an unowned ring-two plot");
+    game.players[0].explored.insert(target);
+    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
+        target,
+        Yields {
+            science: 10.0,
+            ..Yields::default()
+        },
+    );
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    let mut plan = district_planning_lane(game.turn);
+    plan.threatened_city = Some(city);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_district_planning_2();
+    ai.enable_threatened_city_reserve();
+    let floor = ai.threatened_city_gold_floor(&game, 0, &plan);
+    assert!(floor > 0.0, "the threatened city has a defender price");
+    game.players[0].gold = cost + floor - 1.0;
+    let action = Action::BuyPlot {
+        city,
+        pos: target,
+        cost,
+    };
+
+    assert_eq!(
+        ai.exceptional_science_plot_score(&game, 0, &plan, &action),
+        None,
+        "the exceptional purchase may not leave less than the defender floor"
     );
 }
 

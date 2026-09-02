@@ -5137,6 +5137,14 @@ const UNVERIFIABLE_ORDER_KINDS: &[(&str, &str)] = &[
     // Levied units keep the city-state's ids and the frame does not mark them
     // as levied, so a levy cannot be told from the minor's own army.
     ("levy", "levied units are not marked in the frame"),
+    // A question, not an act: the mod answers it at issue time with a
+    // `preview` event (the host's `SimulateAttackInto` reading, filed on the
+    // board as `Game::host_previews`) and changes nothing the next frame
+    // could show.
+    (
+        "preview",
+        "answered by the host's `preview` event at issue time; nothing changes on the frame",
+    ),
 ];
 
 /// Unit verbs the next frame cannot answer, each with the reason. `SPY_*`
