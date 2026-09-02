@@ -1676,30 +1676,6 @@ def print_status(state_root: Path, state: dict[str, Any], *, as_json: bool = Fal
         print(f"  deadline: {report['deadline_at']}{suffix}")
 
 
-class OutcomeLog:
-    """Print a tick outcome when it changes, not on every 5-second poll.
-
-    After a daemon restart under a live segment every tick returns
-    ``active_segment`` for hours; logging each one buries the lifecycle lines
-    an operator reads (``segment_started``, ``cut_request_adopted``,
-    ``frozen_deadline``, ``published``).  Repeats are counted and the count is
-    reported when the outcome finally changes.
-    """
-
-    def __init__(self) -> None:
-        self.last: str | None = None
-        self.repeats = 0
-
-    def note(self, outcome: str) -> str | None:
-        """Return the line to print for ``outcome``, or ``None`` for a silent repeat."""
-        if outcome == self.last:
-            self.repeats += 1
-            return None
-        suffix = f" (previous outcome repeated {self.repeats} more times)" if self.repeats else ""
-        self.last, self.repeats = outcome, 0
-        return f"{utc_now()} {outcome}{suffix}"
-
-
 def machine_from_config(repo: Path) -> str | None:
     result = subprocess.run(["git", "-C", str(repo), "config", "--get", "civvis.machine"],
                             text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
@@ -1821,15 +1797,12 @@ def main(argv: list[str] | None = None) -> int:
                         f"batch {state['current']['id']} is {phase!r}; publish applies to a "
                         "frozen batch (cut or complete one first)")
                 publish, once = True, True
-            outcomes = OutcomeLog()
             while True:
                 outcome = tick(
                     state_root, state_file, state, repo=repo, jobs=jobs,
                     machine=machine, agent=args.publisher_agent, publish=publish,
                 )
-                line = outcomes.note(outcome)
-                if line is not None:
-                    print(line, flush=True)
+                print(f"{utc_now()} {outcome}", flush=True)
                 if outcome == "published":
                     print("next: restart the scheduler service (launchctl kickstart -k gui/$UID/<label>) "
                           "so it rotates onto the merge commit and starts the next batch", flush=True)
