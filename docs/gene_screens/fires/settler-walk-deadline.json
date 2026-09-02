@@ -25,12 +25,12 @@
   "difficulty": null,
   "drift": {
     "batch": {
-      "culture": 0.2916666666666667,
+      "culture": 0.20833333333333334,
       "diplomatic": 0.0,
       "domination": 0.0,
       "religious": 0.16666666666666666,
-      "science": 0.4166666666666667,
-      "score": 0.125,
+      "science": 0.5416666666666666,
+      "score": 0.08333333333333333,
       "unfinished": 0.0
     },
     "games": 24,
@@ -60,49 +60,49 @@
   "endings": {
     "by_kind": {
       "culture": {
-        "games": 7,
-        "median_turn": 167,
-        "seats": 42,
-        "share": 0.2916666666666667,
+        "games": 5,
+        "median_turn": 160,
+        "seats": 30,
+        "share": 0.20833333333333334,
         "won_by_field": 0
       },
       "religious": {
         "games": 4,
-        "median_turn": 141,
+        "median_turn": 188,
         "seats": 24,
         "share": 0.16666666666666666,
         "won_by_field": 0
       },
       "science": {
-        "games": 10,
-        "median_turn": 216,
-        "seats": 60,
-        "share": 0.4166666666666667,
+        "games": 13,
+        "median_turn": 217,
+        "seats": 78,
+        "share": 0.5416666666666666,
         "won_by_field": 0
       },
       "score": {
-        "games": 3,
+        "games": 2,
         "median_turn": 250,
-        "seats": 18,
-        "share": 0.125,
+        "seats": 12,
+        "share": 0.08333333333333333,
         "won_by_field": 0
       }
     },
     "games": 24,
     "lanes": {
-      "domestic_mean": 106.625,
-      "dvp_mean": 8.07638888888889,
+      "domestic_mean": 110.90972222222223,
+      "dvp_mean": 8.305555555555555,
       "dvp_required": 20,
-      "rival_dvp_mean": 10.07638888888889,
-      "rival_tourists_mean": 66.89583333333333,
+      "rival_dvp_mean": 10.145833333333334,
+      "rival_tourists_mean": 71.30555555555556,
       "seats_where_somebody_reached_the_threshold": 0.0,
-      "tourists_mean": 29.444444444444443
+      "tourists_mean": 31.46527777777778
     },
     "lost_to": {
-      "culture": 0.24305555555555555,
+      "culture": 0.1736111111111111,
       "diplomatic": 0.0,
       "religious": 0.1388888888888889,
-      "science": 0.3472222222222222
+      "science": 0.4513888888888889
     },
     "unit": "games, and the seats of those games",
     "won_by_field": 120
@@ -120,7 +120,7 @@
         {
           "label": "naval-recon",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -185,7 +185,7 @@
         {
           "label": "settler-guard-holds-2",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         }
       ],
@@ -232,7 +232,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -303,7 +303,7 @@
         {
           "label": "district-coverage-2",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         }
       ],
@@ -350,7 +350,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -421,7 +421,7 @@
         {
           "label": "holy-site-where-the-threat-is-2",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         }
       ],
@@ -474,7 +474,7 @@
         {
           "label": "air-surge",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -527,7 +527,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -586,7 +586,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -651,7 +651,7 @@
         {
           "label": "district-planning",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -710,7 +710,7 @@
         {
           "label": "science-victory-drive",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -775,7 +775,7 @@
         {
           "label": "government-ladder-2",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         }
       ],
@@ -822,7 +822,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -881,7 +881,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -946,7 +946,7 @@
         {
           "label": "wonder-adjacent-sites",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -1011,7 +1011,7 @@
         {
           "label": "treasury-at-work-2",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         }
       ],
@@ -1058,7 +1058,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -1129,7 +1129,7 @@
         {
           "label": "capture-go-or-stand-down-2",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         }
       ],
@@ -1176,7 +1176,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.16666666666666674,
+          "share": 0.1666666666666667,
           "win": 0.16666666666666666
         },
         {
@@ -1234,46 +1234,46 @@
   "games": 24,
   "genes": [
     {
-      "adjusted_pp": -18.243774574049798,
-      "adjusted_se_pp": 4.101043786558196,
-      "compute_cost_pct": -6.2715519719041355,
-      "compute_cost_se_pct": 6.69643636610097,
+      "adjusted_pp": -14.469200524246395,
+      "adjusted_se_pp": 5.436507553724812,
+      "compute_cost_pct": -4.221700875461199,
+      "compute_cost_se_pct": 5.51072261383558,
       "cost_games": 24,
-      "done_delta_pp": -1.6288673370875029,
-      "done_se_pp": 1.7476410859942122,
-      "forgotten_delta_pp": 0.6462386642441642,
-      "forgotten_se_pp": 1.0422389990321417,
+      "done_delta_pp": -1.2739415503032148,
+      "done_se_pp": 1.9335394047794983,
+      "forgotten_delta_pp": 1.5968888772182082,
+      "forgotten_se_pp": 1.2381716170591897,
       "n_off": 109,
       "n_on": 35,
-      "read": "HURTS ** · share HURTS **",
+      "read": "hurts * (thin) · share HURTS **",
       "seats": 144,
-      "share_delta_pp": -2.8772193402432173,
-      "share_resolves_pp": 2.702380686283118,
-      "share_se_pp": 0.965135959386828,
-      "share_z": -2.9811544293419323,
+      "share_delta_pp": -3.4255810204209594,
+      "share_resolves_pp": 2.6738150561243246,
+      "share_se_pp": 0.9549339486158301,
+      "share_z": -3.5872439401555614,
       "tag": "settler-walk-deadline",
-      "time_cost_pct": -8.75652620801765,
-      "time_cost_se_pct": 11.59775769669815,
-      "win_delta_pp": -18.243774574049798,
-      "win_off": 0.21100917431192662,
-      "win_on": 0.02857142857142857,
-      "win_resolves_pp": 11.482922602362947,
-      "win_se_pp": 4.101043786558196,
+      "time_cost_pct": -6.065213958386403,
+      "time_cost_se_pct": 10.432835695712509,
+      "win_delta_pp": -14.469200524246395,
+      "win_off": 0.2018348623853211,
+      "win_on": 0.05714285714285714,
+      "win_resolves_pp": 15.222221150429473,
+      "win_se_pp": 5.436507553724812,
       "win_tranches": [
         {
           "games": 24,
           "position": "latest",
           "seats": 144,
-          "win_delta_pp": -18.243774574049798,
-          "win_se_pp": 4.101043786558196,
-          "win_z": -4.448568589744539
+          "win_delta_pp": -14.469200524246395,
+          "win_se_pp": 5.436507553724812,
+          "win_z": -2.6614881670370996
         }
       ],
-      "win_z": -4.448568589744539
+      "win_z": -2.6614881670370996
     }
   ],
   "kind": "gene_screen_analysis",
-  "overall_share": 0.16666666666666674,
+  "overall_share": 0.1666666666666667,
   "overall_win": 0.16666666666666666,
   "profile": {
     "all_seats": true,
@@ -1285,10 +1285,10 @@
       "target_seats": 144
     },
     "build": {
-      "binary_sha256": "18d6899d500be068d882d88e50cd4f2f18599199e804b934fb48c3caa3a1d7b4",
-      "commit": "4ab7e2f098d81e15825d3f3e67a1d300ad379ad2",
+      "binary_sha256": "1e6d06cd7a99382b5c4429e79b923cc4edd06db9c3b58f4c8bf83ee7db8f28e9",
+      "commit": "14a85b245b21632d5a0ccee425c303aba7eb8057",
       "commit_source": "build-tree",
-      "dirty": false,
+      "dirty": true,
       "genes_sha256": "587b2c70d0b0677898e65bb366e893a63877ee8cc50da1b9b78d36ebebf36290"
     },
     "city_states": 9,
@@ -1841,8 +1841,8 @@
     "genes": 1,
     "power": 0.8,
     "read": "the smallest Δ this run could resolve at 80% power; a Δ below it is inside the run's own noise",
-    "share_pp": 2.702380686283118,
-    "win_pp": 11.482922602362947
+    "share_pp": 2.6738150561243246,
+    "win_pp": 15.222221150429473
   },
   "rival_mix": null,
   "seats": 144,

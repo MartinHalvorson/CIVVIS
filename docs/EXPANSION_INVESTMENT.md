@@ -123,8 +123,10 @@ every step is in a hostile's reach" 26%, a guard it waits for 6%, a refused
 host move 5%.
 
 What shipped for it is `settler-walk-deadline`
-(`src/ai/advanced/settler_walk_deadline.rs`): a Settler out of a city past
-twelve Online turns founds the best legal site within two tiles. The
-pipeline genes are not the lever left in the opening; the walk is. To read
-it live, put the tag in `~/.civvis-live-force-on` when the halt lifts and
-compare cities@60 and the settler fates above on the next runs.
+(`src/ai/advanced/settler_walk_deadline.rs`): an opening Settler that has
+spent twelve Online turns out of a city (turns at home or embarked do not
+count) founds the best legal site within two tiles, provided it is worth at
+least half of the site it was walking to. The pipeline genes are not the
+lever left in the opening; the walk is. To read it live, put the tag in
+`~/.civvis-live-force-on` when the halt lifts and compare cities@60 and the
+settler fates above on the next runs.

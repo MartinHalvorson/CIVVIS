@@ -146,6 +146,7 @@ impl AdvancedAi {
     }
 
     /// Turns this Settler has spent out of a city, as last noted.
+    #[cfg(test)]
     pub(super) fn settler_turns_out(&self, uid: u32) -> u32 {
         self.settler_walk_clock
             .get(&uid)
