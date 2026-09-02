@@ -918,6 +918,16 @@ pub struct StrategyCensus {
     pub board_forces: u32,
     pub board_reassignments: u32,
     pub board_short_rows: u32,
+    /// `requisitions`: units started for a requisition, units bought, and
+    /// open requisitions no city could build for, summed over turns. See
+    /// `advanced/requisitions.rs`.
+    pub requisition_items: u32,
+    pub requisition_purchases: u32,
+    pub requisition_unserved: u32,
+    /// `war-policy-via-board`: declarations the board's Siege bill held,
+    /// and peace offers its term made. See `advanced/war_policy.rs`.
+    pub war_policy_declarations_held: u32,
+    pub war_policy_peace_offers: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -1006,6 +1016,11 @@ impl StrategyCensus {
         self.board_forces += other.board_forces;
         self.board_reassignments += other.board_reassignments;
         self.board_short_rows += other.board_short_rows;
+        self.requisition_items += other.requisition_items;
+        self.requisition_purchases += other.requisition_purchases;
+        self.requisition_unserved += other.requisition_unserved;
+        self.war_policy_declarations_held += other.war_policy_declarations_held;
+        self.war_policy_peace_offers += other.war_policy_peace_offers;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -4460,6 +4475,23 @@ pub struct AdvancedAi {
     ///
     /// **Off by default.** Screenable.
     pub conversion_majority_alarm: bool,
+    /// Whether the smooth religious-victory clock reads the least-converted
+    /// remaining civilization, rather than pooling every rival's city counts.
+    ///
+    /// Version one fixes the staircase, but its pooled denominator gives a
+    /// wide empire more votes than a small one. Fully converting one enormous
+    /// neighbour can therefore cross the denial bar while several untouched
+    /// civilizations still remain. The victory rule does not weight them by
+    /// size: every living civilization must hold a majority. Version two
+    /// measures progress to each majority separately and reads the weakest
+    /// one. That is the actual conjunctive clock: the religious leader is only
+    /// as close as its furthest remaining holdout.
+    ///
+    /// Folded in with the exact completed-civilization reading below, so it
+    /// cannot hide a majority the host has already confirmed.
+    ///
+    /// **Off by default.** Screenable.
+    pub conversion_majority_alarm_2: bool,
     /// Whether the Culture lane is scored by WHERE THE TWO CURVES ARE WHEN
     /// THE CLOCK STOPS rather than by the ratio they stand at today.
     ///
@@ -5728,6 +5760,18 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// The Objective Board's shortfall reaches production and the treasury:
+    /// an idle city starts the unit a short row asks for (the best worth per
+    /// hammer of its kind, not the strongest), Gold buys the top one above
+    /// the reserve, the parity and bleeding-city defenders come from the
+    /// board's Deter and Defend rows, and `desired_military` is the board's
+    /// summed need while the land army is under it. Inert without
+    /// `objective_board`. Opt-in gene `requisitions`; see
+    /// `advanced/requisitions.rs`.
+    requisitions: bool,
+    /// This turn's requisition purchases: the one-a-turn rule and the
+    /// census. See `requisitions`.
+    requisitions_served: RefCell<requisitions::Served>,
     /// Units a siege has reserved as its taker: excluded from every other
     /// blow and move, and readable by a joint planner through
     /// `unit_is_reserved`. Empty with `siege-train` off. See
@@ -6000,6 +6044,18 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Who may be a target, when a war is declared and when peace is sued
+    /// for, read off the Objective Board's own requirements: a rival whose
+    /// nearest city's Siege bill is over the whole roster is no target, a
+    /// declaration waits for that bill staged on the objective's ring with
+    /// no other major war and every Defend row served, and the `0.62`
+    /// "outmatched" peace term becomes "no feasible siege AND the tide
+    /// against us (or an urgent Defend row unserved for three turns)".
+    /// Opt-in gene `war-policy-via-board`; see `advanced/war_policy.rs`.
+    war_policy_via_board: bool,
+    /// The gene's tides per rival and its unserved-Defend clocks. See
+    /// `war_policy_via_board`.
+    war_policy: war_policy::WarPolicy,
     /// `trade-route-network`: a Commercial Hub (or a Harbor on a coast with
     /// no Hub) beside a standing Campus is the Science lane's trade
     /// capacity, and a Market or Lighthouse is worth the Trade Route it
@@ -6588,6 +6644,12 @@ mod siege_train;
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
 /// `advanced/objective_board.rs`.
 pub mod objective_board;
+/// The board's shortfall reaches production and the treasury. Opt-in gene
+/// `requisitions`.
+mod requisitions;
+/// Target feasibility, the declaration and the peace term read off the
+/// board's requirements. Opt-in gene `war-policy-via-board`.
+mod war_policy;
 
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
@@ -7396,6 +7458,7 @@ impl AdvancedAi {
             rival_suzerainty_alarm: false,
             science_chain_alarm: false,
             conversion_majority_alarm: false,
+            conversion_majority_alarm_2: false,
             culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
             diplomatic_lane_forecast_2: false,
@@ -7548,6 +7611,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            requisitions: false,
+            requisitions_served: RefCell::new(requisitions::Served::default()),
             reserved_units: BTreeSet::new(),
             rapid_city_expansion_2: false,
             relief_column_marches: false,
@@ -7591,6 +7656,8 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            war_policy_via_board: false,
+            war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,
             walls_after_districts: false,
             threatened_city_reserve: false,
@@ -7992,6 +8059,10 @@ impl AdvancedAi {
         // The front and its tide clock; exact no-op with the gene off. See
         // `advanced/one_war.rs`.
         self.one_war_observe(g, pid);
+        // `war-policy-via-board`: the tide with every major at war and the
+        // unserved-Defend clocks; exact no-op with the gene off. See
+        // `advanced/war_policy.rs`.
+        self.war_policy_observe(g, pid);
     }
 
     fn plan_stale(&self, g: &Game, pid: usize) -> bool {
@@ -9892,13 +9963,12 @@ impl AdvancedAi {
     /// `pid`'s progress toward a Religious Victory measured in the cities the
     /// victory actually asks for, as a percentage.
     ///
-    /// See [`Self::conversion_majority_alarm`]. The rule is a majority of the
-    /// cities in every other living major, so the denominator is the sum of
-    /// those majorities and the numerator is how much of it is already held.
-    /// Nothing here is a model: it is the victory condition, counted instead
-    /// of rounded.
+    /// See [`Self::conversion_majority_alarm`] and
+    /// [`Self::conversion_majority_alarm_2`]. Version one pools the required
+    /// cities. Version two measures each civilization separately, then reads
+    /// the least-converted holdout the victory rule still requires.
     fn conversion_majority_pressure(&self, g: &Game, pid: usize) -> i32 {
-        if !self.conversion_majority_alarm {
+        if !self.conversion_majority_alarm && !self.conversion_majority_alarm_2 {
             return 0;
         }
         let Some(faith) = g.players[pid].religion.as_deref() else {
@@ -9906,6 +9976,7 @@ impl AdvancedAi {
         };
         let mut required = 0_usize;
         let mut held = 0_usize;
+        let mut bottleneck_progress = None;
         for other in g.players.iter().filter(|other| {
             other.id != pid && other.alive && !other.is_minor && !other.is_barbarian
         }) {
@@ -9934,11 +10005,18 @@ impl AdvancedAi {
                 });
             required += majority;
             held += following.min(majority);
+            let progress = 100 * following.min(majority) / majority;
+            bottleneck_progress =
+                Some(bottleneck_progress.map_or(progress, |current: usize| current.min(progress)));
         }
         if required == 0 {
             return 0;
         }
-        (100 * held / required) as i32
+        if self.conversion_majority_alarm_2 {
+            bottleneck_progress.unwrap_or(0) as i32
+        } else {
+            (100 * held / required) as i32
+        }
     }
 
     fn religious_conversion_tally(&self, g: &Game, pid: usize) -> (usize, usize) {
@@ -11126,12 +11204,20 @@ impl AdvancedAi {
                         .map(|(rival, _)| rival)
                         // `city_campaign`: the plan's rival before the generic
                         // value sort. See `advanced/city_campaign.rs`.
-                        .or_else(|| self.campaign_target(g, pid))
+                        // `war-policy-via-board`: a rival whose nearest
+                        // city's Siege bill is over the whole roster is no
+                        // target (every rival passes with the gene off). See
+                        // `advanced/war_policy.rs`.
+                        .or_else(|| {
+                            self.campaign_target(g, pid)
+                                .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
+                        })
                         .or_else(|| {
                             let mut candidates: Vec<_> = major_rivals
                                 .iter()
                                 .copied()
                                 .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                                .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
                                 .collect();
                             if strategy == GrandStrategy::Conquest {
                                 candidates.extend(
@@ -11140,6 +11226,8 @@ impl AdvancedAi {
                                         .filter(|player| player.is_minor)
                                         .filter(|player| {
                                             self.campaign_target_legal(g, pid, player.id)
+                                                && self
+                                                    .war_policy_target_feasible(g, pid, player.id)
                                         })
                                         .map(|player| player.id),
                                 );
@@ -17507,6 +17595,17 @@ impl AdvancedAi {
             // `advanced/one_war.rs`.
             let one_war_peace = self.one_war_peace(g, pid, *other);
             let one_war_presses = self.one_war_presses(g, pid, *other);
+            // `war-policy-via-board`: the `0.62` "outmatched" term becomes
+            // "no Siege row against them is feasible AND the tide is
+            // against us (or an urgent Defend row is unserved for three
+            // turns)"; every other term stands. See
+            // `advanced/war_policy.rs`.
+            let policy_peace = self.war_policy_peace(g, pid, *other);
+            let outmatched = if self.war_policy_via_board {
+                policy_peace.is_some()
+            } else {
+                my_power < g.military_power(*other) * 0.62
+            };
             // An explicit Science seat has no offensive use for a war it did
             // not appoint. A losing proposal can still be refused by the
             // attacker, so make the direct-peace condition part of the outer
@@ -17522,7 +17621,7 @@ impl AdvancedAi {
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
                 && !peace_pending
-                && (my_power < g.military_power(*other) * 0.62
+                && (outmatched
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other))
                     || (self.religion_sues_peace
@@ -17547,9 +17646,13 @@ impl AdvancedAi {
                     || science_defensive_peace)
             {
                 self.peace_offers.insert(*other);
+                if policy_peace.is_some() {
+                    self.census.war_policy_peace_offers += 1;
+                }
                 // Only a rout licenses a live tribute; every other reason
                 // for the offer is white peace. See `AiReport::peace_routed`.
-                if my_power < g.military_power(*other) * 0.62
+                // The board's term claims none: its peace is white.
+                if (!self.war_policy_via_board && outmatched)
                     || matches!(one_war_peace, Some(one_war::OneWarPeace::Rout))
                 {
                     self.peace_routed.insert(*other);
@@ -17572,8 +17675,10 @@ impl AdvancedAi {
                             if needed == 1 { "" } else { "s" },
                             g.players[minor].civ
                         )
-                    } else if my_power < their_power * 0.62 {
-                        "outmatched".to_string()
+                    } else if outmatched {
+                        policy_peace
+                            .clone()
+                            .unwrap_or_else(|| "outmatched".to_string())
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace && plan.strategy == GrandStrategy::Religion {
@@ -17724,8 +17829,18 @@ impl AdvancedAi {
         // alone can outweigh the whole ratio. What decides an ancient siege is
         // not the empires' totals but how many takers are standing at the
         // objective, which is exactly what `early_rush_stack_ready` counts.
+        // `war-policy-via-board`: the board's Siege bill staged on the
+        // objective's ring, no other major war, every Defend row served —
+        // in place of the rush count, the campaign bill and the empire
+        // ratio. `None` with the gene off. See `advanced/war_policy.rs`.
+        let policy = self.war_policy_declaration(g, pid, target, plan);
+        if matches!(policy, Some(Err(_))) {
+            self.census.war_policy_declarations_held += 1;
+        }
         let ready = urgent_denial
-            || if rushing {
+            || if let Some(verdict) = &policy {
+                verdict.is_ok()
+            } else if rushing {
                 plan.target_city
                     .and_then(|city| g.cities.get(&city))
                     .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
@@ -17787,11 +17902,14 @@ impl AdvancedAi {
             // it any other way: an army that sits still for thirty turns looks
             // identical to one with no plan.
             let blocker = if !close_enough {
-                "no city of theirs is within 18 tiles of one of mine"
+                "no city of theirs is within 18 tiles of one of mine".to_string()
             } else if !ready {
-                "the army is not strong enough yet"
+                match &policy {
+                    Some(Err(reason)) => reason.clone(),
+                    _ => "the army is not strong enough yet".to_string(),
+                }
             } else {
-                "the army has not finished staging"
+                "the army has not finished staging".to_string()
             };
             think!(self.journal(), Military, Detail,
                    "Holding off war with {}", g.players[target].civ;
@@ -18354,6 +18472,23 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city_id)
                 .or_else(|| self.native_emergency_item(g, pid, city_id))
+                // `requisitions`: a bleeding city's unit is its Defend row's
+                // requisition; the wall answer stands. See
+                // `advanced/requisitions.rs`.
+                .map(|item| match item {
+                    Item::Unit { .. } => self
+                        .requisition_item_for_city(
+                            g,
+                            pid,
+                            city_id,
+                            &[
+                                objective_board::ObjectiveKind::Defend,
+                                objective_board::ObjectiveKind::Relieve,
+                            ],
+                        )
+                        .unwrap_or(item),
+                    other => other,
+                })
             else {
                 continue;
             };
@@ -18751,10 +18886,27 @@ impl AdvancedAi {
         }) {
             return false;
         }
-        let defender = self
-            .base
-            .best_military(g, pid, contact, Some(true))
-            .or_else(|| self.base.best_military(g, pid, contact, Some(false)));
+        let defender = if self.requisitions_on() {
+            // `requisitions`: the Deter row's requisition names the city and
+            // the unit; without one the board sees no gap to pre-empt for.
+            // See `advanced/requisitions.rs`.
+            if self.deter_requisition_city() != Some(contact) {
+                return false;
+            }
+            match self.requisition_item_for_city(
+                g,
+                pid,
+                contact,
+                &[objective_board::ObjectiveKind::Deter],
+            ) {
+                Some(Item::Unit { unit }) => Some(unit.as_str().to_string()),
+                _ => None,
+            }
+        } else {
+            self.base
+                .best_military(g, pid, contact, Some(true))
+                .or_else(|| self.base.best_military(g, pid, contact, Some(false)))
+        };
         let Some(unit) = defender else {
             return false;
         };
@@ -18793,7 +18945,10 @@ impl AdvancedAi {
         if self.emergency_city_defense_purchase(g, pid, plan) {
             return true;
         }
-        if self.border_parity_purchase(g, pid) {
+        // `requisitions`: the Deter row's requisition is the parity gap, and
+        // the board is the single source; the purchase runs below, once the
+        // reserve is known. See `advanced/requisitions.rs`.
+        if !self.requisitions_on() && self.border_parity_purchase(g, pid) {
             return true;
         }
         if self.border_parity_3_purchase(g, pid) {
@@ -18826,6 +18981,13 @@ impl AdvancedAi {
         // while a city of ours is threatened or bleeding. `stock` comes back
         // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.reserve_for_the_threatened_city(g, pid, plan, reserve);
+        // `requisitions`: the highest-ranked open requisition the treasury
+        // covers above the reserve, one a turn, right behind the emergency
+        // defence. Exact no-op with the gene off. See
+        // `advanced/requisitions.rs`.
+        if self.requisition_purchase(g, pid, reserve).is_some() {
+            return true;
+        }
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -23588,6 +23750,10 @@ impl AdvancedAi {
             self.expansion_census.dispatch_calls += 1;
         }
         let mut counts = self.counts(g, pid);
+        // `requisitions`: the board assessed for this turn before its
+        // shortfall is read below; exact no-op with the gene off. See
+        // `advanced/requisitions.rs`.
+        self.requisitions_before_production(g, pid, plan);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
@@ -23744,6 +23910,30 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `requisitions`: the Objective Board's shortfall is a reserve
+            // item ahead of every economic one — the row's nearest idle city
+            // starts the best worth-per-hammer unit of the kind the row
+            // lacks. Exact no-op with the gene off. See
+            // `advanced/requisitions.rs`.
+            if committed.is_none() {
+                if let Some(order) = self.requisition_production_item(g, pid, cid) {
+                    let item = Item::Unit { unit: order.unit };
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        self.requisition_started(g, &order);
+                        counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
             // The first usable empty trade slot is an income-producing asset,
             // not an ordinary low-value unit bid. Once immediate local defence
             // is covered, reserve it in a city that can start a safe route now.
@@ -23795,7 +23985,9 @@ impl AdvancedAi {
             // civvis-20260829T074813Z never bought under version one — at
             // t60 the seat read 0.72 of France with 158 Gold, at t90 0.55
             // with 90 — and Russia took Ostia at t102 at 81 against 208.
-            if committed.is_none() && self.border_parity_2 {
+            // `requisitions`: the Deter row's requisition is this gap at
+            // this city; the block above already served it.
+            if committed.is_none() && self.border_parity_2 && !self.requisitions_on() {
                 if let Some((_, _, _, contact)) = self.border_parity_target(g, pid) {
                     if contact == cid {
                         let defender = self
@@ -25365,6 +25557,11 @@ impl AdvancedAi {
         let land_military = counts
             .military
             .saturating_sub(counts.naval + counts.aircraft);
+        // `requisitions`: the board's summed need sizes the army while the
+        // land military is under it; `desired_military` otherwise, and with
+        // the gene off. See `advanced/requisitions.rs`.
+        let desired_military =
+            self.requisition_army_target(g, pid, desired_military, land_military);
         // Keep empty-city scoring consistent with
         // `redirect_repeatable_projects_for_force_gap`. That pass pauses an
         // existing district race when a war plan is short of land units, but
@@ -29788,8 +29985,16 @@ impl AdvancedAi {
             }
         }
         // On water, a naval military unit occupies a second legal stack with
-        // the embarked land guard and Settler. The sea guard is best effort:
-        // a shortage must not make the expedition stop before it can found.
+        // the embarked land guard and Settler. The live water floor below
+        // refuses an unguarded water leg, so search the whole routeable sea
+        // rather than only the local eight-tile escort radius. A hull can be
+        // several turns away after the army has built it for another job;
+        // binding it now lets `stacked_guard_step` bring it over instead of
+        // leaving the Settler in a permanent hold. Disconnected lakes and
+        // trapped coastal hulls are excluded by the same long-range router
+        // the guard will use. The sea guard is still best effort: if no hull
+        // can reach this water body, the safety floor keeps the expedition
+        // stopped rather than exposing it.
         if afloat && !self.settler_sea_guards.contains_key(&uid) {
             let taken = self.all_bound_settler_guards();
             let sea_guard = g
@@ -29799,7 +30004,6 @@ impl AdvancedAi {
                     let unit = &g.units[candidate];
                     unit.linked_to.is_none()
                         && !taken.contains(candidate)
-                        && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
                         && Self::guard_matches_escort_layer(g, unit, true)
                         && (!self.settler_guard_holds_on()
                             || (unit.hp >= STACKED_GUARD_MIN_HP
@@ -29811,21 +30015,27 @@ impl AdvancedAi {
                                     visible.as_ref().expect("computed under the flag"),
                                 )))
                 })
-                .min_by_key(|candidate| {
+                .filter_map(|candidate| {
+                    let route_distance = g.route_distance(candidate, current, 0)?;
+                    Some((candidate, route_distance))
+                })
+                .min_by_key(|(candidate, route_distance)| {
                     let unit = &g.units[candidate];
                     let spec = &g.rules.units[unit.kind];
                     (
-                        g.wdist(unit.pos, current),
+                        *route_distance,
                         spec.has_ranged_attack(),
                         std::cmp::Reverse(g.unit_strength(unit, true) as i64),
                         *candidate,
                     )
-                });
+                })
+                .map(|(candidate, _)| candidate);
             if let Some(guard) = sea_guard {
                 self.bind_settler_guard(g, uid, guard);
                 think!(self.journal(), Expansion, Detail, "A naval guard joins the settler";
                        "the sea layer shares the water leg while the land guard remains \
-                        responsible for the landing");
+                        responsible for the landing; the hull can route to the embarked \
+                        Settler and will close the gap on its military turn");
             }
         }
         if !self.settler_guards.contains_key(&uid) {

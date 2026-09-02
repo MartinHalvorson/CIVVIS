@@ -195,6 +195,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `chase-every-boost` | off (unmeasured) | Hunt every Eureka and Inspiration: the chase table reads every trigger the engine can judge (`Game::boost_progress`), a boost in hand scales the node, a boost one actionable step away is waited for, the beeline walks the goal's prerequisites by their boosted cost, and production, builders and kills are paid the research a trigger earns. | 1 \| 1 |
 | `coalition-before-war-2` | off (unmeasured) | At the ready strike, invite one credible neighbour to a joint war and wait no more than one turn. | 1 \| 2 |
 | `commitment-owner-acts` | off (unmeasured) | Every open settle or improve commitment whose owner the unit pass left with movement and no order acts on it after the pass — found, improve, or the safe route step — or is released with a recorded reason. | 1 \| 1 |
+| `conversion-majority-alarm-2` | off (unmeasured) | Read each rival civilization's progress toward its own majority, then use the least-converted holdout as the conjunctive victory clock. | 1 \| 2 |
 | `diplomatic-lane-forecast-2` | off (unmeasured) | Version 2 waits until a current suzerainty or already-earned Diplomatic Victory Point proves a real foothold before projecting Congress turns. | 1 \| 2 |
 | `early-project-restraint-2` | off (unmeasured) | Restrain an off-lane repeatable Great-Person project only while its district owes a first building this city can start now. | 1 \| 2 |
 | `enter-the-prophet-race-2` | off (unmeasured) | Enter the secondary Great Prophet race only when the board-aware religious-opening rank admits this seat: two cities, a real Holy Site path, and one of the remaining global slots. | 1 \| 2 |
@@ -207,6 +208,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `objective-board` | off (unmeasured) | The army's turn planned from a ranked Objective Board — rows valued in hammers with a requirement and a deadline — and served by persistent task forces, in place of proximity force groups and the posture ladder; `force_groups` is built from the forces. | 1 \| 1 |
 | `opening-warrior-recon-2` | off (unmeasured) | Before the first city, let only a Warrior directly escorting the Settler reveal terrain first, then reconsider from the ordinary settlement candidates. | 1 \| 2 |
 | `rapid-city-expansion-2` | off (unmeasured) | Version two of `rapid-city-expansion`: aim at the measured five-city opening band without version one's immediate fifteen-city order, non-empty queue preemption, closest-site override, founding-pantheon override, or automatic conquest pivot. | 1 \| 2 |
+| `requisitions` | off (unmeasured) | `requisitions`: the Objective Board's shortfall reaches production and the treasury. | 1 \| 1 |
 | `settler-site-gate` | off (unmeasured) | `settler-site-gate`: a city starts a Settler only while an acceptable, unclaimed site worth founding exists. | 1 \| 1 |
 | `settler-target-floor` | off (unmeasured) | `settler-target-floor`: a Settler is never sent to a site not worth the walk. | 1 \| 1 |
 | `settler-walk-deadline` | off (unmeasured) | A Settler out of a city past its deadline founds the best legal site within reach instead of chasing the ranked one it has not reached. | 1 \| 1 |
@@ -215,6 +217,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
 | `veterans-withdraw-early` | off (unmeasured) | A promoted unit keeps hit points in hand before it withdraws. | 1 \| 1 |
+| `war-policy-via-board` | off (unmeasured) | `war-policy-via-board`: target feasibility, the declaration and the peace term read off the board. | 1 \| 1 |
 | `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
 
 ## Removed from the code

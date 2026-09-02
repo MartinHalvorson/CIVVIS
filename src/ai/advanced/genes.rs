@@ -2015,6 +2015,10 @@ pub const GENES: &[Gene] = &[
     // Version 3 of `border-parity`: one local garrison against an actually
     // visible two-body staging group; buy it without touching production.
     Gene { tag: "border-parity-3", field: "border_parity_3", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_3, disable: AdvancedAi::disable_border_parity_3 },
+    // Version 2 smooths each civilization's majority separately, then reads
+    // the least-converted holdout. One enormous converted empire can no longer
+    // outweigh several untouched civilizations the victory still requires.
+    Gene { tag: "conversion-majority-alarm-2", field: "conversion_majority_alarm_2", kind: Kind::OptIn, enable: AdvancedAi::enable_conversion_majority_alarm_2, disable: AdvancedAi::disable_conversion_majority_alarm_2 },
     // Version 2 enters only after the existing religious-opening rank proves
     // the seat has two cities, a real Holy Site path, and one of the remaining
     // Prophet slots. The four-part commitment still moves as one package.
@@ -2042,6 +2046,30 @@ pub const GENES: &[Gene] = &[
     // objective left the second threatened city with nothing. Priced on the
     // arena first. See `advanced/objective_board.rs`.
     Gene { tag: "objective-board", field: "objective_board", kind: Kind::OptIn, enable: AdvancedAi::enable_objective_board, disable: AdvancedAi::disable_objective_board },
+    // The Objective Board's shortfall reaches production and the treasury:
+    // an idle city starts the unit a short row asks for — the kind the row
+    // lacks (siege, ranged, melee; a shooter for a city, cavalry for a
+    // Destroy falling due), the best WORTH PER HAMMER of that kind rather
+    // than `best_military`'s strongest — Gold buys the top requisition above
+    // the reserve, `border_parity_*` and the bleeding city's defender take
+    // their city and unit from the board's Deter and Defend rows, and
+    // `desired_military` is the board's summed need while the land army is
+    // under it. Inert without `objective-board` (no board to read). Whole-
+    // game no-harm screen beside the board. See `advanced/requisitions.rs`.
+    Gene { tag: "requisitions", field: "requisitions", kind: Kind::OptIn, enable: AdvancedAi::enable_requisitions, disable: AdvancedAi::disable_requisitions },
+    // Who may be a target, when a war is declared and when peace is sued
+    // for, read off the Objective Board's own requirements in place of
+    // empire-wide power ratios: a rival whose nearest city's Siege bill is
+    // over the whole roster is excluded from the target ranking; an
+    // elective or campaign declaration waits until that bill is staged on
+    // the objective's 3–5 ring with no other major war and every Defend row
+    // served; and the `my_power < theirs × 0.62` "outmatched" peace term
+    // becomes "no Siege row against them is feasible AND the tide ledger is
+    // negative over its window (or an urgent Defend row has gone unserved
+    // for three turns)" — a defensive war with a served Defend row is
+    // fought, not begged. Every other peace term stands. See
+    // `advanced/war_policy.rs`.
+    Gene { tag: "war-policy-via-board", field: "war_policy_via_board", kind: Kind::OptIn, enable: AdvancedAi::enable_war_policy_via_board, disable: AdvancedAi::disable_war_policy_via_board },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
