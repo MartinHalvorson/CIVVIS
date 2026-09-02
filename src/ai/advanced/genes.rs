@@ -1916,6 +1916,14 @@ pub const GENES: &[Gene] = &[
     // V2 waits for a Eureka only when its final trigger is already queued and
     // the node is within two turns. The broad v1 remains measurable.
     Gene { tag: "boost-wait-research-2", field: "boost_wait_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research_2, disable: AdvancedAi::disable_boost_wait_research_2 },
+    // Appended at the END so a running screen keeps its positional genome.
+    // 461 of our units died in combat across the 32 live runs of 2026-08-30..09-01,
+    // 408 to barbarians; 352 were at or below 50 HP at the killing blow, 334 had been
+    // hit on an earlier turn and left in reach, 135 were shooters a melee unit walked
+    // onto. The recovery withdraws on the mean blow from visible units; this withdraws
+    // on the top of the roll, remembers raiders in the fog, and screens shooters.
+    // See `advanced/wounded_out_of_reach.rs`.
+    Gene { tag: "wounded-out-of-reach", field: "wounded_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach, disable: AdvancedAi::disable_wounded_out_of_reach },
     // Version 2 of `coalition-before-war`: court only a credible military
     // partner, spend Envoys only to flip the target's client, and make one
     // joint-war invitation at the ready strike.

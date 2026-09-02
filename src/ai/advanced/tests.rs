@@ -12076,6 +12076,124 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     );
 }
 
+/// A placed Spaceport leaves the production queue but still occupies the
+/// district plot. The live mirror stores that state as a tile foundation, so
+/// it must consume the same cap as a queued or completed pad. This is the
+/// t193/t207 shape from civvis-20260901T230916Z: a lower-production city with
+/// an unfinished foundation must keep a higher-production city from opening a
+/// fresh fourth commitment.
+#[test]
+fn science_spaceport_cap_counts_placed_foundations_as_commitments() {
+    let mut game = Game::new_full(1, 40, 24, 71_004, 320, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found capital");
+    let mut cities = game.player_city_ids(0);
+    while cities.len() < 4 {
+        found_test_city(&mut game, 0);
+        cities = game.player_city_ids(0);
+    }
+    game.max_turns = 0;
+    game.players[0].techs.insert(crate::name!("rocketry"));
+    game.players[0]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+
+    // Normalize the fixture so the only variable is the Spaceport state.
+    for city in &cities {
+        let center = game.cities[city].pos;
+        for position in game.cities[city].owned_tiles.clone() {
+            if position == center {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+        }
+    }
+    for (rank, city) in cities.iter().copied().enumerate() {
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            city,
+            Yields {
+                production: rank as f64 * 100.0,
+                ..Yields::default()
+            },
+        );
+    }
+
+    install_ai_test_district(&mut game, cities[0], "spaceport");
+    install_ai_test_district(&mut game, cities[1], "spaceport");
+
+    let foundation_city = cities[2];
+    let foundation_item = game
+        .producible_items(0, foundation_city)
+        .into_iter()
+        .find(|item| {
+            matches!(item, Item::District { district, .. }
+                if game.district_family(*district) == "spaceport")
+        })
+        .expect("the third city can place a Spaceport");
+    let foundation_pos = match foundation_item {
+        Item::District { pos, .. } => pos,
+        item => panic!("expected a Spaceport item, got {item:?}"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city: foundation_city,
+            item: foundation_item,
+        },
+    )
+    .expect("place a Spaceport foundation");
+    // Civ VI removes a placed district from the queue once its plot is chosen.
+    game.cities.get_mut(&foundation_city).unwrap().queue.clear();
+    assert!(game.map.tiles[&foundation_pos]
+        .district_foundation
+        .as_ref()
+        .is_some_and(|foundation| game.district_family(foundation.district) == "spaceport"));
+
+    let free_city = cities[3];
+    let free_item = game
+        .producible_items(0, free_city)
+        .into_iter()
+        .find(|item| {
+            matches!(item, Item::District { district, .. }
+                if game.district_family(*district) == "spaceport")
+        })
+        .expect("the fourth city can place a Spaceport");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(AdvancedAi::science_spaceport_commitments(&game, 0), 3);
+    assert_eq!(
+        ai.science_spaceport_retained_cities(&game, 0),
+        std::iter::once(foundation_city).collect(),
+        "an existing foundation fills the final launch-site slot before a fresh city"
+    );
+    assert_eq!(
+        ai.production_value(&game, 0, free_city, &free_item, &plan, &ai.counts(&game, 0)),
+        -10_000.0,
+        "the cap must veto a fresh Spaceport once foundations fill it"
+    );
+}
+
 /// ★★★★ The last fifty turns of a Settler game are a tally, and the science
 /// lane spent them on a launch pad (civvis-20260816T093036Z: Spaceport at
 /// t226 + Manhattan Project, 871 vs 1,157; T101521Z: two Spaceports after
@@ -42425,6 +42543,271 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
             .is_some_and(|sites| sites.contains_key(&target)),
         "the destination goes through the dead-site machinery, not into the void"
     );
+}
+
+// ═══ wounded-out-of-reach ═══════════════════════════════════════════════════
+
+/// `wounded-out-of-reach` is a native opt-in, off in both controllers, with
+/// a published row and two working toggles.
+#[test]
+fn wounded_out_of_reach_is_a_native_opt_in_off_in_both_controllers() {
+    super::test_support::opt_in_off_in_both_controllers("wounded-out-of-reach", |ai| {
+        ai.wounded_out_of_reach
+    });
+}
+
+/// A fixture guard: `false` skips the test the way the sibling raider
+/// fixtures do, unless `CIVVIS_STRICT_FIXTURES` is set, when a fixture that
+/// does not hold is a failure rather than a silent pass.
+fn fixture_holds(condition: bool, what: &str) -> bool {
+    if !condition && std::env::var_os("CIVVIS_STRICT_FIXTURES").is_some() {
+        panic!("fixture does not hold: {what}");
+    }
+    condition
+}
+
+/// A flat plains board with one of our cities two tiles from an exposed
+/// `front` tile and the Barbarian seat alive and at war with us. Every unit
+/// the generator placed is removed so the only units are the test's own.
+fn wounded_out_of_reach_board(seed: u64) -> Option<(Game, Pos, Pos, usize)> {
+    let mut g = Game::new_full(2, 20, 14, seed, 80, 0, true);
+    let barbarian = g.barb_pid?;
+    for unit in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(unit);
+    }
+    g.map.clear_rivers();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        tile.owner_city = None;
+        tile.hills = false;
+        tile.road = 0;
+    }
+    g.at_war.insert((0, barbarian));
+    g.at_war.insert((barbarian, 0));
+    g.current = 0;
+    let front = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| g.wdisk(*position, 3).len() == 37)?;
+    let refuge = g
+        .wdisk(front, 2)
+        .into_iter()
+        .find(|position| g.wdist(*position, front) == 2)?;
+    g.found_city_for(0, refuge, Some("Refuge".to_string()));
+    Some((g, front, refuge, barbarian))
+}
+
+/// A tile two steps from `front` on the far side from `refuge`, for the
+/// raider to stand on: it can reach `front` next turn and not the city.
+fn far_side_of(g: &Game, front: Pos, refuge: Pos) -> Option<Pos> {
+    g.wdisk(front, 2)
+        .into_iter()
+        .filter(|position| g.wdist(*position, front) == 2 && g.wdist(*position, refuge) >= 3)
+        .max_by_key(|position| g.wdist(*position, refuge))
+}
+
+/// The recovery evacuates on the MEAN blow; a unit in the band between the
+/// mean and the top of the roll stands, and dies to the roll. With the gene
+/// on it leaves the raider's reach; off, the same board leaves it standing.
+#[test]
+fn a_unit_the_roll_could_kill_leaves_the_raiders_reach() {
+    let Some((mut g, front, refuge, barbarian)) = wounded_out_of_reach_board(91_611) else {
+        assert!(fixture_holds(false, "a board with a barbarian seat"));
+        return;
+    };
+    let Some(lair) = far_side_of(&g, front, refuge) else {
+        assert!(fixture_holds(false, "a far-side tile for the raider"));
+        return;
+    };
+    let ours = g.spawn_test_unit("warrior", 0, front);
+    let raider = g.spawn_test_unit("horseman", barbarian, lair);
+    if !fixture_holds(
+        g.attack_reach(raider).contains(&front) && g.unit_visible_to(raider, 0),
+        "the raider is in reach of the front tile and in sight",
+    ) {
+        return;
+    }
+    let ai_off = AdvancedAi::new();
+    let envelopes = ai_off.base.enemy_attack_envelopes(&g, 0);
+    // The mean blow depends on the defender's hit points (a damaged unit
+    // defends weaker), so walk the hit points down until they sit in the
+    // band between the mean and the top of the roll.
+    let mut band = None;
+    for hp in (46..=100).rev() {
+        g.units.get_mut(&ours).unwrap().hp = hp;
+        let mean = BasicAi::incoming_damage(&g, 0, ours, front, &envelopes).total;
+        if f64::from(hp) > mean && f64::from(hp) <= mean * crate::ai::COMBAT_ROLL_MAX {
+            band = Some((hp, mean));
+            break;
+        }
+    }
+    let Some((hp, mean)) = band else {
+        if !fixture_holds(false, "an hp in the roll band above the withdrawal line") {
+            return;
+        }
+        unreachable!();
+    };
+    g.units.get_mut(&ours).unwrap().hp = hp;
+    assert!(
+        f64::from(hp) > mean,
+        "the mean blow leaves it alive: {hp} vs {mean:.1}"
+    );
+    assert!(
+        f64::from(hp) <= mean * crate::ai::COMBAT_ROLL_MAX,
+        "the top of the roll does not: {hp} vs {:.1}",
+        mean * crate::ai::COMBAT_ROLL_MAX
+    );
+
+    // Off: the recovery reads the mean and leaves it standing.
+    let mut untouched = g.clone();
+    assert_eq!(
+        ai_off.wounded_out_of_reach_step(&mut untouched, 0, ours),
+        None
+    );
+    assert_eq!(ai_off.base.retreat_step(&mut untouched, 0, ours), None);
+    assert_eq!(
+        untouched.units[&ours].pos, front,
+        "the shipped recovery left it in reach"
+    );
+
+    // On: it leaves the reach.
+    let mut ai_on = AdvancedAi::new();
+    ai_on.enable_wounded_out_of_reach();
+    ai_on.attach_journal(Journal::recording());
+    assert_eq!(ai_on.wounded_out_of_reach_step(&mut g, 0, ours), Some(true));
+    let after = g.units[&ours].pos;
+    assert_ne!(after, front, "it moved");
+    // Four movement points of cavalry cover most of an open plain; the
+    // refuge a two-move warrior can reach is the city, where the blow lands
+    // on the district, or failing that a tile outside the envelope.
+    assert!(
+        after == refuge || !g.attack_reach(raider).contains(&after),
+        "it stands in the city or where the horseman cannot strike it: {after:?} (city {refuge:?})"
+    );
+}
+
+/// A shooter with a melee raider two tiles away and nothing beside it steps
+/// out of the raider's reach; with a warrior standing between them it holds.
+#[test]
+fn an_unscreened_shooter_steps_out_of_a_raiders_reach_and_a_screened_one_holds() {
+    let Some((mut g, front, refuge, barbarian)) = wounded_out_of_reach_board(91_613) else {
+        assert!(fixture_holds(false, "a board with a barbarian seat"));
+        return;
+    };
+    let Some(lair) = far_side_of(&g, front, refuge) else {
+        assert!(fixture_holds(false, "a far-side tile for the raider"));
+        return;
+    };
+    let archer = g.spawn_test_unit("archer", 0, front);
+    let raider = g.spawn_test_unit("warrior", barbarian, lair);
+    if !fixture_holds(
+        g.attack_reach(raider).contains(&front) && g.unit_visible_to(raider, 0),
+        "the raider is in reach of the front tile and in sight",
+    ) {
+        return;
+    }
+    let ai_off = AdvancedAi::new();
+    let mut untouched = g.clone();
+    assert_eq!(
+        ai_off.wounded_out_of_reach_step(&mut untouched, 0, archer),
+        None
+    );
+    assert_eq!(
+        ai_off.base.retreat_step(&mut untouched, 0, archer),
+        None,
+        "a full-health archer is nothing the recovery evacuates"
+    );
+
+    let mut ai_on = AdvancedAi::new();
+    ai_on.enable_wounded_out_of_reach();
+    ai_on.attach_journal(Journal::recording());
+
+    // Screened: a warrior on the tile between them, no farther from the
+    // raider than the archer is.
+    let Some(between) = g.nbrs(front).into_iter().find(|position| {
+        g.wdist(*position, lair) <= g.wdist(front, lair) && g.can_stop(archer, *position)
+    }) else {
+        assert!(fixture_holds(
+            false,
+            "a tile between the archer and the raider"
+        ));
+        return;
+    };
+    let mut screened = g.clone();
+    let guard = screened.spawn_test_unit("warrior", 0, between);
+    assert_eq!(screened.units[&guard].pos, between);
+    assert_eq!(
+        ai_on.wounded_out_of_reach_step(&mut screened, 0, archer),
+        None,
+        "with a melee unit beside it the archer keeps its ground"
+    );
+
+    // Unscreened: it leaves the reach.
+    assert_eq!(
+        ai_on.wounded_out_of_reach_step(&mut g, 0, archer),
+        Some(true)
+    );
+    let after = g.units[&archer].pos;
+    assert_ne!(after, front);
+    assert!(
+        !g.attack_reach(raider).contains(&after),
+        "the archer ended its turn outside the warrior's reach: {after:?}"
+    );
+}
+
+/// One attack this turn that kills the last thing in reach is the attack
+/// scan's decision: the step stands down rather than walking away from a
+/// kill.
+#[test]
+fn a_wounded_unit_that_can_finish_its_only_threat_is_left_to_the_attack_scan() {
+    let Some((mut g, front, refuge, barbarian)) = wounded_out_of_reach_board(91_617) else {
+        assert!(fixture_holds(false, "a board with a barbarian seat"));
+        return;
+    };
+    let Some(adjacent) = g
+        .nbrs(front)
+        .into_iter()
+        .find(|position| g.wdist(*position, refuge) >= 2)
+    else {
+        assert!(fixture_holds(
+            false,
+            "a neighbour of the front tile away from the city"
+        ));
+        return;
+    };
+    let ours = g.spawn_test_unit("warrior", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 40;
+    let raider = g.spawn_test_unit("warrior", barbarian, adjacent);
+    g.units.get_mut(&raider).unwrap().hp = 5;
+    if !fixture_holds(
+        g.attack_reach(raider).contains(&front) && g.unit_visible_to(raider, 0),
+        "the raider is in reach of the front tile and in sight",
+    ) {
+        return;
+    }
+    let can_attack = g
+        .legal_actions_within(0, crate::game::ActionFamilies::UNITS)
+        .into_iter()
+        .any(|action| matches!(action, Action::Attack { unit, .. } if unit == ours));
+    if !fixture_holds(can_attack, "an attack on the adjacent raider is legal") {
+        return;
+    }
+    let mut ai_on = AdvancedAi::new();
+    ai_on.enable_wounded_out_of_reach();
+    assert_eq!(
+        ai_on.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a 5 HP raider beside a 40 HP warrior is a kill, not a reason to withdraw"
+    );
+    assert_eq!(g.units[&ours].pos, front, "and nothing moved");
 }
 
 #[test]
