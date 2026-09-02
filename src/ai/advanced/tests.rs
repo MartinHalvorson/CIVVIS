@@ -11052,6 +11052,89 @@ fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
 }
 
 #[test]
+fn enter_the_prophet_race_2_waits_for_a_feasible_commitment() {
+    let mut game = Game::new_full(4, 34, 20, 76_108, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    for tech in ["animal_husbandry", "mining"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+
+    assert!(!v2.enter_the_prophet_race);
+    assert!(
+        !v2.enter_the_prophet_race_2,
+        "the new family member is opt-in"
+    );
+    v2.enable_enter_the_prophet_race();
+    assert!(v2.enter_the_prophet_race);
+    assert!(!v2.enter_the_prophet_race_2);
+    v2.enable_enter_the_prophet_race_2();
+    assert!(!v2.enter_the_prophet_race);
+    assert!(v2.enter_the_prophet_race_2);
+    v2.enable_enter_the_prophet_race();
+    assert!(v2.enter_the_prophet_race);
+    assert!(
+        !v2.enter_the_prophet_race_2,
+        "the last enabled version wins"
+    );
+    v2.enable_enter_the_prophet_race_2();
+
+    assert!(v2.prophet_race_open_for(&game, 0));
+    assert!(
+        !v2.religious_opening_viable(&game, 0),
+        "one city cannot pay a secondary lane's district commitment"
+    );
+    assert!(!v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    v2.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "v2 must not charge the research fee before the production path exists"
+    );
+
+    let capital = game.player_city_ids(0)[0];
+    let anchor = game.cities[&capital].pos;
+    found_nearby_test_city(&mut game, 0, anchor);
+    game.players[0].research = None;
+    assert!(
+        v2.religious_opening_viable(&game, 0),
+        "two cities and a placeable Holy Site make this seat a real contender"
+    );
+    assert!(v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    v2.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("astrology"));
+
+    v2.take_turn_inner(&mut game, 0);
+    assert!(v2.base.enter_prophet_race);
+    assert!(v2.base.pursue_religion);
+
+    game.players[0].religion = Some("Feasible Faith".to_string());
+    v2.take_turn_inner(&mut game, 0);
+    assert!(
+        !v2.base.enter_prophet_race,
+        "a founder no longer pays an entry fee"
+    );
+    assert!(
+        v2.base.pursue_religion,
+        "the admitted package still uses the religion it won"
+    );
+}
+
+#[test]
 fn skip_the_prophet_race_2_leaves_only_a_last_call_race() {
     let mut game = Game::new_full(6, 74, 46, 76_107, 250, 0, false);
     let mut cities = Vec::new();

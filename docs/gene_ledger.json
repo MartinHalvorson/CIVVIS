@@ -1547,6 +1547,15 @@
           "early-project-restraint-2": null
         }
       },
+      "enter-the-prophet-race": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "enter-the-prophet-race": null,
+          "enter-the-prophet-race-2": null
+        }
+      },
       "first-builder-reserve": {
         "rule_on": [],
         "head": null,
