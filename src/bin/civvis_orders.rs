@@ -11073,7 +11073,12 @@ mod tests {
                 unit: slinger,
                 target: plot(5, 4),
             }),
-            ("unit", Some(100), Some("AIR_ATTACK".to_string()), Some((5, 4))),
+            (
+                "unit",
+                Some(100),
+                Some("AIR_ATTACK".to_string()),
+                Some((5, 4))
+            ),
             "the target plot, in host offsets"
         );
         assert_eq!(
