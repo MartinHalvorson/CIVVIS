@@ -2187,6 +2187,13 @@ pub const GENES: &[Gene] = &[
     // safest neighbour that strictly improves on staying. Appended at the
     // END, above the markers, so a running screen keeps its positional genome.
     Gene { tag: "standing-still-is-a-risk", field: "standing_still_is_a_risk", kind: Kind::OptIn, enable: AdvancedAi::enable_standing_still_is_a_risk, disable: AdvancedAi::disable_standing_still_is_a_risk },
+    // `detour-keeps-the-site-worth` (2026-09-02): the threat detour takes the
+    // best site whose approach is SAFE, not a site of comparable worth. Over
+    // 53 live Civ VI runs the median detour is +21% better, but 24% of them
+    // give up more than 40% of the deferred site's value (worst -83%). The
+    // gene refuses those and keeps the original target. Appended at the END,
+    // above the markers, so a running screen keeps its positional genome.
+    Gene { tag: "detour-keeps-the-site-worth", field: "detour_keeps_the_site_worth", kind: Kind::OptIn, enable: AdvancedAi::enable_detour_keeps_the_site_worth, disable: AdvancedAi::disable_detour_keeps_the_site_worth },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

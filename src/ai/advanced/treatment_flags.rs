@@ -4157,6 +4157,18 @@ impl AdvancedAi {
         self.standing_still_is_a_risk = false;
     }
 
+    /// A threat detour refuses a fallback worth less than
+    /// `SETTLER_DETOUR_VALUE_FLOOR` of the site it defers. See the field doc
+    /// on `AdvancedAi`.
+    pub fn enable_detour_keeps_the_site_worth(&mut self) {
+        self.detour_keeps_the_site_worth = true;
+    }
+
+    /// The twin of `enable_detour_keeps_the_site_worth`.
+    pub fn disable_detour_keeps_the_site_worth(&mut self) {
+        self.detour_keeps_the_site_worth = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

@@ -1590,6 +1590,18 @@ const SETTLER_THREAT_DETOUR_TURNS: u32 = 6;
 /// only when a visible blocker has already stopped the preferred route.
 const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
 
+/// `detour-keeps-the-site-worth`: the least of the deferred site's value a
+/// detour may settle for. The detour picks the best site whose approach is
+/// SAFE, which is not the same as a site worth going to. Measured over 53
+/// live Civ VI runs, on the 41 detours whose journal prices both ends: the
+/// median detour is **+21%** better than the site it leaves, so the mechanism
+/// earns its place — but **24%** of them cost more than 40% of that value,
+/// the worst -83%, and the losses cluster below this floor rather than
+/// spreading (only ~4 of 41 land between -10% and -40%). Below the floor the
+/// original site is kept: the approach is merely threatened, and the
+/// blocker's own clock is shorter than a walk to half a city.
+const SETTLER_DETOUR_VALUE_FLOOR: f64 = 0.6;
+
 /// `settle_sooner`: what one turn of a Settler's walk costs, on top of the
 /// per-tile discount `settle_sites` already applies and the route's movement
 /// points. The existing terms come to roughly 2.5–3.4 points a turn against
@@ -4931,6 +4943,18 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// A threat detour must keep most of the site's worth. See
+    /// `SETTLER_DETOUR_VALUE_FLOOR` for the live measurement: the median
+    /// detour improves on the site it leaves, but a quarter of them give up
+    /// more than 40% of its value walking to the nearest SAFE site rather
+    /// than a comparable one. With the gene on, a fallback worth less than
+    /// `SETTLER_DETOUR_VALUE_FLOOR` of the deferred site is refused and the
+    /// original target kept — the deferral is rolled back exactly as the
+    /// no-safe-alternate path already does, so the site stays in the ranking
+    /// and the settler waits out a blocker whose clock is the shorter one.
+    ///
+    /// Opt-in gene `detour-keeps-the-site-worth`.
+    detour_keeps_the_site_worth: bool,
     /// `doomed-blow-veto`: a unit whose every blow this turn would leave it
     /// dead on the enemy's next — return damage plus the danger at the stand
     /// against its hit points — is rotated instead of left to the ladder to
@@ -7719,6 +7743,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
             chase_every_boost: false,
             chase_every_boost_2: false,
@@ -30248,6 +30273,19 @@ impl AdvancedAi {
                 }
             }
         }
+        // `detour-keeps-the-site-worth`: the fallback above is the best site
+        // whose approach is SAFE, which is not the same as a site worth the
+        // walk. Refuse one that gives up more of the deferred site's value
+        // than the floor allows; the caller keeps the original target and the
+        // deferral is rolled back below, exactly as a missing alternate is.
+        let fallback = fallback.filter(|candidate| {
+            if !self.detour_keeps_the_site_worth {
+                return true;
+            }
+            let kept = self.settle_value(g, pid, target);
+            kept <= 0.0
+                || self.settle_value(g, pid, *candidate) >= kept * SETTLER_DETOUR_VALUE_FLOOR
+        });
         let Some(fallback) = fallback else {
             match previous {
                 Some(old_until) => {
