@@ -3256,6 +3256,34 @@ exported at tier 2 is priced 17 CS above the same hostile at tier 0 by
 `attacks_remaining: 0` reaches the planted hostile and rival unit on both
 paths.
 
+### Shipped: the combat row is the engine's own pair, and the pair is public (2026-09-01, PR #3017)
+
+`Game::melee_exchange_strengths` and `Game::ranged_strike_strengths`
+(`src/game/actions.rs`) are the two halves `do_attack` and `do_ranged`
+resolve a fight with — matchup, flanking, adjacent support, the tile's
+defence, the river and amphibious penalties, the ranged-versus-unit malus,
+each already through `effective_strength` for the wounded penalty. They were
+`pub(crate)`, so the one instrument outside the engine that prices a fight,
+`live_divergence::combat_pairs`, priced it as
+`expected_damage(unit_strength(att, false), unit_strength(def, true))` — two
+bare strengths, none of those terms — and a `combat_damage` row could blame
+the model for a bonus the engine itself would have paid. Both functions are
+now `pub`, documented as the engine's own arithmetic exposed for planners,
+and `combat_pairs` routes every fight through the exact pair: melee via
+`melee_exchange_strengths(uid, did)`, a shot via
+`ranged_strike_strengths(uid, did, defender.pos)`. A fight is a shot when the
+mod's `strike` event for that attacker on that turn carried the verb
+`RANGE_ATTACK` (joined by the reader), or when the attacker has ranged
+strength and did not stand adjacent — by the ledger's `attacker`/`defender`
+positions when the combat opened, by the board's when the ledger has none.
+The bare formula remains only where the exact pair is `None`. Two tests on a
+fixture board pin it: a melee row equals `expected_damage` of the exact
+exchange and differs from the bare formula by the hill under the defender;
+a shot routes through the ranged pair by distance, by ledger positions and by
+verb. The `combat_damage` scoreboard row will move on the next
+`tools/live_divergence.py` run — the historical figure (MAE 11.8 hp on
+`civvis-20260826T184456Z`) was measured against the bare formula.
+
 ### How to re-measure
 
 The border table is one join: `orders.sqlite` (`kind='unit' and
