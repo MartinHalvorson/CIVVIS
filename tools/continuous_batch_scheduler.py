@@ -504,7 +504,16 @@ def ensure_source(state_root: Path, state: dict[str, Any], repo: Path) -> dict[s
     if git_output(source_dir, "status", "--porcelain"):
         raise SchedulerError(f"detached batch source is dirty: {source_dir}")
     run_checked(
-        ["cargo", "build", "--release", "--locked", "--bin", "gene_screen"],
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--locked",
+            "--features",
+            "developer-tools",
+            "--bin",
+            "gene_screen",
+        ],
         cwd=source_dir,
         description="build pinned gene_screen",
     )
