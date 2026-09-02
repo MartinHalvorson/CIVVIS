@@ -33191,8 +33191,9 @@ fn air_surge_ai() -> AdvancedAi {
     ai
 }
 
-/// Grant the breakthrough and the metal, so the wing is only a question of
-/// production.
+/// Grant the breakthrough and two improved Aluminum sources. Gathering Storm
+/// produces two Aluminum per improved source, so this is the live-run shape
+/// the user reported: +4 a turn, enough to sustain a four-Bomber ceiling.
 fn air_surge_arm(game: &mut Game) {
     game.players[0]
         .techs
@@ -33202,6 +33203,33 @@ fn air_surge_arm(game: &mut Game) {
     game.players[0]
         .strategic_resources
         .insert(crate::name!("aluminum"), 400.0);
+    let mut sources = Vec::new();
+    for city in game.player_city_ids(0) {
+        let city = &game.cities[&city];
+        for position in &city.owned_tiles {
+            if *position != city.pos {
+                sources.push(*position);
+                if sources.len() == 2 {
+                    break;
+                }
+            }
+        }
+        if sources.len() == 2 {
+            break;
+        }
+    }
+    assert_eq!(
+        sources.len(),
+        2,
+        "fixture needs two owned improvement tiles"
+    );
+    for position in sources {
+        let tile = game.map.tiles.get_mut(&position).expect("owned tile");
+        tile.resource = Some(crate::name!("aluminum"));
+        tile.improvement = Some(crate::name!("mine"));
+        tile.pillaged = false;
+    }
+    assert_eq!(game.strategic_resource_rate(0, "aluminum"), 4.0);
 }
 
 /// The gene is off in production, and an inactive surge must be invisible:
@@ -33312,6 +33340,7 @@ fn the_appointment_names_a_city_the_wing_can_reach() {
         .expect("a reachable rival city is an appointable surge");
     assert_eq!(plan.target_player, 1);
     assert_eq!(plan.objective_city, objective);
+    assert_eq!(plan.objective_pos, game.cities[&objective].pos);
     assert_eq!(plan.phase, air_surge::AirSurgePhase::Beeline);
     assert_eq!(
         game.cities[&plan.objective_city].owner, 1,
@@ -33568,10 +33597,11 @@ fn the_surge_stands_down_when_no_aluminium_arrives() {
     );
 }
 
-/// The declaration waits for the whole package. Half a surge is a war opened
-/// with the escort the wing was supposed to clear the way for.
+/// The first two Bombers and two capture bodies are the launch package. The
+/// other two Bombers and bodies are follow-through for the continent, not a
+/// reason to leave a vulnerable neighbour alive.
 #[test]
-fn the_declaration_waits_for_the_wing_and_the_escort() {
+fn the_declaration_launches_at_two_bombers_and_two_capture_bodies() {
     let (mut game, _, _) = air_surge_fixture(941_108);
     air_surge_arm(&mut game);
     let mut ai = air_surge_ai();
@@ -33599,21 +33629,26 @@ fn the_declaration_waits_for_the_wing_and_the_escort() {
         "an incomplete package must not declare"
     );
 
-    for _ in 1..air_surge::AIR_SURGE_BOMBERS {
+    assert_eq!(
+        AdvancedAi::air_surge_bomber_goal(&game, 0),
+        air_surge::AIR_SURGE_BOMBERS,
+        "+4 Aluminum per turn sustains all four Bombers"
+    );
+    for _ in 1..air_surge::AIR_SURGE_LAUNCH_BOMBERS {
         game.spawn_test_unit("bomber", 0, home);
     }
-    for _ in 0..air_surge::AIR_SURGE_BODIES {
+    for _ in 0..air_surge::AIR_SURGE_LAUNCH_BODIES {
         game.spawn_test_unit(plan.body_unit.as_str(), 0, home);
     }
     ai.maintain_air_surge(&game, 0);
     assert_eq!(
         ai.air_surge_plan.as_ref().map(|plan| plan.phase),
         Some(air_surge::AirSurgePhase::Strike),
-        "a complete package is owed a declaration"
+        "the initial strike package is owed a declaration"
     );
 
     assert!(ai.air_surge_opening(&mut game, 0, 1));
-    assert!(game.is_at_war(0, 1), "the complete package opens the war");
+    assert!(game.is_at_war(0, 1), "the initial package opens the war");
     assert_eq!(ai.air_surge_census.declarations, 1);
     assert_eq!(
         ai.air_surge_plan.as_ref().map(|plan| plan.phase),
@@ -33624,6 +33659,51 @@ fn the_declaration_waits_for_the_wing_and_the_escort() {
             .as_ref()
             .and_then(|plan| plan.declared_turn),
         Some(game.turn)
+    );
+    assert!(
+        ai.air_surge_production_value(
+            &game,
+            0,
+            &Item::Unit {
+                unit: crate::name!("bomber"),
+            },
+            1.0,
+        )
+        .is_some(),
+        "war starts at two, while +4 Aluminum keeps building toward four"
+    );
+}
+
+/// `--fresh-board` recreates city ids every frame. The objective coordinate
+/// is the stable identity, so an unrelated current-board id cannot make a
+/// still-Macedonian city look as though it changed owner.
+#[test]
+fn a_fresh_board_rebinds_the_air_surge_objective_by_coordinate() {
+    let (mut game, stale_city, _) = air_surge_fixture(941_115);
+    air_surge_arm(&mut game);
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    let plan = ai.air_surge_plan.as_mut().expect("an appointed surge");
+    let objective = plan.objective_city;
+    let objective_pos = plan.objective_pos;
+    assert_ne!(stale_city, objective, "the stale id must name another city");
+    plan.objective_city = stale_city;
+    assert_eq!(plan.objective_pos, objective_pos);
+
+    // This is the exact condition after a fresh mirror rebuild: the retained
+    // id now names a different city, while the City Center coordinate remains
+    // Pella's durable identity.
+    game.turn += 1;
+    ai.maintain_air_surge(&game, 0);
+    let rebound = ai
+        .air_surge_plan
+        .expect("the target still belongs to the rival");
+    assert_eq!(rebound.objective_city, objective);
+    assert_eq!(rebound.objective_pos, objective_pos);
+    assert_eq!(
+        ai.air_surge_census.aborts.get("objective changed owner"),
+        None,
+        "a reconstruction id change is not a capture or a stand-down"
     );
 }
 
@@ -36649,6 +36729,113 @@ fn diplomatic_lane_forecast_still_has_to_be_earned() {
     assert!(
         armed > barren,
         "the floor has to move the reading ({armed} vs {barren})"
+    );
+}
+
+/// V2 keeps the calendar arithmetic, but a bank of Favor by itself is no
+/// longer permission to switch the whole plan to Diplomacy. A point actually
+/// earned from Congress or a city-state already under our suzerainty is the
+/// concrete foothold that turns the projection back on, and its speculative
+/// reading stays below realised lane progress.
+#[test]
+fn diplomatic_lane_forecast_two_requires_earned_traction_and_caps_a_projection() {
+    let mut v1 = AdvancedAi::new();
+    v1.enable_diplomatic_lane_forecast();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_diplomatic_lane_forecast_2();
+    let shipped = AdvancedAi::new();
+    let mut game = Game::new(6, 40, 26, 5_104, 250, 9);
+    game.turn = 60;
+    game.players[0].diplomatic_favor = 2_000.0;
+
+    let speculative = v1.lane_progress_table(&game, 0)[3];
+    assert!(speculative > 0, "v1 sees the large Favor balance");
+    assert_eq!(
+        v2.lane_progress_table(&game, 0)[3],
+        shipped.lane_progress_table(&game, 0)[3],
+        "v2 does not treat Favor alone as a diplomatic opening"
+    );
+
+    game.players[0].dvp = 1;
+    let earned_v1 = v1.lane_progress_table(&game, 0)[3];
+    let earned_v2 = v2.lane_progress_table(&game, 0)[3];
+    assert!(
+        earned_v1 > DIPLOMATIC_FORECAST_OPENING_CAP,
+        "fixture makes v1's projection able to outrank a real opening ({earned_v1})"
+    );
+    assert!(
+        earned_v2 > shipped.lane_progress_table(&game, 0)[3]
+            && earned_v2 <= DIPLOMATIC_FORECAST_OPENING_CAP,
+        "an earned point restores v2 only as a bounded candidate ({earned_v2})"
+    );
+
+    let mut suzerain = game.clone();
+    suzerain.players[0].dvp = 0;
+    let minor = suzerain
+        .players
+        .iter()
+        .find(|player| player.alive && player.is_minor && !player.is_barbarian)
+        .expect("fixture has a living city-state")
+        .id;
+    suzerain.players[0].envoys = vec![(minor, 3)];
+    assert_eq!(suzerain.suzerain_of(minor), Some(0));
+    let suzerain_v1 = v1.lane_progress_table(&suzerain, 0)[3];
+    let suzerain_v2 = v2.lane_progress_table(&suzerain, 0)[3];
+    assert!(
+        suzerain_v1 > DIPLOMATIC_FORECAST_OPENING_CAP,
+        "fixture makes v1's suzerain projection able to outrank a real opening ({suzerain_v1})"
+    );
+    assert!(
+        suzerain_v2 > shipped.lane_progress_table(&suzerain, 0)[3]
+            && suzerain_v2 <= DIPLOMATIC_FORECAST_OPENING_CAP,
+        "a current suzerainty restores v2 only as a bounded candidate ({suzerain_v2})"
+    );
+
+    let mut progressed = game.clone();
+    progressed.players[0].dvp = 10;
+    assert_eq!(
+        v2.lane_progress_table(&progressed, 0)[3],
+        50,
+        "ten earned DVP outrank the cap through the lane's actual tally"
+    );
+}
+
+/// `diplomatic-lane-forecast-2` is a distinct screenable version.  Switching
+/// versions is exclusive, so no screen arm can accidentally combine v1's
+/// speculative opening with v2's foothold gate.
+#[test]
+fn diplomatic_lane_forecast_two_is_opt_in_and_turns_version_one_off() {
+    let v2 = GENES
+        .iter()
+        .find(|gene| gene.tag == "diplomatic-lane-forecast-2")
+        .expect("version 2 is published");
+    assert!(v2.opt_in() && v2.screenable() && !v2.live());
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_diplomatic_lane_forecast();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (true, false),
+        "v1 begins as the sole active version"
+    );
+    ai.enable_diplomatic_lane_forecast_2();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (false, true),
+        "v2 turns the speculative version off"
+    );
+    ai.enable_diplomatic_lane_forecast();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (true, false),
+        "v1 can likewise replace v2"
+    );
+    ai.enable_diplomatic_lane_forecast_2();
+    ai.disable_diplomatic_lane_forecast_2();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (false, false),
+        "v2 remains independently reversible"
     );
 }
 

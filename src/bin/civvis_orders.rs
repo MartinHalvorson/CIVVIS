@@ -957,8 +957,9 @@ impl HostMoveRefusals {
     /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
     /// again; the host records that as `from == destination` / `move_refused`.
     /// Waiting for the next turn is the only useful retry because this frame has
-    /// no newer authoritative position. FORTIFY and civilian CAPTURE have the
-    /// same stale-state failure mode. The diplomacy arm has the same shape:
+    /// no newer authoritative position. FORTIFY, civilian CAPTURE and SWAP have
+    /// the same stale-state failure mode (a swap re-derived from the old frame
+    /// is aimed at the tile the unit has already taken). The diplomacy arm has the same shape:
     /// its pending/cooldown guards mean a repeated deal order can only be
     /// refused again. Attack orders are deliberately excluded: a fresh combat
     /// frame may legitimately finish the same target.
@@ -981,7 +982,7 @@ impl HostMoveRefusals {
             let Some(verb) = order.verb.as_deref() else {
                 return true;
             };
-            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
+            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY" | "SWAP") {
                 let key = HostUnitOrderKey {
                     verb: verb.to_string(),
                     pos: order.pos,
@@ -1766,9 +1767,10 @@ fn append_border_buy_order(
 // holds none of, the host sells a copy as an ordinary deal, and in the nine
 // recorded sales the AI asked 2–14 Gold a turn per copy; one copy is +1
 // Amenity in four cities. `Game::quick_deals` does quote a luxury PURCHASE,
-// but the mirror carries no rival's tradeable stock and `border_buy_ceiling`
-// rightly refuses the shape, so — like the favor sale and the passage
-// purchase — the order is composed here from the export's own facts: the
+// but its result is not enough to choose a seller; the mirror now carries the
+// host's met-gated tradeable luxury catalogue and `border_buy_ceiling` rightly
+// refuses the shape, so — like the favor sale and the passage purchase — the
+// order is composed here from the export's own facts: the
 // amenity ledger the host reports per city, the net income, the treasury,
 // the rivals' war state and gold. The Lua arm reads the RIVAL's own
 // tradeable list, takes the first luxury the host says the seat holds none
@@ -1776,8 +1778,9 @@ fn append_border_buy_order(
 // the ceiling carried in `x`.
 //
 // Cadence-gated like its neighbours (phase 4, the last free slot of the
-// six-turn deal week), aimed at the richest met major at peace with no deal
-// already heading its way this turn; the mod's own cooldowns
+// six-turn deal week), aimed at the richest met major at peace that the host
+// says has at least one tradeable luxury, with no deal already heading its
+// way this turn; the mod's own cooldowns
 // (`TradeRetryTurns`) meter re-asks after a `buy_no_luxury`. The ceiling is
 // what a copy is worth to the empire — a base and a share per city, since
 // the four cities it reaches each recover the 10% — bounded by what the
@@ -1843,6 +1846,12 @@ fn append_luxury_buy_order(
         .iter()
         .filter(|rival| !rival.at_war)
         .filter(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        })
+        .filter(|rival| {
             !orders.iter().any(|order| {
                 (order.kind == "sell" || order.kind == "buy")
                     && order.subject == Some(rival.player as i64)
@@ -1862,7 +1871,23 @@ fn append_luxury_buy_order(
                 .then_with(|| right.player.cmp(&left.player))
         });
     let Some(seller) = seller else {
-        return Some("luxury_buy_hold:no_seller");
+        let mut peaceful_rivals = state.rivals.iter().filter(|rival| !rival.at_war);
+        let has_peaceful_rival = peaceful_rivals.clone().next().is_some();
+        let all_catalogues_known = has_peaceful_rival
+            && peaceful_rivals
+                .clone()
+                .all(|rival| rival.tradeable_luxuries.is_some());
+        let known_stock = peaceful_rivals.any(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        });
+        return Some(if all_catalogues_known && !known_stock {
+            "luxury_buy_hold:no_stock"
+        } else {
+            "luxury_buy_hold:no_seller"
+        });
     };
     orders.push(Order {
         kind: "buy",
@@ -3585,6 +3610,7 @@ fn decide(
                     }
                     Action::Attack { unit, .. }
                     | Action::Ranged { unit, .. }
+                    | Action::Swap { unit, .. }
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
                     | Action::Improve { unit, .. }
@@ -3704,6 +3730,7 @@ fn decide(
             // a copy, or with nobody at peace to buy one from.
             if why == "luxury_buy_hold:income"
                 || why == "luxury_buy_hold:treasury"
+                || why == "luxury_buy_hold:no_stock"
                 || why == "luxury_buy_hold:no_seller"
             {
                 note_bits.push(why.to_string());
@@ -4242,6 +4269,34 @@ fn translate(
                 pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
             })
         }
+        // ★★★ THE SWAP VERB. `Action::Swap` — legal, tested and correctly refused
+        // in the engine since `do_swap`, and chosen by `swap-rotation`
+        // (`src/ai/advanced/swap_rotation.rs`) — fell through this match's
+        // `_ => None` and was counted `unit_action_untranslated`, so a rotation
+        // the arena priced positive on every instrument (docs/LIVE_TACTICS.md
+        // §18) could never reach the live board.
+        //
+        // Civilization VI has a dedicated operation for it, read off the
+        // installed game: `Base/Assets/Gameplay/Data/UnitOperations.xml:56`
+        // (`UNITOPERATION_SWAP_UNITS`, `VisibleInUI="false"`). The shipped UI
+        // requests it with the PARTNER'S plot as the ordinary positional pair —
+        // `Base/Assets/UI/Civ6Common.lua:160-161`, inside `RequestMoveOperation`:
+        //
+        //   if (UnitManager.CanStartOperation( kUnit, UnitOperationTypes.SWAP_UNITS, nil, tParameters) ) then
+        //       UnitManager.RequestOperation(kUnit, UnitOperationTypes.SWAP_UNITS, tParameters);
+        //
+        // so the order is `SWAP` with `pos` = where the partner stands. The
+        // partner is read off the mirrored board, not the action: the mod needs
+        // a plot, and a partner this bridge cannot see has no plot to name.
+        Action::Swap { unit, other } => civ6_of.get(unit).and_then(|civ6| {
+            let partner = mirror_state.game.units.get(other)?.pos;
+            Some(Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some("SWAP".to_string()),
+                pos: Some(civvis::hex::axial_to_offset(partner.0, partner.1)),
+            })
+        }),
         // ⚠ There is NO attack operation on this build; the resolved list is only
         // MOVE_TO and RANGE_ATTACK, so a melee strike IS a move onto the defended
         // plot. That is how Civilization VI resolves it, not a hack.
@@ -5677,6 +5732,29 @@ fn verify_unit_order(
                 _ if target_harmed(before, after, want) => Verdict::Verified,
                 None => gone(),
                 Some(_) => Verdict::Failed("not_captured".to_string()),
+            }
+        }
+        // A swap is two units trading hexes, so either half proves it: this
+        // unit standing on the partner's former tile, or the partner standing
+        // on ours. Only a unit that was on the decision frame can be judged
+        // (there is no "our tile" for a unit first seen afterwards).
+        "SWAP" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            let partner_took_our_tile = was.is_some_and(|was| {
+                after.units.iter().any(|u| {
+                    u.id != id
+                        && (u.x, u.y) == (was.x, was.y)
+                        && own_unit(before, u.id).is_some_and(|p| (p.x, p.y) == want)
+                })
+            });
+            match now {
+                Some(now) if (now.x, now.y) == want => Verdict::Verified,
+                _ if partner_took_our_tile => Verdict::Verified,
+                None => gone(),
+                Some(_) if was.is_none() => Verdict::Unverifiable,
+                Some(_) => Verdict::Failed("not_swapped".to_string()),
             }
         }
         "FOUND_CITY" => {
@@ -10549,6 +10627,121 @@ mod tests {
         ));
     }
 
+    /// `Action::Swap` crosses as `SWAP` aimed at the PARTNER'S tile — the
+    /// positional pair the shipped `Civ6Common.lua:160-161` hands
+    /// `UNITOPERATION_SWAP_UNITS` — instead of falling through to
+    /// `unit_action_untranslated`.
+    #[test]
+    fn a_swap_crosses_as_the_swap_verb_aimed_at_the_partners_tile() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let by_host = |host: i64| {
+            mirror
+                .civ6_of
+                .iter()
+                .find_map(|(unit, civ6)| (*civ6 == host).then_some(*unit))
+                .unwrap()
+        };
+        let warrior = by_host(101);
+        let slinger = by_host(100);
+        assert_eq!(
+            mirror.game.wdist(
+                mirror.game.units[&warrior].pos,
+                mirror.game.units[&slinger].pos
+            ),
+            1,
+            "the board's two friendly units are adjacent, as a swap requires"
+        );
+
+        let swap = translate(
+            &Action::Swap {
+                unit: warrior,
+                other: slinger,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the swap crosses");
+        assert_eq!(swap.kind, "unit");
+        assert_eq!(swap.subject, Some(101));
+        assert_eq!(swap.verb.as_deref(), Some("SWAP"));
+        assert_eq!(
+            swap.pos,
+            Some((4, 5)),
+            "the partner's plot, in host offsets"
+        );
+
+        // A partner the mirror cannot see has no plot to name.
+        assert!(translate(
+            &Action::Swap {
+                unit: warrior,
+                other: u32::MAX,
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+    }
+
+    /// Either half of the exchange verifies a swap: this unit on the partner's
+    /// former tile, or the partner on ours. Both still where they stood is
+    /// `not_swapped`.
+    #[test]
+    fn a_swap_is_verified_by_either_unit_standing_on_the_others_tile() {
+        let (tiles, before) = local_barbarian_defense_board();
+        // Warrior 101 at (5,5) swaps with Slinger 100 at (4,5).
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("SWAP".to_string()),
+            pos: Some((4, 5)),
+        };
+        let verdict = |after: &StateSnapshot| {
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                after,
+                &tiles,
+                &[],
+                LaterFrames::default(),
+            )
+        };
+
+        let mut swapped = before.clone();
+        for unit in swapped.units.iter_mut() {
+            match unit.id {
+                101 => (unit.x, unit.y) = (4, 5),
+                100 => (unit.x, unit.y) = (5, 5),
+                _ => {}
+            }
+        }
+        assert!(matches!(verdict(&swapped), Verdict::Verified));
+
+        // The partner's half alone is enough evidence.
+        let mut partner_only = before.clone();
+        let slinger = partner_only
+            .units
+            .iter_mut()
+            .find(|unit| unit.id == 100)
+            .unwrap();
+        (slinger.x, slinger.y) = (5, 5);
+        assert!(matches!(verdict(&partner_only), Verdict::Verified));
+
+        let stood = before.clone();
+        assert!(matches!(
+            verdict(&stood),
+            Verdict::Failed(reason) if reason == "not_swapped"
+        ));
+
+        let mut gone = before.clone();
+        gone.units.retain(|unit| unit.id != 101);
+        assert!(matches!(
+            verdict(&gone),
+            Verdict::Failed(reason) if reason == "unit_gone"
+        ));
+    }
+
     #[test]
     fn great_people_activate_or_move_to_the_nearest_firaxis_valid_plot() {
         let state = StateSnapshot {
@@ -13354,11 +13547,13 @@ mod tests {
                 StateRival {
                     player: 2,
                     gold: 300.0,
+                    tradeable_luxuries: Some(vec!["RESOURCE_SILK".to_string()]),
                     ..StateRival::default()
                 },
                 StateRival {
                     player: 4,
                     gold: 500.0,
+                    tradeable_luxuries: Some(vec!["RESOURCE_AMBER".to_string()]),
                     ..StateRival::default()
                 },
                 StateRival {
@@ -13369,6 +13564,7 @@ mod tests {
                 },
                 StateRival {
                     player: 6,
+                    tradeable_luxuries: Some(Vec::new()),
                     ..StateRival::default()
                 },
             ],
@@ -13387,6 +13583,38 @@ mod tests {
         // 135 + 10·3 = 165, under what 12 a turn carries (25·(12−4) = 200)
         // and the cap.
         assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // A richer rival with no catalogue entry must not consume the only
+        // purchase window: the host would answer `buy_no_luxury`.
+        let mut no_stock = state.clone();
+        no_stock.rivals[1].tradeable_luxuries = Some(Vec::new());
+        let mut stock_orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&no_stock, &mut stock_orders), None);
+        assert_eq!(stock_orders[0].subject, Some(2));
+
+        // A host export that explicitly reports no stock is different from
+        // an older export with no field at all; do not send a blind deal in
+        // either case.
+        let mut no_known_stock = state.clone();
+        for rival in &mut no_known_stock.rivals {
+            rival.tradeable_luxuries = Some(Vec::new());
+        }
+        let mut no_stock_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&no_known_stock, &mut no_stock_orders),
+            Some("luxury_buy_hold:no_stock")
+        );
+        assert!(no_stock_orders.is_empty());
+        let mut old_export = state.clone();
+        for rival in &mut old_export.rivals {
+            rival.tradeable_luxuries = None;
+        }
+        let mut old_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&old_export, &mut old_orders),
+            Some("luxury_buy_hold:no_seller")
+        );
+        assert!(old_orders.is_empty());
 
         // The income binds: 8 a turn carries 100 at the 25× book with 4 kept
         // clear; the cap binds a wide empire on a fat income.

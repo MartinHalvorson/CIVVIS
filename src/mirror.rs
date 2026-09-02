@@ -2743,6 +2743,15 @@ pub struct StateRival {
     /// owns when both cities are on it (`restore_rival_outgoing_routes`).
     #[serde(default)]
     pub trade_routes: Option<Vec<StateRivalRoute>>,
+    /// Luxury resource types this met rival can currently offer in the
+    /// shipped diplomacy deal screen that the seat itself does not own.
+    /// `Some([])` is the host's authoritative answer that no useful luxury is
+    /// available; `None` means an older control mod could not query the deal
+    /// catalogue. The luxury-buy arm uses this to avoid selecting a rich
+    /// rival whose deal has nothing the seat lacks, which otherwise wastes the
+    /// six-turn purchase window.
+    #[serde(default)]
+    pub tradeable_luxuries: Option<Vec<String>>,
     /// The rival's economy as the host reports it — per-turn Science and
     /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
     /// every one an accessor the shipped World Rankings and Deal screens call
@@ -5532,6 +5541,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "tourists_visiting_us",
         "era_score",
         "trade_routes",
+        "tradeable_luxuries",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.

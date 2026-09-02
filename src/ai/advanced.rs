@@ -252,6 +252,11 @@ const STRATEGIC_WONDER_TOURISM_RATE: f64 = 95.0;
 /// way is the same envoy. `ENVOY_PRODUCTION_VALUE` is the other lanes' price.
 const DIPLOMATIC_ENVOY_PRODUCTION_VALUE: f64 = 300.0;
 
+/// A speculative Congress runway can nominate Diplomacy, but cannot outrank
+/// Religion's realised opening floor (46). Earned DVP and suzerainties still
+/// raise the baseline score past this cap normally.
+const DIPLOMATIC_FORECAST_OPENING_CAP: i32 = 45;
+
 /// Rings around a settle site inside which a rival major's owned tiles read as
 /// a provocation. See `AdvancedAi::foreign_border_pressure`.
 const FOREIGN_BORDER_RADIUS: i32 = 3;
@@ -4481,6 +4486,14 @@ pub struct AdvancedAi {
     /// **Off by default.** Screenable: the native board convenes the same
     /// Congress, banks the same Favor and awards the same points.
     pub diplomatic_lane_forecast: bool,
+    /// Version 2 of [`Self::diplomatic_lane_forecast`]: a Favor balance alone
+    /// is not a diplomatic race. Project the Congress calendar only after an
+    /// actual Diplomatic Victory Point or a current suzerainty proves the
+    /// empire has a foothold in the lane, and cap that projection below
+    /// realised lane progress.
+    ///
+    /// **Off by default.** Screenable.
+    pub diplomatic_lane_forecast_2: bool,
     /// Whether a major we are NOT at war with, whose army is parked inside
     /// reach of one of our cities, counts toward that city's danger.
     ///
@@ -7214,6 +7227,7 @@ impl AdvancedAi {
             conversion_majority_alarm: false,
             culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
+            diplomatic_lane_forecast_2: false,
             frontier_massing_alarm: false,
             envoy_priority: false,
             coordinated_finish: false,
@@ -9273,7 +9287,26 @@ impl AdvancedAi {
     /// points, and 0 says it does not arrive. A seat already at twenty reads
     /// 100 without any of the arithmetic.
     fn diplomatic_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
-        if !self.diplomatic_lane_forecast || !g.victory_conditions.diplomatic {
+        if !(self.diplomatic_lane_forecast || self.diplomatic_lane_forecast_2)
+            || !g.victory_conditions.diplomatic
+        {
+            return 0;
+        }
+        // Version 1 treated Favor as enough evidence to commit the whole plan
+        // to Diplomacy.  But Favor is a spendable snapshot, not a point on the
+        // victory track or a source that keeps paying it.  V2 waits until an
+        // earned Congress point or a living city-state we actually lead makes
+        // the long calendar projection an observed foothold rather than a
+        // speculative opening.
+        if self.diplomatic_lane_forecast_2
+            && g.players[pid].dvp <= 0
+            && !g.players.iter().any(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && g.suzerain_of(minor.id) == Some(pid)
+            })
+        {
             return 0;
         }
         let needed = crate::game::DIPLOMATIC_VICTORY_POINTS - g.players[pid].dvp;
@@ -9341,7 +9374,15 @@ impl AdvancedAi {
         let carry = blind + (1.0 - blind) * share;
 
         let forecast = f64::from(sessions) * per_session * carry;
-        ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32
+        let score =
+            ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32;
+        if self.diplomatic_lane_forecast_2 {
+            // The calendar is a candidate signal, not unearned progress: the
+            // lane table's actual DVP/suzerain tally may still grow beyond it.
+            score.min(DIPLOMATIC_FORECAST_OPENING_CAP)
+        } else {
+            score
+        }
     }
 
     /// How much of the Culture bar this empire will have cleared when the
