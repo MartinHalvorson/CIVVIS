@@ -77,6 +77,49 @@ class Reservations(unittest.TestCase):
             scheduler.validate_state(state)
 
 
+class SourcePreparation(unittest.TestCase):
+    def test_pinned_gene_screen_build_enables_developer_tools(self):
+        """The scheduler must build the feature-gated tournament binary."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            commit = "a" * 40
+            source_dir = root / "sources" / commit
+            (source_dir / ".git").mkdir(parents=True)
+            binary = source_dir / "target" / "release" / "gene_screen"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"test binary")
+            commands: list[list[str]] = []
+
+            def git_output(repo: Path, *args: str) -> str:
+                if args == ("rev-parse", "origin/main"):
+                    return commit
+                if args == ("rev-parse", "HEAD"):
+                    self.assertEqual(repo, source_dir)
+                    return commit
+                if args == ("status", "--porcelain"):
+                    self.assertEqual(repo, source_dir)
+                    return ""
+                self.fail(f"unexpected git command: {args}")
+
+            def run_checked(command, **_kwargs):
+                commands.append(list(command))
+                return SimpleNamespace(stdout="")
+
+            with mock.patch.object(scheduler, "git_output", side_effect=git_output), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run_checked), \
+                    mock.patch.object(scheduler, "sha256", return_value="b" * 64):
+                source = scheduler.ensure_source(root, scheduler.new_state(100, 1), root / "repo")
+
+            self.assertEqual(source["commit"], commit)
+            self.assertIn(
+                [
+                    "cargo", "build", "--release", "--locked", "--features",
+                    "developer-tools", "--bin", "gene_screen",
+                ],
+                commands,
+            )
+
+
 class ValidatedRows(unittest.TestCase):
     def test_scheduler_counts_one_game_from_six_seat_rows(self):
         with tempfile.TemporaryDirectory() as temporary:
