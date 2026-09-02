@@ -1091,6 +1091,10 @@ impl AdvancedAi {
         for gene in super::GENES.iter().filter(|gene| gene.live()) {
             (gene.enable)(self);
         }
+        // This is deployment policy rather than a screenable treatment: every
+        // verification game shares the same 10–15 city horizon, including
+        // ablation arms that temporarily withhold one live treatment.
+        self.verification_city_target = true;
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
