@@ -6022,11 +6022,9 @@ pub struct AdvancedAi {
     /// behind it, so the line does not open when it leaves. Opt-in gene
     /// `swap-rotation`; see `advanced/swap_rotation.rs`.
     swap_rotation: bool,
-    /// Version two refuses a relief weaker than the wounded defender, ranks
-    /// effective strength before health, and recognizes depth within a
-    /// hostile city's siege sphere even after the force group dissolves. The
-    /// same rule reaches the joint battle planner. One family version plays
-    /// at a time. Opt-in gene `swap-rotation-2`.
+    /// Version two preserves V1 below its static line and additionally rotates
+    /// a roll-top lethal unit into a safer stand when the relief survives the
+    /// inherited front. One family version plays. Opt-in `swap-rotation-2`.
     swap_rotation_2: bool,
     /// A shooter's tile beside a melee friend that stands nearer the enemy
     /// earns two screen weights — the arena's own definition of screened.

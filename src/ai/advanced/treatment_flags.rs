@@ -4002,9 +4002,9 @@ impl AdvancedAi {
         self.war_policy_via_board = false;
     }
 
-    /// Version two keeps the field-front swap, refuses a weaker relief, and
-    /// additionally recognizes depth in a nearby hostile city's siege
-    /// sphere after a force group dissolves. One family version plays.
+    /// Version two keeps V1's field-front swap and adds a roll-top lethal
+    /// rotation when the wounded destination is safer and the relief survives.
+    /// One family version plays at a time.
     pub fn enable_swap_rotation_2(&mut self) {
         self.swap_rotation = false;
         self.swap_rotation_2 = true;
