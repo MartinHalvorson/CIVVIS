@@ -1911,8 +1911,8 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         return SimpleNamespace(**values)
 
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
-        """The one early stop is forwarded verbatim when the launcher names
-        it; absent, the harness's own 0.50 default holds."""
+        """Legacy launchers retain their argv shape; live play ignores it and
+        defaults to the full-game policy when the option is absent."""
         cmd = climb.play_command(
             self._play_args(restart_below_leader_ratio=0.50), "t",
             Path("orders.sqlite"), Path("civvis_orders"))
@@ -2264,13 +2264,14 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
                 climb.RUN_ROOT = original
 
 
-class AbandonedGamesAreNotReloaded(unittest.TestCase):
-    """⚠ AN ABANDONED GAME MUST STAY ABANDONED.
+class HistoricalAbandonedGamesAreNotReloaded(unittest.TestCase):
+    """⚠ A HISTORICAL ABANDONED GAME MUST STAY ABANDONED.
 
-    The operator rule retires a run below half of the leader after turn 50. A
-    retirement leaves the turn stale while the end screens settle, which now
-    reads as "frozen" — so without this guard the resume path would reload the
-    very game the rule had just ended.
+    Current verification games never make an automatic score retirement, but
+    older rows can still have one. A retirement leaves the turn stale while
+    the end screens settle, which now reads as "frozen" — so without this
+    guard the resume path would reload the very game that was deliberately
+    ended.
     """
 
     def _args(self):

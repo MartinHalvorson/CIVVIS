@@ -36,8 +36,9 @@ repository's history, so every section is labelled with which one it answers:
 - **VALUE** — did it help? A census **never** answers this. Only a paired
   win/score contrast does, and for a live-bridge repair that means live games.
 
-Every section here is BEHAVIOUR except `restart`, whose counterfactual half is
-labelled where it starts.
+Every section here is BEHAVIOUR except `restart`, whose former-score-cutoff
+counterfactual is labelled where it starts. It is retained precisely because
+full games now show what an early score call would have hidden.
 
 ## ⚠ It reads and prints
 
@@ -47,11 +48,11 @@ against a game that is still being played.
 
 ## ⚠ Where the numbers come from
 
-The harness's early stop is not re-implemented here: `below_leader_score_reading`
-(the one remaining rule — after turn 50, strictly below half of the leader's
-score; it replaced #2319's three-axis reading) is imported from
-`tools/civ6_play.py` and fed the recorded events in file order, which is
-exactly what the live loop does. That section is a **check**.
+The former score cutoff is not re-implemented here:
+`below_leader_score_reading` is imported from `tools/civ6_play.py` and fed the
+recorded events in file order. The live policy now disables automatic score
+retirement; this section is a **counterfactual learning check** that shows
+what the old line would have discarded.
 
 `#2278`'s Great Person section transcribes `StateGreatPerson::slot_starved`
 (`src/mirror.rs`) into Python, because the Rust predicate is not reachable from
@@ -82,10 +83,11 @@ from civ6_play import below_leader_score_reading  # noqa: E402
 
 DEFAULT_CORPUS = Path.home() / "civvis-civ6-runs" / "control"
 
-#: The line for `--restart-below-leader-ratio`: the harness's current default
-#: (`civ6_play.DEFAULT_LEADER_SCORE_RATIO`), so a census at this value replays
-#: exactly what a live game would have done.
-RESTART_RATIO = civ6_play.DEFAULT_LEADER_SCORE_RATIO
+#: The historical score line we audit against completed games. It is
+#: intentionally independent of the live default (0): this tells us what the
+#: former cutoff would have hidden, while live games all reach an in-game end.
+HISTORICAL_SCORE_GAP_RATIO = 0.50
+RESTART_RATIO = HISTORICAL_SCORE_GAP_RATIO
 
 #: Firaxis's three city-defence buildings, in escalation order. The live report
 #: names the second and third by their in-game labels, Castle and Star Fort.
@@ -344,28 +346,29 @@ def trade_reading(records: Iterable[dict]) -> dict:
 
 
 # --------------------------------------------------------------------------
-# The early stop (below half of the leader's score after turn 50), replayed through
-# the harness's own function
+# The former score cutoff (below half of the leader after turn 50), replayed
+# through the harness's own function as a learning counterfactual.
 # --------------------------------------------------------------------------
 
 
 def restart_reading(records: Iterable[dict], ratio: float, closing: dict) -> dict:
-    """BEHAVIOUR, then VALUE-adjacent. Would the early stop have ended this run?
+    """LEARNING counterfactual: where would the former score line have fired?
 
     The verdict half is a **check**, not a transcription: the recorded events
     are fed to `civ6_play.below_leader_score_reading` in file order, which is
-    what `_play`'s `finished()` does with the live stream.
+    what the former live loop did with the stream.
 
     The counterfactual half — what the run went on to do after the turn the
-    rule would have stopped it — is the closest a recorded corpus can get to
+    former rule would have stopped it — is the closest a recorded corpus can get to
     value, and it is still not a win/loss contrast: a restart replaces the rest
     of that game with a *different* game whose result is unrecorded. What it
     can say exactly is the **risk**: how many stopped games later climbed back
     over the score line, and how many were won.
 
-    The standing score call applies to every victory target, including Science.
-    Keeping this replay tied to the live policy is necessary; otherwise the
-    census would disagree with the run it claims to reproduce.
+    The live score call is deliberately disabled for every victory target,
+    including Science. This separate historical ratio remains useful because
+    every completed game can now reveal whether the early call would have
+    missed a recovery or misclassified the path to defeat.
     """
     state: dict[str, Any] = {}
     verdict = None
@@ -383,8 +386,11 @@ def restart_reading(records: Iterable[dict], ratio: float, closing: dict) -> dic
             turn = record.get("turn")
             if isinstance(turn, int) and not isinstance(turn, bool):
                 last_turn = max(last_turn, turn)
-        fired = (below_leader_score_reading(state, record, ratio)
-                 if score_stop_allowed else None)
+        # Deliberately independent of `score_stop_allowed`: this is a
+        # counterfactual about the former rule, not an instruction to the live
+        # harness. The field is still reported so consumers can prove that the
+        # live policy did not cut the game off.
+        fired = below_leader_score_reading(state, record, ratio)
         if fired is not None and verdict is None:
             verdict = fired
         if verdict is not None and kind == "turn" and record.get("ctx") == "agent":
@@ -998,10 +1004,10 @@ def report_restart(rows: list[dict], ratio: float) -> list[str]:
     finals = [r["restart"]["final_score_ratio"] for r in fired
               if r["restart"]["final_score_ratio"] is not None]
     return [
-        f"=== #2319: the three-signal restart, replayed at ratio {ratio}"
-        "  [BEHAVIOUR, then RISK] ===",
+        f"=== former score-cutoff counterfactual at ratio {ratio}"
+        "  [LEARNING, not a live stop] ===",
         f"  runs replayed                        {len(rows)}",
-        f"  runs the rule would have RESTARTED   {len(fired)}"
+        f"  runs the former rule would have CUT  {len(fired)}"
         f"  ({100 * len(fired) / len(rows) if rows else 0:.1f}%)",
         f"  median turn it fires                 "
         f"{statistics.median(turns) if turns else 0:.0f}",
@@ -1016,6 +1022,8 @@ def report_restart(rows: list[dict], ratio: float) -> list[str]:
         "   (where the stopped game actually ended up)",
         f"  for scale, wins anywhere in the corpus {len(all_won)}"
         f" of {len(rows)}",
+        "  current live policy plays every game through; these completed outcomes",
+        "  show the evidence an early score cutoff would have discarded.",
         "  ⚠ NOT a value reading. A restart replaces the rest of that game with a",
         "    different game whose result is unrecorded; this bounds the RISK only.",
     ]
@@ -1160,8 +1168,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--section", action="append", choices=SECTIONS,
                         help="repeatable; default is every section")
     parser.add_argument("--restart-ratio", type=float, default=RESTART_RATIO,
-                        help=f"score ratio for the early stop (default {RESTART_RATIO},"
-                             " the harness default; 0 disables the policy)")
+                        help=f"historical score ratio to audit (default {RESTART_RATIO};"
+                             " this never stops a live game, and 0 disables the audit)")
     parser.add_argument("--replay", action="append", metavar="NAME=BINARY",
                         help="repeatable; answer the recorded turns again with"
                              " this `civvis_orders` build and diff the arms")

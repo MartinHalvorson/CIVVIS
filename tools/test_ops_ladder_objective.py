@@ -122,8 +122,7 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
         self.assertIn('${VICTORY:+--victory} ${VICTORY:+"$VICTORY"}', source)
-        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.50}",
-                      source)
+        self.assertIn("RESTART_BELOW_LEADER_RATIO=0", source)
 
     def test_an_unreachable_github_does_not_stop_the_ladder_outright(self):
         """⚠ On 2026-08-28 it did, for three hours and zero games.
@@ -247,12 +246,11 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         """⚠ zsh does not word-split an unquoted `${VAR:+--flag "$VAR"}`: set,
         it reached the climb as ONE argument, `--victory science`, which
         argparse rejects as unrecognized. The victory form had never been
-        exercised; the abandon floor was, 2026-08-19 17:00Z, and four starts
-        in a row played nothing. The leader-score line is different: it is
-        the one early stop left, a deployment policy at 0.50
-        even when a GUI host did not inherit a login-shell environment. Run the script's OWN knob lines
-        and the flag lines of its climb invocation under zsh, with and without
-        operator overrides, and read the words that come out."""
+        exercised; the former leader-score setting is deliberately different:
+        it cannot reinstate automatic retirement, even if an old GUI-host
+        policy still exports it. Run the script's own knob lines and the flag
+        lines of its climb invocation under zsh, with and without old policy
+        values, and read the words that come out."""
         if shutil.which("zsh") is None:
             # The supervisor is a zsh script and only ever runs on the macOS
             # hosts that have it; the literal pin above is the guard on a
@@ -260,7 +258,8 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
             self.skipTest("zsh is not installed here")
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         knob_lines = [line for line in source.splitlines()
-                      if re.match(r"^(VICTORY|RESTART_BELOW_LEADER_RATIO)=\$\{CIVVIS_", line)]
+                      if (re.match(r"^VICTORY=\$\{CIVVIS_", line)
+                          or line == "RESTART_BELOW_LEADER_RATIO=0")]
         self.assertEqual(len(knob_lines), 2, knob_lines)
         invocation = EveryLadderLoopCanAskForTheRungAndTheLane._invocation(source)
         flag_lines = [line.strip().rstrip("\\").strip()
@@ -270,16 +269,16 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         script = "\n".join(knob_lines) + (
             "\nfor w in " + " ".join(flag_lines) + "; do print -r -- \"$w\"; done\n")
         for knobs, expected in (
-            ({}, ["--restart-below-leader-ratio", "0.50"]),
+            ({}, ["--restart-below-leader-ratio", "0"]),
             ({"CIVVIS_VICTORY": "science"},
-             ["--victory", "science", "--restart-below-leader-ratio", "0.50"]),
+             ["--victory", "science", "--restart-below-leader-ratio", "0"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
-             ["--restart-below-leader-ratio", "0.70"]),
+             ["--restart-below-leader-ratio", "0"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0"},
              ["--restart-below-leader-ratio", "0"]),
             ({"CIVVIS_VICTORY": "culture",
               "CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.40"},
-             ["--victory", "culture", "--restart-below-leader-ratio", "0.40"]),
+             ["--victory", "culture", "--restart-below-leader-ratio", "0"]),
         ):
             with self.subTest(knobs=knobs):
                 env = {k: v for k, v in os.environ.items()
