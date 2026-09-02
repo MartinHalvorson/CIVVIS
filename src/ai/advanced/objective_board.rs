@@ -1010,6 +1010,16 @@ impl AdvancedAi {
             let naval = force.iter().any(|uid| BasicAi::waterborne(g, *uid));
             let land = force.iter().any(|uid| !BasicAi::waterborne(g, *uid));
             let kind = &g.units[&force[0]].kind;
+            // A body in the field falls due when the nearest unit of ours can
+            // reach it: the nearer body ranks first at equal value, as the
+            // central position asks, and a farther one outranks it only by
+            // being worth proportionally more.
+            let reach = pool
+                .iter()
+                .map(|uid| UnitFacts::of(g, *uid).travel_turns(g, at, 1))
+                .min()
+                .unwrap_or(1)
+                .max(1);
             rows.push(Objective {
                 kind: ObjectiveKind::Destroy,
                 key: ObjectiveKey::Destroy(force[0]),
@@ -1022,7 +1032,7 @@ impl AdvancedAi {
                     siege: 0,
                     bodies: 0,
                 },
-                deadline: None,
+                deadline: Some(reach),
                 state: RowState::Open,
                 depends_on: None,
                 land: land || !naval,
@@ -1546,12 +1556,12 @@ impl AdvancedAi {
                 force.aimed_at = row.at;
             }
         }
-        // On an arena nothing is coming: a force that cannot match what its
-        // row is measured against — the bill under the margin — would be fed
-        // to it a body at a time, so it joins the highest-ranked force of its
-        // domain instead, and so do the leftovers. `central_position` is the
-        // board that found it: two hostile bodies, two Destroy rows, and an
-        // army split three to one between them lost 184 a seed.
+        // On an arena nothing is coming and there is nothing to hold, so the
+        // army is one force per domain, aimed at the top-ranked row — the
+        // shipped layer's own one-group doctrine, with the board choosing the
+        // objective. `central_position` found the alternative: two hostile
+        // bodies, two Destroy rows, and an army split between them lost 184 a
+        // seed against the one that struck the nearer body with everything.
         let arena = g.is_arena();
         let top_force: BTreeMap<bool, usize> = if arena {
             let mut order: Vec<usize> = (0..forces.len())
@@ -1573,31 +1583,11 @@ impl AdvancedAi {
                     top.insert(sea, index);
                     continue;
                 };
-                let Some(row) = rows
-                    .iter()
-                    .find(|row| row.key == forces[index].objective_key)
-                else {
-                    continue;
-                };
-                let margin = match row.kind {
-                    ObjectiveKind::Siege => SIEGE_MARGIN,
-                    ObjectiveKind::Defend | ObjectiveKind::Relieve => DEFEND_MARGIN,
-                    ObjectiveKind::Destroy => DESTROY_MARGIN,
-                    ObjectiveKind::ClearCamp => CAMP_MARGIN,
-                    _ => 1.0,
-                };
-                let strength: f64 = forces[index]
-                    .units
-                    .iter()
-                    .map(|uid| facts[uid].strength)
-                    .sum();
-                if row.requirement.strength > 0.0 && strength < row.requirement.strength / margin {
-                    let moved = std::mem::take(&mut forces[index].units);
-                    for uid in &moved {
-                        assignment.insert(*uid, leader);
-                    }
-                    forces[leader].units.extend(moved);
+                let moved = std::mem::take(&mut forces[index].units);
+                for uid in &moved {
+                    assignment.insert(*uid, leader);
                 }
+                forces[leader].units.extend(moved);
             }
             top
         } else {
