@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-surge-2` | off (unmeasured) | Version 2 of `air_surge`: the science–domination loop. | 1 \| 2 |
+| `battle-planner` | off (unmeasured) | The force's turn is planned jointly — the danger field, a beam-searched kill sequence verified on one clone, and a heal rotation — ahead of the per-unit ladder, which leaves the planned units alone. | 1 \| 1 |
 | `boost-wait-research-2` | off (unmeasured) | Wait only on a two-turn node whose final boost trigger is already at the front of an owned city queue, using the boost as a light tie-break. | 1 \| 2 |
 | `campus-through-expansion` | off (unmeasured) | `campus-through-expansion` (OptIn): a Science seat prices the Campus and its buildings in the Science lane while its plan still reads Expansion, and no city's first specialty district may be an Entertainment Complex. | 1 \| 1 |
 | `chase-every-boost` | off (unmeasured) | Hunt every Eureka and Inspiration: the chase table reads every trigger the engine can judge (`Game::boost_progress`), a boost in hand scales the node, a boost one actionable step away is waited for, the beeline walks the goal's prerequisites by their boosted cost, and production, builders and kills are paid the research a trigger earns. | 1 \| 1 |

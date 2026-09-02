@@ -1946,6 +1946,16 @@ pub const GENES: &[Gene] = &[
     // convert — walks of 13–15 turns, a third of Emperor Settlers taken —
     // so a walker past twelve turns founds the best site within reach.
     Gene { tag: "settler-walk-deadline", field: "settler_walk_deadline", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_deadline, disable: AdvancedAi::disable_settler_walk_deadline },
+    // `battle-planner` (2026-09-02): the force's turn planned jointly instead
+    // of unit by unit — a danger field from the engine's exact pair on a
+    // probe of the board, a beam-searched kill sequence (ranged before the
+    // melee finisher, kills at 1.15× the hit points, return damage and every
+    // end tile's danger priced, three vetoes) replayed on one clone before it
+    // lands, and a heal rotation that steps the wounded and the exposed to a
+    // tile nothing can strike. Replaces `prioritize_immediate_kills` and
+    // `fire-plan` at their seam; the ladder leaves the planned units alone.
+    // Priced on the arena first. See `advanced/battle_planner.rs`.
+    Gene { tag: "battle-planner", field: "battle_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner, disable: AdvancedAi::disable_battle_planner },
 
     Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
