@@ -2187,6 +2187,16 @@ pub const GENES: &[Gene] = &[
     // safest neighbour that strictly improves on staying. Appended at the
     // END, above the markers, so a running screen keeps its positional genome.
     Gene { tag: "standing-still-is-a-risk", field: "standing_still_is_a_risk", kind: Kind::OptIn, enable: AdvancedAi::enable_standing_still_is_a_risk, disable: AdvancedAi::disable_standing_still_is_a_risk },
+    // ⚠ A NARROW SUZERAINTY IS A SUBSCRIPTION, NOT A PURCHASE. `bank_envoys`
+    // brakes only the uncontested overstack and deliberately exempts a
+    // city-state within one envoy of a rival; live run
+    // `civvis-20260902T205532Z` defended exactly that narrow lead at Bologna
+    // seven times, spent 27 envoys, and lost it on t164 to Arabia — whom it
+    // had been at war with since t139 — which then levied Bologna and
+    // suspended every yield those envoys had bought. Peace with a levied
+    // city-state is refused by the engine, so the stake cannot be recovered.
+    // See `contested_suzerainty_brake`.
+    Gene { tag: "contested-suzerainty-brake", field: "contested_suzerainty_brake", kind: Kind::OptIn, enable: AdvancedAi::enable_contested_suzerainty_brake, disable: AdvancedAi::disable_contested_suzerainty_brake },
     // `detour-keeps-the-site-worth` (2026-09-02): the threat detour takes the
     // best site whose approach is SAFE, not a site of comparable worth. Over
     // 53 live Civ VI runs the median detour is +21% better, but 24% of them

@@ -46262,6 +46262,85 @@ fn a_settler_that_will_not_move_still_stands_somewhere() {
     }
 }
 
+/// ★★★★ See `contested_suzerainty_brake`: `bank_envoys` brakes only the
+/// UNCONTESTED overstack, and its own comment exempts "a city-state within one
+/// envoy of a rival" on the grounds that defending a narrow suzerainty beats
+/// the cap. Live run `civvis-20260902T205532Z` defended exactly that at
+/// Bologna seven times, spent 27 envoys, and lost it on t164 to Arabia — at
+/// war with the seat since t139 — which then levied Bologna and suspended
+/// every yield those envoys had bought.
+#[test]
+fn the_brake_stops_bidding_a_race_against_a_rival_already_at_war_with_us() {
+    let contested_stack = |braked: bool| {
+        let mut spent_on_contested = 0i64;
+        for seed in 1..30u64 {
+            let mut g = Game::new(2, 24, 16, seed, 80, 4);
+            let minors: Vec<usize> = g
+                .players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .map(|player| player.id)
+                .collect();
+            if minors.len() < 2 {
+                continue;
+            }
+            for minor in &minors {
+                g.record_contact(0, *minor);
+            }
+            g.record_contact(0, 1);
+            // The Bologna shape: a deep stack on one city-state that the
+            // rival we are ALREADY AT WAR WITH is level with, and an
+            // untouched city-state beside it.
+            let contested = minors[0];
+            // `envoys` is a Vec of (city-state, count) and `envoys_at` reads
+            // the FIRST match, so set an existing row rather than pushing a
+            // shadowed duplicate.
+            let mut seat = |player: usize, count: i64| match g.players[player]
+                .envoys
+                .iter_mut()
+                .find(|(state, _)| *state == contested)
+            {
+                Some((_, held)) => *held = count,
+                None => g.players[player].envoys.push((contested, count)),
+            };
+            seat(0, 8);
+            seat(1, 8);
+            g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+            g.players[0].envoys_free = 1;
+            let mut ai = AdvancedAi::new();
+            ai.enable_bank_envoys();
+            if braked {
+                ai.enable_contested_suzerainty_brake();
+            }
+            ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+            spent_on_contested += g.envoys_at(0, contested) - 8;
+        }
+        spent_on_contested
+    };
+
+    let stock = contested_stack(false);
+    let braked = contested_stack(true);
+    println!("contested reinforcement over 29 boards: stock {stock}, braked {braked}");
+    assert!(
+        braked < stock,
+        "the brake must divert envoys off a race the seat is losing to a \
+         belligerent: stock reinforced the contested city-state {stock} times, \
+         braked {braked} over 29 boards"
+    );
+}
+
+/// The brake is opt-in and must be off in both shipped controllers.
+#[test]
+fn the_contested_suzerainty_brake_is_off_by_default() {
+    assert!(!AdvancedAi::new().contested_suzerainty_brake);
+    assert!(!AdvancedAi::legacy().contested_suzerainty_brake);
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_suzerainty_brake();
+    assert!(ai.contested_suzerainty_brake);
+    ai.disable_contested_suzerainty_brake();
+    assert!(!ai.contested_suzerainty_brake);
+}
+
 /// `detour-keeps-the-site-worth`: the threat detour takes the best site whose
 /// approach is SAFE, which is not the same as a site worth the walk. Measured
 /// over 53 live Civ VI runs on the 41 detours whose journal prices both ends:
