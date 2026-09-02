@@ -2406,6 +2406,11 @@ pub struct BasicAi {
     /// exactly as before. Implies version 1; its enable turns version 1 off.
     /// Opt-in gene `naval-recon-2`.
     pub(crate) naval_recon_2: bool,
+    /// Version 3 of `naval_recon`: retain one peacetime eye, but yield its
+    /// idle production reservation to a simultaneously missing land scout.
+    /// The wartime second-eye exception is unchanged. Opt-in gene
+    /// `naval-recon-3`.
+    pub(crate) naval_recon_3: bool,
     /// When the capital's landmass is nearly full, chart water toward known
     /// foreign landfalls rather than treating every coast as interchangeable.
     /// Opt-in gene `island-exploration`.
@@ -4777,6 +4782,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            naval_recon_3: false,
             island_exploration: false,
             camp_party: false,
             come_ashore: false,
@@ -5237,6 +5243,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            naval_recon_3: false,
             island_exploration: false,
             camp_party: false,
             come_ashore: false,
@@ -9771,9 +9778,31 @@ impl BasicAi {
     /// major naval war, retain a second eye so the fighting ship cannot make
     /// the unexplored world disappear from production's priorities.
     /// See `naval_recon`.
-    /// Either version of the naval eye. See `naval_recon_2`.
+    /// Any version of the naval eye. See `naval_recon_2` and `naval_recon_3`.
     pub(crate) fn naval_recon_on(&self) -> bool {
-        self.naval_recon || self.naval_recon_2
+        self.naval_recon || self.naval_recon_2 || self.naval_recon_3
+    }
+
+    /// Whether the sea arm needs its wartime redundancy. Keep this separate
+    /// from the arm count so version 3 can yield an idle peacetime queue to a
+    /// land scout without weakening the existing second-eye exception.
+    fn naval_recon_major_war(&self, g: &Game, pid: usize) -> bool {
+        g.players.iter().any(|enemy| {
+            enemy.id != pid
+                && enemy.alive
+                && !enemy.is_minor
+                && (!enemy.is_barbarian || self.sea_answers)
+                && g.is_at_war(pid, enemy.id)
+                && (g.units.values().any(|unit| {
+                    unit.owner == enemy.id
+                        && g.map
+                            .get(unit.pos)
+                            .is_some_and(|tile| g.rules.is_water(tile))
+                }) || (!enemy.is_barbarian
+                    && g.player_city_ids(enemy.id)
+                        .into_iter()
+                        .any(|cid| Self::city_is_coastal(g, cid))))
+        })
     }
 
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
@@ -9818,22 +9847,7 @@ impl BasicAi {
         // own `naval_war` test has always included barbarians, but this arm
         // excluded them — so the second wartime eye never arrived during
         // exactly the sea raid that sinks a lone explorer. See `sea_answers`.
-        let major_naval_war = g.players.iter().any(|enemy| {
-            enemy.id != pid
-                && enemy.alive
-                && !enemy.is_minor
-                && (!enemy.is_barbarian || self.sea_answers)
-                && g.is_at_war(pid, enemy.id)
-                && (g.units.values().any(|unit| {
-                    unit.owner == enemy.id
-                        && g.map
-                            .get(unit.pos)
-                            .is_some_and(|tile| g.rules.is_water(tile))
-                }) || (!enemy.is_barbarian
-                    && g.player_city_ids(enemy.id)
-                        .into_iter()
-                        .any(|cid| Self::city_is_coastal(g, cid))))
-        });
+        let major_naval_war = self.naval_recon_major_war(g, pid);
         let arm_target = if major_naval_war {
             NAVAL_RECON_WARTIME_ARM_MAX
         } else if self.naval_recon_2 {
@@ -9848,6 +9862,18 @@ impl BasicAi {
         g.player_city_ids(pid)
             .into_iter()
             .any(|cid| Self::city_has_naval_recon_launch(g, pid, cid))
+    }
+
+    /// V3's sea scout is an information complement, not a way to crowd out
+    /// the scout that can reveal the empire's own continent. The basic
+    /// picker already ranks `recon_pick` ahead of `naval_recon_pick`; the
+    /// advanced idle-queue reserver uses this explicit gate to preserve that
+    /// same ordering. A naval war remains a production exception because its
+    /// second eye may be the only hull still free to chart.
+    pub(crate) fn naval_recon_yields_to_land_recon(&self, g: &Game, pid: usize) -> bool {
+        self.naval_recon_3
+            && !self.naval_recon_major_war(g, pid)
+            && self.recon_is_the_missing_arm(g, pid)
     }
 
     /// The cheapest ship this city can lay down. Exploration wants a hull
@@ -22120,6 +22146,17 @@ mod tests {
             ai.naval_recon_is_the_missing_arm(&game, 0),
             "the sole Galley can fight the major naval war or chart, but not reliably do both"
         );
+        let mut delayed_v3 = BasicAi::new();
+        delayed_v3.naval_recon_3 = true;
+        delayed_v3.recon_replacement = true;
+        assert!(
+            delayed_v3.naval_recon_is_the_missing_arm(&game, 0),
+            "v3 delays only peacetime production; a one-city naval war still keeps its second eye"
+        );
+        assert!(
+            !delayed_v3.naval_recon_yields_to_land_recon(&game, 0),
+            "v3's land-first queue rule never weakens the wartime second-eye exception"
+        );
 
         // A viable sea unit already queued is the second eye being built, not
         // permission for every other city to queue another copy.
@@ -22145,6 +22182,49 @@ mod tests {
         assert!(
             !ai.naval_recon_is_the_missing_arm(&city_state_war, 0),
             "a city-state war keeps the normal one-ship exploration arm"
+        );
+    }
+
+    /// `naval-recon-3` gives a simultaneously missing land eye the next idle
+    /// production queue, so the sea scout cannot crowd out the broader
+    /// continental information gap. It still keeps the normal one-hull
+    /// peacetime arm and the existing two-eye wartime exception.
+    #[test]
+    fn a_v3_naval_recon_yields_to_a_missing_land_eye() {
+        let (mut game, mut ai) = blind_empire(4_433);
+        ai.naval_recon = false;
+        ai.naval_recon_3 = true;
+        let capital = game.player_city_ids(0)[0];
+        let capital_pos = game.cities[&capital].pos;
+        dry_map(&mut game);
+        coastal_waterway(&mut game, capital_pos, NAVAL_RECON_MIN_WATERWAY_TILES + 3);
+        game.players[0].techs.insert(crate::name!("sailing"));
+
+        assert!(
+            ai.naval_recon_is_the_missing_arm(&game, 0),
+            "the v3 sea arm remains a normal one-hull peacetime need"
+        );
+        assert!(
+            ai.recon_is_the_missing_arm(&game, 0),
+            "the fixture also leaves the empire without a land eye"
+        );
+        assert!(
+            ai.naval_recon_yields_to_land_recon(&game, 0),
+            "v3 makes the sea arm yield to the broader land frontier"
+        );
+
+        let mut v1 = ai.clone();
+        v1.naval_recon_3 = false;
+        v1.naval_recon = true;
+        assert!(
+            !v1.naval_recon_yields_to_land_recon(&game, 0),
+            "the existing one-eye version retains its independent sea reservation"
+        );
+
+        game.spawn_test_unit("scout", 0, capital_pos);
+        assert!(
+            !ai.naval_recon_yields_to_land_recon(&game, 0),
+            "once the land eye exists, v3 may reserve its one sea scout"
         );
     }
 

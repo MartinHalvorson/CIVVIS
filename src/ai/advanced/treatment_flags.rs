@@ -499,6 +499,20 @@ impl AdvancedAi {
         self.base.naval_recon_2 = false;
     }
 
+    /// Version 3 of `naval-recon`: let a simultaneously missing land scout
+    /// take the idle queue before the one peacetime sea scout. One version per
+    /// family is active in a screen.
+    pub fn enable_naval_recon_3(&mut self) {
+        self.base.naval_recon = false;
+        self.base.naval_recon_2 = false;
+        self.base.naval_recon_3 = true;
+    }
+
+    /// The twin of `enable_naval_recon_3`.
+    pub fn disable_naval_recon_3(&mut self) {
+        self.base.naval_recon_3 = false;
+    }
+
     /// A building whose powered half would be switched on the day it stands —
     /// the city is powered and stays powered with the building's own demand —
     /// is priced with that half, so the Lab, Stock Exchange and Factory in

@@ -22642,6 +22642,7 @@ impl AdvancedAi {
         // precedence unless the existing emergency-garrison exception applies.
         if self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
             || !self.base.naval_recon_is_the_missing_arm(g, pid)
+            || self.base.naval_recon_yields_to_land_recon(g, pid)
         {
             return;
         }
