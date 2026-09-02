@@ -1,0 +1,3230 @@
+{
+  "batch": {
+    "complete_games": 72,
+    "complete_seats": 432,
+    "completion": 1.0,
+    "partial": false,
+    "read": "screen complete · 432 of 432 intended seats (100.0%) · seeds 96313900..96313971 reserved",
+    "seed_window": [
+      96313900,
+      96313971
+    ],
+    "seed_window_played": [
+      96313900,
+      96313971
+    ],
+    "target_games": 72,
+    "target_seats": 432
+  },
+  "cost_method": {
+    "compute": "log of wall seconds per completed turn, per game",
+    "fit": "OLS on how many seats had each screened gene on, with an intercept; one observation per game with HC1 robust errors",
+    "time": "log of whole-game wall seconds, per game",
+    "unit": "percent change per enabled major seat; positive is slower"
+  },
+  "difficulty": null,
+  "drift": {
+    "batch": {
+      "culture": 0.1388888888888889,
+      "diplomatic": 0.013888888888888888,
+      "domination": 0.0,
+      "religious": 0.09722222222222222,
+      "science": 0.6527777777777778,
+      "score": 0.09722222222222222,
+      "unfinished": 0.0
+    },
+    "games": 72,
+    "live_ladder": {
+      "games": 93,
+      "shares": {
+        "culture": 0.1827956989247312,
+        "diplomatic": 0.15053763440860216,
+        "science": 0.07526881720430108,
+        "score": 0.5913978494623656
+      },
+      "source": "docs/civ6_ladder.json"
+    },
+    "live_loss_census": {
+      "games": 72,
+      "shares": {
+        "culture": 0.375,
+        "diplomatic": 0.4444444444444444,
+        "domination": 0.013888888888888888,
+        "religious": 0.1111111111111111,
+        "science": 0.05555555555555555
+      },
+      "source": "docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md"
+    },
+    "unit": "share of games ended by each condition"
+  },
+  "endings": {
+    "by_kind": {
+      "culture": {
+        "games": 10,
+        "median_turn": 169,
+        "seats": 60,
+        "share": 0.1388888888888889,
+        "won_by_field": 0
+      },
+      "diplomatic": {
+        "games": 1,
+        "median_turn": 237,
+        "seats": 6,
+        "share": 0.013888888888888888,
+        "won_by_field": 0
+      },
+      "religious": {
+        "games": 7,
+        "median_turn": 166,
+        "seats": 42,
+        "share": 0.09722222222222222,
+        "won_by_field": 0
+      },
+      "science": {
+        "games": 47,
+        "median_turn": 225,
+        "seats": 282,
+        "share": 0.6527777777777778,
+        "won_by_field": 0
+      },
+      "score": {
+        "games": 7,
+        "median_turn": 250,
+        "seats": 42,
+        "share": 0.09722222222222222,
+        "won_by_field": 0
+      }
+    },
+    "games": 72,
+    "lanes": {
+      "domestic_mean": 121.20370370370371,
+      "dvp_mean": 10.07638888888889,
+      "dvp_required": 20,
+      "rival_dvp_mean": 12.162037037037036,
+      "rival_tourists_mean": 75.42361111111111,
+      "seats_where_somebody_reached_the_threshold": 0.013888888888888888,
+      "tourists_mean": 34.34953703703704
+    },
+    "lost_to": {
+      "culture": 0.11574074074074074,
+      "diplomatic": 0.011574074074074073,
+      "religious": 0.08101851851851852,
+      "science": 0.5439814814814815
+    },
+    "unit": "games, and the seats of those games",
+    "won_by_field": 360
+  },
+  "families": [
+    {
+      "base": "naval-recon",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "naval-recon",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "naval-recon-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "naval-recon-3",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "naval-recon",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "naval-recon-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "naval-recon-3",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "naval-recon",
+          "b": "naval-recon-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "naval-recon-2",
+          "b": "naval-recon-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "naval-recon",
+        "naval-recon-2",
+        "naval-recon-3"
+      ]
+    },
+    {
+      "base": "settler-guard-holds",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "settler-guard-holds",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "settler-guard-holds-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "settler-guard-holds",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "settler-guard-holds-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "settler-guard-holds",
+          "b": "settler-guard-holds-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "settler-guard-holds",
+        "settler-guard-holds-2"
+      ]
+    },
+    {
+      "base": "amenity-project-preemption",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "amenity-project-preemption",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "amenity-project-preemption-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "amenity-project-preemption",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "amenity-project-preemption-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "amenity-project-preemption",
+          "b": "amenity-project-preemption-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "amenity-project-preemption",
+        "amenity-project-preemption-2"
+      ]
+    },
+    {
+      "base": "district-coverage",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "district-coverage",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "district-coverage-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "district-coverage",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "district-coverage-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "district-coverage",
+          "b": "district-coverage-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "district-coverage",
+        "district-coverage-2"
+      ]
+    },
+    {
+      "base": "settler-target-hysteresis",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "settler-target-hysteresis",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "settler-target-hysteresis-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "settler-target-hysteresis",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "settler-target-hysteresis-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "settler-target-hysteresis",
+          "b": "settler-target-hysteresis-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "settler-target-hysteresis",
+        "settler-target-hysteresis-2"
+      ]
+    },
+    {
+      "base": "holy-site-where-the-threat-is",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "holy-site-where-the-threat-is",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "holy-site-where-the-threat-is-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "holy-site-where-the-threat-is",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "holy-site-where-the-threat-is-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "holy-site-where-the-threat-is",
+          "b": "holy-site-where-the-threat-is-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "holy-site-where-the-threat-is",
+        "holy-site-where-the-threat-is-2"
+      ]
+    },
+    {
+      "base": "recovery-reads-the-war",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "recovery-reads-the-war",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "recovery-reads-the-war-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "recovery-reads-the-war",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "recovery-reads-the-war-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "recovery-reads-the-war",
+          "b": "recovery-reads-the-war-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "recovery-reads-the-war",
+        "recovery-reads-the-war-2"
+      ]
+    },
+    {
+      "base": "conversion-majority-alarm",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "conversion-majority-alarm",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "conversion-majority-alarm-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "conversion-majority-alarm",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "conversion-majority-alarm-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "conversion-majority-alarm",
+          "b": "conversion-majority-alarm-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "conversion-majority-alarm",
+        "conversion-majority-alarm-2"
+      ]
+    },
+    {
+      "base": "diplomatic-lane-forecast",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "diplomatic-lane-forecast",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "diplomatic-lane-forecast-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "diplomatic-lane-forecast",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "diplomatic-lane-forecast-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "diplomatic-lane-forecast",
+          "b": "diplomatic-lane-forecast-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "diplomatic-lane-forecast",
+        "diplomatic-lane-forecast-2"
+      ]
+    },
+    {
+      "base": "air-surge",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "air-surge",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "air-surge-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "air-surge",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "air-surge-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "air-surge",
+          "b": "air-surge-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "air-surge",
+        "air-surge-2"
+      ]
+    },
+    {
+      "base": "power-the-laboratory",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "power-the-laboratory",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "power-the-laboratory-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "power-the-laboratory",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "power-the-laboratory-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "power-the-laboratory",
+          "b": "power-the-laboratory-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "power-the-laboratory",
+        "power-the-laboratory-2"
+      ]
+    },
+    {
+      "base": "campus-adjacency-threshold",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "campus-adjacency-threshold",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "campus-adjacency-threshold-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "campus-adjacency-threshold",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "campus-adjacency-threshold-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "campus-adjacency-threshold",
+          "b": "campus-adjacency-threshold-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "campus-adjacency-threshold",
+        "campus-adjacency-threshold-2"
+      ]
+    },
+    {
+      "base": "district-planning",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "district-planning",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "district-planning-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "district-planning-3",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "district-planning",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "district-planning-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "district-planning-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "district-planning",
+          "b": "district-planning-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "district-planning-2",
+          "b": "district-planning-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "district-planning",
+        "district-planning-2",
+        "district-planning-3"
+      ]
+    },
+    {
+      "base": "science-victory-drive",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "science-victory-drive",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "science-victory-drive-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "science-victory-drive",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "science-victory-drive-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "science-victory-drive",
+          "b": "science-victory-drive-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "science-victory-drive",
+        "science-victory-drive-2"
+      ]
+    },
+    {
+      "base": "opening-warrior-recon",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "opening-warrior-recon",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "opening-warrior-recon-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "opening-warrior-recon",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "opening-warrior-recon-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "opening-warrior-recon",
+          "b": "opening-warrior-recon-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "opening-warrior-recon",
+        "opening-warrior-recon-2"
+      ]
+    },
+    {
+      "base": "eureka-chasing-builder",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "eureka-chasing-builder",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "eureka-chasing-builder-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "eureka-chasing-builder",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "eureka-chasing-builder-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "eureka-chasing-builder",
+          "b": "eureka-chasing-builder-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "eureka-chasing-builder",
+        "eureka-chasing-builder-2"
+      ]
+    },
+    {
+      "base": "coalition-before-war",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "coalition-before-war",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "coalition-before-war-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "coalition-before-war",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "coalition-before-war-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "coalition-before-war",
+          "b": "coalition-before-war-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "coalition-before-war",
+        "coalition-before-war-2"
+      ]
+    },
+    {
+      "base": "government-ladder",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "government-ladder",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "government-ladder-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "government-ladder",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "government-ladder-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "government-ladder",
+          "b": "government-ladder-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "government-ladder",
+        "government-ladder-2"
+      ]
+    },
+    {
+      "base": "chain-payback-window",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "chain-payback-window",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "chain-payback-window-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "chain-payback-window",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "chain-payback-window-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "chain-payback-window",
+          "b": "chain-payback-window-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "chain-payback-window",
+        "chain-payback-window-2"
+      ]
+    },
+    {
+      "base": "never-an-empty-queue",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "never-an-empty-queue",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "never-an-empty-queue-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "never-an-empty-queue-3",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "never-an-empty-queue",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "never-an-empty-queue-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "never-an-empty-queue-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "never-an-empty-queue",
+          "b": "never-an-empty-queue-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "never-an-empty-queue-2",
+          "b": "never-an-empty-queue-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "never-an-empty-queue",
+        "never-an-empty-queue-2",
+        "never-an-empty-queue-3"
+      ]
+    },
+    {
+      "base": "first-builder-reserve",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "first-builder-reserve",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "first-builder-reserve-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "first-builder-reserve",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "first-builder-reserve-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "first-builder-reserve",
+          "b": "first-builder-reserve-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "first-builder-reserve",
+        "first-builder-reserve-2"
+      ]
+    },
+    {
+      "base": "wonder-adjacent-sites",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "wonder-adjacent-sites",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "wonder-adjacent-sites-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "wonder-adjacent-sites",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "wonder-adjacent-sites-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "wonder-adjacent-sites",
+          "b": "wonder-adjacent-sites-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "wonder-adjacent-sites",
+        "wonder-adjacent-sites-2"
+      ]
+    },
+    {
+      "base": "rapid-city-expansion",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "rapid-city-expansion",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "rapid-city-expansion-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "rapid-city-expansion",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "rapid-city-expansion-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "rapid-city-expansion",
+          "b": "rapid-city-expansion-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "rapid-city-expansion",
+        "rapid-city-expansion-2"
+      ]
+    },
+    {
+      "base": "native-emergency-purchase",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "native-emergency-purchase",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "native-emergency-purchase-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "native-emergency-purchase",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "native-emergency-purchase-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "native-emergency-purchase",
+          "b": "native-emergency-purchase-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "native-emergency-purchase",
+        "native-emergency-purchase-2"
+      ]
+    },
+    {
+      "base": "skip-the-prophet-race",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "skip-the-prophet-race",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "skip-the-prophet-race-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "skip-the-prophet-race",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "skip-the-prophet-race-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "skip-the-prophet-race",
+          "b": "skip-the-prophet-race-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "skip-the-prophet-race",
+        "skip-the-prophet-race-2"
+      ]
+    },
+    {
+      "base": "boost-wait-research",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "boost-wait-research",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "boost-wait-research-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "boost-wait-research",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "boost-wait-research-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "boost-wait-research",
+          "b": "boost-wait-research-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "boost-wait-research",
+        "boost-wait-research-2"
+      ]
+    },
+    {
+      "base": "treasury-at-work",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "treasury-at-work",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "treasury-at-work-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "treasury-at-work",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "treasury-at-work-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "treasury-at-work",
+          "b": "treasury-at-work-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "treasury-at-work",
+        "treasury-at-work-2"
+      ]
+    },
+    {
+      "base": "swap-rotation",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 117,
+          "share": 0.1703197385071271,
+          "win": 0.1623931623931624
+        },
+        {
+          "label": "swap-rotation",
+          "seats": 149,
+          "share": 0.16582421880970077,
+          "win": 0.20134228187919462
+        },
+        {
+          "label": "swap-rotation-2",
+          "seats": 166,
+          "share": 0.16484808428928135,
+          "win": 0.13855421686746988
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "swap-rotation",
+          "share_delta_pp": -0.4495519697426509,
+          "share_se_pp": 0.8526324854962396,
+          "share_z": -0.5272517495987825,
+          "win_delta_pp": 3.894911948603225,
+          "win_se_pp": 4.667800938643549,
+          "win_z": 0.834421176009934
+        },
+        {
+          "a": "off",
+          "b": "swap-rotation-2",
+          "share_delta_pp": -0.5471654217845956,
+          "share_se_pp": 0.7505016417382301,
+          "share_z": -0.7290662556277834,
+          "win_delta_pp": -2.3838945525692488,
+          "win_se_pp": 3.900921850332511,
+          "win_z": -0.6111105641262842
+        },
+        {
+          "a": "swap-rotation",
+          "b": "swap-rotation-2",
+          "share_delta_pp": -0.09761345204198357,
+          "share_se_pp": 0.6334511423016798,
+          "share_z": -0.15409783884404993,
+          "win_delta_pp": -6.278806501172479,
+          "win_se_pp": 4.185911095473586,
+          "win_z": -1.4999856322706029
+        }
+      ],
+      "versions": [
+        "swap-rotation",
+        "swap-rotation-2"
+      ]
+    },
+    {
+      "base": "coastal-city-sites",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "coastal-city-sites",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "coastal-city-sites-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "coastal-city-sites",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "coastal-city-sites-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "coastal-city-sites",
+          "b": "coastal-city-sites-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "coastal-city-sites",
+        "coastal-city-sites-2"
+      ]
+    },
+    {
+      "base": "capture-go-or-stand-down",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "capture-go-or-stand-down",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "capture-go-or-stand-down-2",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "capture-go-or-stand-down",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "capture-go-or-stand-down-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "capture-go-or-stand-down",
+          "b": "capture-go-or-stand-down-2",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "capture-go-or-stand-down",
+        "capture-go-or-stand-down-2"
+      ]
+    },
+    {
+      "base": "enter-the-prophet-race",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "enter-the-prophet-race",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "enter-the-prophet-race-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "enter-the-prophet-race",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "enter-the-prophet-race-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "enter-the-prophet-race",
+          "b": "enter-the-prophet-race-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "enter-the-prophet-race",
+        "enter-the-prophet-race-2"
+      ]
+    },
+    {
+      "base": "border-parity",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "border-parity",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "border-parity-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "border-parity-3",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "border-parity",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "border-parity-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "border-parity-3",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "border-parity",
+          "b": "border-parity-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "border-parity-2",
+          "b": "border-parity-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "border-parity",
+        "border-parity-2",
+        "border-parity-3"
+      ]
+    },
+    {
+      "base": "boosted-bargain-first",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "boosted-bargain-first",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "boosted-bargain-first-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "boosted-bargain-first",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "boosted-bargain-first-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "boosted-bargain-first",
+          "b": "boosted-bargain-first-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "boosted-bargain-first",
+        "boosted-bargain-first-2"
+      ]
+    },
+    {
+      "base": "early-project-restraint",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "early-project-restraint",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "early-project-restraint-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "early-project-restraint",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "early-project-restraint-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "early-project-restraint",
+          "b": "early-project-restraint-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "early-project-restraint",
+        "early-project-restraint-2"
+      ]
+    },
+    {
+      "base": "battle-planner",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "battle-planner",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "battle-planner-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "battle-planner-3",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "battle-planner",
+          "share_delta_pp": 16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "battle-planner-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "battle-planner-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "battle-planner",
+          "b": "battle-planner-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "battle-planner-2",
+          "b": "battle-planner-3",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "battle-planner",
+        "battle-planner-2",
+        "battle-planner-3"
+      ]
+    },
+    {
+      "base": "chase-every-boost",
+      "cells": [
+        {
+          "label": "off",
+          "seats": 432,
+          "share": 0.16666666666666682,
+          "win": 0.16666666666666666
+        },
+        {
+          "label": "chase-every-boost",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        },
+        {
+          "label": "chase-every-boost-2",
+          "seats": 0,
+          "share": 0.0,
+          "win": 0.0
+        }
+      ],
+      "contrasts": [
+        {
+          "a": "off",
+          "b": "chase-every-boost",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "off",
+          "b": "chase-every-boost-2",
+          "share_delta_pp": -16.666666666666664,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": -16.666666666666664,
+          "win_se_pp": null,
+          "win_z": 0.0
+        },
+        {
+          "a": "chase-every-boost",
+          "b": "chase-every-boost-2",
+          "share_delta_pp": 0.0,
+          "share_se_pp": null,
+          "share_z": 0.0,
+          "win_delta_pp": 0.0,
+          "win_se_pp": null,
+          "win_z": 0.0
+        }
+      ],
+      "versions": [
+        "chase-every-boost",
+        "chase-every-boost-2"
+      ]
+    }
+  ],
+  "family_wise_z": 2.2414014778976137,
+  "games": 72,
+  "genes": [
+    {
+      "adjusted_pp": 3.894911948603226,
+      "adjusted_se_pp": 4.667800938643549,
+      "compute_cost_pct": -2.3025104039176525,
+      "compute_cost_se_pct": 2.2870586683143843,
+      "cost_games": 72,
+      "done_delta_pp": -0.15929517340624866,
+      "done_se_pp": 0.7423109882981137,
+      "forgotten_delta_pp": -0.5014865440626792,
+      "forgotten_se_pp": 0.5088010017752421,
+      "n_off": 283,
+      "n_on": 149,
+      "read": "~",
+      "science_end": {
+        "diff": 13.638186222638566,
+        "n_off": 283,
+        "n_on": 149,
+        "se": 13.698887566291807,
+        "z": 0.9955688851843265
+      },
+      "science_pace": {
+        "diff": 0.06353309460004297,
+        "n_off": 283,
+        "n_on": 149,
+        "se": 0.41926695467240016,
+        "z": 0.1515337516873597
+      },
+      "seats": 432,
+      "share_delta_pp": -0.1285998142082051,
+      "share_resolves_pp": 1.7703381834124832,
+      "share_se_pp": 0.6322636369330297,
+      "share_z": -0.20339587269641854,
+      "tag": "swap-rotation",
+      "techs_end": {
+        "diff": 1.4610003082979546,
+        "n_off": 283,
+        "n_on": 149,
+        "se": 1.5135446293565797,
+        "z": 0.9652839301600494
+      },
+      "time_cost_pct": -2.2424843263822174,
+      "time_cost_se_pct": 4.100457267239651,
+      "win_delta_pp": 5.293238788626177,
+      "win_off": 0.14840989399293286,
+      "win_on": 0.20134228187919462,
+      "win_resolves_pp": 11.05421209228023,
+      "win_se_pp": 3.947932890100082,
+      "win_tranches": [
+        {
+          "games": 72,
+          "position": "latest",
+          "seats": 432,
+          "win_delta_pp": 5.293238788626177,
+          "win_se_pp": 3.947932890100082,
+          "win_z": 1.340762099046722
+        }
+      ],
+      "win_z": 1.340762099046722
+    },
+    {
+      "adjusted_pp": -2.383894552569252,
+      "adjusted_se_pp": 3.900921850332511,
+      "compute_cost_pct": -1.0810471495997624,
+      "compute_cost_se_pct": 2.1630569777096516,
+      "cost_games": 72,
+      "done_delta_pp": -0.13185824368421584,
+      "done_se_pp": 0.6713051065434388,
+      "forgotten_delta_pp": 0.7946577428745834,
+      "forgotten_se_pp": 0.5970884623482722,
+      "n_off": 266,
+      "n_on": 166,
+      "read": "~",
+      "science_end": {
+        "diff": -11.14336659344147,
+        "n_off": 266,
+        "n_on": 166,
+        "se": 12.428534143553232,
+        "z": -0.8965954041508276
+      },
+      "science_pace": {
+        "diff": -0.3278829604130813,
+        "n_off": 266,
+        "n_on": 166,
+        "se": 0.33681170473538735,
+        "z": -0.973490397760016
+      },
+      "seats": 432,
+      "share_delta_pp": -0.2953487169287228,
+      "share_resolves_pp": 1.5219163034977508,
+      "share_se_pp": 0.5435415369634824,
+      "share_z": -0.5433783746844827,
+      "tag": "swap-rotation-2",
+      "techs_end": {
+        "diff": -2.3225835673521154,
+        "n_off": 266,
+        "n_on": 166,
+        "se": 1.3456956798283992,
+        "z": -1.7259352186136818
+      },
+      "time_cost_pct": -3.224727632242139,
+      "time_cost_se_pct": 3.6743655314647605,
+      "win_delta_pp": -4.56563094483196,
+      "win_off": 0.18421052631578946,
+      "win_on": 0.13855421686746988,
+      "win_resolves_pp": 9.308938165865179,
+      "win_se_pp": 3.3246207735232782,
+      "win_tranches": [
+        {
+          "games": 72,
+          "position": "latest",
+          "seats": 432,
+          "win_delta_pp": -4.56563094483196,
+          "win_se_pp": 3.3246207735232782,
+          "win_z": -1.373278715332551
+        }
+      ],
+      "win_z": -1.373278715332551
+    }
+  ],
+  "kind": "gene_screen_analysis",
+  "overall_share": 0.16666666666666682,
+  "overall_win": 0.16666666666666666,
+  "profile": {
+    "all_seats": true,
+    "baseline": "best",
+    "batch": {
+      "seed_first": 96313900,
+      "seed_last": 96313971,
+      "target_games": 72,
+      "target_seats": 432
+    },
+    "build": {
+      "binary_sha256": "fc84bacedeb23c3b9e807c7ae5575ab6e7bab8bfcd6a3ae43d384094020b966c",
+      "commit": "43dc5fe18f576427f76c6cbe3c50dd4f4fdff419",
+      "commit_source": "build-tree",
+      "dirty": false,
+      "genes_sha256": "0067c87282b8fb26d53a4f51f95790a882b8144aecb5524237d26ee74b4b24db"
+    },
+    "city_states": 9,
+    "contested_field": "",
+    "contested_field_genes": "",
+    "design": "independent",
+    "difficulty": "prince",
+    "difficulty_rotate": "",
+    "families": [
+      [
+        "naval-recon",
+        "naval-recon-2",
+        "naval-recon-3"
+      ],
+      [
+        "settler-guard-holds",
+        "settler-guard-holds-2"
+      ],
+      [
+        "amenity-project-preemption",
+        "amenity-project-preemption-2"
+      ],
+      [
+        "district-coverage",
+        "district-coverage-2"
+      ],
+      [
+        "settler-target-hysteresis",
+        "settler-target-hysteresis-2"
+      ],
+      [
+        "holy-site-where-the-threat-is",
+        "holy-site-where-the-threat-is-2"
+      ],
+      [
+        "recovery-reads-the-war",
+        "recovery-reads-the-war-2"
+      ],
+      [
+        "conversion-majority-alarm",
+        "conversion-majority-alarm-2"
+      ],
+      [
+        "diplomatic-lane-forecast",
+        "diplomatic-lane-forecast-2"
+      ],
+      [
+        "air-surge",
+        "air-surge-2"
+      ],
+      [
+        "power-the-laboratory",
+        "power-the-laboratory-2"
+      ],
+      [
+        "campus-adjacency-threshold",
+        "campus-adjacency-threshold-2"
+      ],
+      [
+        "district-planning",
+        "district-planning-2",
+        "district-planning-3"
+      ],
+      [
+        "science-victory-drive",
+        "science-victory-drive-2"
+      ],
+      [
+        "opening-warrior-recon",
+        "opening-warrior-recon-2"
+      ],
+      [
+        "eureka-chasing-builder",
+        "eureka-chasing-builder-2"
+      ],
+      [
+        "coalition-before-war",
+        "coalition-before-war-2"
+      ],
+      [
+        "government-ladder",
+        "government-ladder-2"
+      ],
+      [
+        "chain-payback-window",
+        "chain-payback-window-2"
+      ],
+      [
+        "never-an-empty-queue",
+        "never-an-empty-queue-2",
+        "never-an-empty-queue-3"
+      ],
+      [
+        "first-builder-reserve",
+        "first-builder-reserve-2"
+      ],
+      [
+        "wonder-adjacent-sites",
+        "wonder-adjacent-sites-2"
+      ],
+      [
+        "rapid-city-expansion",
+        "rapid-city-expansion-2"
+      ],
+      [
+        "native-emergency-purchase",
+        "native-emergency-purchase-2"
+      ],
+      [
+        "skip-the-prophet-race",
+        "skip-the-prophet-race-2"
+      ],
+      [
+        "boost-wait-research",
+        "boost-wait-research-2"
+      ],
+      [
+        "treasury-at-work",
+        "treasury-at-work-2"
+      ],
+      [
+        "swap-rotation",
+        "swap-rotation-2"
+      ],
+      [
+        "coastal-city-sites",
+        "coastal-city-sites-2"
+      ],
+      [
+        "capture-go-or-stand-down",
+        "capture-go-or-stand-down-2"
+      ],
+      [
+        "enter-the-prophet-race",
+        "enter-the-prophet-race-2"
+      ],
+      [
+        "border-parity",
+        "border-parity-2",
+        "border-parity-3"
+      ],
+      [
+        "boosted-bargain-first",
+        "boosted-bargain-first-2"
+      ],
+      [
+        "early-project-restraint",
+        "early-project-restraint-2"
+      ],
+      [
+        "battle-planner",
+        "battle-planner-2",
+        "battle-planner-3"
+      ],
+      [
+        "chase-every-boost",
+        "chase-every-boost-2"
+      ]
+    ],
+    "genes": [
+      "war-reinforcement",
+      "come-ashore",
+      "recorded-tactical-step",
+      "whole-turn-backtrack-guard",
+      "blind-objective-strength",
+      "blind-objective-units",
+      "relief-targets-the-siege",
+      "army-target-weighs-enemy",
+      "peacetime-deterrence",
+      "war-economy",
+      "bounded-recovery",
+      "siege-commitment",
+      "garrison-under-fire",
+      "strike-opening",
+      "recon-replacement",
+      "barbarian-scouts-are-scouts",
+      "barbarian-bargain",
+      "barbarian-ranged-answer",
+      "naval-recon",
+      "camp-party",
+      "religion-sues-peace",
+      "escort-unstick",
+      "buildings-before-projects",
+      "settler-guard-holds",
+      "stranded-settler-discount",
+      "wide-map-capacity",
+      "amenity-project-preemption",
+      "amenity-district-path",
+      "housing-research",
+      "district-coverage",
+      "slot-kind-tiebreak",
+      "loyalty-rate-alarm",
+      "score-horizon",
+      "one-launch-pad",
+      "settler-target-hysteresis",
+      "culture-building-debt",
+      "strategic-wonders",
+      "builder-barbarian-safety",
+      "apostle-promotion-by-role",
+      "founder-temple",
+      "holy-lane-parity",
+      "idle-faith-patronage",
+      "religious-defence-scales",
+      "religious-units-heal-first",
+      "holy-site-where-the-threat-is",
+      "enhancer-for-the-corps",
+      "early-contact-window",
+      "great-person-housing",
+      "opportunistic-war",
+      "raid-pillage-prizes",
+      "settler-threat-detour",
+      "settle-sooner",
+      "science-multiplier-payoff",
+      "research-tier-premium",
+      "one-shot-recovery",
+      "lane-great-people",
+      "lane-policy-deck",
+      "lane-culture-spending",
+      "lane-space-race",
+      "competition-victory-points",
+      "defensible-sites",
+      "elective-war-in-reach",
+      "recovery-reads-the-war",
+      "expansion-pays-back",
+      "domination-city-count",
+      "unchosen-war-keeps-the-lane",
+      "elective-war-yields-to-a-lane",
+      "rival-suzerainty-alarm",
+      "congress-counter-leader",
+      "science-chain-alarm",
+      "conversion-majority-alarm",
+      "culture-lane-forecast",
+      "diplomatic-lane-forecast",
+      "frontier-massing-alarm",
+      "air-surge",
+      "power-the-laboratory",
+      "campus-adjacency-threshold",
+      "coordinated-finish",
+      "unit-objective-memory",
+      "pantheon-board",
+      "maintenance-aware-deck",
+      "unit-cost-efficiency",
+      "settlement-gap-target",
+      "price-the-suzerainty",
+      "engine-faith-price",
+      "promote-when-wounded",
+      "district-planning",
+      "wonder-score-tally",
+      "missionary-last-charge-explores",
+      "missionary-evades-raiders",
+      "religious-veto-defence",
+      "deals-for-our-gain",
+      "deals-at-the-ceiling",
+      "no-free-passage",
+      "one-war-at-a-time",
+      "flip-nearby-city-states",
+      "settler-screen",
+      "pass-picket",
+      "solvency-first-trade-slot",
+      "city-campaign",
+      "campaign-pillage",
+      "settler-factory-coordination",
+      "naval-threat-triage",
+      "surprise-war-mobilization",
+      "science-victory-drive",
+      "expansion-schedule",
+      "growth-to-settle",
+      "order-retry",
+      "builder-tries-the-next-tile",
+      "opening-warrior-recon",
+      "opening-warrior-recon-2",
+      "settler-second-look",
+      "civilian-out-of-reach",
+      "chop-into-the-queue",
+      "eureka-chasing-builder",
+      "eureka-chasing-production",
+      "coalition-before-war",
+      "amenity-project-preemption-2",
+      "campus-adjacency-threshold-2",
+      "district-coverage-2",
+      "guru-heals-the-corps-2",
+      "holy-site-where-the-threat-is-2",
+      "naval-recon-2",
+      "power-the-laboratory-2",
+      "settler-guard-holds-2",
+      "settler-target-hysteresis-2",
+      "siege-is-progress-2",
+      "government-ladder",
+      "chain-payback-window",
+      "upgrade-the-garrison",
+      "never-an-empty-queue",
+      "improvement-housing-value",
+      "builder-supply-floor",
+      "chain-payback-window-2",
+      "never-an-empty-queue-2",
+      "first-builder-reserve",
+      "first-builder-reserve-2",
+      "first-research-building-reserve",
+      "enemy-of-my-enemy",
+      "camp-tile-buyout",
+      "wonder-adjacent-sites",
+      "wonder-adjacent-sites-2",
+      "wonder-ring-recon",
+      "rapid-city-expansion",
+      "contested-land-first",
+      "buy-what-cards-cannot-boost",
+      "build-what-cards-boost",
+      "gold-for-the-young-city",
+      "native-emergency-purchase",
+      "native-emergency-purchase-2",
+      "quest-production",
+      "quest-trade-route",
+      "quest-camp-errand",
+      "quest-boost",
+      "skip-the-prophet-race",
+      "science-building-first",
+      "boost-first-research",
+      "boost-wait-research",
+      "boost-unlock-research",
+      "chokepoint-siting",
+      "canal-city",
+      "chokepoint-claim",
+      "encampment-seals-the-pass",
+      "chokepoint-garrison",
+      "government-capacity-fallback",
+      "government-ladder-2",
+      "lane-release-when-hopeless",
+      "war-needs-a-treasury",
+      "peace-when-the-war-does-not-pay",
+      "city-target-meets-the-map",
+      "lane-votes-its-favor",
+      "religion-race-is-closed",
+      "moksha-defends-the-faithless",
+      "treasury-at-work",
+      "treasury-at-work-2",
+      "fire-plan",
+      "close-as-a-body",
+      "screen-the-shooters",
+      "barbarian-settler-capture",
+      "exchange-is-the-engines",
+      "defend-where-you-stand",
+      "swap-rotation",
+      "coastal-city-sites",
+      "coastal-city-sites-2",
+      "culture-floor",
+      "gold-income-floor",
+      "early-archers",
+      "capture-go-or-stand-down",
+      "capture-go-or-stand-down-2",
+      "commitment-patience",
+      "relief-column-marches",
+      "threatened-city-reserve",
+      "island-exploration",
+      "overseas-settlement",
+      "enter-the-prophet-race",
+      "settler-never-idles",
+      "exhaustion-loyalty-guard",
+      "settler-backlog-brake",
+      "first-granary-reserve",
+      "connect-the-luxury",
+      "border-parity",
+      "age-closer",
+      "boosted-bargain-first",
+      "boosted-bargain-first-2",
+      "cheapest-wonder-first",
+      "border-parity-2",
+      "first-district-first",
+      "walls-after-districts",
+      "hostile-memory",
+      "escort-cap-holds",
+      "science-expansion-phase",
+      "first-luxury-first",
+      "science-opening-band",
+      "science-victory-drive-2",
+      "capital-settler-after-completion",
+      "early-project-restraint",
+      "settler-site-gate",
+      "settler-target-floor",
+      "spaceport-surplus-veto",
+      "district-planning-2",
+      "district-planning-3",
+      "air-surge-2",
+      "commitment-owner-acts",
+      "campus-through-expansion",
+      "trade-route-network",
+      "industrial-chain-debt",
+      "skip-the-prophet-race-2",
+      "siege-preempts-the-queue",
+      "rapid-city-expansion-2",
+      "naval-recon-3",
+      "never-an-empty-queue-3",
+      "boost-wait-research-2",
+      "diplomatic-lane-forecast-2",
+      "wounded-out-of-reach",
+      "coalition-before-war-2",
+      "settler-walk-deadline",
+      "battle-planner",
+      "chase-every-boost",
+      "chase-every-boost-2",
+      "early-project-restraint-2",
+      "battle-planner-2",
+      "siege-train",
+      "anvil",
+      "eureka-chasing-builder-2",
+      "border-parity-3",
+      "conversion-majority-alarm-2",
+      "enter-the-prophet-race-2",
+      "modernize-before-spending",
+      "veterans-withdraw-early",
+      "objective-board",
+      "requisitions",
+      "war-policy-via-board",
+      "battle-planner-3",
+      "siege-is-progress-3",
+      "recovery-reads-the-war-2",
+      "swap-rotation-2"
+    ],
+    "height": 46,
+    "kind": "header",
+    "map": "continents",
+    "native_competitions": false,
+    "p_default_on": 0.75,
+    "p_on": 0.75,
+    "players": 6,
+    "prior": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      0.375,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.375
+    ],
+    "randomize_civs": true,
+    "rivals": "",
+    "screened": [
+      "swap-rotation",
+      "swap-rotation-2"
+    ],
+    "speed": "online",
+    "start_seed": 96313900,
+    "turns": 250,
+    "victories": "science,culture,religious,diplomatic,domination,score",
+    "victory_mask": "",
+    "width": 74
+  },
+  "reproducibility": {
+    "target_seats_per_window": 20000,
+    "unit": "seats",
+    "windows": "newest first; whole games only"
+  },
+  "resolution": {
+    "alpha": 0.05,
+    "expected_flags_by_chance": 0.091,
+    "genes": 2,
+    "power": 0.8,
+    "read": "the smallest Δ this run could resolve at 80% power; a Δ below it is inside the run's own noise",
+    "share_pp": 1.7703381834124832,
+    "win_pp": 11.05421209228023
+  },
+  "rival_mix": null,
+  "seats": 432,
+  "shape": "standard",
+  "victory_masks": null
+}
