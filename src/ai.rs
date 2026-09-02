@@ -11202,7 +11202,7 @@ impl BasicAi {
             let Some((_, _, city, item)) = choice else {
                 break;
             };
-            let resumed = g.cities[&city].queue.first().is_some();
+            let resumed = !g.cities[&city].queue.is_empty();
             if g.apply(
                 pid,
                 &Action::Produce {
