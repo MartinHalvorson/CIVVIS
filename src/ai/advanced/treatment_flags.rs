@@ -855,8 +855,9 @@ impl AdvancedAi {
     }
 
     /// Read each rival civilization's progress toward its own majority, then
-    /// average those equal shares. Version 2 of `conversion-majority-alarm`;
-    /// enabling it selects this family version.
+    /// use the least-converted holdout as the conjunctive victory clock.
+    /// Version 2 of `conversion-majority-alarm`; enabling it selects this
+    /// family version.
     pub fn enable_conversion_majority_alarm_2(&mut self) {
         self.conversion_majority_alarm = false;
         self.conversion_majority_alarm_2 = true;

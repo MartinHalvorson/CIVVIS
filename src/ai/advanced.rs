@@ -4449,17 +4449,17 @@ pub struct AdvancedAi {
     ///
     /// **Off by default.** Screenable.
     pub conversion_majority_alarm: bool,
-    /// Whether the smooth religious-victory clock gives every remaining
-    /// civilization one equal share, rather than pooling their city counts.
+    /// Whether the smooth religious-victory clock reads the least-converted
+    /// remaining civilization, rather than pooling every rival's city counts.
     ///
     /// Version one fixes the staircase, but its pooled denominator gives a
     /// wide empire more votes than a small one. Fully converting one enormous
     /// neighbour can therefore cross the denial bar while several untouched
     /// civilizations still remain. The victory rule does not weight them by
     /// size: every living civilization must hold a majority. Version two
-    /// measures progress to each majority separately and averages those
-    /// percentages, making the smooth signal an interpolation of the same
-    /// equal-civilization staircase it replaces.
+    /// measures progress to each majority separately and reads the weakest
+    /// one. That is the actual conjunctive clock: the religious leader is only
+    /// as close as its furthest remaining holdout.
     ///
     /// Folded in with the exact completed-civilization reading below, so it
     /// cannot hide a majority the host has already confirmed.
@@ -9877,8 +9877,8 @@ impl AdvancedAi {
     ///
     /// See [`Self::conversion_majority_alarm`] and
     /// [`Self::conversion_majority_alarm_2`]. Version one pools the required
-    /// cities. Version two measures each civilization separately, then gives
-    /// those equal shares the victory rule gives them.
+    /// cities. Version two measures each civilization separately, then reads
+    /// the least-converted holdout the victory rule still requires.
     fn conversion_majority_pressure(&self, g: &Game, pid: usize) -> i32 {
         if !self.conversion_majority_alarm && !self.conversion_majority_alarm_2 {
             return 0;
@@ -9888,8 +9888,7 @@ impl AdvancedAi {
         };
         let mut required = 0_usize;
         let mut held = 0_usize;
-        let mut equal_progress = 0_usize;
-        let mut rivals = 0_usize;
+        let mut bottleneck_progress = None;
         for other in g.players.iter().filter(|other| {
             other.id != pid && other.alive && !other.is_minor && !other.is_barbarian
         }) {
@@ -9918,14 +9917,15 @@ impl AdvancedAi {
                 });
             required += majority;
             held += following.min(majority);
-            equal_progress += 100 * following.min(majority) / majority;
-            rivals += 1;
+            let progress = 100 * following.min(majority) / majority;
+            bottleneck_progress =
+                Some(bottleneck_progress.map_or(progress, |current: usize| current.min(progress)));
         }
-        if required == 0 || rivals == 0 {
+        if required == 0 {
             return 0;
         }
         if self.conversion_majority_alarm_2 {
-            (equal_progress / rivals) as i32
+            bottleneck_progress.unwrap_or(0) as i32
         } else {
             (100 * held / required) as i32
         }

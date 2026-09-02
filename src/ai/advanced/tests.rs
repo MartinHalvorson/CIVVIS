@@ -37843,8 +37843,8 @@ fn a_rival_one_city_short_everywhere_reads_zero_on_the_staircase() {
 
     let mut ai = AdvancedAi::new();
     ai.enable_conversion_majority_alarm();
-    let mut equal = AdvancedAi::new();
-    equal.enable_conversion_majority_alarm_2();
+    let mut bottleneck = AdvancedAi::new();
+    bottleneck.enable_conversion_majority_alarm_2();
     let shipped = AdvancedAi::new();
 
     let (converted, _) = shipped.religious_conversion_tally(&game, 0);
@@ -37861,7 +37861,7 @@ fn a_rival_one_city_short_everywhere_reads_zero_on_the_staircase() {
         "half the cities the victory asks for are already converted"
     );
     assert_eq!(
-        equal.conversion_majority_pressure(&game, 0),
+        bottleneck.conversion_majority_pressure(&game, 0),
         50,
         "equal-sized civilizations preserve version one's smooth reading"
     );
@@ -37874,7 +37874,7 @@ fn a_rival_one_city_short_everywhere_reads_zero_on_the_staircase() {
 
 /// Version one pools every required city. That lets one enormous converted
 /// empire outweigh four untouched holdouts even though Religion must take all
-/// five civilizations. Version two gives each holdout one equal share.
+/// five civilizations. Version two reads the furthest remaining holdout.
 #[test]
 fn conversion_majority_alarm_2_does_not_let_one_wide_empire_outvote_four_holdouts() {
     let mut game = Game::new(6, 96, 52, 8_403, 250, 0);
@@ -37899,30 +37899,30 @@ fn conversion_majority_alarm_2_does_not_let_one_wide_empire_outvote_four_holdout
 
     let mut pooled = AdvancedAi::new();
     pooled.enable_conversion_majority_alarm();
-    let mut equal = AdvancedAi::new();
-    equal.enable_conversion_majority_alarm_2();
+    let mut bottleneck = AdvancedAi::new();
+    bottleneck.enable_conversion_majority_alarm_2();
 
     assert_eq!(pooled.conversion_majority_pressure(&game, 0), 69);
     assert_eq!(
-        equal.conversion_majority_pressure(&game, 0),
-        20,
-        "one completed civilization is one fifth of the remaining race"
+        bottleneck.conversion_majority_pressure(&game, 0),
+        0,
+        "an untouched civilization is still the bottleneck"
     );
     let pooled_pressure = pooled.rival_victory_pressure(&game, 0);
-    let equal_pressure = equal.rival_victory_pressure(&game, 0);
+    let bottleneck_pressure = bottleneck.rival_victory_pressure(&game, 0);
     assert_eq!(pooled_pressure.strategy, GrandStrategy::Religion);
     assert_eq!(pooled_pressure.progress, 69);
-    assert_eq!(equal_pressure.strategy, GrandStrategy::Religion);
-    assert_eq!(equal_pressure.progress, 20);
+    assert_eq!(bottleneck_pressure.strategy, GrandStrategy::Religion);
+    assert_eq!(bottleneck_pressure.progress, 16);
     assert_eq!(
         pooled.denial_response_for_pressure(&game, 2, 0, 0, pooled_pressure),
         Some(GrandStrategy::Conquest),
         "the pooled clock starts a war against one converted empire"
     );
     assert_eq!(
-        equal.denial_response_for_pressure(&game, 2, 0, 0, equal_pressure),
+        bottleneck.denial_response_for_pressure(&game, 2, 0, 0, bottleneck_pressure),
         None,
-        "four untouched civilizations keep the equal clock below the war bar"
+        "four untouched civilizations keep the bottleneck clock below the war bar"
     );
 }
 
