@@ -15878,6 +15878,11 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     live.disable_settler_never_idles();
+    // This arm is about the deployed rate forecast. The separately selected
+    // exhaustion guard is covered by its own fixture and would reject this
+    // site before that forecast gets to speak.
+    live.disable_exhaustion_loyalty_guard();
+    assert!(!live.exhaustion_loyalty_guard);
     // The deployed rate forecast remains independently covered after the
     // withheld frontier-floor control above.
     live.frontier_loyalty = false;
