@@ -2162,11 +2162,6 @@ pub const GENES: &[Gene] = &[
     // with one survivable blow keeps the ladder's freedom. Priced on the
     // arena beside `battle-planner-2`. See `advanced/battle_planner.rs`.
     Gene { tag: "doomed-blow-veto", field: "doomed_blow_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto, disable: AdvancedAi::disable_doomed_blow_veto },
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
-    // ---- append: e-f ------------------------------------------------
-    // ---- append: g-k ------------------------------------------------
-    // ---- append: l-o ------------------------------------------------
     // Version two of `missionary-last-charge-explores`: a one-charge
     // Missionary searches a continent-scale horizon, ranks distant
     // high-reveal fog, and insists on a route the movement rules permit.
@@ -2175,6 +2170,11 @@ pub const GENES: &[Gene] = &[
     // intact for its existing screen history; one family version plays at a
     // time. See `advanced/missionary_field.rs`.
     Gene { tag: "missionary-last-charge-explores-2", field: "missionary_last_charge_explores_2", kind: Kind::OptIn, enable: AdvancedAi::enable_missionary_last_charge_explores_2, disable: AdvancedAi::disable_missionary_last_charge_explores_2 },
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
+    // ---- append: g-k ------------------------------------------------
+    // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
