@@ -8129,8 +8129,7 @@ fn a_captured_citys_pending_disposition_reaches_the_board_and_clears() {
         "Rome sits on seat 1"
     );
     assert_eq!(
-        mirror.game.cities[&antium].original_owner,
-        2,
+        mirror.game.cities[&antium].original_owner, 2,
         "Greece sits on seat 2"
     );
     let pending = mirror.game.legal_city_disposition_actions(0);
@@ -8139,7 +8138,10 @@ fn a_captured_citys_pending_disposition_reaches_the_board_and_clears() {
         crate::game::Action::RazeCity { city: antium },
         crate::game::Action::LiberateCity { city: antium },
     ] {
-        assert!(pending.contains(&action), "{action:?} missing from {pending:?}");
+        assert!(
+            pending.contains(&action),
+            "{action:?} missing from {pending:?}"
+        );
     }
 
     // The host took a directive: the export no longer names the city, and

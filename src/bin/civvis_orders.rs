@@ -3787,9 +3787,9 @@ fn decide(
                         }
                     }
                     Action::Produce { .. } => "produce_not_mapped",
-                    Action::KeepCity { .. } | Action::RazeCity { .. } | Action::LiberateCity { .. } => {
-                        "city_not_mapped"
-                    }
+                    Action::KeepCity { .. }
+                    | Action::RazeCity { .. }
+                    | Action::LiberateCity { .. } => "city_not_mapped",
                     _ => "",
                 };
                 // ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest
@@ -16552,20 +16552,41 @@ mod order_postcondition_tests {
         kept.cities[0].captured_from = None;
         let gone = frame(31);
 
-        assert_eq!(check(&order("KEEP"), &before, &kept, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&order("KEEP"), &before, &kept, &[]),
+            Verdict::Verified
+        );
         // Still pending: the host did not take the directive.
-        assert_eq!(check(&order("KEEP"), &before, &before, &[]), failed("not_kept"));
-        assert_eq!(check(&order("KEEP"), &before, &gone, &[]), failed("city_gone"));
+        assert_eq!(
+            check(&order("KEEP"), &before, &before, &[]),
+            failed("not_kept")
+        );
+        assert_eq!(
+            check(&order("KEEP"), &before, &gone, &[]),
+            failed("city_gone")
+        );
 
-        assert_eq!(check(&order("RAZE"), &before, &gone, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&order("RAZE"), &before, &gone, &[]),
+            Verdict::Verified
+        );
         let mut burning = kept.clone();
         burning.cities[0].pop = 3;
-        assert_eq!(check(&order("RAZE"), &before, &burning, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&order("RAZE"), &before, &burning, &[]),
+            Verdict::Verified
+        );
         let mut same_turn = kept.clone();
         same_turn.turn = 30;
         same_turn.frame = 1;
-        assert_eq!(check(&order("RAZE"), &before, &same_turn, &[]), Verdict::Verified);
-        assert_eq!(check(&order("RAZE"), &before, &kept, &[]), failed("not_razed"));
+        assert_eq!(
+            check(&order("RAZE"), &before, &same_turn, &[]),
+            Verdict::Verified
+        );
+        assert_eq!(
+            check(&order("RAZE"), &before, &kept, &[]),
+            failed("not_razed")
+        );
 
         let foreign = |player: usize| {
             let mut after = frame(31);
@@ -16581,13 +16602,22 @@ mod order_postcondition_tests {
             });
             after
         };
-        assert_eq!(check(&order("LIBERATE"), &before, &foreign(5), &[]), Verdict::Verified);
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &foreign(5), &[]),
+            Verdict::Verified
+        );
         assert_eq!(
             check(&order("LIBERATE"), &before, &foreign(3), &[]),
             failed("liberated_to_another")
         );
-        assert_eq!(check(&order("LIBERATE"), &before, &kept, &[]), failed("not_liberated"));
-        assert_eq!(check(&order("LIBERATE"), &before, &gone, &[]), failed("not_liberated"));
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &kept, &[]),
+            failed("not_liberated")
+        );
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &gone, &[]),
+            failed("not_liberated")
+        );
     }
 
     #[test]
