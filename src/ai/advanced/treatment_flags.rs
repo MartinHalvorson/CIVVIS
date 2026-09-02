@@ -3744,6 +3744,33 @@ impl AdvancedAi {
         self.battle_planner_2 = false;
     }
 
+    /// A force whose objective is an enemy city plays the siege as a state
+    /// machine — stage on the ring out of the city's reach until the bill is
+    /// met, seal the ring spread-first, reduce walls before the garrison,
+    /// reserve one taker and walk in when the city is within its blow. See
+    /// `siege_train`.
+    pub fn enable_siege_train(&mut self) {
+        self.siege_train = true;
+    }
+
+    /// The twin of `enable_siege_train`.
+    pub fn disable_siege_train(&mut self) {
+        self.siege_train = false;
+    }
+
+    /// The land group nearest a threatened city of ours holds it as a
+    /// formation — a shooter on the centre, melee on the front tiles that
+    /// face the enemy, the rest within two, the wounded rotated into the
+    /// city — in place of the relief hold point. See `siege_train`.
+    pub fn enable_anvil(&mut self) {
+        self.anvil = true;
+    }
+
+    /// The twin of `enable_anvil`.
+    pub fn disable_anvil(&mut self) {
+        self.anvil = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
