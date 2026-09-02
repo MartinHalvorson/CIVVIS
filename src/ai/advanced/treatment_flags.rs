@@ -4035,6 +4035,20 @@ impl AdvancedAi {
         self.city_campaign_2 = false;
     }
 
+    /// `strike-reach`: the battle planner's danger field reads every hostile's
+    /// reach the way the engine resolves a blow — a unit that stops in our
+    /// zone of control keeps its movement for the strike, so a melee unit
+    /// two tiles off can close and hit — and on the mirrored board a ranged
+    /// hostile needs no line of sight of its own. See `battle_planner`.
+    pub fn enable_strike_reach(&mut self) {
+        self.strike_reach = true;
+    }
+
+    /// The twin of `enable_strike_reach`.
+    pub fn disable_strike_reach(&mut self) {
+        self.strike_reach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
