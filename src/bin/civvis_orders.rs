@@ -5139,6 +5139,17 @@ const EVIDENCE_KINDS: &[&str] = &[
     // on the ledger is a named refusal, not a position diff.
     "move_noop",
     "move_fallback",
+    // ⭐ THE SAME FOR A STRIKE. `range_attack_refused` is the host declining a
+    // shot the simulator previewed (line of sight, range, a spent attack — its
+    // `why` is the host's own reason), and `war_refused` is `refuseWarStarter`
+    // holding back an order the engine would answer with a war the agent never
+    // declared. Both were emitted for months and read by nothing in Rust: a
+    // refused ATTACK/RANGE_ATTACK was failed as `target_unharmed`, which
+    // reads the same as a shot that landed for zero. The mirror also reads
+    // both into `Game::blocked_strikes` so the next frame of the same turn
+    // does not propose the identical pair again.
+    "range_attack_refused",
+    "war_refused",
 ];
 
 /// Ledger evidence and state frames stamped with one of `turns`.
@@ -5410,6 +5421,63 @@ fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> 
     })
 }
 
+/// The host's own reason a strike did not happen, when it gave one this turn
+/// for exactly this attacker and target.
+///
+/// `war_refused` (from `CivvisLedger.refuseWarStarter`) verifies as
+/// `would_declare_war`: the order was never sent, because the engine would
+/// have answered it with a war the agent never declared. `range_attack_refused`
+/// carries the host's `why` — `refusalReason`'s localized failure reasons,
+/// `"Target is out of range | No line of sight [p4r]"` — and crosses as
+/// `host_refused_<why>` with that text reduced to a token; a refusal without
+/// words is `host_refused_strike`.
+fn strike_refusal_reason(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    unit: i64,
+    target: Option<(i32, i32)>,
+) -> Option<String> {
+    let aimed_here = |event: &serde_json::Value| {
+        event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+            && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
+            && target.is_none_or(|(x, y)| {
+                event.get("x").and_then(|v| v.as_i64()) == Some(i64::from(x))
+                    && event.get("y").and_then(|v| v.as_i64()) == Some(i64::from(y))
+            })
+    };
+    let of_kind = |event: &serde_json::Value, kind: &str| {
+        event.get("kind").and_then(|k| k.as_str()) == Some(kind)
+    };
+    if evidence
+        .iter()
+        .any(|event| of_kind(event, "war_refused") && aimed_here(event))
+    {
+        return Some("would_declare_war".to_string());
+    }
+    let refused = evidence
+        .iter()
+        .find(|event| of_kind(event, "range_attack_refused") && aimed_here(event))?;
+    let why = refused
+        .get("why")
+        .and_then(|w| w.as_str())
+        .unwrap_or("")
+        // `refusalReason` suffixes the call form it got the words from.
+        .split(" [")
+        .next()
+        .unwrap_or("");
+    let token: String = why
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    Some(if token.is_empty() || token.starts_with("can_start") {
+        "host_refused_strike".to_string()
+    } else {
+        format!("host_refused_{token}")
+    })
+}
+
 /// Whether the host deliberately rewrote this Settler leg to an escape plot.
 /// The safety pass can replace the planner's destination after the order has
 /// already entered the ledger; the event is the bridge's proof of the actual
@@ -5627,7 +5695,12 @@ fn verify_unit_order(
             if harmed || combat_evidence(evidence, turn, id) {
                 Verdict::Verified
             } else {
-                Verdict::Failed("target_unharmed".to_string())
+                // The host's own reason when it gave one; see
+                // `strike_refusal_reason`.
+                Verdict::Failed(
+                    strike_refusal_reason(evidence, turn, id, order.pos)
+                        .unwrap_or_else(|| "target_unharmed".to_string()),
+                )
             }
         }
         "FORTIFY" => {
@@ -10202,6 +10275,167 @@ mod tests {
             planned.units[&chariot].pos, target,
             "the private CIVVIS board still simulates and scores the full approach"
         );
+    }
+
+    /// A strike the host refused this turn (`range_attack_refused` /
+    /// `war_refused`) reaches the mirrored board as `Game::blocked_strikes`,
+    /// and a later frame of the same turn neither enumerates, proves nor
+    /// applies the identical pair — while the same unit's other targets and
+    /// other units' strikes at the same target stay open.
+    #[test]
+    fn a_strike_the_host_refused_is_not_proposed_again_this_turn() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        let open = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let by_host = |mirror: &civvis::mirror::LiveMirror, host: i64| {
+            mirror
+                .civ6_of
+                .iter()
+                .find_map(|(unit, civ6)| (*civ6 == host).then_some(*unit))
+                .unwrap()
+        };
+        let target = civvis::hex::offset_to_axial(5, 4);
+        let warrior = by_host(&open, 101);
+        let strike = Action::Attack {
+            unit: warrior,
+            target,
+        };
+        assert!(
+            open.game.legal_actions(0).contains(&strike),
+            "the adjacent warrior's melee strike is legal on the open board"
+        );
+        let mut planned = open.game.clone();
+        let volley = finish_live_war_units(&mut planned, 0, &open.civ6_of);
+        assert!(
+            volley.actions.contains(&strike),
+            "the finishing pre-pass sends the warrior's blow on the open board: {:?}",
+            volley.actions
+        );
+
+        // Frame 1 of the same turn: the host refused exactly that pair.
+        state.frame = 1;
+        state.refused_strikes.insert((101, 5, 4));
+        let blocked = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let warrior = by_host(&blocked, 101);
+        let strike = Action::Attack {
+            unit: warrior,
+            target,
+        };
+        assert!(
+            blocked.game.blocked_strikes.contains(&(warrior, target)),
+            "the refused pair reaches the board in CIVVIS ids and axial tiles"
+        );
+        assert!(
+            !blocked.game.legal_actions(0).contains(&strike),
+            "the refused strike is not enumerated again"
+        );
+        assert!(blocked.game.strike_blocked(warrior, target));
+        let mut replan = blocked.game.clone();
+        assert!(
+            replan.apply(0, &strike).is_err(),
+            "the applier refuses it too, so a pre-pass proving it on a private board cannot re-issue it"
+        );
+        let volley = finish_live_war_units(&mut replan, 0, &blocked.civ6_of);
+        let re_issued = volley.actions.iter().any(|action| {
+            matches!(
+                action,
+                Action::Attack { unit, target: to } | Action::Ranged { unit, target: to }
+                    if *unit == warrior && *to == target
+            )
+        });
+        assert!(
+            !re_issued,
+            "the replan frame does not re-issue the refused strike: {:?}",
+            volley.actions
+        );
+        // The block is the exact pair, not the unit and not the target.
+        let slinger = by_host(&blocked, 100);
+        assert!(
+            !blocked.game.blocked_strikes.contains(&(slinger, target)),
+            "another unit's strike at the same target is not blocked"
+        );
+        assert!(
+            !blocked
+                .game
+                .blocked_strikes
+                .iter()
+                .any(|(unit, to)| *unit == warrior && *to != target),
+            "the same unit's other targets are not blocked"
+        );
+    }
+
+    /// An ATTACK/RANGE_ATTACK that left its target unharmed verifies with the
+    /// host's reason when the host gave one this turn for exactly this pair:
+    /// `would_declare_war` for a war-starter refusal, the host's `why` as a
+    /// token for a ranged refusal, and `target_unharmed` when it gave none.
+    #[test]
+    fn a_refused_strike_verifies_with_the_hosts_reason() {
+        let (tiles, before) = local_barbarian_defense_board();
+        let after = before.clone();
+        let verdict = |verb: &str, evidence: &[serde_json::Value]| {
+            let order = IssuedOrder {
+                kind: "unit".to_string(),
+                subject: Some(101),
+                verb: Some(verb.to_string()),
+                pos: Some((5, 4)),
+            };
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &after,
+                &tiles,
+                evidence,
+                LaterFrames::default(),
+            )
+        };
+        let event = |json: &str| serde_json::from_str::<serde_json::Value>(json).unwrap();
+
+        assert!(matches!(
+            verdict("ATTACK", &[]),
+            Verdict::Failed(reason) if reason == "target_unharmed"
+        ));
+        let war = event(
+            r#"{"kind":"war_refused","turn":30,"unit":101,"verb":"ATTACK","x":5,"y":4,"players":[3],"target_owner":3}"#,
+        );
+        assert!(matches!(
+            verdict("ATTACK", std::slice::from_ref(&war)),
+            Verdict::Failed(reason) if reason == "would_declare_war"
+        ));
+        let los = event(
+            r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":5,"y":4,"moves":2,"attacks":1,"activity":"ACTIVITY_AWAKE","why":"No line of sight [p4r]"}"#,
+        );
+        assert!(matches!(
+            verdict("RANGE_ATTACK", std::slice::from_ref(&los)),
+            Verdict::Failed(reason) if reason == "host_refused_no_line_of_sight"
+        ));
+        let wordless = event(
+            r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":5,"y":4,"why":"can_start=false,no_reasons [p4r]"}"#,
+        );
+        assert!(matches!(
+            verdict("RANGE_ATTACK", std::slice::from_ref(&wordless)),
+            Verdict::Failed(reason) if reason == "host_refused_strike"
+        ));
+        // Another plot's, another turn's or another unit's refusal is not ours.
+        let elsewhere = event(
+            r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":6,"y":4,"why":"Target is out of range [p4r]"}"#,
+        );
+        let last_turn = event(
+            r#"{"kind":"war_refused","turn":29,"unit":101,"verb":"ATTACK","x":5,"y":4,"players":[3]}"#,
+        );
+        let theirs = event(
+            r#"{"kind":"war_refused","turn":30,"unit":100,"verb":"ATTACK","x":5,"y":4,"players":[3]}"#,
+        );
+        assert!(matches!(
+            verdict("ATTACK", &[elsewhere, last_turn, theirs]),
+            Verdict::Failed(reason) if reason == "target_unharmed"
+        ));
+        // A refusal beside a combat on the ledger: the refusal was an earlier
+        // frame's and the combat is the proof the strike landed.
+        let fought = event(r#"{"kind":"combat","turn":30,"attacker":{"id":101}}"#);
+        assert!(matches!(
+            verdict("ATTACK", &[war, fought]),
+            Verdict::Verified
+        ));
     }
 
     /// A move onto an enemy civilian crosses as `CAPTURE`, the attack-modifier
