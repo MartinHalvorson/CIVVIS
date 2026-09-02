@@ -1,5 +1,6 @@
-//! The Missionary in the field: two opt-in genes for what a spreader does
-//! between its charges, and what it does about the raiders it meets.
+//! The Missionary in the field: three opt-in genes — two for what a spreader
+//! does between its charges, and one for what it does about the raiders it
+//! meets.
 //!
 //! Both answer an operator goal of 2026-08-24 — *"a heuristic for exploring
 //! with missionaries with 1 charge remaining … missionaries should be smart
@@ -16,7 +17,7 @@
 //! spreads the moment it stands beside one, last charge included. That is
 //! the right thing for the first two charges — they leave the unit standing
 //! — and a waste of the third, which deletes a four-move unit standing in
-//! foreign territory it is free to cross. With the gene on, a Missionary
+//! foreign territory it is free to cross. With version one on, a Missionary
 //! on its last charge explores the fog within [`MISSIONARY_EXPLORE_RADIUS`]
 //! for up to [`MISSIONARY_EXPLORE_TURNS`] turns first, and spends the charge
 //! when the fog is gone, the turns are up, or something better than fog
@@ -26,6 +27,13 @@
 //! [`crate::ai::BasicAi::frontier_reveal_value`] first and distance second,
 //! and kept while it stays unexplored, so the unit does not oscillate
 //! between two equally dark horizons.
+//!
+//! `missionary-last-charge-explores-2` preserves that obligation to cities,
+//! but uses the last charge as a true expedition: it searches out to
+//! [`MISSIONARY_EXPEDITION_RADIUS`], prefers a farther high-reveal shore, and
+//! retains only a goal with a legal route. The route rule is deliberately
+//! shared with movement, so religious units use their closed-border exception
+//! without learning what lies beyond the fog.
 //!
 //! ## `missionary-evades-raiders`
 //!
@@ -47,7 +55,7 @@
 //! city and reaches the second only by attacking the guard. Sea raiders are
 //! ignored — a galley cannot condemn.
 //!
-//! Both genes ship off and are priced by the standard screen like every
+//! All three genes ship off and are priced by the standard screen like every
 //! other opt-in; `docs/gene_screens/fires/` carries their fires probes.
 
 use std::collections::BTreeMap;
@@ -57,9 +65,15 @@ use crate::ai::BasicAi;
 use crate::game::Game;
 use crate::Pos;
 
-/// How far from the unit the exploring gene looks for fog. Ten tiles is
+/// How far version one of the exploring gene looks for fog. Ten tiles is
 /// two and a half turns of Missionary movement on open ground.
 pub(super) const MISSIONARY_EXPLORE_RADIUS: i32 = 10;
+
+/// How far version two of the exploring gene searches for fog. Thirty-six
+/// tiles is nine turns of Missionary movement on open ground: enough to cross
+/// a normal ocean gap or the far side of a continent while the last charge is
+/// still expendable.
+pub(super) const MISSIONARY_EXPEDITION_RADIUS: i32 = 36;
 
 /// How many turns a last-charge Missionary may explore before the charge is
 /// owed to a city whatever the horizon still hides.
@@ -257,9 +271,10 @@ impl AdvancedAi {
         sidestep.is_some_and(|(_, position)| self.base.path_move(g, pid, uid, position))
     }
 
-    /// The fog tile a last-charge Missionary walks toward: the reachable dry
-    /// unexplored tile within [`MISSIONARY_EXPLORE_RADIUS`] that would reveal
-    /// the most, nearest first, outside every visible raider's reach.
+    /// The fog tile a version-one last-charge Missionary walks toward: the
+    /// reachable dry unexplored tile within [`MISSIONARY_EXPLORE_RADIUS`] that
+    /// would reveal the most, nearest first, outside every visible raider's
+    /// reach.
     fn missionary_frontier_goal(
         g: &Game,
         pid: usize,
@@ -284,6 +299,43 @@ impl AdvancedAi {
                     std::cmp::Reverse(*position),
                 )
             })
+    }
+
+    /// The version-two expedition target: a reachable dry unexplored tile
+    /// within [`MISSIONARY_EXPEDITION_RADIUS`] that reveals the most, then is
+    /// farthest away, outside every visible raider's reach. The route check is
+    /// intentional: a Missionary can cross foreign closed borders, unlike a
+    /// Scout, but it still cannot cross an ocean before embarkation or a
+    /// mountain wall at all.
+    fn missionary_expedition_goal(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        threats: &[BarbarianCaptureThreat],
+    ) -> Option<Pos> {
+        let origin = g.units[&uid].pos;
+        let explored = &g.players[pid].explored;
+        let mut candidates: Vec<Pos> = g
+            .wdisk(origin, MISSIONARY_EXPEDITION_RADIUS)
+            .into_iter()
+            .filter(|position| *position != origin && !explored.contains(position))
+            .filter(|position| {
+                g.map
+                    .get(*position)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .filter(|position| !Self::religious_tile_in_reach(g, pid, *position, threats))
+            .collect();
+        candidates.sort_by_key(|position| {
+            std::cmp::Reverse((
+                BasicAi::frontier_reveal_value(g, pid, uid, *position),
+                g.wdist(origin, *position),
+                std::cmp::Reverse(*position),
+            ))
+        });
+        candidates
+            .into_iter()
+            .find(|position| g.route_step(uid, *position, 0).is_some())
     }
 
     /// `missionary_last_charge_explores`: a Missionary on its last charge
@@ -344,6 +396,80 @@ impl AdvancedAi {
                     && !Self::religious_tile_in_reach(g, pid, *goal, &threats)
             });
             let Some(goal) = held.or_else(|| Self::missionary_frontier_goal(g, pid, uid, &threats))
+            else {
+                entry.goal = None;
+                return None;
+            };
+            entry.goal = Some(goal);
+            if entry.last_turn != turn {
+                entry.last_turn = turn;
+                entry.turns += 1;
+            }
+            goal
+        };
+        if self.religious_step_toward_range(g, pid, uid, goal, 0) {
+            return Some(true);
+        }
+        None
+    }
+
+    /// `missionary_last_charge_explores_2`: a last-charge Missionary makes a
+    /// long, routeable expedition before spending the charge. Version one
+    /// stays separate so its existing screen history remains a measurement of
+    /// the original local policy.
+    pub(super) fn last_charge_missionary_expedition(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        religion: &str,
+        targets: &[Pos],
+    ) -> Option<bool> {
+        if !self.missionary_last_charge_explores_2 {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        if unit.kind != "missionary" || unit.charges != 1 {
+            return None;
+        }
+        let current = unit.pos;
+        if g.cities.values().any(|city| {
+            city.owner == pid && Self::city_needs_religious_support(g, pid, city, religion)
+        }) {
+            return None;
+        }
+        let untouched_beside = targets.iter().any(|target| {
+            g.wdist(current, *target) <= 1
+                && g.city_at(*target).is_some_and(|city| {
+                    g.cities[&city]
+                        .pressure
+                        .get(religion)
+                        .copied()
+                        .unwrap_or(0.0)
+                        <= 0.0
+                })
+        });
+        if untouched_beside {
+            return None;
+        }
+        let threats = self.religious_raider_threats(g, pid);
+        let turn = g.turn;
+        let goal = {
+            let mut memory = self.missionary_explore.borrow_mut();
+            memory.retain(|other, _| g.units.contains_key(other));
+            let entry = memory.entry(uid).or_default();
+            if entry.turns >= MISSIONARY_EXPLORE_TURNS {
+                return None;
+            }
+            let explored = &g.players[pid].explored;
+            let held = entry.goal.filter(|goal| {
+                !explored.contains(goal)
+                    && g.wdist(current, *goal) <= MISSIONARY_EXPEDITION_RADIUS
+                    && !Self::religious_tile_in_reach(g, pid, *goal, &threats)
+                    && g.route_step(uid, *goal, 0).is_some()
+            });
+            let Some(goal) =
+                held.or_else(|| Self::missionary_expedition_goal(g, pid, uid, &threats))
             else {
                 entry.goal = None;
                 return None;

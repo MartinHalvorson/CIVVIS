@@ -5854,6 +5854,12 @@ pub struct AdvancedAi {
     /// city stands beside it. Opt-in gene `missionary-last-charge-explores`;
     /// see `advanced/missionary_field.rs`.
     missionary_last_charge_explores: bool,
+    /// Version two turns the last charge into a long, routeable expedition: it
+    /// searches farther, ranks distant high-reveal fog, and uses the movement
+    /// route that lets religious units cross closed borders. It is mutually
+    /// exclusive with version one. Opt-in gene
+    /// `missionary-last-charge-explores-2`; see `advanced/missionary_field.rs`.
+    missionary_last_charge_explores_2: bool,
     /// The exploring gene's memory of each Missionary: its fog goal and the
     /// turns it has spent.
     missionary_explore: RefCell<BTreeMap<u32, missionary_field::MissionaryExplore>>,
@@ -7767,6 +7773,7 @@ impl AdvancedAi {
             opening_warrior_recon: false,
             opening_warrior_recon_2: false,
             missionary_last_charge_explores: false,
+            missionary_last_charge_explores_2: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
             missionary_evades_raiders: false,
             one_war_at_a_time: false,
@@ -33067,9 +33074,15 @@ impl AdvancedAi {
             })
             .collect();
         targets.sort_by(|left, right| right.cmp(left));
-        // `missionary_last_charge_explores`: the third charge is the unit's
+        // `missionary_last_charge_explores*`: the third charge is the unit's
         // life, and the fog is worth more than a third pass at the same city.
+        // Version two is an intentionally separate long-range expedition, so
+        // the registry can screen it beside the original local policy.
         let sites: Vec<Pos> = targets.iter().map(|(_, _, target)| *target).collect();
+        if let Some(acted) = self.last_charge_missionary_expedition(g, pid, uid, &religion, &sites)
+        {
+            return acted;
+        }
         if let Some(acted) = self.last_charge_missionary_explores(g, pid, uid, &religion, &sites) {
             return acted;
         }

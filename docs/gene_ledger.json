@@ -1887,6 +1887,15 @@
           "holy-site-where-the-threat-is-2": null
         }
       },
+      "missionary-last-charge-explores": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "missionary-last-charge-explores": null,
+          "missionary-last-charge-explores-2": null
+        }
+      },
       "native-emergency-purchase": {
         "rule_on": [],
         "head": null,
