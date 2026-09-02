@@ -117,6 +117,9 @@ MIRRORED_IMPROVEMENTS = set(json.loads(
 MIRRORED_WONDERS = set(json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "wonders.json").read_text()
 ))
+MIRRORED_UNIT_RULES = json.loads(
+    (Path(__file__).resolve().parent.parent / "data" / "units.json").read_text()
+)
 UNIT_MODEL_FALLBACKS = {
     # These two host-only variants now have exact CIVVIS specs, so their
     # implementation prefix must stay intact in the audit. Other barbarian
@@ -729,6 +732,13 @@ def city_fact_mismatches(state, board, top):
 def visible_exported_units(state, board, top):
     """Yield every currently visible unit with its compact CIVVIS owner seat."""
     visible = {tuple(pos) for pos in board.get("visible") or []}
+    free_city_unit_ids = {
+        unit.get("id")
+        for minor in state.get("minors") or []
+        if minor.get("civ") == "CIVILIZATION_FREE_CITIES"
+        for unit in minor.get("units") or []
+        if unit.get("id", 0) > 0
+    }
 
     def is_visible(unit):
         return axial(unit.get("x", 0), top - unit.get("y", 0)) in visible
@@ -748,7 +758,7 @@ def visible_exported_units(state, board, top):
     yield from (
         (None, unit)
         for unit in state.get("hostiles") or []
-        if is_visible(unit)
+        if is_visible(unit) and unit.get("id") not in free_city_unit_ids
     )
 
 
@@ -761,6 +771,35 @@ def unmodelled_great_person(kind):
 def exported_unit_kind(unit):
     """Return the unit type across Firaxis's two export field names."""
     return unit.get("kind") or unit.get("type")
+
+
+def modelled_qualified_unique(raw_kind):
+    """Resolve a civilization-qualified unit the way the live mirror does.
+
+    Civilization VI calls Phoenicia's unique naval unit
+    ``UNIT_PHOENICIA_BIREME`` while CIVVIS stores the modelled unique as
+    ``bireme``. The Rust mirror accepts that spelling only when the stripped
+    name is an explicitly unique model; the checker must apply the same guard
+    or it can either report a real board unit as missing or accept an ordinary
+    unit under a misleading prefix. The suffix pass covers CIVVIS names with
+    a Civilopedia epithet, such as ``maryannu_chariot_archer``.
+    """
+    if not raw_kind or raw_kind.startswith("great_"):
+        return None
+    _, separator, bare = raw_kind.partition("_")
+    if not separator or not bare:
+        return None
+    direct = MIRRORED_UNIT_RULES.get(bare)
+    if isinstance(direct, dict) and direct.get("unique_to"):
+        return bare
+    suffix = f"_{bare}"
+    matches = [
+        name for name, spec in MIRRORED_UNIT_RULES.items()
+        if name.endswith(suffix)
+        and isinstance(spec, dict)
+        and spec.get("unique_to")
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def unit_fact_mismatches(state, board, top):
@@ -779,6 +818,9 @@ def unit_fact_mismatches(state, board, top):
         # an older ordinary barbarian prefix still resolves to its stock role.
         kind = IDENTIFIER_ALIASES.get(kind, kind)
         kind = UNIT_MODEL_FALLBACKS.get(kind, kind)
+        qualified = modelled_qualified_unique(raw_kind)
+        if qualified and kind == raw_kind and not raw_kind.startswith("barbarian_"):
+            kind = qualified
         # ⚠⚠ AND THE BASE THE EXPORT ITSELF HANDS US, because the mirror
         # DELIBERATELY approximates a unique it does not model and says so.
         #

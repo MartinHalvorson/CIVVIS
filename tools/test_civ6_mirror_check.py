@@ -370,6 +370,43 @@ class MirrorCheckTest(unittest.TestCase):
         })
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
+    def test_visible_phoenician_bireme_uses_its_modelled_unique_name(self) -> None:
+        state = {"rivals": [{"units": [{
+            "kind": "UNIT_PHOENICIA_BIREME", "base": "UNIT_GALLEY",
+            "x": 3, "y": 5, "hp": 100, "fortified": False,
+            "fortify_turns": 0,
+        }]}]}
+        board = {"view_player": 0, "units": [{
+            "owner": 1, "type": "bireme", "pos": [1, 5],
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }], "visible": [[1, 5]]}
+
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+    def test_free_city_unit_exported_in_both_lists_is_counted_once(self) -> None:
+        unit = {
+            "id": 196608, "kind": "UNIT_CROSSBOWMAN", "x": 3, "y": 5,
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }
+        state = {
+            "minors": [{
+                "player": 62, "civ": "CIVILIZATION_FREE_CITIES",
+                "units": [dict(unit)],
+            }],
+            "hostiles": [{
+                "id": unit["id"], "type": unit["kind"], "player": 62,
+                "x": unit["x"], "y": unit["y"], "hp": unit["hp"],
+                "fortified": unit["fortified"],
+                "fortify_turns": unit["fortify_turns"],
+            }],
+        }
+        board = {"view_player": 0, "units": [{
+            "owner": 6, "type": "crossbowman", "pos": [1, 5],
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }], "visible": [[1, 5]]}
+
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
     def test_hidden_rival_unit_is_not_compared_to_the_seated_board(self) -> None:
         state = {"rivals": [{"units": [{
             "kind": "UNIT_KNIGHT", "x": 3, "y": 5,
