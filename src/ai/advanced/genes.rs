@@ -2170,6 +2170,23 @@ pub const GENES: &[Gene] = &[
     // intact for its existing screen history; one family version plays at a
     // time. See `advanced/missionary_field.rs`.
     Gene { tag: "missionary-last-charge-explores-2", field: "missionary_last_charge_explores_2", kind: Kind::OptIn, enable: AdvancedAi::enable_missionary_last_charge_explores_2, disable: AdvancedAi::disable_missionary_last_charge_explores_2 },
+    // `route-block-is-a-wait` (2026-09-02): `commitment_owners_act` released a
+    // settle or improve decision on the FIRST turn `route_step` found no
+    // enterable neighbour, dropping the target and parking the site for the
+    // hysteresis window. Over 53 live Civ VI runs that one-turn block is 502
+    // of 547 releases (92%), and 18% of the settle drops land within two
+    // tiles of the site. The gene holds instead, bounded by
+    // COMMITMENT_PATIENCE consecutive forgotten turns. Appended at the END,
+    // above the markers, so a running screen keeps its positional genome.
+    Gene { tag: "route-block-is-a-wait", field: "route_block_is_a_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_route_block_is_a_wait, disable: AdvancedAi::disable_route_block_is_a_wait },
+    // `standing-still-is-a-risk` (2026-09-02): the safe-step guard's last
+    // resort demanded a neighbour 5.0 risk points safer than the rejected
+    // route step and otherwise did not move, never pricing the tile the unit
+    // stands on. Over 39 live Civ VI runs that is 527 settler-turns standing
+    // still, 13.5 a game — the largest single cause. The gene steps to the
+    // safest neighbour that strictly improves on staying. Appended at the
+    // END, above the markers, so a running screen keeps its positional genome.
+    Gene { tag: "standing-still-is-a-risk", field: "standing_still_is_a_risk", kind: Kind::OptIn, enable: AdvancedAi::enable_standing_still_is_a_risk, disable: AdvancedAi::disable_standing_still_is_a_risk },
     // ⚠ A NARROW SUZERAINTY IS A SUBSCRIPTION, NOT A PURCHASE. `bank_envoys`
     // brakes only the uncontested overstack and deliberately exempts a
     // city-state within one envoy of a rival; live run
