@@ -2743,6 +2743,15 @@ pub struct StateRival {
     /// owns when both cities are on it (`restore_rival_outgoing_routes`).
     #[serde(default)]
     pub trade_routes: Option<Vec<StateRivalRoute>>,
+    /// Luxury resource types this met rival can currently offer in the
+    /// shipped diplomacy deal screen that the seat itself does not own.
+    /// `Some([])` is the host's authoritative answer that no useful luxury is
+    /// available; `None` means an older control mod could not query the deal
+    /// catalogue. The luxury-buy arm uses this to avoid selecting a rich
+    /// rival whose deal has nothing the seat lacks, which otherwise wastes the
+    /// six-turn purchase window.
+    #[serde(default)]
+    pub tradeable_luxuries: Option<Vec<String>>,
     /// The rival's economy as the host reports it — per-turn Science and
     /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
     /// every one an accessor the shipped World Rankings and Deal screens call
@@ -3538,6 +3547,25 @@ pub struct StateSnapshot {
     /// this field without the attribute took a replay from 4,339 orders to 0.
     #[serde(default)]
     pub refused_promotions: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// Strikes the host refused THIS TURN, as `(unit, x, y)` in Civilization VI
+    /// ids and offset plots, from `range_attack_refused` and `war_refused`.
+    /// Per turn, not cumulative: a shot the host refused for line of sight last
+    /// turn may be open after a move, and a war refusal is answered by the
+    /// diplomacy arm, not by never striking that plot again.
+    /// See `Game::blocked_strikes`.
+    ///
+    /// ⚠ `#[serde(default)]` is load-bearing here for the same reason as above.
+    #[serde(default)]
+    pub refused_strikes: std::collections::BTreeSet<(i64, i32, i32)>,
+    /// The host's answers to this turn's `preview` orders, keyed
+    /// `(unit, x, y, verb)` in Civilization VI ids and offset plots. Per turn:
+    /// a simulation is a reading of the board as it stood when it was asked.
+    /// See `Game::host_previews`.
+    ///
+    /// ⚠ `#[serde(default)]` is load-bearing here for the same reason as above.
+    #[serde(default)]
+    pub host_previews:
+        std::collections::BTreeMap<(i64, i32, i32, String), crate::game::HostStrikePreview>,
     /// Origin/destination pairs Firaxis rejected for trade-route pathing.
     #[serde(default)]
     pub refused_trade_routes: std::collections::BTreeSet<(crate::Pos, crate::Pos)>,
@@ -5522,6 +5550,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "tourists_visiting_us",
         "era_score",
         "trade_routes",
+        "tradeable_luxuries",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
@@ -5803,6 +5832,8 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
         state.refused_promotions = refused_promotions_through(path, turn);
+        state.refused_strikes = refused_strikes_on(path, state.turn);
+        state.host_previews = host_previews_on(path, state.turn);
     }
     best
 }
@@ -6598,6 +6629,116 @@ fn refused_promotions_through(
     refused
 }
 
+/// Strikes the host refused on exactly `turn`, keyed by Civilization VI unit id
+/// and the offset plot they were aimed at.
+///
+/// ★★★ READ FROM TWO EVENTS THE MOD HAS EMITTED FOR MONTHS AND NOTHING IN RUST
+/// CONSUMED. `range_attack_refused` (unit, x, y, moves, attacks, activity, why)
+/// is the host declining a shot the simulator previewed — line of sight, range,
+/// a spent attack; `war_refused` (unit, verb, x, y, players, target_owner) is
+/// `refuseWarStarter` holding back an order the engine would answer with a war
+/// the agent never declared. Both name the pair exactly, and until now the
+/// same pair was re-proposed on the next frame of the same turn and refused
+/// again. The `war_refused` a DeclareWar order raises carries `target` and no
+/// `unit`/`x`/`y`, so it is not a strike and is skipped here.
+fn refused_strikes_on(
+    path: &std::path::Path,
+    turn: u32,
+) -> std::collections::BTreeSet<(i64, i32, i32)> {
+    let mut refused = std::collections::BTreeSet::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("range_attack_refused") && !line.contains("war_refused") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if !matches!(
+            event.get("kind").and_then(|k| k.as_str()),
+            Some("range_attack_refused" | "war_refused")
+        ) {
+            continue;
+        }
+        if event.get("turn").and_then(|value| value.as_u64()) != Some(u64::from(turn)) {
+            continue;
+        }
+        let (Some(unit), Some(x), Some(y)) = (
+            event.get("unit").and_then(|v| v.as_i64()),
+            event.get("x").and_then(|v| v.as_i64()),
+            event.get("y").and_then(|v| v.as_i64()),
+        ) else {
+            continue;
+        };
+        refused.insert((unit, x as i32, y as i32));
+    }
+    refused
+}
+
+/// The host's `preview` answers on exactly `turn`, keyed by Civilization VI
+/// unit id, the offset plot and the verb asked. A later answer for the same
+/// key replaces an earlier one: the board may have moved between frames and
+/// the newer simulation read the newer board.
+///
+/// The event is the mod's answer to a `preview` order: `{turn, frame, unit,
+/// verb, x, y, preview{attacker_strength, defender_strength,
+/// damage_to_attacker, damage_to_defender, defender_wall_damage}}`, the
+/// `preview` table being `CivvisLedger.preview`'s reading of
+/// `CombatManager.SimulateAttackInto`. A field the host could not read is
+/// absent and lands as zero; an event with no `preview` table is skipped.
+fn host_previews_on(
+    path: &std::path::Path,
+    turn: u32,
+) -> std::collections::BTreeMap<(i64, i32, i32, String), crate::game::HostStrikePreview> {
+    let mut previews = std::collections::BTreeMap::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return previews;
+    };
+    for line in raw.lines() {
+        if !line.contains("\"preview\"") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|k| k.as_str()) != Some("preview") {
+            continue;
+        }
+        if event.get("turn").and_then(|value| value.as_u64()) != Some(u64::from(turn)) {
+            continue;
+        }
+        let (Some(unit), Some(x), Some(y), Some(verb), Some(preview)) = (
+            event.get("unit").and_then(|v| v.as_i64()),
+            event.get("x").and_then(|v| v.as_i64()),
+            event.get("y").and_then(|v| v.as_i64()),
+            event.get("verb").and_then(|v| v.as_str()),
+            event.get("preview").filter(|v| v.is_object()),
+        ) else {
+            continue;
+        };
+        let float = |key: &str| preview.get(key).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let whole = |key: &str| {
+            preview
+                .get(key)
+                .and_then(|v| v.as_f64())
+                .map_or(0, |v| v.round() as i32)
+        };
+        previews.insert(
+            (unit, x as i32, y as i32, verb.to_string()),
+            crate::game::HostStrikePreview {
+                attacker_strength: float("attacker_strength"),
+                defender_strength: float("defender_strength"),
+                damage_to_attacker: whole("damage_to_attacker"),
+                damage_to_defender: whole("damage_to_defender"),
+                defender_wall_damage: whole("defender_wall_damage"),
+            },
+        );
+    }
+    previews
+}
+
 /// How many times the host must refuse the same origin/destination pair
 /// before the mirror condemns it.
 ///
@@ -6833,6 +6974,52 @@ fn blocked_promotions_from(
         }
     }
     out
+}
+
+/// Translate this turn's host strike refusals onto CIVVIS unit ids and axial
+/// tiles. A refusal for a unit the board does not carry is dropped: there is
+/// no attacker to gate.
+fn blocked_strikes_from(
+    refused: &std::collections::BTreeSet<(i64, i32, i32)>,
+    unit_ids: &std::collections::BTreeMap<u32, i64>,
+) -> BTreeSet<(u32, crate::Pos)> {
+    if refused.is_empty() {
+        return BTreeSet::new();
+    }
+    let by_host: BTreeMap<i64, u32> = unit_ids.iter().map(|(uid, civ6)| (*civ6, *uid)).collect();
+    refused
+        .iter()
+        .filter_map(|(civ6, x, y)| {
+            let uid = *by_host.get(civ6)?;
+            Some((uid, crate::hex::offset_to_axial(*x, *y)))
+        })
+        .collect()
+}
+
+/// Translate this turn's host strike previews onto CIVVIS unit ids and axial
+/// tiles, `ranged` standing for the RANGE_ATTACK verb. A preview for a unit
+/// the board does not carry is dropped; a verb that is neither strike is not
+/// a preview the board can file.
+fn host_previews_from(
+    previews: &std::collections::BTreeMap<(i64, i32, i32, String), crate::game::HostStrikePreview>,
+    unit_ids: &std::collections::BTreeMap<u32, i64>,
+) -> BTreeMap<(u32, crate::Pos, bool), crate::game::HostStrikePreview> {
+    if previews.is_empty() {
+        return BTreeMap::new();
+    }
+    let by_host: BTreeMap<i64, u32> = unit_ids.iter().map(|(uid, civ6)| (*civ6, *uid)).collect();
+    previews
+        .iter()
+        .filter_map(|((civ6, x, y, verb), preview)| {
+            let ranged = match verb.as_str() {
+                "RANGE_ATTACK" => true,
+                "ATTACK" => false,
+                _ => return None,
+            };
+            let uid = *by_host.get(civ6)?;
+            Some(((uid, crate::hex::offset_to_axial(*x, *y), ranged), *preview))
+        })
+        .collect()
 }
 
 /// The typed key the board files a host production item under — the
@@ -11839,6 +12026,8 @@ pub fn rebuild_from_state(
         &unit_ids,
         &game.rules,
     ));
+    game.blocked_strikes = Arc::new(blocked_strikes_from(&state.refused_strikes, &unit_ids));
+    game.host_previews = Arc::new(host_previews_from(&state.host_previews, &unit_ids));
 
     // The readings that must survive whatever the board passes scored on their
     // way there. See `HOST_STATE_STEPS`.
@@ -13048,6 +13237,9 @@ impl LiveMirror {
             &self.civ6_of,
             &self.game.rules,
         ));
+        self.game.blocked_strikes =
+            Arc::new(blocked_strikes_from(&state.refused_strikes, &self.civ6_of));
+        self.game.host_previews = Arc::new(host_previews_from(&state.host_previews, &self.civ6_of));
         // ⚠ ONE ORDERED STEP LIST, WALKED BY BOTH PASSES. See
         // `HOST_STATE_STEPS`: everything this method and `rebuild_from_state`
         // apply from the host state is written there once and told apart by

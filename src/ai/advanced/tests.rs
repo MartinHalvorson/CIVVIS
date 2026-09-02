@@ -17519,6 +17519,11 @@ fn district_project_search_extends_only_concrete_great_person_races() {
         .buildings
         .push(crate::name!("library"));
     let far = ai.production_value(&game, 0, city, &project, &plan, &counts);
+    game.retired_great_people.insert("aryabhata".to_string());
+    assert_eq!(
+        game.current_great_person("scientist").map(|(id, _)| id),
+        Some("euclid")
+    );
     let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
     let cost = game.gp_cost(0, "scientist");
     game.players[0]
@@ -17681,6 +17686,124 @@ fn opening_gpp_projects_wait_except_for_prophets_and_exceptional_scientists() {
     let stock_after_opening =
         ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
     assert_eq!(after_opening, stock_after_opening);
+}
+
+#[test]
+fn project_restraint_v2_reads_first_building_debt_instead_of_a_clock() {
+    let mut game = Game::new(2, 24, 16, 7_106, 200, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "campus");
+    game.players[0].techs.insert(crate::name!("writing"));
+    // Keep the valuation above the restraint cap even in an off-lane plan,
+    // so this test observes the gate rather than an already-cheap project.
+    std::sync::Arc::make_mut(&mut game.rules)
+        .projects
+        .get_mut("campus_research_grants")
+        .unwrap()
+        .ongoing_yields
+        .insert("culture".to_string(), 1_000.0);
+    game.turn = 51;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ordinary = AdvancedAi::new();
+    let mut v1 = AdvancedAi::new();
+    v1.enable_early_project_restraint();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_early_project_restraint_2();
+
+    let scientist_cost = game.gp_cost(0, "scientist");
+    game.players[1]
+        .gpp
+        .insert("scientist".to_string(), scientist_cost - 1.0);
+
+    let stock_debt =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert!(
+        stock_debt > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "the fixture needs a project whose race value can outrun the missing-building penalty"
+    );
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v2 must wait while the Campus can build its first Library"
+    );
+
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        ..plan.clone()
+    };
+    let science_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &science_plan,),
+        science_stock,
+        "a Scientist project must remain live for the Science lane even before its Library"
+    );
+
+    let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
+    let cost = game.gp_cost(0, "scientist");
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), cost - award);
+    assert!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan)
+            > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "any one-project claim must override debt; v1's named exception rejects Euclid"
+    );
+    game.players[0].gpp.insert("scientist".to_string(), 0.0);
+
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    let developed = v2.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    let developed_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert_eq!(developed, developed_stock);
+    assert_eq!(
+        v1.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v1's opening timer must remain measurable and unchanged"
+    );
+
+    game.cities.get_mut(&city).unwrap().buildings.clear();
+    game.turn = game.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS);
+    let late_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert_eq!(
+        v1.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        late_stock,
+        "v1 must release the project at its historical deadline"
+    );
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v2 must keep reading an unpaid, buildable Library debt after the clock expires"
+    );
+
+    let mut family = AdvancedAi::new();
+    family.enable_early_project_restraint();
+    family.enable_early_project_restraint_2();
+    assert!(!family.early_project_restraint && family.early_project_restraint_2);
+    family.enable_early_project_restraint();
+    assert!(family.early_project_restraint && !family.early_project_restraint_2);
 }
 
 #[test]
@@ -33191,8 +33314,9 @@ fn air_surge_ai() -> AdvancedAi {
     ai
 }
 
-/// Grant the breakthrough and the metal, so the wing is only a question of
-/// production.
+/// Grant the breakthrough and two improved Aluminum sources. Gathering Storm
+/// produces two Aluminum per improved source, so this is the live-run shape
+/// the user reported: +4 a turn, enough to sustain a four-Bomber ceiling.
 fn air_surge_arm(game: &mut Game) {
     game.players[0]
         .techs
@@ -33202,6 +33326,33 @@ fn air_surge_arm(game: &mut Game) {
     game.players[0]
         .strategic_resources
         .insert(crate::name!("aluminum"), 400.0);
+    let mut sources = Vec::new();
+    for city in game.player_city_ids(0) {
+        let city = &game.cities[&city];
+        for position in &city.owned_tiles {
+            if *position != city.pos {
+                sources.push(*position);
+                if sources.len() == 2 {
+                    break;
+                }
+            }
+        }
+        if sources.len() == 2 {
+            break;
+        }
+    }
+    assert_eq!(
+        sources.len(),
+        2,
+        "fixture needs two owned improvement tiles"
+    );
+    for position in sources {
+        let tile = game.map.tiles.get_mut(&position).expect("owned tile");
+        tile.resource = Some(crate::name!("aluminum"));
+        tile.improvement = Some(crate::name!("mine"));
+        tile.pillaged = false;
+    }
+    assert_eq!(game.strategic_resource_rate(0, "aluminum"), 4.0);
 }
 
 /// The gene is off in production, and an inactive surge must be invisible:
@@ -33312,6 +33463,7 @@ fn the_appointment_names_a_city_the_wing_can_reach() {
         .expect("a reachable rival city is an appointable surge");
     assert_eq!(plan.target_player, 1);
     assert_eq!(plan.objective_city, objective);
+    assert_eq!(plan.objective_pos, game.cities[&objective].pos);
     assert_eq!(plan.phase, air_surge::AirSurgePhase::Beeline);
     assert_eq!(
         game.cities[&plan.objective_city].owner, 1,
@@ -33568,10 +33720,11 @@ fn the_surge_stands_down_when_no_aluminium_arrives() {
     );
 }
 
-/// The declaration waits for the whole package. Half a surge is a war opened
-/// with the escort the wing was supposed to clear the way for.
+/// The first two Bombers and two capture bodies are the launch package. The
+/// other two Bombers and bodies are follow-through for the continent, not a
+/// reason to leave a vulnerable neighbour alive.
 #[test]
-fn the_declaration_waits_for_the_wing_and_the_escort() {
+fn the_declaration_launches_at_two_bombers_and_two_capture_bodies() {
     let (mut game, _, _) = air_surge_fixture(941_108);
     air_surge_arm(&mut game);
     let mut ai = air_surge_ai();
@@ -33599,21 +33752,26 @@ fn the_declaration_waits_for_the_wing_and_the_escort() {
         "an incomplete package must not declare"
     );
 
-    for _ in 1..air_surge::AIR_SURGE_BOMBERS {
+    assert_eq!(
+        AdvancedAi::air_surge_bomber_goal(&game, 0),
+        air_surge::AIR_SURGE_BOMBERS,
+        "+4 Aluminum per turn sustains all four Bombers"
+    );
+    for _ in 1..air_surge::AIR_SURGE_LAUNCH_BOMBERS {
         game.spawn_test_unit("bomber", 0, home);
     }
-    for _ in 0..air_surge::AIR_SURGE_BODIES {
+    for _ in 0..air_surge::AIR_SURGE_LAUNCH_BODIES {
         game.spawn_test_unit(plan.body_unit.as_str(), 0, home);
     }
     ai.maintain_air_surge(&game, 0);
     assert_eq!(
         ai.air_surge_plan.as_ref().map(|plan| plan.phase),
         Some(air_surge::AirSurgePhase::Strike),
-        "a complete package is owed a declaration"
+        "the initial strike package is owed a declaration"
     );
 
     assert!(ai.air_surge_opening(&mut game, 0, 1));
-    assert!(game.is_at_war(0, 1), "the complete package opens the war");
+    assert!(game.is_at_war(0, 1), "the initial package opens the war");
     assert_eq!(ai.air_surge_census.declarations, 1);
     assert_eq!(
         ai.air_surge_plan.as_ref().map(|plan| plan.phase),
@@ -33624,6 +33782,51 @@ fn the_declaration_waits_for_the_wing_and_the_escort() {
             .as_ref()
             .and_then(|plan| plan.declared_turn),
         Some(game.turn)
+    );
+    assert!(
+        ai.air_surge_production_value(
+            &game,
+            0,
+            &Item::Unit {
+                unit: crate::name!("bomber"),
+            },
+            1.0,
+        )
+        .is_some(),
+        "war starts at two, while +4 Aluminum keeps building toward four"
+    );
+}
+
+/// `--fresh-board` recreates city ids every frame. The objective coordinate
+/// is the stable identity, so an unrelated current-board id cannot make a
+/// still-Macedonian city look as though it changed owner.
+#[test]
+fn a_fresh_board_rebinds_the_air_surge_objective_by_coordinate() {
+    let (mut game, stale_city, _) = air_surge_fixture(941_115);
+    air_surge_arm(&mut game);
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    let plan = ai.air_surge_plan.as_mut().expect("an appointed surge");
+    let objective = plan.objective_city;
+    let objective_pos = plan.objective_pos;
+    assert_ne!(stale_city, objective, "the stale id must name another city");
+    plan.objective_city = stale_city;
+    assert_eq!(plan.objective_pos, objective_pos);
+
+    // This is the exact condition after a fresh mirror rebuild: the retained
+    // id now names a different city, while the City Center coordinate remains
+    // Pella's durable identity.
+    game.turn += 1;
+    ai.maintain_air_surge(&game, 0);
+    let rebound = ai
+        .air_surge_plan
+        .expect("the target still belongs to the rival");
+    assert_eq!(rebound.objective_city, objective);
+    assert_eq!(rebound.objective_pos, objective_pos);
+    assert_eq!(
+        ai.air_surge_census.aborts.get("objective changed owner"),
+        None,
+        "a reconstruction id change is not a capture or a stand-down"
     );
 }
 
@@ -35015,6 +35218,224 @@ fn the_plans_buy_spends_into_the_reserve_only_under_version_two() {
     assert!(
         v2_game.players[0].gold >= 150.0 - f64::EPSILON,
         "half the reserve is never spent"
+    );
+}
+
+/// A workable five-plus-Science tile is an asset in a Science race, not
+/// fallback ground. The host correction models Setia's Bermuda Triangle
+/// tiles: the normal plot scorer never reaches them while a unit or building
+/// exists and also requires 200 Gold above the whole reserve.
+#[test]
+fn version_two_promotes_an_exceptional_science_tile_above_the_general_reserve() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
+        .expect("an unowned ring-two plot");
+    game.players[0].explored.insert(target);
+    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
+        target,
+        Yields {
+            science: 10.0,
+            ..Yields::default()
+        },
+    );
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    // This still permits an ordinary Gold purchase, but is well below the
+    // Science reserve plus the generic plot path's extra 200-Gold headroom.
+    game.players[0].gold = cost + 200.0;
+    let plan = district_planning_lane(game.turn);
+    let action = Action::BuyPlot {
+        city,
+        pos: target,
+        cost,
+    };
+
+    let plain = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        plain
+            .legal_purchase_actions(&game, 0)
+            .iter()
+            .any(|candidate| !matches!(candidate, Action::BuyPlot { .. })),
+        "the tile must beat a real non-plot candidate rather than only fill an empty menu"
+    );
+    let mut plain_game = game.clone();
+    plain.advanced_gold_spending(&mut plain_game, 0, &plan);
+    assert_eq!(
+        plain_game.map.tiles[&target].owner_city, None,
+        "without version two, the generic reserve keeps the high-science tile out"
+    );
+
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Science);
+    v2.enable_district_planning_2();
+    let counts = v2.counts(&game, 0);
+    let mut cache = DistrictPlanCache::default();
+    assert_eq!(
+        v2.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache),
+        None,
+        "flat ground is not a district-plan purchase; the science asset path is distinct"
+    );
+    assert!(
+        v2.exceptional_science_plot_score(&game, 0, &plan, &action)
+            .is_some(),
+        "the host-observed ten-Science tile clears the strategic score"
+    );
+    assert!(
+        v2.advanced_gold_spending(&mut game, 0, &plan),
+        "the exceptional tile competes in the main purchase ranking"
+    );
+    assert_eq!(
+        game.map.tiles[&target].owner_city,
+        Some(city),
+        "the science city annexes the exceptional tile"
+    );
+    assert!(
+        game.players[0].gold < 300.0,
+        "the buy is allowed to draw through the broad Science reserve"
+    );
+}
+
+/// Civ VI sells only connected plots. Setia's closest Bermuda tile was in its
+/// third ring, so the first legal purchase was a worthless-looking second-ring
+/// coast tile. Version two prices that bridge with the science tile it unlocks,
+/// then buys the science tile on the following purchase pass.
+#[test]
+fn version_two_buys_the_bridge_to_an_exceptional_science_tile() {
+    let (mut game, city, center) = planning_capital();
+    for pos in game.wdisk(center, 3) {
+        game.players[0].explored.insert(pos);
+    }
+    // Discover the connected route with an unconstrained counterfactual;
+    // the test sets the deliberately tight real treasury below.
+    game.players[0].gold = 1_000.0;
+    let mut route = None;
+    for bridge in game
+        .wdisk(center, 2)
+        .into_iter()
+        .filter(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
+    {
+        let Some(bridge_cost) = game.plot_purchase_cost(0, city, bridge) else {
+            continue;
+        };
+        let mut after = game.speculative_clone();
+        after
+            .apply(
+                0,
+                &Action::BuyPlot {
+                    city,
+                    pos: bridge,
+                    cost: bridge_cost,
+                },
+            )
+            .expect("the bridge quote is legal");
+        let target = after.nbrs(bridge).into_iter().find(|target| {
+            after.wdist(*target, center) == 3
+                && after.map.tiles[target].owner_city.is_none()
+                && game.plot_purchase_cost(0, city, *target).is_none()
+                && after.plot_purchase_cost(0, city, *target).is_some()
+        });
+        if let Some(target) = target {
+            let target_cost = after
+                .plot_purchase_cost(0, city, target)
+                .expect("the bridge opens the third-ring target");
+            route = Some((bridge, bridge_cost, target, target_cost));
+            break;
+        }
+    }
+    let (bridge, bridge_cost, target, target_cost) = route.expect("a ring-two bridge route");
+    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
+        target,
+        Yields {
+            science: 10.0,
+            ..Yields::default()
+        },
+    );
+    // Both quotes fit, but their 125-Gold remainder is well inside the
+    // ordinary Science reserve; a bridge has no generic-yield case to make.
+    game.players[0].gold = bridge_cost + target_cost + 125.0;
+    let plan = district_planning_lane(game.turn);
+    let bridge_action = Action::BuyPlot {
+        city,
+        pos: bridge,
+        cost: bridge_cost,
+    };
+    assert_eq!(
+        game.plot_purchase_cost(0, city, target),
+        None,
+        "the science tile cannot be bought before its bridge"
+    );
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_district_planning_2();
+    assert!(
+        ai.exceptional_science_plot_score(&game, 0, &plan, &bridge_action)
+            .is_some(),
+        "the low-yield bridge inherits the value of the science tile it opens"
+    );
+    assert!(
+        ai.advanced_gold_spending(&mut game, 0, &plan),
+        "the first purchase pass takes the bridge"
+    );
+    assert!(
+        game.nbrs(target)
+            .into_iter()
+            .any(|pos| game.map.tiles[&pos].owner_city == Some(city)),
+        "the chosen bridge now opens the science tile"
+    );
+    assert_eq!(game.map.tiles[&target].owner_city, None);
+    assert!(
+        ai.advanced_gold_spending(&mut game, 0, &plan),
+        "the now-connected science tile is bought on the next pass"
+    );
+    assert_eq!(
+        game.map.tiles[&target].owner_city,
+        Some(city),
+        "the city reaches its exceptional science terrain"
+    );
+}
+
+/// Drawing through the broad reserve does not mean spending the money a
+/// threatened city needs for an immediate defender.
+#[test]
+fn exceptional_science_tile_keeps_the_threatened_city_defender_floor() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
+        .expect("an unowned ring-two plot");
+    game.players[0].explored.insert(target);
+    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
+        target,
+        Yields {
+            science: 10.0,
+            ..Yields::default()
+        },
+    );
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    let mut plan = district_planning_lane(game.turn);
+    plan.threatened_city = Some(city);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_district_planning_2();
+    ai.enable_threatened_city_reserve();
+    let floor = ai.threatened_city_gold_floor(&game, 0, &plan);
+    assert!(floor > 0.0, "the threatened city has a defender price");
+    game.players[0].gold = cost + floor - 1.0;
+    let action = Action::BuyPlot {
+        city,
+        pos: target,
+        cost,
+    };
+
+    assert_eq!(
+        ai.exceptional_science_plot_score(&game, 0, &plan, &action),
+        None,
+        "the exceptional purchase may not leave less than the defender floor"
     );
 }
 
@@ -36649,6 +37070,113 @@ fn diplomatic_lane_forecast_still_has_to_be_earned() {
     assert!(
         armed > barren,
         "the floor has to move the reading ({armed} vs {barren})"
+    );
+}
+
+/// V2 keeps the calendar arithmetic, but a bank of Favor by itself is no
+/// longer permission to switch the whole plan to Diplomacy. A point actually
+/// earned from Congress or a city-state already under our suzerainty is the
+/// concrete foothold that turns the projection back on, and its speculative
+/// reading stays below realised lane progress.
+#[test]
+fn diplomatic_lane_forecast_two_requires_earned_traction_and_caps_a_projection() {
+    let mut v1 = AdvancedAi::new();
+    v1.enable_diplomatic_lane_forecast();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_diplomatic_lane_forecast_2();
+    let shipped = AdvancedAi::new();
+    let mut game = Game::new(6, 40, 26, 5_104, 250, 9);
+    game.turn = 60;
+    game.players[0].diplomatic_favor = 2_000.0;
+
+    let speculative = v1.lane_progress_table(&game, 0)[3];
+    assert!(speculative > 0, "v1 sees the large Favor balance");
+    assert_eq!(
+        v2.lane_progress_table(&game, 0)[3],
+        shipped.lane_progress_table(&game, 0)[3],
+        "v2 does not treat Favor alone as a diplomatic opening"
+    );
+
+    game.players[0].dvp = 1;
+    let earned_v1 = v1.lane_progress_table(&game, 0)[3];
+    let earned_v2 = v2.lane_progress_table(&game, 0)[3];
+    assert!(
+        earned_v1 > DIPLOMATIC_FORECAST_OPENING_CAP,
+        "fixture makes v1's projection able to outrank a real opening ({earned_v1})"
+    );
+    assert!(
+        earned_v2 > shipped.lane_progress_table(&game, 0)[3]
+            && earned_v2 <= DIPLOMATIC_FORECAST_OPENING_CAP,
+        "an earned point restores v2 only as a bounded candidate ({earned_v2})"
+    );
+
+    let mut suzerain = game.clone();
+    suzerain.players[0].dvp = 0;
+    let minor = suzerain
+        .players
+        .iter()
+        .find(|player| player.alive && player.is_minor && !player.is_barbarian)
+        .expect("fixture has a living city-state")
+        .id;
+    suzerain.players[0].envoys = vec![(minor, 3)];
+    assert_eq!(suzerain.suzerain_of(minor), Some(0));
+    let suzerain_v1 = v1.lane_progress_table(&suzerain, 0)[3];
+    let suzerain_v2 = v2.lane_progress_table(&suzerain, 0)[3];
+    assert!(
+        suzerain_v1 > DIPLOMATIC_FORECAST_OPENING_CAP,
+        "fixture makes v1's suzerain projection able to outrank a real opening ({suzerain_v1})"
+    );
+    assert!(
+        suzerain_v2 > shipped.lane_progress_table(&suzerain, 0)[3]
+            && suzerain_v2 <= DIPLOMATIC_FORECAST_OPENING_CAP,
+        "a current suzerainty restores v2 only as a bounded candidate ({suzerain_v2})"
+    );
+
+    let mut progressed = game.clone();
+    progressed.players[0].dvp = 10;
+    assert_eq!(
+        v2.lane_progress_table(&progressed, 0)[3],
+        50,
+        "ten earned DVP outrank the cap through the lane's actual tally"
+    );
+}
+
+/// `diplomatic-lane-forecast-2` is a distinct screenable version.  Switching
+/// versions is exclusive, so no screen arm can accidentally combine v1's
+/// speculative opening with v2's foothold gate.
+#[test]
+fn diplomatic_lane_forecast_two_is_opt_in_and_turns_version_one_off() {
+    let v2 = GENES
+        .iter()
+        .find(|gene| gene.tag == "diplomatic-lane-forecast-2")
+        .expect("version 2 is published");
+    assert!(v2.opt_in() && v2.screenable() && !v2.live());
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_diplomatic_lane_forecast();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (true, false),
+        "v1 begins as the sole active version"
+    );
+    ai.enable_diplomatic_lane_forecast_2();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (false, true),
+        "v2 turns the speculative version off"
+    );
+    ai.enable_diplomatic_lane_forecast();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (true, false),
+        "v1 can likewise replace v2"
+    );
+    ai.enable_diplomatic_lane_forecast_2();
+    ai.disable_diplomatic_lane_forecast_2();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (false, false),
+        "v2 remains independently reversible"
     );
 }
 

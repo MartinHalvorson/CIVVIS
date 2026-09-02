@@ -811,11 +811,25 @@ impl AdvancedAi {
     /// arrive along the Congress calendar, not by how many are banked. See
     /// [`Self::diplomatic_lane_forecast`].
     pub fn enable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast_2 = false;
         self.diplomatic_lane_forecast = true;
     }
 
     pub fn disable_diplomatic_lane_forecast(&mut self) {
         self.diplomatic_lane_forecast = false;
+    }
+
+    /// Version 2 waits until a current suzerainty or already-earned Diplomatic
+    /// Victory Point proves a real foothold before projecting Congress turns.
+    /// One version per family is active in a screen.
+    pub fn enable_diplomatic_lane_forecast_2(&mut self) {
+        self.diplomatic_lane_forecast = false;
+        self.diplomatic_lane_forecast_2 = true;
+    }
+
+    /// The twin of `enable_diplomatic_lane_forecast_2`.
+    pub fn disable_diplomatic_lane_forecast_2(&mut self) {
+        self.diplomatic_lane_forecast_2 = false;
     }
 
     /// Count a peacetime major's army massed near one of our cities toward
@@ -2194,6 +2208,7 @@ impl AdvancedAi {
     /// city development; an open Prophet race and a clutch for an exceptional
     /// Scientist remain forcing. Opt-in gene `early-project-restraint`.
     pub fn enable_early_project_restraint(&mut self) {
+        self.early_project_restraint_2 = false;
         self.early_project_restraint = true;
     }
 
@@ -3478,12 +3493,16 @@ impl AdvancedAi {
     /// `district-planning-2`: the district plan's tile buy competes out of
     /// the treasury reserve (never spending below half of it) instead of
     /// needing 200 Gold of surplus headroom, and the purchase bars drop to
-    /// adjacency 2 with an edge of 1 over owned ground. Measured motive:
-    /// zero `buy_plot` orders in every recorded live game — replaying
-    /// Emperor game 20260901T132005Z, the plan priced the adjacency-4
-    /// Campus plot at 905 against a floor of 120 on every probed turn and
-    /// only the headroom rule refused it, while three cities placed
-    /// campuses at adjacency ≤ 1 beside that ground.
+    /// adjacency 2 with an edge of 1 over owned ground. A Science lane also
+    /// promotes a workable tile worth at least 5 Science, or the connector
+    /// that immediately opens it, into that strategic competition; it may
+    /// draw through the general reserve but preserves the war-package and
+    /// immediate-defender floors. Measured motive: zero `buy_plot` orders in
+    /// every recorded live game — replaying Emperor
+    /// game 20260901T132005Z, the plan priced the adjacency-4 Campus plot at
+    /// 905 against a floor of 120 on every probed turn and only the headroom
+    /// rule refused it, while three cities placed campuses at adjacency ≤ 1
+    /// beside that ground.
     pub fn enable_district_planning_2(&mut self) {
         self.district_planning_2 = true;
     }
@@ -3677,6 +3696,20 @@ impl AdvancedAi {
     /// The twin of `enable_battle_planner`.
     pub fn disable_battle_planner(&mut self) {
         self.battle_planner = false;
+    }
+
+    /// Restrain an off-lane repeatable Great-Person project only while its
+    /// district owes a first building this city can start now. Lane projects
+    /// and immediate race swings remain available. Version 2 of
+    /// `early-project-restraint`; one family member plays at a time.
+    pub fn enable_early_project_restraint_2(&mut self) {
+        self.early_project_restraint = false;
+        self.early_project_restraint_2 = true;
+    }
+
+    /// The twin of `enable_early_project_restraint_2`.
+    pub fn disable_early_project_restraint_2(&mut self) {
+        self.early_project_restraint_2 = false;
     }
 
     /// Version two of `battle_planner`: the positions plan — slots laid

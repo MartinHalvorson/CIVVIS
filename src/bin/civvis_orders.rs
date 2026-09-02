@@ -957,8 +957,9 @@ impl HostMoveRefusals {
     /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
     /// again; the host records that as `from == destination` / `move_refused`.
     /// Waiting for the next turn is the only useful retry because this frame has
-    /// no newer authoritative position. FORTIFY and civilian CAPTURE have the
-    /// same stale-state failure mode. The diplomacy arm has the same shape:
+    /// no newer authoritative position. FORTIFY, civilian CAPTURE and SWAP have
+    /// the same stale-state failure mode (a swap re-derived from the old frame
+    /// is aimed at the tile the unit has already taken). The diplomacy arm has the same shape:
     /// its pending/cooldown guards mean a repeated deal order can only be
     /// refused again. Attack orders are deliberately excluded: a fresh combat
     /// frame may legitimately finish the same target.
@@ -981,7 +982,7 @@ impl HostMoveRefusals {
             let Some(verb) = order.verb.as_deref() else {
                 return true;
             };
-            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY") {
+            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY" | "SWAP") {
                 let key = HostUnitOrderKey {
                     verb: verb.to_string(),
                     pos: order.pos,
@@ -1766,9 +1767,10 @@ fn append_border_buy_order(
 // holds none of, the host sells a copy as an ordinary deal, and in the nine
 // recorded sales the AI asked 2–14 Gold a turn per copy; one copy is +1
 // Amenity in four cities. `Game::quick_deals` does quote a luxury PURCHASE,
-// but the mirror carries no rival's tradeable stock and `border_buy_ceiling`
-// rightly refuses the shape, so — like the favor sale and the passage
-// purchase — the order is composed here from the export's own facts: the
+// but its result is not enough to choose a seller; the mirror now carries the
+// host's met-gated tradeable luxury catalogue and `border_buy_ceiling` rightly
+// refuses the shape, so — like the favor sale and the passage purchase — the
+// order is composed here from the export's own facts: the
 // amenity ledger the host reports per city, the net income, the treasury,
 // the rivals' war state and gold. The Lua arm reads the RIVAL's own
 // tradeable list, takes the first luxury the host says the seat holds none
@@ -1776,8 +1778,9 @@ fn append_border_buy_order(
 // the ceiling carried in `x`.
 //
 // Cadence-gated like its neighbours (phase 4, the last free slot of the
-// six-turn deal week), aimed at the richest met major at peace with no deal
-// already heading its way this turn; the mod's own cooldowns
+// six-turn deal week), aimed at the richest met major at peace that the host
+// says has at least one tradeable luxury, with no deal already heading its
+// way this turn; the mod's own cooldowns
 // (`TradeRetryTurns`) meter re-asks after a `buy_no_luxury`. The ceiling is
 // what a copy is worth to the empire — a base and a share per city, since
 // the four cities it reaches each recover the 10% — bounded by what the
@@ -1843,6 +1846,12 @@ fn append_luxury_buy_order(
         .iter()
         .filter(|rival| !rival.at_war)
         .filter(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        })
+        .filter(|rival| {
             !orders.iter().any(|order| {
                 (order.kind == "sell" || order.kind == "buy")
                     && order.subject == Some(rival.player as i64)
@@ -1862,7 +1871,23 @@ fn append_luxury_buy_order(
                 .then_with(|| right.player.cmp(&left.player))
         });
     let Some(seller) = seller else {
-        return Some("luxury_buy_hold:no_seller");
+        let mut peaceful_rivals = state.rivals.iter().filter(|rival| !rival.at_war);
+        let has_peaceful_rival = peaceful_rivals.clone().next().is_some();
+        let all_catalogues_known = has_peaceful_rival
+            && peaceful_rivals
+                .clone()
+                .all(|rival| rival.tradeable_luxuries.is_some());
+        let known_stock = peaceful_rivals.any(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        });
+        return Some(if all_catalogues_known && !known_stock {
+            "luxury_buy_hold:no_stock"
+        } else {
+            "luxury_buy_hold:no_seller"
+        });
     };
     orders.push(Order {
         kind: "buy",
@@ -3585,6 +3610,7 @@ fn decide(
                     }
                     Action::Attack { unit, .. }
                     | Action::Ranged { unit, .. }
+                    | Action::Swap { unit, .. }
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
                     | Action::Improve { unit, .. }
@@ -3704,6 +3730,7 @@ fn decide(
             // a copy, or with nobody at peace to buy one from.
             if why == "luxury_buy_hold:income"
                 || why == "luxury_buy_hold:treasury"
+                || why == "luxury_buy_hold:no_stock"
                 || why == "luxury_buy_hold:no_seller"
             {
                 note_bits.push(why.to_string());
@@ -4242,6 +4269,34 @@ fn translate(
                 pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
             })
         }
+        // ★★★ THE SWAP VERB. `Action::Swap` — legal, tested and correctly refused
+        // in the engine since `do_swap`, and chosen by `swap-rotation`
+        // (`src/ai/advanced/swap_rotation.rs`) — fell through this match's
+        // `_ => None` and was counted `unit_action_untranslated`, so a rotation
+        // the arena priced positive on every instrument (docs/LIVE_TACTICS.md
+        // §18) could never reach the live board.
+        //
+        // Civilization VI has a dedicated operation for it, read off the
+        // installed game: `Base/Assets/Gameplay/Data/UnitOperations.xml:56`
+        // (`UNITOPERATION_SWAP_UNITS`, `VisibleInUI="false"`). The shipped UI
+        // requests it with the PARTNER'S plot as the ordinary positional pair —
+        // `Base/Assets/UI/Civ6Common.lua:160-161`, inside `RequestMoveOperation`:
+        //
+        //   if (UnitManager.CanStartOperation( kUnit, UnitOperationTypes.SWAP_UNITS, nil, tParameters) ) then
+        //       UnitManager.RequestOperation(kUnit, UnitOperationTypes.SWAP_UNITS, tParameters);
+        //
+        // so the order is `SWAP` with `pos` = where the partner stands. The
+        // partner is read off the mirrored board, not the action: the mod needs
+        // a plot, and a partner this bridge cannot see has no plot to name.
+        Action::Swap { unit, other } => civ6_of.get(unit).and_then(|civ6| {
+            let partner = mirror_state.game.units.get(other)?.pos;
+            Some(Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some("SWAP".to_string()),
+                pos: Some(civvis::hex::axial_to_offset(partner.0, partner.1)),
+            })
+        }),
         // ⚠ There is NO attack operation on this build; the resolved list is only
         // MOVE_TO and RANGE_ATTACK, so a melee strike IS a move onto the defended
         // plot. That is how Civilization VI resolves it, not a hack.
@@ -5082,6 +5137,14 @@ const UNVERIFIABLE_ORDER_KINDS: &[(&str, &str)] = &[
     // Levied units keep the city-state's ids and the frame does not mark them
     // as levied, so a levy cannot be told from the minor's own army.
     ("levy", "levied units are not marked in the frame"),
+    // A question, not an act: the mod answers it at issue time with a
+    // `preview` event (the host's `SimulateAttackInto` reading, filed on the
+    // board as `Game::host_previews`) and changes nothing the next frame
+    // could show.
+    (
+        "preview",
+        "answered by the host's `preview` event at issue time; nothing changes on the frame",
+    ),
 ];
 
 /// Unit verbs the next frame cannot answer, each with the reason. `SPY_*`
@@ -5139,6 +5202,17 @@ const EVIDENCE_KINDS: &[&str] = &[
     // on the ledger is a named refusal, not a position diff.
     "move_noop",
     "move_fallback",
+    // ⭐ THE SAME FOR A STRIKE. `range_attack_refused` is the host declining a
+    // shot the simulator previewed (line of sight, range, a spent attack — its
+    // `why` is the host's own reason), and `war_refused` is `refuseWarStarter`
+    // holding back an order the engine would answer with a war the agent never
+    // declared. Both were emitted for months and read by nothing in Rust: a
+    // refused ATTACK/RANGE_ATTACK was failed as `target_unharmed`, which
+    // reads the same as a shot that landed for zero. The mirror also reads
+    // both into `Game::blocked_strikes` so the next frame of the same turn
+    // does not propose the identical pair again.
+    "range_attack_refused",
+    "war_refused",
 ];
 
 /// Ledger evidence and state frames stamped with one of `turns`.
@@ -5410,6 +5484,63 @@ fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> 
     })
 }
 
+/// The host's own reason a strike did not happen, when it gave one this turn
+/// for exactly this attacker and target.
+///
+/// `war_refused` (from `CivvisLedger.refuseWarStarter`) verifies as
+/// `would_declare_war`: the order was never sent, because the engine would
+/// have answered it with a war the agent never declared. `range_attack_refused`
+/// carries the host's `why` — `refusalReason`'s localized failure reasons,
+/// `"Target is out of range | No line of sight [p4r]"` — and crosses as
+/// `host_refused_<why>` with that text reduced to a token; a refusal without
+/// words is `host_refused_strike`.
+fn strike_refusal_reason(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    unit: i64,
+    target: Option<(i32, i32)>,
+) -> Option<String> {
+    let aimed_here = |event: &serde_json::Value| {
+        event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+            && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
+            && target.is_none_or(|(x, y)| {
+                event.get("x").and_then(|v| v.as_i64()) == Some(i64::from(x))
+                    && event.get("y").and_then(|v| v.as_i64()) == Some(i64::from(y))
+            })
+    };
+    let of_kind = |event: &serde_json::Value, kind: &str| {
+        event.get("kind").and_then(|k| k.as_str()) == Some(kind)
+    };
+    if evidence
+        .iter()
+        .any(|event| of_kind(event, "war_refused") && aimed_here(event))
+    {
+        return Some("would_declare_war".to_string());
+    }
+    let refused = evidence
+        .iter()
+        .find(|event| of_kind(event, "range_attack_refused") && aimed_here(event))?;
+    let why = refused
+        .get("why")
+        .and_then(|w| w.as_str())
+        .unwrap_or("")
+        // `refusalReason` suffixes the call form it got the words from.
+        .split(" [")
+        .next()
+        .unwrap_or("");
+    let token: String = why
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    Some(if token.is_empty() || token.starts_with("can_start") {
+        "host_refused_strike".to_string()
+    } else {
+        format!("host_refused_{token}")
+    })
+}
+
 /// Whether the host deliberately rewrote this Settler leg to an escape plot.
 /// The safety pass can replace the planner's destination after the order has
 /// already entered the ledger; the event is the bridge's proof of the actual
@@ -5611,6 +5742,29 @@ fn verify_unit_order(
                 Some(_) => Verdict::Failed("not_captured".to_string()),
             }
         }
+        // A swap is two units trading hexes, so either half proves it: this
+        // unit standing on the partner's former tile, or the partner standing
+        // on ours. Only a unit that was on the decision frame can be judged
+        // (there is no "our tile" for a unit first seen afterwards).
+        "SWAP" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            let partner_took_our_tile = was.is_some_and(|was| {
+                after.units.iter().any(|u| {
+                    u.id != id
+                        && (u.x, u.y) == (was.x, was.y)
+                        && own_unit(before, u.id).is_some_and(|p| (p.x, p.y) == want)
+                })
+            });
+            match now {
+                Some(now) if (now.x, now.y) == want => Verdict::Verified,
+                _ if partner_took_our_tile => Verdict::Verified,
+                None => gone(),
+                Some(_) if was.is_none() => Verdict::Unverifiable,
+                Some(_) => Verdict::Failed("not_swapped".to_string()),
+            }
+        }
         "FOUND_CITY" => {
             let site = order.pos.or_else(|| was.map(|u| (u.x, u.y)));
             let founded_here = site.is_some_and(|s| {
@@ -5627,7 +5781,12 @@ fn verify_unit_order(
             if harmed || combat_evidence(evidence, turn, id) {
                 Verdict::Verified
             } else {
-                Verdict::Failed("target_unharmed".to_string())
+                // The host's own reason when it gave one; see
+                // `strike_refusal_reason`.
+                Verdict::Failed(
+                    strike_refusal_reason(evidence, turn, id, order.pos)
+                        .unwrap_or_else(|| "target_unharmed".to_string()),
+                )
             }
         }
         "FORTIFY" => {
@@ -10204,6 +10363,167 @@ mod tests {
         );
     }
 
+    /// A strike the host refused this turn (`range_attack_refused` /
+    /// `war_refused`) reaches the mirrored board as `Game::blocked_strikes`,
+    /// and a later frame of the same turn neither enumerates, proves nor
+    /// applies the identical pair — while the same unit's other targets and
+    /// other units' strikes at the same target stay open.
+    #[test]
+    fn a_strike_the_host_refused_is_not_proposed_again_this_turn() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        let open = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let by_host = |mirror: &civvis::mirror::LiveMirror, host: i64| {
+            mirror
+                .civ6_of
+                .iter()
+                .find_map(|(unit, civ6)| (*civ6 == host).then_some(*unit))
+                .unwrap()
+        };
+        let target = civvis::hex::offset_to_axial(5, 4);
+        let warrior = by_host(&open, 101);
+        let strike = Action::Attack {
+            unit: warrior,
+            target,
+        };
+        assert!(
+            open.game.legal_actions(0).contains(&strike),
+            "the adjacent warrior's melee strike is legal on the open board"
+        );
+        let mut planned = open.game.clone();
+        let volley = finish_live_war_units(&mut planned, 0, &open.civ6_of);
+        assert!(
+            volley.actions.contains(&strike),
+            "the finishing pre-pass sends the warrior's blow on the open board: {:?}",
+            volley.actions
+        );
+
+        // Frame 1 of the same turn: the host refused exactly that pair.
+        state.frame = 1;
+        state.refused_strikes.insert((101, 5, 4));
+        let blocked = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let warrior = by_host(&blocked, 101);
+        let strike = Action::Attack {
+            unit: warrior,
+            target,
+        };
+        assert!(
+            blocked.game.blocked_strikes.contains(&(warrior, target)),
+            "the refused pair reaches the board in CIVVIS ids and axial tiles"
+        );
+        assert!(
+            !blocked.game.legal_actions(0).contains(&strike),
+            "the refused strike is not enumerated again"
+        );
+        assert!(blocked.game.strike_blocked(warrior, target));
+        let mut replan = blocked.game.clone();
+        assert!(
+            replan.apply(0, &strike).is_err(),
+            "the applier refuses it too, so a pre-pass proving it on a private board cannot re-issue it"
+        );
+        let volley = finish_live_war_units(&mut replan, 0, &blocked.civ6_of);
+        let re_issued = volley.actions.iter().any(|action| {
+            matches!(
+                action,
+                Action::Attack { unit, target: to } | Action::Ranged { unit, target: to }
+                    if *unit == warrior && *to == target
+            )
+        });
+        assert!(
+            !re_issued,
+            "the replan frame does not re-issue the refused strike: {:?}",
+            volley.actions
+        );
+        // The block is the exact pair, not the unit and not the target.
+        let slinger = by_host(&blocked, 100);
+        assert!(
+            !blocked.game.blocked_strikes.contains(&(slinger, target)),
+            "another unit's strike at the same target is not blocked"
+        );
+        assert!(
+            !blocked
+                .game
+                .blocked_strikes
+                .iter()
+                .any(|(unit, to)| *unit == warrior && *to != target),
+            "the same unit's other targets are not blocked"
+        );
+    }
+
+    /// An ATTACK/RANGE_ATTACK that left its target unharmed verifies with the
+    /// host's reason when the host gave one this turn for exactly this pair:
+    /// `would_declare_war` for a war-starter refusal, the host's `why` as a
+    /// token for a ranged refusal, and `target_unharmed` when it gave none.
+    #[test]
+    fn a_refused_strike_verifies_with_the_hosts_reason() {
+        let (tiles, before) = local_barbarian_defense_board();
+        let after = before.clone();
+        let verdict = |verb: &str, evidence: &[serde_json::Value]| {
+            let order = IssuedOrder {
+                kind: "unit".to_string(),
+                subject: Some(101),
+                verb: Some(verb.to_string()),
+                pos: Some((5, 4)),
+            };
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &after,
+                &tiles,
+                evidence,
+                LaterFrames::default(),
+            )
+        };
+        let event = |json: &str| serde_json::from_str::<serde_json::Value>(json).unwrap();
+
+        assert!(matches!(
+            verdict("ATTACK", &[]),
+            Verdict::Failed(reason) if reason == "target_unharmed"
+        ));
+        let war = event(
+            r#"{"kind":"war_refused","turn":30,"unit":101,"verb":"ATTACK","x":5,"y":4,"players":[3],"target_owner":3}"#,
+        );
+        assert!(matches!(
+            verdict("ATTACK", std::slice::from_ref(&war)),
+            Verdict::Failed(reason) if reason == "would_declare_war"
+        ));
+        let los = event(
+            r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":5,"y":4,"moves":2,"attacks":1,"activity":"ACTIVITY_AWAKE","why":"No line of sight [p4r]"}"#,
+        );
+        assert!(matches!(
+            verdict("RANGE_ATTACK", std::slice::from_ref(&los)),
+            Verdict::Failed(reason) if reason == "host_refused_no_line_of_sight"
+        ));
+        let wordless = event(
+            r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":5,"y":4,"why":"can_start=false,no_reasons [p4r]"}"#,
+        );
+        assert!(matches!(
+            verdict("RANGE_ATTACK", std::slice::from_ref(&wordless)),
+            Verdict::Failed(reason) if reason == "host_refused_strike"
+        ));
+        // Another plot's, another turn's or another unit's refusal is not ours.
+        let elsewhere = event(
+            r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":6,"y":4,"why":"Target is out of range [p4r]"}"#,
+        );
+        let last_turn = event(
+            r#"{"kind":"war_refused","turn":29,"unit":101,"verb":"ATTACK","x":5,"y":4,"players":[3]}"#,
+        );
+        let theirs = event(
+            r#"{"kind":"war_refused","turn":30,"unit":100,"verb":"ATTACK","x":5,"y":4,"players":[3]}"#,
+        );
+        assert!(matches!(
+            verdict("ATTACK", &[elsewhere, last_turn, theirs]),
+            Verdict::Failed(reason) if reason == "target_unharmed"
+        ));
+        // A refusal beside a combat on the ledger: the refusal was an earlier
+        // frame's and the combat is the proof the strike landed.
+        let fought = event(r#"{"kind":"combat","turn":30,"attacker":{"id":101}}"#);
+        assert!(matches!(
+            verdict("ATTACK", &[war, fought]),
+            Verdict::Verified
+        ));
+    }
+
     /// A move onto an enemy civilian crosses as `CAPTURE`, the attack-modifier
     /// MOVE_TO the host needs to enter an occupied plot; a move onto open
     /// ground stays `MOVE_TO`. Measured reason: 65 bare `MOVE_TO` orders at a
@@ -10312,6 +10632,121 @@ mod tests {
         assert!(matches!(
             verify_unit_order(&order, 30, &before, &stood, &tiles, &[], LaterFrames::default()),
             Verdict::Failed(reason) if reason == "not_captured"
+        ));
+    }
+
+    /// `Action::Swap` crosses as `SWAP` aimed at the PARTNER'S tile — the
+    /// positional pair the shipped `Civ6Common.lua:160-161` hands
+    /// `UNITOPERATION_SWAP_UNITS` — instead of falling through to
+    /// `unit_action_untranslated`.
+    #[test]
+    fn a_swap_crosses_as_the_swap_verb_aimed_at_the_partners_tile() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let by_host = |host: i64| {
+            mirror
+                .civ6_of
+                .iter()
+                .find_map(|(unit, civ6)| (*civ6 == host).then_some(*unit))
+                .unwrap()
+        };
+        let warrior = by_host(101);
+        let slinger = by_host(100);
+        assert_eq!(
+            mirror.game.wdist(
+                mirror.game.units[&warrior].pos,
+                mirror.game.units[&slinger].pos
+            ),
+            1,
+            "the board's two friendly units are adjacent, as a swap requires"
+        );
+
+        let swap = translate(
+            &Action::Swap {
+                unit: warrior,
+                other: slinger,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the swap crosses");
+        assert_eq!(swap.kind, "unit");
+        assert_eq!(swap.subject, Some(101));
+        assert_eq!(swap.verb.as_deref(), Some("SWAP"));
+        assert_eq!(
+            swap.pos,
+            Some((4, 5)),
+            "the partner's plot, in host offsets"
+        );
+
+        // A partner the mirror cannot see has no plot to name.
+        assert!(translate(
+            &Action::Swap {
+                unit: warrior,
+                other: u32::MAX,
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+    }
+
+    /// Either half of the exchange verifies a swap: this unit on the partner's
+    /// former tile, or the partner on ours. Both still where they stood is
+    /// `not_swapped`.
+    #[test]
+    fn a_swap_is_verified_by_either_unit_standing_on_the_others_tile() {
+        let (tiles, before) = local_barbarian_defense_board();
+        // Warrior 101 at (5,5) swaps with Slinger 100 at (4,5).
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("SWAP".to_string()),
+            pos: Some((4, 5)),
+        };
+        let verdict = |after: &StateSnapshot| {
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                after,
+                &tiles,
+                &[],
+                LaterFrames::default(),
+            )
+        };
+
+        let mut swapped = before.clone();
+        for unit in swapped.units.iter_mut() {
+            match unit.id {
+                101 => (unit.x, unit.y) = (4, 5),
+                100 => (unit.x, unit.y) = (5, 5),
+                _ => {}
+            }
+        }
+        assert!(matches!(verdict(&swapped), Verdict::Verified));
+
+        // The partner's half alone is enough evidence.
+        let mut partner_only = before.clone();
+        let slinger = partner_only
+            .units
+            .iter_mut()
+            .find(|unit| unit.id == 100)
+            .unwrap();
+        (slinger.x, slinger.y) = (5, 5);
+        assert!(matches!(verdict(&partner_only), Verdict::Verified));
+
+        let stood = before.clone();
+        assert!(matches!(
+            verdict(&stood),
+            Verdict::Failed(reason) if reason == "not_swapped"
+        ));
+
+        let mut gone = before.clone();
+        gone.units.retain(|unit| unit.id != 101);
+        assert!(matches!(
+            verdict(&gone),
+            Verdict::Failed(reason) if reason == "unit_gone"
         ));
     }
 
@@ -13120,11 +13555,13 @@ mod tests {
                 StateRival {
                     player: 2,
                     gold: 300.0,
+                    tradeable_luxuries: Some(vec!["RESOURCE_SILK".to_string()]),
                     ..StateRival::default()
                 },
                 StateRival {
                     player: 4,
                     gold: 500.0,
+                    tradeable_luxuries: Some(vec!["RESOURCE_AMBER".to_string()]),
                     ..StateRival::default()
                 },
                 StateRival {
@@ -13135,6 +13572,7 @@ mod tests {
                 },
                 StateRival {
                     player: 6,
+                    tradeable_luxuries: Some(Vec::new()),
                     ..StateRival::default()
                 },
             ],
@@ -13153,6 +13591,38 @@ mod tests {
         // 135 + 10·3 = 165, under what 12 a turn carries (25·(12−4) = 200)
         // and the cap.
         assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // A richer rival with no catalogue entry must not consume the only
+        // purchase window: the host would answer `buy_no_luxury`.
+        let mut no_stock = state.clone();
+        no_stock.rivals[1].tradeable_luxuries = Some(Vec::new());
+        let mut stock_orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&no_stock, &mut stock_orders), None);
+        assert_eq!(stock_orders[0].subject, Some(2));
+
+        // A host export that explicitly reports no stock is different from
+        // an older export with no field at all; do not send a blind deal in
+        // either case.
+        let mut no_known_stock = state.clone();
+        for rival in &mut no_known_stock.rivals {
+            rival.tradeable_luxuries = Some(Vec::new());
+        }
+        let mut no_stock_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&no_known_stock, &mut no_stock_orders),
+            Some("luxury_buy_hold:no_stock")
+        );
+        assert!(no_stock_orders.is_empty());
+        let mut old_export = state.clone();
+        for rival in &mut old_export.rivals {
+            rival.tradeable_luxuries = None;
+        }
+        let mut old_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&old_export, &mut old_orders),
+            Some("luxury_buy_hold:no_seller")
+        );
+        assert!(old_orders.is_empty());
 
         // The income binds: 8 a turn carries 100 at the 25× book with 4 kept
         // clear; the cap binds a wide empire on a fat income.
