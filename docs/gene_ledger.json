@@ -1871,6 +1871,15 @@
           "skip-the-prophet-race-2": null
         }
       },
+      "swap-rotation": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "swap-rotation": null,
+          "swap-rotation-2": null
+        }
+      },
       "treasury-at-work": {
         "rule_on": [
           "treasury-at-work-2"

@@ -1355,7 +1355,9 @@ impl AdvancedAi {
     /// The fresh friend a wounded unit should trade places with, if any:
     /// adjacent, ours, melee-capable, healthier by `RELIEF_HP_MARGIN`,
     /// further from the nearest hostile than the wounded unit, and standing
-    /// where the wounded unit would be less exposed.
+    /// where the wounded unit would be less exposed. `swap-rotation-2` also
+    /// accepts hostile-city depth, refuses a weaker defender, and ranks
+    /// effective strength before health.
     fn rotation_relief(
         &self,
         g: &Game,
@@ -1363,6 +1365,7 @@ impl AdvancedAi {
         uid: u32,
         field: &mut DangerField,
         here: f64,
+        objective: Option<Pos>,
     ) -> Option<u32> {
         let unit = g.units.get(&uid)?;
         let hostile_distance = |pos: Pos| {
@@ -1378,7 +1381,10 @@ impl AdvancedAi {
                 .min()
         };
         let ours = hostile_distance(unit.pos)?;
-        let mut best: Option<(i32, u32)> = None;
+        let hostile_city_objective = self.swap_rotation_city_objective(g, pid, unit.pos, objective);
+        let wounded_strength =
+            crate::game::effective_strength(g.unit_strength(unit, true), unit.hp);
+        let mut best: Option<(f64, i32, u32)> = None;
         for pos in g.nbrs(unit.pos) {
             for other_id in g.unit_ids_at(pos) {
                 let Some(other) = g.units.get(other_id) else {
@@ -1397,18 +1403,35 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                if hostile_distance(other.pos).unwrap_or(i32::MAX) <= ours {
+                let behind_siege_ring = hostile_city_objective.is_some_and(|objective| {
+                    g.wdist(other.pos, objective) > g.wdist(unit.pos, objective)
+                });
+                if hostile_distance(other.pos).unwrap_or(i32::MAX) <= ours && !behind_siege_ring {
                     continue;
                 }
                 if field.danger(other.pos, uid) >= here - NO_DANGER {
                     continue;
                 }
-                if best.is_none_or(|(hp, id)| other.hp > hp || (other.hp == hp && other.id < id)) {
-                    best = Some((other.hp, other.id));
+                let strength =
+                    crate::game::effective_strength(g.unit_strength(other, true), other.hp);
+                if self.swap_rotation_2 && strength + NO_DANGER < wounded_strength {
+                    continue;
+                }
+                let better = best.is_none_or(|(best_strength, hp, id)| {
+                    if self.swap_rotation_2 {
+                        strength > best_strength + NO_DANGER
+                            || ((strength - best_strength).abs() <= NO_DANGER
+                                && (other.hp > hp || (other.hp == hp && other.id < id)))
+                    } else {
+                        other.hp > hp || (other.hp == hp && other.id < id)
+                    }
+                });
+                if better {
+                    best = Some((strength, other.hp, other.id));
                 }
             }
         }
-        best.map(|(_, id)| id)
+        best.map(|(_, _, id)| id)
     }
 
     /// Pull the wounded and the exposed out of reach and fortify them.
@@ -1469,7 +1492,12 @@ impl AdvancedAi {
                 })
                 .collect();
             safe.sort_unstable();
-            let relief = self.rotation_relief(g, pid, uid, field, here);
+            let objective = self
+                .force_groups
+                .iter()
+                .find(|group| group.units.contains(&uid))
+                .map(|group| group.objective);
+            let relief = self.rotation_relief(g, pid, uid, field, here, objective);
             let mut moved = false;
             if let Some(relief) = relief {
                 moved = g
@@ -3066,6 +3094,57 @@ mod tests {
         // a kill either: the exchange is a loss, so nothing is planned.
         wound(&mut g, ours, 100);
         assert!(ai.kill_sequence(&g, 0).is_empty());
+    }
+
+    /// V2's city-depth repair reaches the deployed joint planner as well as
+    /// the legacy per-unit ladder. A common defender leaves both friendly
+    /// tiles at distance one, while the city garrison makes the outer tile
+    /// materially more dangerous; only the hostile objective distinguishes
+    /// which friend is behind the siege ring.
+    #[test]
+    fn swap_rotation_two_teaches_the_battle_planner_siege_depth() {
+        let mut g = build(position("the_storming").expect("known"), 3).expect("buildable");
+        let seeded: Vec<u32> = (0..2).flat_map(|pid| g.player_unit_ids(pid)).collect();
+        for uid in seeded {
+            g.remove_unit(uid);
+        }
+        let objective_city = g.player_city_ids(1)[0];
+        let objective = g.cities[&objective_city].pos;
+        let front = at(16, 6);
+        let behind = at(15, 6);
+        let common_enemy = at(15, 5);
+        let hurt = g.spawn_unit("swordsman", 0, front);
+        let fresh = g.spawn_unit("swordsman", 0, behind);
+        g.spawn_unit("warrior", 1, common_enemy);
+        g.spawn_unit("warrior", 1, objective);
+        wound(&mut g, hurt, 30);
+        assert_eq!(g.wdist(front, common_enemy), 1);
+        assert_eq!(g.wdist(behind, common_enemy), 1);
+        assert!(g.wdist(behind, objective) > g.wdist(front, objective));
+
+        let mut field = DangerField::new(&g, 0);
+        let here = field.danger(front, hurt);
+        let behind_danger = field.danger(behind, hurt);
+        assert!(
+            behind_danger < here,
+            "the rear ring is safer: {behind_danger} < {here}"
+        );
+
+        let mut v1 = AdvancedAi::new();
+        v1.enable_battle_planner();
+        v1.enable_swap_rotation();
+        assert_eq!(
+            v1.rotation_relief(&g, 0, hurt, &mut field, here, Some(objective)),
+            None
+        );
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_battle_planner();
+        v2.enable_swap_rotation_2();
+        assert_eq!(
+            v2.rotation_relief(&g, 0, hurt, &mut field, here, Some(objective)),
+            Some(fresh)
+        );
     }
 
     /// A 30-hit-point warrior beside a healthy enemy steps to a tile the

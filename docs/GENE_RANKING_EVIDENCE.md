@@ -205,6 +205,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `requisitions` | off (unmeasured) | `requisitions`: the Objective Board's shortfall reaches production and the treasury. | 1 \| 1 |
 | `siege-is-progress-3` | off (unmeasured) | Reset war fatigue once per enemy city only after a nearby own land force is observed reducing its wall or city health. | 1 \| 1 |
 | `siege-train` | off (unmeasured) | A force whose objective is an enemy city plays the siege as a state machine — stage on the ring out of the city's reach until the bill is met, seal the ring spread-first, reduce walls before the garrison, reserve one taker and walk in when the city is within its blow. | 1 \| 1 |
+| `swap-rotation-2` | off (unmeasured) | Version two keeps the field-front swap and additionally recognizes a relief farther from the force's hostile city objective as behind the siege ring. | 1 \| 2 |
 | `veterans-withdraw-early` | off (unmeasured) | A promoted unit keeps hit points in hand before it withdraws. | 1 \| 1 |
 | `war-policy-via-board` | off (unmeasured) | `war-policy-via-board`: target feasibility, the declaration and the peace term read off the board. | 1 \| 1 |
 

@@ -2105,6 +2105,11 @@ pub const GENES: &[Gene] = &[
     // fronts into extra Recovery; immediate city danger still takes Recovery
     // independently, including city-state pressure. One family version plays.
     Gene { tag: "recovery-reads-the-war-2", field: "recovery_reads_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_reads_the_war_2, disable: AdvancedAi::disable_recovery_reads_the_war_2 },
+    // Version two never weakens the held tile: the relief must match the
+    // wounded unit's effective strength, and strength ranks before health.
+    // It also reads siege depth from a nearby hostile city even after a force
+    // group dissolves, and teaches the joint battle planner the same rule.
+    Gene { tag: "swap-rotation-2", field: "swap_rotation_2", kind: Kind::OptIn, enable: AdvancedAi::enable_swap_rotation_2, disable: AdvancedAi::disable_swap_rotation_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

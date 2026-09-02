@@ -6022,6 +6022,12 @@ pub struct AdvancedAi {
     /// behind it, so the line does not open when it leaves. Opt-in gene
     /// `swap-rotation`; see `advanced/swap_rotation.rs`.
     swap_rotation: bool,
+    /// Version two refuses a relief weaker than the wounded defender, ranks
+    /// effective strength before health, and recognizes depth within a
+    /// hostile city's siege sphere even after the force group dissolves. The
+    /// same rule reaches the joint battle planner. One family version plays
+    /// at a time. Opt-in gene `swap-rotation-2`.
+    swap_rotation_2: bool,
     /// A shooter's tile beside a melee friend that stands nearer the enemy
     /// earns two screen weights — the arena's own definition of screened.
     /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
@@ -7734,6 +7740,7 @@ impl AdvancedAi {
             settler_capture_scars: BTreeMap::new(),
             settler_never_idles: false,
             swap_rotation: false,
+            swap_rotation_2: false,
             screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,

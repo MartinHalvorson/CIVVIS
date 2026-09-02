@@ -49,10 +49,21 @@
 //! when off. Priced on the arena first; the whole-game screen is the
 //! no-harm check (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
 //!
-//! **Not on the live bridge.** The host's own swap operation is not driven
-//! over the Civilization VI channel and two `MOVE_TO` orders cannot emulate
-//! one — the first is refused. `docs/MOVEMENT.md` states that limit; this
-//! gene is a CIVVIS-side decision until a host verb exists.
+//! **Live bridge.** The host's own swap operation was not driven over the
+//! Civilization VI channel when V1 landed, and two `MOVE_TO` orders cannot
+//! emulate one — the first is refused. The bridge now
+//! translates `Action::Swap` as the host's `SWAP_UNITS` operation, so a
+//! controller choice here reaches both native and live play.
+//!
+//! **Version two repairs two predicates rather than rotating more bodies.**
+//! V1 ranks relief by hit points alone, so a pristine obsolete unit can
+//! replace a wounded but still stronger front-liner and weaken the tile the
+//! swap exists to hold. V2 requires at least the wounded unit's effective
+//! defensive strength and ranks strength before health. It also recognizes
+//! depth within four tiles of a hostile city from the board itself, even when
+//! the force group dissolved, and supplies the same rule to the joint battle
+//! planner that now owns most tactical turns. Field fronts retain V1's
+//! nearest-hostile depth test.
 
 use super::{AdvancedAi, ForcePosture};
 use crate::game::{Action, Game};
@@ -63,16 +74,59 @@ use crate::game::{Action, Game};
 /// fight, which is the failure mode `arrival-waves` was removed for in a
 /// different shape.
 pub(super) const ROTATION_HP_MARGIN: i32 = 25;
+/// A city siege's staging, front, and relief rings. `siege-train` stages at
+/// distance three to five; four reaches its inner stage without treating a
+/// distant field action as part of the siege.
+const CITY_ROTATION_RING: i32 = 4;
 
 impl AdvancedAi {
+    /// The hostile city whose siege rings can define "behind" for V2.
+    /// Prefer a current force objective, but recover from a dissolved group
+    /// by reading the nearest hostile city directly from the board.
+    pub(super) fn swap_rotation_city_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        unit_pos: crate::Pos,
+        objective: Option<crate::Pos>,
+    ) -> Option<crate::Pos> {
+        if !self.swap_rotation_2 {
+            return None;
+        }
+        let hostile_city = |pos| {
+            g.city_at(pos).is_some_and(|city| {
+                let owner = g.cities[&city].owner;
+                owner != pid && g.is_at_war(pid, owner)
+            })
+        };
+        if let Some(objective) = objective.filter(|pos| hostile_city(*pos)) {
+            if g.wdist(unit_pos, objective) <= CITY_ROTATION_RING {
+                return Some(objective);
+            }
+        }
+        g.cities
+            .values()
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+            .map(|city| (g.wdist(unit_pos, city.pos), city.id, city.pos))
+            .filter(|(distance, _, _)| *distance <= CITY_ROTATION_RING)
+            .min_by_key(|(distance, city, _)| (*distance, *city))
+            .map(|(_, _, pos)| pos)
+    }
+
     /// The relief this unit should trade places with, if the gene is on and
     /// the board offers one.
     ///
     /// Deliberately a pure read: it names the swap and the caller applies
     /// it, so the choice is testable without a board mutation and the engine
     /// keeps the last word on legality.
-    pub(super) fn swap_rotation_relief(&self, g: &Game, pid: usize, uid: u32) -> Option<u32> {
-        if !self.swap_rotation {
+    pub(super) fn swap_rotation_relief(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        objective: Option<crate::Pos>,
+    ) -> Option<u32> {
+        if !self.swap_rotation && !self.swap_rotation_2 {
             return None;
         }
         let unit = g.units.get(&uid)?;
@@ -102,9 +156,18 @@ impl AdvancedAi {
         if ours > 1 {
             return None;
         }
+        // V1 could not recognize depth on a siege ring: defenders around the
+        // city commonly leave both adjacent friendly tiles one step from an
+        // enemy. V2 accepts the force objective as a second axis only when it
+        // is an enemy city in the current war. A field objective, our own
+        // threatened city, or a stale peace objective cannot widen the gene.
+        let hostile_city_objective = self.swap_rotation_city_objective(g, pid, unit.pos, objective);
         // The relief: adjacent, ours, military, melee-capable, healthier by
-        // the margin, and standing further from the enemy than we are.
-        let mut best: Option<(i32, u32)> = None;
+        // the margin, and standing further from either the enemy contact or,
+        // in V2, the hostile city the force is besieging.
+        let wounded_strength =
+            crate::game::effective_strength(g.unit_strength(unit, true), unit.hp);
+        let mut best: Option<(f64, i32, u32)> = None;
         for pos in g.nbrs(unit.pos) {
             for other_id in g.unit_ids_at(pos) {
                 let Some(other) = g.units.get(other_id) else {
@@ -124,17 +187,35 @@ impl AdvancedAi {
                     continue;
                 }
                 let theirs = hostile_reach(other.pos).unwrap_or(i32::MAX);
-                if theirs <= ours {
+                let behind_siege_ring = hostile_city_objective.is_some_and(|objective| {
+                    g.wdist(other.pos, objective) > g.wdist(unit.pos, objective)
+                });
+                if theirs <= ours && !behind_siege_ring {
                     continue;
                 }
-                // The freshest relief, then the lowest id so the choice is a
-                // function of the board alone.
-                if best.is_none_or(|(hp, id)| other.hp > hp || (other.hp == hp && other.id < id)) {
-                    best = Some((other.hp, other.id));
+                let strength =
+                    crate::game::effective_strength(g.unit_strength(other, true), other.hp);
+                if self.swap_rotation_2 && strength + f64::EPSILON < wounded_strength {
+                    continue;
+                }
+                // V1's historical choice is the freshest relief. V2 cannot
+                // weaken the held tile and ranks effective defensive strength
+                // before health; id keeps either choice a board function.
+                let better = best.is_none_or(|(best_strength, hp, id)| {
+                    if self.swap_rotation_2 {
+                        strength > best_strength + f64::EPSILON
+                            || ((strength - best_strength).abs() <= f64::EPSILON
+                                && (other.hp > hp || (other.hp == hp && other.id < id)))
+                    } else {
+                        other.hp > hp || (other.hp == hp && other.id < id)
+                    }
+                });
+                if better {
+                    best = Some((strength, other.hp, other.id));
                 }
             }
         }
-        best.map(|(_, id)| id)
+        best.map(|(_, _, id)| id)
     }
 
     /// Rotate the wounded front-liner out if the board offers a relief.
@@ -149,14 +230,22 @@ impl AdvancedAi {
         // A front only exists while a group is fighting for it. A muster or a
         // march has no line to keep whole, and `Recover` is the posture that
         // has already decided to leave.
-        let engaged = self.force_groups.iter().any(|group| {
-            group.units.contains(&uid)
-                && matches!(group.posture, ForcePosture::Engage | ForcePosture::Hold)
+        let group = self
+            .force_groups
+            .iter()
+            .find(|group| group.units.contains(&uid));
+        let objective = group.map(|group| group.objective);
+        let engaged = group.is_some_and(|group| {
+            matches!(group.posture, ForcePosture::Engage | ForcePosture::Hold)
         });
-        if !engaged {
+        let on_siege_ring = g.units.get(&uid).is_some_and(|unit| {
+            self.swap_rotation_city_objective(g, pid, unit.pos, objective)
+                .is_some()
+        });
+        if !engaged && !on_siege_ring {
             return None;
         }
-        let relief = self.swap_rotation_relief(g, pid, uid)?;
+        let relief = self.swap_rotation_relief(g, pid, uid, objective)?;
         let action = Action::Swap {
             unit: uid,
             other: relief,
@@ -201,12 +290,23 @@ mod tests {
     fn the_gene_ships_off_and_is_registered() {
         let ai = AdvancedAi::new();
         assert!(!ai.swap_rotation, "an opt-in ships off");
+        assert!(!ai.swap_rotation_2, "the successor also ships off");
         assert!(super::super::GENES
             .iter()
             .any(|gene| gene.opt_in() && gene.field == "swap_rotation"));
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "swap_rotation_2"));
         let mut on = AdvancedAi::new();
         on.enable_swap_rotation();
         assert!(on.swap_rotation);
+        assert!(!on.swap_rotation_2);
+        on.enable_swap_rotation_2();
+        assert!(!on.swap_rotation);
+        assert!(on.swap_rotation_2);
+        on.enable_swap_rotation();
+        assert!(on.swap_rotation);
+        assert!(!on.swap_rotation_2, "selecting v1 clears v2");
         on.disable_swap_rotation();
         assert!(!on.swap_rotation);
     }
@@ -224,11 +324,11 @@ mod tests {
         wound(&mut g, hurt, 30);
         let mut ai = AdvancedAi::new();
         assert!(
-            ai.swap_rotation_relief(&g, 0, hurt).is_none(),
+            ai.swap_rotation_relief(&g, 0, hurt, None).is_none(),
             "off, the gene names nothing"
         );
         ai.enable_swap_rotation();
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), Some(fresh));
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), Some(fresh));
         assert!(g
             .apply(
                 0,
@@ -266,14 +366,14 @@ mod tests {
         // A healthy front-liner is not rotated: it is still the right unit
         // for the tile.
         let (g, ai, hurt, _) = setup(90, "warrior", 100, behind);
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // A relief no healthier than the unit it replaces buys nothing.
         let (g, ai, hurt, _) = setup(30, "warrior", 40, behind);
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // A shooter is not put into contact; that is the position
         // `screen-the-shooters` exists to avoid.
         let (g, ai, hurt, _) = setup(30, "archer", 100, behind);
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // A relief no further from the enemy than we are is not behind the
         // line — swapping two exposed tiles is not a rotation.
         let (g, ai, hurt, _) = setup(30, "warrior", 100, at(10, 5));
@@ -282,7 +382,7 @@ mod tests {
             g.wdist(front, enemy),
             "the fixture puts both on the same rank"
         );
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // And a wounded unit nobody is standing next to can simply walk.
         let mut g = open_field();
         let hurt = g.spawn_unit("warrior", 0, front);
@@ -291,7 +391,76 @@ mod tests {
         wound(&mut g, hurt, 30);
         let mut ai = AdvancedAi::new();
         ai.enable_swap_rotation();
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
+    }
+
+    /// The failure documented by the original gene's arena result: units on
+    /// a siege ring can be equally close to a defender even though one is
+    /// unambiguously behind the other relative to the city being reduced.
+    #[test]
+    fn version_two_reads_depth_from_the_hostile_city_objective() {
+        let mut g = build(position("the_storming").expect("known"), 3).expect("buildable");
+        let seeded: Vec<u32> = (0..2).flat_map(|pid| g.player_unit_ids(pid)).collect();
+        for uid in seeded {
+            g.remove_unit(uid);
+        }
+        let objective_city = g.player_city_ids(1)[0];
+        let objective = g.cities[&objective_city].pos;
+        let front = at(16, 6);
+        let behind = at(15, 6);
+        let enemy = at(15, 5);
+        let hurt = g.spawn_unit("swordsman", 0, front);
+        let fresh = g.spawn_unit("swordsman", 0, behind);
+        g.spawn_unit("warrior", 1, enemy);
+        wound(&mut g, hurt, 30);
+        assert_eq!(g.wdist(front, enemy), 1);
+        assert_eq!(g.wdist(behind, enemy), 1, "both look exposed to v1");
+        assert!(g.wdist(behind, objective) > g.wdist(front, objective));
+
+        let mut v1 = AdvancedAi::new();
+        v1.enable_swap_rotation();
+        assert_eq!(
+            v1.swap_rotation_relief(&g, 0, hurt, Some(objective)),
+            None,
+            "v1 cannot distinguish depth on this ring"
+        );
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_swap_rotation_2();
+        assert_eq!(
+            v2.swap_rotation_relief(&g, 0, hurt, Some(objective)),
+            Some(fresh)
+        );
+    }
+
+    /// Health alone is not relief: a pristine obsolete body can still be a
+    /// weaker defender than the wounded unit it would replace. V1 makes that
+    /// swap; V2 preserves the strength of the held tile.
+    #[test]
+    fn version_two_does_not_weaken_the_held_tile() {
+        let mut g = open_field();
+        let front = at(10, 6);
+        let behind = at(9, 6);
+        let hurt = g.spawn_unit("swordsman", 0, front);
+        let obsolete = g.spawn_unit("warrior", 0, behind);
+        g.spawn_unit("warrior", 1, at(11, 6));
+        wound(&mut g, hurt, 30);
+        assert!(
+            crate::game::effective_strength(g.unit_strength(&g.units[&obsolete], true), 100)
+                < crate::game::effective_strength(g.unit_strength(&g.units[&hurt], true), 30)
+        );
+
+        let mut v1 = AdvancedAi::new();
+        v1.enable_swap_rotation();
+        assert_eq!(
+            v1.swap_rotation_relief(&g, 0, hurt, None),
+            Some(obsolete),
+            "v1 chooses the healthiest body"
+        );
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_swap_rotation_2();
+        assert_eq!(v2.swap_rotation_relief(&g, 0, hurt, None), None);
     }
 
     /// The step fires only for a group that is holding a front, and it
