@@ -17598,7 +17598,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- batches per poll — still an order of magnitude short of the every-publish
 	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
 	-- scaled by the same factor so every wall-clock allowance is unchanged.
-	local every = cfg.OrdersPollTicks or 4;
+	local every = cfg.OrdersPollTicks or 2;
 	if awaiting.ticks % every ~= 0 then return false; end
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
@@ -17662,7 +17662,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- opening board's stale-answer and built-in ladders below never apply
 	-- to a frame — a stale answer is the very board this frame replaces.
 	if frame > 0 then
-		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 150) then
+		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 300) then
 			awaiting.done = true;
 			awaiting.source = "civvis";
 			-- Every trigger, and the cap: a brain that could not answer this
@@ -17678,7 +17678,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	end
 
 	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
-	if awaiting.polls >= (cfg.OrdersWaitPolls or 300) then
+	if awaiting.polls >= (cfg.OrdersWaitPolls or 600) then
 		local stale = newestAnsweredTurn(turn);
 		local maxStale = cfg.OrdersMaxStale or 4;
 		if stale ~= nil and stale > 0 and (turn - stale) <= maxStale then
@@ -17699,7 +17699,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- a mechanism given authority with no floor for being wrong. Past the budget the
 	-- built-in heuristics run and the turn is recorded as `fallback`, which is a
 	-- number to watch — a run that is mostly fallback is not a measurement of CIVVIS.
-	if awaiting.polls >= (cfg.OrdersFallbackPolls or 900) then
+	if awaiting.polls >= (cfg.OrdersFallbackPolls or 1800) then
 		-- ⚠ SET THE SOURCE *BEFORE* RUNNING THE FALLBACK. `playFallback` emits the
 		-- turn record, which reads `awaiting.source` — assigning after the call made
 		-- every fallback turn report `orders_source: pending`, so the one field that
