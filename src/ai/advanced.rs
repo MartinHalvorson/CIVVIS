@@ -918,6 +918,12 @@ pub struct StrategyCensus {
     pub board_forces: u32,
     pub board_reassignments: u32,
     pub board_short_rows: u32,
+    /// `requisitions`: units started for a requisition, units bought, and
+    /// open requisitions no city could build for, summed over turns. See
+    /// `advanced/requisitions.rs`.
+    pub requisition_items: u32,
+    pub requisition_purchases: u32,
+    pub requisition_unserved: u32,
     /// `war-policy-via-board`: declarations the board's Siege bill held,
     /// and peace offers its term made. See `advanced/war_policy.rs`.
     pub war_policy_declarations_held: u32,
@@ -1010,6 +1016,9 @@ impl StrategyCensus {
         self.board_forces += other.board_forces;
         self.board_reassignments += other.board_reassignments;
         self.board_short_rows += other.board_short_rows;
+        self.requisition_items += other.requisition_items;
+        self.requisition_purchases += other.requisition_purchases;
+        self.requisition_unserved += other.requisition_unserved;
         self.war_policy_declarations_held += other.war_policy_declarations_held;
         self.war_policy_peace_offers += other.war_policy_peace_offers;
         self.expansion += other.expansion;
@@ -5751,6 +5760,18 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// The Objective Board's shortfall reaches production and the treasury:
+    /// an idle city starts the unit a short row asks for (the best worth per
+    /// hammer of its kind, not the strongest), Gold buys the top one above
+    /// the reserve, the parity and bleeding-city defenders come from the
+    /// board's Deter and Defend rows, and `desired_military` is the board's
+    /// summed need while the land army is under it. Inert without
+    /// `objective_board`. Opt-in gene `requisitions`; see
+    /// `advanced/requisitions.rs`.
+    requisitions: bool,
+    /// This turn's requisition purchases: the one-a-turn rule and the
+    /// census. See `requisitions`.
+    requisitions_served: RefCell<requisitions::Served>,
     /// Units a siege has reserved as its taker: excluded from every other
     /// blow and move, and readable by a joint planner through
     /// `unit_is_reserved`. Empty with `siege-train` off. See
@@ -6623,6 +6644,9 @@ mod siege_train;
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
 /// `advanced/objective_board.rs`.
 pub mod objective_board;
+/// The board's shortfall reaches production and the treasury. Opt-in gene
+/// `requisitions`.
+mod requisitions;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -7587,6 +7611,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            requisitions: false,
+            requisitions_served: RefCell::new(requisitions::Served::default()),
             reserved_units: BTreeSet::new(),
             rapid_city_expansion_2: false,
             relief_column_marches: false,
@@ -18447,6 +18473,23 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city_id)
                 .or_else(|| self.native_emergency_item(g, pid, city_id))
+                // `requisitions`: a bleeding city's unit is its Defend row's
+                // requisition; the wall answer stands. See
+                // `advanced/requisitions.rs`.
+                .map(|item| match item {
+                    Item::Unit { .. } => self
+                        .requisition_item_for_city(
+                            g,
+                            pid,
+                            city_id,
+                            &[
+                                objective_board::ObjectiveKind::Defend,
+                                objective_board::ObjectiveKind::Relieve,
+                            ],
+                        )
+                        .unwrap_or(item),
+                    other => other,
+                })
             else {
                 continue;
             };
@@ -18844,10 +18887,27 @@ impl AdvancedAi {
         }) {
             return false;
         }
-        let defender = self
-            .base
-            .best_military(g, pid, contact, Some(true))
-            .or_else(|| self.base.best_military(g, pid, contact, Some(false)));
+        let defender = if self.requisitions_on() {
+            // `requisitions`: the Deter row's requisition names the city and
+            // the unit; without one the board sees no gap to pre-empt for.
+            // See `advanced/requisitions.rs`.
+            if self.deter_requisition_city() != Some(contact) {
+                return false;
+            }
+            match self.requisition_item_for_city(
+                g,
+                pid,
+                contact,
+                &[objective_board::ObjectiveKind::Deter],
+            ) {
+                Some(Item::Unit { unit }) => Some(unit.as_str().to_string()),
+                _ => None,
+            }
+        } else {
+            self.base
+                .best_military(g, pid, contact, Some(true))
+                .or_else(|| self.base.best_military(g, pid, contact, Some(false)))
+        };
         let Some(unit) = defender else {
             return false;
         };
@@ -18886,7 +18946,10 @@ impl AdvancedAi {
         if self.emergency_city_defense_purchase(g, pid, plan) {
             return true;
         }
-        if self.border_parity_purchase(g, pid) {
+        // `requisitions`: the Deter row's requisition is the parity gap, and
+        // the board is the single source; the purchase runs below, once the
+        // reserve is known. See `advanced/requisitions.rs`.
+        if !self.requisitions_on() && self.border_parity_purchase(g, pid) {
             return true;
         }
         if self.border_parity_3_purchase(g, pid) {
@@ -18919,6 +18982,13 @@ impl AdvancedAi {
         // while a city of ours is threatened or bleeding. `stock` comes back
         // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.reserve_for_the_threatened_city(g, pid, plan, reserve);
+        // `requisitions`: the highest-ranked open requisition the treasury
+        // covers above the reserve, one a turn, right behind the emergency
+        // defence. Exact no-op with the gene off. See
+        // `advanced/requisitions.rs`.
+        if self.requisition_purchase(g, pid, reserve).is_some() {
+            return true;
+        }
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -23681,6 +23751,10 @@ impl AdvancedAi {
             self.expansion_census.dispatch_calls += 1;
         }
         let mut counts = self.counts(g, pid);
+        // `requisitions`: the board assessed for this turn before its
+        // shortfall is read below; exact no-op with the gene off. See
+        // `advanced/requisitions.rs`.
+        self.requisitions_before_production(g, pid, plan);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
@@ -23837,6 +23911,30 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `requisitions`: the Objective Board's shortfall is a reserve
+            // item ahead of every economic one — the row's nearest idle city
+            // starts the best worth-per-hammer unit of the kind the row
+            // lacks. Exact no-op with the gene off. See
+            // `advanced/requisitions.rs`.
+            if committed.is_none() {
+                if let Some(order) = self.requisition_production_item(g, pid, cid) {
+                    let item = Item::Unit { unit: order.unit };
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        self.requisition_started(g, &order);
+                        counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
             // The first usable empty trade slot is an income-producing asset,
             // not an ordinary low-value unit bid. Once immediate local defence
             // is covered, reserve it in a city that can start a safe route now.
@@ -23888,7 +23986,9 @@ impl AdvancedAi {
             // civvis-20260829T074813Z never bought under version one — at
             // t60 the seat read 0.72 of France with 158 Gold, at t90 0.55
             // with 90 — and Russia took Ostia at t102 at 81 against 208.
-            if committed.is_none() && self.border_parity_2 {
+            // `requisitions`: the Deter row's requisition is this gap at
+            // this city; the block above already served it.
+            if committed.is_none() && self.border_parity_2 && !self.requisitions_on() {
                 if let Some((_, _, _, contact)) = self.border_parity_target(g, pid) {
                     if contact == cid {
                         let defender = self
@@ -25458,6 +25558,11 @@ impl AdvancedAi {
         let land_military = counts
             .military
             .saturating_sub(counts.naval + counts.aircraft);
+        // `requisitions`: the board's summed need sizes the army while the
+        // land military is under it; `desired_military` otherwise, and with
+        // the gene off. See `advanced/requisitions.rs`.
+        let desired_military =
+            self.requisition_army_target(g, pid, desired_military, land_military);
         // Keep empty-city scoring consistent with
         // `redirect_repeatable_projects_for_force_gap`. That pass pauses an
         // existing district race when a war plan is short of land units, but

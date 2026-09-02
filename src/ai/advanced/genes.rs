@@ -2046,6 +2046,17 @@ pub const GENES: &[Gene] = &[
     // objective left the second threatened city with nothing. Priced on the
     // arena first. See `advanced/objective_board.rs`.
     Gene { tag: "objective-board", field: "objective_board", kind: Kind::OptIn, enable: AdvancedAi::enable_objective_board, disable: AdvancedAi::disable_objective_board },
+    // The Objective Board's shortfall reaches production and the treasury:
+    // an idle city starts the unit a short row asks for — the kind the row
+    // lacks (siege, ranged, melee; a shooter for a city, cavalry for a
+    // Destroy falling due), the best WORTH PER HAMMER of that kind rather
+    // than `best_military`'s strongest — Gold buys the top requisition above
+    // the reserve, `border_parity_*` and the bleeding city's defender take
+    // their city and unit from the board's Deter and Defend rows, and
+    // `desired_military` is the board's summed need while the land army is
+    // under it. Inert without `objective-board` (no board to read). Whole-
+    // game no-harm screen beside the board. See `advanced/requisitions.rs`.
+    Gene { tag: "requisitions", field: "requisitions", kind: Kind::OptIn, enable: AdvancedAi::enable_requisitions, disable: AdvancedAi::disable_requisitions },
     // Who may be a target, when a war is declared and when peace is sued
     // for, read off the Objective Board's own requirements in place of
     // empire-wide power ratios: a rival whose nearest city's Siege bill is
