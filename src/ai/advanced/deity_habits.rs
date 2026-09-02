@@ -220,10 +220,23 @@ impl AdvancedAi {
                 if spec.era > reach || known.contains(node) || boosted.contains(node) {
                     continue;
                 }
-                let Some(have) = self.eureka_trigger_progress(g, pid, &boost.trigger) else {
-                    continue;
+                // `chase-every-boost`: every trigger the engine can judge is a
+                // chase, read from `Game::boost_progress` — the same arm that
+                // decides "met". Off, only the six buildable prefixes below
+                // are chased, exactly as the two Deity genes measured. A best-
+                // single-value arm with nothing to measure reads `i64::MIN`;
+                // clamped to zero it is "none yet". See
+                // `advanced/chase_every_boost.rs`.
+                let (have, need) = if self.chase_every_boost {
+                    let (have, need) = g.boost_progress(pid, boost);
+                    (have.max(0), need.max(1))
+                } else {
+                    let Some(have) = self.eureka_trigger_progress(g, pid, &boost.trigger) else {
+                        continue;
+                    };
+                    (have, boost.count.max(1))
                 };
-                let remaining = boost.count.max(1) - have;
+                let remaining = need - have;
                 if remaining <= 0 {
                     continue;
                 }
@@ -323,7 +336,9 @@ impl AdvancedAi {
     /// earns toward a boost, on the improvement-value scale. Zero when the
     /// gene is off or nothing is chased.
     pub(super) fn eureka_builder_premium(&self, g: &Game, pos: Pos, improvement: &str) -> f64 {
-        if !self.eureka_chasing_builder {
+        // `chase-every-boost` carries this premium as part of its union; see
+        // `advanced/chase_every_boost.rs`.
+        if !(self.eureka_chasing_builder || self.chase_every_boost) {
             return 0.0;
         }
         let tile = &g.map.tiles[&pos];
