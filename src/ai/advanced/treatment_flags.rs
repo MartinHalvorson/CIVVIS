@@ -3422,11 +3422,25 @@ impl AdvancedAi {
     /// beeline resumes. See `AdvancedAi::boosted_bargain_tech`.
     pub fn enable_boosted_bargain_first(&mut self) {
         self.boosted_bargain_first = true;
+        self.boosted_bargain_first_2 = false;
     }
 
     /// The twin of `enable_boosted_bargain_first`.
     pub fn disable_boosted_bargain_first(&mut self) {
         self.boosted_bargain_first = false;
+    }
+
+    /// Let a one-turn boosted technology break a close ordinary fallback
+    /// decision after every forced lane goal stands down. See
+    /// `AdvancedAi::boosted_bargain_tech_2`.
+    pub fn enable_boosted_bargain_first_2(&mut self) {
+        self.boosted_bargain_first_2 = true;
+        self.boosted_bargain_first = false;
+    }
+
+    /// The twin of `enable_boosted_bargain_first_2`.
+    pub fn disable_boosted_bargain_first_2(&mut self) {
+        self.boosted_bargain_first_2 = false;
     }
 
     /// A wonder within twelve turns of done in one of the empire's strongest

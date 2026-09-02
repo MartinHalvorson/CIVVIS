@@ -1769,6 +1769,9 @@ pub const GENES: &[Gene] = &[
     // A boosted, prerequisite-met technology within two turns of science is
     // researched before the lane's beeline resumes; see `boosted_bargain_tech`.
     Gene { tag: "boosted-bargain-first", field: "boosted_bargain_first", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first, disable: AdvancedAi::disable_boosted_bargain_first },
+    // Version two is a one-turn, close-value fallback tiebreak and never
+    // interrupts a forced lane goal; see `boosted_bargain_tech_2`.
+    Gene { tag: "boosted-bargain-first-2", field: "boosted_bargain_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first_2, disable: AdvancedAi::disable_boosted_bargain_first_2 },
     // A wonder twelve turns from done in a strong city opens the live race
     // without the ordinary guards; see `wonder_bargain_city`.
     Gene { tag: "cheapest-wonder-first", field: "cheapest_wonder_first", kind: Kind::OptIn, enable: AdvancedAi::enable_cheapest_wonder_first, disable: AdvancedAi::disable_cheapest_wonder_first },
