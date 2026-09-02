@@ -17519,6 +17519,11 @@ fn district_project_search_extends_only_concrete_great_person_races() {
         .buildings
         .push(crate::name!("library"));
     let far = ai.production_value(&game, 0, city, &project, &plan, &counts);
+    game.retired_great_people.insert("aryabhata".to_string());
+    assert_eq!(
+        game.current_great_person("scientist").map(|(id, _)| id),
+        Some("euclid")
+    );
     let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
     let cost = game.gp_cost(0, "scientist");
     game.players[0]
@@ -17739,7 +17744,7 @@ fn project_restraint_v2_reads_first_building_debt_instead_of_a_clock() {
     assert!(
         v2.district_project_value(&game, 0, city, "campus_research_grants", &plan)
             > EARLY_GPP_PROJECT_FALLBACK_CAP,
-        "a one-project claim on Aryabhata must still override concrete building debt"
+        "any one-project claim must override debt; v1's named exception rejects Euclid"
     );
     game.players[0].gpp.insert("scientist".to_string(), 0.0);
 
@@ -17749,7 +17754,9 @@ fn project_restraint_v2_reads_first_building_debt_instead_of_a_clock() {
         .buildings
         .push(crate::name!("library"));
     let developed = v2.district_project_value(&game, 0, city, "campus_research_grants", &plan);
-    assert_eq!(developed, stock_debt + 420.0);
+    let developed_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert_eq!(developed, developed_stock);
     assert_eq!(
         v1.district_project_value(&game, 0, city, "campus_research_grants", &plan),
         EARLY_GPP_PROJECT_FALLBACK_CAP,

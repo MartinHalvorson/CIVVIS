@@ -12290,6 +12290,42 @@ impl AdvancedAi {
         })
     }
 
+    /// Whether this completion changes a live Great-Person race immediately.
+    ///
+    /// V1 made named exceptions only for Prophets and a short list of
+    /// Scientists. V2 keeps the building debt subordinate to the board's
+    /// generic forcing facts: one completion either recruits the current
+    /// person or overtakes the leading rival. The ordinary affinity and
+    /// project valuation still decide whether that newly admitted move wins
+    /// the queue.
+    fn project_changes_great_person_race(
+        g: &Game,
+        pid: usize,
+        awards: &BTreeMap<String, f64>,
+    ) -> bool {
+        awards.iter().any(|(kind, award)| {
+            if *award <= f64::EPSILON
+                || !g.great_person_class_earnable(pid, kind)
+                || !g.great_person_class_offered_now(pid, kind)
+                || g.live_great_person_offer_blocker(pid, kind).is_some()
+            {
+                return false;
+            }
+            let cost = g.gp_cost(pid, kind);
+            let mine = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
+            let rival = g
+                .players
+                .iter()
+                .filter(|player| {
+                    player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+                })
+                .map(|player| player.gpp.get(kind).copied().unwrap_or(0.0))
+                .fold(0.0_f64, f64::max);
+            (mine < cost && mine + award + f64::EPSILON >= cost)
+                || (rival > mine && mine + award > rival)
+        })
+    }
+
     /// Evaluate a repeatable district project as a bounded race move. The
     /// ongoing conversion is valued over the actual build horizon, while the
     /// completion award is priced against the live global Great Person race.
@@ -12332,14 +12368,15 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
-        let ordinary_gpp_project = spec.repeatable
-            && !spec.completion_gpp.is_empty()
-            && !Self::early_project_race_exception(g, pid, &gpp_awards);
-        let early_gpp_project_restrained = ordinary_gpp_project
+        let repeatable_gpp_project = spec.repeatable && !spec.completion_gpp.is_empty();
+        let named_race_exception = Self::early_project_race_exception(g, pid, &gpp_awards);
+        let early_gpp_project_restrained = repeatable_gpp_project
+            && !named_race_exception
             && ((self.early_project_restraint
                 && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS))
                 || (self.early_project_restraint_2
-                    && Self::project_first_building_debt(g, pid, cid, project)));
+                    && Self::project_first_building_debt(g, pid, cid, project)
+                    && !Self::project_changes_great_person_race(g, pid, &gpp_awards)));
         let host_competition_gpp_scores = [
             (
                 "EMERGENCY_WORLDS_FAIR",
