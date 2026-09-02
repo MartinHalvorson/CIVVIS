@@ -40,6 +40,8 @@ cargo run --release --features developer-tools --bin doctrine_arena -- --list
 | `the_breakthrough` | Bonaparte's *masse de rupture*; Guderian at Sedan 1940 | A fist massed on one point against a line holding everywhere |
 | `hammer_and_anvil` | Alexander at Gaugamela, 331 BC | Infantry fixes the front while something fast goes round it |
 | `the_golden_bridge` | Sun Tzu: leave a surrounded enemy a way out | Troops cornered with nowhere to go fight at a price the arithmetic does not predict |
+| `the_storming` | Vauban's breach; every siege that ended in an assault | Break the wall, then take the city; a body that storms an unbreached wall is spent for nothing |
+| `the_relief` | Every siege raised from inside | A thin garrison and a relief two tiles behind it against three times their number: what the city tile is for, who stands on the ring |
 
 **The board is painted, not generated.** Every tile of every position is written
 down in `POSITIONS`, so the defile is a defile in every run, on every machine,
@@ -587,6 +589,56 @@ its own predicate: the relief must stand *further from the enemy* than the
 unit it replaces, and on a ring around a city every besieger is about
 equally far from it. A rotation measured against **the city** rather than the
 nearest enemy is a different gene, and this board can now price it.
+
+### Two doctrines for a city, and a board for holding one (2026-09-02)
+
+§"The arena can pose a siege" ended on the claim the board could now price:
+a gene that paced a siege train specifically. `siege-train` and `anvil`
+(`src/ai/advanced/siege_train.rs`, both `Kind::OptIn`, off) are that gene
+and its defensive twin, and `docs/LIVE_TACTICS.md` §23 records how they are
+built. Priced here first, as the gate says.
+
+**`the_relief`** is the second city board, added for the anvil: the same
+walled 200-hit-point city, a garrison of two beside it and a relief of four
+two tiles behind, against an assault of six (a catapult, two swordsmen, a
+warrior, an archer, a horseman). `the_storming` poses taking a city;
+`the_relief` poses holding one with a column in reach. The control is exact
+on it — `advanced` against itself `+0.0`, 0 of 12 seeds diverging, as on
+every other board — and it satisfies the five position checks.
+
+**What the readings say (40 seeds × 2 role swaps each; control 12 seeds,
+`+0.0`, 0/12 on all thirteen boards, captures `+1/−1` each way).**
+
+- `the_storming`, `advanced+siege-train` against `advanced`: **+474.2 ±
+  67.1 a seed (t 7.07, sign p < 0.0001, 33 better / 5 worse, fires 40/40)**,
+  1.57 kills per loss against 0.64. **Cities: +29/−1 against +1/−29** — the
+  city is taken in twenty-nine of forty assaults, where the deployed
+  controller took it once in these forty and three times in the forty of
+  2026-08-27. The besieger's arrival spread fell **8.86 → 6.08**, its
+  `screen` rose 38 % → 51 %, and its material swing per seed went from
+  **−291 to −54**: the train still pays for the city, but it gets the city.
+- On top of the kill plan, `advanced+battle-planner+siege-train` against
+  `advanced+battle-planner`: **+284.5 ± 94.7 (t 3.00, sign p 0.0135, 24/9,
+  40/40)**, 1.38 kills per loss against 0.72, **cities +10/−2 against
+  +2/−10**, arrival 7.80 → 3.74. The two compose; the planner alone left
+  captures at +1/−1 (§21 of `LIVE_TACTICS.md`), the doctrine is what turns
+  its cheaper kills into a city.
+- `the_relief`, `advanced+anvil` against `advanced`: **+64.8 ± 33.0 (t 1.96,
+  sign p 0.26, 23/15, 40/40)**, 1.05 kills per loss against 0.95 — the right
+  sign and not yet a reading at forty seeds. No city changed hands in eighty
+  games: the assault of six does not take the city from either controller.
+- `the_storming`, `advanced+anvil` against `advanced`, the garrison's
+  reading: **+175.8 ± 57.1 (t 3.08, sign p 0.0106, 18/5, 40/40)**, 1.13
+  kills per loss against 0.88; the garrison's swing per seed +379 against
+  +291, its `ground` 16 % against 11 %, its `screen` 28 % against 10 %. The
+  garrison lost the city twice in forty against once: a difference of one at
+  this n, recorded rather than read.
+- `battle_bench`, `advanced+siege-train+anvil` against `advanced`, 100 seeds
+  × 2 seatings, the no-harm check: **+132.5 ± 33.3 (t 3.98, p 0.0001;
+  62/37/1)**, exchange ratio 1.21 against 0.83, 100 of 100 diverging.
+
+The whole-game screen is the no-harm check that follows; the fires probes
+(six games each) read `~` for both, as a tactical gene's should.
 
 ## What this does not license
 
