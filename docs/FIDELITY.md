@@ -3284,6 +3284,34 @@ verb. The `combat_damage` scoreboard row will move on the next
 `tools/live_divergence.py` run — the historical figure (MAE 11.8 hp on
 `civvis-20260826T184456Z`) was measured against the bare formula.
 
+### Shipped: the air verbs cross (2026-09-02)
+
+`Action::AirStrike`, `Action::AirRebase` and `Action::AirPatrol` fell through
+`translate`'s `_ => None` and were counted `unit_action_untranslated`, so an
+aircraft on the live seat could be built and never flown. They now cross as
+unit verbs `AIR_ATTACK` (`pos` = target plot), `REBASE` (`pos` = base plot)
+and `PATROL` (`pos` = patrol plot). Read off the installed game: the three
+shipped operations are `UNITOPERATION_AIR_ATTACK`, `UNITOPERATION_REBASE` and
+`UNITOPERATION_DEPLOY` (`Base/Assets/Gameplay/Data/UnitOperations.xml:66`,
+`:93`, `:72`); there is **no `AIR_PATROL` row** — a fighter's patrol is the
+shipped "Deploy", flying to a plot within range and intercepting from there —
+so `PATROL` resolves to DEPLOY. Each is requested as the shipped
+`WorldInput.lua:2077-2078` / `:2418-2419` / `:2486-2487` requests it, with
+the plot as `PARAM_X`/`PARAM_Y` after the four-argument
+`CanStartOperation(unit, OP, nil, tParameters)`; a decline is
+`cannot_air_attack` / `cannot_rebase` / `cannot_patrol`. `AIR_ATTACK` goes
+through `refuseWarStarter` (the shipped `WorldInput.lua:2067` asks
+`IsAttackChangeWarState` before the same request) and `CivvisLedger.strike`,
+so the host's preview and the combat frame follow it; the preview passes a
+nil combat type, as `UnitPanel.lua:3905-3916` does outside RANGE_ATTACK
+mode. Verdicts: `AIR_ATTACK` as `RANGE_ATTACK`; `REBASE` = the aircraft on
+the base plot next frame, else `not_rebased`; `PATROL` unverifiable (no
+patrol state in the frame). The own-unit export gains `range`
+(`Unit:GetRange()`, `Panels/UnitPanel.lua:2250`): an aircraft stands on its
+base between sorties, so `x`/`y` already name the base and `range` names its
+operational reach. `StateUnit::range` parses it; nothing on the board reads
+it yet — the catalogue's range still decides.
+
 ### How to re-measure
 
 The border table is one join: `orders.sqlite` (`kind='unit' and

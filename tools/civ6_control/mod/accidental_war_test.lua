@@ -13,7 +13,9 @@
 --      `war_refused` event names the unit, verb and plot;
 --   2. a strike that changes no war state goes through unchanged, with the
 --      attack modifier the melee path depends on;
---   3. CAPTURE, RANGE_ATTACK and the city strike are guarded the same way;
+--   3. CAPTURE, RANGE_ATTACK, the city strike and the air sortie (AIR_ATTACK)
+--      are guarded the same way; REBASE and PATROL move an aircraft between
+--      friendly plots and never ask the question;
 --   4. an absent API answers nil and the strike proceeds (the historical
 --      behaviour), never a blanket refusal.
 --
@@ -194,6 +196,39 @@ do
 	check("peace_range_sent", ok, true)
 	check("peace_range_requested", #state.requests, 1)
 end
+
+-- 3c. the air sortie is a strike and is guarded; REBASE and PATROL move an
+--     aircraft between friendly plots and never ask the war question
+do
+	local state = fixture({ 6 })
+	local ok, why = applyOrder(player, 0, { kind = "unit", subject = 7, verb = "AIR_ATTACK", x = 10, y = 12 }, 40)
+	check("war_air_refused", ok, false)
+	check("war_air_reason", why, "would_declare_war:6")
+	check("war_air_not_requested", #state.requests, 0)
+end
+do
+	local state = fixture({})
+	local ok, why = applyOrder(player, 0, { kind = "unit", subject = 7, verb = "AIR_ATTACK", x = 10, y = 12 }, 40)
+	check("peace_air_sent", ok, true)
+	check("peace_air_verb", why, "AIR_ATTACK")
+	check("peace_air_requested", #state.requests, 1)
+	check("peace_air_operation", state.requests[1] and state.requests[1].hash, "UNITOPERATION_AIR_ATTACK")
+	check("peace_air_target_x", state.requests[1] and state.requests[1].params.x, 10)
+	check("peace_air_target_y", state.requests[1] and state.requests[1].params.y, 12)
+end
+do
+	local state = fixture({ 6 })
+	local ok, why = applyOrder(player, 0, { kind = "unit", subject = 7, verb = "REBASE", x = 10, y = 12 }, 40)
+	check("rebase_sent_whatever_the_war_answer", ok, true)
+	check("rebase_verb", why, "REBASE")
+	check("rebase_never_asked", state.asked, nil)
+	check("rebase_operation", state.requests[1] and state.requests[1].hash, "UNITOPERATION_REBASE")
+	local sent, verb = applyOrder(player, 0, { kind = "unit", subject = 7, verb = "PATROL", x = 10, y = 12 }, 40)
+	check("patrol_sent", sent, true)
+	check("patrol_verb", verb, "PATROL")
+	check("patrol_never_asked", state.asked, nil)
+	check("patrol_operation_is_the_shipped_deploy", state.requests[2] and state.requests[2].hash, "UNITOPERATION_DEPLOY")
+end
 do
 	local state = fixture({ 4 })
 	local ok, why = applyOrder(player, 0, { kind = "city_strike", subject = 3, verb = "CITY_STRIKE", x = 10, y = 12 }, 40)
@@ -242,7 +277,9 @@ do
 	check("source_asks_the_host", src:find("CombatManager.IsAttackChangeWarState(actor:GetComponentID(), x, y)", 1, true) ~= nil, true)
 	local guards = 0
 	for _ in src:gmatch("CivvisLedger%.refuseWarStarter%(") do guards = guards + 1 end
-	check("source_guards_four_arms_and_the_assault", guards, 5)
+	-- ATTACK/MOVE_TO/CAPTURE (one call), RANGE_ATTACK, AIR_ATTACK, the city
+	-- strike and the encampment strike.
+	check("source_guards_four_arms_the_assault_and_the_sortie", guards, 6)
 end
 
 if failures > 0 then

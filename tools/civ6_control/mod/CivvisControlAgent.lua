@@ -271,6 +271,15 @@ local function resolveActions()
 		-- (`Base/Assets/UI/Civ6Common.lua:160-161`) whenever the destination
 		-- plot holds a friendly unit. `applyOrder` takes verb `SWAP`.
 		"UNITOPERATION_SWAP_UNITS",
+		-- The air verbs. `Base/Assets/Gameplay/Data/UnitOperations.xml:66`
+		-- (`UNITOPERATION_AIR_ATTACK`, `InterfaceMode="INTERFACEMODE_AIR_ATTACK"`),
+		-- `:93` (`UNITOPERATION_REBASE`) and `:72` (`UNITOPERATION_DEPLOY`).
+		-- There is no `AIR_PATROL` row on this build: a fighter's patrol IS the
+		-- shipped "Deploy" — it flies to a plot within range and intercepts from
+		-- there — so `applyOrder`'s verb `PATROL` resolves to DEPLOY. All three
+		-- take `{PARAM_X, PARAM_Y}`, the way `WorldInput.lua:2077`, `:2418` and
+		-- `:2486` request them.
+		"UNITOPERATION_AIR_ATTACK", "UNITOPERATION_REBASE", "UNITOPERATION_DEPLOY",
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
@@ -7021,6 +7030,13 @@ local function exportState(player, pid, turn, frame)
 			-- SelectedUnit read). The mirror plans a frame's second strike only
 			-- for units that still have one.
 			attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
+			-- The unit's live range (`Unit:GetRange()`, the shipped
+			-- `UnitPanel.lua:2250` read). For an aircraft this is its
+			-- operational range from the plot it stands on — which IS its base:
+			-- a Civilization VI aircraft sits on its airfield, city or carrier
+			-- between sorties, so `x`/`y` name the base and this names how far
+			-- an AIR_ATTACK, REBASE or PATROL may reach from it.
+			range = try(function() return unit:GetRange(); end, nil),
 			-- The host's upgrade verdict: see the block above `units[#units + 1]`.
 			-- `upgrade_to` is the successor's UnitType, `upgrade_cost` the Gold
 			-- the host would charge, `upgrade_blocked_reason` present exactly
@@ -10474,6 +10490,10 @@ end;
 CivvisLedger.preview = function(unit, verb, x, y)
 	if try(function() return UI.IsGameCoreBusy(); end, false) == true then return nil; end
 	local combatType = nil;
+	-- The shipped UnitPanel.lua:3905-3916 names a combat type ONLY in the
+	-- RANGE_ATTACK interface mode; in AIR_ATTACK mode (and every other) it
+	-- hands `SimulateAttackInto` nil and lets the engine pick, so an
+	-- `AIR_ATTACK` preview deliberately leaves `combatType` nil here.
 	if verb == "RANGE_ATTACK" then
 		combatType = try(function()
 			local ranged = unit:GetRangedCombat() or 0;
@@ -13644,6 +13664,66 @@ local function applyOrder(player, pid, row, turn)
 			end
 			return accepted, verb;
 		end
+		-- ★★★ THE AIR VERBS. `AIR_ATTACK` (x/y = the target plot), `REBASE`
+		-- (x/y = the new base plot) and `PATROL` (x/y = the plot to fly to and
+		-- intercept from) — until this branch every one fell through Rust's
+		-- `translate` as `unit_action_untranslated`, so no aircraft the seat
+		-- built ever flew. Each is one shipped operation requested with the
+		-- plot as the positional pair, exactly as `WorldInput.lua` does:
+		--
+		--   :2077  if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, nil, tParameters)) then
+		--   :2078      UnitManager.RequestOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, tParameters);
+		--   :2418  if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.DEPLOY, nil, tParameters)) then
+		--   :2486  if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.REBASE, nil, tParameters)) then
+		--
+		-- with `tParameters[PARAM_X]`/`[PARAM_Y]` = `plot:GetX()`/`GetY()`.
+		-- `canOperate` is that four-argument `CanStartOperation(unit, hash,
+		-- nil, params)`, asked with the SAME table the request then carries; a
+		-- host that declines (out of range, no base slot there, no target,
+		-- attack spent) is the NAMED refusal `cannot_<verb>`, never a silent
+		-- no-op. `AIR_ATTACK` is a strike: `refuseWarStarter` holds it back
+		-- when the engine would answer with an undeclared war (the shipped
+		-- `WorldInput.lua:2067` asks `IsAttackChangeWarState` before the same
+		-- request), and `CivvisLedger.strike` records it so the preview and
+		-- the combat frame count follow, as they do for RANGE_ATTACK.
+		-- `REBASE` and `PATROL` move an aircraft between friendly plots and
+		-- start no war. Never reach-capped: an air operation is one hop.
+		if verb == "AIR_ATTACK" or verb == "REBASE" or verb == "PATROL" then
+			if x == nil or y == nil then return false, "no_dest"; end
+			local opName = "UNITOPERATION_AIR_ATTACK";
+			if verb == "REBASE" then opName = "UNITOPERATION_REBASE"; end
+			if verb == "PATROL" then opName = "UNITOPERATION_DEPLOY"; end
+			local hash = OP[opName];
+			if hash == nil then return false, "unknown_op_" .. verb; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			if verb == "AIR_ATTACK" then
+				local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, verb, x, y, turn);
+				if warRefusal ~= nil then return false, warRefusal; end
+			end
+			if not canOperate(unit, hash, params) then
+				if verb == "AIR_ATTACK" then
+					-- The same event RANGE_ATTACK files, so the decider's
+					-- `blocked_strikes` keeps the refused pair off the next frame.
+					emit("range_attack_refused", {
+						turn = turn, unit = subject, unit_kind = unitTypeName(unit),
+						verb = verb,
+						unit_x = try(function() return unit:GetX(); end, -1),
+						unit_y = try(function() return unit:GetY(); end, -1),
+						x = x, y = y,
+						moves = try(function() return unit:GetMovesRemaining(); end, -1),
+						attacks = try(function() return unit:GetAttacksRemaining(); end, -1),
+						why = refusalReason(unit, hash, params),
+					});
+				end
+				return false, "cannot_" .. string.lower(verb);
+			end
+			if verb == "AIR_ATTACK" then
+				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+			end
+			return operate(unit, hash, params), verb;
+		end
 		-- ★★★★★ IMPROVE — the order whose absence made CIVVIS build builders forever.
 		--
 		-- CIVVIS tells a builder to improve the tile it stands on; that order was not
@@ -14626,8 +14706,9 @@ CivvisQueue.expectFor = function(row)
 	local verb = tostring(row.verb or "");
 	local x, y = tonumber(row.x), tonumber(row.y);
 	-- A SWAP lands the unit on the partner's plot, the same expectation a
-	-- MOVE_TO carries for its destination.
-	if (verb == "MOVE_TO" or verb == "SWAP") and x ~= nil and y ~= nil then
+	-- MOVE_TO carries for its destination; a REBASE lands the aircraft on
+	-- its new base plot.
+	if (verb == "MOVE_TO" or verb == "SWAP" or verb == "REBASE") and x ~= nil and y ~= nil then
 		return { x = x, y = y };
 	end
 	return nil;
@@ -14635,7 +14716,7 @@ end;
 
 CivvisQueue.isStrike = function(row)
 	local verb = tostring(row.verb or "");
-	return verb == "ATTACK" or verb == "RANGE_ATTACK";
+	return verb == "ATTACK" or verb == "RANGE_ATTACK" or verb == "AIR_ATTACK";
 end;
 
 CivvisQueue.push = function(subject, row, expect)
@@ -14782,6 +14863,7 @@ CivvisQueue.drain = function(player, pid, turn)
 						local row = entry.rows[entry.next];
 						local verb = tostring(row.verb or "");
 						if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or verb == "SWAP"
+								or verb == "REBASE" or verb == "PATROL"
 								or CivvisQueue.isStrike(row)) then
 							-- Nothing that needs movement can run; say why, don't ask.
 							CivvisQueue.refuseRest(subject, entry, "queue_no_moves");

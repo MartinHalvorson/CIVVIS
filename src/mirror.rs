@@ -2231,6 +2231,14 @@ pub struct StateUnit {
     /// allowance.
     #[serde(default)]
     pub attacks_remaining: Option<i32>,
+    /// The unit's live range (`Unit:GetRange()`, `Panels/UnitPanel.lua:2250`).
+    /// For an aircraft this is the operational range from the plot it stands
+    /// on, which is its base — a Civilization VI aircraft sits on its
+    /// airfield, city or carrier between sorties, so `x`/`y` name the base and
+    /// this names how far `AIR_ATTACK`, `REBASE` and `PATROL` reach from it.
+    /// Exported for the seat's own units; absent on an older export.
+    #[serde(default)]
+    pub range: Option<i32>,
     /// ★★★ THE HOST'S OWN UPGRADE VERDICT (docs/FIDELITY.md, "The one-to-one
     /// map", item 9). `upgrade_to` is the successor `UnitCommandResults.
     /// UNIT_TYPE` names, `upgrade_cost` is `Unit:GetUpgradeCost()`, and
@@ -5339,6 +5347,7 @@ const UNIT_KEYS: &[&str] = &[
     "queued_dest",
     "embarked",
     "attacks_remaining",
+    "range",
     "free",
     // The host's per-unit affordances (docs/FIDELITY.md item 9).
     "upgrade_to",
