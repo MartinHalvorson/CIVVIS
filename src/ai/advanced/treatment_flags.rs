@@ -3034,6 +3034,20 @@ impl AdvancedAi {
         self.builder_avoid.clear();
     }
 
+    /// Every open settle or improve commitment whose owner the unit pass left
+    /// with movement and no order acts on it after the pass — found, improve,
+    /// or the safe route step — or is released with a recorded reason. Filed
+    /// here rather than under a marker: a whole function under one reads as
+    /// an entry. See `commitment_owner_acts` and `advanced/commitments.rs`.
+    pub fn enable_commitment_owner_acts(&mut self) {
+        self.commitment_owner_acts = true;
+    }
+
+    /// The twin of `enable_commitment_owner_acts`.
+    pub fn disable_commitment_owner_acts(&mut self) {
+        self.commitment_owner_acts = false;
+    }
+
     /// `culture-floor`: a culture-yielding building is exempt from the Great
     /// Work veto and the Theatre Square is priced while the empire's culture
     /// a turn trails the strongest major's by the floor ratio. See
