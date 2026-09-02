@@ -1133,7 +1133,7 @@ def entry_from(summary: dict) -> dict:
         # finish is neither a loss nor a measurement.
         "partial": summary.get("partial"),
         # The harness's own early-stop verdict (the one remaining rule:
-        # under 60 % of the leader's score after turn 150,
+        # strictly below half of the leader's score after turn 50,
         # `civ6_play.below_leader_score_reading`; older rows carry the retired
         # rules' verdicts verbatim). A row with `reason: "abandoned"` is a
         # loss the ladder chose not to play out, and the record preserves the

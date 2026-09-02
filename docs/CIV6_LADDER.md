@@ -75,11 +75,11 @@ absent from this table have never been completed by anyone here.
 `outcome` is what the game did, not what the harness saw last.
 `defeat` means this controller was eliminated and the game said so;
 `stopped`, `stalled` and `timeout` mean nobody won and nobody lost;
-`abandoned` means the harness stopped under a recorded early-stop
-policy: either five turns below a measured expected-win floor, or
-five post-turn-100 turns below the configured leader score ratio
-while trailing visible science and culture leaders — a loss it chose
-not to play out.
+`abandoned` means the harness stopped under the recorded early-stop policy —
+a loss it chose not to play out. For new verification runs, that policy calls a
+game after turn 50 when its score is strictly below half of the best met
+leader's score. Older rows below preserve the policy that was active when they
+were recorded.
 A ledger that cannot tell defeat from a wedge cannot be used to
 compare anything, and until `defeat` existed here the two were the
 same row.
