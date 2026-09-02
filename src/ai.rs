@@ -11085,10 +11085,93 @@ impl BasicAi {
         None
     }
 
+    /// A live district foundation is an activation path too. Firaxis keeps a
+    /// placed district on the map when a city switches to a unit or a second
+    /// district, but the ordinary mirror queue only contains the CURRENT
+    /// production item. Treating that foundation as merely "ready or queued"
+    /// therefore strands a named Great Person: the required district exists,
+    /// yet no city ever resumes it.
+    ///
+    /// Only yield to a queue that is safe to bank. A military body, civilian
+    /// expansion unit, defensive repair/walls, wonder, or one-shot project is
+    /// an active commitment; the activation path must wait for it. Ordinary
+    /// infrastructure, another district, repeatable projects, and products
+    /// use the engine's normal per-item progress bank and can be resumed here.
+    fn live_great_person_activation_resume_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<Item> {
+        if self.minor || self.barb {
+            return None;
+        }
+        let queued = g.cities[&cid].queue.first();
+        let queue_can_yield = match queued {
+            None => true,
+            Some(Item::Building { building }) => g
+                .rules
+                .buildings
+                .get(building)
+                .is_none_or(|spec| spec.outer_defense <= 0),
+            Some(Item::District { .. }) | Some(Item::Product { .. }) => true,
+            Some(Item::Project { project }) => g
+                .rules
+                .projects
+                .get(project)
+                .is_some_and(|spec| spec.repeatable),
+            Some(Item::Formation { .. })
+            | Some(Item::Unit { .. })
+            | Some(Item::Wonder { .. })
+            | Some(Item::Repair { .. }) => false,
+        };
+        if !queue_can_yield {
+            return None;
+        }
+
+        for need in &g.players[pid].live_great_person_activation_needs {
+            let Some(family) = Self::live_great_person_district(need) else {
+                continue;
+            };
+            let Some((district, pos)) =
+                g.cities[&cid]
+                    .owned_tiles
+                    .iter()
+                    .copied()
+                    .find_map(|position| {
+                        let foundation =
+                            g.map.tiles.get(&position)?.district_foundation.as_ref()?;
+                        (g.district_family(foundation.district) == family)
+                            .then_some((foundation.district, position))
+                    })
+            else {
+                continue;
+            };
+            let item = Item::District { district, pos };
+            // The foundation may already be in the host's tail queue, or the
+            // current item may be another district of the same family. Either
+            // way the city already has a path that will satisfy the person, so
+            // do not preempt the head merely to move an equivalent district
+            // forward.
+            if g.cities[&cid].queue.iter().any(|queued| {
+                matches!(queued, Item::District { district, .. }
+                    if g.district_family(*district) == family)
+            }) {
+                continue;
+            }
+            if g.can_produce(pid, cid, &item) {
+                return Some(item);
+            }
+        }
+        None
+    }
+
     /// Reserve the fastest idle city for one missing Great Person activation
     /// requirement before the strategic governor can fill every queue with a
-    /// repeatable project. Re-running after the chosen item completes advances
-    /// multi-stage cultural chains one concrete prerequisite at a time.
+    /// repeatable project. It also resumes a placed-but-paused district before
+    /// a second district can hide it. Re-running after the chosen item
+    /// completes advances multi-stage cultural chains one concrete prerequisite
+    /// at a time.
     pub(crate) fn prioritize_live_great_person_activation(&self, g: &mut Game, pid: usize) -> bool {
         if g.players[pid].live_great_person_activation_needs.is_empty() {
             return false;
@@ -11098,9 +11181,12 @@ impl BasicAi {
             let choice = g
                 .player_city_ids(pid)
                 .into_iter()
-                .filter(|city| g.cities[city].queue.is_empty())
                 .filter_map(|city| {
-                    let item = self.live_great_person_activation_item(g, pid, city)?;
+                    let item = if g.cities[&city].queue.is_empty() {
+                        self.live_great_person_activation_item(g, pid, city)
+                    } else {
+                        self.live_great_person_activation_resume_item(g, pid, city)
+                    }?;
                     let remaining = (g.item_cost_for_city(pid, city, &item)
                         - g.cities[&city].production)
                         .max(0.0);
@@ -11116,6 +11202,7 @@ impl BasicAi {
             let Some((_, _, city, item)) = choice else {
                 break;
             };
+            let resumed = !g.cities[&city].queue.is_empty();
             if g.apply(
                 pid,
                 &Action::Produce {
@@ -11128,8 +11215,15 @@ impl BasicAi {
                 break;
             }
             changed = true;
-            think!(self.journal, Cities, Decision, "Building an activation path for an idle Great Person";
-                   "{} starts {:?}, the fastest missing prerequisite", g.cities[&city].name, item);
+            if resumed {
+                think!(self.journal, Cities, Decision,
+                      "Resuming an activation path for a live Great Person";
+                      "{} starts {:?}, the fastest missing prerequisite", g.cities[&city].name, item);
+            } else {
+                think!(self.journal, Cities, Decision,
+                      "Building an activation path for an idle Great Person";
+                      "{} starts {:?}, the fastest missing prerequisite", g.cities[&city].name, item);
+            }
         }
         changed
     }
@@ -18593,6 +18687,170 @@ mod tests {
             !ai.prioritize_live_great_person_activation(&mut game, 0),
             "a queued Campus satisfies every waiting Scientist without duplication"
         );
+    }
+
+    #[test]
+    fn a_live_great_person_resumes_a_paused_activation_foundation() {
+        let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        // Two specialty foundations are legal at this population. This is the
+        // shape the live mirror observed in Lugdunum: the required Holy Site
+        // remains on the map while a later Campus owns the active queue.
+        game.cities.get_mut(&city).unwrap().pop = 5;
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        grant_tech_with_prerequisites(&mut game, 0, "astrology");
+        grant_tech_with_prerequisites(&mut game, 0, "writing");
+        let holy_site = game
+            .district_sites(city, crate::name!("holy_site"))
+            .into_iter()
+            .next()
+            .unwrap();
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::District {
+                    district: crate::name!("holy_site"),
+                    pos: holy_site,
+                },
+            },
+        )
+        .unwrap();
+        let campus = game
+            .district_sites(city, crate::name!("campus"))
+            .into_iter()
+            .next()
+            .unwrap();
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::District {
+                    district: crate::name!("campus"),
+                    pos: campus,
+                },
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 17.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("hildegard_of_bingen".to_string()),
+                required_district: Some("holy_site".to_string()),
+                required_missing_building: None,
+                required_great_work: None,
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, pos })
+                if game.district_family(*district) == "holy_site" && *pos == holy_site
+        ));
+        assert_eq!(
+            game.cities[&city]
+                .production_progress
+                .get(&format!("district:campus:{},{}", campus.0, campus.1)),
+            Some(&17.0),
+            "switching back to the placed Holy Site must bank the active Campus"
+        );
+        assert!(
+            !ai.prioritize_live_great_person_activation(&mut game, 0),
+            "the active foundation must not be re-applied in a loop"
+        );
+    }
+
+    #[test]
+    fn a_live_great_person_does_not_preempt_a_military_activation_queue() {
+        let mut game = Game::new_full(1, 20, 14, 41_110, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 5;
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        grant_tech_with_prerequisites(&mut game, 0, "astrology");
+        grant_tech_with_prerequisites(&mut game, 0, "writing");
+        let holy_site = game
+            .district_sites(city, crate::name!("holy_site"))
+            .into_iter()
+            .next()
+            .unwrap();
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::District {
+                    district: crate::name!("holy_site"),
+                    pos: holy_site,
+                },
+            },
+        )
+        .unwrap();
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::Unit {
+                    unit: crate::name!("warrior"),
+                },
+            },
+        )
+        .unwrap();
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("hildegard_of_bingen".to_string()),
+                required_district: Some("holy_site".to_string()),
+                required_missing_building: None,
+                required_great_work: None,
+            },
+        );
+
+        assert!(
+            !BasicAi::new().prioritize_live_great_person_activation(&mut game, 0),
+            "a military queue remains an active survival commitment"
+        );
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "warrior"
+        ));
     }
 
     #[test]
