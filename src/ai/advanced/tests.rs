@@ -1572,6 +1572,151 @@ fn a_weak_seat_that_cannot_buy_its_defender_produces_it() {
     assert!(!ai.border_parity_2);
 }
 
+/// `border-parity-3`: whole-empire weakness and a nearby rival city are no
+/// longer enough. Two actually visible non-recon land bodies staged beside an
+/// ungarrisoned city open exactly one local defender purchase; neither an idle
+/// queue nor an active Settler is touched.
+#[test]
+fn visible_border_staging_fills_one_local_garrison_without_preemption() {
+    let mut game = Game::new_full(2, 40, 24, 91_779, 250, 0, false);
+    game.current = 0;
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("a starting settler");
+        let pos = game.units[&settler].pos;
+        game.remove_unit(settler);
+        game.found_city_for(pid, pos, None);
+    }
+    for pid in 0..2 {
+        for unit in game.player_unit_ids(pid) {
+            game.remove_unit(unit);
+        }
+    }
+    let ours = game.player_city_ids(0)[0];
+    let home = game.cities[&ours].pos;
+    let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    for position in &positions {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        game.players[0].explored.insert(*position);
+    }
+    let mut city_ring: Vec<Pos> = positions
+        .iter()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) == 6)
+        .collect();
+    city_ring.sort_unstable();
+    game.found_city_for(1, city_ring[0], None);
+    let mut staging_ring: Vec<Pos> = positions
+        .iter()
+        .copied()
+        .filter(|pos| game.wdist(*pos, home) == 2)
+        .collect();
+    staging_ring.sort_unstable();
+    let staged = staging_ring[0];
+    let first = game.spawn_test_unit("warrior", 1, staged);
+    let second = game.spawn_test_unit("warrior", 1, staged);
+    game.record_contact(0, 1);
+    game.players[0].gold = 1_000.0;
+    assert!(
+        game.player_can_see(0, staged),
+        "fixture: the staging tile is in current city vision"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.border_parity_3, "the new version ships off");
+    assert!(!AdvancedAi::legacy().border_parity_3);
+    assert_eq!(ai.border_parity_3_target(&game, 0), None, "off, nothing");
+    ai.enable_border_parity_3();
+    assert!(ai.border_parity_3);
+    assert!(
+        !ai.border_parity && !ai.border_parity_2,
+        "one family version"
+    );
+    let (strength, rival, contact, bodies) = ai
+        .border_parity_3_target(&game, 0)
+        .expect("two visible bodies stage beside the empty city");
+    assert!(strength > 0.0);
+    assert_eq!((rival, contact, bodies), (1, ours, 2));
+
+    let mut passing = game.clone();
+    passing.remove_unit(second);
+    assert_eq!(
+        ai.border_parity_3_target(&passing, 0),
+        None,
+        "one passing body is not a staged army"
+    );
+    assert!(passing.units.contains_key(&first));
+
+    let mut idle = game.clone();
+    idle.players[0].gold = 0.0;
+    let mut idle_control = idle.clone();
+    AdvancedAi::new().advanced_production(&mut idle_control, 0, &plan, false);
+    ai.advanced_production(&mut idle, 0, &plan, false);
+    assert_eq!(
+        idle.cities[&ours].queue, idle_control.cities[&ours].queue,
+        "version three leaves an idle queue to ordinary production"
+    );
+
+    let mut committed = game.clone();
+    committed.players[0].gold = 0.0;
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    committed.cities.get_mut(&ours).expect("capital").queue = vec![settler.clone()];
+    ai.advanced_production(&mut committed, 0, &plan, false);
+    assert_eq!(
+        committed.cities[&ours].queue.first(),
+        Some(&settler),
+        "version three never preempts an active queue"
+    );
+
+    let units_before = game.player_unit_ids(0).len();
+    assert!(
+        ai.border_parity_3_purchase(&mut game, 0),
+        "the exposed city buys its one garrison"
+    );
+    assert_eq!(game.player_unit_ids(0).len(), units_before + 1);
+    assert_eq!(
+        ai.border_parity_3_target(&game, 0),
+        None,
+        "the first local defender closes the bounded debt"
+    );
+    assert!(
+        !ai.border_parity_3_purchase(&mut game, 0),
+        "there is no second purchase"
+    );
+    ai.enable_border_parity_2();
+    assert!(ai.border_parity_2);
+    assert!(
+        !ai.border_parity && !ai.border_parity_3,
+        "v2 selects itself"
+    );
+    ai.enable_border_parity();
+    assert!(ai.border_parity);
+    assert!(
+        !ai.border_parity_2 && !ai.border_parity_3,
+        "v1 selects itself"
+    );
+}
+
 #[test]
 fn threatened_recovery_does_not_start_a_live_settler() {
     // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
@@ -9273,6 +9418,30 @@ fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
         AdvancedAi::new().threatened_city(&game, 0),
         Some(quiet),
         "recency must not override an overwhelmingly more dangerous city"
+    );
+
+    // A bridge restart or a skipped export can lose the last-hit timestamp,
+    // while the host still reports the city's breached health bars. The
+    // critically damaged city must remain the emergency target when the
+    // neighbouring ratio is only modestly worse.
+    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(quiet, 190.0);
+    game.cities.get_mut(&recent).unwrap().hp = 120;
+    game.cities.get_mut(&recent).unwrap().last_attacked = 0;
+    let damaged_pressure = AdvancedAi::city_pressure(&game, 0, recent);
+    let quiet_pressure = AdvancedAi::city_pressure(&game, 0, quiet);
+    assert!(
+        quiet_pressure > damaged_pressure,
+        "the raw ratio should still mildly prefer the healthy neighbour: damaged {damaged_pressure:.3}, quiet {quiet_pressure:.3}"
+    );
+    assert!(
+        quiet_pressure - damaged_pressure
+            < CRITICAL_CITY_DAMAGE_PRIORITY * f64::from(200 - 120) / 200.0,
+        "the damage credit should cover only a modest ratio gap: damaged {damaged_pressure:.3}, quiet {quiet_pressure:.3}"
+    );
+    assert_eq!(
+        AdvancedAi::new().threatened_city(&game, 0),
+        Some(recent),
+        "a breached city remains the emergency target even without recency metadata"
     );
 }
 

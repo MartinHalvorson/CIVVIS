@@ -1032,6 +1032,10 @@ pub const GENES: &[Gene] = &[
     // later opening turn can improve the choice with new terrain too.
     // Appended at the END so a running screen keeps its positional genome.
     Gene { tag: "opening-warrior-recon", field: "opening_warrior_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon, disable: AdvancedAi::disable_opening_warrior_recon },
+    // Version two pays for only an actual opening escort's fresh vision and
+    // leaves the normal settlement candidate filter intact. It replaces v1
+    // within a seat, so a screen can compare their distinct mechanisms.
+    Gene { tag: "opening-warrior-recon-2", field: "opening_warrior_recon_2", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon_2, disable: AdvancedAi::disable_opening_warrior_recon_2 },
     // A Settler normally has two movement points. After its first actual move,
     // throw away its cached destination and choose the remaining leg from the
     // newly current board without discarding long-lived safety history.
@@ -1972,6 +1976,27 @@ pub const GENES: &[Gene] = &[
     // Priced on the arena against version 1. See
     // `AdvancedAi::enable_battle_planner_2`.
     Gene { tag: "battle-planner-2", field: "battle_planner_2", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner_2, disable: AdvancedAi::disable_battle_planner_2 },
+    // `siege-train` (2026-09-02): the siege as a state machine per objective
+    // city — stage on the 3–5 ring out of the city's strike reach until the
+    // strength there meets the bill (defenders within six, city, walls,
+    // ×1.25), seal the ring spread-first so `city_under_siege` reads true,
+    // siege on the walls then the garrison, shooters on relievers and the
+    // open city, melee holding the ring, one reserved taker walking in when
+    // the city is within its expected blow. `the_storming` found `advanced`
+    // takes the city three times in forty assaults and loses the position on
+    // an arrival spread of 10.9 turns; nothing in the tree but the rush's
+    // ring seal decided when or how a train closes. See
+    // `advanced/siege_train.rs`.
+    Gene { tag: "siege-train", field: "siege_train", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_train, disable: AdvancedAi::disable_siege_train },
+    // `anvil` (2026-09-02): the threatened city held as a formation — a
+    // shooter on the City Center for the garrison bonus and the city strike,
+    // melee on the two or three adjacent tiles facing the enemy with the best
+    // defence, everyone else within two so the city strike joins their fight,
+    // never an empty ring while a hostile is within six, the wounded rotated
+    // into the city by swap. Replaces the relief hold point for that group;
+    // engages relievers only on a favourable exchange. See
+    // `advanced/siege_train.rs`.
+    Gene { tag: "anvil", field: "anvil", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil, disable: AdvancedAi::disable_anvil },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing
@@ -1979,6 +2004,9 @@ pub const GENES: &[Gene] = &[
     // preserves every existing bit while giving independent new tags distinct
     // insertion lines. `tools/test_treatment_append_points.py` proves the
     // claim by constructing and merging two synthetic Gene-row pull requests.
+    // Version 3 of `border-parity`: one local garrison against an actually
+    // visible two-body staging group; buy it without touching production.
+    Gene { tag: "border-parity-3", field: "border_parity_3", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_3, disable: AdvancedAi::disable_border_parity_3 },
     // The generic upgrade pass runs after the purchase pass has spent the
     // treasury, so the army never modernizes: ~3 UPGRADE orders per live
     // game, Heavy Chariot the commonest unit at t150. Upgrade FIRST at the

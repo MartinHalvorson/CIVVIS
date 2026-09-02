@@ -186,9 +186,11 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-surge-2` | off (unmeasured) | Version 2 of `air_surge`: the science–domination loop. | 1 \| 2 |
+| `anvil` | off (unmeasured) | The land group nearest a threatened city of ours holds it as a formation — a shooter on the centre, melee on the front tiles that face the enemy, the rest within two, the wounded rotated into the city — in place of the relief hold point. | 1 \| 1 |
 | `battle-planner` | off (unmeasured) | The force's turn is planned jointly — the danger field, a beam-searched kill sequence verified on one clone, and a heal rotation — ahead of the per-unit ladder, which leaves the planned units alone. | — \| 2 |
 | `battle-planner-2` | off (unmeasured) | Version two of `battle_planner`: the positions plan — slots laid against the enemy contact and the objective, a minimum-cost assignment with reservations, moves front to rear, pacing on the approach — joins the kill plan and the heal rotation. | — \| 2 |
 | `boost-wait-research-2` | off (unmeasured) | Wait only on a two-turn node whose final boost trigger is already at the front of an owned city queue, using the boost as a light tie-break. | 1 \| 2 |
+| `border-parity-3` | off (unmeasured) | Version three of `border-parity`: fill one local garrison debt only when two visible non-recon land bodies from the same peaceful major are staged beside the city. | 1 \| 3 |
 | `campus-through-expansion` | off (unmeasured) | `campus-through-expansion` (OptIn): a Science seat prices the Campus and its buildings in the Science lane while its plan still reads Expansion, and no city's first specialty district may be an Entertainment Complex. | 1 \| 1 |
 | `chase-every-boost` | off (unmeasured) | Hunt every Eureka and Inspiration: the chase table reads every trigger the engine can judge (`Game::boost_progress`), a boost in hand scales the node, a boost one actionable step away is waited for, the beeline walks the goal's prerequisites by their boosted cost, and production, builders and kills are paid the research a trigger earns. | 1 \| 1 |
 | `coalition-before-war-2` | off (unmeasured) | At the ready strike, invite one credible neighbour to a joint war and wait no more than one turn. | 1 \| 2 |
@@ -200,11 +202,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `modernize-before-spending` | off (unmeasured) | Upgrade the standing army before the purchase pass, at strategic moments. | 1 \| 1 |
 | `naval-recon-3` | off (unmeasured) | Version 3 of `naval-recon`: let a simultaneously missing land scout take the idle queue before the one peacetime sea scout. | 1 \| 3 |
 | `never-an-empty-queue-3` | off (unmeasured) | Version three of `never-an-empty-queue`: tolerate one transient empty turn, then recover a persistent stall with a civilian candidate above the hard veto. | 1 \| 3 |
+| `opening-warrior-recon-2` | off (unmeasured) | Before the first city, let only a Warrior directly escorting the Settler reveal terrain first, then reconsider from the ordinary settlement candidates. | 1 \| 2 |
 | `rapid-city-expansion-2` | off (unmeasured) | Version two of `rapid-city-expansion`: aim at the measured five-city opening band without version one's immediate fifteen-city order, non-empty queue preemption, closest-site override, founding-pantheon override, or automatic conquest pivot. | 1 \| 2 |
 | `settler-site-gate` | off (unmeasured) | `settler-site-gate`: a city starts a Settler only while an acceptable, unclaimed site worth founding exists. | 1 \| 1 |
 | `settler-target-floor` | off (unmeasured) | `settler-target-floor`: a Settler is never sent to a site not worth the walk. | 1 \| 1 |
 | `settler-walk-deadline` | off (unmeasured) | A Settler out of a city past its deadline founds the best legal site within reach instead of chasing the ranked one it has not reached. | 1 \| 1 |
 | `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
+| `siege-train` | off (unmeasured) | A force whose objective is an enemy city plays the siege as a state machine — stage on the ring out of the city's reach until the bill is met, seal the ring spread-first, reduce walls before the garrison, reserve one taker and walk in when the city is within its blow. | 1 \| 1 |
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
 | `veterans-withdraw-early` | off (unmeasured) | A promoted unit keeps hit points in hand before it withdraws. | 1 \| 1 |

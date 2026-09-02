@@ -2153,11 +2153,27 @@ impl AdvancedAi {
     /// append-point check reads a method line's first identifier.
     pub fn enable_opening_warrior_recon(&mut self) {
         self.opening_warrior_recon = true;
+        self.opening_warrior_recon_2 = false;
     }
 
     /// The twin of `enable_opening_warrior_recon`.
     pub fn disable_opening_warrior_recon(&mut self) {
         self.opening_warrior_recon = false;
+    }
+
+    /// Before the first city, let only a Warrior directly escorting the
+    /// Settler reveal terrain first, then reconsider from the ordinary
+    /// settlement candidates. Opt-in gene `opening-warrior-recon-2`; see
+    /// `advanced/opening_settlement.rs`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_opening_warrior_recon_2(&mut self) {
+        self.opening_warrior_recon = false;
+        self.opening_warrior_recon_2 = true;
+    }
+
+    /// The twin of `enable_opening_warrior_recon_2`.
+    pub fn disable_opening_warrior_recon_2(&mut self) {
+        self.opening_warrior_recon_2 = false;
     }
 
     /// After a Settler's first move, discard only its disposable cached site
@@ -3349,6 +3365,8 @@ impl AdvancedAi {
     /// `AdvancedAi::border_parity_purchase`.
     pub fn enable_border_parity(&mut self) {
         self.border_parity = true;
+        self.border_parity_2 = false;
+        self.border_parity_3 = false;
     }
 
     /// The twin of `enable_border_parity`.
@@ -3398,7 +3416,9 @@ impl AdvancedAi {
     /// and when the treasury cannot pay, the contact city's idle queue starts
     /// the defender. See `AdvancedAi::border_parity_target`.
     pub fn enable_border_parity_2(&mut self) {
+        self.border_parity = false;
         self.border_parity_2 = true;
+        self.border_parity_3 = false;
     }
 
     /// The twin of `enable_border_parity_2`.
@@ -3712,6 +3732,21 @@ impl AdvancedAi {
         self.early_project_restraint_2 = false;
     }
 
+    /// Version three of `border-parity`: fill one local garrison debt only
+    /// when two visible non-recon land bodies from the same peaceful major
+    /// are staged beside the city. Buy one answer without touching production.
+    /// Enabling it selects this family version.
+    pub fn enable_border_parity_3(&mut self) {
+        self.border_parity = false;
+        self.border_parity_2 = false;
+        self.border_parity_3 = true;
+    }
+
+    /// The twin of `enable_border_parity_3`.
+    pub fn disable_border_parity_3(&mut self) {
+        self.border_parity_3 = false;
+    }
+
     /// Version two of `battle_planner`: the positions plan — slots laid
     /// against the enemy contact and the objective, a minimum-cost
     /// assignment with reservations, moves front to rear, pacing on the
@@ -3726,6 +3761,33 @@ impl AdvancedAi {
     /// The twin of `enable_battle_planner_2`.
     pub fn disable_battle_planner_2(&mut self) {
         self.battle_planner_2 = false;
+    }
+
+    /// A force whose objective is an enemy city plays the siege as a state
+    /// machine — stage on the ring out of the city's reach until the bill is
+    /// met, seal the ring spread-first, reduce walls before the garrison,
+    /// reserve one taker and walk in when the city is within its blow. See
+    /// `siege_train`.
+    pub fn enable_siege_train(&mut self) {
+        self.siege_train = true;
+    }
+
+    /// The twin of `enable_siege_train`.
+    pub fn disable_siege_train(&mut self) {
+        self.siege_train = false;
+    }
+
+    /// The land group nearest a threatened city of ours holds it as a
+    /// formation — a shooter on the centre, melee on the front tiles that
+    /// face the enemy, the rest within two, the wounded rotated into the
+    /// city — in place of the relief hold point. See `siege_train`.
+    pub fn enable_anvil(&mut self) {
+        self.anvil = true;
+    }
+
+    /// The twin of `enable_anvil`.
+    pub fn disable_anvil(&mut self) {
+        self.anvil = false;
     }
 
     /// Upgrade the standing army before the purchase pass, at strategic

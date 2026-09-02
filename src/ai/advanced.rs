@@ -112,6 +112,12 @@ const THREAT_RELIEF_RADIUS: i32 = 6;
 /// city at 1.2769; this covers that 0.1213 gap without allowing recency to
 /// override a materially worse emergency elsewhere.
 const FRESH_CITY_DAMAGE_PRIORITY: f64 = 0.15;
+/// Maximum ratio credit for a city whose health is already critically low,
+/// even when the last-hit timestamp is unavailable after a bridge rebuild.
+/// Split evenly between the garrison and outer-defense bars, then capped so
+/// damage is only a bounded tie-break within the active-breach emergency tier.
+const CRITICAL_CITY_DAMAGE_PRIORITY: f64 = 0.75;
+const CRITICAL_WALL_DAMAGE_PRIORITY: f64 = 0.75;
 /// Turn the ancient-rush window shuts, after which ordinary campaign rules
 /// resume. `rush_census` finds the first walled capital at turn 80 and 43% of
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
@@ -387,6 +393,16 @@ const BORDER_PARITY_RESERVE: f64 = 100.0;
 /// the contact city's defender ahead of whatever it is building; above it,
 /// only an idle queue takes the defender.
 const BORDER_PARITY_SEVERE_RATIO: f64 = 0.5;
+/// `border-parity-3`: two visible non-recon land bodies this close to an
+/// ungarrisoned city are a concrete local staging threat, rather than the
+/// whole-empire power comparison versions one and two used.
+const BORDER_PARITY_LOCAL_THREAT_RADIUS: i32 = 5;
+/// A body within this ring already answers the local garrison debt. Version
+/// three buys or queues at most one answer per exposed city.
+const BORDER_PARITY_LOCAL_GARRISON_RADIUS: i32 = 2;
+/// One passing body is contact, not an army. Requiring a pair keeps version
+/// three out of the ordinary peacetime economy until a rival visibly stages.
+const BORDER_PARITY_LOCAL_THREAT_BODIES: usize = 2;
 /// `age-closer`: the era-point shortfall from a Normal Age at which the seat
 /// spends its bank on a guaranteed Historic Moment. Nine live King games
 /// fell into 15 Dark Ages; ten of the fifteen shortfalls were five points or
@@ -883,6 +899,18 @@ pub struct StrategyCensus {
     pub battle_plan_slots: u32,
     pub battle_plan_positioned: u32,
     pub battle_plan_paced: u32,
+    /// `siege-train`: siege-turns by stage, turns the ring was sealed, and
+    /// cities taken by the taker. `anvil`: unit-turns posted at a threatened
+    /// city and wounded units rotated into it. See `advanced/siege_train.rs`.
+    pub siege_stage_turns: u32,
+    pub siege_invest_turns: u32,
+    pub siege_reduce_turns: u32,
+    pub siege_take_turns: u32,
+    pub siege_hold_turns: u32,
+    pub siege_rings_sealed: u32,
+    pub siege_captures: u32,
+    pub anvil_turns: u32,
+    pub anvil_rotations: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -958,6 +986,15 @@ impl StrategyCensus {
         self.battle_plan_slots += other.battle_plan_slots;
         self.battle_plan_positioned += other.battle_plan_positioned;
         self.battle_plan_paced += other.battle_plan_paced;
+        self.siege_stage_turns += other.siege_stage_turns;
+        self.siege_invest_turns += other.siege_invest_turns;
+        self.siege_reduce_turns += other.siege_reduce_turns;
+        self.siege_take_turns += other.siege_take_turns;
+        self.siege_hold_turns += other.siege_hold_turns;
+        self.siege_rings_sealed += other.siege_rings_sealed;
+        self.siege_captures += other.siege_captures;
+        self.anvil_turns += other.anvil_turns;
+        self.anvil_rotations += other.anvil_rotations;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -4662,6 +4699,15 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `anvil`: the land group nearest a threatened city of ours holds it
+    /// as a formation — a shooter on the centre, melee on the front tiles,
+    /// the rest within two — instead of the relief hold point. Opt-in gene;
+    /// see `advanced/siege_train.rs`.
+    anvil: bool,
+    /// `anvil`: each member's post this turn, drawn once from the board.
+    anvil_orders: BTreeMap<u32, Pos>,
+    /// `anvil`: the (turn, city) the posts were drawn for.
+    anvil_orders_turn: Option<(u32, u32)>,
     /// `battle-planner`: the force's turn planned jointly — the danger
     /// field, the kill plan, the heal rotation — ahead of the per-unit
     /// ladder, which then leaves the planned units alone. Opt-in gene; see
@@ -4691,6 +4737,11 @@ pub struct AdvancedAi {
     /// city's idle queue starts the defender instead. See
     /// `border_parity_target` and `advanced_production`.
     border_parity_2: bool,
+    /// `border-parity-3`: replace the whole-empire power ratio with one
+    /// concrete local debt. An ungarrisoned city facing two visible,
+    /// non-recon land bodies from the same peaceful major buys one defender.
+    /// Production is never displaced or reserved. See `border_parity_3_target`.
+    border_parity_3: bool,
     /// `boosted-bargain-first`: a prerequisite-met technology whose Eureka is
     /// in hand and whose remaining cost is at most `BOOSTED_BARGAIN_TURNS` of
     /// science is researched before the lane's beeline resumes. See
@@ -5616,6 +5667,11 @@ pub struct AdvancedAi {
     /// Opt-in gene `opening-warrior-recon`; see
     /// `advanced/opening_settlement.rs`.
     opening_warrior_recon: bool,
+    /// A selective rewrite of the opening reconnaissance pass: only a Warrior
+    /// escorting the initial Settler acts first, while normal settlement
+    /// candidate filtering stays in force. Opt-in gene
+    /// `opening-warrior-recon-2`; see `advanced/opening_settlement.rs`.
+    opening_warrior_recon_2: bool,
     /// A Missionary on its last charge explores the fog within
     /// `MISSIONARY_EXPLORE_RADIUS` for up to `MISSIONARY_EXPLORE_TURNS` turns
     /// before spending it — unless a city of ours is slipping or an untouched
@@ -5638,6 +5694,11 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Units a siege has reserved as its taker: excluded from every other
+    /// blow and move, and readable by a joint planner through
+    /// `unit_is_reserved`. Empty with `siege-train` off. See
+    /// `advanced/siege_train.rs`.
+    reserved_units: BTreeSet<u32>,
     /// `rapid-city-expansion-2`: a selective rewrite of the worst-performing
     /// gene. It follows the measured five-city opening band, reserves only an
     /// empty capital queue, refuses unworthy or already-claimed sites, and
@@ -5749,6 +5810,12 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-train`: a force whose objective is an enemy city plays the
+    /// siege as a state machine — stage, invest, reduce, take, hold — kept
+    /// across turns per city. Opt-in gene; see `advanced/siege_train.rs`.
+    siege_train: bool,
+    /// `siege-train`: every siege in progress, keyed by the objective city.
+    sieges: BTreeMap<u32, siege_train::Siege>,
     /// `settler-site-gate`: a city starts a Settler only while an acceptable,
     /// unclaimed site worth founding exists for it. Opt-in gene; see
     /// `advanced/settler_site_gate.rs`.
@@ -6476,6 +6543,11 @@ mod battle_planner;
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
 mod close_as_a_body;
+
+/// Siege train and anvil: the doctrines of a force whose objective is a city
+/// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
+/// `advanced/siege_train.rs`.
+mod siege_train;
 
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
@@ -7302,12 +7374,16 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            anvil: false,
+            anvil_orders: BTreeMap::new(),
+            anvil_orders_turn: None,
             battle_planner: false,
             battle_planner_ordered: BTreeSet::new(),
             battle_planner_recovering: BTreeSet::new(),
             battle_planner_2: false,
             air_surge_2: false,
             border_parity_2: false,
+            border_parity_3: false,
             boosted_bargain_first: false,
             border_parity: false,
             age_closer: false,
@@ -7420,6 +7496,7 @@ impl AdvancedAi {
             native_emergency_purchase: false,
             order_retry: false,
             opening_warrior_recon: false,
+            opening_warrior_recon_2: false,
             missionary_last_charge_explores: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
             missionary_evades_raiders: false,
@@ -7427,6 +7504,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reserved_units: BTreeSet::new(),
             rapid_city_expansion_2: false,
             relief_column_marches: false,
             religion_race_is_closed: false,
@@ -7440,6 +7518,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_train: false,
+            sieges: BTreeMap::new(),
             settler_site_gate: false,
             settler_target_floor: false,
             science_expansion_phase: false,
@@ -9244,32 +9324,61 @@ impl AdvancedAi {
                 let critical = danger >= 0.90
                     || (danger >= BASTION_PRESSURE
                         && (breached || fresh_damage || imminent_attack));
+                // A fresh timestamp is a useful bridge signal, but it can be
+                // absent after a skipped export or a decider restart. Once a
+                // city is already breached, its remaining health is stronger
+                // evidence than a modest hostile/friendly ratio difference at
+                // a healthy neighbour. Keep the credit bounded and behind the
+                // same critical-threat gate above.
+                let damage_priority = if self.battlefront_observation && breached {
+                    let city_missing =
+                        f64::from((CITY_MAX_HP - city.hp).max(0)) / f64::from(CITY_MAX_HP);
+                    let wall_missing = if wall_max > 0 {
+                        f64::from((wall_max - city.wall_hp).max(0)) / f64::from(wall_max)
+                    } else {
+                        0.0
+                    };
+                    (city_missing * CRITICAL_CITY_DAMAGE_PRIORITY
+                        + wall_missing * CRITICAL_WALL_DAMAGE_PRIORITY)
+                        .min(1.0)
+                } else {
+                    0.0
+                };
+                // A breached city with a currently executable hostile attack
+                // is a distinct emergency from a healthy city merely inside
+                // the same pressure radius. Give that state the first sort
+                // key; the bounded damage/pressure score still orders two
+                // active breaches against one another.
+                let active_breach = breached && imminent_attack;
                 let priority = danger
+                    + damage_priority
                     + if fresh_damage {
                         FRESH_CITY_DAMAGE_PRIORITY
                     } else {
                         0.0
                     };
                 critical.then_some((
+                    u8::from(active_breach),
                     // A city that just lost health is the one the enemy is
-                    // actually shooting. A bounded recency credit lets that
-                    // evidence outrank a modestly higher radius ratio at an
-                    // undamaged neighbour, while a much more dangerous city
-                    // still wins the emergency selection.
+                    // actually shooting. The active-breach tier handles a
+                    // breached city with a current attack envelope; within
+                    // that tier, bounded damage and recency credits order
+                    // otherwise comparable emergencies by severity.
                     priority,
                     danger,
-                    (200 - city.hp).max(0) + (wall_max - city.wall_hp).max(0),
+                    (CITY_MAX_HP - city.hp).max(0) + (wall_max - city.wall_hp).max(0),
                     cid,
                 ))
             })
             .max_by(|left, right| {
                 left.0
-                    .total_cmp(&right.0)
+                    .cmp(&right.0)
                     .then_with(|| left.1.total_cmp(&right.1))
-                    .then_with(|| left.2.cmp(&right.2))
-                    .then_with(|| right.3.cmp(&left.3))
+                    .then_with(|| left.2.total_cmp(&right.2))
+                    .then_with(|| left.3.cmp(&right.3))
+                    .then_with(|| right.4.cmp(&left.4))
             })
-            .map(|(_, _, _, cid)| cid)
+            .map(|(_, _, _, _, cid)| cid)
     }
 
     fn religious_opening_rank(g: &Game, pid: usize) -> Option<(u8, f64, f64)> {
@@ -18447,6 +18556,133 @@ impl AdvancedAi {
         true
     }
 
+    /// `border-parity-3`'s local target: a city of ours with no non-recon
+    /// land defender within two tiles and at least two currently visible
+    /// non-recon land units belonging to the same met major within five.
+    ///
+    /// Versions one and two inferred danger from a nearby rival CITY and the
+    /// rival's WHOLE military power. That made a remote navy or army displace
+    /// a local Settler. This version requires the army itself to be on the
+    /// board beside the city, and the first local body closes the debt. The
+    /// tuple is `(visible strength, rival, city, bodies)`; the strongest
+    /// staging group wins, with stable ids breaking ties.
+    fn border_parity_3_target(&self, g: &Game, pid: usize) -> Option<(f64, usize, u32, usize)> {
+        if !self.border_parity_3 {
+            return None;
+        }
+        if g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_barbarian
+                && !player.is_minor
+                && g.is_at_war(pid, player.id)
+        }) {
+            return None;
+        }
+        let visible = g.player_vision_frame(pid);
+        let mut best: Option<(f64, usize, u32, usize)> = None;
+        for cid in g.player_city_ids(pid) {
+            let city_pos = g.cities[&cid].pos;
+            let defended = g.units.values().any(|unit| {
+                if unit.owner != pid
+                    || g.wdist(unit.pos, city_pos) > BORDER_PARITY_LOCAL_GARRISON_RADIUS
+                {
+                    return false;
+                }
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military"
+                    && spec.promotion_class != "recon"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            });
+            if defended {
+                continue;
+            }
+            for rival in g.players.iter().filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_barbarian
+                    && !player.is_minor
+                    && !g.same_team(pid, player.id)
+                    && g.has_met(pid, player.id)
+            }) {
+                let staged: Vec<&crate::game::Unit> = g
+                    .units
+                    .values()
+                    .filter(|unit| unit.owner == rival.id)
+                    .filter(|unit| g.wdist(unit.pos, city_pos) <= BORDER_PARITY_LOCAL_THREAT_RADIUS)
+                    .filter(|unit| g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+                    .filter(|unit| {
+                        let spec = &g.rules.units[unit.kind];
+                        spec.class == "military"
+                            && spec.promotion_class != "recon"
+                            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    })
+                    .collect();
+                if staged.len() < BORDER_PARITY_LOCAL_THREAT_BODIES {
+                    continue;
+                }
+                let strength = staged
+                    .iter()
+                    .map(|unit| {
+                        crate::game::effective_strength(
+                            g.unit_strength(unit, false)
+                                .max(g.unit_ranged_attack_strength(unit)),
+                            unit.hp,
+                        )
+                    })
+                    .sum::<f64>();
+                let candidate = (strength, rival.id, cid, staged.len());
+                if best.is_none_or(|had| {
+                    strength > had.0 + f64::EPSILON
+                        || ((strength - had.0).abs() <= f64::EPSILON
+                            && (cid, rival.id) < (had.2, had.1))
+                }) {
+                    best = Some(candidate);
+                }
+            }
+        }
+        best
+    }
+
+    fn border_parity_3_defender(&self, g: &Game, pid: usize, city: u32) -> Option<String> {
+        self.base
+            .best_military(g, pid, city, Some(true))
+            .or_else(|| self.base.best_military(g, pid, city, Some(false)))
+    }
+
+    fn border_parity_3_purchase(&self, g: &mut Game, pid: usize) -> bool {
+        let Some((strength, rival, city, bodies)) = self.border_parity_3_target(g, pid) else {
+            return false;
+        };
+        let Some(unit) = self.border_parity_3_defender(g, pid, city) else {
+            return false;
+        };
+        let bank = g.players[pid].gold;
+        let Some(cost) = g.unit_purchase_cost(pid, city, &unit, "gold") else {
+            return false;
+        };
+        if bank + f64::EPSILON < BORDER_PARITY_RESERVE + cost {
+            return false;
+        }
+        let action = Action::Buy {
+            city,
+            unit: Name::new(&unit),
+            formation: 0,
+            currency: "gold".to_string(),
+        };
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let city_name = g.cities[&city].name.clone();
+            think!(self.journal(), Economy, Decision,
+                "Buying {unit} for {city_name} against a visible border staging by {}", g.players[rival].civ;
+                "{bodies} combat bodies with {strength:.0} effective strength stand within \
+                 {BORDER_PARITY_LOCAL_THREAT_RADIUS} tiles, and no local garrison does");
+        }
+        true
+    }
+
     /// `border-parity-2` under a SEVERE deficit: our power under
     /// `BORDER_PARITY_SEVERE_RATIO` of the bordering major's while the
     /// contact city builds something that is neither a defender, walls, a
@@ -18514,6 +18750,9 @@ impl AdvancedAi {
             return true;
         }
         if self.border_parity_purchase(g, pid) {
+            return true;
+        }
+        if self.border_parity_3_purchase(g, pid) {
             return true;
         }
         let city_count = g.player_city_ids(pid).len();
@@ -28416,10 +28655,11 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|pos| {
                 let tile = g.map.get(pos)?;
-                // During the one-city opening the recon gene must not let the
-                // native board's complete map decide a site the player has not
-                // observed. The Warrior moves before this scan and exposes
-                // whole radius-two city footprints for this exact filter.
+                // Historical opening-recon v1 must not let the native board's
+                // complete map decide a site the player has not observed. The
+                // Warrior moves before this scan and exposes whole radius-two
+                // city footprints for that v1-only filter; v2 keeps this
+                // shipped candidate path intact.
                 if !self.opening_settlement_footprint_known(g, pid, pos) {
                     return None;
                 }
@@ -30207,7 +30447,7 @@ impl AdvancedAi {
                             }
                         })
                         .or_else(|| {
-                            if !self.opening_settlement_recon_active(g, pid) {
+                            if !self.opening_warrior_recon_v1_active(g, pid) {
                                 self.base
                                     .best_reachable_settle_site(
                                         g,
@@ -35850,6 +36090,13 @@ impl AdvancedAi {
         // do so each measured worse.
         if let Some(acted) = self.rush_siege_step(g, pid, uid, plan) {
             self.force_groups_dirty = true;
+            return acted;
+        }
+        // `siege-train` / `anvil`: a force whose objective is a city — an
+        // enemy city to take, a city of ours to hold — plays the doctrine for
+        // it in place of the per-unit scan and the group mover below. `None`
+        // with both genes off. See `advanced/siege_train.rs`.
+        if let Some(acted) = self.siege_doctrine_step(g, pid, uid, plan) {
             return acted;
         }
         let group = self

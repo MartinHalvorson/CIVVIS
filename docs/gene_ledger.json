@@ -1435,7 +1435,8 @@
         "ships": null,
         "versions": {
           "border-parity": null,
-          "border-parity-2": null
+          "border-parity-2": null,
+          "border-parity-3": null
         }
       },
       "campus-adjacency-threshold": {
@@ -1576,6 +1577,15 @@
           "never-an-empty-queue": null,
           "never-an-empty-queue-2": null,
           "never-an-empty-queue-3": null
+        }
+      },
+      "opening-warrior-recon": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "opening-warrior-recon": null,
+          "opening-warrior-recon-2": null
         }
       },
       "power-the-laboratory": {
