@@ -911,6 +911,13 @@ pub struct StrategyCensus {
     pub siege_captures: u32,
     pub anvil_turns: u32,
     pub anvil_rotations: u32,
+    /// `objective-board`: rows written, task forces standing, units that
+    /// changed row, and rows the allocation left short, summed over turns.
+    /// See `advanced/objective_board.rs`.
+    pub board_rows: u32,
+    pub board_forces: u32,
+    pub board_reassignments: u32,
+    pub board_short_rows: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -995,6 +1002,10 @@ impl StrategyCensus {
         self.siege_captures += other.siege_captures;
         self.anvil_turns += other.anvil_turns;
         self.anvil_rotations += other.anvil_rotations;
+        self.board_rows += other.board_rows;
+        self.board_forces += other.board_forces;
+        self.board_reassignments += other.board_reassignments;
+        self.board_short_rows += other.board_short_rows;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -5493,6 +5504,16 @@ pub struct AdvancedAi {
     /// go first (`VETERAN_UPGRADE_WEIGHT` per promotion). An appointed war
     /// package runs its own exact pass and this stands down for it.
     modernize_before_spending: bool,
+    /// The army's turn planned from a ranked Objective Board — Defend,
+    /// Relieve, Siege, Destroy, ClearCamp, Escort, Deter, Recon rows valued in
+    /// hammers with a requirement and a deadline — served by persistent task
+    /// forces whose ids survive their members, in place of proximity force
+    /// groups and the posture ladder; `force_groups` is built from the forces
+    /// so the planners and the ladder read it unchanged. Opt-in gene
+    /// `objective-board`. See `advanced/objective_board.rs`.
+    objective_board: bool,
+    /// The board and its forces, kept across turns. See `objective_board`.
+    objective_board_state: objective_board::ObjectiveBoard,
     /// The host refuses ~14% of MOVE_TO orders as `did_not_move`, the refusal
     /// event carries no destination, and the verdicts are ledger-only — so
     /// the same refused move was re-issued for up to eleven straight turns
@@ -6562,6 +6583,12 @@ mod close_as_a_body;
 /// `advanced/siege_train.rs`.
 mod siege_train;
 
+/// The Objective Board: a ranked list of what the army is for this turn and
+/// persistent task forces raised against it, in place of proximity force
+/// groups and the posture ladder. Opt-in gene `objective-board`; see
+/// `advanced/objective_board.rs`.
+pub mod objective_board;
+
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
 /// bill, and pillage with the movement the march does not use. Two opt-in
@@ -7498,6 +7525,8 @@ impl AdvancedAi {
 
             // ---- append: l-o ----------------------------------------
             modernize_before_spending: false,
+            objective_board: false,
+            objective_board_state: objective_board::ObjectiveBoard::default(),
             live_move_refusal_break: false,
             live_barbarian_scouts_capture: false,
             live_settler_capture_lessons: false,
@@ -33143,6 +33172,13 @@ impl AdvancedAi {
     }
 
     fn rebuild_force_groups(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
+        // `objective-board`: the groups are the board's task forces. Every
+        // caller of this function reads the same `force_groups` afterwards.
+        // See `advanced/objective_board.rs`.
+        if self.objective_board {
+            self.board_rebuild_force_groups(g, pid, plan);
+            return;
+        }
         self.force_groups.clear();
         let enemies: Vec<usize> = g
             .players
@@ -36129,7 +36165,7 @@ impl AdvancedAi {
         // orders until an attack actually dirties them. The former
         // unconditional rebuild before every step made a turn with `n` units
         // repeatedly regroup and rescore all `n` after each unit moved.
-        if self.victory_planning && self.force_groups_dirty {
+        if (self.victory_planning || self.objective_board) && self.force_groups_dirty {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
         }
@@ -37499,7 +37535,9 @@ impl AdvancedAi {
                 let _ = self.start_zero_movement_trader_route(g, pid, uid, plan.strategy);
             }
         }
-        if self.victory_planning {
+        // `objective-board` runs for every major seat, `victory_planning` or
+        // not. See `advanced/objective_board.rs`.
+        if self.victory_planning || self.objective_board {
             self.rebuild_force_groups(g, pid, plan);
         } else {
             self.force_groups.clear();

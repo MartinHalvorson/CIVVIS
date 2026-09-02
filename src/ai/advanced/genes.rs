@@ -2029,6 +2029,19 @@ pub const GENES: &[Gene] = &[
     // the withdrawal line, the one-blow test and the lethal-pool retreat all
     // fire while it can still walk. 70% of live losses were already <50 hp.
     Gene { tag: "veterans-withdraw-early", field: "veteran_retreat_margin", kind: Kind::Production, enable: AdvancedAi::enable_veteran_retreat_margin, disable: AdvancedAi::disable_veteran_retreat_margin },
+    // `objective-board` (2026-09-02): the army's turn planned from a ranked
+    // Objective Board — Defend, Relieve, Siege, Destroy, ClearCamp, Escort,
+    // Deter and Recon rows, each valued in hammers with a requirement and a
+    // deadline, ranked by value over deadline with an urgent Defend above
+    // every offensive row — and served by persistent task forces whose ids
+    // survive their members (allocation by contribution per travel turn,
+    // hysteresis, never stripping a served row). `force_groups` is built
+    // from the forces, so the battle planner, the siege train and the
+    // ladder read it unchanged. Replaces the proximity clustering and the
+    // posture ladder of `rebuild_force_groups`, whose one empire-wide
+    // objective left the second threatened city with nothing. Priced on the
+    // arena first. See `advanced/objective_board.rs`.
+    Gene { tag: "objective-board", field: "objective_board", kind: Kind::OptIn, enable: AdvancedAi::enable_objective_board, disable: AdvancedAi::disable_objective_board },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

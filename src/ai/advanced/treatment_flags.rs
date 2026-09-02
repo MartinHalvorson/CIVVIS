@@ -3843,6 +3843,19 @@ impl AdvancedAi {
         self.base.veteran_retreat_margin = false;
     }
 
+    /// The army's turn planned from a ranked Objective Board — rows valued in
+    /// hammers with a requirement and a deadline — and served by persistent
+    /// task forces, in place of proximity force groups and the posture
+    /// ladder; `force_groups` is built from the forces. See `objective_board`.
+    pub fn enable_objective_board(&mut self) {
+        self.objective_board = true;
+    }
+
+    /// The twin of `enable_objective_board`.
+    pub fn disable_objective_board(&mut self) {
+        self.objective_board = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
