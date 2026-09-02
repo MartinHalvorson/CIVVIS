@@ -1354,6 +1354,30 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("UnitManager.CanStartCommand(unit, hash, params)", handler)
         self.assertIn("UnitManager.RequestCommand(unit, hash, params)", handler)
 
+    def test_foreign_unit_walks_export_attacks_formation_and_embarked(self) -> None:
+        """An enemy Corps read on the board as a plain unit and an enemy that
+        had struck this turn as one that could still strike: `hostiles[]`,
+        `rivals[].units[]` and `minors[].units[]` carried none of the three
+        per-unit facts the own-unit export has. All three walks now emit them
+        behind the same guards (docs/FIDELITY.md, 2026-09-01)."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        hostiles = source.split("local function addUnitsOf(bid, isFree)", 1)[1].split(
+            "PlayerManager.GetAliveBarbarianIDs()", 1
+        )[0]
+        rivals = source.split("local theirUnits = {};", 1)[1].split(
+            "rivals[#rivals + 1] = {", 1
+        )[0]
+        minors = source.split("for _, unit in minor:GetUnits():Members() do", 1)[1].split(
+            "minors[#minors + 1] = {", 1
+        )[0]
+        for walk in (hostiles, rivals, minors):
+            self.assertIn(
+                "attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil)",
+                walk,
+            )
+            self.assertIn("formation = CivvisMilitaryFormation(unit)", walk)
+            self.assertIn("embarked = try(function() return unit:IsEmbarked(); end, nil)", walk)
+
     def test_resource_export_gates_on_the_database_reveal_rules(self) -> None:
         """IsResourceVisible alone passed pre-Refining oil (7 plots, run
         civvis-20260807T162004Z); the database PrereqTech/PrereqCivic columns
