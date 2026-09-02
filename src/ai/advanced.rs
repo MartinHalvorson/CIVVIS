@@ -5825,6 +5825,11 @@ pub struct AdvancedAi {
     /// cost 219 pre-first-district city-turns, every one with a district
     /// placeable. See `advanced_production`.
     walls_after_districts: bool,
+    /// A unit the next blow could remove leaves the reach of whatever can
+    /// strike it, and a shooter or scout does not end the turn inside a
+    /// raider's reach without a melee unit beside it. See
+    /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
+    wounded_out_of_reach: bool,
     /// `threatened-city-reserve`: while a city of ours is threatened
     /// (`plan.threatened_city`) or bleeding (`native_city_emergency`), every
     /// ordinary Gold purchase — the strategic buyer here and the baseline
@@ -6492,6 +6497,11 @@ mod first_luxury;
 /// to its ending, with what became of it counted. Infrastructure, not a
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
+/// A unit the next blow could remove leaves the reach of whatever can
+/// strike it; a shooter or scout does not end the turn inside a raider's
+/// reach without a melee unit beside it. Opt-in gene `wounded-out-of-reach`.
+/// See `advanced/wounded_out_of_reach.rs`.
+mod wounded_out_of_reach;
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained
@@ -7338,6 +7348,7 @@ impl AdvancedAi {
             upgrade_the_garrison: false,
             wonder_adjacent_sites: false,
             wonder_adjacent_sites_2: false,
+            wounded_out_of_reach: false,
         }
     }
 
@@ -35162,6 +35173,15 @@ impl AdvancedAi {
         // away. `None` with the gene off. See `advanced/swap_rotation.rs`.
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.swap_rotation_step(g, pid, uid) {
+                return acted;
+            }
+        }
+        // `wounded-out-of-reach`: ahead of the recovery, because the recovery
+        // reads the mean blow from visible units and this reads the top of
+        // the roll from visible and remembered ones. `None` with the gene off.
+        // See `advanced/wounded_out_of_reach.rs`.
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.wounded_out_of_reach_step(g, pid, uid) {
                 return acted;
             }
         }
