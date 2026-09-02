@@ -1168,46 +1168,17 @@ def check_quiet(worktree: Path, number: int, *, timeout_seconds: float = INITIAL
         time.sleep(10.0)
 
 
-def deployment_genome_at_publication_base(worktree: Path) -> tuple[str, tuple[str, ...]]:
-    """Read defaults from the ``main`` commit actually merged into a task.
+def reporting_write_command(report: str) -> list[str]:
+    """Publish a batch and reselect defaults from the latest three reports.
 
-    A publication task may carry a checkpoint of generated reports while it
-    catches up to ``main``.  Reading that working ledger would accidentally
-    retain the checkpoint's old defaults.  The merge base is the exact source
-    selection the task contains, so it is the only safe baseline to hand to
-    the reporting-only generator.
-    """
-    base = git_output(worktree, "merge-base", "HEAD", "origin/main")
-    try:
-        ledger = json.loads(
-            git_output(worktree, "show", f"{base}:docs/gene_ledger.json"))
-    except json.JSONDecodeError as error:
-        raise SchedulerError(
-            f"deployment ledger at publication base {base} is not valid JSON") from error
-    rules = ledger.get("rules")
-    genome = rules.get("deployment_genome") if isinstance(rules, dict) else None
-    if (not isinstance(genome, list)
-            or any(not isinstance(tag, str) or not tag for tag in genome)
-            or len(set(genome)) != len(genome)):
-        raise SchedulerError(
-            f"deployment ledger at publication base {base} has no valid deployment genome")
-    return base, tuple(genome)
-
-
-def reporting_write_command(report: str,
-                            deployment_genome: Iterable[str]) -> list[str]:
-    """Regenerate a report batch without letting it re-select live defaults.
-
-    Tournament results must update the published evidence table. The operator's
-    selected on/off genome is intentionally a separate decision.  Capture it
-    from the task's merged ``main`` base rather than from mutable generated
-    files in the task worktree.
+    A completed reporting batch is evidence for the operator's recorded
+    completed-seat-weighted selection rule.  The generator owns the strict
+    threshold and family resolution, so the scheduler must ask it to reselect
+    rather than carrying a stale genome from the publication task's base.
     """
     return [
         sys.executable, "tools/genes.py", "write",
-        "--preserve-deployment-defaults",
-        "--retained-deployment-genome",
-        json.dumps(list(deployment_genome), separators=(",", ":")),
+        "--reselect-deployment-defaults",
         "--reporting-batch", report,
     ]
 
@@ -1237,7 +1208,8 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "artifact; raw JSONL records are never treated as games.",
         f"- The games were pinned to clean source `{source['commit']}` / binary "
         f"`{source['binary_sha256']}`. This publication changes no game mechanics; it updates "
-        "the generated table evidence while deliberately retaining the selected default genome.",
+        "the generated table evidence and reselects the default genome under the recorded "
+        "completed-seat-weighted latest-three-batch policy.",
         "",
         "overwrite-guard: allow this report deliberately regenerates the complete ranking snapshot from "
         "a frozen batch, replacing its current table, ledger, and evidence rows.",
@@ -1251,8 +1223,8 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "- [x] `python3 tools/test_genes.py`",
         "- [x] `cargo test --profile ci --locked`",
         "- [x] `git diff --check origin/main...`",
-        "- [x] No game-mechanic or default-selection change; the reporting batch only refreshes "
-        "published evidence, so a soak is not applicable",
+        "- [x] No game-mechanic source change; the reporting batch mechanically reselects defaults "
+        "under the recorded policy, so a soak is not applicable",
         "- [x] No unrelated runtime artifacts",
         "",
         "## Notes for integration",
@@ -1391,17 +1363,14 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         target.parent.mkdir(parents=True, exist_ok=True)
         write_reporting_artifact(analysis_path(state_root, batch), target, batch)
         generated = list(PUBLICATION_GENERATED_FILES)
-        selection_base, deployment_genome = deployment_genome_at_publication_base(
-            worktree)
-        publication["deployment_selection_base"] = selection_base
-        publication["deployment_selection_count"] = len(deployment_genome)
-        write = reporting_write_command(report, deployment_genome)
+        write = reporting_write_command(report)
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
         if first.returncode != 0:
             reason = (
                 f"The immutable {batch['id']} continuous result was built from clean "
-                f"{batch['source']['commit']}; it is a report-only historical display batch, "
-                "not a source of runtime defaults."
+                f"{batch['source']['commit']}; it remains latest-three evidence for the "
+                "completed-seat-weighted deployment policy, but that historic build cannot "
+                "be re-verified locally."
             )
             run_checked(
                 [*write, "--reporting-unverified-build", reason], cwd=worktree,
