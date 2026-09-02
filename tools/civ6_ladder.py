@@ -469,6 +469,90 @@ def combat_totals(events_path: Path) -> dict | None:
     }
 
 
+BOOST_MARK_TURNS = (100, 150)
+
+
+def boost_totals(events_path: Path) -> dict | None:
+    """How much of the tree the seat researched with a boost in hand, summed
+    from the run's own ``state`` frames: ``{techs_researched, techs_boosted,
+    civics_adopted, civics_inspired, techs_boosted_share,
+    civics_inspired_share, at_t100, at_t150}``.
+
+    ⭐ THE LADDER NEVER SAID HOW MANY EUREKAS IT EARNED. The host sends
+    `boosted_techs` / `boosted_civics` every frame, but only the boosts still
+    OUTSTANDING — a node drops off the list the turn it completes — so no
+    single frame can say what share of the tree was boosted. This walks
+    every frame, keeps the union of everything ever reported boosted, and
+    intersects it with the final `techs` / `civics`. Measured this way on
+    the 08-30..09-01 live corpus: 13–40% of techs, 5–12% of civics.
+
+    `at_t100` / `at_t150` carry the same four counts at the first frame of
+    that turn or later, so a screen can read the pace without the outcome.
+
+    `None` when no `state` frame carries a `techs` list, which is a run
+    whose mod predates state export, not an empire that researched nothing.
+    A `-contN` continuation starts mid-game, so its union is partial: read
+    it as a segment, never as the whole game's share.
+    """
+    ever_boosted_techs: set = set()
+    ever_boosted_civics: set = set()
+    techs: list | None = None
+    civics: list = []
+    marks: dict = {}
+    seen_state = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "state":
+                continue
+            if not isinstance(event.get("techs"), list):
+                continue
+            seen_state = True
+            techs = [t for t in event["techs"] if isinstance(t, str)]
+            civics = [c for c in event.get("civics") or [] if isinstance(c, str)]
+            ever_boosted_techs.update(
+                t for t in event.get("boosted_techs") or [] if isinstance(t, str))
+            ever_boosted_civics.update(
+                c for c in event.get("boosted_civics") or [] if isinstance(c, str))
+            turn = event.get("turn")
+            if isinstance(turn, int):
+                for mark in BOOST_MARK_TURNS:
+                    key = f"t{mark}"
+                    if turn >= mark and key not in marks:
+                        marks[key] = _boost_counts(
+                            techs, civics, ever_boosted_techs, ever_boosted_civics)
+    if not seen_state or techs is None:
+        return None
+    totals = _boost_counts(techs, civics, ever_boosted_techs, ever_boosted_civics)
+    totals["at_t100"] = marks.get("t100")
+    totals["at_t150"] = marks.get("t150")
+    return totals
+
+
+def _boost_counts(techs: list, civics: list, boosted_techs: set,
+                  boosted_civics: set) -> dict:
+    researched = set(techs)
+    adopted = set(civics)
+    techs_boosted = len(researched & boosted_techs)
+    civics_inspired = len(adopted & boosted_civics)
+    return {
+        "techs_researched": len(researched),
+        "techs_boosted": techs_boosted,
+        "civics_adopted": len(adopted),
+        "civics_inspired": civics_inspired,
+        "techs_boosted_share": (
+            round(techs_boosted / len(researched), 4) if researched else None),
+        "civics_inspired_share": (
+            round(civics_inspired / len(adopted), 4) if adopted else None),
+    }
+
+
 def open_events(events_path: Path):
     """Text handle over `events.jsonl`, or its gzipped copy off the ledger branch."""
     if events_path.suffix == ".gz":
