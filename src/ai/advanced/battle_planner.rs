@@ -350,7 +350,11 @@ fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos> {
             continue;
         }
         // A land unit standing on water is embarked there and strikes nothing.
-        let embarked = !sea && probe.map.get(from).is_some_and(|tile| probe.rules.is_water(tile));
+        let embarked = !sea
+            && probe
+                .map
+                .get(from)
+                .is_some_and(|tile| probe.rules.is_water(tile));
         if embarked {
             continue;
         }
@@ -3336,12 +3340,22 @@ mod tests {
         let tile = at(10, 6);
         assert_eq!(g.wdist(g.units[&enemy].pos, tile), 2);
         assert!(g.unit_max_moves(enemy) >= 2.0);
-        assert!(!g.attack_reach(enemy).contains(&tile), "the flood stops at our zone of control");
+        assert!(
+            !g.attack_reach(enemy).contains(&tile),
+            "the flood stops at our zone of control"
+        );
         assert_eq!(danger(&g, 0, tile, ours), 0.0);
         let read = strike_danger(&g, 0, tile, ours);
         let (att, def) = g.melee_exchange_strengths(enemy, ours).expect("a pair");
-        assert!(read > 0.0, "the strike reach prices the closing blow: {read}");
-        assert!((read - expected_damage(att, def)).abs() < 1e-9, "{read} v {}", expected_damage(att, def));
+        assert!(
+            read > 0.0,
+            "the strike reach prices the closing blow: {read}"
+        );
+        assert!(
+            (read - expected_damage(att, def)).abs() < 1e-9,
+            "{read} v {}",
+            expected_damage(att, def)
+        );
         // Beyond one move and a blow, nothing.
         let far = at(9, 6);
         assert_eq!(g.wdist(g.units[&enemy].pos, far), 3);
@@ -3365,15 +3379,26 @@ mod tests {
         let mut v1 = AdvancedAi::new();
         v1.enable_battle_planner();
         v1.plan_battle(&mut flood, 0, &plan);
-        assert_eq!(flood.units[&hurt].pos, at(10, 6), "the flood reads its tile as safe, so it holds");
+        assert_eq!(
+            flood.units[&hurt].pos,
+            at(10, 6),
+            "the flood reads its tile as safe, so it holds"
+        );
         assert!(flood.units[&hurt].fortified);
         let mut ai = AdvancedAi::new();
         ai.enable_battle_planner();
         ai.enable_strike_reach();
         ai.plan_battle(&mut g, 0, &plan);
         let after = &g.units[&hurt];
-        assert_ne!(after.pos, at(10, 6), "it left the tile the enemy can close on");
-        assert!(g.wdist(after.pos, g.units[&enemy].pos) >= 3, "beyond one move and a blow");
+        assert_ne!(
+            after.pos,
+            at(10, 6),
+            "it left the tile the enemy can close on"
+        );
+        assert!(
+            g.wdist(after.pos, g.units[&enemy].pos) >= 3,
+            "beyond one move and a blow"
+        );
         assert!(after.fortified);
         assert!(strike_danger(&g, 0, after.pos, hurt) <= NO_DANGER);
         assert_eq!(ai.census.strike_reach_widened, 1);
@@ -3394,10 +3419,17 @@ mod tests {
         let tile = at(10, 6);
         g.map.tiles.get_mut(&at(9, 6)).expect("a tile").terrain = "mountain".into();
         assert!(g.rules.units[g.units[&archer].kind].siege);
-        assert!(!g.unit_has_line_of_sight_from(archer, at(8, 6), tile), "the mountain blocks the line");
+        assert!(
+            !g.unit_has_line_of_sight_from(archer, at(8, 6), tile),
+            "the mountain blocks the line"
+        );
         assert!(!g.attack_reach(archer).contains(&tile));
         assert_eq!(danger(&g, 0, tile, ours), 0.0);
-        assert_eq!(strike_danger(&g, 0, tile, ours), 0.0, "a native board keeps the engine's rule");
+        assert_eq!(
+            strike_danger(&g, 0, tile, ours),
+            0.0,
+            "a native board keeps the engine's rule"
+        );
         // The live seat, shown the board by the host.
         let observed: BTreeSet<Pos> = g.map.tiles.keys().copied().collect();
         g.host_observed = Arc::new(observed);
