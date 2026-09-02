@@ -1477,7 +1477,12 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
             && !AdvancedAi::legacy().boosted_bargain_first_2
     );
     game.players[0].boosted_techs.insert(crate::name!("mining"));
-    assert_eq!(ai.boosted_bargain_tech(&game, 0), None, "off, nothing");
+    let available = BasicAi::era_completion_techs(&game, 0);
+    assert_eq!(
+        ai.boosted_bargain_tech(&game, 0, &available),
+        None,
+        "off, nothing"
+    );
     ai.enable_boosted_bargain_first();
     assert!(ai.boosted_bargain_first);
     assert!(!ai.boosted_bargain_first_2);
@@ -1492,7 +1497,7 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
         "fixture: boosted Mining ({remaining:.1}) is within two turns of {science:.1} science"
     );
     assert_eq!(
-        ai.boosted_bargain_tech(&game, 0),
+        ai.boosted_bargain_tech(&game, 0, &available),
         Some("mining"),
         "the boosted bargain is Mining"
     );
@@ -1506,7 +1511,7 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
         .boosted_techs
         .remove(&crate::name!("mining"));
     assert_eq!(
-        ai.boosted_bargain_tech(&game, 0),
+        ai.boosted_bargain_tech(&game, 0, &available),
         None,
         "without the Eureka there is no bargain"
     );
@@ -1615,8 +1620,15 @@ fn boosted_bargain_v2_breaks_only_a_close_unforced_fallback() {
 
     let mut v2 = AdvancedAi::new();
     v2.enable_boosted_bargain_first_2();
+    let available = BasicAi::era_completion_techs(&game, 0);
     assert_eq!(
-        v2.boosted_bargain_tech_2(&game, 0, plan.strategy, &crate::name!("sailing")),
+        v2.boosted_bargain_tech_2(
+            &game,
+            0,
+            plan.strategy,
+            &available,
+            &crate::name!("sailing")
+        ),
         Some(crate::name!("animal_husbandry"))
     );
     v2.advanced_research(&mut game, 0, &plan);
@@ -7338,6 +7350,15 @@ fn nuclear_program_beelines_only_for_a_reachable_goal_and_stops_at_its_arsenal()
     game.players[0]
         .techs
         .extend(ancestors.into_iter().map(|tech| Name::new(&tech)));
+    let fission_era = game.rules.techs[&crate::name!("nuclear_fission")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < fission_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     ai.advanced_research(&mut game, 0, &plan);
     assert_eq!(
         game.players[0].research.as_deref(),
@@ -11173,6 +11194,15 @@ fn adaptive_science_readiness_commits_to_the_rocketry_path() {
     {
         game.players[0].techs.insert(*tech);
     }
+    let rocketry_era = game.rules.techs[&crate::name!("rocketry")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < rocketry_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     game.players[0].dvp = 10;
 
     let focus = ai.victory_focus(&game, 0);
@@ -11229,6 +11259,15 @@ fn mature_diplomatic_plan_prepares_one_science_backup() {
     {
         game.players[0].techs.insert(*tech);
     }
+    let rocketry_era = game.rules.techs[&crate::name!("rocketry")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < rocketry_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     game.turn = game.standard_duration(220);
     let plan = StrategicPlan {
         strategy: GrandStrategy::Diplomacy,
@@ -11317,6 +11356,85 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     assert!(
         ai.civic_leads_to(&diplomacy, civic, "global_warming_mitigation"),
         "diplomatic culture must advance toward Global Warming Mitigation's victory point"
+    );
+}
+
+/// A late beeline may use only the next technology that advances its goal,
+/// which made the live seat reach Advanced Flight before it ever researched
+/// Bronze Working. Both controllers must clear the oldest unfinished era
+/// before any later-era candidate is considered.
+#[test]
+fn research_completes_each_era_before_a_later_beeline() {
+    let setup = || {
+        let mut game = Game::new_full(1, 20, 14, 76_004, 300, 0, false);
+        let known_ancient: Vec<Name> = game
+            .rules
+            .techs
+            .iter()
+            .filter(|(tech, spec)| spec.era == 0 && tech.as_str() != "bronze_working")
+            .map(|(tech, _)| *tech)
+            .collect();
+        game.players[0].techs.extend(known_ancient);
+        // These two known prerequisites make the late Science milestone legal
+        // without making Bronze Working an ancestor of it, matching the
+        // beeline shape that left the Ancient side branch behind in the live
+        // run.
+        game.players[0]
+            .techs
+            .extend([crate::name!("radio"), crate::name!("chemistry")]);
+        assert!(
+            game.available_techs(0)
+                .contains(&crate::name!("bronze_working")),
+            "fixture: Bronze Working is a legal Ancient choice"
+        );
+        assert!(
+            game.available_techs(0).contains(&crate::name!("rocketry")),
+            "fixture: the late Science beeline is also legal"
+        );
+        game
+    };
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 1,
+        rush: false,
+    };
+
+    let mut basic = setup();
+    assert_eq!(
+        BasicAi::era_completion_techs(&basic, 0),
+        vec![crate::name!("bronze_working")],
+        "the policy exposes only the unfinished Ancient era"
+    );
+    BasicAi::new().research(&mut basic, 0);
+    assert_eq!(basic.players[0].research.as_deref(), Some("bronze_working"));
+
+    let mut advanced = setup();
+    AdvancedAi::new().advanced_research(&mut advanced, 0, &plan);
+    assert_eq!(
+        advanced.players[0].research.as_deref(),
+        Some("bronze_working"),
+        "a Science beeline must not leap from an unfinished Ancient era to Rocketry"
+    );
+
+    advanced.players[0].research = None;
+    advanced.players[0]
+        .techs
+        .insert(crate::name!("bronze_working"));
+    let next_era = BasicAi::era_completion_techs(&advanced, 0);
+    assert!(
+        !next_era.is_empty()
+            && next_era
+                .iter()
+                .all(|tech| advanced.rules.techs[tech].era == 1),
+        "after Ancient is complete, only Classical choices may open next: {next_era:?}"
+    );
+    assert!(
+        !next_era.contains(&crate::name!("rocketry")),
+        "the later beeline remains gated behind the whole Classical era"
     );
 }
 
@@ -26061,15 +26179,58 @@ fn tactical_melee_preflight_matches_the_engine_entry_cost_rule() {
     game.units.get_mut(&attacker).unwrap().moves_left = 1.0;
     assert!(!engine_offers_attack(&game));
     assert!(
-        !AdvancedAi::tactical_melee_candidate_is_legal(&game, attacker, target),
+        !AdvancedAi::tactical_melee_candidate_is_legal(&game, 0, attacker, target),
         "the tactical scan must not score an attack that cannot pay its entry cost"
     );
 
     game.units.get_mut(&attacker).unwrap().moves_left = 2.0;
     assert!(engine_offers_attack(&game));
     assert!(
-        AdvancedAi::tactical_melee_candidate_is_legal(&game, attacker, target),
+        AdvancedAi::tactical_melee_candidate_is_legal(&game, 0, attacker, target),
         "the preflight must retain the full-movement attack the engine allows"
+    );
+}
+
+#[test]
+fn tactical_melee_preflight_rejects_a_peaceful_bystander_plot() {
+    let mut game = Game::new_full(3, 24, 16, 81_702, 80, 0, false);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    game.current = 0;
+    game.at_war.insert((0, 1));
+    let target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.nbrs(*position).len() == 6)
+        .expect("fixture needs an interior tile");
+    let origin = game.nbrs(target)[0];
+    let attacker = game.spawn_test_unit("warrior", 0, origin);
+    game.spawn_test_unit("warrior", 1, target);
+    game.spawn_test_unit("builder", 2, target);
+
+    let attack = Action::Attack {
+        unit: attacker,
+        target,
+    };
+    assert!(game.peaceful_foreign_unit_at(0, target));
+    assert!(
+        !game
+            .legal_actions(0)
+            .into_iter()
+            .any(|action| action == attack),
+        "the engine must not offer a plot-addressed strike through a peaceful bystander"
+    );
+    assert!(
+        !AdvancedAi::tactical_melee_candidate_is_legal(&game, 0, attacker, target),
+        "the tactical scorer must use the same peaceful-bystander veto"
     );
 }
 
@@ -34357,6 +34518,19 @@ fn the_capture_body_is_cavalry_when_the_empire_can_field_one() {
 #[test]
 fn the_beeline_forces_research_along_the_chain() {
     let (mut game, _, _) = air_surge_fixture(941_104);
+    // This unit test isolates the air-surge chain itself. The ordinary
+    // controller now clears an older era before it opens the next one, so set
+    // up the same mature research position rather than letting an unrelated
+    // Ancient branch preempt Flight.
+    let flight_era = game.rules.techs[&crate::name!("flight")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < flight_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     let mut ai = air_surge_ai();
     ai.maintain_air_surge(&game, 0);
     assert_eq!(

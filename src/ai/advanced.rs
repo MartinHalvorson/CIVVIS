@@ -13660,7 +13660,7 @@ impl AdvancedAi {
             .map(VictoryTarget::strategy)
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
-            let available = g.available_techs(pid);
+            let available = BasicAi::era_completion_techs(g, pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
@@ -13668,7 +13668,7 @@ impl AdvancedAi {
             let science_harbor_goal = Self::science_harbor_research_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
-            let bargain_goal = self.boosted_bargain_tech(g, pid);
+            let bargain_goal = self.boosted_bargain_tech(g, pid, &available);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
                 && (objective != GrandStrategy::Science
                     || self.barbarian_research_is_urgent(g, pid))
@@ -13828,7 +13828,7 @@ impl AdvancedAi {
                 Some(goal_pick)
             } else {
                 fallback_pick.map(|ordinary| {
-                    self.boosted_bargain_tech_2(g, pid, plan.strategy, &ordinary)
+                    self.boosted_bargain_tech_2(g, pid, plan.strategy, &available, &ordinary)
                         .unwrap_or(ordinary)
                 })
             };
@@ -14325,7 +14325,12 @@ impl AdvancedAi {
     /// cities' science. `None` with the gene off or without such a bargain.
     /// The science read here is the cities' own; empire-wide bonuses only
     /// make the bargain cheaper than it reads.
-    fn boosted_bargain_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+    fn boosted_bargain_tech(
+        &self,
+        g: &Game,
+        pid: usize,
+        available: &[Name],
+    ) -> Option<&'static str> {
         if !self.boosted_bargain_first {
             return None;
         }
@@ -14336,8 +14341,9 @@ impl AdvancedAi {
             .map(|cid| g.city_yields(cid).science)
             .sum::<f64>()
             .max(1.0);
-        g.available_techs(pid)
-            .into_iter()
+        available
+            .iter()
+            .copied()
             .filter(|tech| player.boosted_techs.contains(tech))
             .map(|tech| {
                 let percent = g.rules.techs[tech.as_str()]
@@ -14365,6 +14371,7 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
         strategy: GrandStrategy,
+        available: &[Name],
         ordinary: &Name,
     ) -> Option<Name> {
         if !self.boosted_bargain_first_2 {
@@ -14379,8 +14386,9 @@ impl AdvancedAi {
             .max(1.0);
         let value_floor =
             self.tech_value(g, pid, ordinary, strategy) * BOOSTED_BARGAIN_V2_VALUE_FLOOR;
-        g.available_techs(pid)
-            .into_iter()
+        available
+            .iter()
+            .cloned()
             .filter(|tech| player.boosted_techs.contains(tech))
             .filter_map(|tech| {
                 let remaining =
@@ -35113,15 +35121,15 @@ impl AdvancedAi {
     /// The tactical scan starts from an enemy tile, not `Game::legal_actions`,
     /// so it must retain the engine's melee preflight before it clones and
     /// scores a proposed strike.  In particular, entering a forest across a
-    /// river can cost more movement than a unit has left.
-    fn tactical_melee_candidate_is_legal(g: &Game, uid: u32, target: Pos) -> bool {
-        let unit = &g.units[&uid];
-        unit.moves_left > 0.0
-            && unit.attacks_left > 0
-            && g.rules.units[unit.kind].is_melee_capable()
-            && g.wdist(unit.pos, target) == 1
-            && g.unit_can_melee_target_domain(uid, target)
-            && g.can_pay_melee_entry(uid, target)
+    /// river can cost more movement than a unit has left, and a plot shared by
+    /// an enemy and a peaceful foreign unit is not a legal plot-addressed
+    /// strike because Civilization VI chooses the defender from that plot.
+    fn tactical_melee_candidate_is_legal(g: &Game, pid: usize, uid: u32, target: Pos) -> bool {
+        // Keep this call on the authoritative engine predicate.  Repeating
+        // only the movement/domain half here let a peaceful bystander through
+        // and paid for a speculative clone that `Game::apply` immediately
+        // refused.
+        g.melee_order_is_legal(pid, uid, target)
     }
 
     /// Price the enemy's forcing reply on a board an exact attack has already
@@ -36855,7 +36863,7 @@ impl AdvancedAi {
                     target: pos,
                 });
             }
-            if Self::tactical_melee_candidate_is_legal(g, uid, pos) {
+            if Self::tactical_melee_candidate_is_legal(g, pid, uid, pos) {
                 actions.push(Action::Attack {
                     unit: uid,
                     target: pos,
