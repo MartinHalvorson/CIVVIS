@@ -1925,6 +1925,7 @@ pub const GENES: &[Gene] = &[
     // See `advanced/wounded_out_of_reach.rs`.
     Gene { tag: "wounded-out-of-reach", field: "wounded_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach, disable: AdvancedAi::disable_wounded_out_of_reach },
 
+    Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing
@@ -1934,7 +1935,6 @@ pub const GENES: &[Gene] = &[
     // claim by constructing and merging two synthetic Gene-row pull requests.
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
-    Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
