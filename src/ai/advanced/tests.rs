@@ -6739,36 +6739,39 @@ fn recovery_v2_does_not_sum_weak_fronts_into_extra_recovery() {
 }
 
 #[test]
-fn recovery_v2_releases_a_stale_power_gap_but_not_a_threatened_city() {
+fn recovery_v2_keeps_a_live_lane_in_a_defensive_war_until_a_city_is_threatened() {
     let (mut game, _) = outgunned_at_war_fixture();
     game.turn = 100;
+    game.players[0].dvp = 10;
+    install_surprise_war(&mut game, 1, 0, 70);
+    game.current = 0;
 
     let mut v1 = AdvancedAi::new();
     v1.enable_recovery_reads_the_war();
-    v1.major_war_since = Some(0);
     assert_eq!(
         v1.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "version one can remain in power-gap Recovery for the whole war"
+        "version one lets the defensive power gap take the whole strategy"
     );
 
     let mut v2 = AdvancedAi::new();
     v2.enable_recovery_reads_the_war_2();
-    v2.major_war_since = Some(0);
-    assert_ne!(
-        v2.assess(&game, 0).strategy,
-        GrandStrategy::Recovery,
-        "v2 releases a power-gap posture after its bounded window"
-    );
-
-    v2.major_war_since = Some(game.turn.saturating_sub(1));
     assert_eq!(
         v2.assess(&game, 0).strategy,
-        GrandStrategy::Recovery,
-        "v2 preserves v1's trigger during a fresh major war"
+        GrandStrategy::Diplomacy,
+        "v2 keeps an established lane while a rival's war remains away from home"
     );
 
-    v2.major_war_since = Some(0);
+    let mut ours = game.clone();
+    ours.wars.clear();
+    install_surprise_war(&mut ours, 0, 1, 70);
+    ours.current = 0;
+    assert_eq!(
+        v2.assess(&ours, 0).strategy,
+        GrandStrategy::Recovery,
+        "a war we declared keeps version one's Recovery response"
+    );
+
     let home = game.cities[&game.player_city_ids(0)[0]].pos;
     let attacker = game
         .nbrs(home)
@@ -6780,7 +6783,7 @@ fn recovery_v2_releases_a_stale_power_gap_but_not_a_threatened_city() {
     assert_eq!(
         v2.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "immediate city danger overrides the stale-war bound"
+        "immediate city danger overrides lane preservation"
     );
 }
 
