@@ -3592,8 +3592,9 @@ impl AdvancedAi {
     /// At the ready strike, invite one credible neighbour to a joint war and
     /// wait no more than one turn. Credible means the target is close to a
     /// victory or the partner has the grievance and combined power that make
-    /// the Basic controller accept. Unlike version one, this performs no
-    /// alliance courtship, diverts no Envoys and never retries. Opt-in gene
+    /// the Basic controller accept. Before the strike it asks that partner
+    /// only for a military alliance and spends Envoy score only to unseat the
+    /// target from a nearby client; it never retries. Opt-in gene
     /// `coalition-before-war-2`.
     pub fn enable_coalition_before_war_2(&mut self) {
         self.coalition_before_war_2 = true;

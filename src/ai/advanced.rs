@@ -4712,7 +4712,8 @@ pub struct AdvancedAi {
 
     // ---- append: c-d ------------------------------------------------
     /// Version 2 of `coalition-before-war`: make one strike-time joint-war
-    /// invitation to a credible partner, without alliance or Envoy setup.
+    /// invitation to a credible partner, with only directly useful military
+    /// alliance and enemy-client Envoy setup.
     /// Opt-in gene `coalition-before-war-2`; see `advanced/coalition.rs`.
     coalition_before_war_2: bool,
     /// `campus-through-expansion`: a Science seat prices the Campus and its
