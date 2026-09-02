@@ -1282,3 +1282,69 @@ requirement and is the Reserve's anchor only; a Relieve row's need is the
 Defend's less what stands within six, read once a turn; sea forces exist
 for the three sea rows and take the shipped sea mover unchanged. The
 `victory_planning` gate does not apply: the board runs for every major seat.
+
+## 27. The battle planner reads the wider machinery: the siege's taker, the host's price, the previews asked for (2026-09-02, opt-in gene `battle-planner-3`)
+
+§21–§22 planned a force's turn from the board alone; §23 published the
+siege's taker through `reserved_units` for a joint planner to leave alone,
+and the planner did not read it; #3026 gave the board the host's own
+`SimulateAttackInto` reading (`Game::host_preview`, a `preview` order
+answered at issue time) and nothing consumed it. `battle-planner-3`
+(`src/ai/advanced/battle_planner.rs`, opt-in, version three of the family:
+`enable_battle_planner_3` turns one and two off, `battle_planner_on()`
+covers all three, `MAX_VERSIONS` is 3) is version two plus three readings:
+
+1. **The taker is the siege's.** A unit `siege_train.rs` has reserved
+   (`unit_is_reserved`) is skipped by the kill plan, the heal rotation and
+   the positions plan. The Take blow is the siege train's own step — the
+   planner's targets are units, never cities — so the exception the brief
+   names falls out: the planner never spends the unit that walks in.
+2. **The host's price beats the closed form.** Where `Game::host_preview`
+   holds a reading for a `(unit, target tile, ranged)` pair, the candidate
+   carries the host's damage both ways in place of `expected_damage`'s
+   centre roll — from every stand of the pair, since the reading is made
+   of the defender's tile and health and the attacker's health and
+   promotions, none of which a move changes (a river crossing is the one
+   term it misses) — and a blow the host says kills the attacker is vetoed
+   outright, whatever the kill is worth. Native boards hold no previews,
+   so the closed form stands there.
+3. **Asking for the price.** Before the search, the top 24
+   (`MAX_WANTED_PREVIEWS`) candidate pairs by closed-form damage from the
+   unit's own tile that have no reading yet are published through
+   `AdvancedAi::wanted_previews()`; `civvis_orders` turns them into
+   `preview` orders (`kind: "preview"`, `ATTACK`/`RANGE_ATTACK`, the target
+   plot) ahead of the frame's strikes, and the answers reach
+   `Game::host_previews` on the turn's next frame, where the plan reads
+   them. Sixteen lines in `decide`, after `take_turn`.
+
+**Reading** (the tactical gate, `docs/DOCTRINE_ARENA.md`; ci binaries of
+this branch; every number is `advanced+battle-planner-3+siege-train` less
+`advanced+battle-planner-2+siege-train`, so what the arena prices is rule 1
+alone — rules 2 and 3 are live-only):
+
+- `battle_bench` control `--a advanced --b advanced --games 60`: +0.00,
+  0/60 diverging.
+- `battle_bench --games 200` (×2 seatings): **−11.30 ± 4.56 a seed (t −2.48,
+  p 0.013; 9 better / 18 worse / 173 tied, fires 38/200)**; exchange 0.985
+  v 1.016; units lost 1,694 v 1,668. On the open field the siege train
+  reserves a taker for a city that is not there to take, and the unit it
+  holds back is a blow the plan does not strike.
+- `doctrine_arena --position the_storming` control `--seeds 12`: +0.0,
+  0/12 diverging. `--seeds 40` (×2 roles): **−2.8 ± 42.5 (t −0.06, 4/6,
+  fires 18/40)**; kills per loss 0.98 v 1.02; **cities +16/−11 v +11/−16**
+  — the city taken five more times in eighty assaults, the reading rule 1
+  exists for; besieger arrival 2.82 v 2.85, screen 58 % v 56 %.
+- Fires (`gene_screen --games 6 --jobs 3 --genes
+  battle-planner,battle-planner-2,battle-planner-3 --p-on 0.75 --start-seed
+  97700300`, `docs/gene_screens/fires/battle-planner-3.json`): version three
+  on in 6 of 36 seats, win −20.0 pp ± 17.9 (z −1.12), share −0.95 pp — fires,
+  and nothing more at six games.
+
+**What this does not say.** The bench and the arena cannot see rules 2 and
+3: the live seat is where a host reading exists, and the live arm
+(`~/.civvis-live-force-on`) is where they are read. The host prices a pair
+from the unit's tile; the plan applies that price to the same pair after a
+move. A `preview` order is a question the mod answers with an event and
+`UNVERIFIABLE_ORDER_KINDS` already lists it, so the verdicts do not chase
+it. The wanted list is the last plan's; a replan frame within the turn
+reads the answers, the first frame of a turn asks.

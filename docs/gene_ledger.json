@@ -1438,7 +1438,8 @@
         "ships": null,
         "versions": {
           "battle-planner": null,
-          "battle-planner-2": null
+          "battle-planner-2": null,
+          "battle-planner-3": null
         }
       },
       "boost-wait-research": {
