@@ -864,6 +864,18 @@ pub struct StrategyCensus {
     pub battle_plan_verified_kills: u32,
     pub battle_plan_dropped_blows: u32,
     pub battle_plan_rotations: u32,
+    /// `siege-train`: siege-turns by stage, turns the ring was sealed, and
+    /// cities taken by the taker. `anvil`: unit-turns posted at a threatened
+    /// city and wounded units rotated into it. See `advanced/siege_train.rs`.
+    pub siege_stage_turns: u32,
+    pub siege_invest_turns: u32,
+    pub siege_reduce_turns: u32,
+    pub siege_take_turns: u32,
+    pub siege_hold_turns: u32,
+    pub siege_rings_sealed: u32,
+    pub siege_captures: u32,
+    pub anvil_turns: u32,
+    pub anvil_rotations: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -936,6 +948,15 @@ impl StrategyCensus {
         self.battle_plan_verified_kills += other.battle_plan_verified_kills;
         self.battle_plan_dropped_blows += other.battle_plan_dropped_blows;
         self.battle_plan_rotations += other.battle_plan_rotations;
+        self.siege_stage_turns += other.siege_stage_turns;
+        self.siege_invest_turns += other.siege_invest_turns;
+        self.siege_reduce_turns += other.siege_reduce_turns;
+        self.siege_take_turns += other.siege_take_turns;
+        self.siege_hold_turns += other.siege_hold_turns;
+        self.siege_rings_sealed += other.siege_rings_sealed;
+        self.siege_captures += other.siege_captures;
+        self.anvil_turns += other.anvil_turns;
+        self.anvil_rotations += other.anvil_rotations;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -4632,6 +4653,15 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `anvil`: the land group nearest a threatened city of ours holds it
+    /// as a formation — a shooter on the centre, melee on the front tiles,
+    /// the rest within two — instead of the relief hold point. Opt-in gene;
+    /// see `advanced/siege_train.rs`.
+    anvil: bool,
+    /// `anvil`: each member's post this turn, drawn once from the board.
+    anvil_orders: BTreeMap<u32, Pos>,
+    /// `anvil`: the (turn, city) the posts were drawn for.
+    anvil_orders_turn: Option<(u32, u32)>,
     /// `battle-planner`: the force's turn planned jointly — the danger
     /// field, the kill plan, the heal rotation — ahead of the per-unit
     /// ladder, which then leaves the planned units alone. Opt-in gene; see
@@ -5571,6 +5601,11 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Units a siege has reserved as its taker: excluded from every other
+    /// blow and move, and readable by a joint planner through
+    /// `unit_is_reserved`. Empty with `siege-train` off. See
+    /// `advanced/siege_train.rs`.
+    reserved_units: BTreeSet<u32>,
     /// `rapid-city-expansion-2`: a selective rewrite of the worst-performing
     /// gene. It follows the measured five-city opening band, reserves only an
     /// empty capital queue, refuses unworthy or already-claimed sites, and
@@ -5682,6 +5717,12 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-train`: a force whose objective is an enemy city plays the
+    /// siege as a state machine — stage, invest, reduce, take, hold — kept
+    /// across turns per city. Opt-in gene; see `advanced/siege_train.rs`.
+    siege_train: bool,
+    /// `siege-train`: every siege in progress, keyed by the objective city.
+    sieges: BTreeMap<u32, siege_train::Siege>,
     /// `settler-site-gate`: a city starts a Settler only while an acceptable,
     /// unclaimed site worth founding exists for it. Opt-in gene; see
     /// `advanced/settler_site_gate.rs`.
@@ -6409,6 +6450,11 @@ mod battle_planner;
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
 mod close_as_a_body;
+
+/// Siege train and anvil: the doctrines of a force whose objective is a city
+/// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
+/// `advanced/siege_train.rs`.
+mod siege_train;
 
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
@@ -7229,6 +7275,9 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            anvil: false,
+            anvil_orders: BTreeMap::new(),
+            anvil_orders_turn: None,
             battle_planner: false,
             battle_planner_ordered: BTreeSet::new(),
             battle_planner_recovering: BTreeSet::new(),
@@ -7351,6 +7400,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reserved_units: BTreeSet::new(),
             rapid_city_expansion_2: false,
             relief_column_marches: false,
             religion_race_is_closed: false,
@@ -7364,6 +7414,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_train: false,
+            sieges: BTreeMap::new(),
             settler_site_gate: false,
             settler_target_floor: false,
             science_expansion_phase: false,
@@ -35564,6 +35616,13 @@ impl AdvancedAi {
         // do so each measured worse.
         if let Some(acted) = self.rush_siege_step(g, pid, uid, plan) {
             self.force_groups_dirty = true;
+            return acted;
+        }
+        // `siege-train` / `anvil`: a force whose objective is a city — an
+        // enemy city to take, a city of ours to hold — plays the doctrine for
+        // it in place of the per-unit scan and the group mover below. `None`
+        // with both genes off. See `advanced/siege_train.rs`.
+        if let Some(acted) = self.siege_doctrine_step(g, pid, uid, plan) {
             return acted;
         }
         let group = self
