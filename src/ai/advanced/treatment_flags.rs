@@ -3809,6 +3809,8 @@ impl AdvancedAi {
     /// The twin of `enable_veteran_retreat_margin`.
     pub fn disable_veteran_retreat_margin(&mut self) {
         self.base.veteran_retreat_margin = false;
+    }
+
     /// The army's turn planned from a ranked Objective Board — rows valued in
     /// hammers with a requirement and a deadline — and served by persistent
     /// task forces, in place of proximity force groups and the posture

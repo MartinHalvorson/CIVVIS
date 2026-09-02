@@ -2525,6 +2525,36 @@ mod tests {
             .all(|force| force.objective_key == ObjectiveKey::Reserve));
     }
 
+    /// On an arena — `central_position`, our army between two hostile
+    /// bodies — the board raises one land force, not one per body: nothing
+    /// is coming, so a force under its row's bill joins the top force and so
+    /// do the leftovers, and nothing stands still.
+    #[test]
+    fn on_an_arena_the_army_is_one_force_and_nothing_stands_still() {
+        let g = crate::doctrine::build(
+            crate::doctrine::position("central_position").expect("known"),
+            3,
+        )
+        .expect("buildable");
+        assert!(g.is_arena());
+        let mut ai = on();
+        let plan = conquest(&g, None);
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let land: Vec<&TaskForce> = ai
+            .objective_board()
+            .forces
+            .iter()
+            .filter(|force| force.domain == ForceDomain::Land)
+            .collect();
+        assert_eq!(land.len(), 1, "one land force on an arena");
+        assert!(!land[0].units.is_empty());
+        assert!(land[0].units.iter().all(|uid| g.units[uid].owner == 0));
+        assert!(ai
+            .force_groups
+            .iter()
+            .all(|group| matches!(group.posture, ForcePosture::Engage | ForcePosture::Advance)));
+    }
+
     /// A settler outside our borders is an Escort row; its shortfall is a
     /// requisition.
     #[test]
