@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -306,6 +307,69 @@ def _capture_once(command: list[str]) -> subprocess.CompletedProcess | None:
         return None
 
 
+#: ★★★★★ HOW LONG THE FALLBACK IS LEFT ALONE ONCE IT HAS PROVED IT WILL HANG.
+#:
+#: The CoreGraphics fallback exists for one situation: ScreenCaptureKit
+#: preflights successfully and then yields no frame because Cmd-Shift-5 owns the
+#: native recording stream.  On this host, 2026-09-02, that situation is
+#: permanent -- an interactive `screencapture -pdiU -z` picker has been open
+#: since 10:04 and `systemstatusd` has been pinned at 99 % CPU ever since -- and
+#: in it the fallback does not merely fail, it never returns:
+#:
+#:     native(SCK)  #0 3.52s rc=78 "CoreGraphics capture returned no image"
+#:     native(SCK)  #1 3.52s rc=78    (its own 3.5 s guard, every time)
+#:     fallback(CG) #0 TIMEOUT >20s
+#:     fallback(CG) #1 TIMEOUT >20s   (killed by Python at 7.5 s in production)
+#:
+#: So every capture cost 3.5 + 7.5 = 11.0 s and returned nothing.  The
+#: verification harness spends two per desktop rescue, which is the 23.5 s that
+#: separated `autoclose_desktop` from the next line of a live run 23 times in
+#: one 31-minute game -- 30 % of it -- and 25.8 min of 68.6 in run
+#: civvis-20260902T095330Z.  The popup keeper pays the same 11 s on its own
+#: polls, which is why `popup_clear.log` reached 60 MB in a day.
+#:
+#: ⚠ A BREAKER, NOT A REMOVAL.  The fallback is the only backend that can work
+#: while a recording owns the stream, so it must come back on its own: a picker
+#: closes, a grant changes, the spin ends.  After this many seconds the next
+#: capture tries it again, and one success clears the breaker entirely.
+FALLBACK_BREAKER_SECONDS = 120.0
+#: Consecutive fallback timeouts before the breaker opens.  Two, not one: a
+#: single kill under momentary load is the ordinary transient this module has
+#: always tolerated, and `SHOT_BACKOFF_SECONDS` already retries it.
+FALLBACK_BREAKER_TIMEOUTS = 2
+
+_fallback_timeouts = 0
+_fallback_opened_at: float | None = None
+
+
+def _fallback_available(now: float | None = None) -> bool:
+    """Whether the CoreGraphics fallback is worth its wall clock right now."""
+    if _fallback_opened_at is None:
+        return True
+    if now is None:
+        now = time.monotonic()
+    return (now - _fallback_opened_at) >= FALLBACK_BREAKER_SECONDS
+
+
+def _note_fallback(result: subprocess.CompletedProcess | None) -> None:
+    """Record what the fallback did, and open or clear the breaker."""
+    global _fallback_timeouts, _fallback_opened_at
+    if result is None:
+        _fallback_timeouts += 1
+        if _fallback_timeouts >= FALLBACK_BREAKER_TIMEOUTS:
+            _fallback_opened_at = time.monotonic()
+        return
+    _fallback_timeouts = 0
+    _fallback_opened_at = None
+
+
+def reset_fallback_breaker() -> None:
+    """Forget the fallback's history. For tests and for a deliberate retry."""
+    global _fallback_timeouts, _fallback_opened_at
+    _fallback_timeouts = 0
+    _fallback_opened_at = None
+
+
 def capture_region(box_points, output: str | Path) -> None:
     """Write one screen-point region to ``output`` as a PNG."""
     result = _capture_once(_capture_command(box_points, output, fallback=False))
@@ -314,7 +378,13 @@ def capture_region(box_points, output: str | Path) -> None:
         # Cmd-Shift-5 owns the native recording stream. Start the CoreGraphics
         # fallback in a fresh helper because the first attempt can leave the
         # original process's capture state wedged.
+        if not _fallback_available():
+            raise CaptureUnavailable(
+                "native region capture yielded no image and the CoreGraphics "
+                "fallback is timing out; skipping it for "
+                f"{FALLBACK_BREAKER_SECONDS:.0f}s")
         result = _capture_once(_capture_command(box_points, output, fallback=True))
+        _note_fallback(result)
     if result is None:
         raise CaptureUnavailable("native region capture timed out")
     if result.returncode:
