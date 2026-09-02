@@ -32,8 +32,9 @@
 //!    where the mirror never fills `player.counters`; that keeps them open as
 //!    chases-by-action until the host reports the boost fired, which is the
 //!    truthful answer.
-//! 2. **Research and civics.** A boost in hand scales the node's score by
-//!    what the discount buys (`boost_in_hand_scale`); a node whose boost is
+//! 2. **Research and civics.** The in-hand scale (`boost_in_hand_scale`) is
+//!    deliberately NOT armed (its isolation read negative, see that function);
+//!    a node whose boost is
 //!    **one actionable step away** is deferred (`boost_wait_penalty`, in its
 //!    tight form); a node is credited the chases it opens, under a cap a
 //!    third of the standalone gene's; and the **beeline** takes the goal's
@@ -891,11 +892,11 @@ mod tests {
         let plain = AdvancedAi::new();
         let ai = armed();
         assert_eq!(plain.boost_in_hand_scale(&game, 0, "masonry", true), 1.0);
+        // The in-hand scale is the one old-family hook the gene does NOT arm:
+        // see `boost_in_hand_scale` for the isolation that removed it.
+        assert_eq!(ai.boost_in_hand_scale(&game, 0, "masonry", true), 1.0);
         assert!(
-            (ai.boost_in_hand_scale(&game, 0, "masonry", true) - 1.0 / 0.6f64.sqrt()).abs() < 1e-9
-        );
-        assert!(
-            (ai.boost_in_hand_scale(&game, 0, "craftsmanship", false) - 1.0 / 0.6f64.sqrt()).abs()
+            (ai.boost_in_hand_scale(&game, 0, "craftsmanship", false) - 1.0).abs()
                 < 1e-9
         );
     }

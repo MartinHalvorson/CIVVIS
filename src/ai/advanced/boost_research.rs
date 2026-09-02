@@ -150,7 +150,14 @@ impl AdvancedAi {
     pub(super) fn boost_in_hand_scale(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
         // `chase-every-boost` carries this scale as part of its union; see
         // `advanced/chase_every_boost.rs`.
-        if !(self.boost_first_research || self.chase_every_boost)
+        // `chase-every-boost` deliberately does NOT arm this scale. Its 24-game
+        // isolation on seeds 26090140..63 read the whole gene at share -2.6 pp
+        // (z -2.7) and every variant with this scale off as neutral, while the
+        // scale's own ancestor (`boost-first-research` v1) is the one member of
+        // the family that ever measured significantly negative (share -3.4 pp,
+        // z -3.2). The gene keeps the wait, unlock, beeline, production, builder
+        // and kill hooks; the live screen prices the union.
+        if !self.boost_first_research
             || !Self::boost_in_hand(g, pid, node, techs)
         {
             return 1.0;
