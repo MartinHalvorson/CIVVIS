@@ -1965,6 +1965,13 @@ pub const GENES: &[Gene] = &[
     // first-building debt in the project's own district. Lane-aligned points
     // and immediate race swings stay live; only off-lane churn waits.
     Gene { tag: "early-project-restraint-2", field: "early_project_restraint_2", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint_2, disable: AdvancedAi::disable_early_project_restraint_2 },
+    // Version 2 of `battle-planner` (2026-09-02): the positions plan joins the
+    // kill plan and the heal rotation — slots laid against the enemy contact
+    // and the objective, a minimum-cost assignment with reservations, moves
+    // front to rear, pacing on the approach. One version of the family plays.
+    // Priced on the arena against version 1. See
+    // `AdvancedAi::enable_battle_planner_2`.
+    Gene { tag: "battle-planner-2", field: "battle_planner_2", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner_2, disable: AdvancedAi::disable_battle_planner_2 },
     // `siege-train` (2026-09-02): the siege as a state machine per objective
     // city — stage on the 3–5 ring out of the city's strike reach until the
     // strength there meets the bill (defenders within six, city, walls,

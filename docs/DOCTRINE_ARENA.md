@@ -595,7 +595,7 @@ nearest enemy is a different gene, and this board can now price it.
 §"The arena can pose a siege" ended on the claim the board could now price:
 a gene that paced a siege train specifically. `siege-train` and `anvil`
 (`src/ai/advanced/siege_train.rs`, both `Kind::OptIn`, off) are that gene
-and its defensive twin, and `docs/LIVE_TACTICS.md` §22 records how they are
+and its defensive twin, and `docs/LIVE_TACTICS.md` §23 records how they are
 built. Priced here first, as the gate says.
 
 **`the_relief`** is the second city board, added for the anvil: the same
