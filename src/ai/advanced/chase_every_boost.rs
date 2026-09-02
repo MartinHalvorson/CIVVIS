@@ -223,6 +223,9 @@ impl AdvancedAi {
         improvement: &str,
         value: f64,
     ) -> f64 {
+        if self.eureka_chasing_builder_2 && !self.chase_every_boost {
+            return self.eureka_builder_v2_premium(g, pos, improvement, value);
+        }
         let premium = self.eureka_builder_premium(g, pos, improvement);
         if self.chase_every_boost && !self.eureka_chasing_builder {
             premium.min(value.max(0.0) * CHASE_BUILDER_VALUE_FRACTION)
