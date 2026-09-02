@@ -4533,16 +4533,14 @@ fn production_advanced_reflects_the_bounded_recovery_selection() {
     let mut production = AdvancedAi::new();
     production.enable_engine_repairs();
     assert_eq!(
-        production.bounded_recovery,
-        selected,
+        production.bounded_recovery, selected,
         "production must follow the recorded deployment selection"
     );
 
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert_eq!(
-        live_bridge.bounded_recovery,
-        selected,
+        live_bridge.bounded_recovery, selected,
         "the live bridge must follow the recorded deployment selection"
     );
 }
@@ -18695,8 +18693,7 @@ fn culture_building_debt_is_in_native_universe_and_ledger_decides_deployment() {
     let selected = crate::ai::ledger_default_on(tag)
         .expect("a registered native repair has a deployment selection");
     assert_eq!(
-        deployed.culture_building_debt,
-        selected,
+        deployed.culture_building_debt, selected,
         "{tag}: deployment must follow the ledger"
     );
 }
