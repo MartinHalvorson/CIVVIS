@@ -178,9 +178,12 @@
 //! turn. With the gene on, `doomed_shooters` reads every candidate blow of
 //! every shooter — return damage (a melee blow's) plus the field's danger at
 //! the stand — and a shooter with no blow that leaves it above zero is not
-//! armed: the rotation takes it as exposed, stands it out of reach (or on the
-//! least danger under `safest-stand`) and fortifies, and the ladder leaves
-//! it alone. A unit with one survivable blow keeps the ladder's freedom, and
+//! armed: if it is wounded or exposed where it stands the rotation takes it
+//! out of reach (or to the least danger under `safest-stand`); if it is safe
+//! where it stands it holds that ground and fortifies — the ladder's attack
+//! is the one thing denied it. (The first cut rotated every doomed unit and
+//! read −338 ± 84 on the_ridge: a unit safe on its hill was walked off it.)
+//! A unit with one survivable blow keeps the ladder's freedom, and
 //! the kill plan's own vetoes and values are unchanged. Census
 //! `battle_plan_doomed`; one Decision line per plan when it fires.
 
@@ -1681,9 +1684,22 @@ impl AdvancedAi {
             // otherwise be removed: without a recovery to remember, a margin
             // would walk it out of reach one turn and back into it the next.
             let margin = if heals { ROTATE_DANGER_MARGIN } else { 0 };
-            // `doomed-blow-veto`: a unit with no blow it would survive is
-            // exposed by definition — the alternative is the ladder's attack.
-            let exposed = here > f64::from(unit.hp - margin) || doomed.contains(&uid);
+            let exposed = here > f64::from(unit.hp - margin);
+            // `doomed-blow-veto`: a unit with no blow it would survive that is
+            // neither wounded nor exposed where it stands holds that ground
+            // and fortifies — the ladder's attack is the one thing denied it;
+            // one that is also exposed rotates like any other.
+            if doomed.contains(&uid) && !(wounded || exposed) {
+                self.base.fortify_or_stop(g, pid, uid);
+                self.battle_planner_ordered.insert(uid);
+                if let Some(now) = g.units.get(&uid) {
+                    think!(self.journal(), Military, Decision,
+                        "Battle plan: the {} at {:?} holds rather than strike", now.kind, now.pos;
+                        "{} hp, danger {here:.0} where it stands; every blow it has would leave it dead next turn",
+                        now.hp);
+                }
+                continue;
+            }
             if !(wounded || exposed) {
                 continue;
             }
@@ -3579,8 +3595,9 @@ mod tests {
     }
 
     /// Played: with the gene off the doomed warrior is left to the ladder —
-    /// the plan orders nothing for it; with the gene on it is the rotation's,
-    /// steps to a tile out of reach and fortifies, and the archer is untouched.
+    /// the plan orders nothing for it; with the gene on, safe where it stands,
+    /// it holds its ground and fortifies and the archer is untouched; wounded
+    /// as well, it is the rotation's and steps out of reach.
     #[test]
     fn with_the_veto_the_doomed_unit_is_rotated_instead_of_left_to_attack() {
         let mut g = open_field();
@@ -3603,14 +3620,19 @@ mod tests {
         assert_eq!(ai.census.battle_plan_doomed, 1);
         assert!(ai.battle_planner_ordered.contains(&ours), "on, the plan's");
         let now = &g.units[&ours];
-        assert_ne!(now.pos, at(10, 4), "it stepped out of reach");
-        assert!(now.fortified);
-        assert!(
-            danger(&off_board, 0, now.pos, ours) <= NO_DANGER,
-            "to a tile the field read as out of reach"
-        );
-        assert_eq!(ai.census.battle_plan_rotations, 1);
+        assert_eq!(now.pos, at(10, 4), "safe where it stands, it holds its ground");
+        assert!(now.fortified, "and fortifies");
+        assert_eq!(ai.census.battle_plan_rotations, 0);
         assert!(g.units.contains_key(&archer), "and struck nothing");
-        assert!(ai.battle_planner_recovering.contains(&ours));
+        assert!(!ai.battle_planner_recovering.contains(&ours), "not a recovery");
+        // Wounded as well, the same unit is the rotation's and steps out of reach.
+        let mut g2 = off_board.clone();
+        wound(&mut g2, ours, 40);
+        let mut hurt = version_two();
+        hurt.enable_doomed_blow_veto();
+        hurt.plan_battle(&mut g2, 0, &plan);
+        assert!(hurt.battle_planner_ordered.contains(&ours));
+        assert_ne!(g2.units[&ours].pos, at(10, 4), "wounded, it steps out of reach");
+        assert!(hurt.battle_planner_recovering.contains(&ours));
     }
 }
