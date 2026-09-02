@@ -1,6 +1,19 @@
 //! `chase-every-boost`: one opt-in gene that hunts Eurekas AND Inspirations
 //! everywhere the planner already decides something a boost trigger names.
 //!
+//! Version one is deliberately the broad historical control described below.
+//! It expands every trigger into the chase table and lets the resulting
+//! research value influence beelines, queue items, Builder work, and clean
+//! kills. That breadth made stale or irrelevant future boosts compete with
+//! current plans.
+//!
+//! `chase-every-boost-2` keeps only a narrow, cashable slice: a city may break
+//! a close production tie for the *final* unit, building, or district trigger
+//! of the technology or civic already under study. The city must finish before
+//! the study itself, and another city already queued to finish the same trigger
+//! suppresses the premium. Version two does not alter research selection,
+//! Builder work, or combat; v1 remains available as the family control.
+//!
 //! Measured on the live King/Emperor ladder (ledger runs of 2026-08-30 to
 //! 2026-09-01, 32 runs past turn 100): of the technologies the seat
 //! researched, **13–40 % had been boosted**; of the civics it adopted,
@@ -100,6 +113,17 @@ pub(super) const CHASE_ONE_STEP_FRACTION: f64 = 0.5;
 /// against a flat 28 for a boost in hand) and measured slightly negative;
 /// two turns keeps the permission worth less than the boost it opens.
 pub(super) const CHASE_UNLOCK_TURNS_CAP: f64 = 2.0;
+/// `chase-every-boost-2`: a cashable final trigger is a production tiebreak,
+/// not a second strategic objective. The raw queue scale is hundreds to low
+/// thousands, so half a raw point per granted research point is enough to
+/// distinguish close local choices without displacing a Settler, district, or
+/// urgent defender on the boost alone.
+pub(super) const CHASE_V2_PRODUCTION_VALUE_PER_POINT: f64 = 0.5;
+/// The absolute ceiling on version two's one-item production tiebreak.
+pub(super) const CHASE_V2_PRODUCTION_VALUE_CAP: f64 = 50.0;
+/// The same tiebreak may never exceed one quarter of the item's ordinary raw
+/// score; the ordinary city plan remains the reason to build it.
+pub(super) const CHASE_V2_PRODUCTION_RAW_FRACTION: f64 = 0.25;
 
 impl AdvancedAi {
     /// The open chase for `node`, if its boost is still earnable.
@@ -196,7 +220,8 @@ impl AdvancedAi {
 
     /// The production premium `production_value` adds for `item` in city
     /// `cid`: the old `eureka-chasing-production` rate when only that gene is
-    /// on, this gene's chase-aware version when it is on. Zero with both off.
+    /// on, v1's broad chase-aware version when it is on, or v2's active-study
+    /// final-trigger tiebreak. Zero with all three genes off.
     pub(super) fn production_boost_premium(
         &self,
         g: &Game,
@@ -208,6 +233,9 @@ impl AdvancedAi {
         if self.chase_every_boost {
             self.chase_production_premium(g, pid, cid, item)
                 .min(raw.max(0.0) * CHASE_PRODUCTION_RAW_FRACTION)
+        } else if self.chase_every_boost_2 {
+            self.chase_current_production_premium(g, pid, cid, item)
+                .min(raw.max(0.0) * CHASE_V2_PRODUCTION_RAW_FRACTION)
         } else {
             self.eureka_production_premium(g, pid, item)
         }
@@ -247,6 +275,106 @@ impl AdvancedAi {
             Item::Wonder { .. } => "wonders".to_string(),
             _ => return None,
         })
+    }
+
+    /// The deliberately smaller item surface that version two may price.
+    /// Wonders remain a v1-only global chase: their shared trigger is too
+    /// broad for a city-local, already-active-study tiebreak.
+    fn v2_item_trigger_key(g: &Game, item: &Item) -> Option<String> {
+        match item {
+            Item::Unit { .. } | Item::Building { .. } | Item::District { .. } => {
+                Self::item_trigger_key(g, item)
+            }
+            _ => None,
+        }
+    }
+
+    /// The final remaining production trigger for one active study, together
+    /// with its research payout and the time before that study completes.
+    /// This deliberately reads the engine's progress predicate directly,
+    /// rather than expanding the whole v1 chase table.
+    fn active_study_production_trigger(
+        &self,
+        g: &Game,
+        pid: usize,
+        node: &str,
+        techs: bool,
+    ) -> Option<(String, f64, f64)> {
+        let player = &g.players[pid];
+        let (boost, progress, cost, base_cost) = if techs {
+            let spec = g.rules.techs.get(node)?;
+            (
+                spec.boost.as_ref()?,
+                player.research_progress,
+                g.tech_cost(node),
+                spec.cost,
+            )
+        } else {
+            let spec = g.rules.civics.get(node)?;
+            (
+                spec.boost.as_ref()?,
+                player.civic_progress,
+                g.civic_cost(node),
+                spec.cost,
+            )
+        };
+        if Self::boost_in_hand(g, pid, node, techs) {
+            return None;
+        }
+        let (have, need) = g.boost_progress(pid, boost);
+        if need.saturating_sub(have) != 1 {
+            return None;
+        }
+        let study_left = (cost - progress).max(0.0);
+        if study_left <= 0.0 {
+            return None;
+        }
+        let payout = g.game_speed.scale(base_cost) * boost.percent.unwrap_or(40.0) / 100.0;
+        let study_turns = study_left / Self::research_rate(g, pid, techs);
+        Some((boost.trigger.clone(), payout, study_turns))
+    }
+
+    /// `chase-every-boost-2`: reward only a current study's final city
+    /// production trigger, and only if this city can complete it before the
+    /// study. A matching front-of-queue item elsewhere has already claimed
+    /// the one remaining step, so this city receives no duplicate premium.
+    pub(super) fn chase_current_production_premium(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> f64 {
+        if !self.chase_every_boost_2 {
+            return 0.0;
+        }
+        let Some(key) = Self::v2_item_trigger_key(g, item) else {
+            return 0.0;
+        };
+        let claimed_elsewhere = g.cities.values().any(|city| {
+            city.owner == pid
+                && city.id != cid
+                && city.queue.first().is_some_and(|queued| {
+                    Self::v2_item_trigger_key(g, queued).as_deref() == Some(key.as_str())
+                })
+        });
+        if claimed_elsewhere {
+            return 0.0;
+        }
+        let production = g.city_yields(cid).production.max(1.0);
+        let build_turns = g.item_remaining_cost_for_city(pid, cid, item) / production;
+        let active = [
+            (g.players[pid].research.as_deref(), true),
+            (g.players[pid].civic.as_deref(), false),
+        ];
+        let payout: f64 = active
+            .into_iter()
+            .filter_map(|(node, techs)| node.map(|node| (node, techs)))
+            .filter_map(|(node, techs)| self.active_study_production_trigger(g, pid, node, techs))
+            .filter(|(trigger, _, study_turns)| trigger == &key && build_turns <= *study_turns)
+            .map(|(_, payout, _)| payout)
+            .sum();
+        (payout * CHASE_V2_PRODUCTION_VALUE_PER_POINT).min(CHASE_V2_PRODUCTION_VALUE_CAP)
     }
 
     /// What `item` is worth toward open chases, less what the rest of the
@@ -333,8 +461,9 @@ mod tests {
     use crate::name;
 
     #[test]
-    fn chase_every_boost_is_a_native_opt_in_off_in_both_controllers() {
+    fn chase_every_boost_versions_are_native_opt_in_off_in_both_controllers() {
         opt_in_off_in_both_controllers("chase-every-boost", |ai| ai.chase_every_boost);
+        opt_in_off_in_both_controllers("chase-every-boost-2", |ai| ai.chase_every_boost_2);
     }
 
     /// One founded capital and nothing else on the board.
@@ -378,6 +507,32 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_chase_every_boost();
         ai
+    }
+
+    fn armed_v2() -> AdvancedAi {
+        let mut ai = AdvancedAi::new();
+        ai.enable_chase_every_boost_2();
+        ai
+    }
+
+    #[test]
+    fn chase_every_boost_versions_ship_off_and_are_mutually_exclusive() {
+        let mut ai = AdvancedAi::new();
+        assert!(!ai.chase_every_boost, "the broad control ships off");
+        assert!(!ai.chase_every_boost_2, "the selective successor ships off");
+
+        ai.enable_chase_every_boost();
+        assert!(ai.chase_every_boost);
+        assert!(!ai.chase_every_boost_2);
+        ai.enable_chase_every_boost_2();
+        assert!(!ai.chase_every_boost, "one family version plays");
+        assert!(ai.chase_every_boost_2);
+        ai.enable_chase_every_boost();
+        assert!(ai.chase_every_boost);
+        assert!(
+            !ai.chase_every_boost_2,
+            "version one also selects its family"
+        );
     }
 
     fn spec(game: &Game, node: &str, techs: bool) -> crate::rules::BoostSpec {
@@ -618,6 +773,76 @@ mod tests {
         assert!(
             one_left > two_left,
             "{one_left} > {two_left}: the further step is discounted"
+        );
+    }
+
+    #[test]
+    fn chase_every_boost_v2_only_prices_a_timely_active_final_city_trigger() {
+        let mut game = capital_board(57_014);
+        let cid = game.player_city_ids(0)[0];
+        let encampment = Item::District {
+            district: name!("encampment"),
+            pos: game.cities[&cid].pos,
+        };
+        // Military Training needs precisely one Encampment. It is the civic
+        // under study, and the small capital finishes the district well before
+        // the slow early-culture study completes.
+        game.players[0].civic = Some("military_training".to_string());
+        game.players[0].civic_progress = 0.0;
+        let ai = armed_v2();
+        let premium = ai.chase_current_production_premium(&game, 0, cid, &encampment);
+        assert!(
+            premium > 0.0,
+            "the concrete final step earns its active civic"
+        );
+        assert!(
+            (ai.production_boost_premium(&game, 0, cid, &encampment, 1_000.0) - premium).abs()
+                < 1e-9,
+            "the production path uses version two's narrow tiebreak"
+        );
+
+        // V2 does not acquire v1's global research ordering hook, even for a
+        // banked boost, and a future or unrelated civic earns no city premium.
+        let masonry = game.rules.techs["masonry"].cost;
+        game.players[0].boosted_techs.insert(name!("masonry"));
+        assert_eq!(ai.beeline_step_cost(&game, 0, "masonry", true), masonry);
+        game.players[0].civic = Some("craftsmanship".to_string());
+        assert_eq!(
+            ai.chase_current_production_premium(&game, 0, cid, &encampment),
+            0.0,
+            "a future Military Training trigger cannot buy an Encampment"
+        );
+
+        // A study that will finish first cannot cash the later build, and a
+        // front queue in another city has already claimed the one remaining
+        // trigger step.
+        game.players[0].civic = Some("military_training".to_string());
+        game.players[0].civic_progress = game.civic_cost("military_training") - 0.25;
+        assert_eq!(
+            ai.chase_current_production_premium(&game, 0, cid, &encampment),
+            0.0,
+            "a boost after its study finishes is worthless"
+        );
+        game.players[0].civic_progress = 0.0;
+        let wonder = Item::Wonder {
+            wonder: name!("pyramids"),
+            pos: game.cities[&cid].pos,
+        };
+        assert_eq!(
+            ai.chase_current_production_premium(&game, 0, cid, &wonder),
+            0.0,
+            "version two keeps broad wonder chasing in the v1 control"
+        );
+        let other = second_city(&mut game);
+        game.cities
+            .get_mut(&other)
+            .expect("the second city exists")
+            .queue
+            .push(encampment.clone());
+        assert_eq!(
+            ai.chase_current_production_premium(&game, 0, cid, &encampment),
+            0.0,
+            "another city already owns the final trigger"
         );
     }
 
