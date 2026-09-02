@@ -1181,10 +1181,6 @@ RANKING_HEADING = [
     "- Estimated probability that this gene is beneficial to our performance",
     "- (3 cols) win rate from the last tournament / prior tournament / tournament "
     "prior to that, scaled to n=10k total seats (n=actual number of seats listed too)",
-    "- Δ techs@150: research pace from the last tournament — techs known by the "
-    "Standard-turn-150 mark (turn 99 on the screen's Online clock), seats with the gene "
-    "on minus seats with it off, with its clustered z; blank when that tournament was "
-    "played before the screen recorded it. Evidence beside the sort key, not part of it",
     "- Total recorded win rate when gene is on",
     "- Total recorded win rate when gene is off",
     "- [Sort key] Difference between the previous 2 cols",
@@ -2807,17 +2803,6 @@ def reporting_batch_cell(batch: dict | None, tag: str) -> str:
     return f"{total_seat_batch_wins(batch['rows'][tag]):+d}"
 
 
-#: ⭐ THE SCIENCE-PACE COLUMN (2026-09-01), one column immediately after the
-#: three batch columns: the LAST batch's on−off Δ of techs known at the
-#: Standard-turn-150 mark (`gene_screen`'s `SCIENCE_PACE_STANDARD_TURN`, turn
-#: 99 on the screen's Online clock), with its clustered z. The screen prices
-#: every gene by win share in a game that 52% of the time ends on score at the
-#: clock, where research speed is invisible; this is the research-speed read
-#: beside it. It is evidence beside the sort key and the batch rule, never an
-#: input to either. Blank for a batch played before the screen recorded it.
-SCIENCE_PACE_COLUMN = "Δ techs@150 (last batch)"
-
-
 def science_pace_of(gene: dict) -> dict | None:
     """One source's `science_pace` block for a gene, or None when absent.
 
@@ -2835,16 +2820,6 @@ def science_pace_of(gene: dict) -> dict | None:
         "n_on": int(pace.get("n_on") or 0),
         "n_off": int(pace.get("n_off") or 0),
     }
-
-
-def science_pace_cell(batch: dict | None, tag: str) -> str:
-    """`+1.23 (z +2.47)`, or an en dash when the batch cannot say."""
-    if batch is None or tag not in batch["rows"]:
-        return EN_DASH
-    pace = batch["rows"][tag].get("science_pace")
-    if not pace:
-        return EN_DASH
-    return f"{pace['diff']:+.2f} (z {pace['z']:+.2f})"
 
 
 def reporting_batch_header(label: str, batch: dict | None) -> str:
@@ -3455,12 +3430,7 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's "
         "excess over that chance rate, scaled from actual completed seats; they do not invent "
         "games or seats. The independent latest batch can have unequal on/off arms, which is "
-        "why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row. "
-        "*Δ techs@150 (last batch)* is the newest batch's research-pace contrast — techs known "
-        "by the Standard-turn-150 mark (turn 99 on the screen's Online clock), seats-on minus "
-        "seats-off with its clustered z — printed as evidence beside the sort key; it enters "
-        "neither the sort nor the batch rule, and stays blank until a batch played by a screen "
-        "that records `techs_150` enters.",
+        "why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row.",
         "",
         batch_provenance,
         "",
@@ -3532,10 +3502,9 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             reporting_batch_header(label, batch)
             for label, batch in zip(REPORTING_BATCH_LABELS, reporting_slots)
         )
-        + f" | {SCIENCE_PACE_COLUMN}"
         + " | Total (on) Win rate | Total (off) Win rate | Diff | "
         "cost (compute) | cost (time) |",
-        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (_diff, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
@@ -3559,7 +3528,6 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | "
             f"{best_version_cell(tag, tags, verdict, measured)} | {default} | "
             f"{probability_cell(posterior)} | {last} | {prior} | {third} | "
-            f"{science_pace_cell(reporting_slots[0], tag)} | "
             f"{on_cell} | "
             f"{off_cell} | "
             f"{diff_cell(history)} | "
