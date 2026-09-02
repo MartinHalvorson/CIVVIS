@@ -43329,17 +43329,32 @@ fn a_settler_prices_the_raider_it_saw_and_the_owner_that_is_not_a_barbarian() {
     let watched = game.spawn_test_unit("warrior", 1, seen_at);
     remembering.observe_turn_start_hostiles(&game, 0);
     assert_eq!(
-        remembering.hostile_last_seen.get(&watched),
-        Some(&(seen_at, game.turn)),
+        remembering.hostile_last_seen.get(&(watched as i64)),
+        Some(&super::RememberedHostile {
+            pos: seen_at,
+            when: game.turn,
+            owner: 1,
+            kind: crate::name!("warrior"),
+        }),
         "the turn-start observation records what the seat could see, and where"
     );
     game.remove_unit(watched);
+    // The rest of this fixture uses a separate remembered identity to test
+    // the projection window; do not let the observed unit we removed above
+    // provide an additional recent threat.
+    remembering.hostile_last_seen.remove(&(watched as i64));
 
     // Now the remembered fact, one turn old, standing in for the unit that
     // walked out of sight: the tile the settler is on is still priced.
-    remembering
-        .hostile_last_seen
-        .insert(raider, (seen_at, game.turn - 1));
+    remembering.hostile_last_seen.insert(
+        raider as i64,
+        super::RememberedHostile {
+            pos: seen_at,
+            when: game.turn - 1,
+            owner: 1,
+            kind: crate::name!("warrior"),
+        },
+    );
     assert!(
         remembering
             .barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS)
@@ -43356,11 +43371,13 @@ fn a_settler_prices_the_raider_it_saw_and_the_owner_that_is_not_a_barbarian() {
     // The window closes. A sighting older than `HOSTILE_MEMORY_TURNS` is a
     // rumour, not a threat: by then the settler has usually walked past it.
     remembering.hostile_last_seen.insert(
-        raider,
-        (
-            seen_at,
-            game.turn - civilian_safety::HOSTILE_MEMORY_TURNS - 1,
-        ),
+        raider as i64,
+        super::RememberedHostile {
+            pos: seen_at,
+            when: game.turn - civilian_safety::HOSTILE_MEMORY_TURNS - 1,
+            owner: 1,
+            kind: crate::name!("warrior"),
+        },
     );
     assert!(
         !remembering
@@ -43393,6 +43410,54 @@ fn a_settler_prices_the_raider_it_saw_and_the_owner_that_is_not_a_barbarian() {
     );
     let _ = neighbour;
     let _ = settler;
+}
+
+/// The live mirror rebuilds its foreign roster from visible-only `hostiles[]`.
+/// A barbarian revealed in one frame must therefore remain a capture threat
+/// even when the next frame contains no hostile unit at all; otherwise the
+/// Settler planner walks into the fogged unit's old reach.
+#[test]
+fn live_capture_lessons_remember_a_hostile_after_the_visible_export_drops_it() {
+    let (mut game, _city, home) = barbarian_field(71_702);
+    game.turn = 20;
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let seen_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("open ground beside the Settler");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let raider = game.spawn_test_unit("warrior", 1, seen_at);
+    let civ6_raider_id = 71_702_001;
+    std::sync::Arc::make_mut(&mut game.host_unit_facts).insert(
+        raider,
+        crate::game::HostUnitFacts {
+            civ6_id: Some(civ6_raider_id),
+            ..Default::default()
+        },
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.live_settler_capture_lessons);
+    live.observe_turn_start_hostiles(&game, 0);
+    assert!(
+        live.hostile_last_seen.contains_key(&civ6_raider_id),
+        "the live observation must use the stable Civ 6 id"
+    );
+
+    // This is the next fresh-board export: the hostile is in fog and is not
+    // planted in `Game` at all. The remembered record still covers the
+    // Settler's tile, while the exact current-frame path sees nothing.
+    game.remove_unit(raider);
+    game.turn += 1;
+    let reach = live.barbarian_reach(&game, 0, start, civilian_safety::REACH_SCAN_RADIUS);
+    assert!(reach.covers(&game, start));
+    assert_eq!(game.player_unit_ids(0), vec![settler]);
 }
 
 /// `escort-cap-holds`: the two-turn escort cap releases on schedule instead of
