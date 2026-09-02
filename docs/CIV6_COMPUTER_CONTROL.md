@@ -665,12 +665,12 @@ prophets are retired, never deleted).
 
 See `docs/CIV6_LADDER.md` for the current standing.
 
-### Every game is played out; under 60 % of the leader after turn 150 is the one exception
+### A verification game is called after turn 50 when it is more than half behind
 
-The current operator policy is to play full verification games, with only one
-late-game exception: abandon at or after turn 150 when the score is under 60 %
-of the leader's. Earlier policies had four early stops that ended most King
-games before the game could: the
+The current operator policy is to call a verification game on any readable
+agent turn after turn 50 when its score is strictly below 50 % of the leader's.
+Exactly half of the leader's score remains in play. Earlier policies had four
+early stops that ended most King games before the game could: the
 three-cities-by-turn-32 and second-settler-captured opening restarts (#2505),
 the score-science-culture deficit restart (#2319 — its former 0.70 default lived in
 the supervisor and was on even where the login shell unset it) and the
@@ -678,22 +678,19 @@ measured win-rate floor behind `--abandon-below-win-rate` (#2174, off). Of 81
 King games, 73 ended that way. All four are gone.
 
 What remains is one rule, carried by `civ6_play.py` itself as a default
-(`--restart-below-leader-ratio 0.60`; the supervisor and the climb forward
+(`--restart-below-leader-ratio 0.50`; the supervisor and the climb forward
 `CIVVIS_RESTART_BELOW_LEADER_RATIO` verbatim when it is set, and `0` plays
-every game out): at or after turn 150, a score under 60 % of the leader's for
-any readable agent turn immediately abandons the game. Explicitly targeted
-Science runs are the deliberate exception: their score can trail while
-Rocketry, Spaceports, and launch projects are converting research into the
-victory condition, so a score gap is not evidence that the lane is lost. They
-finish on an actual victory/defeat or the turn limit. "The leader" is the
-best-scoring rival the seat has met — `rival_best` in the mod's turn record —
-so a rival still unmet at turn 150 is invisible to the rule, which errs toward
-playing on. A turn without a standing is not a termination reading. An
+every game out): after turn 50, a score strictly under half of the leader's for
+any readable agent turn immediately abandons the game. The policy applies to
+every victory target, including Science. "The leader" is the best-scoring rival
+the seat has met — `rival_best` in the mod's turn record — so a rival still
+unmet at turn 51 is invisible to the rule, which errs toward playing on. A turn
+without a standing is not a termination reading. An
 abandoned run is filed with `reason: "abandoned"` and the verdict (`rule:
 below_leader_score`, turn, standing, ratio, line) in its summary and ledger row
 — its own ending, never a stall, a wedge or a defeat. The replay census reads
-`victory_target` from that summary so its counterfactual restart report uses
-the same Science exception as the live harness.
+the harness's own score rule so its counterfactual restart report agrees with
+the live run.
 
 ### The run always tests the latest code
 
