@@ -1874,6 +1874,17 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
     Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
     Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
+    // `commitment-owner-acts` (operator, 2026-08-27, "decisions are slow to
+    // be carried out or forgotten"; 2026-09-01): the commitment ledger's
+    // largest open class at the deployment genome is the owner that skips its
+    // turn — a settle or improve decision open, the unit alive with movement,
+    // and no order issued. After the unit pass, every such owner gets the
+    // commitment's own next step (found, improve, or the route step toward the
+    // target when no hostile can reach it) or the decision is released with a
+    // recorded reason — an illegal step, or a tile inside a hostile's reach,
+    // where the civilian-safety flee keeps priority. Appended at the END so a
+    // running screen keeps its positional genome. See `docs/COMMITMENTS.md` §8.
+    Gene { tag: "commitment-owner-acts", field: "commitment_owner_acts", kind: Kind::OptIn, enable: AdvancedAi::enable_commitment_owner_acts, disable: AdvancedAi::disable_commitment_owner_acts },
     // Appended at the END, above the markers, so a running screen keeps its
     // positional genome. The 2026-09-01 Emperor foundations: the Campus
     // through the Expansion plan, the trade network, the Industrial chain.
@@ -1924,6 +1935,13 @@ pub const GENES: &[Gene] = &[
     // on the top of the roll, remembers raiders in the fog, and screens shooters.
     // See `advanced/wounded_out_of_reach.rs`.
     Gene { tag: "wounded-out-of-reach", field: "wounded_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach, disable: AdvancedAi::disable_wounded_out_of_reach },
+
+    // Forensic of 2026-09-01 over the 08-31 King and 09-01 Emperor live runs
+    // (`advanced/settler_walk_deadline.rs`): with every host-only expansion
+    // gene live the seat builds its Settlers on schedule and they do not
+    // convert — walks of 13–15 turns, a third of Emperor Settlers taken —
+    // so a walker past twelve turns founds the best site within reach.
+    Gene { tag: "settler-walk-deadline", field: "settler_walk_deadline", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_deadline, disable: AdvancedAi::disable_settler_walk_deadline },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

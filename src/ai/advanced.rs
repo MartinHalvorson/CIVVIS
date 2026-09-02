@@ -2155,6 +2155,10 @@ pub struct AdvancedAi {
     /// `settle_sooner` can price how long it has already been out of a city
     /// when it picks (or re-picks) a site. See `best_reachable_settle_site_except_cached`.
     settler_walk_started: BTreeMap<u32, u32>,
+    /// Each Settler's walk for `settler-walk-deadline`: (turn the walk
+    /// began, turn last noted, turns spent out of a city). See
+    /// `advanced/settler_walk_deadline.rs`.
+    settler_walk_clock: BTreeMap<u32, (u32, u32, u32)>,
     /// Where each Settler stood and for how many turns, for the
     /// `settler-never-idles` watchdog: (tile, turn last noted, streak). See
     /// `advanced/settler_never_idles.rs`.
@@ -4768,6 +4772,13 @@ pub struct AdvancedAi {
     /// `commitments::COMMITMENT_PATIENCE` consecutive forgotten turns, parking
     /// the site. Opt-in gene; see `advanced/commitments.rs`.
     commitment_patience: bool,
+    /// `commitment-owner-acts`: after the unit pass, every open settle or
+    /// improve commitment whose owner still has movement and received no
+    /// order gets the commitment's own next step — found, improve, or the
+    /// route step toward the target when it is safe — or is released with a
+    /// recorded reason when that step is illegal or the owner stands inside
+    /// a hostile's reach. Opt-in gene; see `advanced/commitments.rs`.
+    commitment_owner_acts: bool,
     /// `capture-go-or-stand-down`: a declared war's objective that no unit of
     /// ours has been within `commitments::CAPTURE_PRESENCE_RADIUS` of for
     /// `commitments::CAPTURE_GO_TURNS` consecutive turns is stood down
@@ -5650,6 +5661,11 @@ pub struct AdvancedAi {
     /// window closes. Opt-in gene `science-expansion-phase`; the timing
     /// argument is on the constant.
     science_expansion_phase: bool,
+    /// A Settler out of a city past `SETTLER_WALK_DEADLINE_STANDARD` founds
+    /// the best legal site within reach instead of chasing a ranked one.
+    /// Opt-in gene `settler-walk-deadline`; the forensic that motivates it is
+    /// on `advanced/settler_walk_deadline.rs`.
+    settler_walk_deadline: bool,
     /// `science-opening-band`: the assigned Science lane keeps the
     /// expansion-first posture until `SCIENCE_OPENING_BAND_CITY_TARGET`
     /// cities or `SCIENCE_OPENING_BAND_STANDARD_TURNS`, instead of the
@@ -6470,6 +6486,9 @@ mod settler_site_gate;
 /// A Settler is never sent to a site not worth the walk. One opt-in gene;
 /// see `advanced/settler_target_floor.rs`.
 mod settler_target_floor;
+/// An opening Settler that has walked too long founds within reach. One
+/// opt-in gene; see `advanced/settler_walk_deadline.rs`.
+mod settler_walk_deadline;
 /// A barbarian ring on a city's doorstep is answered before anything else
 /// is built, and a Settler's guard cuts down the raider pinning it. Two
 /// genes; see `advanced/siege_response.rs`.
@@ -6802,6 +6821,7 @@ impl AdvancedAi {
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
         self.settler_walk_started.clear();
+        self.settler_walk_clock.clear();
         self.settler_idle_streak.clear();
         self.settler_stranded_at.clear();
         self.settler_relaxed_targets.clear();
@@ -6913,6 +6933,11 @@ impl AdvancedAi {
             .settler_walk_started
             .iter()
             .filter_map(|(uid, started)| map.get(uid).map(|new| (*new, *started)))
+            .collect();
+        self.settler_walk_clock = self
+            .settler_walk_clock
+            .iter()
+            .filter_map(|(uid, clock)| map.get(uid).map(|new| (*new, *clock)))
             .collect();
         self.settler_idle_streak = self
             .settler_idle_streak
@@ -7033,6 +7058,7 @@ impl AdvancedAi {
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             settler_walk_started: BTreeMap::new(),
+            settler_walk_clock: BTreeMap::new(),
             settler_idle_streak: BTreeMap::new(),
             settler_stranded_at: BTreeMap::new(),
             settler_relaxed_targets: BTreeMap::new(),
@@ -7184,6 +7210,7 @@ impl AdvancedAi {
             cheapest_wonder_first: false,
             connect_the_luxury: false,
             commitment_patience: false,
+            commitment_owner_acts: false,
             capture_go_or_stand_down: false,
             capture_stood_down: BTreeMap::new(),
             capture_go_or_stand_down_2: false,
@@ -7295,6 +7322,7 @@ impl AdvancedAi {
             settler_site_gate: false,
             settler_target_floor: false,
             science_expansion_phase: false,
+            settler_walk_deadline: false,
             science_opening_band: false,
             settler_backlog_brake: false,
             settler_last_seen: BTreeMap::new(),
@@ -29941,6 +29969,13 @@ impl AdvancedAi {
             }
             return false;
         }
+        // See `settler_walk_deadline`: a walker past its deadline founds the
+        // best legal site within reach before the target search runs.
+        if self.settler_walk_deadline {
+            if let Some(acted) = self.settler_walk_deadline_step(g, pid, uid) {
+                return acted;
+            }
+        }
         let visible = self.battlefront_visibility(g, pid);
         // The checks in dropping order, each with a name. Run 212725Z spent
         // t224-t248 with FOUR settlers orbiting one site — "sets (22, 21)
@@ -37008,6 +37043,8 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_walk_started
             .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_walk_clock
+            .retain(|uid, _| g.units.contains_key(uid));
         self.settler_idle_streak
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_stranded_at
@@ -38003,6 +38040,11 @@ impl AdvancedAi {
             BasicAi::upgrade_units(g, pid);
         }
         self.advanced_units(g, pid, &plan);
+        // `commitment-owner-acts`: the owners the unit pass left standing with
+        // movement and an open decision act on it now, or the decision is
+        // released with its reason. Exact no-op while the gene is off. See
+        // `advanced/commitments.rs`.
+        self.commitment_owners_act(g, pid);
         // A capture can end the appointment during movement. Re-read it now,
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
