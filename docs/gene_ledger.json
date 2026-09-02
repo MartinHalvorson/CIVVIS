@@ -1577,6 +1577,15 @@
           "boost-wait-research-2": null
         }
       },
+      "boosted-bargain-first": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "boosted-bargain-first": null,
+          "boosted-bargain-first-2": null
+        }
+      },
       "border-parity": {
         "rule_on": [],
         "head": null,
