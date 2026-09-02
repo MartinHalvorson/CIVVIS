@@ -6042,6 +6042,11 @@ pub struct AdvancedAi {
     /// (empire of three cities or more). See `BasicAi::settler_backlog_brake`
     /// and `settler_in_flight_allowed`.
     settler_backlog_brake: bool,
+    /// Version two keeps V1's idle census and full stop, but only once the
+    /// empire holds six cities. Three-to-five-city growth retains the
+    /// ordinary pipeline. Implies neither V1 branch; one family version
+    /// plays. Opt-in `settler-backlog-brake-2`.
+    settler_backlog_brake_2: bool,
     /// Where each settler stood when it was last stepped, so a settler that
     /// leaves the board can be told from one that founded. Recorded only
     /// under `live_settler_capture_lessons`.
@@ -7784,6 +7789,7 @@ impl AdvancedAi {
             settler_walk_deadline: false,
             science_opening_band: false,
             settler_backlog_brake: false,
+            settler_backlog_brake_2: false,
             settler_last_seen: BTreeMap::new(),
             summoned_guard_turn: BTreeMap::new(),
             settler_vanished: Vec::new(),
@@ -25437,11 +25443,11 @@ impl AdvancedAi {
         }
     }
 
-    /// `settler_in_flight_allowed` under `settler-backlog-brake`: a Settler
-    /// that has stood on one tile for `SETTLER_BACKLOG_IDLE_TURNS` turns
-    /// closes the pipeline until it moves or founds — every width the search
-    /// below grants is what a walker earns, and a parked Settler is not
-    /// walking. The opening is untouched. Every production caller asks here.
+    /// The ordinary pipeline under the `settler-backlog-brake` family.
+    ///
+    /// V1 lets one Settler parked six turns close every slot from three cities
+    /// onward. V2 preserves that full stop only from six cities onward, after
+    /// the high-leverage first growth wave. Every production caller asks here.
     fn settler_pipeline_width(
         &self,
         g: &Game,
@@ -25459,7 +25465,17 @@ impl AdvancedAi {
         {
             return 0;
         }
-        self.settler_in_flight_allowed(g, desired_cities, city_count, settlers)
+        let width = self.settler_in_flight_allowed(g, desired_cities, city_count, settlers);
+        if self.settler_backlog_brake_2
+            && city_count >= BasicAi::SETTLER_BACKLOG_V2_MIN_CITIES
+            && self
+                .base
+                .parked_settlers(g, pid, BasicAi::SETTLER_BACKLOG_IDLE_TURNS)
+                > 0
+        {
+            return 0;
+        }
+        width
     }
 
     fn settler_in_flight_allowed(

@@ -2654,6 +2654,59 @@ fn a_parked_settler_closes_the_pipeline_under_the_brake() {
     );
 }
 
+/// V2 preserves V1's full stop after six cities while removing the veto from
+/// the high-leverage three-to-five-city growth wave.
+#[test]
+fn settler_backlog_v2_waits_for_a_mature_empire() {
+    let mut game = Game::new(2, 24, 16, 71, 250, 0);
+    let mut ai = AdvancedAi::new();
+    ai.enable_land_grab();
+    ai.enable_settler_backlog_brake_2();
+    assert!(!ai.settler_backlog_brake && ai.settler_backlog_brake_2);
+    assert!(!ai.base.settler_backlog_brake && ai.base.settler_backlog_brake_2);
+
+    for turn in 1..=BasicAi::SETTLER_BACKLOG_IDLE_TURNS {
+        game.turn = turn;
+        ai.base.refresh_settler_idle(&game, 0);
+    }
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 3, 1),
+        3,
+        "the patience window leaves the whole pipeline alone"
+    );
+    game.turn = BasicAi::SETTLER_BACKLOG_IDLE_TURNS + 1;
+    ai.base.refresh_settler_idle(&game, 0);
+    assert_eq!(
+        ai.base
+            .parked_settlers(&game, 0, BasicAi::SETTLER_BACKLOG_IDLE_TURNS),
+        1,
+        "fixture: one starting Settler is parked"
+    );
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 3, 1),
+        3,
+        "a parked walker does not end the three-city growth wave"
+    );
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 6, 1),
+        0,
+        "the full brake returns once the empire holds six cities"
+    );
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 2, 1),
+        2,
+        "the opening remains untouched"
+    );
+    ai.enable_settler_backlog_brake();
+    assert!(ai.settler_backlog_brake && !ai.settler_backlog_brake_2);
+    assert!(ai.base.settler_backlog_brake && !ai.base.settler_backlog_brake_2);
+    assert_eq!(
+        ai.settler_pipeline_width(&game, 0, 16, 3, 1),
+        0,
+        "V1 still closes the entire pipeline"
+    );
+}
+
 /// The land grab's pipeline: two walkers from the first city, one more per
 /// three cities, never more than the seats still short. Every default
 /// constructor and the frozen anchor keep the one-at-a-time gate.

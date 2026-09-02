@@ -3425,14 +3425,33 @@ impl AdvancedAi {
     /// Settler has stood on one tile six turns; the same brake on the
     /// `BasicAi` pipeline. See `AdvancedAi::settler_in_flight_allowed`.
     pub fn enable_settler_backlog_brake(&mut self) {
+        self.settler_backlog_brake_2 = false;
         self.settler_backlog_brake = true;
         self.base.settler_backlog_brake = true;
+        self.base.settler_backlog_brake_2 = false;
     }
 
     /// The twin of `enable_settler_backlog_brake`.
     pub fn disable_settler_backlog_brake(&mut self) {
         self.settler_backlog_brake = false;
         self.base.settler_backlog_brake = false;
+    }
+
+    /// Preserve V1's full stop for a mature empire of six or more cities, but
+    /// leave the ordinary pipeline alone during the high-leverage
+    /// three-to-five-city growth wave. Version two of
+    /// `settler-backlog-brake`, so enabling it turns V1 off.
+    pub fn enable_settler_backlog_brake_2(&mut self) {
+        self.settler_backlog_brake = false;
+        self.base.settler_backlog_brake = false;
+        self.settler_backlog_brake_2 = true;
+        self.base.settler_backlog_brake_2 = true;
+    }
+
+    /// The twin of `enable_settler_backlog_brake_2`.
+    pub fn disable_settler_backlog_brake_2(&mut self) {
+        self.settler_backlog_brake_2 = false;
+        self.base.settler_backlog_brake_2 = false;
     }
 
     /// A city grown to its housing (pop + 1 ≥ housing) with no Granary starts
