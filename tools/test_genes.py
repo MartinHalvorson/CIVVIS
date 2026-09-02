@@ -533,10 +533,10 @@ class TheOperatorPins(unittest.TestCase):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         pins = rules["operator_default_on"]
-        expected_pins = set()
+        expected_pins = {"enter-the-prophet-race"}
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 0)
+        self.assertEqual(len(pins), 1)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         self.assertTrue(genome)
@@ -909,24 +909,29 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
 class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
     """The checked-in ledger's selection follows its recorded policy.
 
-    The current reporting-only selection keeps exactly the genes averaging at
-    least +5 wins per 10,000 total seats over their available latest-three
-    batch readings. Both policy forms preserve the one-version-per-family
-    invariant and expose the legacy batch-rule reading as evidence.
+    The current reporting-only selection keeps the genes averaging at least
+    +5 wins per 10,000 total seats over their available latest-three batch
+    readings, plus any explicit operator overrides. Both policy forms preserve
+    the one-version-per-family invariant and expose the legacy batch-rule
+    reading as evidence.
     """
 
-    def test_the_current_selection_is_exactly_the_available_batch_average_rule(self):
+    def test_the_current_selection_is_the_available_batch_average_rule_plus_pins(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         self.assertEqual(rules["deployment_policy"], gene_ledger.RETAINED_DEPLOYMENT_POLICY)
-        self.assertEqual(rules["operator_default_on"], [])
+        self.assertEqual(rules["operator_default_on"], ["enter-the-prophet-race"])
         self.assertEqual(rules["operator_default_off"], [])
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
             batches, gene_ledger.screenable_tags()))
-        self.assertEqual(set(rules["deployment_genome"]), eligible)
+        pins = set(rules["operator_default_on"])
+        self.assertEqual(set(rules["deployment_genome"]), eligible | pins)
         self.assertEqual(len(eligible), 68)
+        self.assertEqual(len(rules["deployment_genome"]), 69)
+        self.assertNotIn("enter-the-prophet-race", eligible)
+        self.assertEqual(rules["batch_decisions"]["enter-the-prophet-race"], "off")
         self.assertNotIn("amenity-project-preemption", eligible)
         self.assertNotIn("amenity-project-preemption-2", eligible)
 
