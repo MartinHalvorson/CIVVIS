@@ -1852,6 +1852,10 @@ impl AdvancedAi {
                 None => force.aimed_at,
             };
             let kind = row.map(|row| row.kind);
+            // Where the group is sent: the row's tile, except that a Defend
+            // that engages is sent at the threat, as the shipped objective
+            // aims a relief at the nearest besieger.
+            let mut group_objective = objective;
             let focus_target = self.force_focus_target(g, pid, &units, &objective_enemies, plan);
             let local_strength_ratio =
                 self.local_strength_ratio(g, pid, &units, &hostile_seats, objective);
@@ -1902,7 +1906,28 @@ impl AdvancedAi {
             } else {
                 match kind {
                     Some(ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
-                        if contact || forcing_focus {
+                        // On an arena nothing stands still (the shipped
+                        // ladder's own exception): the defence engages the
+                        // threat. In a game it holds the city until contact.
+                        if arena || contact || forcing_focus {
+                            let threat = g
+                                .units
+                                .values()
+                                .filter(|unit| {
+                                    hostile_seats.contains(&unit.owner)
+                                        && g.rules.units[unit.kind].class == "military"
+                                        && g.wdist(unit.pos, objective) <= THREAT_RELIEF_RADIUS + 2
+                                        && self.observed(g, pid, &visible, unit)
+                                })
+                                .min_by_key(|unit| {
+                                    (
+                                        g.wdist(unit.pos, objective),
+                                        g.wdist(unit.pos, force_medoid),
+                                        unit.id,
+                                    )
+                                })
+                                .map(|unit| unit.pos);
+                            group_objective = threat.unwrap_or(objective);
                             (ForcePosture::Engage, objective)
                         } else {
                             (ForcePosture::Hold, objective)
@@ -2001,7 +2026,7 @@ impl AdvancedAi {
                 domain: force.domain,
                 units,
                 anchor,
-                objective,
+                objective: group_objective,
                 focus_target,
                 posture,
                 readiness,
@@ -2204,17 +2229,16 @@ mod tests {
             .iter()
             .all(|uid| ours_second.contains(uid)));
         assert!(!force_first.units.is_empty() && !force_second.units.is_empty());
-        // And the projection: one group per force, holding or engaging at
-        // its own city.
+        // And the projection: one group per force, standing at its own city
+        // and holding it or engaging the threat beside it.
         assert_eq!(ai.force_groups.len(), 2);
         for group in &ai.force_groups {
             assert!(matches!(
                 group.posture,
                 ForcePosture::Hold | ForcePosture::Engage
             ));
-            assert!(
-                group.objective == g.cities[&first].pos || group.objective == g.cities[&second].pos
-            );
+            assert!(group.anchor == g.cities[&first].pos || group.anchor == g.cities[&second].pos);
+            assert!(g.wdist(group.objective, group.anchor) <= THREAT_RELIEF_RADIUS + 2);
         }
     }
 
