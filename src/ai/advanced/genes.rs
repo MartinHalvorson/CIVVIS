@@ -1032,6 +1032,10 @@ pub const GENES: &[Gene] = &[
     // later opening turn can improve the choice with new terrain too.
     // Appended at the END so a running screen keeps its positional genome.
     Gene { tag: "opening-warrior-recon", field: "opening_warrior_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon, disable: AdvancedAi::disable_opening_warrior_recon },
+    // Version two pays for only an actual opening escort's fresh vision and
+    // leaves the normal settlement candidate filter intact. It replaces v1
+    // within a seat, so a screen can compare their distinct mechanisms.
+    Gene { tag: "opening-warrior-recon-2", field: "opening_warrior_recon_2", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon_2, disable: AdvancedAi::disable_opening_warrior_recon_2 },
     // A Settler normally has two movement points. After its first actual move,
     // throw away its cached destination and choose the remaining leg from the
     // newly current board without discarding long-lived safety history.

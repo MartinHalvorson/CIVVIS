@@ -1578,6 +1578,15 @@
           "never-an-empty-queue-3": null
         }
       },
+      "opening-warrior-recon": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "opening-warrior-recon": null,
+          "opening-warrior-recon-2": null
+        }
+      },
       "power-the-laboratory": {
         "rule_on": [],
         "head": "power-the-laboratory",

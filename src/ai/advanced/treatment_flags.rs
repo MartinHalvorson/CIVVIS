@@ -2153,11 +2153,27 @@ impl AdvancedAi {
     /// append-point check reads a method line's first identifier.
     pub fn enable_opening_warrior_recon(&mut self) {
         self.opening_warrior_recon = true;
+        self.opening_warrior_recon_2 = false;
     }
 
     /// The twin of `enable_opening_warrior_recon`.
     pub fn disable_opening_warrior_recon(&mut self) {
         self.opening_warrior_recon = false;
+    }
+
+    /// Before the first city, let only a Warrior directly escorting the
+    /// Settler reveal terrain first, then reconsider from the ordinary
+    /// settlement candidates. Opt-in gene `opening-warrior-recon-2`; see
+    /// `advanced/opening_settlement.rs`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_opening_warrior_recon_2(&mut self) {
+        self.opening_warrior_recon = false;
+        self.opening_warrior_recon_2 = true;
+    }
+
+    /// The twin of `enable_opening_warrior_recon_2`.
+    pub fn disable_opening_warrior_recon_2(&mut self) {
+        self.opening_warrior_recon_2 = false;
     }
 
     /// After a Settler's first move, discard only its disposable cached site
