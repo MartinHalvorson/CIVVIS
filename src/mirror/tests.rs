@@ -3376,6 +3376,89 @@ fn live_spies_are_seated_and_the_block_follows_capacity() {
     );
 }
 
+/// A visible city banner is public; an agent assigned there is not.
+#[test]
+fn a_rival_spy_on_a_visible_city_never_crosses_the_live_mirror() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 120,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(4, 4, "TERRAIN_GRASS")],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 120,
+        spy_capacity: Some(2),
+        ..StateSnapshot::default()
+    };
+    state.cities.push(StateCity {
+        id: 1,
+        name: "Roma".to_string(),
+        x: 3,
+        y: 3,
+        pop: 4,
+        ..StateCity::default()
+    });
+    state.units.push(StateUnit {
+        id: 77,
+        kind: "UNIT_SPY".to_string(),
+        x: 3,
+        y: 3,
+        ..StateUnit::default()
+    });
+    state.rivals.push(StateRival {
+        player: 3,
+        civ: "CIVILIZATION_BRAZIL".to_string(),
+        cities: vec![StateCity {
+            id: 9,
+            name: "Curitiba".to_string(),
+            x: 4,
+            y: 4,
+            pop: 6,
+            ..StateCity::default()
+        }],
+        units: vec![StateUnit {
+            id: 88,
+            kind: "UNIT_SPY".to_string(),
+            x: 4,
+            y: 4,
+            ..StateUnit::default()
+        }],
+        ..StateRival::default()
+    });
+    let assert_private = |game: &crate::game::Game| {
+        assert!(
+            game.spies.values().any(|spy| spy.owner == 0),
+            "the local Spy must still reach the espionage layer"
+        );
+        assert!(
+            !game
+                .units
+                .values()
+                .any(|unit| unit.owner != 0 && unit.kind == "spy"),
+            "seeing Curitiba must not reveal Brazil's Spy"
+        );
+        let view = crate::obs::observation_player_view(game, 0);
+        assert!(
+            !view["units"]
+                .as_array()
+                .expect("units array")
+                .iter()
+                .any(|unit| unit["type"] == "spy" && unit["owner"] != 0),
+            "the player view must not retain the secret either"
+        );
+    };
+
+    let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    assert_private(&rebuilt.game);
+
+    let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    assert_private(&mirror.game);
+    state.turn += 1;
+    mirror.sync(&snapshot, &state, 0);
+    assert_private(&mirror.game);
+}
+
 /// ★★★★ A FRESH LIVE SPY OWES NO PROMOTION, so the mission layer is
 /// reachable at all. Civilization VI grants a Spy its first promotion at
 /// level 2; the native rule owes one per level. Seating the host's level

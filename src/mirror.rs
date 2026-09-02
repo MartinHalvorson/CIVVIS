@@ -7604,6 +7604,15 @@ fn apply_host_maintenance(game: &mut crate::game::Game, state: &StateSnapshot) {
     }
 }
 
+/// A rival Spy is not revealed merely because its city tile is visible.
+///
+/// The live exporter reads a rival's engine roster, where hidden spies are
+/// present so their operations can run. Keep this boundary guard as well so a
+/// stale or malformed state file cannot turn tile sight into agent detection.
+fn foreign_spy_is_hidden(owner: usize, name: &str) -> bool {
+    owner != 0 && name == "spy"
+}
+
 /// One seat 0 Spy as `seat_live_spies` reads it off the mirrored unit.
 struct LiveSpySeat {
     id: u32,
@@ -11884,6 +11893,9 @@ pub fn rebuild_from_state(
         let _ = &snapshot;
         let mut name = resolved_civvis_unit_name(&game.rules, &u.kind)
             .unwrap_or_else(|| civvis_unit_name(&u.kind));
+        if foreign_spy_is_hidden(owner, &name) {
+            return None;
+        }
         if !game.rules.units.contains_key(&name) {
             // ★★★★ WHAT IT REPLACES, rather than nothing at all.
             //
@@ -14044,6 +14056,9 @@ impl LiveMirror {
                 }
                 continue;
             };
+            if foreign_spy_is_hidden(owner, &name) {
+                continue;
+            }
             let pos = crate::hex::offset_to_axial(unit.x, unit.y);
             if self.game.map.get(pos).is_none() || self.game.units.values().any(|u| u.pos == pos) {
                 self.dropped_units
@@ -14188,6 +14203,9 @@ impl LiveMirror {
                     }
                     continue;
                 };
+                if foreign_spy_is_hidden(owner, &name) {
+                    continue;
+                }
                 let pos = crate::hex::offset_to_axial(unit.x, unit.y);
                 if self.game.map.get(pos).is_none() {
                     continue;
@@ -14300,6 +14318,9 @@ impl LiveMirror {
                     }
                     continue;
                 };
+                if foreign_spy_is_hidden(owner, &name) {
+                    continue;
+                }
                 let pos = crate::hex::offset_to_axial(unit.x, unit.y);
                 if self.game.map.get(pos).is_none() {
                     continue;

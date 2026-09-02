@@ -39,6 +39,7 @@ local EXPORTS = {
 local LOG = {}
 Automation = { Log = function(line) LOG[#LOG + 1] = line end }
 UnitOperationTypes = { PARAM_X = "x", PARAM_Y = "y" }
+ActivityTypes = { ACTIVITY_OPERATION = "operation" }
 UnitCommandTypes = {}
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2)
@@ -81,6 +82,7 @@ local function unitObject(u)
 		GetFortifyTurns = function() return 0 end,
 		GetFormationUnitCount = function() return 1 end,
 		GetAttacksRemaining = function() return u.attacks or 1 end,
+		GetActivityType = function() return u.activity end,
 	}
 end
 UnitManager = {
@@ -88,6 +90,9 @@ UnitManager = {
 		local u = host.units[id]
 		if u == nil or u.gone then return nil end
 		return unitObject(u)
+	end,
+	GetActivityType = function(unit)
+		return host.units[unit.GetID()].activity
 	end,
 	CanStartOperation = function(unit, hash, _, params)
 		local id = unit.GetID()
@@ -102,6 +107,7 @@ UnitManager = {
 			-- Asynchronous, like the host: the unit arrives only when the
 			-- test says so (`host.arrive`), unless the walk was priced dead.
 			u.pendingX, u.pendingY = params.x, params.y
+			if u.active_operation then u.activity = "operation" end
 		end
 	end,
 	CanStartCommand = function() return false end,
@@ -114,6 +120,9 @@ function host.arrive(id)
 		u.pendingX, u.pendingY = nil, nil
 		u.moves = math.max(0, (u.moves or 0) - 1)
 	end
+end
+function host.deactivate(id)
+	host.units[id].activity = nil
 end
 local function members(list)
 	return function()
@@ -222,6 +231,25 @@ queue.drain(player, PID, 7)
 check("strike fires once the walk arrived", ops(10), "UNITOPERATION_MOVE_TO,UNITOPERATION_RANGE_ATTACK")
 check("queue drained", queue.pendingCount(), 0)
 check("orders_queue reports the landed strike", field(lastEvent("orders_queue"), "strikes_landed"), 1)
+
+-- 2b. Reaching the requested plot while the host's operation is still active
+-- is not settled. Civilization VI can expose the unit at its destination and
+-- still ignore a follow-up operation until the path deactivates.
+reset()
+host.units[142] = {
+	id = 142, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2,
+	active_operation = true,
+}
+applyOrders(player, PID, 7, { row(142, "MOVE_TO", 2, 1), row(142, "FORTIFY") })
+host.arrive(142)
+queue.drain(player, PID, 7)
+check("active host operation blocks the follow-up", ops(142), "UNITOPERATION_MOVE_TO")
+check("active host operation keeps the queue pending", queue.pendingCount(), 1)
+host.deactivate(142)
+queue.drain(player, PID, 7)
+check("follow-up runs after host deactivation", ops(142),
+	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
+check("deactivated host operation drains the queue", queue.pendingCount(), 0)
 
 -- 3. A refused first order takes its follow-ups with it, by name.
 reset()
