@@ -678,6 +678,8 @@ fn physical_great_people_without_activation_plots_reach_production_planning() {
                 individual: Some("GREAT_PERSON_INDIVIDUAL_HILDEGARD_OF_BINGEN".to_string()),
                 class: Some("GREAT_PERSON_CLASS_SCIENTIST".to_string()),
                 required_district: Some("DISTRICT_HOLY_SITE".to_string()),
+                required_missing_building: None,
+                required_great_work: None,
                 charges: 1,
                 can_activate: false,
                 activation_plots: Vec::new(),
@@ -718,6 +720,70 @@ fn physical_great_people_without_activation_plots_reach_production_planning() {
     );
 }
 
+#[test]
+fn physical_named_great_person_prerequisites_cross_into_activation_needs() {
+    let mut game = crate::game::Game::new_full(1, 20, 14, 95_105, 80, 0, false);
+    let state = StateSnapshot {
+        units: vec![
+            StateUnit {
+                id: 78,
+                kind: "UNIT_GREAT_SCIENTIST".to_string(),
+                great_person: Some(StateGreatPerson {
+                    individual: Some("GREAT_PERSON_INDIVIDUAL_MARY_LEAKEY".to_string()),
+                    class: Some("GREAT_PERSON_CLASS_SCIENTIST".to_string()),
+                    required_district: Some("DISTRICT_THEATER".to_string()),
+                    required_missing_building: None,
+                    required_great_work: Some("GREATWORKOBJECT_ARTIFACT".to_string()),
+                    charges: 1,
+                    can_activate: false,
+                    activation_plots: Vec::new(),
+                    empty_slots: None,
+                }),
+                ..StateUnit::default()
+            },
+            StateUnit {
+                id: 79,
+                kind: "UNIT_GREAT_ENGINEER".to_string(),
+                great_person: Some(StateGreatPerson {
+                    individual: Some("GREAT_PERSON_INDIVIDUAL_JAMES_OF_ST_GEORGE".to_string()),
+                    class: Some("GREAT_PERSON_CLASS_ENGINEER".to_string()),
+                    required_district: Some("DISTRICT_CITY_CENTER".to_string()),
+                    required_missing_building: Some("BUILDING_CASTLE".to_string()),
+                    required_great_work: None,
+                    charges: 3,
+                    can_activate: false,
+                    activation_plots: Vec::new(),
+                    empty_slots: None,
+                }),
+                ..StateUnit::default()
+            },
+        ],
+        ..StateSnapshot::default()
+    };
+    let mut unmapped = Vec::new();
+
+    apply_great_person_points(&mut game, &state, &mut unmapped);
+
+    assert!(
+        unmapped.is_empty(),
+        "stock named prerequisites have CIVVIS aliases"
+    );
+    let needs = &game.players[0].live_great_person_activation_needs;
+    assert_eq!(needs.len(), 2);
+    assert_eq!(
+        needs[0].required_district.as_deref(),
+        Some("theater_square")
+    );
+    assert_eq!(needs[0].required_missing_building, None);
+    assert_eq!(needs[0].required_great_work.as_deref(), Some("artifact"));
+    assert_eq!(needs[1].required_district.as_deref(), Some("city_center"));
+    assert_eq!(
+        needs[1].required_missing_building.as_deref(),
+        Some("medieval_walls")
+    );
+    assert_eq!(needs[1].required_great_work, None);
+}
+
 /// A highlighted plot is a *place*, not a *use*. Firaxis highlights a
 /// cultural person's district whether or not a compatible Great Work slot
 /// is free, so seven Writers/Artists/Musicians stood on one Theater plot
@@ -732,6 +798,8 @@ fn a_slot_starved_person_with_highlighted_plots_is_still_a_need() {
         individual: Some("GREAT_PERSON_INDIVIDUAL_MARK_TWAIN".to_string()),
         class: Some("GREAT_PERSON_CLASS_WRITER".to_string()),
         required_district: None,
+        required_missing_building: None,
+        required_great_work: None,
         charges: 0,
         can_activate,
         activation_plots: vec![StateActivationPlot {
@@ -813,6 +881,8 @@ fn every_offered_plot_full_is_a_need_however_many_slots_the_empire_owns() {
         individual: Some("GREAT_PERSON_INDIVIDUAL_HG_WELLS".to_string()),
         class: Some("GREAT_PERSON_CLASS_WRITER".to_string()),
         required_district: None,
+        required_missing_building: None,
+        required_great_work: None,
         charges: 0,
         can_activate: false,
         activation_plots: vec![closed(67, 14, 12), closed(65, 25, 1), closed(64, 27, 2)],
@@ -963,6 +1033,8 @@ fn live_offer_district_blocker_prevents_an_unusable_scientist_race() {
         StateGreatPersonOffer {
             individual: Some("GREAT_PERSON_INDIVIDUAL_HILDEGARD_OF_BINGEN".to_string()),
             required_district: Some("DISTRICT_HOLY_SITE".to_string()),
+            required_missing_building: None,
+            required_great_work: None,
         },
     );
     let campus_only = StateSnapshot {
@@ -1062,6 +1134,116 @@ fn live_offer_district_blocker_prevents_an_unusable_scientist_race() {
     let bare: StateSnapshot =
         serde_json::from_str(r#"{"turn": 3}"#).expect("an older control mod still parses");
     assert!(bare.great_person_offers.is_none());
+}
+
+#[test]
+fn live_offer_named_building_and_work_gates_follow_host_prerequisites() {
+    let mary_wire = state_from_json(
+        r#"{"turn":92,"great_person_offers":{"GREAT_PERSON_CLASS_SCIENTIST":{"individual":"GREAT_PERSON_INDIVIDUAL_MARY_LEAKEY","required_district":"DISTRICT_THEATER","required_great_work":"GREATWORKOBJECT_ARTIFACT"}}}"#,
+    )
+    .expect("the named Great Work prerequisite parses");
+    assert!(
+        mary_wire.schema_gaps.is_empty(),
+        "the recognized work prerequisite stays quiet"
+    );
+    let mary_offer = mary_wire
+        .great_person_offers
+        .as_ref()
+        .and_then(|offers| offers.get("GREAT_PERSON_CLASS_SCIENTIST"))
+        .expect("the Mary Leakey offer crosses the wire");
+    assert_eq!(
+        mary_offer.required_great_work.as_deref(),
+        Some("GREATWORKOBJECT_ARTIFACT")
+    );
+
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 92,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![host_grass(2, 3), host_grass(3, 3), host_grass(4, 3)],
+    }]);
+    let mut offers = BTreeMap::new();
+    offers.insert(
+        "GREAT_PERSON_CLASS_SCIENTIST".to_string(),
+        StateGreatPersonOffer {
+            individual: Some("GREAT_PERSON_INDIVIDUAL_MARY_LEAKEY".to_string()),
+            required_district: Some("DISTRICT_THEATER".to_string()),
+            required_missing_building: None,
+            required_great_work: Some("GREATWORKOBJECT_ARTIFACT".to_string()),
+        },
+    );
+    let theater_only = StateSnapshot {
+        turn: 92,
+        cities: vec![StateCity {
+            id: 65_536,
+            name: "Rome".to_string(),
+            x: 3,
+            y: 3,
+            pop: 6,
+            capital: true,
+            districts: vec![StateDistrict {
+                kind: "DISTRICT_THEATER".to_string(),
+                x: 4,
+                y: 3,
+                ..StateDistrict::default()
+            }],
+            ..StateCity::default()
+        }],
+        great_person_offers: Some(offers.clone()),
+        ..StateSnapshot::default()
+    };
+    let no_museum = rebuild_from_state(&snapshot, &theater_only, 2, 1, 250, 0).game;
+    let blocker = no_museum
+        .live_great_person_offer_blocker(0, "scientist")
+        .expect("Mary cannot activate without an Archaeological Museum slot");
+    assert!(blocker.contains("artifact"));
+    assert!(!no_museum.can_activate_current_great_person(0, "scientist"));
+
+    let mut with_museum = theater_only.clone();
+    with_museum.cities[0]
+        .buildings
+        .push("BUILDING_MUSEUM_ARTIFACT".to_string());
+    let ready = rebuild_from_state(&snapshot, &with_museum, 2, 1, 250, 0).game;
+    assert!(
+        ready
+            .live_great_person_offer_blocker(0, "scientist")
+            .is_none(),
+        "an Archaeological Museum opens the exact artifact gate"
+    );
+    assert!(ready.can_activate_current_great_person(0, "scientist"));
+
+    let james_offer = StateGreatPersonOffer {
+        individual: Some("GREAT_PERSON_INDIVIDUAL_JAMES_OF_ST_GEORGE".to_string()),
+        required_district: Some("DISTRICT_CITY_CENTER".to_string()),
+        required_missing_building: Some("BUILDING_CASTLE".to_string()),
+        required_great_work: None,
+    };
+    let mut james_offers = BTreeMap::new();
+    james_offers.insert("GREAT_PERSON_CLASS_ENGINEER".to_string(), james_offer);
+    let castleless = StateSnapshot {
+        great_person_offers: Some(james_offers.clone()),
+        ..theater_only.clone()
+    };
+    let james_ready = rebuild_from_state(&snapshot, &castleless, 2, 1, 250, 0).game;
+    assert!(
+        james_ready
+            .live_great_person_offer_blocker(0, "engineer")
+            .is_none(),
+        "an absent Castle is the activation condition for James"
+    );
+
+    let mut castle_blocked = castleless;
+    castle_blocked.cities[0]
+        .buildings
+        .push("BUILDING_CASTLE".to_string());
+    let james_blocked = rebuild_from_state(&snapshot, &castle_blocked, 2, 1, 250, 0).game;
+    assert!(
+        james_blocked
+            .live_great_person_offer_blocker(0, "engineer")
+            .is_some_and(|reason| reason.contains("BUILDING_CASTLE")),
+        "a completed Castle removes James's missing-building target"
+    );
 }
 
 #[test]

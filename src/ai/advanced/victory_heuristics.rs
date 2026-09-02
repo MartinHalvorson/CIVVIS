@@ -351,6 +351,7 @@ mod tests {
                 kind: "general".to_string(),
                 individual: None,
                 required_district: None,
+                ..LiveGreatPersonActivationNeed::default()
             });
         assert_eq!(
             BasicAi::live_great_person_tech_goal(&game, 0).as_deref(),

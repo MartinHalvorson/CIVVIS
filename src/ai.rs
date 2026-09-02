@@ -3771,11 +3771,33 @@ impl BasicAi {
         }
     }
 
-    fn live_great_person_work(kind: &str) -> Option<&'static str> {
-        match kind {
+    fn live_great_person_work(
+        need: &crate::game::LiveGreatPersonActivationNeed,
+    ) -> Option<&'static str> {
+        if let Some(required) = need.required_great_work.as_deref() {
+            return match required {
+                "writing" => Some("writing"),
+                "art" | "religious_art" => Some("art"),
+                "artifact" => Some("artifact"),
+                "music" => Some("music"),
+                "relic" => Some("relic"),
+                _ => None,
+            };
+        }
+        match need.kind.as_str() {
             "writer" => Some("writing"),
             "artist" => Some("art"),
             "musician" => Some("music"),
+            _ => None,
+        }
+    }
+
+    fn live_great_person_work_building(work: &str) -> Option<&'static str> {
+        match work {
+            "writing" => Some("amphitheater"),
+            "art" => Some("art_museum"),
+            "artifact" => Some("archaeological_museum"),
+            "music" => Some("broadcast_center"),
             _ => None,
         }
     }
@@ -3802,6 +3824,15 @@ impl BasicAi {
                     }
                 }
             }
+            if let Some(work) = Self::live_great_person_work(need) {
+                if let Some(building) = Self::live_great_person_work_building(work) {
+                    if let Some(tech) = g.rules.buildings[building].tech.as_deref() {
+                        if !g.players[pid].techs.contains(&Name::new(tech)) {
+                            return Some(tech.to_string());
+                        }
+                    }
+                }
+            }
             // The Musician chain eventually needs a Broadcast Center. Walking
             // to Radio now is safe even if Humanism still gates its Museum;
             // the civic chooser below advances that independent half.
@@ -3822,6 +3853,15 @@ impl BasicAi {
                 if let Some(civic) = g.rules.districts[district].civic.as_deref() {
                     if !g.players[pid].civics.contains(&Name::new(civic)) {
                         return Some(civic.to_string());
+                    }
+                }
+            }
+            if let Some(work) = Self::live_great_person_work(need) {
+                if let Some(building) = Self::live_great_person_work_building(work) {
+                    if let Some(civic) = g.rules.buildings[building].civic.as_deref() {
+                        if !g.players[pid].civics.contains(&Name::new(civic)) {
+                            return Some(civic.to_string());
+                        }
                     }
                 }
             }
@@ -10911,6 +10951,7 @@ impl BasicAi {
             "writing" => &["amphitheater"],
             // Target first, then the prerequisite needed to make it buildable.
             "art" => &["art_museum", "amphitheater"],
+            "artifact" => &["archaeological_museum", "amphitheater"],
             "music" => &["broadcast_center", "art_museum", "amphitheater"],
             _ => return None,
         };
@@ -10985,7 +11026,7 @@ impl BasicAi {
                 }
             }
 
-            if let Some(work) = Self::live_great_person_work(&need.kind) {
+            if let Some(work) = Self::live_great_person_work(need) {
                 if let Some(building) = Self::live_great_person_cultural_item(g, pid, cid, work) {
                     return Some(building);
                 }
@@ -18506,6 +18547,7 @@ mod tests {
                 kind: "scientist".to_string(),
                 individual: Some("hypatia".to_string()),
                 required_district: Some("campus".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
             },
         );
 
@@ -18561,6 +18603,7 @@ mod tests {
                 kind: "scientist".to_string(),
                 individual: Some("stephanie_kwolek".to_string()),
                 required_district: Some("spaceport".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
             },
         );
 
@@ -18604,6 +18647,7 @@ mod tests {
                 kind: "artist".to_string(),
                 individual: Some("donatello".to_string()),
                 required_district: Some("theater_square".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
             },
         );
 
@@ -18622,6 +18666,63 @@ mod tests {
         assert!(
             !ai.prioritize_live_great_person_activation(&mut game, 0),
             "the queued prerequisite must not be cloned by a second city"
+        );
+    }
+
+    #[test]
+    fn a_stranded_live_artifact_scientist_builds_the_exact_museum() {
+        let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("mary_leakey".to_string()),
+                required_district: Some("theater_square".to_string()),
+                required_great_work: Some("artifact".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        assert_eq!(
+            BasicAi::live_great_person_civic_goal(&game, 0).as_deref(),
+            Some("humanism"),
+            "the named Artifact prerequisite must lead to Humanism"
+        );
+        game.players[0].civics.insert(crate::name!("humanism"));
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building })
+                if game.building_is_family(building, crate::name!("archaeological_museum"))
+        ));
+        assert!(
+            !ai.prioritize_live_great_person_activation(&mut game, 0),
+            "the exact Museum prerequisite must not be cloned while queued"
         );
     }
 
@@ -18658,6 +18759,7 @@ mod tests {
                     kind: "engineer".to_string(),
                     individual: Some("imhotep".to_string()),
                     required_district: None,
+                    ..crate::game::LiveGreatPersonActivationNeed::default()
                 },
             );
             (game, city)
