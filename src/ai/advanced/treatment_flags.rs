@@ -811,11 +811,25 @@ impl AdvancedAi {
     /// arrive along the Congress calendar, not by how many are banked. See
     /// [`Self::diplomatic_lane_forecast`].
     pub fn enable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast_2 = false;
         self.diplomatic_lane_forecast = true;
     }
 
     pub fn disable_diplomatic_lane_forecast(&mut self) {
         self.diplomatic_lane_forecast = false;
+    }
+
+    /// Version 2 waits until a current suzerainty or already-earned Diplomatic
+    /// Victory Point proves a real foothold before projecting Congress turns.
+    /// One version per family is active in a screen.
+    pub fn enable_diplomatic_lane_forecast_2(&mut self) {
+        self.diplomatic_lane_forecast = false;
+        self.diplomatic_lane_forecast_2 = true;
+    }
+
+    /// The twin of `enable_diplomatic_lane_forecast_2`.
+    pub fn disable_diplomatic_lane_forecast_2(&mut self) {
+        self.diplomatic_lane_forecast_2 = false;
     }
 
     /// Count a peacetime major's army massed near one of our cities toward
@@ -2298,6 +2312,7 @@ impl AdvancedAi {
     /// first identifier.
     pub fn enable_coalition_before_war(&mut self) {
         self.coalition_before_war = true;
+        self.coalition_before_war_2 = false;
     }
 
     /// The twin of `enable_coalition_before_war`.
@@ -3650,6 +3665,36 @@ impl AdvancedAi {
     /// The twin of `enable_never_an_empty_queue_3`.
     pub fn disable_never_an_empty_queue_3(&mut self) {
         self.never_an_empty_queue_3 = false;
+    }
+
+    /// At the ready strike, invite one credible neighbour to a joint war and
+    /// wait no more than one turn. Credible means the target is close to a
+    /// victory or the partner has the grievance and combined power that make
+    /// the Basic controller accept. Before the strike it asks that partner
+    /// only for a military alliance and spends Envoy score only to unseat the
+    /// target from a nearby client; it never retries. Opt-in gene
+    /// `coalition-before-war-2`.
+    pub fn enable_coalition_before_war_2(&mut self) {
+        self.coalition_before_war_2 = true;
+        self.coalition_before_war = false;
+    }
+
+    /// The twin of `enable_coalition_before_war_2`.
+    pub fn disable_coalition_before_war_2(&mut self) {
+        self.coalition_before_war_2 = false;
+    }
+
+    /// The force's turn is planned jointly — the danger field, a
+    /// beam-searched kill sequence verified on one clone, and a heal
+    /// rotation — ahead of the per-unit ladder, which leaves the planned
+    /// units alone. See `battle_planner`.
+    pub fn enable_battle_planner(&mut self) {
+        self.battle_planner = true;
+    }
+
+    /// The twin of `enable_battle_planner`.
+    pub fn disable_battle_planner(&mut self) {
+        self.battle_planner = false;
     }
 
     // ---- append: a-b ------------------------------------------------

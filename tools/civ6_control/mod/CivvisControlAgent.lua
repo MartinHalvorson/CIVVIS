@@ -195,6 +195,45 @@ local function try(fn, fallback)
 	return fallback;
 end
 
+-- The resource types the shipped diplomacy screen currently puts on a
+-- rival's side of a working deal, narrowed to luxuries this seat actually
+-- lacks. Kept as a bare global because the control agent is already at the
+-- Lua 5.1 main-chunk local ceiling; the exporter and its offline regression
+-- both call the same predicate instead of maintaining two trade catalogues.
+CivvisTradeableLuxuries = function(player, pid, otherId)
+	local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, otherId);
+	if deal == nil then return nil; end
+	local possible = DealManager.GetPossibleDealItems(
+		otherId, pid, DealItemTypes.RESOURCES, deal) or {};
+	local resources = player:GetResources();
+	if resources == nil then return nil; end
+	local out = {};
+	for _, entry in ipairs(possible) do
+		if entry.IsValid ~= false and (entry.MaxAmount or 0) > 0 then
+			local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+			local owned = try(function()
+				return resources:GetResourceAmount(entry.ForType);
+			end, nil);
+			if row ~= nil and row.ResourceClassType == "RESOURCECLASS_LUXURY"
+				and owned == 0 then
+				local key = "RESOURCES:" .. tostring(entry.ForType);
+				local selling = false;
+				local trade = CivvisTrade;
+				if trade ~= nil and trade.pending ~= nil then
+					for _, pending in pairs(trade.pending) do
+						if pending.gave ~= nil and pending.gave[key] ~= nil then
+							selling = true;
+						end
+					end
+				end
+				if not selling then out[#out + 1] = row.ResourceType; end
+			end
+		end
+	end
+	table.sort(out);
+	return out;
+end;
+
 
 -- --------------------------------------------------------------- action ids
 --
@@ -226,6 +265,12 @@ local function resolveActions()
 	for _, name in ipairs({
 		"UNITOPERATION_FOUND_CITY", "UNITOPERATION_FOUND_RELIGION",
 		"UNITOPERATION_MOVE_TO",
+		-- Two adjacent friendly units trading hexes. `VisibleInUI="false"` in
+		-- `Base/Assets/Gameplay/Data/UnitOperations.xml:115`: the shipped UI
+		-- never shows a button for it, it requests it from `RequestMoveOperation`
+		-- (`Base/Assets/UI/Civ6Common.lua:160-161`) whenever the destination
+		-- plot holds a friendly unit. `applyOrder` takes verb `SWAP`.
+		"UNITOPERATION_SWAP_UNITS",
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
@@ -7453,6 +7498,17 @@ local function exportState(player, pid, turn, frame)
 					end
 					return routes;
 				end, nil),
+				-- The same resource catalogue the shipped diplomacy deal screen
+				-- shows on the rival's side, narrowed to luxury TYPES the seat
+				-- actually lacks. This is deliberately not a hidden map location
+				-- or total stock: a met player can inspect this offer column, while
+				-- the mirror only needs to avoid asking a rich rival whose available
+				-- items contain no useful luxury.
+				-- `Some([])` is a real no-stock answer; the outer `try` leaves the
+				-- field nil when this build cannot query a working deal.
+				tradeable_luxuries = try(function()
+					return CivvisTradeableLuxuries(player, pid, otherId);
+				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
 				-- fast it is moving. Every accessor is one the shipped World
@@ -13267,6 +13323,34 @@ local function applyOrder(player, pid, row, turn)
 		-- next to the civilian and stops (see `attackModifiers`); measured on
 		-- the 273 live runs that carried #2075: 65 bare MOVE_TO orders aimed at
 		-- an unguarded barbarian-held settler, zero captures.
+		-- ★★★ SWAP. Two adjacent friendly units trade hexes; `x`/`y` is the
+		-- PARTNER'S plot, exactly the positional pair the shipped UI hands the
+		-- operation. `Base/Assets/UI/Civ6Common.lua:160-161`
+		-- (`RequestMoveOperation`, the branch a human's move takes when the
+		-- destination holds a friendly unit):
+		--
+		--   if (UnitManager.CanStartOperation( kUnit, UnitOperationTypes.SWAP_UNITS, nil, tParameters) ) then
+		--       UnitManager.RequestOperation(kUnit, UnitOperationTypes.SWAP_UNITS, tParameters);
+		--
+		-- with `tParameters[PARAM_X]`/`[PARAM_Y]` = the destination plot
+		-- (`WorldInput.lua:940-943` asks the same question the same way to draw
+		-- the swap path). `canOperate` is that four-argument
+		-- `CanStartOperation(unit, hash, nil, params)`, asked with the SAME
+		-- params the request then carries; a host that declines (not adjacent,
+		-- no friendly unit there, a different stacking layer, no movement left)
+		-- is a NAMED refusal, `cannot_swap`, never a silent no-op. Not a war
+		-- starter — both units are ours — and never reach-capped: the partner
+		-- is adjacent by construction.
+		if verb == "SWAP" then
+			if x == nil or y == nil then return false, "no_dest"; end
+			local hash = OP["UNITOPERATION_SWAP_UNITS"];
+			if hash == nil then return false, "unknown_op_" .. verb; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			if not canOperate(unit, hash, params) then return false, "cannot_swap"; end
+			return operate(unit, hash, params), verb;
+		end
 		if verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE" then
 			if x == nil or y == nil then return false, "no_dest"; end
 			-- ★★★★★ SEND THIS TURN'S LEG, NOT A PATH THE HOST WALKS NEXT TURN.
@@ -14432,7 +14516,11 @@ end;
 CivvisQueue.expectFor = function(row)
 	local verb = tostring(row.verb or "");
 	local x, y = tonumber(row.x), tonumber(row.y);
-	if verb == "MOVE_TO" and x ~= nil and y ~= nil then return { x = x, y = y }; end
+	-- A SWAP lands the unit on the partner's plot, the same expectation a
+	-- MOVE_TO carries for its destination.
+	if (verb == "MOVE_TO" or verb == "SWAP") and x ~= nil and y ~= nil then
+		return { x = x, y = y };
+	end
 	return nil;
 end;
 
@@ -14584,7 +14672,8 @@ CivvisQueue.drain = function(player, pid, turn)
 					else
 						local row = entry.rows[entry.next];
 						local verb = tostring(row.verb or "");
-						if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or CivvisQueue.isStrike(row)) then
+						if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or verb == "SWAP"
+								or CivvisQueue.isStrike(row)) then
 							-- Nothing that needs movement can run; say why, don't ask.
 							CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
 						else

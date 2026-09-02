@@ -527,6 +527,7 @@ impl Game {
                                     &visibility_viewers,
                                 )
                                 && self.unit_has_line_of_sight(uid, pos)
+                                && !self.strike_blocked(uid, pos)
                             {
                                 acts.push(Action::Ranged {
                                     unit: uid,
@@ -556,6 +557,7 @@ impl Game {
                                 && self.enemy_combat_target_at(pid, pos)
                                 && self.unit_can_melee_target_domain(uid, pos)
                                 && self.can_pay_melee_entry(uid, pos)
+                                && !self.strike_blocked(uid, pos)
                             {
                                 acts.push(Action::Attack {
                                     unit: uid,
@@ -1800,6 +1802,15 @@ impl Game {
             && self.enemy_ranged_target_at(pid, target)
             && self.combat_target_visible_at(pid, target, visible, viewers)
             && self.unit_has_line_of_sight(uid, target)
+            && !self.strike_blocked(uid, target)
+    }
+
+    /// Whether the host refused exactly this strike earlier in the current
+    /// turn. See `Game::blocked_strikes`: one refusal is enough — the host has
+    /// already answered this (unit, target) pair for this turn, and asking it
+    /// again in a later frame can only be refused again.
+    pub fn strike_blocked(&self, uid: u32, target: Pos) -> bool {
+        !self.blocked_strikes.is_empty() && self.blocked_strikes.contains(&(uid, target))
     }
 
     /// Whether the engine will accept `Attack { unit: uid, target }` right
@@ -1821,6 +1832,7 @@ impl Game {
             && self.enemy_combat_target_at(pid, target)
             && self.unit_can_melee_target_domain(uid, target)
             && self.can_pay_melee_entry(uid, target)
+            && !self.strike_blocked(uid, target)
     }
 
     /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
@@ -1841,7 +1853,12 @@ impl Game {
     /// melee round at the engine's unrandomized centre: the defender takes
     /// `expected_damage(att, def)` and the attacker takes
     /// `expected_damage(def, att)`.
-    pub(crate) fn melee_exchange_strengths(&self, uid: u32, did: u32) -> Option<(f64, f64)> {
+    ///
+    /// `pub`, not `pub(crate)`: this is the engine's own arithmetic, exposed
+    /// for planners and for the divergence instrument
+    /// (`live_divergence::combat_pairs`) so that nothing outside the crate
+    /// re-derives a melee exchange from two bare strengths.
+    pub fn melee_exchange_strengths(&self, uid: u32, did: u32) -> Option<(f64, f64)> {
         let attacker = self.units.get(&uid)?;
         let defender = self.units.get(&did)?;
         let target = defender.pos;
@@ -1877,12 +1894,11 @@ impl Game {
     /// second blow in `do_ranged` for a controller to price, which is why
     /// standing under one is a straight loss and standing under a melee
     /// attack need not be.
-    pub(crate) fn ranged_strike_strengths(
-        &self,
-        uid: u32,
-        did: u32,
-        target: Pos,
-    ) -> Option<(f64, f64)> {
+    ///
+    /// `pub` for the same reason as [`melee_exchange_strengths`]: the
+    /// engine's own arithmetic, exposed for planners and the divergence
+    /// instrument rather than copied by them.
+    pub fn ranged_strike_strengths(&self, uid: u32, did: u32, target: Pos) -> Option<(f64, f64)> {
         let shooter = self.units.get(&uid)?;
         let defender = self.units.get(&did)?;
         let spec = &self.rules.units[shooter.kind];
@@ -3114,6 +3130,9 @@ impl Game {
         if !spec.is_melee_capable() {
             return Err("unit cannot melee attack".into());
         }
+        if self.strike_blocked(uid, target) {
+            return Err("the host refused this strike this turn".into());
+        }
         let amphibious = self.is_embarked(&u);
         if u.moves_left <= 0.0 || u.attacks_left <= 0 {
             return Err("no moves left".into());
@@ -3473,6 +3492,9 @@ impl Game {
         let spec = self.rules.units[u.kind].clone();
         if !spec.has_ranged_attack() {
             return Err("unit has no ranged attack".into());
+        }
+        if self.strike_blocked(uid, target) {
+            return Err("the host refused this strike this turn".into());
         }
         if self.is_embarked(&u) {
             return Err("cannot attack while embarked".into());

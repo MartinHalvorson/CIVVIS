@@ -6343,6 +6343,21 @@ pub struct Game {
     /// cannot.
     #[serde(default)]
     pub blocked_promotions: Arc<BTreeMap<u32, BTreeSet<Name>>>,
+    /// ★★★ STRIKES THE HOST REFUSED THIS TURN, so a later frame of the same
+    /// turn does not propose the identical shot again.
+    ///
+    /// `(attacker, target)` in CIVVIS unit ids and axial tiles. A live mirror
+    /// fills it per turn from the mod's `range_attack_refused` (line of sight,
+    /// range, spent attacks — the host's own `why`) and `war_refused` (a strike
+    /// the engine would answer with a war the agent never declared) events;
+    /// native games leave it empty. Gated where `blocked_promotions` is: at
+    /// the one legality each chooser and the applier itself pass through
+    /// (`legal_actions_within`'s strike loops, `ranged_order_is_legal`,
+    /// `melee_order_is_legal`, `do_attack`, `do_ranged`), so a pre-pass that
+    /// proves a strike on a private board (`live_finishing_candidates`) is
+    /// refused the same way the picker is.
+    #[serde(default)]
+    pub blocked_strikes: Arc<BTreeSet<(u32, Pos)>>,
     /// Origin/destination pairs a host engine rejected for a trade route.
     /// Native games leave this empty; a live mirror learns it from Firaxis so an
     /// unreachable city is not offered again every turn on geometric range alone.
@@ -7170,6 +7185,7 @@ impl From<GameSer> for Game {
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
+            blocked_strikes: Arc::new(BTreeSet::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
             blocked_pantheons: Arc::new(BTreeSet::new()),
@@ -7863,6 +7879,7 @@ impl Game {
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
+            blocked_strikes: Arc::new(BTreeSet::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
             blocked_pantheons: Arc::new(BTreeSet::new()),
