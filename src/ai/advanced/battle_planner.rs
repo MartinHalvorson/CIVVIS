@@ -165,6 +165,8 @@ pub(super) const MAX_TARGETS: usize = 8;
 /// `battle-planner-3`: candidate pairs asked of the host a frame, by
 /// closed-form damage.
 pub(super) const MAX_WANTED_PREVIEWS: usize = 24;
+/// A pair the plan wants the host to price: `(unit, target tile, ranged)`.
+pub type WantedPreview = (u32, Pos, bool);
 /// Stands kept per (shooter, target): the unit's own tile, then the safest.
 const FROM_TILES_PER_PAIR: usize = 3;
 /// How much of next turn's expected damage a striker's end tile costs, on
@@ -802,7 +804,7 @@ impl AdvancedAi {
     /// `(unit, target tile, ranged)` — as the last plan left them. Empty
     /// with the version off. `civvis_orders` reads it after `take_turn` and
     /// issues a `preview` order per pair.
-    pub fn wanted_previews(&self) -> Vec<(u32, Pos, bool)> {
+    pub fn wanted_previews(&self) -> Vec<WantedPreview> {
         self.battle_planner_wanted_previews.clone()
     }
 
@@ -814,7 +816,7 @@ impl AdvancedAi {
         shooters: &[Shooter],
         targets: &[Target],
         candidates: &[Candidate],
-    ) -> Vec<(u32, Pos, bool)> {
+    ) -> Vec<WantedPreview> {
         if !self.battle_planner_3 {
             return Vec::new();
         }
@@ -840,7 +842,7 @@ impl AdvancedAi {
                 .then_with(|| a.2.cmp(&b.2))
                 .then_with(|| a.3.cmp(&b.3))
         });
-        let mut wanted: Vec<(u32, Pos, bool)> = Vec::new();
+        let mut wanted: Vec<WantedPreview> = Vec::new();
         for (_, uid, pos, ranged) in ranked {
             if wanted.len() >= MAX_WANTED_PREVIEWS {
                 break;
@@ -859,7 +861,7 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
         field: &mut DangerField,
-    ) -> (Vec<Blow>, BTreeSet<u32>, Vec<(u32, Pos, bool)>) {
+    ) -> (Vec<Blow>, BTreeSet<u32>, Vec<WantedPreview>) {
         let (shooters, targets, candidates, armed) = self.strike_candidates(g, pid, field);
         if candidates.is_empty() {
             return (Vec::new(), armed, Vec::new());

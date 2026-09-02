@@ -4762,7 +4762,7 @@ pub struct AdvancedAi {
     battle_planner_3: bool,
     /// The pairs `(unit, target tile, ranged)` the last kill plan wanted
     /// the host to price. See `battle_planner_3`.
-    battle_planner_wanted_previews: Vec<(u32, Pos, bool)>,
+    battle_planner_wanted_previews: Vec<battle_planner::WantedPreview>,
     /// `air-surge-2`: version two of `air_surge` — the science–domination
     /// loop. The original one-appointment surge remains a separately
     /// measurable family member; this continuation lets the Formal-War clock
