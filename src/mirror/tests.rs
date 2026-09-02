@@ -8896,7 +8896,10 @@ fn a_strike_the_host_refused_this_turn_reaches_the_board() {
         [(3342338, 7, 5), (5111818, 8, 5)].into_iter().collect(),
         "this turn's two named pairs, and neither last turn's nor the DeclareWar refusal"
     );
-    assert!(refused_strikes_on(&path, 41).is_empty(), "per turn, not cumulative");
+    assert!(
+        refused_strikes_on(&path, 41).is_empty(),
+        "per turn, not cumulative"
+    );
 
     let unit_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 3342338i64), (9u32, 5111818i64)]
         .into_iter()
@@ -8950,11 +8953,17 @@ fn a_strike_the_host_refused_this_turn_reaches_the_board() {
         .expect("the archer is mirrored");
     assert_eq!(
         *mirror.game.blocked_strikes,
-        [(uid, crate::hex::offset_to_axial(7, 5))].into_iter().collect(),
+        [(uid, crate::hex::offset_to_axial(7, 5))]
+            .into_iter()
+            .collect(),
         "the archer's refused shot is on the board; the unmapped unit's is not"
     );
-    assert!(mirror.game.strike_blocked(uid, crate::hex::offset_to_axial(7, 5)));
-    assert!(!mirror.game.strike_blocked(uid, crate::hex::offset_to_axial(6, 5)));
+    assert!(mirror
+        .game
+        .strike_blocked(uid, crate::hex::offset_to_axial(7, 5)));
+    assert!(!mirror
+        .game
+        .strike_blocked(uid, crate::hex::offset_to_axial(6, 5)));
 
     let _ = std::fs::remove_dir_all(&dir);
 }
