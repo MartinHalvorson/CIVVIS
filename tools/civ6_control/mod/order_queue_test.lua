@@ -67,7 +67,9 @@ setmetatable(_G, { __index = function(_, k)
 end })
 
 -- ---------------------------------------------------------------- fake host
-local host = { units = {}, ops = {}, refuse = {}, contacts = {} }
+local host = { units = {}, ops = {}, commands = {}, allow_cancel = false,
+	defer_cancel = false,
+	refuse = {}, contacts = {} }
 local PID = 0
 local function unitObject(u)
 	return {
@@ -110,8 +112,15 @@ UnitManager = {
 			if u.active_operation then u.activity = "operation" end
 		end
 	end,
-	CanStartCommand = function() return false end,
-	RequestCommand = function() end,
+	CanStartCommand = function(_, hash)
+		return hash == "UNITCOMMAND_CANCEL" and host.allow_cancel
+	end,
+	RequestCommand = function(unit, hash)
+		host.commands[#host.commands + 1] = { id = unit.GetID(), command = hash }
+		if hash == "UNITCOMMAND_CANCEL" and not host.defer_cancel then
+			host.units[unit.GetID()].activity = nil
+		end
+	end,
 }
 function host.arrive(id)
 	local u = host.units[id]
@@ -213,7 +222,8 @@ local function row(subject, verb, x, y)
 	return { kind = "unit", subject = subject, verb = verb, x = x, y = y }
 end
 local function reset()
-	host.units, host.ops, host.refuse, host.contacts = {}, {}, {}, {}
+	host.units, host.ops, host.commands, host.refuse, host.contacts = {}, {}, {}, {}, {}
+	host.allow_cancel, host.defer_cancel = false, false
 	queue.reset(7)
 end
 
@@ -234,22 +244,50 @@ check("orders_queue reports the landed strike", field(lastEvent("orders_queue"),
 
 -- 2b. Reaching the requested plot while the host's operation is still active
 -- is not settled. Civilization VI can expose the unit at its destination and
--- still ignore a follow-up operation until the path deactivates.
+-- still ignore a follow-up operation until the path deactivates. Once the
+-- destination is reached, the bridge may cancel that landed path through the
+-- host's own cancel command and run the dependent order in the same turn.
 reset()
 host.units[142] = {
 	id = 142, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2,
 	active_operation = true,
 }
 applyOrders(player, PID, 7, { row(142, "MOVE_TO", 2, 1), row(142, "FORTIFY") })
+queue.drain(player, PID, 7)
+check("active operation protects an en-route follow-up", ops(142), "UNITOPERATION_MOVE_TO")
 host.arrive(142)
+host.allow_cancel = false
 queue.drain(player, PID, 7)
-check("active host operation blocks the follow-up", ops(142), "UNITOPERATION_MOVE_TO")
-check("active host operation keeps the queue pending", queue.pendingCount(), 1)
-host.deactivate(142)
+check("landed operation waits when cancellation is unavailable", ops(142),
+	"UNITOPERATION_MOVE_TO")
+check("uncancellable landed operation keeps the queue pending", queue.pendingCount(), 1)
+host.allow_cancel = true
 queue.drain(player, PID, 7)
-check("follow-up runs after host deactivation", ops(142),
+check("landed operation is cancelled before the follow-up", host.commands[1]
+	and host.commands[1].command, "UNITCOMMAND_CANCEL")
+check("follow-up runs after landed operation cancellation", ops(142),
 	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
-check("deactivated host operation drains the queue", queue.pendingCount(), 0)
+check("landed-operation queue drains", queue.pendingCount(), 0)
+
+-- A cancel request may be asynchronous too.  Do not turn its successful
+-- return into permission to race the still-active operation.
+reset()
+host.units[143] = {
+	id = 143, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2,
+	active_operation = true,
+}
+applyOrders(player, PID, 7, { row(143, "MOVE_TO", 2, 1), row(143, "FORTIFY") })
+host.arrive(143)
+host.allow_cancel, host.defer_cancel = true, true
+queue.drain(player, PID, 7)
+check("asynchronous cancellation keeps the follow-up pending", ops(143),
+	"UNITOPERATION_MOVE_TO")
+check("asynchronous cancellation does not race the follow-up", queue.pendingCount(), 1)
+host.deactivate(143)
+queue.drain(player, PID, 7)
+check("follow-up runs after cancellation settles", ops(143),
+	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
+check("asynchronous cancellation queue drains", queue.pendingCount(), 0)
 
 -- 3. A refused first order takes its follow-ups with it, by name.
 reset()
