@@ -132,6 +132,16 @@ const ANVIL_FRONT_TILES: usize = 3;
 /// A group farther than this from the objective is not on it.
 const OBJECTIVE_REACH: i32 = 8;
 
+/// A ranked choice of tile: the best key seen so far, and where it was.
+type Pick<K> = Option<(K, Pos)>;
+/// Stage's back-off tile: distance from the city (capped), friends beside
+/// it, then the tile itself.
+type BackOffKey = (i32, i32, Reverse<Pos>);
+/// A shot: a kill first, then the damage, the lower hit points, the tile.
+type ShotKey = (bool, i64, Reverse<i32>, Reverse<Pos>);
+/// A melee blow: a kill first, then the margin dealt over taken, the tile.
+type BlowKey = (bool, i64, Reverse<Pos>);
+
 /// Where a siege stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SiegeStage {
@@ -981,7 +991,7 @@ impl AdvancedAi {
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
         if distance <= CITY_STRIKE_RANGE {
-            let mut best: Option<((i32, i32, Reverse<Pos>), Pos)> = None;
+            let mut best: Pick<BackOffKey> = None;
             for pos in g.nbrs(here) {
                 let away = g.wdist(pos, city.pos);
                 if away <= distance || !g.can_move(uid, pos) {
@@ -1355,7 +1365,7 @@ impl AdvancedAi {
                 continue;
             }
             let better = best.as_ref().is_none_or(|(kill, value, _)| {
-                result.eliminates_enemy_unit > *kill
+                (result.eliminates_enemy_unit && !*kill)
                     || (result.eliminates_enemy_unit == *kill && result.value > *value)
             });
             if better {
@@ -1402,7 +1412,7 @@ impl AdvancedAi {
         let range = g.unit_attack_range(uid).max(1);
         let frame = g.player_vision_frame(pid);
         let viewers = g.visibility_viewers(pid);
-        let mut best: Option<((bool, i64, Reverse<i32>, Reverse<Pos>), Pos)> = None;
+        let mut best: Pick<ShotKey> = None;
         for pos in g.wdisk(unit.pos, range) {
             if pos == unit.pos || near_city.is_some_and(|c| g.wdist(pos, c) > RELIEVER_RADIUS) {
                 continue;
@@ -1603,7 +1613,7 @@ impl AdvancedAi {
         if !melee {
             return None;
         }
-        let mut best: Option<((bool, i64, Reverse<Pos>), Pos)> = None;
+        let mut best: Pick<BlowKey> = None;
         for pos in g.nbrs(unit.pos) {
             let Some(defender) = strongest_hostile_at(g, pid, pos) else {
                 continue;
