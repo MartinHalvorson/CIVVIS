@@ -1091,3 +1091,171 @@ the taker's attack before the taker's turn; the hook is published for that
 change. The bill is read from visible defenders only, and a coastal city's
 water side cannot be sealed by land units — both are the engine's facts,
 not the doctrine's choices.
+
+## 24. The Objective Board: what the army is for, ranked, and the forces raised against it (2026-09-02, opt-in gene `objective-board`)
+
+Every step above plans *how* a force fights. What a force is *for* is still
+`rebuild_force_groups`: every field unit clustered by proximity (a clique of
+`command_radius` six), anchored on its medoid, aimed by `domain_objective` at
+one empire-wide objective — the threatened city, else the target city, else
+the nearest enemy — and given a posture from a ladder of ratios. The groups
+are rebuilt every turn and after every strike, a group's id is its lowest
+unit, nothing is ever *asked* of the army, and two cities under pressure at
+once produce one `threatened_city` and one relief: the argmax flips between
+them and the second city gets nothing. §1's record has that shape — the
+relief column that holds at its centroid, forty cities lost on the King rung,
+a siege fed to a garrison a unit at a time.
+
+`objective-board` (`src/ai/advanced/objective_board.rs`, opt-in, off,
+byte-identical when off; runs for every major seat, `victory_planning` or
+not) replaces the clustering and the ladder with a board written once a turn:
+
+1. **Rows.** `Defend` a city whose pressure reaches `BASTION_PRESSURE`
+   (0.45), `Relieve` it from beyond six, `Siege` the plan's target city and
+   the campaign's cities in order, `Destroy` a hostile force in the field not
+   already covered by a Defend or a Siege, `ClearCamp` a camp within nine of
+   a city before turn 100, `Escort` a settler or builder outside our borders,
+   `Deter` the strongest bordering major while our power is under 0.8 of
+   theirs, `Recon` an unexplored sector no scout holds. Each carries a
+   **value in hammers** (a unit its cost at its hit points; a city the
+   replacement production of its districts and buildings, the lane's own
+   district at 1.5, plus 20 a citizen; a settler its cost plus 200; a camp
+   120 plus its guard; Deter 0.3 of the contact city), a **requirement**
+   (`ForceNeed`: strength, melee, ranged, siege, bodies — Siege the campaign
+   bill × 1.25 with a melee taker and siege while walls stand; Defend the
+   hostile strength within six × 1.2 less the city's own; ClearCamp the guard
+   × 1.5; Escort one melee, plus a ranged unit when a hostile is remembered
+   within six; Destroy the body × 1.5) and a **deadline** where one can be
+   named (Defend: turns until the city falls at the damage it has been
+   taking, never under two; Escort: turns until a known raider is in reach;
+   Destroy: turns until our nearest unit can reach it).
+2. **Rank.** Value over deadline (ten turns where there is none), under two
+   hard rules: a Defend whose deadline is inside the relief time of the
+   nearest force outranks every offensive row, and no row ranks above one it
+   depends on — Relieve after its Defend, the campaign's second city after
+   its first.
+3. **Task forces.** Kept on the controller across turns with an id that
+   survives the death of any member. Allocation walks the rows in rank order
+   taking the best contribution per travel turn until the row is met — a
+   unit's strength toward the unmet need and a body toward an unmet count,
+   times an arrival factor of one inside the deadline and 0.7 a turn late
+   after it. A served row is never stripped below its need by a lower one; a
+   unit stays in its force unless the gain is at least 25 % or its row is
+   done; an urgent Defend may pull anyone. The leftovers are the **Reserve**
+   at the Deter row's tile, else the frontier city nearest the strongest met
+   rival, else the capital. Sea units form their own forces for a coastal
+   Siege, an embarked Escort and a naval Destroy; air units stay out.
+4. **Integration.** `force_groups` is built *from* the forces — one
+   `ForceGroup` per force, `objective` the row's tile, `anchor` where a
+   standing force stands, `posture` from the row's doctrine: Defend and
+   Relieve hold the city and engage the threat on contact; Siege follows the
+   siege train's stage when that gene is on (Muster while staging, Advance
+   to invest, Engage to reduce and take) and otherwise musters on the far
+   side of the city, advances and engages on contact; Destroy engages at an
+   exchange of 1.5 and holds defensive ground below it; ClearCamp and Recon
+   advance; Escort and Deter hold. So `battle_planner.rs`, `siege_train.rs`
+   and the per-unit ladder read `force_groups` unchanged. On an arena — no
+   reinforcement coming, nothing to hold — the army is one force per domain
+   aimed at the top-ranked row, the shipped layer's own one-group doctrine
+   with the board choosing the objective; `central_position` is the board
+   that insisted (below).
+5. **The record.** One "Military/Strategy" line a turn — `Board: Defend
+   Aquileia (value 2,400, need 180, force #3 of 6, deadline 4) · Siege Seoul
+   (value 1,120, need 260, force #5 of 4, staging) · …` — with the rows by
+   kind, the forces, the units that changed row and the rows left short;
+   `StrategyCensus` counts the same four; `AdvancedAi::requisitions()`
+   publishes the shortfall per row (kind, units short, by which turn, at
+   which city) for a production consumer — the next change; nothing reads it
+   yet.
+
+Ten deterministic tests hold the claims: the gene ships off and is
+registered; off, the board is never written and the shipped group is built;
+two pressured cities produce two Defend rows and both are served; a force is
+not stripped below its need by a lower row; a task force's id survives the
+death of its lowest member and the reserve fills its gap; a Siege row's
+requirement is the campaign bill × 1.25 with a taker and siege while the
+walls stand; a Defend inside relief time outranks a Siege worth far more and
+pulls the far warrior home; a camp within nine is a row before turn 100 and
+not after; a settler outside the borders is an Escort row and a requisition;
+on `central_position` the army is one force and nothing stands still.
+
+**The gate (§13), read in order.** Every arena cell below is on the ci
+binaries built from this branch, with `battle-planner-2` on both sides of
+the captured cells so the board is read on top of the shipped planner.
+
+- `doctrine_arena --capture --games 24` took **599 engagements** from 24
+  whole games; the host was loaded, so the cells were run on the **first 60**
+  of them (same JSON shape, a prefix of the file) — a sample of the
+  distribution, not the curriculum. Control on those 60 boards, `advanced`
+  against itself, 12 seeds × 2 roles: **+0.0, 0/12 diverging on every board,
+  healing off and on**.
+- Captured file, `advanced+objective-board+battle-planner-2` against
+  `advanced+battle-planner-2`, 60 boards × 40 seeds × 2 roles, healing off:
+  **+14.7 ± 2.7 a seed (t 5.40, sign p 0.0004, 767 better / 633 worse)**,
+  **1.03 kills per loss against 0.97**, cities **+119/−117 against
+  +117/−119**. Healing on: **+7.4 ± 2.7 (t 2.73, sign p 0.0355, 764/683)**,
+  1.02 against 0.98, cities +405/−433 against +433/−405.
+- Curriculum, `advanced+objective-board` against `advanced`, 13 boards × 40
+  seeds × 2 roles (control 12 seeds: +0.0, 0/12 on all thirteen): pooled
+  **−0.2 ± 13.3 (181/174)**, 1.00 kills per loss each way. The rows, which
+  are what a curriculum is read on: **hammer_and_anvil +137.8 ± 47.4 (t 2.91,
+  sign p 0.0167, 25/10)**, the_ridge +111.5 ± 65.8 (t 1.70, 20/10),
+  oblique_order +43.8 ± 50.7, double_envelopment +21.0 ± 13.6 (t 1.55),
+  central_position +12.5 ± 29.8 (18/18), the_golden_bridge +8.5 ± 23.4,
+  the_relief −7.8 ± 5.5 (fires 16/40), the_storming −15.0 ± 15.0 (fires
+  2/40 — a Siege row aims the force where the shipped objective already
+  did), the_defile −24.0 ± 12.9, the_reserve −39.0 ± 66.8, the_river_line
+  −65.5 ± 71.2, lake_trasimene −92.5 ± 77.4, the_breakthrough −93.8 ± 50.5
+  (t −1.86, 19/20). Nothing negative is a reading at this n; two boards are
+  positive readings.
+- `battle_bench`, `advanced+objective-board` against `advanced`, 100 seeds ×
+  2 seatings (control 60 seeds: +0.00, 60 tied): **+18.7 ± 22.0 (t 0.85,
+  p 0.40; 52/40/8)**, exchange ratio 1.047 against 0.955 — the no-harm
+  reading, a null.
+- Fires (`gene_screen --games 6 --genes objective-board --start-seed
+  97600100`, `--analyze` → `docs/gene_screens/fires/objective-board.json`):
+  on in 7 of 36 seats, win +14.8 pp ± 15.8 (z +0.93), **share +4.92 pp
+  (z +3.28)** — proof the gene fires, and at six games nothing more.
+- The whole-game no-harm read (`gene_screen --games 24 --difficulty emperor
+  --genes objective-board,battle-planner-2 --p-on 0.75 --start-seed
+  97600200`, 144 seats): `objective-board` on in 106 seats against 38 off,
+  win **17.9 % against 13.2 %, +4.8 pp ± 7.1 (z +0.67)**, share **+1.69 pp
+  (z +1.84)**, `~`; `battle-planner-2` beside it +9.2 pp ± 6.4 (z +1.48).
+  Not negative; at 24 games not a reading either, for the reason §7 and §17
+  give.
+
+**What it took to get there, in order — the arena's corrections.** The
+first cut held a Defend force at its city on every board, arena included,
+and read +9.1 ± 3.0 on the captured file at **86 cities taken against 136**:
+the garrison never left home. The shipped ladder's arena exception applies —
+nothing stands still where nothing is coming — so a Defend on an arena
+engages the threat (and in a game the group is sent at the nearest besieger
+on contact, as `domain_objective` sends a relief). That cut read −1.5 ± 2.8
+with the captures still 86 against 123, and on the curriculum
+**central_position −184.2 ± 48.7 (t −3.79)** and **the_breakthrough −143.8 ±
+39.0**: two hostile bodies made two Destroy rows, the army split between
+them by contribution per travel turn, and each half engaged a whole body.
+Merging only the forces under their bill made it worse (−262.2 ± 50.3),
+because the army then marched past the nearer body to the one worth more:
+a Destroy row had no deadline, so a farther body of the same value ranked
+level with the near one and a bigger body ranked above it. Two changes
+answered both: **a Destroy row falls due when the nearest unit of ours can
+reach it** — the nearer body ranks first at equal value and a farther one
+outranks it only by being worth proportionally more, which is the central
+position's own rule — and **on an arena the army is one force per domain,
+aimed at the top row**, the shipped one-group doctrine with the board
+choosing the objective. central_position came back to +12.5 ± 29.8 (18/18)
+and the captured file to the numbers above.
+
+**What this does not say.** The captured file is 60 of 599 engagements
+and a prefix of the file, not a random draw; the curriculum is read on its
+rows and two of thirteen are readings. The board's whole-game machinery —
+persistent forces, hysteresis, the Reserve, the requisitions — is what an
+arena cannot price: a fixed army over sixteen turns has nothing to raise and
+nowhere to send a shortfall, so the arena prices the ranking and the posture
+map, and the whole-game screen at scale is where the rest is read.
+`requisitions()` has no production consumer yet; the Deter row has no
+requirement and is the Reserve's anchor only; a Relieve row's need is the
+Defend's less what stands within six, read once a turn; sea forces exist
+for the three sea rows and take the shipped sea mover unchanged. The
+`victory_planning` gate does not apply: the board runs for every major seat.
