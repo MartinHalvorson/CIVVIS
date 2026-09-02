@@ -1645,7 +1645,8 @@
         "ships": "coalition-before-war",
         "versions": {
           "coalition-before-war": null,
-          "coalition-before-war-2": null
+          "coalition-before-war-2": null,
+          "coalition-before-war-3": null
         }
       },
       "coastal-city-sites": {

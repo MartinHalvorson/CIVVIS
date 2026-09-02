@@ -1955,6 +1955,10 @@ pub const GENES: &[Gene] = &[
     // partner, spend Envoys only to flip the target's client, and make one
     // joint-war invitation at the ready strike.
     Gene { tag: "coalition-before-war-2", field: "coalition_before_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_coalition_before_war_2, disable: AdvancedAi::disable_coalition_before_war_2 },
+    // Version 3 asks only a neighbour already fighting the planned target
+    // for a military alliance: a proven second front and an immediate combat
+    // bonus, without a speculative joint-war offer or declaration delay.
+    Gene { tag: "coalition-before-war-3", field: "coalition_before_war_3", kind: Kind::OptIn, enable: AdvancedAi::enable_coalition_before_war_3, disable: AdvancedAi::disable_coalition_before_war_3 },
 
     // Forensic of 2026-09-01 over the 08-31 King and 09-01 Emperor live runs
     // (`advanced/settler_walk_deadline.rs`): with every host-only expansion
