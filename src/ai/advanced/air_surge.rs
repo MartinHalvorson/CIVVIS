@@ -50,7 +50,7 @@
 //! the objective changes hands, the target dies, diplomacy makes the war
 //! illegal, the launch slips past the endgame reserve, or home Recovery
 //! persists. It never opens a second front — [`AdvancedAi::air_surge_open`]
-//! refuses while any major war is already on.
+//! refuses while two or more major wars are already on.
 //!
 //! Off by default: registry row `air-surge`. It reaches the genome
 //! unmeasured and stays off until a screen says it helps (`gene_ledger`);
@@ -60,7 +60,7 @@
 //! deliberately a *capability* the empire can reach, priced on its own, and
 //! not a change to which victory the planner aims at.
 
-use super::{AdvancedAi, GrandStrategy, StrategicPlan};
+use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::reasoning::plain;
@@ -497,6 +497,14 @@ impl AdvancedAi {
         {
             return false;
         }
+        let fronts = Self::air_surge_fronts(g, pid);
+        // An explicit Science race has a fixed lane to protect. At peace the
+        // air package would divert research into Advanced Flight and spend
+        // production on an elective war; retain the capability for the
+        // defensive one-front counter below.
+        if self.victory_target == Some(VictoryTarget::Science) && fronts.is_empty() {
+            return false;
+        }
         let reserve = g.standard_duration(AIR_SURGE_ENDGAME_RESERVE);
         if g.turn.saturating_add(reserve) >= g.max_turns {
             return false;
@@ -511,7 +519,7 @@ impl AdvancedAi {
         // arms against the civilization already fighting us and needs no
         // declaration at all. Two fronts is a war the empire is losing, and a
         // three-technology beeline is not the answer to it.
-        Self::air_surge_fronts(g, pid).len() <= 1
+        fronts.len() <= 1
     }
 
     /// The majors already at war with us.

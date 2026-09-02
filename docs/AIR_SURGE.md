@@ -191,6 +191,24 @@ domination lane: `docs/eval/` records a pinned `live_target_domination` at
 adaptive's 1. Conquest is mechanically reachable; *aiming* at it is what cost
 the Elo. This gene adds the machinery and leaves the aim alone.
 
+There is one explicit-lane compatibility rule: when `victory_target=science`,
+an elective no-front surge stays closed. Its Advanced Flight beeline and war
+package would compete directly with the fixed Science research lane. A
+one-front surge remains available as a defensive counter, because it arms
+against the civilization already attacking us rather than opening an elective
+war. Generic/adaptive seats and other explicit victory targets retain the
+normal elective window.
+
+This narrow rule is evidence-backed rather than a global removal. In a
+matched six-seed `victory_eval --target science --deployment` run on
+2026-09-02, the explicit Science deployment recorded 3/6 science wins with
+elective air-surge enabled and 5/6 with it withheld; two seeds flipped from a
+score-at-turn-limit result to a Science victory. The live owner trace also
+showed repeated elective appointments diverting research into Advanced
+Flight while the Science target was still pursuing Rocketry. The screen
+ledger remains the authority for whether the capability should be reopened
+for broader lanes.
+
 It also never competes with the melee appointment: `air_surge_open` refuses
 while a `war_plan` is live and `may_form_war_plan` refuses while a surge is,
 because two packages would bid for the same idle queues and the same
