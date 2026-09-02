@@ -2109,6 +2109,10 @@ pub const GENES: &[Gene] = &[
     // fronts into extra Recovery; immediate city danger still takes Recovery
     // independently, including city-state pressure. One family version plays.
     Gene { tag: "recovery-reads-the-war-2", field: "recovery_reads_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_reads_the_war_2, disable: AdvancedAi::disable_recovery_reads_the_war_2 },
+    // Version two preserves V1 and adds a roll-top lethal rotation only when
+    // the wounded destination is safer and the relief survives the front.
+    // Geometry and the joint planner's own rotation policy stay unchanged.
+    Gene { tag: "swap-rotation-2", field: "swap_rotation_2", kind: Kind::OptIn, enable: AdvancedAi::enable_swap_rotation_2, disable: AdvancedAi::disable_swap_rotation_2 },
     // Version 2 narrows an already-staged Conquest plan to one nearby,
     // holdable city, then keeps that objective rather than extending a war
     // from an empire-wide army estimate.

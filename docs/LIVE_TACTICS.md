@@ -730,6 +730,21 @@ need healing, and it does not: the wounded unit never has to come back. What
 pays is that the line does not open when it leaves. That is a different
 claim from "rotate to heal", and it is the one the numbers support.
 
+The 2026-09-02 second version keeps that original rule byte-for-byte below
+the withdrawal line and adds one narrow case above it: rotate only when the
+top of the visible enemy damage roll can kill the front unit, the wounded
+unit becomes safer on the relief tile, and the relief survives on the front.
+That distinction survived the direct instruments. Across 200 matched
+`battle_bench` seeds, version two produced 781 kills for 755 losses versus
+755/781 for version one (paired material +16.3 ± 12.6). Across the 13-board
+doctrine curriculum it read +9.6 ± 6.9 with healing off and −2.3 ± 7.6 with
+healing on. The whole-game no-harm screen is unresolved rather than
+positive: over 72 games / 432 seats, version two was −6.3 ± 4.2 win points
+and −0.1 share points against version one, and −2.4 ± 3.9 win points and
+−0.6 share points against off. Neither contrast reaches the predeclared
+two-standard-error harm boundary, so the gene remains opt-in: the tactical
+rescue is real, while strategic promotion is not established.
+
 ## 19. The arena can pose a siege, and the siege is an arrival problem (2026-08-27)
 
 `docs/DOCTRINE_ARENA.md` ("The arena can pose a siege") records the

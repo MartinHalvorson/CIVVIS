@@ -3305,6 +3305,7 @@ impl AdvancedAi {
     /// `swap_rotation`.
     pub fn enable_swap_rotation(&mut self) {
         self.swap_rotation = true;
+        self.swap_rotation_2 = false;
     }
 
     /// The twin of `enable_swap_rotation`.
@@ -4022,6 +4023,19 @@ impl AdvancedAi {
     /// The twin of `enable_war_policy_via_board`.
     pub fn disable_war_policy_via_board(&mut self) {
         self.war_policy_via_board = false;
+    }
+
+    /// Version two keeps V1's field-front swap and adds a roll-top lethal
+    /// rotation when the wounded destination is safer and the relief survives.
+    /// One family version plays at a time.
+    pub fn enable_swap_rotation_2(&mut self) {
+        self.swap_rotation = false;
+        self.swap_rotation_2 = true;
+    }
+
+    /// The twin of `enable_swap_rotation_2`.
+    pub fn disable_swap_rotation_2(&mut self) {
+        self.swap_rotation_2 = false;
     }
 
     /// Turn an existing Conquest plan into one nearby, holdable city only when
