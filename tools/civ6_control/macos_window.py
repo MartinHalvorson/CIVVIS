@@ -33,6 +33,15 @@ CAPTURE_ACCESS_POLL_SECONDS = 10.0
 # capture per pass instead of spending the whole retry schedule inside it.
 SETUP_SCREENSHOT_ATTEMPTS = 1
 
+# The autoclose handler photographs a screen only to decide whether its
+# optional, visually-confirmed rescue is safe.  A failed frame is not a reason
+# to retry five times in the same event: the Lua context will ask again while
+# it remains visible, and a second event gives the capture service time to
+# recover.  The normal screenshot callers retain the transient-frame retry
+# schedule below.
+AUTOCLOSE_SCREENSHOT_PREFIX = "autoclose-stuck-turn-"
+AUTOCLOSE_SCREENSHOT_ATTEMPTS = 1
+
 
 def game_window(game_process: str) -> tuple[int, int, int, int] | None:
     """Position and size of the game window in points, or ``None``."""
@@ -244,7 +253,10 @@ def screenshot(path: Path, *, attempts: int | None = None,
               "unreadable", flush=True)
         return False
     if attempts is None:
-        attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
+        if path.name.startswith(AUTOCLOSE_SCREENSHOT_PREFIX):
+            attempt_limit = AUTOCLOSE_SCREENSHOT_ATTEMPTS
+        else:
+            attempt_limit = len(SHOT_BACKOFF_SECONDS) + 1
     else:
         try:
             attempt_limit = max(1, int(attempts))

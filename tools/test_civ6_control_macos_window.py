@@ -162,6 +162,18 @@ class ScreenCaptureTests(unittest.TestCase):
         capture.assert_called_once()
         sleep.assert_not_called()
 
+    def test_autoclose_snapshot_leaves_retries_to_the_next_event(self) -> None:
+        """A diagnostic miss must not hold the live game for five captures."""
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(macos_window.macos_capture, "capture_region") as capture, \
+             patch.object(macos_window.time, "sleep") as sleep:
+            landed = self._shot(
+                Path(temporary) / "autoclose-stuck-turn-71.png",
+            )
+        self.assertFalse(landed)
+        capture.assert_called_once()
+        sleep.assert_not_called()
+
     def test_launcher_setup_readers_keep_the_outer_capture_poll(self) -> None:
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
         self.assertIn("screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)", source)

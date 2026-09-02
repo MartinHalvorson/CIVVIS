@@ -33,7 +33,7 @@ Requires the mirror server on :8610 (see civvis-civ6-mirror/follow.py).
           the per-turn rates `economy_drift` compares. Same turn, or the delta is
           just income.
 
-## Nine ways this checker itself cried wolf
+## Ten ways this checker itself cried wolf
 
 Each of these is a real bug I nearly reported, caught only by looking again:
 
@@ -83,6 +83,12 @@ Each of these is a real bug I nearly reported, caught only by looking again:
    exports; clean again at 165). A one-report disagreement that names a minor
    met within the export interval is this skew, not a dropped city -- re-check
    after the next export before reporting it.
+10. It compared a board published from state frame 0 with state frames 1 and 2
+    that the host had appended for the same turn. Units that moved during the
+    replan then appeared to be missing, even though the next completed-turn
+    publication was clean. A live checker now defers this narrow handoff until
+    the `turn` completion marker exists, rather than turning an in-flight frame
+    into a parity alarm.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -117,6 +123,9 @@ MIRRORED_IMPROVEMENTS = set(json.loads(
 MIRRORED_WONDERS = set(json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "wonders.json").read_text()
 ))
+MIRRORED_UNIT_RULES = json.loads(
+    (Path(__file__).resolve().parent.parent / "data" / "units.json").read_text()
+)
 UNIT_MODEL_FALLBACKS = {
     # These two host-only variants now have exact CIVVIS specs, so their
     # implementation prefix must stay intact in the audit. Other barbarian
@@ -729,6 +738,13 @@ def city_fact_mismatches(state, board, top):
 def visible_exported_units(state, board, top):
     """Yield every currently visible unit with its compact CIVVIS owner seat."""
     visible = {tuple(pos) for pos in board.get("visible") or []}
+    free_city_unit_ids = {
+        unit.get("id")
+        for minor in state.get("minors") or []
+        if minor.get("civ") == "CIVILIZATION_FREE_CITIES"
+        for unit in minor.get("units") or []
+        if unit.get("id", 0) > 0
+    }
 
     def is_visible(unit):
         return axial(unit.get("x", 0), top - unit.get("y", 0)) in visible
@@ -748,7 +764,7 @@ def visible_exported_units(state, board, top):
     yield from (
         (None, unit)
         for unit in state.get("hostiles") or []
-        if is_visible(unit)
+        if is_visible(unit) and unit.get("id") not in free_city_unit_ids
     )
 
 
@@ -761,6 +777,35 @@ def unmodelled_great_person(kind):
 def exported_unit_kind(unit):
     """Return the unit type across Firaxis's two export field names."""
     return unit.get("kind") or unit.get("type")
+
+
+def modelled_qualified_unique(raw_kind):
+    """Resolve a civilization-qualified unit the way the live mirror does.
+
+    Civilization VI calls Phoenicia's unique naval unit
+    ``UNIT_PHOENICIA_BIREME`` while CIVVIS stores the modelled unique as
+    ``bireme``. The Rust mirror accepts that spelling only when the stripped
+    name is an explicitly unique model; the checker must apply the same guard
+    or it can either report a real board unit as missing or accept an ordinary
+    unit under a misleading prefix. The suffix pass covers CIVVIS names with
+    a Civilopedia epithet, such as ``maryannu_chariot_archer``.
+    """
+    if not raw_kind or raw_kind.startswith("great_"):
+        return None
+    _, separator, bare = raw_kind.partition("_")
+    if not separator or not bare:
+        return None
+    direct = MIRRORED_UNIT_RULES.get(bare)
+    if isinstance(direct, dict) and direct.get("unique_to"):
+        return bare
+    suffix = f"_{bare}"
+    matches = [
+        name for name, spec in MIRRORED_UNIT_RULES.items()
+        if name.endswith(suffix)
+        and isinstance(spec, dict)
+        and spec.get("unique_to")
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def unit_fact_mismatches(state, board, top):
@@ -779,6 +824,9 @@ def unit_fact_mismatches(state, board, top):
         # an older ordinary barbarian prefix still resolves to its stock role.
         kind = IDENTIFIER_ALIASES.get(kind, kind)
         kind = UNIT_MODEL_FALLBACKS.get(kind, kind)
+        qualified = modelled_qualified_unique(raw_kind)
+        if qualified and kind == raw_kind and not raw_kind.startswith("barbarian_"):
+            kind = qualified
         # ⚠⚠ AND THE BASE THE EXPORT ITSELF HANDS US, because the mirror
         # DELIBERATELY approximates a unique it does not model and says so.
         #
@@ -1146,6 +1194,8 @@ def main(argv=None):
     # state -> CIVVIS decision/orders -> turn, and the state is already the exact
     # source used to reconstruct the board during that handoff.
     board = state = None
+    state_frame_count = 0
+    in_flight_same_turn = False
     game_turn = -1
     terminal_turn = latest_terminal_turn(run) if args.archive else None
     mirror_error = None
@@ -1164,8 +1214,17 @@ def main(argv=None):
             mirror_error = f"{type(exc).__name__}: {exc}"
             break
         _, game_turn = load_export(run)
-        state = latest_state(run, upto=board["turn"])
+        state, state_frame_count = latest_state_and_frame_count(
+            run, upto=board["turn"]
+        )
         state_turn = int((state or {}).get("turn") or -1)
+        in_flight_same_turn = live_same_turn_frame_handoff(
+            board["turn"], state_turn, game_turn, state_frame_count,
+            archive=args.archive,
+        )
+        if in_flight_same_turn:
+            time.sleep(0.1)
+            continue
         if exact_host_frame(
             board["turn"], state_turn, game_turn, archive=args.archive,
             terminal_turn=terminal_turn,
@@ -1178,6 +1237,14 @@ def main(argv=None):
         print(f"MIRROR  ⚠ unavailable on :{PORT}/state ({detail})")
         return 1
     state_turn = int((state or {}).get("turn") or -1)
+    if in_flight_same_turn:
+        print(f"run   {os.path.basename(run)}")
+        print(
+            f"turn  game {game_turn}   board {board['turn']}   state {state_turn} "
+            f"⏳ IN FLIGHT ({state_frame_count} same-turn state frames)"
+        )
+        print("\nMIRROR  waiting for the host turn-completion boundary; re-check shortly")
+        return 0
     if not exact_host_frame(
         board["turn"], state_turn, game_turn, archive=args.archive,
         terminal_turn=terminal_turn,
@@ -1659,6 +1726,56 @@ def latest_state(run, upto=None):
                 continue
             latest = event
     return latest
+
+
+def latest_state_and_frame_count(run, upto=None):
+    """Return the latest bounded state and its same-turn frame count.
+
+    A live board may be held at the first state frame while the host appends
+    additional replanning frames for that same turn. The latest state remains
+    the right choice once the turn is complete, but it is not a safe comparison
+    target while completion is still in flight. Count those frames in the same
+    pass that selects the bounded state so the checker does not add another
+    full read of a growing multi-megabyte event stream.
+    """
+    latest = None
+    same_turn_frames = 0
+    with open(os.path.join(run, "events.jsonl")) as handle:
+        for line in handle:
+            if '"state"' not in line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if (event.get("kind") or event.get("event")) != "state":
+                continue
+            event_turn = int(event.get("turn") or 0)
+            if upto is not None and event_turn > upto:
+                continue
+            latest = event
+            if upto is not None and event_turn == upto:
+                same_turn_frames += 1
+    return latest, same_turn_frames
+
+
+def live_same_turn_frame_handoff(board_turn, state_turn, completed_turn,
+                                 state_frame_count, *, archive=False):
+    """Whether a live board is racing newer state frames for its same turn.
+
+    `follow.py` republishes on its own cadence. During a host replan it can
+    therefore serve state frame 0 while the event stream already contains
+    frames 1 and 2. There is no source-frame id in the served board, so the
+    only safe signal available to this checker is multiple same-turn states
+    before the host's playable `turn` marker. Archives keep their stricter
+    boundary behavior and never use this live deferral.
+    """
+    return (
+        not archive
+        and state_turn == board_turn
+        and completed_turn < board_turn
+        and state_frame_count > 1
+    )
 
 
 if __name__ == "__main__":

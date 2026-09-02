@@ -48,6 +48,22 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertTrue(civ6_mirror_check.exact_host_frame(96, 96, 95))
         self.assertFalse(civ6_mirror_check.exact_host_frame(96, 95, 95))
 
+    def test_live_same_turn_replans_are_deferred_until_completion(self) -> None:
+        self.assertTrue(
+            civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 85, 3)
+        )
+        self.assertFalse(
+            civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 86, 3)
+        )
+        self.assertFalse(
+            civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 85, 1)
+        )
+        self.assertFalse(
+            civ6_mirror_check.live_same_turn_frame_handoff(
+                86, 86, 85, 3, archive=True
+            )
+        )
+
     def test_archive_state_still_requires_a_completed_boundary(self) -> None:
         self.assertFalse(
             civ6_mirror_check.exact_host_frame(251, 251, 250, archive=True)
@@ -370,6 +386,43 @@ class MirrorCheckTest(unittest.TestCase):
         })
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
+    def test_visible_phoenician_bireme_uses_its_modelled_unique_name(self) -> None:
+        state = {"rivals": [{"units": [{
+            "kind": "UNIT_PHOENICIA_BIREME", "base": "UNIT_GALLEY",
+            "x": 3, "y": 5, "hp": 100, "fortified": False,
+            "fortify_turns": 0,
+        }]}]}
+        board = {"view_player": 0, "units": [{
+            "owner": 1, "type": "bireme", "pos": [1, 5],
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }], "visible": [[1, 5]]}
+
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+    def test_free_city_unit_exported_in_both_lists_is_counted_once(self) -> None:
+        unit = {
+            "id": 196608, "kind": "UNIT_CROSSBOWMAN", "x": 3, "y": 5,
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }
+        state = {
+            "minors": [{
+                "player": 62, "civ": "CIVILIZATION_FREE_CITIES",
+                "units": [dict(unit)],
+            }],
+            "hostiles": [{
+                "id": unit["id"], "type": unit["kind"], "player": 62,
+                "x": unit["x"], "y": unit["y"], "hp": unit["hp"],
+                "fortified": unit["fortified"],
+                "fortify_turns": unit["fortify_turns"],
+            }],
+        }
+        board = {"view_player": 0, "units": [{
+            "owner": 6, "type": "crossbowman", "pos": [1, 5],
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }], "visible": [[1, 5]]}
+
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
     def test_hidden_rival_unit_is_not_compared_to_the_seated_board(self) -> None:
         state = {"rivals": [{"units": [{
             "kind": "UNIT_KNIGHT", "x": 3, "y": 5,
@@ -634,12 +687,18 @@ class MirrorCheckTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
             events.write_text(
-                json.dumps({"kind": "state", "turn": 60, "units": [{"id": 1}]}) + "\n"
+                json.dumps({"kind": "state", "turn": 60, "frame": 0, "units": [{"id": 1}]}) + "\n"
+                + json.dumps({"kind": "state", "turn": 60, "frame": 1, "units": [{"id": 2}]}) + "\n"
                 + json.dumps({"kind": "state", "turn": 61, "units": [{"id": 2}]}) + "\n"
             )
 
             self.assertEqual(civ6_mirror_check.latest_state(temporary, upto=60)["turn"], 60)
             self.assertEqual(civ6_mirror_check.latest_state(temporary)["turn"], 61)
+            latest, same_turn_frames = civ6_mirror_check.latest_state_and_frame_count(
+                temporary, upto=60
+            )
+            self.assertEqual(latest["frame"], 1)
+            self.assertEqual(same_turn_frames, 2)
 
     def test_active_trade_routes_compare_endpoint_pairs_not_trader_positions(self) -> None:
         state = {
