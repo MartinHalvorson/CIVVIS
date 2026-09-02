@@ -1032,6 +1032,48 @@ pub const POSITIONS: &[Position] = &[
             ],
         ],
     },
+    Position {
+        id: "the_relief",
+        name: "The relief",
+        provenance: "Every siege raised from inside: the garrison that held its wall until the column behind it came up",
+        problem: "A walled city with a thin garrison and a relief force two \
+                  tiles behind it, against an assault that outnumbers the \
+                  garrison three to one. The defence has to decide what the \
+                  city tile is for, who stands on the ring, and whether the \
+                  relief fights at the wall or in front of it — the first \
+                  board on which holding a city, rather than taking one, is \
+                  the problem posed.",
+        roles: [
+            "the assault: a catapult, two swordsmen, a warrior, an archer and a horseman on the open side",
+            "the defence: two in the city's shadow and a relief of four two tiles behind it",
+        ],
+        width: 24,
+        height: 14,
+        turns: 34,
+        terrain: &[
+            (Brush::Hills, &[(16, 5), (16, 7)]),
+            (Brush::Forest, &[(13, 6), (14, 4), (14, 8)]),
+        ],
+        cities: &[city(1, 17, 6, 200, 100)],
+        forces: [
+            &[
+                at("catapult", 9, 6),
+                at("swordsman", 11, 5),
+                at("swordsman", 11, 7),
+                at("warrior", 11, 6),
+                at("archer", 10, 6),
+                at("horseman", 12, 6),
+            ],
+            &[
+                at("spearman", 18, 6),
+                at("archer", 18, 5),
+                at("swordsman", 20, 5),
+                at("spearman", 20, 7),
+                at("archer", 20, 6),
+                at("horseman", 21, 6),
+            ],
+        ],
+    },
 ];
 
 /// Look a position up by its identifier.
