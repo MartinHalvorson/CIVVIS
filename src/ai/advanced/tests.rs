@@ -36435,8 +36435,8 @@ fn the_religious_veto_defence_gene_is_a_registered_reversible_opt_in() {
         "the live bridge applies the current latest-three-batch selection"
     );
     let mut ai = AdvancedAi::new();
-    assert_eq!(
-        ai.religious_veto_defence, false,
+    assert!(
+        !ai.religious_veto_defence,
         "the unconfigured controller keeps opt-ins off until the live bridge applies them"
     );
     ai.enable_religious_veto_defence();
