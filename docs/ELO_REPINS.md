@@ -2020,3 +2020,21 @@ profiles, the anchor moves from v34's 19,113 decisions and
 `0x7646_cfed_dde2_cf37` to **19,103 decisions and
 `0x6632_65e0_a544_79ca`**. The shipped ruleset fingerprint remains at v33's
 `fnv1a64:e69039571d195263`.
+
+## v36 (2026-09-02) — research may span a rolling three-era window
+
+v35 proved that a completely open candidate set can strand Bronze Working
+while a Science or military beeline races through much later technology. Its
+one-era lock was deliberately conservative, but it also made every side branch
+in the current era block useful work in the next one. The controller now keeps
+the oldest unfinished non-repeatable era and the next two eras open together.
+The window advances only after its oldest backlog is complete, so the AI can
+work through three consecutive eras but cannot again leave an Ancient branch
+behind while jumping to a Modern or Information-era target.
+
+This is a deliberate shared Basic/Advanced controller change, including
+`advanced_v1`. It moves the anchor from v35's 19,103 decisions and
+`0x6632_65e0_a544_79ca` to **19,113 decisions and
+`0x7646_cfed_dde2_cf37`** across the five profiles — coincidentally the same
+stream v34 recorded before v35 introduced the one-era lock. The shipped
+ruleset fingerprint remains at v33's `fnv1a64:e69039571d195263`.

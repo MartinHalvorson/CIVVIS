@@ -1477,7 +1477,7 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
             && !AdvancedAi::legacy().boosted_bargain_first_2
     );
     game.players[0].boosted_techs.insert(crate::name!("mining"));
-    let available = BasicAi::era_completion_techs(&game, 0);
+    let available = BasicAi::era_window_techs(&game, 0);
     assert_eq!(
         ai.boosted_bargain_tech(&game, 0, &available),
         None,
@@ -1620,7 +1620,7 @@ fn boosted_bargain_v2_breaks_only_a_close_unforced_fallback() {
 
     let mut v2 = AdvancedAi::new();
     v2.enable_boosted_bargain_first_2();
-    let available = BasicAi::era_completion_techs(&game, 0);
+    let available = BasicAi::era_window_techs(&game, 0);
     assert_eq!(
         v2.boosted_bargain_tech_2(
             &game,
@@ -11359,12 +11359,12 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     );
 }
 
-/// A late beeline may use only the next technology that advances its goal,
-/// which made the live seat reach Advanced Flight before it ever researched
-/// Bronze Working. Both controllers must clear the oldest unfinished era
-/// before any later-era candidate is considered.
+/// A late beeline used to make the live seat reach Advanced Flight before it
+/// ever researched Bronze Working. Controllers may now work across three
+/// consecutive eras, but no candidate may be farther than that rolling window
+/// from the oldest unfinished era.
 #[test]
-fn research_completes_each_era_before_a_later_beeline() {
+fn research_keeps_a_three_era_window_before_a_later_beeline() {
     let setup = || {
         let mut game = Game::new_full(1, 20, 14, 76_004, 300, 0, false);
         let known_ancient: Vec<Name> = game
@@ -11379,9 +11379,13 @@ fn research_completes_each_era_before_a_later_beeline() {
         // without making Bronze Working an ancestor of it, matching the
         // beeline shape that left the Ancient side branch behind in the live
         // run.
-        game.players[0]
-            .techs
-            .extend([crate::name!("radio"), crate::name!("chemistry")]);
+        game.players[0].techs.extend([
+            crate::name!("currency"),
+            crate::name!("horseback_riding"),
+            crate::name!("machinery"),
+            crate::name!("radio"),
+            crate::name!("chemistry"),
+        ]);
         assert!(
             game.available_techs(0)
                 .contains(&crate::name!("bronze_working")),
@@ -11390,6 +11394,15 @@ fn research_completes_each_era_before_a_later_beeline() {
         assert!(
             game.available_techs(0).contains(&crate::name!("rocketry")),
             "fixture: the late Science beeline is also legal"
+        );
+        assert!(
+            game.available_techs(0)
+                .contains(&crate::name!("apprenticeship")),
+            "fixture: the third-era technology is legal"
+        );
+        assert!(
+            game.available_techs(0).contains(&crate::name!("printing")),
+            "fixture: the fourth-era technology is legal"
         );
         game
     };
@@ -11404,37 +11417,66 @@ fn research_completes_each_era_before_a_later_beeline() {
     };
 
     let mut basic = setup();
-    assert_eq!(
-        BasicAi::era_completion_techs(&basic, 0),
-        vec![crate::name!("bronze_working")],
-        "the policy exposes only the unfinished Ancient era"
+    let initial_window = BasicAi::era_window_techs(&basic, 0);
+    assert!(
+        initial_window.contains(&crate::name!("bronze_working"))
+            && initial_window.contains(&crate::name!("apprenticeship")),
+        "the Ancient and third-era choices share the three-era window: {initial_window:?}"
+    );
+    assert!(
+        initial_window
+            .iter()
+            .all(|tech| basic.rules.techs[tech].era <= 2),
+        "an unfinished Ancient era permits only Ancient through Medieval choices: {initial_window:?}"
+    );
+    assert!(
+        !initial_window.contains(&crate::name!("printing"))
+            && !initial_window.contains(&crate::name!("rocketry")),
+        "a fourth or later era must stay outside the three-era window: {initial_window:?}"
     );
     BasicAi::new().research(&mut basic, 0);
-    assert_eq!(basic.players[0].research.as_deref(), Some("bronze_working"));
+    let basic_pick = Name::new(
+        basic.players[0]
+            .research
+            .as_deref()
+            .expect("a legal research pick"),
+    );
+    assert!(
+        initial_window.contains(&basic_pick),
+        "Basic AI must select only from the rolling window"
+    );
 
     let mut advanced = setup();
+    let advanced_window = BasicAi::era_window_techs(&advanced, 0);
     AdvancedAi::new().advanced_research(&mut advanced, 0, &plan);
-    assert_eq!(
-        advanced.players[0].research.as_deref(),
-        Some("bronze_working"),
-        "a Science beeline must not leap from an unfinished Ancient era to Rocketry"
+    let advanced_pick = Name::new(
+        advanced.players[0]
+            .research
+            .as_deref()
+            .expect("a legal research pick"),
+    );
+    assert!(
+        advanced_window.contains(&advanced_pick)
+            && advanced.rules.techs[&advanced_pick].era <= 2,
+        "a Science beeline must stay within the Ancient-to-Medieval window rather than leap to Rocketry"
     );
 
     advanced.players[0].research = None;
     advanced.players[0]
         .techs
         .insert(crate::name!("bronze_working"));
-    let next_era = BasicAi::era_completion_techs(&advanced, 0);
+    let next_era = BasicAi::era_window_techs(&advanced, 0);
     assert!(
         !next_era.is_empty()
             && next_era
                 .iter()
-                .all(|tech| advanced.rules.techs[tech].era == 1),
-        "after Ancient is complete, only Classical choices may open next: {next_era:?}"
+                .all(|tech| advanced.rules.techs[tech].era <= 3),
+        "after Ancient is complete, the Classical-to-Renaissance window may open: {next_era:?}"
     );
     assert!(
-        !next_era.contains(&crate::name!("rocketry")),
-        "the later beeline remains gated behind the whole Classical era"
+        next_era.contains(&crate::name!("printing"))
+            && !next_era.contains(&crate::name!("rocketry")),
+        "clearing Ancient rolls the cap forward by one era but still excludes Rocketry"
     );
 }
 

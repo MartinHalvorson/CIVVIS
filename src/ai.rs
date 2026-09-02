@@ -325,6 +325,10 @@ const TECH_PRIORITY: [&str; 15] = [
     "education",
     "machinery",
 ];
+/// Number of consecutive eras in the unattended controller's permissible
+/// research window. This lets a strategy start useful follow-up work without
+/// abandoning an old branch indefinitely.
+const RESEARCH_ERA_WINDOW: usize = 3;
 const CIVIC_PRIORITY: [&str; 8] = [
     "code_of_laws",
     "craftsmanship",
@@ -3906,18 +3910,19 @@ impl BasicAi {
         })
     }
 
-    /// The controller's research candidates after enforcing era completion.
+    /// The controller's research candidates inside the rolling era window.
     ///
     /// The rules correctly make every prerequisite-satisfied technology legal:
     /// that is what permits a human player to beeline. An unattended AI needs
     /// a stronger policy, though. A victory or military beeline can otherwise
     /// jump from an Ancient prerequisite to a Modern one and leave a useful
     /// side branch such as Bronze Working untouched for most of the game.
-    /// Keep the choice in the oldest era with an unresearched nonrepeatable
-    /// technology, and only let the next era open after that backlog is gone.
+    /// Keep candidates in the oldest era with an unresearched nonrepeatable
+    /// technology and the next two eras: at most three eras can be in flight.
+    /// Once the oldest backlog clears, that three-era window rolls forward.
     /// Repeatable Future technologies are deliberately excluded from the
     /// floor, so completing the ordinary tree still leaves them selectable.
-    pub(crate) fn era_completion_techs(g: &Game, pid: usize) -> Vec<Name> {
+    pub(crate) fn era_window_techs(g: &Game, pid: usize) -> Vec<Name> {
         let earliest_incomplete_era = g
             .rules
             .techs
@@ -3925,12 +3930,14 @@ impl BasicAi {
             .filter(|(tech, spec)| !spec.repeatable && !g.players[pid].techs.contains(*tech))
             .map(|(_, spec)| spec.era)
             .min();
+        let latest_allowed_era = earliest_incomplete_era
+            .map(|era| era.saturating_add(RESEARCH_ERA_WINDOW.saturating_sub(1)));
 
         g.available_techs(pid)
             .into_iter()
             .filter(|tech| {
-                earliest_incomplete_era
-                    .is_none_or(|era| g.rules.techs.get(tech).is_some_and(|spec| spec.era == era))
+                latest_allowed_era
+                    .is_none_or(|era| g.rules.techs.get(tech).is_some_and(|spec| spec.era <= era))
             })
             .collect()
     }
@@ -7425,7 +7432,7 @@ impl BasicAi {
     /// setup-granted Walls and can move directly toward their specialty.
     fn minor_research(&self, g: &mut Game, pid: usize) {
         if g.players[pid].research.is_none() {
-            let avail = Self::era_completion_techs(g, pid);
+            let avail = Self::era_window_techs(g, pid);
             if !avail.is_empty() {
                 let has_walls = g.player_city_ids(pid).into_iter().any(|city| {
                     g.cities[&city]
@@ -7627,7 +7634,7 @@ impl BasicAi {
         pool: Option<&WorkPool>,
     ) {
         if g.players[pid].research.is_none() {
-            let avail = Self::era_completion_techs(g, pid);
+            let avail = Self::era_window_techs(g, pid);
             if !avail.is_empty() {
                 let barbarian_goal = if self.barbarian_tactics {
                     Self::barbarian_military_research_goal(g, pid)
