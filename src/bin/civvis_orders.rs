@@ -982,7 +982,12 @@ impl HostMoveRefusals {
             let Some(verb) = order.verb.as_deref() else {
                 return true;
             };
-            if order.kind == "unit" && matches!(verb, "MOVE_TO" | "CAPTURE" | "FORTIFY" | "SWAP") {
+            if order.kind == "unit"
+                && matches!(
+                    verb,
+                    "MOVE_TO" | "CAPTURE" | "FORTIFY" | "SWAP" | "REBASE" | "PATROL"
+                )
+            {
                 let key = HostUnitOrderKey {
                     verb: verb.to_string(),
                     pos: order.pos,
@@ -3776,6 +3781,9 @@ fn decide(
                     Action::Attack { unit, .. }
                     | Action::Ranged { unit, .. }
                     | Action::Swap { unit, .. }
+                    | Action::AirStrike { unit, .. }
+                    | Action::AirRebase { unit, .. }
+                    | Action::AirPatrol { unit, .. }
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
                     | Action::Improve { unit, .. }
@@ -4468,6 +4476,44 @@ fn translate(
                 verb: Some("SWAP".to_string()),
                 pos: Some(civvis::hex::axial_to_offset(partner.0, partner.1)),
             })
+        }),
+        // ★★★ THE AIR VERBS. `Action::AirStrike`, `Action::AirRebase` and
+        // `Action::AirPatrol` — legal and tested in the engine since
+        // `do_air_strike` / `do_air_rebase` / `do_air_patrol` — fell through
+        // this match's `_ => None` and were counted `unit_action_untranslated`,
+        // so no aircraft the live seat ever built could fly a sortie, change
+        // base or intercept. Civilization VI has one operation for each, read
+        // off the installed game (`Base/Assets/Gameplay/Data/UnitOperations.xml`
+        // rows `UNITOPERATION_AIR_ATTACK`, `UNITOPERATION_REBASE`,
+        // `UNITOPERATION_DEPLOY`; there is no `AIR_PATROL` row — a fighter's
+        // patrol is the shipped "Deploy": it flies to a plot within range and
+        // intercepts from there). The shipped UI requests all three with the
+        // plot as the ordinary positional pair, `WorldInput.lua:2077-2078`
+        // (`UnitAirAttack`), `:2418-2419` (`AirUnitDeploy`), `:2486-2487`
+        // (`AirUnitReBase`):
+        //
+        //   if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, nil, tParameters)) then
+        //       UnitManager.RequestOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, tParameters);
+        //
+        // so `pos` is the target plot for `AIR_ATTACK`, the base plot for
+        // `REBASE` and the patrol plot for `PATROL`.
+        Action::AirStrike { unit, target } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("AIR_ATTACK".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+        }),
+        Action::AirRebase { unit, to } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("REBASE".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
+        }),
+        Action::AirPatrol { unit, to } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("PATROL".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(to.0, to.1)),
         }),
         // ⚠ There is NO attack operation on this build; the resolved list is only
         // MOVE_TO and RANGE_ATTACK, so a melee strike IS a move onto the defended
@@ -5338,6 +5384,14 @@ const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
         "SPY_*",
         "espionage missions run for many turns and the frame carries none",
     ),
+    // A fighter's patrol is the shipped `UNITOPERATION_DEPLOY`: the aircraft
+    // flies to the plot and intercepts from there, and the frame exports no
+    // patrol state — neither the plot it watches nor whether the host has
+    // recalled it to base by the next turn's opening frame.
+    (
+        "PATROL",
+        "the frame carries no patrol state; where a deployed fighter stands next frame is the host's",
+    ),
 ];
 
 fn unverifiable_kind(kind: &str) -> bool {
@@ -6003,7 +6057,9 @@ fn verify_unit_order(
                 Verdict::Failed("no_city".to_string())
             }
         }
-        "ATTACK" | "RANGE_ATTACK" => {
+        // An air strike is a ranged strike flown from the base: the target
+        // plot harmed on the next frame, or a combat on the ledger, proves it.
+        "ATTACK" | "RANGE_ATTACK" | "AIR_ATTACK" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
             if harmed || combat_evidence(evidence, turn, id) {
                 Verdict::Verified
@@ -6014,6 +6070,20 @@ fn verify_unit_order(
                     strike_refusal_reason(evidence, turn, id, order.pos)
                         .unwrap_or_else(|| "target_unharmed".to_string()),
                 )
+            }
+        }
+        // A rebase lands the aircraft on the new base plot at once (the
+        // shipped `UNITOPERATION_REBASE` is a teleport that spends the turn),
+        // so the aircraft standing there on the next frame is the whole
+        // postcondition.
+        "REBASE" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            match now {
+                Some(now) if (now.x, now.y) == want => Verdict::Verified,
+                None => gone(),
+                Some(_) => Verdict::Failed("not_rebased".to_string()),
             }
         }
         "FORTIFY" => {
@@ -10977,6 +11047,150 @@ mod tests {
             verdict(&gone),
             Verdict::Failed(reason) if reason == "unit_gone"
         ));
+    }
+
+    /// The three air actions cross as their own verbs, aimed at the plot the
+    /// shipped `WorldInput.lua` hands each operation — the target for
+    /// `AIR_ATTACK` (`:2077`), the new base for `REBASE` (`:2486`), the patrol
+    /// plot for `PATROL` (`:2418`, the shipped Deploy) — instead of falling
+    /// through to `unit_action_untranslated`.
+    #[test]
+    fn the_air_actions_cross_as_air_attack_rebase_and_patrol() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let slinger = mirror
+            .civ6_of
+            .iter()
+            .find_map(|(unit, civ6)| (*civ6 == 100).then_some(*unit))
+            .unwrap();
+        let plot = |x, y| civvis::hex::offset_to_axial(x, y);
+        let crossed = |action: Action| {
+            let order = translate(&action, &mirror, &state).expect("the air action crosses");
+            (order.kind, order.subject, order.verb, order.pos)
+        };
+        assert_eq!(
+            crossed(Action::AirStrike {
+                unit: slinger,
+                target: plot(5, 4),
+            }),
+            (
+                "unit",
+                Some(100),
+                Some("AIR_ATTACK".to_string()),
+                Some((5, 4))
+            ),
+            "the target plot, in host offsets"
+        );
+        assert_eq!(
+            crossed(Action::AirRebase {
+                unit: slinger,
+                to: plot(4, 4),
+            }),
+            ("unit", Some(100), Some("REBASE".to_string()), Some((4, 4))),
+            "the new base plot"
+        );
+        assert_eq!(
+            crossed(Action::AirPatrol {
+                unit: slinger,
+                to: plot(7, 7),
+            }),
+            ("unit", Some(100), Some("PATROL".to_string()), Some((7, 7))),
+            "the plot to fly to and intercept from"
+        );
+        // An aircraft the mirror cannot map has no host id to order.
+        assert!(translate(
+            &Action::AirStrike {
+                unit: u32::MAX,
+                target: plot(5, 4),
+            },
+            &mirror,
+            &state,
+        )
+        .is_none());
+    }
+
+    /// An air strike verifies like a ranged one: the target plot harmed on
+    /// the next frame — hp down, or the unit gone — is the sortie; an
+    /// untouched target is `target_unharmed`.
+    #[test]
+    fn an_air_attack_is_verified_by_the_harmed_target() {
+        let (tiles, before) = local_barbarian_defense_board();
+        // Slinger 100 stands in for the aircraft; the barbarian at (5,4) is
+        // the target.
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(100),
+            verb: Some("AIR_ATTACK".to_string()),
+            pos: Some((5, 4)),
+        };
+        let verdict = |after: &StateSnapshot| {
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                after,
+                &tiles,
+                &[],
+                LaterFrames::default(),
+            )
+        };
+        let mut harmed = before.clone();
+        harmed.hostiles[0].hp = 30.0;
+        assert!(matches!(verdict(&harmed), Verdict::Verified));
+        let mut destroyed = before.clone();
+        destroyed.hostiles.clear();
+        assert!(matches!(verdict(&destroyed), Verdict::Verified));
+        assert!(matches!(
+            verdict(&before),
+            Verdict::Failed(reason) if reason == "target_unharmed"
+        ));
+    }
+
+    /// A rebase is the aircraft standing on the base plot next frame — the
+    /// shipped REBASE is a teleport that spends the turn — else `not_rebased`;
+    /// a patrol (the shipped Deploy) is declared unverifiable because the
+    /// frame carries no patrol state.
+    #[test]
+    fn a_rebase_is_verified_on_the_base_plot_and_a_patrol_is_unverifiable() {
+        let (tiles, before) = local_barbarian_defense_board();
+        let rebase = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(100),
+            verb: Some("REBASE".to_string()),
+            pos: Some((4, 4)),
+        };
+        let verdict = |order: &IssuedOrder, after: &StateSnapshot| {
+            verify_unit_order(
+                order,
+                30,
+                &before,
+                after,
+                &tiles,
+                &[],
+                LaterFrames::default(),
+            )
+        };
+        let mut rebased = before.clone();
+        let aircraft = rebased.units.iter_mut().find(|u| u.id == 100).unwrap();
+        (aircraft.x, aircraft.y) = (4, 4);
+        assert!(matches!(verdict(&rebase, &rebased), Verdict::Verified));
+        assert!(matches!(
+            verdict(&rebase, &before),
+            Verdict::Failed(reason) if reason == "not_rebased"
+        ));
+        let mut gone = before.clone();
+        gone.units.retain(|u| u.id != 100);
+        assert!(matches!(
+            verdict(&rebase, &gone),
+            Verdict::Failed(reason) if reason == "unit_gone"
+        ));
+
+        let patrol = IssuedOrder {
+            verb: Some("PATROL".to_string()),
+            ..rebase.clone()
+        };
+        assert_eq!(verdict(&patrol, &before), Verdict::Unverifiable);
+        assert!(unverifiable_unit_verb("PATROL"));
     }
 
     #[test]
