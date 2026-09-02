@@ -5133,6 +5133,12 @@ const EVIDENCE_KINDS: &[&str] = &[
     // `MOVE_TO` was diagnosed by comparing two frames' positions, which
     // cannot tell a refusal from a unit that simply had no movement left.
     "move_refused",
+    // The queue's same-pass answer to a leg the host accepted and never
+    // walked (`CivvisBoard.moveNoop`): the host's own reason, and the
+    // neighbour step sent in its place. A `did_not_move` with one of these
+    // on the ledger is a named refusal, not a position diff.
+    "move_noop",
+    "move_fallback",
 ];
 
 /// Ledger evidence and state frames stamped with one of `turns`.
@@ -5374,11 +5380,26 @@ fn target_harmed(
 /// inference that reads the same for a refusal, an exhausted allowance and
 /// an order the mod never issued.
 fn move_refusal_reason(evidence: &[serde_json::Value], turn: u32, unit: i64) -> Option<String> {
-    let event = evidence.iter().find(|event| {
-        event.get("kind").and_then(|k| k.as_str()) == Some("move_refused")
-            && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
-            && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
-    })?;
+    let of_kind = |kind: &str| {
+        evidence.iter().find(|event| {
+            event.get("kind").and_then(|k| k.as_str()) == Some(kind)
+                && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+                && event.get("unit").and_then(|u| u.as_i64()) == Some(unit)
+        })
+    };
+    // A leg the host accepted and never walked is the more specific answer:
+    // the mod probed the host for the reason after the watch ran out
+    // (`cannot_start`, `no_path`, `zoc`, `occupied`, …), where `move_refused`
+    // only says the operation would not start.
+    if let Some(noop) = of_kind("move_noop") {
+        let why = noop
+            .get("why")
+            .and_then(|w| w.as_str())
+            .filter(|w| !w.is_empty())
+            .unwrap_or("unknown");
+        return Some(format!("host_noop_{why}"));
+    }
+    let event = of_kind("move_refused")?;
     let named = |key: &str| event.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
     Some(if named("dest_impassable") {
         "host_refused_impassable".to_string()
@@ -8464,6 +8485,34 @@ mod tests {
         assert!(
             super::EVIDENCE_KINDS.contains(&"move_refused"),
             "the reader has to be asked for the kind before it can read it"
+        );
+        assert!(
+            super::EVIDENCE_KINDS.contains(&"move_noop")
+                && super::EVIDENCE_KINDS.contains(&"move_fallback"),
+            "the queue's no-op answer is evidence too"
+        );
+        // A leg the host accepted and never walked names the host's reason
+        // ahead of the plainer refusal on the same unit and turn.
+        let noop = vec![
+            serde_json::json!({
+                "kind": "move_noop", "turn": 42, "unit": 7,
+                "from": [3, 4], "want": [4, 4], "why": "zoc"
+            }),
+            serde_json::json!({
+                "kind": "move_refused", "turn": 42, "unit": 7, "x": 4, "y": 4
+            }),
+            serde_json::json!({
+                "kind": "move_noop", "turn": 42, "unit": 9, "from": [1, 1], "want": [2, 1]
+            }),
+        ];
+        assert_eq!(
+            super::move_refusal_reason(&noop, 42, 7).as_deref(),
+            Some("host_noop_zoc")
+        );
+        assert_eq!(
+            super::move_refusal_reason(&noop, 42, 9).as_deref(),
+            Some("host_noop_unknown"),
+            "a no-op with no reason is still a no-op, not a position diff"
         );
         assert!(
             super::EVIDENCE_KINDS.contains(&"settler_capture_escape"),

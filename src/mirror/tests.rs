@@ -12885,3 +12885,161 @@ fn a_minors_unit_is_planted_on_a_plot_a_barbarian_already_holds() {
         "so the strike veto can see it"
     );
 }
+
+/// docs/FIDELITY.md, "an enemy's attacks left, formation tier and embarked
+/// flag cross" (2026-09-01). `hostiles[]` never carried `formation`, so an
+/// enemy Corps or Army stood on the board as a plain unit — 10 or 17 CS short
+/// of the figure its flag shows. The tier reaches a planted hostile through
+/// the same `apply_unit_observation` the seat's own units use, and
+/// `Game::unit_strength` prices it there, attacking and defending alike.
+#[test]
+fn a_hostile_exported_as_an_army_is_priced_seventeen_above_a_plain_one() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 8,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: (0..8)
+            .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let priced = |formation: Option<i32>| {
+        let state = StateSnapshot {
+            turn: 8,
+            hostiles: vec![StateUnit {
+                id: 131072,
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 3,
+                y: 3,
+                hp: 100.0,
+                formation,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let uid = mirror.foreign_uid_of[&131072];
+        let unit = &mirror.game.units[&uid];
+        assert_eq!(
+            Some(unit.owner),
+            mirror.game.barb_pid,
+            "a hostile lands on the barbarian seat"
+        );
+        (
+            unit.formation,
+            mirror.game.unit_strength(unit, false),
+            mirror.game.unit_strength(unit, true),
+        )
+    };
+    let (plain_tier, plain_attack, plain_defence) = priced(Some(0));
+    let (army_tier, army_attack, army_defence) = priced(Some(2));
+    assert_eq!((plain_tier, army_tier), (0, 2));
+    assert_eq!(
+        army_attack - plain_attack,
+        17.0,
+        "an Army attacks at +17 CS"
+    );
+    assert_eq!(army_defence - plain_defence, 17.0, "and defends at +17 CS");
+    let (corps_tier, corps_attack, _) = priced(Some(1));
+    assert_eq!(
+        (corps_tier, corps_attack - plain_attack),
+        (1, 10.0),
+        "a Corps at +10 CS"
+    );
+    let (absent_tier, absent_attack, _) = priced(None);
+    assert_eq!(
+        (absent_tier, absent_attack),
+        (0, plain_attack),
+        "an older export without the key: the board's own tier, priced as before"
+    );
+    let (sentinel_tier, sentinel_attack, _) = priced(Some(-1));
+    assert_eq!(
+        (sentinel_tier, sentinel_attack),
+        (0, plain_attack),
+        "the mod's -1 is unknown — not an Army, not a claim"
+    );
+}
+
+/// The same note: `attacks_remaining` (`GetAttacksRemaining`, the shipped
+/// SelectedUnit read) now crosses for a foreign unit and
+/// `apply_foreign_unit_strikes` sets the planted unit's `attacks_left` on
+/// every foreign planting site — hostiles and rivals, rebuild and sync. An
+/// enemy that had struck this turn used to read as one that could still
+/// strike. Absent, the fresh-turn allowance stands exactly as before.
+#[test]
+fn a_hostiles_attacks_remaining_reaches_the_planted_unit_on_both_paths() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 8,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: (0..8)
+            .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let state = |turn: u32, attacks: Option<i32>| StateSnapshot {
+        turn,
+        hostiles: vec![StateUnit {
+            id: 131072,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 3,
+            y: 3,
+            hp: 100.0,
+            attacks_remaining: attacks,
+            ..StateUnit::default()
+        }],
+        rivals: vec![StateRival {
+            player: 1,
+            units: vec![StateUnit {
+                id: 65537,
+                kind: "UNIT_ARCHER".to_string(),
+                x: 5,
+                y: 5,
+                hp: 100.0,
+                attacks_remaining: attacks,
+                ..StateUnit::default()
+            }],
+            ..StateRival::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let attacks_of = |mirror: &LiveMirror, id: i64| {
+        let uid = *mirror
+            .foreign_uid_of
+            .get(&id)
+            .expect("the foreign unit is on the board");
+        mirror.game.units[&uid].attacks_left
+    };
+
+    let mut mirror = LiveMirror::new(&snapshot, &state(8, Some(0)), 4, 1, 250, 0);
+    assert_eq!(
+        attacks_of(&mirror, 131072),
+        0,
+        "rebuild: the hostile has already struck"
+    );
+    assert_eq!(
+        attacks_of(&mirror, 65537),
+        0,
+        "rebuild: so has the rival's Archer"
+    );
+    mirror.sync(&snapshot, &state(9, Some(1)), 0);
+    assert_eq!(attacks_of(&mirror, 131072), 1, "sync: a strike in hand");
+    assert_eq!(attacks_of(&mirror, 65537), 1);
+    mirror.sync(&snapshot, &state(10, Some(0)), 0);
+    assert_eq!(attacks_of(&mirror, 131072), 0, "sync: spent again");
+    assert_eq!(attacks_of(&mirror, 65537), 0);
+    mirror.sync(&snapshot, &state(11, None), 0);
+    assert_eq!(
+        attacks_of(&mirror, 131072),
+        1,
+        "an export without the key: the fresh-turn allowance, as before"
+    );
+    assert_eq!(attacks_of(&mirror, 65537), 1);
+
+    let absent = LiveMirror::new(&snapshot, &state(8, None), 4, 1, 250, 0);
+    assert_eq!(
+        (attacks_of(&absent, 131072), attacks_of(&absent, 65537)),
+        (1, 1),
+        "rebuild without the key: unchanged"
+    );
+}
