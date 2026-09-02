@@ -339,6 +339,46 @@ class SilenceIsAFasterWedgeSignal(unittest.TestCase):
         self.assertIn("silence=-1", block)
         self.assertIn('if [[ -r "$events_path" ]]', block)
 
+    def test_the_watchdogs_own_branch_lowers_the_bar_only_when_silent(self):
+        """The real block, sliced out of the script and run under zsh, against
+        a fresh events file and a stale one."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
+        source = self._source()
+        branch = source[source.index("  silence=-1"):
+                        source.index('\n  if [[ "$progress_signal" =~')]
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp)
+            (runs / "civvis-test").mkdir()
+            events = runs / "civvis-test" / "events.jsonl"
+            events.write_text("{}\n")
+
+            def decide() -> tuple[str, str]:
+                script = (f'RUNS={runs}\ntag=civvis-test\n'
+                          'PROGRESS_CONFIRM=5\nSILENCE_S=120\nSILENCE_CONFIRM=2\n'
+                          + branch +
+                          '\nprint -r -- "$progress_needed|$progress_rule"\n')
+                out = subprocess.run(["zsh", "-c", script], capture_output=True,
+                                     text=True, timeout=60)
+                self.assertEqual(out.returncode, 0, out.stderr)
+                needed, rule = out.stdout.strip().split("|", 1)
+                return needed, rule
+
+            needed, rule = decide()
+            self.assertEqual(needed, "5", "a live run keeps the patient rule")
+            self.assertEqual(rule, "no synchronized progress")
+
+            old_time = time.time() - 600
+            os.utime(events, (old_time, old_time))
+            needed, rule = decide()
+            self.assertEqual(needed, "2", "ten minutes of silence lowers the bar")
+            self.assertTrue(rule.startswith("silent for "), rule)
+
+            events.unlink()
+            needed, rule = decide()
+            self.assertEqual(needed, "5", "no events file is no evidence")
+            self.assertEqual(rule, "no synchronized progress")
+
     def test_the_silence_arithmetic_runs_in_the_watchdogs_own_zsh(self):
         """The behaviour, not the text: a fresh file is not silent and an old
         one is, through the same expression the script uses."""
