@@ -463,8 +463,13 @@ fn anvil_orders_for(
     if land.is_empty() {
         return posts;
     }
-    let hostile_distance =
-        |pos: Pos| hostiles.iter().map(|h| g.wdist(*h, pos)).min().unwrap_or(i32::MAX);
+    let hostile_distance = |pos: Pos| {
+        hostiles
+            .iter()
+            .map(|h| g.wdist(*h, pos))
+            .min()
+            .unwrap_or(i32::MAX)
+    };
     let defence = |pos: Pos| -(g.tile_defense_bonus(pos) * 10.0).round() as i32;
     let open = |pos: Pos| {
         g.map
@@ -536,11 +541,13 @@ fn anvil_orders_for(
         .take(ANVIL_FRONT_TILES.min(melee.len()))
         .collect();
     for tile in front {
-        let Some(pick) = melee
-            .iter()
-            .copied()
-            .min_by_key(|uid| (g.wdist(g.units[uid].pos, tile), Reverse(g.units[uid].hp), *uid))
-        else {
+        let Some(pick) = melee.iter().copied().min_by_key(|uid| {
+            (
+                g.wdist(g.units[uid].pos, tile),
+                Reverse(g.units[uid].hp),
+                *uid,
+            )
+        }) else {
             break;
         };
         melee.retain(|uid| *uid != pick);
@@ -782,16 +789,14 @@ impl AdvancedAi {
                 .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
                 .map(|_| cid)
         };
-        g.city_at(group.objective)
-            .and_then(enemy_city)
-            .or_else(|| {
-                if plan.threatened_city.is_some() {
-                    return None;
-                }
-                plan.target_city
-                    .and_then(enemy_city)
-                    .filter(|cid| g.wdist(group.anchor, g.cities[cid].pos) <= OBJECTIVE_REACH)
-            })
+        g.city_at(group.objective).and_then(enemy_city).or_else(|| {
+            if plan.threatened_city.is_some() {
+                return None;
+            }
+            plan.target_city
+                .and_then(enemy_city)
+                .filter(|cid| g.wdist(group.anchor, g.cities[cid].pos) <= OBJECTIVE_REACH)
+        })
     }
 
     /// The state machine, once a turn per city: the bill, the strength, the
@@ -911,7 +916,11 @@ impl AdvancedAi {
             self.census.siege_captures += 1;
         }
         if self.journal().wants(crate::reasoning::Level::Decision) {
-            let name = g.cities.get(&cid).map(|c| c.name.clone()).unwrap_or_default();
+            let name = g
+                .cities
+                .get(&cid)
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
             let taker_note = match taker {
                 Some(uid) => format!(", taker {} reserved", g.units[&uid].kind),
                 None => String::new(),
@@ -1247,7 +1256,13 @@ impl AdvancedAi {
     /// first routable one — a step that does not put the goal further off,
     /// so a unit whose route is re-read after each step cannot walk out and
     /// back within the turn.
-    fn move_toward_any(&mut self, g: &mut Game, pid: usize, uid: u32, goals: &[Pos]) -> Option<bool> {
+    fn move_toward_any(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        goals: &[Pos],
+    ) -> Option<bool> {
         let here = g.units[&uid].pos;
         let reachable = g.reachable(uid);
         for goal in goals {
@@ -1286,7 +1301,11 @@ impl AdvancedAi {
         }
         let (ranged, melee, siege) = {
             let spec = &g.rules.units[unit.kind];
-            (spec.has_ranged_attack(), spec.is_melee_capable(), spec.siege)
+            (
+                spec.has_ranged_attack(),
+                spec.is_melee_capable(),
+                spec.siege,
+            )
         };
         if ranged && siege && unit.moved && g.promotion_effect(&unit, "attack_after_move") == 0.0 {
             return None;
@@ -1327,7 +1346,8 @@ impl AdvancedAi {
         let mut best: Option<(bool, f64, Action)> = None;
         for action in actions {
             let mut board = g.speculative_clone();
-            let (result, applied) = Self::tactical_attack_result_in(&mut board, pid, uid, &action, plan);
+            let (result, applied) =
+                Self::tactical_attack_result_in(&mut board, pid, uid, &action, plan);
             if !matches!(applied, AppliedAttack::Applied) || !result.attacker_survives {
                 continue;
             }
@@ -1352,7 +1372,13 @@ impl AdvancedAi {
 
     /// A ranged blow that finishes a reliever within [`RELIEVER_RADIUS`] of
     /// the city with [`KILL_MARGIN`], lowest hit points first.
-    fn reliever_kill_shot(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+    fn reliever_kill_shot(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+    ) -> Option<bool> {
         self.ranged_shot(g, pid, uid, Some(city.pos), true)
     }
 
@@ -1396,7 +1422,12 @@ impl AdvancedAi {
             if kills_only && !kill {
                 continue;
             }
-            let key = (kill, (dealt * 100.0).round() as i64, Reverse(hp), Reverse(pos));
+            let key = (
+                kill,
+                (dealt * 100.0).round() as i64,
+                Reverse(hp),
+                Reverse(pos),
+            );
             if best.as_ref().is_none_or(|(old, _)| key > *old) {
                 best = Some((key, pos));
             }
@@ -1416,15 +1447,14 @@ impl AdvancedAi {
         if !g.ranged_order_is_legal(pid, uid, city.pos, frame.as_ref(), &viewers) {
             return None;
         }
-        if g
-            .apply(
-                pid,
-                &Action::Ranged {
-                    unit: uid,
-                    target: city.pos,
-                },
-            )
-            .is_err()
+        if g.apply(
+            pid,
+            &Action::Ranged {
+                unit: uid,
+                target: city.pos,
+            },
+        )
+        .is_err()
         {
             return None;
         }
@@ -1522,9 +1552,9 @@ impl AdvancedAi {
             .iter()
             .filter(|(uid, post)| {
                 **post == city.pos
-                    && g.units
-                        .get(uid)
-                        .is_some_and(|unit| unit.pos != city.pos && g.wdist(unit.pos, city.pos) == 1)
+                    && g.units.get(uid).is_some_and(|unit| {
+                        unit.pos != city.pos && g.wdist(unit.pos, city.pos) == 1
+                    })
             })
             .map(|(uid, _)| *uid)
             .collect();
@@ -1606,9 +1636,9 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests {
+    use super::super::GrandStrategy;
     use super::*;
     use crate::doctrine::{build, position};
-    use super::super::GrandStrategy;
 
     /// `the_storming`'s board with its army removed: a 200-hit-point city
     /// of player 1 behind 100 points of wall, and nothing else.
@@ -1791,7 +1821,12 @@ mod tests {
         let standing: Vec<Pos> = warriors.iter().map(|uid| g.units[uid].pos).collect();
         let covered: Vec<(Pos, bool)> = ring_tiles
             .iter()
-            .map(|pos| (*pos, g.in_enemy_zoc(1, *pos) || !g.unit_ids_at(*pos).is_empty()))
+            .map(|pos| {
+                (
+                    *pos,
+                    g.in_enemy_zoc(1, *pos) || !g.unit_ids_at(*pos).is_empty(),
+                )
+            })
             .collect();
         assert_eq!(
             sealed, ring,
@@ -1805,7 +1840,10 @@ mod tests {
             .copied()
             .filter(|pos| ring_tiles.contains(pos))
             .collect();
-        assert!(on_ring.len() >= 2, "two units three apart seal a ring of six: {on_ring:?}");
+        assert!(
+            on_ring.len() >= 2,
+            "two units three apart seal a ring of six: {on_ring:?}"
+        );
         for a in &on_ring {
             for b in &on_ring {
                 assert!(
@@ -1829,7 +1867,10 @@ mod tests {
             assert!(
                 ring_tiles.contains(&g.units[uid].pos),
                 "every warrior stands on the ring: {:?}",
-                warriors.iter().map(|uid| g.units[uid].pos).collect::<Vec<_>>()
+                warriors
+                    .iter()
+                    .map(|uid| g.units[uid].pos)
+                    .collect::<Vec<_>>()
             );
         }
         let (sealed, ring) = ring_state(&g, cid);
@@ -1896,7 +1937,10 @@ mod tests {
             city.hp = 30;
         }
         let blow = taker_blow(&g, 0, swordsman, cid);
-        assert!(blow >= 30.0, "the fixture puts the city within the blow: {blow}");
+        assert!(
+            blow >= 30.0,
+            "the fixture puts the city within the blow: {blow}"
+        );
         let mut ai = AdvancedAi::new();
         ai.enable_siege_train();
         let plan = plan_against(&g, cid);
@@ -1966,21 +2010,33 @@ mod tests {
         let plan = plan_against(&g, cid);
         step_unit(&mut ai, &mut g, 0, catapult, &plan);
         assert!(g.cities[&cid].wall_hp < 100, "the catapult shot the wall");
-        assert_eq!(g.units[&reliever].hp, 100, "the healthy reliever was not the target");
-        assert_eq!(g.units[&catapult].pos, cat_pos, "the gun did not move to fire");
+        assert_eq!(
+            g.units[&reliever].hp, 100,
+            "the healthy reliever was not the target"
+        );
+        assert_eq!(
+            g.units[&catapult].pos, cat_pos,
+            "the gun did not move to fire"
+        );
         // The wall down: the next shot lands on the city's hit points.
         g.cities.get_mut(&cid).unwrap().wall_hp = 0;
         end_round(&mut g);
         let hp_before = g.cities[&cid].hp;
         step_unit(&mut ai, &mut g, 0, catapult, &plan);
-        assert!(g.cities[&cid].hp < hp_before, "the garrison takes the blow now");
+        assert!(
+            g.cities[&cid].hp < hp_before,
+            "the garrison takes the blow now"
+        );
         assert_eq!(g.units[&reliever].hp, 100);
         // A reliever it can kill outranks the city.
         end_round(&mut g);
         g.units.get_mut(&reliever).unwrap().hp = 10;
         let hp_before = g.cities[&cid].hp;
         step_unit(&mut ai, &mut g, 0, catapult, &plan);
-        assert!(!g.units.contains_key(&reliever), "the wounded reliever is finished");
+        assert!(
+            !g.units.contains_key(&reliever),
+            "the wounded reliever is finished"
+        );
         assert_eq!(
             g.cities[&cid].hp, hp_before,
             "the catapult's shot went to the reliever, not the city"
@@ -2011,7 +2067,10 @@ mod tests {
             assert!(g.apply(1, &Action::EndTurn).is_ok());
             assert!(g.apply(0, &Action::EndTurn).is_ok());
         }
-        assert_eq!(g.units[&archer].pos, city_pos, "the shooter garrisons the city");
+        assert_eq!(
+            g.units[&archer].pos, city_pos,
+            "the shooter garrisons the city"
+        );
         let adjacent = [warrior, spearman]
             .iter()
             .filter(|uid| g.wdist(g.units[uid].pos, city_pos) == 1)
@@ -2052,10 +2111,14 @@ mod tests {
         ai.enable_anvil();
         let plan = plan_holding(&g, cid);
         play(&mut ai, &mut g, 1, &plan);
-        assert_eq!(g.units[&hurt].pos, city_pos, "the wounded unit is in the city");
-        assert_eq!(g.units[&archer].pos, ring[0], "the fresh unit holds its tile");
+        assert_eq!(
+            g.units[&hurt].pos, city_pos,
+            "the wounded unit is in the city"
+        );
+        assert_eq!(
+            g.units[&archer].pos, ring[0],
+            "the fresh unit holds its tile"
+        );
         assert_eq!(ai.census.anvil_rotations, 1);
     }
 }
-
-

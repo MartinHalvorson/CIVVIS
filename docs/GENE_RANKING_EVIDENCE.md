@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-surge-2` | off (unmeasured) | Version 2 of `air_surge`: the science–domination loop. | 1 \| 2 |
+| `anvil` | off (unmeasured) | The land group nearest a threatened city of ours holds it as a formation — a shooter on the centre, melee on the front tiles that face the enemy, the rest within two, the wounded rotated into the city — in place of the relief hold point. | 1 \| 1 |
 | `battle-planner` | off (unmeasured) | The force's turn is planned jointly — the danger field, a beam-searched kill sequence verified on one clone, and a heal rotation — ahead of the per-unit ladder, which leaves the planned units alone. | 1 \| 1 |
 | `boost-wait-research-2` | off (unmeasured) | Wait only on a two-turn node whose final boost trigger is already at the front of an owned city queue, using the boost as a light tie-break. | 1 \| 2 |
 | `campus-through-expansion` | off (unmeasured) | `campus-through-expansion` (OptIn): a Science seat prices the Campus and its buildings in the Science lane while its plan still reads Expansion, and no city's first specialty district may be an Entertainment Complex. | 1 \| 1 |
@@ -201,6 +202,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-target-floor` | off (unmeasured) | `settler-target-floor`: a Settler is never sent to a site not worth the walk. | 1 \| 1 |
 | `settler-walk-deadline` | off (unmeasured) | A Settler out of a city past its deadline founds the best legal site within reach instead of chasing the ranked one it has not reached. | 1 \| 1 |
 | `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
+| `siege-train` | off (unmeasured) | A force whose objective is an enemy city plays the siege as a state machine — stage on the ring out of the city's reach until the bill is met, seal the ring spread-first, reduce walls before the garrison, reserve one taker and walk in when the city is within its blow. | 1 \| 1 |
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
 | `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
