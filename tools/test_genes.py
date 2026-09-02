@@ -931,7 +931,7 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         # window, so a fixed number would reject a correct table rotation.
         self.assertEqual(set(rules["deployment_genome"]), eligible)
         self.assertNotIn("amenity-project-preemption", eligible)
-        self.assertIn("amenity-project-preemption-2", eligible)
+        self.assertNotIn("amenity-project-preemption-2", eligible)
 
     def test_retained_selection_weights_only_available_batch_readings_by_seats(self):
         self.assertEqual(
