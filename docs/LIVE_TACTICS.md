@@ -137,6 +137,25 @@ context, the hover share, and the Hall of Fame. Where the recording mod did
 not emit an event it says `(mod predates the ledger)` rather than printing a
 zero.
 
+The ledger's `engagement` section (2026-09-02, `engagement_section`) is the
+doctrine scorecard, every KPI printed as numerator/denominator:
+`initiative_share`, `army_kills_per_loss` (with `city_strikes` /
+`city_strike_kills` kept apart), `killed_when_wounded_share`,
+`wounded_exposed_share` / `wounded_healing_share`, `firepower_utilisation` /
+`idle_healthy_share`, `focus` (targets, multi-hit, left low), `chip_share`,
+`suicidal_attacks` and `cities_lost_undefended`. It is unit-vs-unit only and
+reads frame-0 states. **The junk-row rule:** the mod emits `combat` rows in
+which attacker and defender are both `district` with id −1 and both `_killed`
+flags set — 65 of 446 rows in run `civvis-20260901T132005Z`, 776 across the
+37 runs since 2026-08-29 — and a district attacker carries
+`attacker_killed=true` whenever it is `gone`; the section drops the former
+outright and every non-unit attacker from attacker-side statistics, and prints
+both counts in its header. On run `civvis-20260901T132005Z` the older
+`combat` line, which reads the flags unfiltered, prints kills/loss 0.24; the
+`engagement` line prints 0.87. Across the 37 runs since 2026-08-29:
+initiative 45 %, army kills/loss 1.30, killed when wounded 65 %, firepower
+32 %, chip 31 %.
+
 **Measured on the recorded runs (2026-08-01/02, pre-queue mod):** run
 `live-head-rome-20260802T164220Z` — 1,608 unit orders on 235 turns (6.84 per
 turn), 0 unit-turns with more than one order; 1,397 first moves judged:
