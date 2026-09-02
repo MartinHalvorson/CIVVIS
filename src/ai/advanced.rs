@@ -5774,11 +5774,18 @@ pub struct AdvancedAi {
     /// and the ordinary choice is untouched whenever one exists. Opt-in gene
     /// `never-an-empty-queue`.
     never_an_empty_queue: bool,
-    /// The emergency defence purchase fires on a native signal: a city that
-    /// lost health, was struck within four turns, and has a hostile near.
-    /// Opt-in gene `native-emergency-purchase`; see
+    /// Version one of the native emergency purchase: a damaged city struck
+    /// within four turns remains actionable after the attacker leaves the
+    /// reconstructed board. Opt-in gene `native-emergency-purchase`; see
     /// `advanced/gold_and_cards.rs`.
     native_emergency_purchase: bool,
+    /// Version two of `native-emergency-purchase`: retain only fresh damage
+    /// that a visible, at-war military unit can currently turn into a legal
+    /// City Center attack. It rejects a departed or stale threat while
+    /// preserving version one for comparison. One family version plays at a
+    /// time. Opt-in gene `native-emergency-purchase-2`; see
+    /// `advanced/gold_and_cards.rs`.
+    native_emergency_purchase_2: bool,
     /// A refused order falls through to the next-best candidate the planner
     /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
     /// see `advanced/order_retry.rs`.
@@ -6156,7 +6163,7 @@ pub struct AdvancedAi {
     /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
     wounded_out_of_reach: bool,
     /// `threatened-city-reserve`: while a city of ours is threatened
-    /// (`plan.threatened_city`) or bleeding (`native_city_emergency`), every
+    /// (`plan.threatened_city`) or bleeding (`native_city_emergency_on`), every
     /// ordinary Gold purchase — the strategic buyer here and the baseline
     /// `spend_gold` — leaves one emergency defender's price in the treasury.
     /// The same run bought a Water Mill in Rome at t160 (399 Gold, Aquileia
@@ -7668,6 +7675,7 @@ impl AdvancedAi {
             never_an_empty_queue_3: false,
             never_an_empty_queue: false,
             native_emergency_purchase: false,
+            native_emergency_purchase_2: false,
             order_retry: false,
             opening_warrior_recon: false,
             opening_warrior_recon_2: false,
@@ -18636,10 +18644,10 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
-        // `native_emergency_purchase`: the live gate stays as it is; the gene
-        // adds a native signal (a bleeding, recently struck city with a
-        // hostile near) that a headless board can see.
-        if !self.base.garrison_under_fire && !self.native_emergency_purchase {
+        // The native-emergency-purchase family supplements the live gate with
+        // its selected native signal. Version two narrows that signal to fresh
+        // damage corroborated by a visible legal attacker.
+        if !self.base.garrison_under_fire && !self.native_emergency_purchase_on() {
             return false;
         }
 
@@ -22888,12 +22896,11 @@ impl AdvancedAi {
     /// handoff, or the ordinary governor refills it before the siege evaluator
     /// can act.
     ///
-    /// The default-on `native-emergency-purchase` treatment has the same
-    /// high-confidence evidence after a city has actually been hit. Its Gold
-    /// purchase is immediate when the treasury can pay, but a city must still
-    /// reclaim unsafe production when it cannot. Reuse its exact damage and
-    /// recency predicate here instead of turning a low treasury into a second
-    /// threat heuristic.
+    /// The opt-in `native-emergency-purchase` family likewise answers a city
+    /// that has actually been hit. Its Gold purchase is immediate when the
+    /// treasury can pay, but a city must still reclaim unsafe production when
+    /// it cannot. Reuse the selected family's exact signal here instead of
+    /// turning a low treasury into a second threat heuristic.
     ///
     /// Both paths preserve repairs, walls, and military production, and claim
     /// at most one unsafe queue each turn.
@@ -22922,7 +22929,7 @@ impl AdvancedAi {
             && active_major_war
             && threatened_city.is_some();
         if !self.base.garrison_under_fire
-            && !self.native_emergency_purchase
+            && !self.native_emergency_purchase_on()
             && !armed_major_war_threat
         {
             return;

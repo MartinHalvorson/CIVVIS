@@ -197,6 +197,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `enter-the-prophet-race-2` | off (unmeasured) | Enter the secondary Great Prophet race only when the board-aware religious-opening rank admits this seat: two cities, a real Holy Site path, and one of the remaining global slots. | 1 \| 2 |
 | `eureka-chasing-builder-2` | off (unmeasured) | Version two rewards only a final, immediately usable Builder eureka step for the technology or civic currently in progress. | 1 \| 2 |
 | `modernize-before-spending` | off (unmeasured) | Upgrade the standing army before the purchase pass, at strategic moments. | 1 \| 1 |
+| `native-emergency-purchase-2` | off (unmeasured) | Version two buys the same local answer only for damage this turn or last that a visible at-war military unit can legally follow with a City Center attack. | 1 \| 2 |
 | `objective-board` | off (unmeasured) | The army's turn planned from a ranked Objective Board — rows valued in hammers with a requirement and a deadline — and served by persistent task forces, in place of proximity force groups and the posture ladder; `force_groups` is built from the forces. | 1 \| 1 |
 | `opening-warrior-recon-2` | off (unmeasured) | Before the first city, let only a Warrior directly escorting the Settler reveal terrain first, then reconsider from the ordinary settlement candidates. | 1 \| 2 |
 | `requisitions` | off (unmeasured) | `requisitions`: the Objective Board's shortfall reaches production and the treasury. | 1 \| 1 |

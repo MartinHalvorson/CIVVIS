@@ -2593,18 +2593,34 @@ impl AdvancedAi {
         self.gold_for_the_young_city = false;
     }
 
-    /// Buy Walls or a land defender for a city that lost health to a strike
-    /// within four turns with a hostile unit near, spending through the
-    /// reserve. Opt-in gene `native-emergency-purchase`; see
+    /// Version one buys Walls or a land defender for a city struck within four
+    /// turns, retaining its broad damage-memory signal for comparison. Opt-in
+    /// gene `native-emergency-purchase`; see
     /// `advanced/gold_and_cards.rs`. Filed above the markers: the append-point
     /// check reads a method line's first identifier.
     pub fn enable_native_emergency_purchase(&mut self) {
+        self.native_emergency_purchase_2 = false;
         self.native_emergency_purchase = true;
     }
 
     /// The twin of `enable_native_emergency_purchase`.
     pub fn disable_native_emergency_purchase(&mut self) {
         self.native_emergency_purchase = false;
+    }
+
+    /// Version two buys the same local answer only for damage this turn or
+    /// last that a visible at-war military unit can legally follow with a City
+    /// Center attack. One family version plays, so enabling this successor
+    /// turns version one off. Opt-in gene `native-emergency-purchase-2`; see
+    /// `advanced/gold_and_cards.rs`.
+    pub fn enable_native_emergency_purchase_2(&mut self) {
+        self.native_emergency_purchase = false;
+        self.native_emergency_purchase_2 = true;
+    }
+
+    /// The twin of `enable_native_emergency_purchase_2`.
+    pub fn disable_native_emergency_purchase_2(&mut self) {
+        self.native_emergency_purchase_2 = false;
     }
 
     // The five chokepoint toggles are filed ABOVE the markers: the
