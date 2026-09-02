@@ -926,8 +926,10 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         self.assertEqual(len(batches), 3)
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
             batches, gene_ledger.screenable_tags()))
+        # The exact set is the regression oracle. Its count intentionally
+        # moves whenever a completed reporting batch enters the three-batch
+        # window, so a fixed number would reject a correct table rotation.
         self.assertEqual(set(rules["deployment_genome"]), eligible)
-        self.assertEqual(len(eligible), 85)
         self.assertNotIn("amenity-project-preemption", eligible)
         self.assertIn("amenity-project-preemption-2", eligible)
 
