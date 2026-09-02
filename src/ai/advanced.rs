@@ -12267,6 +12267,16 @@ impl AdvancedAi {
             return false;
         };
         let family = g.district_family(district);
+        let first_building = match family.as_str() {
+            "campus" => "library",
+            "holy_site" => "shrine",
+            "commercial_hub" => "market",
+            "harbor" => "lighthouse",
+            "encampment" => "barracks",
+            "industrial_zone" => "workshop",
+            "theater_square" => "amphitheater",
+            _ => return false,
+        };
         if city.buildings.iter().any(|building| {
             g.rules.buildings[building]
                 .district
@@ -12274,20 +12284,7 @@ impl AdvancedAi {
         }) {
             return false;
         }
-        g.rules.buildings.iter().any(|(building, building_spec)| {
-            building_spec.buildable
-                && !building_spec.wonder
-                && building_spec
-                    .district
-                    .is_some_and(|built| g.district_family(built) == family)
-                && g.can_produce(
-                    pid,
-                    cid,
-                    &Item::Building {
-                        building: *building,
-                    },
-                )
-        })
+        BasicAi::civ_building(g, pid, cid, first_building).is_some()
     }
 
     /// Whether this completion changes a live Great-Person race immediately.
