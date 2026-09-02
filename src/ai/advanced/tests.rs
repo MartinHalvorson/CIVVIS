@@ -2217,12 +2217,21 @@ fn the_land_grab_wants_the_land_not_a_rung() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    // These independently selected expansion treatments take precedence over
+    // `land_grab`'s target. Withhold them so this fixture measures the land
+    // grab against its era-paced control alone.
+    live.disable_rapid_city_expansion();
+    live.disable_rapid_city_expansion_2();
+    live.disable_city_target_meets_the_map();
     assert!(
         live.land_grab && live.base.land_grab,
         "the live seat carries the treatment in both settler routes"
     );
     let mut rungs = AdvancedAi::new();
     rungs.enable_live_bridge();
+    rungs.disable_rapid_city_expansion();
+    rungs.disable_rapid_city_expansion_2();
+    rungs.disable_city_target_meets_the_map();
     rungs.disable_land_grab();
     assert!(!rungs.land_grab && !rungs.base.land_grab);
 
@@ -36417,13 +36426,19 @@ fn the_religious_veto_defence_gene_is_a_registered_reversible_opt_in() {
         "{tag} must be a registered native opt-in"
     );
     assert!(crate::ai::advanced::gene_ledger::screenable(tag));
+    let deployed = crate::ai::advanced::gene_ledger::ledger_default_on(tag)
+        .expect("the registered opt-in has a ledger default");
+    let mut deployed_ai = AdvancedAi::new();
+    deployed_ai.enable_live_bridge();
     assert_eq!(
-        crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-        Some(false),
-        "the latest-three-batch selection withholds this unqualified arm"
+        deployed_ai.religious_veto_defence, deployed,
+        "the live bridge applies the current latest-three-batch selection"
     );
     let mut ai = AdvancedAi::new();
-    assert!(!ai.religious_veto_defence);
+    assert_eq!(
+        ai.religious_veto_defence, false,
+        "the unconfigured controller keeps opt-ins off until the live bridge applies them"
+    );
     ai.enable_religious_veto_defence();
     assert!(ai.religious_veto_defence);
     ai.disable_religious_veto_defence();
@@ -43152,6 +43167,10 @@ fn the_science_lane_widens_while_a_city_can_still_mature() {
     let mut on = AdvancedAi::new();
     on.enable_live_bridge();
     on.enable_science_expansion_phase();
+    // `rapid-city-expansion` versions are independent deployment treatments
+    // whose targets precede `land_grab`; withhold both to isolate this phase.
+    on.disable_rapid_city_expansion();
+    on.disable_rapid_city_expansion_2();
     // `city-target-meets-the-map` is separately selected and clamps this
     // fixture to its reachable sites; withhold it to isolate this ceiling.
     on.disable_city_target_meets_the_map();
@@ -43180,6 +43199,9 @@ fn the_science_lane_widens_while_a_city_can_still_mature() {
 
     let mut off = AdvancedAi::new();
     off.enable_live_bridge();
+    off.disable_rapid_city_expansion();
+    off.disable_rapid_city_expansion_2();
+    off.disable_city_target_meets_the_map();
     // Deployment defaults may select this independent arm; withhold it so
     // this half continues to test the Science expansion phase itself.
     off.disable_science_expansion_phase();
