@@ -1940,6 +1940,13 @@ pub const GENES: &[Gene] = &[
     // joint-war invitation at the ready strike.
     Gene { tag: "coalition-before-war-2", field: "coalition_before_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_coalition_before_war_2, disable: AdvancedAi::disable_coalition_before_war_2 },
 
+    // Forensic of 2026-09-01 over the 08-31 King and 09-01 Emperor live runs
+    // (`advanced/settler_walk_deadline.rs`): with every host-only expansion
+    // gene live the seat builds its Settlers on schedule and they do not
+    // convert — walks of 13–15 turns, a third of Emperor Settlers taken —
+    // so a walker past twelve turns founds the best site within reach.
+    Gene { tag: "settler-walk-deadline", field: "settler_walk_deadline", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_deadline, disable: AdvancedAi::disable_settler_walk_deadline },
+
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing
