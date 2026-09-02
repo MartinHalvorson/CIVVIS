@@ -1132,12 +1132,9 @@ def entry_from(summary: dict) -> dict:
         # string, and the ladder's own rule is that an attempt which did not
         # finish is neither a loss nor a measurement.
         "partial": summary.get("partial"),
-        # The harness's own early-stop verdict (the one remaining rule:
-        # strictly below half of the leader's score after turn 50,
-        # `civ6_play.below_leader_score_reading`; older rows carry the retired
-        # rules' verdicts verbatim). A row with `reason: "abandoned"` is a
-        # loss the ladder chose not to play out, and the record preserves the
-        # exact rule and standing that made that choice.
+        # Historical score-cutoff verdicts remain verbatim so past rows stay
+        # auditable. New verification games never create one: score gaps are
+        # retained as evidence and played through to an in-game outcome.
         "abandoned": summary.get("abandoned"),
         # ⭐ WHO DROVE THE UNITS. `applied_pct` below says how much of what
         # CIVVIS asked for the engine did; this says how much of the seat

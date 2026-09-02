@@ -1726,10 +1726,11 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     """
     if why != "frozen" or resumes_so_far >= args.max_resumes:
         return None
-    # ⚠ An abandoned game must STAY abandoned. The operator rule retires a run
-    # below half of the leader after turn 50, and a retirement leaves the
-    # turn stale while the end screens settle — which now reads as "frozen".
-    # Reloading it would restart the very game the rule just ended.
+    # ⚠ A historical score-retired game must stay retired.  Current
+    # verification policy never makes that automatic score call, but old rows
+    # still exist and a retirement leaves the turn stale while the end screens
+    # settle — which now reads as "frozen". Reloading it would restart the
+    # very game that was deliberately ended.
     if record.get("retire_requested"):
         return None
     turn = record.get("last_turn")
@@ -1959,15 +1960,13 @@ def main() -> int:
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
-    # Forwarded to civ6_play.py untouched; absent, the harness's own default
-    # holds — 0.50 after turn 50, the operator's one early stop. See
-    # `civ6_play.below_leader_score_reading`.
+    # Kept only so old external launchers remain parse-compatible.  Live play
+    # accepts but ignores it: score gaps are recorded for analysis and never
+    # retire a verification game.
     ap.add_argument("--restart-below-leader-ratio", type=float, default=None,
-                    help="immediately abandon on a readable turn at or after "
-                         "turn 51 (after turn 50) when our score is under this share of the "
-                         "leader's; 0 plays every game out (forwarded to "
-                         "civ6_play.py; current operator policy: 0.50, which "
-                         "means strictly below half of the leader's score)")
+                    help="deprecated compatibility option; forwarded for old "
+                         "launchers but ignored by live play, which finishes "
+                         "verification games")
     # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
     #
     # `civ6_play.py` has taken `--leader` (and verifies the pick off the rendered
@@ -2039,8 +2038,9 @@ def main() -> int:
     # default was 3 when a live game parked once or twice; on 2026-08-31 run
     # civvis-20260831T140630Z parked FOUR times by t118 (t87, t112, t112,
     # t118), ran out of budget mid-recovery, and was killed while standing at
-    # 0.589 of the leader — a game the abandon rule would have let play to its
-    # t150 verdict. Each resume past the third walks further back still (see
+    # 0.589 of the leader — exactly the sort of incomplete evidence the
+    # full-game policy protects. Each resume past the third walks further back
+    # still (see
     # `RESUME_STEPS`), so the extra budget costs only the ~13 minutes a
     # genuinely dead park wastes per attempt plus the turns it replays, against
     # losing a live game's whole remaining arc.

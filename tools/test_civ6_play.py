@@ -2127,10 +2127,11 @@ class AnAbandonedGameIsRetiredSoItCounts(unittest.TestCase):
         self.assertFalse(orders.request_retire(missing, "civvis-run", 150))
 
 
-class AGameUnderHalfTheLeadersScoreAfterTurn50IsAbandoned(unittest.TestCase):
-    """The sole current early stop is below half of the leader after turn 50.
+class ScoreGapsRemainTelemetryForLiveVerification(unittest.TestCase):
+    """Full games retain score gaps instead of treating them as a loss call.
 
-    The first qualifying reading ends the game and is filed as its own reason.
+    The former predicate stays tested below because the census uses it to show
+    what an early cutoff would have hidden, never to end a live game.
     """
 
     @staticmethod
@@ -2138,23 +2139,22 @@ class AGameUnderHalfTheLeadersScoreAfterTurn50IsAbandoned(unittest.TestCase):
         return {"kind": kind, "ctx": ctx, "turn": turn, "score": score,
                 "rival_best": rival}
 
-    def test_the_line_is_half_from_turn_51(self):
-        """"After turn 50" starts at turn 51, not on turn 50 itself."""
-        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.50)
+    def test_live_default_is_disabled_but_the_historical_floor_is_stable(self):
+        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.0)
         self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 51)
 
-    def test_targeted_science_is_abandoned_for_a_score_gap(self):
-        self.assertTrue(civ6_play.leader_score_stop_allowed(
+    def test_targeted_science_is_not_auto_retired_for_a_score_gap(self):
+        self.assertFalse(civ6_play.leader_score_stop_allowed(
             civvis_decides=True, victory_target="science"))
 
-    def test_every_other_lane_also_keeps_the_score_stop(self):
+    def test_every_other_lane_also_plays_score_gaps_out(self):
         for decides, target in ((False, "science"), (True, "civvis"),
                                 (True, "culture"), (True, None)):
             with self.subTest(decides=decides, target=target):
-                self.assertTrue(civ6_play.leader_score_stop_allowed(
+                self.assertFalse(civ6_play.leader_score_stop_allowed(
                     civvis_decides=decides, victory_target=target))
 
-    def test_one_reading_under_half_immediately_abandons_with_the_standing(self):
+    def test_a_historical_reading_marks_where_the_former_line_would_have_fired(self):
         state = {}
         verdict = civ6_play.below_leader_score_reading(
             state, self._turn(51, 49, 100), 0.50)
@@ -2200,8 +2200,9 @@ class AGameUnderHalfTheLeadersScoreAfterTurn50IsAbandoned(unittest.TestCase):
             state, self._turn(174, 100, 500), 0.50)["turn"], 174)
         self.assertEqual(state, {})
 
-    def test_zero_or_an_invalid_line_plays_every_game_out(self):
-        for ceiling in (0, 0.0, -1, 1.5, True, None, "0.6"):
+    def test_zero_or_an_invalid_line_has_no_historical_reading(self):
+        for ceiling in (civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0, 0.0, -1,
+                        1.5, True, None, "0.6"):
             with self.subTest(ceiling=ceiling):
                 state = {}
                 for turn in range(51, 190):
@@ -2209,10 +2210,8 @@ class AGameUnderHalfTheLeadersScoreAfterTurn50IsAbandoned(unittest.TestCase):
                         state, self._turn(turn, 10, 500), ceiling))
                 self.assertEqual(state, {})
 
-    def test_an_abandoned_game_is_filed_as_abandoned_and_nothing_else_is(self):
-        """`reason` is the only field saying how a game ended. The harness's
-        own stop takes it; a game that exited or stalled in the same poll keeps
-        that ending; a refusal still outranks everything."""
+    def test_a_historical_abandoned_game_keeps_its_original_reason(self):
+        """Old records remain legible; new score gaps cannot create one."""
         abandoned = {"rule": "below_leader_score", "turn": 51,
                      "score_ratio": 0.49, "score_ratio_ceiling": 0.50}
         state = {"abandoned": abandoned, "seat": {"x": 1}, "configured": True,
@@ -2228,7 +2227,7 @@ class AGameUnderHalfTheLeadersScoreAfterTurn50IsAbandoned(unittest.TestCase):
                  "mode_mismatch": False}
         self.assertEqual(civ6_play.summary_reason(clean, "stopped"), "stopped")
 
-    def test_the_live_loop_runs_the_one_rule_and_none_of_the_scrapped_ones(self):
+    def test_the_live_loop_keeps_score_telemetry_behind_the_full_game_policy(self):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
         self.assertIn("below_leader_score_reading(\n"
@@ -2237,6 +2236,10 @@ class AGameUnderHalfTheLeadersScoreAfterTurn50IsAbandoned(unittest.TestCase):
                       "            civvis_decides=args.civvis_decides", source)
         self.assertIn('"--restart-below-leader-ratio"', source)
         self.assertIn("default=DEFAULT_LEADER_SCORE_RATIO", source)
+        self.assertIn("DEFAULT_LEADER_SCORE_RATIO = 0.0", source)
+        policy = source.split("def leader_score_stop_allowed", 1)[1].split(
+            "\ndef _nonnegative_metric", 1)[0]
+        self.assertIn("return False", policy)
         self.assertIn('"abandoned": state.get("abandoned"),', source)
         self.assertNotIn("LEADER_SCORE_PATIENCE", source)
         for scrapped in ("opening_city_target_reading(state",
