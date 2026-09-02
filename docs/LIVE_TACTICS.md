@@ -1592,3 +1592,65 @@ fact in the table and is not tactical: the export carries `upgrade_to` and
 the Gold to cover it, and about seven were taken, because `upgrade_units`
 runs after the unit loop and `unit_gold_upgrade_offer` refuses a unit that
 has acted. Both are the next sections' work. Live reading: after the arm.
+
+## 30. The blow a unit does not survive (2026-09-02, opt-in gene `doomed-blow-veto`)
+
+The other half of §29's a3 row: twelve of the 145 losses were a ladder
+attack by a unit the plan had not ordered — it struck, stood beside its
+target, and was removed on the enemy's turn (a 94-hit-point Pikeman beside
+a Field Cannon; Warriors at 46–70 hp into Swordsmen). The plan leaves every
+unit with a legal blow it did not spend to the ladder by design (§22: a
+declined shot is still the ladder's to price on its own clone), and the
+ladder's reply price reads the movement flood, not the danger field.
+
+**`doomed-blow-veto`** (`src/ai/advanced/battle_planner.rs`, opt-in, off).
+`doomed_shooters` reads every candidate blow of every shooter — the return
+damage of a melee blow plus the field's danger at the stand — and a shooter
+with no blow that leaves it above zero is not armed. If it is wounded or
+exposed where it stands the rotation takes it (out of reach, or to the
+least danger under `safest-stand`); if it is safe where it stands it holds
+that ground and fortifies, and the ladder's attack is the one thing denied
+it. A unit with one survivable blow keeps the ladder's freedom; the kill
+plan's own vetoes and values are unchanged. Census `battle_plan_doomed`.
+
+**The first cut rotated every doomed unit** and read, beside `strike-reach`:
+bench default +7.5 ± 37.8, ranged +26.0 ± 31.0, melee **−24.6 ± 14.8
+(t −1.67)**; curriculum pooled **−38.0 ± 18.0 (t −2.11)**, almost all of it
+**the_ridge −338.0 ± 84.3 (t −4.01, 11/23)** — a unit safe on its hill,
+whose only blows were downhill into a crowd, was walked off the hill; the
+captured file healing off +13.3 ± 2.8 (t 4.80), healing on +2.3 ± 2.2. The
+second cut holds such a unit where it stands.
+
+**The second cut's gate (§13), ci binaries of this branch; every number
+`advanced+battle-planner-2+strike-reach+doomed-blow-veto` less
+`advanced+battle-planner-2+strike-reach`.**
+
+- `battle_bench` control `advanced` v `advanced`, 60 seeds: +0.00 ± 0.00,
+  0 diverging. Treatment, 100 seeds × 2 seatings: default band **+90.5 ±
+  35.0 a seed (t 2.58, p 0.011; 57/41/2)**, exchange **1.16 v 0.86**; four
+  warriors and two spearmen +15.8 ± 16.0 (43/40/17), 1.10 v 0.91; four
+  archers and two warriors +8.6 ± 29.0 (49/44/7), 1.02 v 0.98. Fires
+  100/100, 83/100, 93/100.
+- `doctrine_arena`, 40 seeds × 2 roles: the_river_line +85.8 ± 75.7, the_relief
+  +49.0 ± 66.9, the_breakthrough +36.0 ± 39.3, central_position +24.5 ±
+  19.2, the_reserve +15.5 ± 105.7; hammer_and_anvil **−172.5 ± 95.5 (sign p
+  0.034, 12/26)**, the_ridge −138.5 ± 81.2 (t −1.71, 13/18), the_storming
+  −92.0 ± 97.1, lake_trasimene −44.2 ± 45.2; pooled −19.3 ± 17.6 (171/171),
+  kills per loss 0.98 v 1.02. The two boards that read against it are the
+  two where a body is meant to take a blow to hold or close a position, and
+  a unit that declines its last blow there is a unit that does not close.
+- The captured 60-engagement file, 40 seeds × 2 roles: healing off **+6.1 ±
+  2.7 a seed (t 2.22; 742/664)**, kills per loss 1.00 v 1.00; healing on
+  +0.6 ± 2.2 (537/497), 1.01 v 0.99 — a null where the live seat's fights
+  are. Cities +549/−538 v +538/−549 with healing on.
+- Fires (`gene_screen --games 6 --jobs 3 --genes doomed-blow-veto
+  --start-seed 97600300`, `docs/gene_screens/fires/doomed-blow-veto.json`):
+  on in 9 of 27 seats, win +7.4 pp ± 14, share −0.60 pp — fires, nothing
+  more.
+
+**What this does not say.** The open field likes it and the captured file
+shrugs: the twelve live deaths it exists for are a live shape — obsolete
+units the ladder swings at Field Cannons and Men-at-Arms — that the arena's
+matched armies do not pose, and the live ledger is where the gene is read.
+It ships off and joins the arm beside `strike-reach` and `safest-stand`;
+the first live reading decides whether it stays.
