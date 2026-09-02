@@ -3906,6 +3906,35 @@ impl BasicAi {
         })
     }
 
+    /// The controller's research candidates after enforcing era completion.
+    ///
+    /// The rules correctly make every prerequisite-satisfied technology legal:
+    /// that is what permits a human player to beeline. An unattended AI needs
+    /// a stronger policy, though. A victory or military beeline can otherwise
+    /// jump from an Ancient prerequisite to a Modern one and leave a useful
+    /// side branch such as Bronze Working untouched for most of the game.
+    /// Keep the choice in the oldest era with an unresearched nonrepeatable
+    /// technology, and only let the next era open after that backlog is gone.
+    /// Repeatable Future technologies are deliberately excluded from the
+    /// floor, so completing the ordinary tree still leaves them selectable.
+    pub(crate) fn era_completion_techs(g: &Game, pid: usize) -> Vec<Name> {
+        let earliest_incomplete_era = g
+            .rules
+            .techs
+            .iter()
+            .filter(|(tech, spec)| !spec.repeatable && !g.players[pid].techs.contains(*tech))
+            .map(|(_, spec)| spec.era)
+            .min();
+
+        g.available_techs(pid)
+            .into_iter()
+            .filter(|tech| {
+                earliest_incomplete_era
+                    .is_none_or(|era| g.rules.techs.get(tech).is_some_and(|spec| spec.era == era))
+            })
+            .collect()
+    }
+
     fn civic_step_toward(g: &Game, avail: &[Name], goal: Option<&str>) -> Option<Name> {
         goal.and_then(|goal| {
             avail
@@ -7396,7 +7425,7 @@ impl BasicAi {
     /// setup-granted Walls and can move directly toward their specialty.
     fn minor_research(&self, g: &mut Game, pid: usize) {
         if g.players[pid].research.is_none() {
-            let avail = g.available_techs(pid);
+            let avail = Self::era_completion_techs(g, pid);
             if !avail.is_empty() {
                 let has_walls = g.player_city_ids(pid).into_iter().any(|city| {
                     g.cities[&city]
@@ -7598,7 +7627,7 @@ impl BasicAi {
         pool: Option<&WorkPool>,
     ) {
         if g.players[pid].research.is_none() {
-            let avail = g.available_techs(pid);
+            let avail = Self::era_completion_techs(g, pid);
             if !avail.is_empty() {
                 let barbarian_goal = if self.barbarian_tactics {
                     Self::barbarian_military_research_goal(g, pid)
@@ -19246,6 +19275,14 @@ mod tests {
         g.players[0]
             .techs
             .extend([crate::name!("sailing"), crate::name!("currency")]);
+        let completed_eras: Vec<Name> = g
+            .rules
+            .techs
+            .iter()
+            .filter(|(_, spec)| spec.era < 2)
+            .map(|(tech, _)| *tech)
+            .collect();
+        g.players[0].techs.extend(completed_eras);
         g.players[0].research = None;
         let mut ai = BasicAi::new();
         ai.minor = true;
@@ -19256,6 +19293,14 @@ mod tests {
         assert_eq!(g.players[0].research.as_deref(), Some("stirrups"));
 
         g.players[0].techs.insert(crate::name!("stirrups"));
+        let completed_eras: Vec<Name> = g
+            .rules
+            .techs
+            .iter()
+            .filter(|(_, spec)| spec.era < 3)
+            .map(|(tech, _)| *tech)
+            .collect();
+        g.players[0].techs.extend(completed_eras);
         g.players[0].research = None;
         ai.minor_research(&mut g, 0);
         assert_eq!(g.players[0].research.as_deref(), Some("banking"));
@@ -19266,6 +19311,14 @@ mod tests {
         let (mut g, source, _) = island_colony_game(2);
         grant_tech_with_prerequisites(&mut g, 0, "cartography");
         grant_tech_with_prerequisites(&mut g, 0, "celestial_navigation");
+        let completed_eras: Vec<Name> = g
+            .rules
+            .techs
+            .iter()
+            .filter(|(_, spec)| spec.era < 3)
+            .map(|(tech, _)| *tech)
+            .collect();
+        g.players[0].techs.extend(completed_eras);
         g.at_war.insert((0, 1));
         let contact = g
             .nbrs(source)

@@ -1998,3 +1998,25 @@ tree, the anchor moves from v33's 18,922 decisions and
 `0xf78c_7e99_7434_1c40` to **19,113 decisions and
 `0x7646_cfed_dde2_cf37`** across the five profiles. The shipped ruleset
 fingerprint remains at v33's `fnv1a64:e69039571d195263`.
+
+## v35 (2026-09-02) — research clears the current era before it advances
+
+The unattended Basic and Advanced research controllers previously scored every
+prerequisite-satisfied technology together. A later-era strategic target could
+therefore keep winning its beeline score while an unrelated earlier technology
+remained available; one live game reached turn 155 before Bronze Working was
+chosen. The rules remain permissive for players and integrations: this is an AI
+candidate policy, not a change to `Game::available_techs`.
+
+Before applying ordinary priorities or a strategic beeline, the controller now
+restricts its candidates to the earliest era that still has an unresearched,
+non-repeatable technology. It therefore completes every branch of the current
+era before considering the next, while Future-era repeatables remain selectable
+once the normal technology tree is complete.
+
+This deliberately reaches the shared Basic/Advanced controller, including
+`advanced_v1`; it is not a default-off treatment. Across the five anchor
+profiles, the anchor moves from v34's 19,113 decisions and
+`0x7646_cfed_dde2_cf37` to **19,103 decisions and
+`0x6632_65e0_a544_79ca`**. The shipped ruleset fingerprint remains at v33's
+`fnv1a64:e69039571d195263`.
