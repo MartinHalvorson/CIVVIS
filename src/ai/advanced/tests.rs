@@ -9274,6 +9274,30 @@ fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
         Some(quiet),
         "recency must not override an overwhelmingly more dangerous city"
     );
+
+    // A bridge restart or a skipped export can lose the last-hit timestamp,
+    // while the host still reports the city's breached health bars. The
+    // critically damaged city must remain the emergency target when the
+    // neighbouring ratio is only modestly worse.
+    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(quiet, 190.0);
+    game.cities.get_mut(&recent).unwrap().hp = 120;
+    game.cities.get_mut(&recent).unwrap().last_attacked = 0;
+    let damaged_pressure = AdvancedAi::city_pressure(&game, 0, recent);
+    let quiet_pressure = AdvancedAi::city_pressure(&game, 0, quiet);
+    assert!(
+        quiet_pressure > damaged_pressure,
+        "the raw ratio should still mildly prefer the healthy neighbour: damaged {damaged_pressure:.3}, quiet {quiet_pressure:.3}"
+    );
+    assert!(
+        quiet_pressure - damaged_pressure
+            < CRITICAL_CITY_DAMAGE_PRIORITY * f64::from(200 - 120) / 200.0,
+        "the damage credit should cover only a modest ratio gap: damaged {damaged_pressure:.3}, quiet {quiet_pressure:.3}"
+    );
+    assert_eq!(
+        AdvancedAi::new().threatened_city(&game, 0),
+        Some(recent),
+        "a breached city remains the emergency target even without recency metadata"
+    );
 }
 
 #[test]

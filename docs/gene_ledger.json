@@ -1432,6 +1432,15 @@
           "amenity-project-preemption-2": null
         }
       },
+      "battle-planner": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "battle-planner": null,
+          "battle-planner-2": null
+        }
+      },
       "boost-wait-research": {
         "rule_on": [],
         "head": null,
