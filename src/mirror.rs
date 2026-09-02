@@ -7080,6 +7080,26 @@ fn civvis_spy_mission_kind(operation: &str) -> String {
         .to_ascii_lowercase()
 }
 
+/// The host's own count of strikes a FOREIGN unit has left this turn
+/// (`Unit:GetAttacksRemaining()`, the shipped `SelectedUnit.lua:62` read),
+/// applied after [`apply_unit_observation`] planted it. The seat's own units
+/// have taken it onto `Unit::attacks_left` since the seat capability landed
+/// (`LiveMirror::new`, `sync`); `hostiles[]`, `rivals[].units[]` and
+/// `minors[].units[]` never carried the key, so an enemy that had already
+/// struck stood on the board as one that could still strike. Every foreign
+/// planting site — hostiles, rivals and city-states, both import paths —
+/// calls this. An export without the key (every recording before 2026-09-01)
+/// leaves the fresh-turn allowance `spawn_unit` gave, exactly as before; a
+/// negative reading is the mod's "could not read" sentinel and is clamped to
+/// none left, as the own-unit paths clamp it.
+fn apply_foreign_unit_strikes(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
+    if let Some(attacks) = unit.attacks_remaining {
+        if let Some(live) = game.units.get_mut(&uid) {
+            live.attacks_left = attacks.max(0);
+        }
+    }
+}
+
 /// Record what the host said about one visible unit under the board's unit id —
 /// see `Game::host_unit_facts` for who reads which. A unit that carries none of
 /// the keys (an older mod) leaves no entry, so every reader falls back to the
@@ -11591,6 +11611,7 @@ pub fn rebuild_from_state(
                 foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
                 record_host_unit_facts(&mut game, uid, unit);
+                apply_foreign_unit_strikes(&mut game, uid, unit);
             }
         }
     }
@@ -11658,6 +11679,7 @@ pub fn rebuild_from_state(
                 foreign_unit_ids.insert(unit.id, uid);
                 placed_rival_units += 1;
                 record_host_unit_facts(&mut game, uid, unit);
+                apply_foreign_unit_strikes(&mut game, uid, unit);
             }
         }
     }
@@ -11732,6 +11754,7 @@ pub fn rebuild_from_state(
             foreign_unit_ids.insert(unit.id, uid);
             placed_rival_units += 1;
             record_host_unit_facts(&mut game, uid, unit);
+            apply_foreign_unit_strikes(&mut game, uid, unit);
             if game.players[owner].is_free_city {
                 game.players[owner].alive = true;
             }
@@ -13526,6 +13549,7 @@ impl LiveMirror {
                 self.foreign_uid_of.insert(unit.id, uid);
             }
             record_host_unit_facts(&mut self.game, uid, unit);
+            apply_foreign_unit_strikes(&mut self.game, uid, unit);
         }
 
         for (index, rival) in state.rivals.iter().enumerate() {
@@ -13667,6 +13691,7 @@ impl LiveMirror {
                     self.foreign_uid_of.insert(unit.id, uid);
                 }
                 record_host_unit_facts(&mut self.game, uid, unit);
+                apply_foreign_unit_strikes(&mut self.game, uid, unit);
             }
         }
 
@@ -13797,6 +13822,7 @@ impl LiveMirror {
                     self.foreign_uid_of.insert(unit.id, uid);
                 }
                 record_host_unit_facts(&mut self.game, uid, unit);
+                apply_foreign_unit_strikes(&mut self.game, uid, unit);
             }
         }
         for &(minor, owner) in &minor_assignments {

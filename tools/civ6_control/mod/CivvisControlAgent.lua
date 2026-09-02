@@ -7094,6 +7094,12 @@ local function exportState(player, pid, turn, frame)
 								fortified = try(function()
 									return (unit:GetFortifyTurns() or 0) > 0;
 								end, false),
+								-- The same three enemy combat facts `hostiles[]` carries, for a rival's unit;
+								-- see the note in `addUnitsOf` below for the shipped reads and
+								-- for why an unreadable value stays nil / -1.
+								attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
+								formation = CivvisMilitaryFormation(unit),
+								embarked = try(function() return unit:IsEmbarked(); end, nil),
 							};
 						end
 					end);
@@ -7601,6 +7607,12 @@ local function exportState(player, pid, turn, frame)
 								fortified = try(function()
 									return (unit:GetFortifyTurns() or 0) > 0;
 								end, false),
+								-- The same three enemy combat facts `hostiles[]` carries, for a city-state's unit;
+								-- see the note in `addUnitsOf` below for the shipped reads and
+								-- for why an unreadable value stays nil / -1.
+								attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
+								formation = CivvisMilitaryFormation(unit),
+								embarked = try(function() return unit:IsEmbarked(); end, nil),
 							};
 						end
 					end);
@@ -7934,6 +7946,20 @@ local function exportState(player, pid, turn, frame)
 						fortified = try(function()
 							return (unit:GetFortifyTurns() or 0) > 0;
 						end, false),
+						-- ★★★ THE THREE FACTS THE PLANNER WAS BLIND TO ON AN ENEMY.
+						-- Same accessors, same guards as the seat's own units above:
+						-- `GetAttacksRemaining` (the shipped SelectedUnit.lua:62 read),
+						-- the merge tier through `CivvisMilitaryFormation`
+						-- (`GetMilitaryFormation`, UnitPanel.lua:2259) and `IsEmbarked`
+						-- (UnitFlagManager.lua:603). Without them an enemy Corps/Army
+						-- was priced on the board as a plain unit, an enemy that had
+						-- struck this turn as one that could still strike, and its
+						-- embarkation was read off its tile. nil / -1 is "could not
+						-- read", never a guess: the mirror keeps its own rule then.
+						-- The rival and city-state unit walks above emit the same three.
+						attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
+						formation = CivvisMilitaryFormation(unit),
+						embarked = try(function() return unit:IsEmbarked(); end, nil),
 					};
 				end
 			end
