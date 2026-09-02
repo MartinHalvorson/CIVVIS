@@ -611,6 +611,16 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('"PROJECT_ENHANCE_DISTRICT_CAMPUS"', source)
         self.assertIn('"UNITCOMMAND_ACTIVATE_GREAT_PERSON"', source)
         self.assertIn("GetActivationHighlightPlots()", source)
+        self.assertGreaterEqual(
+            source.count("ActionRequiresMissingBuildingType"),
+            2,
+            "physical Great People and live offers both carry the negative building gate",
+        )
+        self.assertGreaterEqual(
+            source.count("ActionRequiresCityGreatWorkObjectType"),
+            2,
+            "physical Great People and live offers both carry the exact work gate",
+        )
 
     def test_controller_retires_a_unit_civvis_asks_it_to_delete(self) -> None:
         # The bridge retires the founded zero-charge Prophet (a ghost that

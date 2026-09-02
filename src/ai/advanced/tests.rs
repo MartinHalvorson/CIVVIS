@@ -4520,23 +4520,28 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 }
 
 #[test]
-fn production_advanced_reflects_the_withheld_bounded_recovery_selection() {
+fn production_advanced_reflects_the_bounded_recovery_selection() {
     let bare = AdvancedAi::new();
     assert!(
         !bare.bounded_recovery,
         "the bare controller remains opt-in-off"
     );
     assert!(bare.envoy_priority);
+    let selected = crate::ai::ledger_default_on("bounded-recovery")
+        .expect("bounded-recovery has a deployment selection");
 
     let mut production = AdvancedAi::new();
     production.enable_engine_repairs();
-    assert!(!production.bounded_recovery);
+    assert_eq!(
+        production.bounded_recovery, selected,
+        "production must follow the recorded deployment selection"
+    );
 
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
-    assert!(
-        !live_bridge.bounded_recovery,
-        "the explicit three-batch selection withholds this unqualified arm"
+    assert_eq!(
+        live_bridge.bounded_recovery, selected,
+        "the live bridge must follow the recorded deployment selection"
     );
 }
 
@@ -18685,14 +18690,11 @@ fn culture_building_debt_is_in_native_universe_and_ledger_decides_deployment() {
     let row = crate::ai::gene(tag).expect("registered");
     assert!(row.repair(), "{tag} is a native repair");
     assert!(!row.host_only(), "{tag} left the host-only list");
+    let selected = crate::ai::ledger_default_on(tag)
+        .expect("a registered native repair has a deployment selection");
     assert_eq!(
-        Some(deployed.culture_building_debt),
-        crate::ai::ledger_default_on(tag),
+        deployed.culture_building_debt, selected,
         "{tag}: deployment must follow the ledger"
-    );
-    assert!(
-        deployed.culture_building_debt,
-        "culture-building-debt is enabled by the explicit deployment selection"
     );
 }
 

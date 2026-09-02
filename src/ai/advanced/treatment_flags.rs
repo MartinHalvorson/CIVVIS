@@ -1976,6 +1976,7 @@ impl AdvancedAi {
     /// `advanced/city_campaign.rs`.
     pub fn enable_city_campaign(&mut self) {
         self.city_campaign = true;
+        self.city_campaign_2 = false;
     }
 
     /// The twin of `enable_city_campaign`.
@@ -2391,6 +2392,7 @@ impl AdvancedAi {
     pub fn enable_coalition_before_war(&mut self) {
         self.coalition_before_war = true;
         self.coalition_before_war_2 = false;
+        self.coalition_before_war_3 = false;
     }
 
     /// The twin of `enable_coalition_before_war`.
@@ -3823,11 +3825,28 @@ impl AdvancedAi {
     pub fn enable_coalition_before_war_2(&mut self) {
         self.coalition_before_war_2 = true;
         self.coalition_before_war = false;
+        self.coalition_before_war_3 = false;
     }
 
     /// The twin of `enable_coalition_before_war_2`.
     pub fn disable_coalition_before_war_2(&mut self) {
         self.coalition_before_war_2 = false;
+    }
+
+    /// Recruit only a target neighbour already fighting it. The accepted
+    /// military alliance makes that real second front an immediate combat
+    /// bonus when we declare; this version neither diverts Envoys nor holds
+    /// a ready declaration for a speculative joint-war answer. Opt-in gene
+    /// `coalition-before-war-3`.
+    pub fn enable_coalition_before_war_3(&mut self) {
+        self.coalition_before_war_3 = true;
+        self.coalition_before_war = false;
+        self.coalition_before_war_2 = false;
+    }
+
+    /// The twin of `enable_coalition_before_war_3`.
+    pub fn disable_coalition_before_war_3(&mut self) {
+        self.coalition_before_war_3 = false;
     }
 
     /// The force's turn is planned jointly — the danger field, a
@@ -4013,6 +4032,21 @@ impl AdvancedAi {
     /// The twin of `enable_swap_rotation_2`.
     pub fn disable_swap_rotation_2(&mut self) {
         self.swap_rotation_2 = false;
+    }
+
+    /// Turn an existing Conquest plan into one nearby, holdable city only when
+    /// its complete spare-included bill is already staged. This successor
+    /// replaces v1's multi-city expedition, retains a single objective while
+    /// it stays feasible, and abandons an unlaunched opportunity quickly.
+    /// Opt-in gene `city-campaign-2`; see `advanced/city_campaign.rs`.
+    pub fn enable_city_campaign_2(&mut self) {
+        self.city_campaign = false;
+        self.city_campaign_2 = true;
+    }
+
+    /// The twin of `enable_city_campaign_2`.
+    pub fn disable_city_campaign_2(&mut self) {
+        self.city_campaign_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------
