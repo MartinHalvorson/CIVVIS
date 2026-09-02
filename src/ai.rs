@@ -17999,9 +17999,15 @@ mod tests {
 
         let mut ai = BasicAi::new();
         ai.veteran_retreat_margin = true;
-        assert_eq!(ai.veteran_hp_margin(&game, ours), 2 * VETERAN_HP_PER_PROMOTION);
+        assert_eq!(
+            ai.veteran_hp_margin(&game, ours),
+            2 * VETERAN_HP_PER_PROMOTION
+        );
         assert!(ai.healing_step(&mut game, 0, ours).is_some());
-        assert!(ai.recovering_units.contains(&ours), "the veteran is recovering");
+        assert!(
+            ai.recovering_units.contains(&ours),
+            "the veteran is recovering"
+        );
 
         let unit = game.units.get_mut(&ours).unwrap();
         unit.promotions.insert(crate::name!("ambush"));
@@ -18075,7 +18081,10 @@ mod tests {
         let mut withheld = g.clone();
         let mut control = AdvancedAi::new();
         control.disable_modernize_before_spending();
-        assert_eq!(control.modernize_before_the_purchase_pass(&mut withheld, 0), 0);
+        assert_eq!(
+            control.modernize_before_the_purchase_pass(&mut withheld, 0),
+            0
+        );
         assert_eq!(withheld.units[&warrior].kind, "warrior");
 
         let mut ai = AdvancedAi::new();

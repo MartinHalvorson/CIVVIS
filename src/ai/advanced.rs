@@ -9016,9 +9016,7 @@ impl AdvancedAi {
 
     /// `modernize-before-spending`: see the field. Returns the upgrades taken.
     pub(crate) fn modernize_before_the_purchase_pass(&mut self, g: &mut Game, pid: usize) -> usize {
-        if !self.modernize_before_spending
-            || self.war_plan.is_some()
-            || g.players[pid].is_barbarian
+        if !self.modernize_before_spending || self.war_plan.is_some() || g.players[pid].is_barbarian
         {
             return 0;
         }
