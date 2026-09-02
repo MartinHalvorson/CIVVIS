@@ -5028,6 +5028,13 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Version 2 of `early-project-restraint`: a repeatable Great-Person
+    /// project waits only while its own district owes a first building that
+    /// this city can start now, and only when its points do not serve the
+    /// empire's active lane or change the live race immediately. The arbitrary
+    /// opening clock is gone.
+    /// Opt-in gene `early-project-restraint-2`.
+    early_project_restraint_2: bool,
     /// `first-district-first`: a city's FIRST specialty district outranks
     /// the queue filler. Three edits inside `production_value`, all gated:
     /// a per-city first-district bonus beside `first_copy`, a gentler cost
@@ -7309,6 +7316,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            early_project_restraint_2: false,
             first_district_first: false,
             escort_cap_holds: false,
             first_granary_reserve: false,
@@ -12291,6 +12299,104 @@ impl AdvancedAi {
         mine < cost && mine + award + f64::EPSILON >= cost
     }
 
+    /// Whether this project's own district has a concrete first-building
+    /// debt the city can pay now.
+    ///
+    /// V1 inferred underdevelopment from the global turn number and therefore
+    /// suppressed a project even after the relevant district was developed.
+    /// V2 asks the board directly. A locked building is not debt yet, a
+    /// district family with no building is never debt, and one standing family
+    /// building is enough to release the project at any turn.
+    fn project_first_building_debt(g: &Game, pid: usize, cid: u32, project: &str) -> bool {
+        let spec = &g.rules.projects[project];
+        let city = &g.cities[&cid];
+        let Some(district) = spec.district else {
+            return false;
+        };
+        let family = g.district_family(district);
+        let first_building = match family.as_str() {
+            "campus" => "library",
+            "holy_site" => "shrine",
+            "commercial_hub" => "market",
+            "harbor" => "lighthouse",
+            "encampment" => "barracks",
+            "industrial_zone" => "workshop",
+            "theater_square" => "amphitheater",
+            _ => return false,
+        };
+        if city.buildings.iter().any(|building| {
+            g.rules.buildings[building]
+                .district
+                .is_some_and(|built| g.district_family(built) == family)
+        }) {
+            return false;
+        }
+        BasicAi::civ_building(g, pid, cid, first_building).is_some()
+    }
+
+    /// Whether this completion changes a live Great-Person race immediately.
+    ///
+    /// V1 made named exceptions only for Prophets and a short list of
+    /// Scientists. V2 keeps the building debt subordinate to the board's
+    /// generic forcing facts: one completion either recruits the current
+    /// person or overtakes the leading rival. The ordinary affinity and
+    /// project valuation still decide whether that newly admitted move wins
+    /// the queue.
+    fn project_changes_great_person_race(
+        g: &Game,
+        pid: usize,
+        awards: &BTreeMap<String, f64>,
+    ) -> bool {
+        awards.iter().any(|(kind, award)| {
+            if *award <= f64::EPSILON
+                || !g.great_person_class_earnable(pid, kind)
+                || !g.great_person_class_offered_now(pid, kind)
+                || g.live_great_person_offer_blocker(pid, kind).is_some()
+            {
+                return false;
+            }
+            let cost = g.gp_cost(pid, kind);
+            let mine = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
+            let rival = g
+                .players
+                .iter()
+                .filter(|player| {
+                    player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+                })
+                .map(|player| player.gpp.get(kind).copied().unwrap_or(0.0))
+                .fold(0.0_f64, f64::max);
+            (mine < cost && mine + award + f64::EPSILON >= cost)
+                || (rival > mine && mine + award > rival)
+        })
+    }
+
+    /// Whether any completion points advance the empire's active lane.
+    ///
+    /// A Science empire should not sacrifice its Scientist race merely to
+    /// finish a Library first; the project's normal value already compares
+    /// that race with the building. V2's restraint is for off-lane project
+    /// churn, where a concrete first building is the compounding move.
+    fn project_serves_great_person_lane(
+        lane: GrandStrategy,
+        awards: &BTreeMap<String, f64>,
+    ) -> bool {
+        awards.iter().any(|(kind, award)| {
+            *award > f64::EPSILON
+                && match lane {
+                    GrandStrategy::Science => matches!(kind.as_str(), "scientist" | "engineer"),
+                    GrandStrategy::Culture => {
+                        matches!(kind.as_str(), "writer" | "artist" | "musician")
+                    }
+                    GrandStrategy::Religion => kind == "prophet",
+                    GrandStrategy::Diplomacy => kind == "merchant",
+                    GrandStrategy::Conquest => matches!(kind.as_str(), "general" | "admiral"),
+                    GrandStrategy::Expansion | GrandStrategy::Recovery => {
+                        matches!(kind.as_str(), "engineer" | "merchant")
+                    }
+                }
+        })
+    }
+
     /// Evaluate a repeatable district project as a bounded race move. The
     /// ongoing conversion is valued over the actual build horizon, while the
     /// completion award is priced against the live global Great Person race.
@@ -12333,11 +12439,17 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
-        let early_gpp_project_restrained = self.early_project_restraint
-            && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS)
-            && spec.repeatable
-            && !spec.completion_gpp.is_empty()
-            && !Self::early_project_race_exception(g, pid, &gpp_awards);
+        let great_person_lane = self.great_person_lane(g, pid, plan);
+        let repeatable_gpp_project = spec.repeatable && !spec.completion_gpp.is_empty();
+        let named_race_exception = Self::early_project_race_exception(g, pid, &gpp_awards);
+        let early_gpp_project_restrained = repeatable_gpp_project
+            && !named_race_exception
+            && ((self.early_project_restraint
+                && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS))
+                || (self.early_project_restraint_2
+                    && Self::project_first_building_debt(g, pid, cid, project)
+                    && !Self::project_serves_great_person_lane(great_person_lane, &gpp_awards)
+                    && !Self::project_changes_great_person_race(g, pid, &gpp_awards)));
         let host_competition_gpp_scores = [
             (
                 "EMERGENCY_WORLDS_FAIR",
@@ -12359,7 +12471,6 @@ impl AdvancedAi {
         // out of the loop: `raced_lane` short-circuits on any plan that is not
         // `Expansion`, but `victory_focus` behind it is an empire-wide sweep
         // and this is `production_value`'s hot path.
-        let great_person_lane = self.great_person_lane(g, pid, plan);
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,

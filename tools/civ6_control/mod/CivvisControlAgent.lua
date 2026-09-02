@@ -13076,6 +13076,42 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and resolved or "throw";
 	end
 
+	-- ★★★ PREVIEW: a strike the decider wants PRICED, not fought. `subject` is
+	-- the unit, `verb` ATTACK or RANGE_ATTACK, `x`/`y` the target plot, and the
+	-- answer is a `preview` event carrying the host's own combat simulation.
+	-- `CivvisLedger.preview` wraps the same call the shipped combat preview
+	-- panel makes -- `Base/Assets/UI/Panels/UnitPanel.lua:3924`:
+	--
+	--   m_combatResults = CombatManager.SimulateAttackInto( attacker, eCombatType, locX, locY );
+	--
+	-- with `eCombatType` nil for melee and, for a ranged unit (:3908-3913),
+	-- `CombatTypes.RANGED` or `BOMBARD` "if (pUnit:GetBombardCombat() >
+	-- pUnit:GetRangedCombat())". Until now that simulation ran only inside
+	-- `CivvisLedger.strike`, at issue time, so the decider could read the
+	-- host's price of a blow only after committing to it. NOTHING IS
+	-- REQUESTED here: no operation, no strike-ledger entry, no war-starter
+	-- check -- the simulation has no side effect, and a war the strike would
+	-- start is the strike's refusal, not the preview's. A host that cannot
+	-- simulate (Game Core busy, no result table) is the named refusal
+	-- `preview_unavailable`, so an unanswered ask is never silent.
+	if kind == "preview" then
+		local unit = liveUnit(pid, subject);
+		if unit == nil then return false, "unit_gone:" .. tostring(subject); end
+		if verb ~= "ATTACK" and verb ~= "RANGE_ATTACK" then
+			return false, "preview_unknown_verb_" .. verb;
+		end
+		if x == nil or y == nil then return false, "preview_no_target"; end
+		local preview = CivvisLedger.preview(unit, verb, x, y);
+		if preview == nil then return false, "preview_unavailable"; end
+		emit("preview", {
+			turn = turn,
+			frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			unit = subject, verb = verb, x = x, y = y,
+			preview = preview,
+		});
+		return true, "PREVIEW";
+	end
+
 	if kind == "unit" then
 		-- Asked for fresh, right here: the previous order in this very list may have
 		-- killed or consumed it.

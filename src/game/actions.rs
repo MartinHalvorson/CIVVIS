@@ -1813,6 +1813,25 @@ impl Game {
         !self.blocked_strikes.is_empty() && self.blocked_strikes.contains(&(uid, target))
     }
 
+    /// The host's own simulation of `uid` striking `target` this turn, if a
+    /// `preview` order asked for it: `(attacker_strength, defender_strength,
+    /// damage_to_attacker, damage_to_defender)`. `ranged` picks the
+    /// RANGE_ATTACK answer over the melee one. See `Game::host_previews`.
+    pub fn host_preview(
+        &self,
+        uid: u32,
+        target: Pos,
+        ranged: bool,
+    ) -> Option<(f64, f64, i32, i32)> {
+        let preview = self.host_previews.get(&(uid, target, ranged))?;
+        Some((
+            preview.attacker_strength,
+            preview.defender_strength,
+            preview.damage_to_attacker,
+            preview.damage_to_defender,
+        ))
+    }
+
     /// Whether the engine will accept `Attack { unit: uid, target }` right
     /// now — `legal_actions_within`'s own melee predicates plus the hostile
     /// target check, exactly as `do_attack` applies them. See
