@@ -6084,6 +6084,21 @@ local function exportState(player, pid, turn, frame)
 			end
 		end
 	end);
+	-- ★★★ THE CAPTURED CITY THE HOST IS WAITING ON. Civilization VI blocks the
+	-- turn with ENDTURN_BLOCKING_CONSIDER_RAZE_CITY until the conqueror keeps,
+	-- razes or liberates a city taken this turn; this controller lists that
+	-- blocker as soft and ends the turn over it, so the host's default — keep
+	-- — decided every capture and the board never saw a decision to make. The
+	-- shipped popup finds the city with `GetNextCapturedCity()`
+	-- (`Base/Assets/UI/Popups/RazeCity.lua:71`) and the loser with
+	-- `GetJustConqueredFrom()` (`:86`); the city record below carries both, on
+	-- that one city, so the mirror can set `captured_from` and the board
+	-- offers the same three choices the popup does. The `city` order kind in
+	-- `applyOrder` carries the answer back.
+	local pendingCaptureId = try(function()
+		local pending = player:GetCities():GetNextCapturedCity();
+		return pending and pending:GetID() or nil;
+	end, nil);
 	eachCity(player, function(city)
 		local outgoing = try(function()
 			return city:GetTrade():GetOutgoingRoutes();
@@ -6551,6 +6566,14 @@ local function exportState(player, pid, turn, frame)
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
 			capital = try(function() return city:IsCapital(); end, false),
+			-- See `pendingCaptureId`: the Firaxis player this city was just taken
+			-- from, present exactly while the host waits on its disposition; and
+			-- its founder (`GetOriginalOwner`, `RazeCity.lua:85`), whom LIBERATE
+			-- hands it to.
+			captured_from = (pendingCaptureId ~= nil
+				and pendingCaptureId == try(function() return city:GetID(); end, nil))
+				and try(function() return city:GetJustConqueredFrom(); end, nil) or nil,
+			original_owner = try(function() return city:GetOriginalOwner(); end, nil),
 			-- The NAME, not the hash. See `productionName`: shipping the raw hash
 			-- meant the mirror never knew what any city was already building, so
 			-- CIVVIS re-decided production every turn blind to work in progress.
@@ -11238,6 +11261,56 @@ local function applyOrder(player, pid, row, turn)
 			end
 		end
 		return false, "gp_class_not_offered";
+	end
+
+	-- ★★★ THE CAPTURED CITY'S DISPOSITION. `subject` is the Firaxis city id;
+	-- `verb` is KEEP, RAZE or LIBERATE. Civilization VI has ONE command for all
+	-- three, `CityCommandTypes.DESTROY`, told apart by a directive in
+	-- `PARAM_FLAGS` — the shipped `Base/Assets/UI/Popups/RazeCity.lua` buttons:
+	--
+	--   :39  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.KEEP;
+	--   :48  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.RAZE;
+	--   :17  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.LIBERATE_FOUNDER;
+	--   :18  if (CityManager.CanStartCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters)) then
+	--   :20      CityManager.RequestCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters);
+	--
+	-- LIBERATE is the FOUNDER button (`:17`; the host shows it only when
+	-- `CanLiberateCityTo(GetOriginalOwner())` and the founder is not the
+	-- loser, `:90`), because the engine's `do_liberate_city` returns the city
+	-- to `original_owner`; the owner-before-occupation button (`:28`) has no
+	-- board action. `CanStartCommand` with the SAME table gates the request,
+	-- so a directive the host will not take (RAZE on a capital or on the
+	-- founder's own city, LIBERATE with nobody to hand it to) is the named
+	-- refusal `cannot_<verb>`, never a silent no-op. Until this branch every
+	-- one of these decisions was untranslated and the host's default — keep
+	-- — took every city.
+	if kind == "city" then
+		local city = try(function() return CityManager.GetCity(pid, subject); end);
+		if city == nil then return false, "city_missing:" .. tostring(subject); end
+		local directiveName = ({
+			KEEP = "KEEP", RAZE = "RAZE", LIBERATE = "LIBERATE_FOUNDER",
+		})[verb];
+		if directiveName == nil then return false, "unknown_city_verb_" .. verb; end
+		local directive = try(function() return CityDestroyDirectives[directiveName]; end, nil);
+		if directive == nil then return false, "no_destroy_directive_" .. directiveName; end
+		local params = {};
+		params[UnitOperationTypes.PARAM_FLAGS] = directive;
+		if not try(function()
+			return CityManager.CanStartCommand(city, CityCommandTypes.DESTROY, params);
+		end, false) then
+			return false, "cannot_" .. string.lower(verb);
+		end
+		local ok = pcall(function()
+			CityManager.RequestCommand(city, CityCommandTypes.DESTROY, params);
+		end);
+		emit("city_disposition", {
+			turn = turn, city = subject, verb = verb, requested = ok,
+			name = try(function() return Locale.Lookup(city:GetName()); end, nil),
+			conquered_from = try(function() return city:GetJustConqueredFrom(); end, nil),
+			original_owner = try(function() return city:GetOriginalOwner(); end, nil),
+			pop = try(function() return city:GetPopulation(); end, nil),
+		});
+		return ok, ok and verb or ("city_" .. string.lower(verb) .. "_throw");
 	end
 
 	-- A city's ranged strike. `subject` is the Firaxis city id, x/y the target

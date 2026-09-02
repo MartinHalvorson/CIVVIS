@@ -3787,6 +3787,9 @@ fn decide(
                         }
                     }
                     Action::Produce { .. } => "produce_not_mapped",
+                    Action::KeepCity { .. } | Action::RazeCity { .. } | Action::LiberateCity { .. } => {
+                        "city_not_mapped"
+                    }
                     _ => "",
                 };
                 // ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest
@@ -5077,6 +5080,44 @@ fn translate(
                 verb: None,
                 pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
             }),
+        // ★★★ THE CAPTURED CITY'S DISPOSITION. `KeepCity` / `RazeCity` /
+        // `LiberateCity` are mandatory and exclusive on the board
+        // (`pending_city_capture_actions`: nothing else is legal until one is
+        // chosen) and fell through this match's `_ => None`, so the host's own
+        // default — the `CONSIDER_RAZE_CITY` blocker the mod lists as soft,
+        // i.e. keep — decided every capture. Civilization VI has ONE command
+        // for all three, `CityCommandTypes.DESTROY`, told apart by a directive
+        // flag; the shipped `Base/Assets/UI/Popups/RazeCity.lua` buttons:
+        //
+        //   :39  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.KEEP;
+        //   :48  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.RAZE;
+        //   :17  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.LIBERATE_FOUNDER;
+        //   :18  if (CityManager.CanStartCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters)) then
+        //   :20      CityManager.RequestCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters);
+        //
+        // so the order is kind `city`, `subject` = the host city id, the verb
+        // names the directive, and `pos` carries the city plot so the verdict
+        // can ask who holds it next frame. The engine's `do_liberate_city`
+        // returns the city to `original_owner`, the founder — the
+        // LIBERATE_FOUNDER button, not the owner-before-occupation one.
+        Action::KeepCity { city } | Action::RazeCity { city } | Action::LiberateCity { city } => {
+            let verb = match action {
+                Action::KeepCity { .. } => "KEEP",
+                Action::RazeCity { .. } => "RAZE",
+                _ => "LIBERATE",
+            };
+            let pos = mirror_state.game.cities.get(city)?.pos;
+            mirror_state
+                .cid_of
+                .iter()
+                .find(|(_, cid)| **cid == *city)
+                .map(|(civ6, _)| Order {
+                    kind: "city",
+                    subject: Some(*civ6),
+                    verb: Some(verb.to_string()),
+                    pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
+                })
+        }
         // Delegations and embassies buy diplomatic visibility (a combat bonus
         // against that rival) and a relationship modifier for pocket change,
         // and both were untranslatable: 16 SendDelegation and 7 SendEmbassy
@@ -5615,6 +5656,83 @@ fn foreign_city_at(
         .flat_map(|r| r.cities.iter())
         .chain(state.minors.iter().flat_map(|m| m.cities.iter()))
         .find(|c| (c.x, c.y) == pos)
+}
+
+/// Who holds a foreign city on `pos`: the Firaxis player id of the rival or
+/// city-state whose `cities[]` lists it.
+fn foreign_city_owner_at(state: &civvis::mirror::StateSnapshot, pos: (i32, i32)) -> Option<i64> {
+    let holds = |cities: &[civvis::mirror::StateCity]| cities.iter().any(|c| (c.x, c.y) == pos);
+    state
+        .rivals
+        .iter()
+        .find(|r| holds(&r.cities))
+        .map(|r| r.player as i64)
+        .or_else(|| {
+            state
+                .minors
+                .iter()
+                .find(|m| holds(&m.cities))
+                .map(|m| m.player as i64)
+        })
+}
+
+/// The captured city's disposition, judged by who holds the city on the next
+/// frame. KEEP: still ours and the host no longer waits on a decision for it
+/// (`captured_from` clear), else `not_kept`. RAZE: Civilization VI burns a
+/// razed city down one citizen a turn and it stays ours while it burns, so
+/// the next turn shows it gone or smaller; on a same-turn replan frame the
+/// only trace is the decision consumed — the flag clear before any citizen
+/// has left — which is accepted there and only there; else `not_razed`.
+/// LIBERATE: not ours, and the founder the decision frame named
+/// (`original_owner`) holds the plot, else `liberated_to_another` /
+/// `not_liberated`.
+fn verify_city_disposition(
+    order: &IssuedOrder,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+) -> Verdict {
+    let failed = |why: &str| Verdict::Failed(why.to_string());
+    let Some(id) = order.subject else {
+        return failed("no_subject");
+    };
+    let verb = order.verb.as_deref().unwrap_or("");
+    let was = own_city(before, id);
+    let plot = order.pos.or_else(|| was.map(|c| (c.x, c.y)));
+    let now = own_city(after, id).or_else(|| plot.and_then(|p| own_city_at(after, p)));
+    match verb {
+        "KEEP" => match now {
+            Some(city) if city.captured_from.is_none() => Verdict::Verified,
+            Some(_) => failed("not_kept"),
+            None => failed("city_gone"),
+        },
+        "RAZE" => match now {
+            None => Verdict::Verified,
+            Some(city) if was.is_some_and(|w| city.pop < w.pop) => Verdict::Verified,
+            Some(city)
+                if after.turn == before.turn
+                    && city.captured_from.is_none()
+                    && was.is_some_and(|w| w.captured_from.is_some()) =>
+            {
+                Verdict::Verified
+            }
+            Some(_) => failed("not_razed"),
+        },
+        "LIBERATE" => {
+            let Some(plot) = plot else {
+                return failed("no_plot");
+            };
+            if now.is_some() {
+                return failed("not_liberated");
+            }
+            let founder = was.and_then(|w| w.original_owner);
+            match foreign_city_owner_at(after, plot) {
+                Some(owner) if founder.is_none_or(|f| f == owner) => Verdict::Verified,
+                Some(_) => failed("liberated_to_another"),
+                None => failed("not_liberated"),
+            }
+        }
+        _ => Verdict::Failed(format!("unknown_city_verb_{verb}")),
+    }
 }
 
 fn at_war_with(state: &civvis::mirror::StateSnapshot, player: i64) -> Option<bool> {
@@ -6404,6 +6522,7 @@ fn verify_order_with_context(
                 failed("no_great_person".to_string())
             }
         }
+        "city" => verify_city_disposition(order, before, after),
         "city_strike" | "encampment_strike" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
             if harmed
@@ -12766,6 +12885,31 @@ mod tests {
         assert_eq!(encampment.pos, Some(civvis::hex::axial_to_offset(7, 5)));
     }
 
+    /// The captured city's three dispositions cross as kind `city` — subject
+    /// = the host city id, verb = the `CityDestroyDirectives` name the shipped
+    /// `RazeCity.lua` buttons set, pos = the city plot — instead of falling
+    /// through to the host's default.
+    #[test]
+    fn a_captured_citys_disposition_crosses_as_keep_raze_or_liberate() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let rome = mirror.game.player_city_ids(0)[0];
+        for (action, verb) in [
+            (Action::KeepCity { city: rome }, "KEEP"),
+            (Action::RazeCity { city: rome }, "RAZE"),
+            (Action::LiberateCity { city: rome }, "LIBERATE"),
+        ] {
+            let order = translate(&action, &mirror, &state).expect("the disposition crosses");
+            assert_eq!(
+                (order.kind, order.subject, order.verb.as_deref(), order.pos),
+                ("city", Some(7), Some(verb), Some((4, 4))),
+                "{verb}: host city 7 on its plot, in host offsets"
+            );
+        }
+        // A city the mirror cannot map has no host id to decide for.
+        assert!(translate(&Action::KeepCity { city: u32::MAX }, &mirror, &state).is_none());
+    }
+
     #[test]
     fn delegations_and_embassies_name_the_firaxis_seat() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -16377,6 +16521,73 @@ mod order_postcondition_tests {
         for (verb, why) in UNVERIFIABLE_UNIT_VERBS {
             assert!(!why.is_empty(), "{verb} needs a reason");
         }
+    }
+
+    /// KEEP is the city still ours with the host no longer waiting on the
+    /// decision; RAZE is the city gone or a citizen smaller next turn (or, on
+    /// a same-turn frame, the decision consumed); LIBERATE is the founder the
+    /// decision frame named holding the plot.
+    #[test]
+    fn a_city_disposition_is_verified_by_who_holds_the_city_next_frame() {
+        let mut before = frame(30);
+        before.cities = vec![StateCity {
+            id: 7,
+            name: "Antium".to_string(),
+            x: 4,
+            y: 4,
+            pop: 4,
+            // Taken from Firaxis player 3; founded by player 5.
+            captured_from: Some(3),
+            original_owner: Some(5),
+            ..StateCity::default()
+        }];
+        let order = |verb: &str| IssuedOrder {
+            kind: "city".to_string(),
+            subject: Some(7),
+            verb: Some(verb.to_string()),
+            pos: Some((4, 4)),
+        };
+        let mut kept = frame(31);
+        kept.cities = before.cities.clone();
+        kept.cities[0].captured_from = None;
+        let gone = frame(31);
+
+        assert_eq!(check(&order("KEEP"), &before, &kept, &[]), Verdict::Verified);
+        // Still pending: the host did not take the directive.
+        assert_eq!(check(&order("KEEP"), &before, &before, &[]), failed("not_kept"));
+        assert_eq!(check(&order("KEEP"), &before, &gone, &[]), failed("city_gone"));
+
+        assert_eq!(check(&order("RAZE"), &before, &gone, &[]), Verdict::Verified);
+        let mut burning = kept.clone();
+        burning.cities[0].pop = 3;
+        assert_eq!(check(&order("RAZE"), &before, &burning, &[]), Verdict::Verified);
+        let mut same_turn = kept.clone();
+        same_turn.turn = 30;
+        same_turn.frame = 1;
+        assert_eq!(check(&order("RAZE"), &before, &same_turn, &[]), Verdict::Verified);
+        assert_eq!(check(&order("RAZE"), &before, &kept, &[]), failed("not_razed"));
+
+        let foreign = |player: usize| {
+            let mut after = frame(31);
+            after.rivals.push(StateRival {
+                player,
+                cities: vec![StateCity {
+                    id: 7,
+                    x: 4,
+                    y: 4,
+                    ..StateCity::default()
+                }],
+                ..StateRival::default()
+            });
+            after
+        };
+        assert_eq!(check(&order("LIBERATE"), &before, &foreign(5), &[]), Verdict::Verified);
+        assert_eq!(
+            check(&order("LIBERATE"), &before, &foreign(3), &[]),
+            failed("liberated_to_another")
+        );
+        assert_eq!(check(&order("LIBERATE"), &before, &kept, &[]), failed("not_liberated"));
+        assert_eq!(check(&order("LIBERATE"), &before, &gone, &[]), failed("not_liberated"));
     }
 
     #[test]

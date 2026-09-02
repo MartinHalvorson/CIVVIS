@@ -2098,6 +2098,26 @@ pub struct StateCity {
     pub pop: i32,
     #[serde(default)]
     pub capital: bool,
+    /// ★★★ THE CAPTURE DECISION THE HOST IS WAITING ON. The Firaxis player id
+    /// this city was just taken from (`City:GetJustConqueredFrom()`,
+    /// `Popups/RazeCity.lua:86`), exported on exactly the city the shipped
+    /// popup would show — `Player:GetCities():GetNextCapturedCity()`
+    /// (`RazeCity.lua:71`) — and absent once any keep/raze/liberate directive
+    /// has been taken. The mirror maps it onto `City::captured_from` as a
+    /// seat, so `pending_city_capture_actions` offers the board the same
+    /// three choices the popup offers, and the order bridge carries the one
+    /// it takes back as kind `city`. `None` on every export before this: the
+    /// controller lists the host's `CONSIDER_RAZE_CITY` blocker as soft, so
+    /// the host's default — keep — decided every capture unseen.
+    #[serde(default)]
+    pub captured_from: Option<i64>,
+    /// The founder's Firaxis player id (`City:GetOriginalOwner()`,
+    /// `RazeCity.lua:85`), whom LIBERATE returns the city to. Mapped onto
+    /// `City::original_owner` when the founder sits on a mirrored seat; an
+    /// unmapped founder leaves the board's default (the owner), which offers
+    /// neither Raze nor Liberate — the honest degraded answer.
+    #[serde(default)]
+    pub original_owner: Option<i64>,
     #[serde(default = "unknown_metric")]
     pub defense: f64,
     /// Damage and capacity for the city garrison and outer-defense health pools.
@@ -5210,6 +5230,8 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
 const CITY_KEYS: &[&str] = &[
     "id",
     "name",
+    "captured_from",
+    "original_owner",
     "buildings",
     "pillaged_buildings",
     "religion",
@@ -8753,6 +8775,58 @@ fn apply_player_religion(
     }
 }
 
+/// Firaxis player id -> mirrored seat, for the two per-city player fields the
+/// capture decision carries (`StateCity::captured_from`, `::original_owner`).
+/// The same rule the war bond and `apply_territory` use: rivals take seats
+/// `i + 1` in export order, city-states and the Free Cities actor take the
+/// seats `minor_actor_assignments` gives them, the local player is seat 0.
+fn host_capture_seats(
+    game: &crate::game::Game,
+    state: &StateSnapshot,
+) -> std::collections::BTreeMap<i64, usize> {
+    let mut seat_of: std::collections::BTreeMap<i64, usize> = Default::default();
+    if state.seat.local_player >= 0 {
+        seat_of.insert(i64::from(state.seat.local_player), 0);
+    }
+    for (index, rival) in state.rivals.iter().enumerate() {
+        seat_of.insert(rival.player as i64, index + 1);
+    }
+    for (minor, seat) in minor_actor_assignments(game, state) {
+        seat_of.insert(minor.player as i64, seat);
+    }
+    seat_of
+}
+
+/// ★★★ THE CAPTURE DECISION REACHES THE BOARD. `captured_from` is assigned
+/// from every export — the host names the loser only while its own
+/// keep/raze/liberate decision is open for this city (`GetNextCapturedCity()`,
+/// `Popups/RazeCity.lua:71`), so an export without it CLEARS the flag and the
+/// board stops asking. `original_owner` moves only when the founder sits on a
+/// mirrored seat; an unmapped founder (never met, or no seat left) keeps the
+/// board's default, under which `city_can_be_razed_by` and the liberate
+/// clause both say no and only Keep is offered. A loser that maps to no seat
+/// leaves the flag clear: the engine's `do_keep_city` pays the capture
+/// rewards to `players[defeated]`, and a seat that is not there is a panic,
+/// not a decision.
+fn apply_city_capture(
+    live: &mut crate::game::City,
+    state: &StateCity,
+    seat_of: &std::collections::BTreeMap<i64, usize>,
+) {
+    if let Some(founder) = state
+        .original_owner
+        .filter(|player| *player >= 0)
+        .and_then(|player| seat_of.get(&player))
+    {
+        live.original_owner = *founder;
+    }
+    live.captured_from = state
+        .captured_from
+        .filter(|player| *player >= 0)
+        .and_then(|player| seat_of.get(&player).copied())
+        .filter(|seat| *seat != live.owner);
+}
+
 fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
     // `City::pressure` is the model's only existing representation of a
     // conversion in progress.  The host gives us the more useful clock, but
@@ -11407,6 +11481,7 @@ pub fn rebuild_from_state(
         ),
         HostPhase::Refresh,
     );
+    let capture_seats = host_capture_seats(&game, state);
     for city in &state.cities {
         if let Some(cid) = plant_city(&mut game, 0, city) {
             city_ids.insert(cid, city.id);
@@ -11431,6 +11506,7 @@ pub fn rebuild_from_state(
                     built.food = city.food;
                 }
                 apply_city_religion(built, city);
+                apply_city_capture(built, city, &capture_seats);
                 // ★★★★ SEED THE QUEUE WITH WHAT CIVILIZATION VI IS ALREADY BUILDING.
                 //
                 // Without it every city reads as idle, so CIVVIS chooses production
@@ -13593,6 +13669,7 @@ impl LiveMirror {
                 self.known_city_ids.insert(city.id, cid);
             }
         }
+        let capture_seats = host_capture_seats(&self.game, state);
         for city in &state.cities {
             if let Some(cid) = self.cid_of.get(&city.id) {
                 // The authoritative mirror never simulates a queue itself: the
@@ -13620,6 +13697,7 @@ impl LiveMirror {
                         live.food = city.food;
                     }
                     apply_city_religion(live, city);
+                    apply_city_capture(live, city, &capture_seats);
                     // Firaxis exports the current item, not a speculative
                     // multi-item queue.  Clear even when the item is absent: a
                     // finished build is an empty queue in the real game, not the
