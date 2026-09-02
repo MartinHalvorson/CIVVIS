@@ -52,11 +52,47 @@
 //!    stands adjacent, further from the enemy and `Action::Swap` is legal,
 //!    the swap is preferred so the tile stays held.
 //!
+//! 4. **The positions plan** (`battle-planner-2` only). After the kill plan
+//!    and the rotation, every advancing or engaging force lays out *slots*
+//!    against the enemy contact and the objective — never against the
+//!    group's own anchor — and the members that were given no strike and no
+//!    rotation are placed in them by a minimum-cost assignment. Front slots
+//!    (Vanguard and Mobile) stand at distance one from the nearest contacts,
+//!    on our side, scored by `tile_defense_bonus` and a river between slot
+//!    and enemy; with no enemy within `CONTACT_BAND` they stand at the
+//!    front's depth from the objective instead. Shooter slots stand at
+//!    attack range from the most finishable targets with line of sight and a
+//!    front slot between them and the enemy, or one tile further back where
+//!    no front slot covers them; siege slots in range of the
+//!    objective city behind a front slot; support slots beside the most
+//!    front slots; and a unit under `HEAL_SLOT_HP`, where the board heals,
+//!    takes a heal slot — a tile the field reads as zero, a district or
+//!    friendly ground preferred — and enters the recovery. Units go to slots
+//!    by the Hungarian method on route turns plus danger past the unit's
+//!    spare hit points; a lethal slot is never taken. A unit with a blow to
+//!    offer — the kill plan's shooters, spent or declined, and any unit with
+//!    an enemy city in its attack reach — is not placed: it stays the
+//!    ladder's, which prices the blow on its own clone exactly as version
+//!    one does. Every assigned tile is
+//!    reserved, each unit's end tile this turn is chosen against the
+//!    reservations, and the moves are issued front to rear so a rear unit
+//!    can enter the tile a front unit vacates. On the approach — no enemy
+//!    within `close_as_a_body::CONTACT_RANGE` of any member — no unit ends
+//!    more than the body's pace plus one closer to the objective than the
+//!    slowest member stood; in contact nothing is paced. Cohesion here is a
+//!    property of the slot layout alone: there is no scored adjacency or
+//!    support term, which `docs/TACTICS.md` §4 and §7 measured null and
+//!    refuted.
+//!
 //! Units the plan has ordered are marked (`battle_planner_ordered`) and the
 //! per-unit ladder leaves them alone for the turn; everyone else plays the
-//! ladder exactly as before. `coordinated_tactical_step` — the movement of
-//! units that are not striking — is untouched in this change; the module is
-//! shaped so a `positions_plan` can join the three parts later.
+//! ladder exactly as before. Under version one `coordinated_tactical_step`
+//! moves every unit that is not striking; under version two it moves only
+//! the units the positions plan did not place — a unit without a group, a
+//! scout, a garrison, a member of a holding or mustering force, or one whose
+//! every slot was unreachable or lethal — so behaviour changes only where a
+//! slot plan exists. One version of the family plays: `enable_battle_planner_2`
+//! turns version one off, and the seam reads `battle_planner_on()`.
 //!
 //! **Cities are not kill-plan targets.** A blow on a City Center is priced
 //! by `city_take_damage` — walls absorb a share that depends on the wall
@@ -85,7 +121,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use super::{AdvancedAi, AppliedAttack, StrategicPlan};
+use super::close_as_a_body::{BODY_PACE_SLACK, CONTACT_RANGE};
+use super::{AdvancedAi, AppliedAttack, ForceGroup, ForcePosture, ForceRole, StrategicPlan};
 use crate::game::{effective_strength, expected_damage, Action, Game};
 use crate::think;
 use crate::Pos;
@@ -125,6 +162,34 @@ const UNFINISHED_PENALTY_SHARE: f64 = 0.35;
 const RELIEF_HP_MARGIN: i32 = 25;
 /// Danger this small is none: the field sums exact blows, so zero is zero.
 const NO_DANGER: f64 = 1e-9;
+/// `battle-planner-2`: a visible hostile within this many tiles of a member
+/// is a contact, and the slots are laid against the contacts rather than
+/// the objective.
+pub(super) const CONTACT_BAND: i32 = 3;
+/// `battle-planner-2`: a member under this, where the board heals, takes a
+/// heal slot instead of a role slot and enters the recovery. Above
+/// `ROTATE_HP`, which the rotation already handles, and below the return.
+pub(super) const HEAL_SLOT_HP: i32 = 60;
+/// `battle-planner-2`: hit points a unit keeps in hand before the danger at
+/// a slot starts to cost it turns in the assignment.
+const DANGER_FREE_HP: i32 = 30;
+/// `battle-planner-2`: route turns one hit point of danger past the spare
+/// hit points costs. Twenty points past them weigh a turn of marching.
+const DANGER_COST_PER_HP: f64 = 0.05;
+/// `battle-planner-2`: members one plan places; the rest keep today's step.
+const MAX_PLANNED_UNITS: usize = 20;
+/// `battle-planner-2`: a river between a front slot and the enemy it faces,
+/// on `tile_defense_bonus`'s scale, where a hill is three.
+const RIVER_SLOT_BONUS: f64 = 5.0;
+/// `battle-planner-2`: slot tiles are sought this far around each contact,
+/// or around the objective.
+const SLOT_RADIUS: i32 = 4;
+/// `battle-planner-2`: the most finishable contacts shooter slots are laid
+/// against.
+const SHOOTER_TARGETS: usize = 3;
+/// `battle-planner-2`: a pairing the assignment must not make — unreachable,
+/// or lethal. Finite so the potentials stay finite.
+const UNASSIGNABLE: f64 = 1.0e6;
 
 /// A kill's worth, on `tactical_attack_result_in`'s scale.
 fn unit_value(cost: f64, strength: f64, siege: bool, captures: bool) -> f64 {
@@ -623,11 +688,12 @@ impl AdvancedAi {
     }
 
     /// Plan and play the force's turn: the kill plan, then the heal
-    /// rotation. `true` when a blow landed, so the caller rebuilds its force
-    /// picture. Nothing is read with the gene off.
+    /// rotation, then — version two — the positions plan. `true` when a blow
+    /// landed, so the caller rebuilds its force picture. Nothing is read with
+    /// both versions off.
     pub(super) fn plan_battle(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
         self.battle_planner_ordered.clear();
-        if !self.battle_planner {
+        if !self.battle_planner_on() {
             return false;
         }
         self.battle_planner_recovering.retain(|uid| {
@@ -636,7 +702,7 @@ impl AdvancedAi {
                 .is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP)
         });
         let mut field = DangerField::new(g, pid);
-        let blows = self.kill_sequence_in(g, pid, &mut field);
+        let (blows, armed) = self.kill_sequence_in(g, pid, &mut field);
         let mut struck = false;
         let mut strikers = BTreeSet::new();
         if !blows.is_empty() {
@@ -654,6 +720,16 @@ impl AdvancedAi {
         }
         let rotations = self.rotate_wounded(g, pid, &mut field, &strikers);
         self.census.battle_plan_rotations += rotations;
+        // `battle-planner-2`: the positions plan, on a force picture that no
+        // longer holds the defenders the kill plan removed. The caller's own
+        // rebuild after a strike is the version-one contract and stands.
+        if self.battle_planner_2 {
+            if struck {
+                self.rebuild_force_groups(g, pid, plan);
+                self.force_groups_dirty = false;
+            }
+            self.plan_positions(g, pid, &mut field, &armed);
+        }
         struck
     }
 
@@ -662,17 +738,23 @@ impl AdvancedAi {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn kill_sequence(&self, g: &Game, pid: usize) -> Vec<Blow> {
         let mut field = DangerField::new(g, pid);
-        self.kill_sequence_in(g, pid, &mut field)
+        self.kill_sequence_in(g, pid, &mut field).0
     }
 
-    fn kill_sequence_in(&self, g: &Game, pid: usize, field: &mut DangerField) -> Vec<Blow> {
-        let (shooters, targets, candidates) = self.strike_candidates(g, pid, field);
+    /// The ordered blows, and every unit that had a legal blow to offer.
+    fn kill_sequence_in(
+        &self,
+        g: &Game,
+        pid: usize,
+        field: &mut DangerField,
+    ) -> (Vec<Blow>, BTreeSet<u32>) {
+        let (shooters, targets, candidates, armed) = self.strike_candidates(g, pid, field);
         if candidates.is_empty() {
-            return Vec::new();
+            return (Vec::new(), armed);
         }
         let (sequence, score) = search_kill_sequence(&shooters, &targets, &candidates, field);
         if score <= 0.0 || sequence.is_empty() {
-            return Vec::new();
+            return (Vec::new(), armed);
         }
         let mut dealt = vec![0.0; targets.len()];
         let mut blows = Vec::with_capacity(sequence.len());
@@ -693,17 +775,23 @@ impl AdvancedAi {
                 finishes: dealt[candidate.target] >= f64::from(target.hp) * KILL_MARGIN,
             });
         }
-        blows
+        (blows, armed)
     }
 
     /// Every legal blow each eligible unit could make this turn, from its
     /// own tile or after a move, priced with the engine's pair on the probe.
+    ///
+    /// The fourth element is every unit that has a legal blow this turn —
+    /// the shooters, whether or not the search spends them, and a siege
+    /// unit left to the ladder for a city shot. `battle-planner-2` leaves
+    /// these to the ladder rather than placing them: a declined shot is
+    /// still the ladder's to price on its own clone, as it always was.
     fn strike_candidates(
         &self,
         g: &Game,
         pid: usize,
         field: &mut DangerField,
-    ) -> (Vec<Shooter>, Vec<Target>, Vec<Candidate>) {
+    ) -> (Vec<Shooter>, Vec<Target>, Vec<Candidate>, BTreeSet<u32>) {
         // Targets: the strongest hostile military unit on each visible tile
         // that is not a City Center or an Encampment — the defender the
         // engine will resolve against, as `fire_plan` reads it.
@@ -754,8 +842,9 @@ impl AdvancedAi {
                 }
             })
             .collect();
+        let mut armed: BTreeSet<u32> = BTreeSet::new();
         if targets.is_empty() {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new(), armed);
         }
         let enemy_city_near = |pos: Pos, range: i32| {
             g.cities.values().any(|city| {
@@ -791,6 +880,7 @@ impl AdvancedAi {
             // its shot is the wall, not a unit.
             if spec.siege && enemy_city_near(unit.pos, range + g.unit_max_moves(uid).ceil() as i32)
             {
+                armed.insert(uid);
                 continue;
             }
             let shooter_index = shooters.len();
@@ -867,6 +957,7 @@ impl AdvancedAi {
             if own.is_empty() {
                 continue;
             }
+            armed.insert(uid);
             // Per target keep the unit's own tile and the safest stands
             // after it, so the search is not spent choosing among tiles
             // that differ only in exposure.
@@ -925,7 +1016,7 @@ impl AdvancedAi {
             candidates.extend(kept);
         }
         if candidates.is_empty() {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new(), armed);
         }
         // The most finishable targets, and the shooters with the heaviest
         // blow, within the search's bounds.
@@ -992,7 +1083,7 @@ impl AdvancedAi {
             })
             .collect();
         targets = kept_targets;
-        (kept_shooters, targets, kept)
+        (kept_shooters, targets, kept, armed)
     }
 
     /// Replay the plan on one speculative clone, through the same exact
@@ -1289,6 +1380,832 @@ impl AdvancedAi {
     }
 }
 
+/// `battle-planner-2`: the kind of slot a role stands in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum SlotRole {
+    Front,
+    Shooter,
+    Siege,
+    Support,
+}
+
+/// `battle-planner-2`: one tile the plan wants held, and how deep it is —
+/// its distance to the nearest contact, or to the target on an approach.
+/// The front is ordered on the depth.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Slot {
+    pub role: SlotRole,
+    pub tile: Pos,
+    pub depth: i32,
+}
+
+/// `battle-planner-2`: one unit sent to one tile. `role` is `None` for a
+/// heal slot.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Placement {
+    pub unit: u32,
+    pub tile: Pos,
+    pub role: Option<SlotRole>,
+    pub depth: i32,
+}
+
+/// `battle-planner-2`: a force's positions plan before anything moves.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct PositionPlan {
+    pub group: u32,
+    pub target: Pos,
+    pub contacts: usize,
+    pub slots: Vec<Slot>,
+    /// Front to rear: heal slots first (they vacate the line), then by
+    /// depth, role and unit.
+    pub placements: Vec<Placement>,
+    /// On the approach: the nearest distance to the target a unit may end
+    /// the turn at, and the pace it came from.
+    pub pace_floor: Option<(i32, i32)>,
+}
+
+/// One visible hostile that can fight, within the contact band.
+#[derive(Clone, Copy, Debug)]
+struct Contact {
+    pos: Pos,
+    hp: i32,
+    uid: u32,
+}
+
+/// The minimum-cost assignment of rows to columns, rows ≤ columns: the
+/// Hungarian method with potentials, O(rows² · columns). Every row gets a
+/// column; a pairing at `UNASSIGNABLE` is one the caller drops. Ties fall to
+/// the input order, so the plan is a function of the board alone.
+fn assign_min_cost(cost: &[Vec<f64>]) -> Vec<usize> {
+    let rows = cost.len();
+    if rows == 0 {
+        return Vec::new();
+    }
+    let cols = cost[0].len();
+    debug_assert!(rows <= cols);
+    let mut u = vec![0.0f64; rows + 1];
+    let mut v = vec![0.0f64; cols + 1];
+    let mut matched = vec![0usize; cols + 1];
+    let mut way = vec![0usize; cols + 1];
+    for row in 1..=rows {
+        matched[0] = row;
+        let mut j0 = 0usize;
+        let mut minv = vec![f64::INFINITY; cols + 1];
+        let mut used = vec![false; cols + 1];
+        loop {
+            used[j0] = true;
+            let i0 = matched[j0];
+            let mut delta = f64::INFINITY;
+            let mut j1 = 0usize;
+            for j in 1..=cols {
+                if used[j] {
+                    continue;
+                }
+                let current = cost[i0 - 1][j - 1] - u[i0] - v[j];
+                if current < minv[j] {
+                    minv[j] = current;
+                    way[j] = j0;
+                }
+                if minv[j] < delta {
+                    delta = minv[j];
+                    j1 = j;
+                }
+            }
+            for j in 0..=cols {
+                if used[j] {
+                    u[matched[j]] += delta;
+                    v[j] -= delta;
+                } else {
+                    minv[j] -= delta;
+                }
+            }
+            j0 = j1;
+            if matched[j0] == 0 {
+                break;
+            }
+        }
+        loop {
+            let j1 = way[j0];
+            matched[j0] = matched[j1];
+            j0 = j1;
+            if j0 == 0 {
+                break;
+            }
+        }
+    }
+    let mut out = vec![0usize; rows];
+    for j in 1..=cols {
+        if matched[j] != 0 {
+            out[matched[j] - 1] = j - 1;
+        }
+    }
+    out
+}
+
+impl AdvancedAi {
+    /// Either version of the battle planner. The seam reads this; the
+    /// positions plan itself reads `battle_planner_2`.
+    pub(super) fn battle_planner_on(&self) -> bool {
+        self.battle_planner || self.battle_planner_2
+    }
+
+    /// The slot a role stands in. `None` is a role the plan does not place.
+    fn slot_role(g: &Game, uid: u32, city_objective: bool) -> Option<SlotRole> {
+        match Self::force_role(g, uid) {
+            ForceRole::Vanguard | ForceRole::Mobile => Some(SlotRole::Front),
+            ForceRole::Ranged => Some(SlotRole::Shooter),
+            ForceRole::Siege if city_objective => Some(SlotRole::Siege),
+            ForceRole::Siege => Some(SlotRole::Shooter),
+            ForceRole::Support => Some(SlotRole::Support),
+            ForceRole::Recon | ForceRole::AirStrike => None,
+        }
+    }
+
+    /// The members of a force the positions plan may place: not already
+    /// ordered or recovering, a field unit with movement left, not a garrison,
+    /// not a bound guard, not a scout — and not a unit with a blow to offer.
+    /// `armed` is the kill plan's set: every unit that had a legal blow on a
+    /// hostile unit this turn, spent or declined; a unit with an enemy city
+    /// inside its attack reach joins it here. Both are the ladder's, which
+    /// prices the blow on its own clone as it always has and moves the unit
+    /// as before when it declines. Measured before this rule: placing the
+    /// declined shooters read −129 ± 30 a seed on four archers and two
+    /// warriors, less material destroyed, not more lost — the shots the
+    /// ladder would have taken. The `MAX_PLANNED_UNITS` nearest the target,
+    /// ascending by id.
+    fn planned_members(
+        &self,
+        g: &Game,
+        pid: usize,
+        group: &ForceGroup,
+        target: Pos,
+        armed: &BTreeSet<u32>,
+    ) -> Vec<u32> {
+        let enemy_cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+            .map(|city| city.pos)
+            .collect();
+        let city_in_reach = |uid: u32| -> bool {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            if enemy_cities.is_empty()
+                || unit.attacks_left <= 0
+                || !(spec.is_melee_capable() || spec.has_ranged_attack())
+            {
+                return false;
+            }
+            let range = if spec.has_ranged_attack() {
+                g.unit_attack_range(uid).max(1)
+            } else {
+                1
+            };
+            let mut stands = vec![unit.pos];
+            stands.extend(g.reachable(uid));
+            enemy_cities
+                .iter()
+                .any(|city| stands.iter().any(|stand| g.wdist(*stand, *city) <= range))
+        };
+        let mut members: Vec<u32> = group
+            .units
+            .iter()
+            .copied()
+            .filter(|uid| {
+                let Some(unit) = g.units.get(uid) else {
+                    return false;
+                };
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && !self.battle_planner_ordered.contains(uid)
+                    && !self.battle_planner_recovering.contains(uid)
+                    && !armed.contains(uid)
+                    && matches!(spec.class.as_str(), "military" | "support")
+                    && spec.domain.as_deref() != Some("air")
+                    && unit.linked_to.is_none()
+                    && unit.moves_left > 0.0
+                    && !g.is_embarked(unit)
+                    && g.city_at(unit.pos).is_none()
+                    && g.encampment_at(unit.pos).is_none()
+                    && !self.guard_is_bound_to_any_settler(*uid)
+                    && !matches!(
+                        Self::force_role(g, *uid),
+                        ForceRole::Recon | ForceRole::AirStrike
+                    )
+                    && !city_in_reach(*uid)
+            })
+            .collect();
+        members.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
+        members.truncate(MAX_PLANNED_UNITS);
+        members.sort_unstable();
+        members
+    }
+
+    /// Every visible hostile that can fight within `band` of a member, most
+    /// finishable first.
+    fn contacts(g: &Game, pid: usize, members: &[u32], band: i32) -> Vec<Contact> {
+        let mut contacts: Vec<Contact> = g
+            .units
+            .values()
+            .filter(|other| {
+                let spec = &g.rules.units[other.kind];
+                other.owner != pid
+                    && g.is_at_war(pid, other.owner)
+                    && spec.class == "military"
+                    && (spec.is_melee_capable() || spec.has_ranged_attack())
+                    && g.unit_visible_to(other.id, pid)
+                    && members
+                        .iter()
+                        .any(|uid| g.wdist(g.units[uid].pos, other.pos) <= band)
+            })
+            .map(|other| Contact {
+                pos: other.pos,
+                hp: other.hp,
+                uid: other.id,
+            })
+            .collect();
+        contacts.sort_by_key(|contact| (contact.hp, contact.uid));
+        contacts
+    }
+
+    /// The positions plan for one force, before anything moves: the slots,
+    /// the assignment and the pace floor. `None` when the force is not one
+    /// the plan places — not advancing or engaging, a force of one, or no
+    /// member left to place. Pure but for the field's cache; for tests and
+    /// explainers as much as for `plan_positions`.
+    pub(super) fn position_plan(
+        &self,
+        g: &Game,
+        pid: usize,
+        group: &ForceGroup,
+        field: &mut DangerField,
+        armed: &BTreeSet<u32>,
+    ) -> Option<PositionPlan> {
+        if !matches!(group.posture, ForcePosture::Advance | ForcePosture::Engage) {
+            return None;
+        }
+        let target = match group.posture {
+            ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
+            _ => group.objective,
+        };
+        // A force of one is not a formation and keeps today's step; a force
+        // of several is planned even when the armed and the ordered leave a
+        // single member to place.
+        let members = self.planned_members(g, pid, group, target, armed);
+        if group.units.len() < 2 || members.is_empty() {
+            return None;
+        }
+        let heals = !g.is_arena() || g.tactics.heal;
+        let city_objective = g.city_at(target).is_some_and(|cid| {
+            let city = &g.cities[&cid];
+            city.owner != pid && g.is_at_war(pid, city.owner)
+        });
+        let contacts = Self::contacts(g, pid, &members, CONTACT_BAND);
+        let in_contact = !Self::contacts(g, pid, &members, CONTACT_RANGE).is_empty();
+
+        // Who wants what. A wounded unit on a board that heals wants a heal
+        // slot whatever its role.
+        let mut wounded: Vec<u32> = Vec::new();
+        let mut by_role: BTreeMap<SlotRole, Vec<u32>> = BTreeMap::new();
+        for uid in &members {
+            let unit = &g.units[uid];
+            if heals && unit.hp < HEAL_SLOT_HP {
+                wounded.push(*uid);
+                continue;
+            }
+            if let Some(role) = Self::slot_role(g, *uid, city_objective) {
+                by_role.entry(role).or_default().push(*uid);
+            }
+        }
+
+        // The pool of tiles a slot may be: land within `SLOT_RADIUS` of a
+        // contact (or of the target), that the force can walk and no one
+        // else stands on.
+        let probe = members[0];
+        let centres: Vec<Pos> = if contacts.is_empty() {
+            vec![target]
+        } else {
+            contacts.iter().map(|contact| contact.pos).collect()
+        };
+        let mut pool: BTreeSet<Pos> = BTreeSet::new();
+        for centre in &centres {
+            for tile in g.wdisk(*centre, SLOT_RADIUS) {
+                let Some(t) = g.map.get(tile) else {
+                    continue;
+                };
+                if g.rules.is_water(t)
+                    || !g.unit_can_traverse(probe, tile)
+                    || g.city_at(tile)
+                        .is_some_and(|cid| g.cities[&cid].owner != pid)
+                    || g.unit_ids_at(tile)
+                        .iter()
+                        .any(|other| g.units[other].owner != pid)
+                {
+                    continue;
+                }
+                pool.insert(tile);
+            }
+        }
+        let nearest_contact = |tile: Pos| -> Option<Pos> {
+            contacts
+                .iter()
+                .map(|contact| (g.wdist(tile, contact.pos), contact.pos))
+                .min()
+                .map(|(_, pos)| pos)
+        };
+        let depth = |tile: Pos| -> i32 {
+            nearest_contact(tile)
+                .map(|pos| g.wdist(tile, pos))
+                .unwrap_or_else(|| g.wdist(tile, target))
+        };
+        // On our side of the enemy: no further from the anchor than the
+        // contact the tile faces.
+        let our_side = |tile: Pos| -> bool {
+            nearest_contact(tile)
+                .is_none_or(|pos| g.wdist(tile, group.anchor) <= g.wdist(pos, group.anchor))
+        };
+        let mut slots: Vec<Slot> = Vec::new();
+        let mut taken: BTreeSet<Pos> = BTreeSet::new();
+
+        // Front slots: at depth one, on our side, the best ground first.
+        let n_front = by_role.get(&SlotRole::Front).map_or(0, Vec::len);
+        if n_front > 0 {
+            let mut candidates: Vec<(f64, i32, Pos)> = pool
+                .iter()
+                .copied()
+                .filter(|tile| depth(*tile) == 1 && our_side(*tile))
+                .map(|tile| {
+                    let facing = nearest_contact(tile).unwrap_or(target);
+                    let mut score = g.tile_defense_bonus(tile);
+                    if g.wdist(tile, facing) == 1 && g.map.has_river_edge(tile, facing) {
+                        score += RIVER_SLOT_BONUS;
+                    }
+                    (score, g.wdist(tile, group.anchor), tile)
+                })
+                .collect();
+            candidates.sort_by(|a, b| {
+                b.0.total_cmp(&a.0)
+                    .then_with(|| a.1.cmp(&b.1))
+                    .then_with(|| a.2.cmp(&b.2))
+            });
+            for (_, _, tile) in candidates.into_iter().take(n_front) {
+                taken.insert(tile);
+                slots.push(Slot {
+                    role: SlotRole::Front,
+                    tile,
+                    depth: 1,
+                });
+            }
+        }
+        let front_tiles: Vec<Pos> = slots.iter().map(|slot| slot.tile).collect();
+        let screened = |tile: Pos| -> bool {
+            front_tiles
+                .iter()
+                .any(|front| g.wdist(tile, *front) == 1 && depth(*front) < depth(tile))
+        };
+
+        // Shooter slots: at range from the most finishable targets, in line
+        // of sight, behind a front slot; where no front slot covers a tile at
+        // range, one tile further back instead — a shooter the plan places
+        // has no shot this turn, and standing unscreened at range only puts
+        // it inside the enemy foot's reach for nothing, where a tile back it
+        // steps in and fires next turn (measured: four archers and two
+        // warriors read −69 ± 29 a seed with the unscreened tile at range
+        // taken first). Unscreened at range is the last resort.
+        let n_shooter = by_role.get(&SlotRole::Shooter).map_or(0, Vec::len);
+        if n_shooter > 0 {
+            let range = by_role[&SlotRole::Shooter]
+                .iter()
+                .map(|uid| g.unit_attack_range(*uid).max(1))
+                .min()
+                .unwrap_or(1);
+            let aims: Vec<Pos> = if contacts.is_empty() {
+                vec![target]
+            } else {
+                contacts
+                    .iter()
+                    .take(SHOOTER_TARGETS)
+                    .map(|contact| contact.pos)
+                    .collect()
+            };
+            let mut candidates: Vec<(u8, f64, i32, Pos)> = pool
+                .iter()
+                .copied()
+                .filter(|tile| !taken.contains(tile) && depth(*tile) >= range.min(2))
+                .filter_map(|tile| {
+                    let at_range = aims.iter().any(|aim| {
+                        g.wdist(tile, *aim) == range && g.line_of_sight_from(tile, *aim)
+                    });
+                    let standoff = depth(tile) > range
+                        && aims.iter().any(|aim| g.wdist(tile, *aim) == range + 1);
+                    let tier = if at_range && screened(tile) {
+                        0
+                    } else if standoff {
+                        1
+                    } else if at_range {
+                        2
+                    } else {
+                        return None;
+                    };
+                    Some((
+                        tier,
+                        g.tile_defense_bonus(tile),
+                        g.wdist(tile, group.anchor),
+                        tile,
+                    ))
+                })
+                .collect();
+            candidates.sort_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| b.1.total_cmp(&a.1))
+                    .then_with(|| a.2.cmp(&b.2))
+                    .then_with(|| a.3.cmp(&b.3))
+            });
+            for (_, _, _, tile) in candidates.into_iter().take(n_shooter) {
+                taken.insert(tile);
+                slots.push(Slot {
+                    role: SlotRole::Shooter,
+                    tile,
+                    depth: depth(tile),
+                });
+            }
+        }
+
+        // Siege slots: in range of the objective city, behind a front slot,
+        // the furthest standoff first.
+        let n_siege = by_role.get(&SlotRole::Siege).map_or(0, Vec::len);
+        if n_siege > 0 {
+            let range = by_role[&SlotRole::Siege]
+                .iter()
+                .map(|uid| g.unit_attack_range(*uid).max(1))
+                .min()
+                .unwrap_or(1);
+            let mut candidates: Vec<(bool, i32, f64, i32, Pos)> = pool
+                .iter()
+                .copied()
+                .filter(|tile| {
+                    let reach = g.wdist(*tile, target);
+                    !taken.contains(tile)
+                        && reach <= range
+                        && reach >= 2.min(range)
+                        && g.line_of_sight_from(*tile, target)
+                })
+                .map(|tile| {
+                    (
+                        screened(tile),
+                        g.wdist(tile, target),
+                        g.tile_defense_bonus(tile),
+                        g.wdist(tile, group.anchor),
+                        tile,
+                    )
+                })
+                .collect();
+            candidates.sort_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| b.1.cmp(&a.1))
+                    .then_with(|| b.2.total_cmp(&a.2))
+                    .then_with(|| a.3.cmp(&b.3))
+                    .then_with(|| a.4.cmp(&b.4))
+            });
+            for (_, _, _, _, tile) in candidates.into_iter().take(n_siege) {
+                taken.insert(tile);
+                slots.push(Slot {
+                    role: SlotRole::Siege,
+                    tile,
+                    depth: depth(tile),
+                });
+            }
+        }
+
+        // Support slots: beside the most front slots, behind the line.
+        let n_support = by_role.get(&SlotRole::Support).map_or(0, Vec::len);
+        if n_support > 0 {
+            let mut candidates: Vec<(usize, f64, i32, Pos)> = pool
+                .iter()
+                .copied()
+                .filter(|tile| !taken.contains(tile) && depth(*tile) >= 2)
+                .map(|tile| {
+                    let beside = front_tiles
+                        .iter()
+                        .filter(|front| g.wdist(tile, **front) == 1)
+                        .count();
+                    (
+                        beside,
+                        g.tile_defense_bonus(tile),
+                        g.wdist(tile, group.anchor),
+                        tile,
+                    )
+                })
+                .collect();
+            candidates.sort_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| b.1.total_cmp(&a.1))
+                    .then_with(|| a.2.cmp(&b.2))
+                    .then_with(|| a.3.cmp(&b.3))
+            });
+            for (_, _, _, tile) in candidates.into_iter().take(n_support) {
+                taken.insert(tile);
+                slots.push(Slot {
+                    role: SlotRole::Support,
+                    tile,
+                    depth: depth(tile),
+                });
+            }
+        }
+
+        // Heal slots first: a wounded unit steps out of the line, so its
+        // tile is one the line can use.
+        let mut placements: Vec<Placement> = Vec::new();
+        let mut reserved: BTreeSet<Pos> = taken.clone();
+        for uid in &wounded {
+            let unit = &g.units[uid];
+            let mut tiles = vec![unit.pos];
+            tiles.extend(g.reachable(*uid));
+            let best = tiles
+                .into_iter()
+                .filter(|tile| !reserved.contains(tile) && field.danger(*tile, *uid) <= NO_DANGER)
+                .map(|tile| {
+                    (
+                        -heal_preference(g, pid, tile),
+                        g.wdist(unit.pos, tile),
+                        tile,
+                    )
+                })
+                .min();
+            if let Some((_, _, tile)) = best {
+                reserved.insert(tile);
+                placements.push(Placement {
+                    unit: *uid,
+                    tile,
+                    role: None,
+                    depth: -1,
+                });
+            }
+        }
+
+        // Units to slots, a role at a time: rows are the slots, columns the
+        // units, so every slot is filled when a unit can take it.
+        for (role, units) in &by_role {
+            let role_slots: Vec<&Slot> = slots.iter().filter(|slot| slot.role == *role).collect();
+            if role_slots.is_empty() {
+                continue;
+            }
+            let reach: Vec<Vec<Pos>> = units.iter().map(|uid| g.reachable(*uid)).collect();
+            let cost: Vec<Vec<f64>> = role_slots
+                .iter()
+                .map(|slot| {
+                    units
+                        .iter()
+                        .zip(&reach)
+                        .map(|(uid, reachable)| {
+                            self.slot_cost(g, field, *uid, slot.tile, reachable)
+                        })
+                        .collect()
+                })
+                .collect();
+            let assignment = assign_min_cost(&cost);
+            for (row, column) in assignment.into_iter().enumerate() {
+                if cost[row][column] >= UNASSIGNABLE {
+                    continue;
+                }
+                let slot = role_slots[row];
+                placements.push(Placement {
+                    unit: units[column],
+                    tile: slot.tile,
+                    role: Some(slot.role),
+                    depth: slot.depth,
+                });
+            }
+        }
+        placements.sort_by_key(|placement| (placement.depth, placement.role, placement.unit));
+
+        // The pace floor, on the approach only.
+        let pace_floor = (!in_contact).then(|| {
+            let pace = members
+                .iter()
+                .map(|uid| g.unit_max_moves(*uid).floor() as i32)
+                .min()
+                .unwrap_or(1)
+                .max(1);
+            let rear = members
+                .iter()
+                .filter(|uid| g.unit_max_moves(**uid).floor() as i32 == pace)
+                .map(|uid| g.wdist(g.units[uid].pos, target))
+                .max()
+                .unwrap_or(0);
+            (rear - (pace + BODY_PACE_SLACK), pace)
+        });
+        Some(PositionPlan {
+            group: group.id,
+            target,
+            contacts: contacts.len(),
+            slots,
+            placements,
+            pace_floor,
+        })
+    }
+
+    /// What a unit pays to take a slot: the route in turns plus the danger
+    /// there past the hit points it can spare, in turns. `UNASSIGNABLE` for a
+    /// slot it cannot reach or would not survive.
+    fn slot_cost(
+        &self,
+        g: &Game,
+        field: &mut DangerField,
+        uid: u32,
+        tile: Pos,
+        reachable: &[Pos],
+    ) -> f64 {
+        let unit = &g.units[&uid];
+        let danger = field.danger(tile, uid);
+        if danger >= f64::from(unit.hp) {
+            return UNASSIGNABLE;
+        }
+        let turns = if tile == unit.pos {
+            0.0
+        } else if reachable.contains(&tile) {
+            1.0
+        } else {
+            match g.route_distance(uid, tile, 0) {
+                Some(steps) => (steps as f64 / g.unit_max_moves(uid).max(1.0))
+                    .ceil()
+                    .max(1.0),
+                None => return UNASSIGNABLE,
+            }
+        };
+        turns + (danger - f64::from(unit.hp - DANGER_FREE_HP)).max(0.0) * DANGER_COST_PER_HP
+    }
+
+    /// Where a placed unit ends this turn: its slot if it can reach it, else
+    /// the reachable tile nearest the slot that no one else has reserved,
+    /// that would not kill it, and that keeps the pace floor. The flag says
+    /// the floor changed the choice.
+    fn position_end_tile(
+        &self,
+        g: &Game,
+        field: &mut DangerField,
+        uid: u32,
+        slot: Pos,
+        reserved: &BTreeSet<Pos>,
+        plan: &PositionPlan,
+    ) -> (Pos, bool) {
+        let target = plan.target;
+        let pace_floor = plan.pace_floor.map(|(floor, _)| floor);
+        let unit = &g.units[&uid];
+        let hp = f64::from(unit.hp);
+        let mut options = vec![unit.pos];
+        options.extend(g.reachable(uid));
+        let free: Vec<Pos> = options
+            .into_iter()
+            .filter(|tile| *tile == slot || !reserved.contains(tile))
+            .collect();
+        let mut keyed: Vec<(i32, bool, Pos)> = free
+            .iter()
+            .map(|tile| (g.wdist(*tile, slot), field.danger(*tile, uid) >= hp, *tile))
+            .collect();
+        keyed.sort_unstable();
+        let unbounded = keyed.first().map(|(_, _, tile)| *tile);
+        let bounded = keyed
+            .iter()
+            .find(|(_, _, tile)| pace_floor.is_none_or(|floor| g.wdist(*tile, target) >= floor))
+            .map(|(_, _, tile)| *tile);
+        match bounded {
+            Some(tile) => (tile, unbounded != Some(tile)),
+            None => (unit.pos, unbounded.is_some_and(|tile| tile != unit.pos)),
+        }
+    }
+
+    /// Lay out and play every advancing or engaging force's positions.
+    /// Nothing is read with version two off.
+    fn plan_positions(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        field: &mut DangerField,
+        armed: &BTreeSet<u32>,
+    ) {
+        if !self.battle_planner_2 {
+            return;
+        }
+        let groups = self.force_groups.clone();
+        for group in &groups {
+            let Some(plan) = self.position_plan(g, pid, group, field, armed) else {
+                continue;
+            };
+            let (placed, paced) = self.apply_position_plan(g, pid, field, &plan);
+            self.census.battle_plan_slots += plan.slots.len() as u32;
+            self.census.battle_plan_positioned += placed;
+            self.census.battle_plan_paced += paced;
+            think!(self.journal(), Military, Decision,
+                "Battle plan: a {} force of {} takes {} slot(s) — {} unit(s) placed, {} paced",
+                group.domain.as_str(), group.units.len(), plan.slots.len(), placed, paced;
+                "target {:?}, {} contact(s), {} heal slot(s){}",
+                plan.target, plan.contacts,
+                plan.placements.iter().filter(|placement| placement.role.is_none()).count(),
+                plan.pace_floor.map_or(String::new(), |(floor, pace)| {
+                    format!(", pace {pace}: no unit ends nearer the target than {floor}")
+                });
+                plan.target);
+        }
+    }
+
+    /// Play one force's plan: front to rear, each unit walking to its end
+    /// tile against the reservations, two units that stand on each other's
+    /// slots swapping, and a second pass for anyone the first left short.
+    /// Returns how many units the plan placed and how many the pace held.
+    fn apply_position_plan(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        field: &mut DangerField,
+        plan: &PositionPlan,
+    ) -> (u32, u32) {
+        let heals = !g.is_arena() || g.tactics.heal;
+        let mut reserved: BTreeSet<Pos> = plan.placements.iter().map(|p| p.tile).collect();
+        let mut placed = 0u32;
+        let mut paced = 0u32;
+        let floor = plan.pace_floor.map(|(floor, _)| floor);
+        for placement in &plan.placements {
+            let uid = placement.unit;
+            let Some(unit) = g.units.get(&uid).cloned() else {
+                continue;
+            };
+            if unit.moves_left <= 0.0 || self.battle_planner_ordered.contains(&uid) {
+                continue;
+            }
+            let heal = placement.role.is_none();
+            if unit.pos == placement.tile {
+                self.base.fortify_or_stop(g, pid, uid);
+                self.battle_planner_ordered.insert(uid);
+                if heal && heals {
+                    self.battle_planner_recovering.insert(uid);
+                }
+                placed += 1;
+                continue;
+            }
+            // Two units standing on each other's slots trade places.
+            let counterpart = g.unit_ids_at(placement.tile).iter().copied().find(|other| {
+                plan.placements
+                    .iter()
+                    .any(|q| q.unit == *other && q.tile == unit.pos)
+                    && !self.battle_planner_ordered.contains(other)
+            });
+            if let Some(other) = counterpart {
+                if g.wdist(unit.pos, placement.tile) == 1
+                    && g.apply(pid, &Action::Swap { unit: uid, other }).is_ok()
+                {
+                    self.battle_planner_ordered.insert(uid);
+                    self.battle_planner_ordered.insert(other);
+                    if heal && heals {
+                        self.battle_planner_recovering.insert(uid);
+                    }
+                    placed += 2;
+                    continue;
+                }
+            }
+            let (end, held) =
+                self.position_end_tile(g, field, uid, placement.tile, &reserved, plan);
+            if end == unit.pos {
+                // Nothing nearer the slot is open this turn: hold here.
+                self.base.fortify_or_stop(g, pid, uid);
+                self.battle_planner_ordered.insert(uid);
+                placed += 1;
+                paced += u32::from(held);
+                continue;
+            }
+            if !self.base.path_walk_to(g, pid, uid, end) {
+                // Refused: the ladder plays this unit as before.
+                continue;
+            }
+            reserved.insert(end);
+            self.battle_planner_ordered.insert(uid);
+            if heal && heals {
+                self.battle_planner_recovering.insert(uid);
+            }
+            placed += 1;
+            paced += u32::from(held);
+        }
+        // Second pass: a unit that stopped short because its slot was still
+        // occupied walks on once the occupant has left.
+        for placement in &plan.placements {
+            let uid = placement.unit;
+            let Some(unit) = g.units.get(&uid) else {
+                continue;
+            };
+            if !self.battle_planner_ordered.contains(&uid)
+                || unit.pos == placement.tile
+                || unit.moves_left <= 0.0
+                || floor.is_some_and(|floor| g.wdist(placement.tile, plan.target) < floor)
+                || !g.reachable(uid).contains(&placement.tile)
+            {
+                continue;
+            }
+            self.base.path_walk_to(g, pid, uid, placement.tile);
+        }
+        (placed, paced)
+    }
+}
+
 /// How good a tile is to heal on: the engine's own location rate — a
 /// district 20, friendly ground 15 — plus the best `adjacent_heal` support
 /// unit of ours beside it.
@@ -1343,6 +2260,374 @@ mod tests {
             assessed_turn: g.turn,
             rush: false,
         }
+    }
+
+    /// A force of every unit seat 0 owns, anchored on its medoid the way
+    /// `rebuild_force_groups` anchors it, in the given posture toward
+    /// `objective`.
+    fn force(g: &Game, objective: Pos, posture: ForcePosture) -> ForceGroup {
+        let mut units = g.player_unit_ids(0);
+        units.sort_unstable();
+        let anchor = units
+            .iter()
+            .map(|uid| g.units[uid].pos)
+            .min_by_key(|pos| {
+                (
+                    units
+                        .iter()
+                        .map(|other| g.wdist(*pos, g.units[other].pos))
+                        .sum::<i32>(),
+                    *pos,
+                )
+            })
+            .expect("a force");
+        ForceGroup {
+            id: units[0],
+            domain: super::super::ForceDomain::Land,
+            units,
+            anchor,
+            objective,
+            focus_target: None,
+            posture,
+            readiness: 1.0,
+            local_strength_ratio: 1.0,
+        }
+    }
+
+    fn version_two() -> AdvancedAi {
+        let mut ai = AdvancedAi::new();
+        ai.enable_battle_planner_2();
+        ai
+    }
+
+    #[test]
+    fn version_two_ships_off_is_registered_and_turns_version_one_off() {
+        let ai = AdvancedAi::new();
+        assert!(!ai.battle_planner_2, "an opt-in ships off");
+        assert!(!ai.battle_planner_on());
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "battle_planner_2"));
+        let mut on = AdvancedAi::new();
+        on.enable_battle_planner();
+        assert!((on.battle_planner, on.battle_planner_2) == (true, false));
+        on.enable_battle_planner_2();
+        assert_eq!(
+            (on.battle_planner, on.battle_planner_2),
+            (false, true),
+            "one version of the family plays: version two turns version one off"
+        );
+        assert!(on.battle_planner_on());
+        on.disable_battle_planner_2();
+        assert!(!on.battle_planner_2 && !on.battle_planner_on());
+        super::super::test_support::opt_in_off_in_both_controllers("battle-planner-2", |ai| {
+            ai.battle_planner_2
+        });
+        // And version one alone leaves the positions plan out: nothing is
+        // laid out, nothing is counted.
+        let mut g = open_field();
+        g.spawn_unit("warrior", 0, at(9, 6));
+        g.spawn_unit("archer", 0, at(8, 6));
+        g.spawn_unit("warrior", 1, at(12, 6));
+        let mut v1 = AdvancedAi::new();
+        v1.enable_battle_planner();
+        v1.force_groups = vec![force(&g, at(12, 6), ForcePosture::Advance)];
+        let plan = conquest(&g);
+        v1.plan_battle(&mut g, 0, &plan);
+        assert_eq!(v1.census.battle_plan_slots, 0);
+        assert_eq!(v1.census.battle_plan_positioned, 0);
+    }
+
+    /// A fortified enemy warrior two tiles off, a hill on the tile between:
+    /// the warrior takes the front slot on the hill and the archer ends two
+    /// tiles from the enemy beside the warrior and behind it. The slots are
+    /// laid against the enemy, not the anchor. Planned with no unit armed
+    /// and played by `apply_position_plan`: through `plan_battle` this
+    /// archer has a shot to offer and is the ladder's — the next test.
+    #[test]
+    fn the_warrior_takes_the_hill_in_front_and_the_archer_stands_two_behind_it() {
+        let mut g = open_field();
+        let enemy_tile = at(12, 6);
+        let hill = at(11, 6);
+        g.map.tiles.get_mut(&hill).expect("a tile").hills = true;
+        let warrior = g.spawn_unit("warrior", 0, at(10, 6));
+        let archer = g.spawn_unit("archer", 0, at(9, 6));
+        let enemy = g.spawn_unit("warrior", 1, enemy_tile);
+        fortify(&mut g, enemy);
+        let mut ai = version_two();
+        let group = force(&g, enemy_tile, ForcePosture::Advance);
+        let mut field = DangerField::new(&g, 0);
+        let plan = ai
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
+            .expect("an advancing force of two is planned");
+        assert_eq!(plan.contacts, 1);
+        let front: Vec<&Slot> = plan
+            .slots
+            .iter()
+            .filter(|slot| slot.role == SlotRole::Front)
+            .collect();
+        assert_eq!(front.len(), 1, "{:?}", plan.slots);
+        assert_eq!(front[0].tile, hill, "the front slot is the hill");
+        let shooter: Vec<&Slot> = plan
+            .slots
+            .iter()
+            .filter(|slot| slot.role == SlotRole::Shooter)
+            .collect();
+        assert_eq!(shooter.len(), 1, "{:?}", plan.slots);
+        assert_eq!(g.wdist(shooter[0].tile, enemy_tile), 2, "at range");
+        assert_eq!(g.wdist(shooter[0].tile, hill), 1, "behind the front slot");
+        let placed: BTreeMap<u32, Pos> = plan
+            .placements
+            .iter()
+            .map(|placement| (placement.unit, placement.tile))
+            .collect();
+        assert_eq!(placed[&warrior], hill);
+        assert_eq!(placed[&archer], shooter[0].tile);
+        assert_eq!(
+            plan.placements[0].unit, warrior,
+            "the front moves first: {:?}",
+            plan.placements
+        );
+        assert!(plan.pace_floor.is_none(), "in contact, nothing is paced");
+
+        let (placed, paced) = ai.apply_position_plan(&mut g, 0, &mut field, &plan);
+        assert_eq!((placed, paced), (2, 0));
+        let (w, a) = (g.units[&warrior].pos, g.units[&archer].pos);
+        assert_eq!(w, hill, "the warrior stands on the hill");
+        assert_eq!(
+            g.wdist(a, enemy_tile),
+            2,
+            "the archer ends two from the enemy"
+        );
+        assert_eq!(g.wdist(a, w), 1, "beside the warrior");
+        assert!(
+            g.wdist(w, enemy_tile) < g.wdist(a, enemy_tile),
+            "and behind it"
+        );
+        assert!(ai.battle_planner_claims(warrior) && ai.battle_planner_claims(archer));
+        assert!(g.units.contains_key(&enemy));
+    }
+
+    /// Through `plan_battle`: an archer already standing beside the warrior
+    /// on a tile two from the enemy with line of sight has a blow to offer —
+    /// whether the kill plan spends it or declines it, the positions plan
+    /// leaves it to the ladder, as version one would. The warrior, which
+    /// cannot close and strike in one turn, is placed on the hill in front.
+    #[test]
+    fn a_unit_with_a_blow_to_offer_is_left_to_the_ladder() {
+        let mut g = open_field();
+        let enemy_tile = at(12, 6);
+        let hill = at(11, 6);
+        g.map.tiles.get_mut(&hill).expect("a tile").hills = true;
+        let warrior = g.spawn_unit("warrior", 0, at(10, 6));
+        let stand = g
+            .wdisk(enemy_tile, 2)
+            .into_iter()
+            .filter(|tile| {
+                g.wdist(*tile, enemy_tile) == 2
+                    && g.wdist(*tile, at(10, 6)) == 1
+                    && g.line_of_sight_from(*tile, enemy_tile)
+            })
+            .min()
+            .expect("a firing tile beside the warrior");
+        let archer = g.spawn_unit("archer", 0, stand);
+        let enemy = g.spawn_unit("warrior", 1, enemy_tile);
+        fortify(&mut g, enemy);
+        let mut ai = version_two();
+        let mut field = DangerField::new(&g, 0);
+        let (blows, armed) = ai.kill_sequence_in(&g, 0, &mut field);
+        assert!(armed.contains(&archer), "the archer has a shot to offer");
+        assert!(
+            !armed.contains(&warrior),
+            "the warrior cannot close and strike"
+        );
+        ai.force_groups = vec![force(&g, enemy_tile, ForcePosture::Advance)];
+        let strategic = conquest(&g);
+        let struck = ai.plan_battle(&mut g, 0, &strategic);
+        assert_eq!(struck, !blows.is_empty());
+        assert_eq!(g.units[&warrior].pos, hill, "the warrior is placed");
+        assert!(ai.battle_planner_claims(warrior));
+        if blows.is_empty() {
+            assert!(
+                !ai.battle_planner_claims(archer),
+                "a declined shooter is the ladder's, not the plan's"
+            );
+            assert_eq!(g.units[&archer].pos, stand, "and has not been moved");
+        }
+        assert_eq!(ai.census.battle_plan_slots, 1, "one slot: the front's");
+        assert_eq!(ai.census.battle_plan_positioned, 1);
+    }
+
+    /// Three warriors and two archers against a pair of enemy warriors: every
+    /// slot is a distinct tile, every placement is a distinct tile, and after
+    /// the moves every unit stands on its own tile. Everyone stands three or
+    /// more tiles from the enemy, so no blow is legal this turn — a melee
+    /// unit that steps beside an enemy has spent its movement, and the
+    /// archers cannot close to range — and the positions plan places all.
+    #[test]
+    fn two_units_never_receive_the_same_tile() {
+        let mut g = open_field();
+        for (col, row) in [(8, 5), (8, 6), (8, 7)] {
+            g.spawn_unit("warrior", 0, at(col, row));
+        }
+        g.spawn_unit("archer", 0, at(6, 6));
+        g.spawn_unit("archer", 0, at(6, 7));
+        let first = g.spawn_unit("warrior", 1, at(11, 6));
+        let second = g.spawn_unit("warrior", 1, at(11, 7));
+        fortify(&mut g, first);
+        fortify(&mut g, second);
+        let mut ai = version_two();
+        let group = force(&g, at(11, 6), ForcePosture::Engage);
+        let mut field = DangerField::new(&g, 0);
+        let plan = ai
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
+            .expect("planned");
+        let slot_tiles: BTreeSet<Pos> = plan.slots.iter().map(|slot| slot.tile).collect();
+        assert_eq!(slot_tiles.len(), plan.slots.len(), "{:?}", plan.slots);
+        assert_eq!(plan.slots.len(), 5, "one slot per unit: {:?}", plan.slots);
+        let placed: BTreeSet<Pos> = plan.placements.iter().map(|p| p.tile).collect();
+        assert_eq!(placed.len(), plan.placements.len(), "{:?}", plan.placements);
+        let units: BTreeSet<u32> = plan.placements.iter().map(|p| p.unit).collect();
+        assert_eq!(units.len(), plan.placements.len(), "one slot per unit");
+        assert!(plan
+            .slots
+            .iter()
+            .filter(|slot| slot.role == SlotRole::Front)
+            .all(|slot| slot.depth == 1));
+        ai.force_groups = vec![group];
+        let strategic = conquest(&g);
+        assert!(!ai.plan_battle(&mut g, 0, &strategic), "no blow is legal");
+        assert_eq!(ai.census.battle_plan_kills, 0);
+        let standing: BTreeSet<Pos> = g
+            .player_unit_ids(0)
+            .iter()
+            .map(|uid| g.units[uid].pos)
+            .collect();
+        assert_eq!(
+            standing.len(),
+            5,
+            "{:?} / {:?}",
+            g.player_unit_ids(0)
+                .iter()
+                .map(|uid| (uid, g.units[uid].pos, g.units[uid].hp))
+                .collect::<Vec<_>>(),
+            plan.placements
+        );
+        assert_eq!(ai.census.battle_plan_positioned, 5, "everyone is placed");
+    }
+
+    /// A spearman and a horseman on the approach, the enemy far off: the
+    /// horseman ends no more than the spearman's pace plus one closer to the
+    /// objective than the spearman stood, though it could ride four.
+    #[test]
+    fn the_horseman_is_paced_to_the_spearman_on_the_approach() {
+        let mut g = open_field();
+        let spearman = g.spawn_unit("spearman", 0, at(4, 6));
+        let horseman = g.spawn_unit("horseman", 0, at(5, 6));
+        let enemy = at(19, 6);
+        g.spawn_unit("warrior", 1, enemy);
+        g.spawn_unit("warrior", 1, at(20, 6));
+        let mut ai = version_two();
+        let group = force(&g, enemy, ForcePosture::Advance);
+        let mut field = DangerField::new(&g, 0);
+        let plan = ai
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
+            .expect("planned");
+        assert_eq!(plan.contacts, 0, "no enemy within the band");
+        let spear_start = g.wdist(at(4, 6), enemy);
+        assert_eq!(
+            plan.pace_floor,
+            Some((spear_start - (2 + BODY_PACE_SLACK), 2)),
+            "the floor is the slowest member's distance less its pace and the slack"
+        );
+        assert_eq!(plan.placements.len(), 2);
+        ai.force_groups = vec![group];
+        let strategic = conquest(&g);
+        ai.plan_battle(&mut g, 0, &strategic);
+        let horse_end = g.wdist(g.units[&horseman].pos, enemy);
+        let spear_end = g.wdist(g.units[&spearman].pos, enemy);
+        assert!(
+            horse_end >= spear_start - 3,
+            "paced: the horseman ends at {horse_end}, the spearman started at {spear_start}"
+        );
+        assert!(
+            horse_end < g.wdist(at(5, 6), enemy),
+            "and still advances ({horse_end})"
+        );
+        assert!(
+            spear_end < spear_start,
+            "the spearman marches ({spear_end})"
+        );
+        assert_eq!(ai.census.battle_plan_paced, 1);
+        assert_eq!(ai.census.battle_plan_positioned, 2);
+    }
+
+    /// On a board that heals, a 55-hit-point warrior — above the rotation's
+    /// bar, below the heal slot's — takes a zero-danger tile and fortifies
+    /// while its healthy friend takes the front slot; it is then in the
+    /// recovery the rotation keeps.
+    #[test]
+    fn a_wounded_unit_gets_a_heal_slot() {
+        let mut g = open_field();
+        g.tactics.heal = true;
+        let enemy_tile = at(12, 6);
+        let hill = at(11, 6);
+        g.map.tiles.get_mut(&hill).expect("a tile").hills = true;
+        let healthy = g.spawn_unit("warrior", 0, at(10, 6));
+        let hurt = g.spawn_unit("warrior", 0, at(8, 6));
+        let enemy = g.spawn_unit("warrior", 1, enemy_tile);
+        fortify(&mut g, enemy);
+        wound(&mut g, hurt, 55);
+        assert!(
+            danger(&g, 0, at(8, 6), hurt) <= NO_DANGER,
+            "out of reach where it stands"
+        );
+        let mut ai = version_two();
+        let group = force(&g, enemy_tile, ForcePosture::Advance);
+        let mut field = DangerField::new(&g, 0);
+        let plan = ai
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
+            .expect("planned");
+        let heal: Vec<&Placement> = plan
+            .placements
+            .iter()
+            .filter(|placement| placement.role.is_none())
+            .collect();
+        assert_eq!(heal.len(), 1, "{:?}", plan.placements);
+        assert_eq!(heal[0].unit, hurt);
+        assert!(
+            danger(&g, 0, heal[0].tile, hurt) <= NO_DANGER,
+            "a heal slot is a tile the field reads as zero"
+        );
+        assert_eq!(
+            plan.slots
+                .iter()
+                .filter(|slot| slot.role == SlotRole::Front)
+                .count(),
+            1,
+            "the healthy warrior alone wants a front slot: {:?}",
+            plan.slots
+        );
+        ai.force_groups = vec![group];
+        let strategic = conquest(&g);
+        ai.plan_battle(&mut g, 0, &strategic);
+        let now = &g.units[&hurt];
+        assert_eq!(now.pos, heal[0].tile);
+        assert!(now.fortified, "it fortifies on its heal slot");
+        assert!(
+            ai.battle_planner_recovering.contains(&hurt),
+            "and enters the recovery"
+        );
+        assert!(ai.battle_planner_claims(hurt));
+        assert_eq!(
+            g.units[&healthy].pos, hill,
+            "the healthy warrior holds the front"
+        );
+        assert_eq!(ai.census.battle_plan_positioned, 2);
+        assert_eq!(
+            ai.census.battle_plan_rotations, 0,
+            "the rotation did not fire"
+        );
     }
 
     #[test]

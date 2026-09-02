@@ -186,7 +186,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-surge-2` | off (unmeasured) | Version 2 of `air_surge`: the science–domination loop. | 1 \| 2 |
-| `battle-planner` | off (unmeasured) | The force's turn is planned jointly — the danger field, a beam-searched kill sequence verified on one clone, and a heal rotation — ahead of the per-unit ladder, which leaves the planned units alone. | 1 \| 1 |
+| `battle-planner` | off (unmeasured) | The force's turn is planned jointly — the danger field, a beam-searched kill sequence verified on one clone, and a heal rotation — ahead of the per-unit ladder, which leaves the planned units alone. | — \| 2 |
+| `battle-planner-2` | off (unmeasured) | Version two of `battle_planner`: the positions plan — slots laid against the enemy contact and the objective, a minimum-cost assignment with reservations, moves front to rear, pacing on the approach — joins the kill plan and the heal rotation. | — \| 2 |
 | `boost-wait-research-2` | off (unmeasured) | Wait only on a two-turn node whose final boost trigger is already at the front of an owned city queue, using the boost as a light tie-break. | 1 \| 2 |
 | `border-parity-3` | off (unmeasured) | Version three of `border-parity`: fill one local garrison debt only when two visible non-recon land bodies from the same peaceful major are staged beside the city. | 1 \| 3 |
 | `campus-through-expansion` | off (unmeasured) | `campus-through-expansion` (OptIn): a Science seat prices the Campus and its buildings in the Science lane while its plan still reads Expansion, and no city's first specialty district may be an Entertainment Complex. | 1 \| 1 |
