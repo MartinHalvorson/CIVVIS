@@ -5562,6 +5562,11 @@ pub struct AdvancedAi {
     /// Opt-in gene `opening-warrior-recon`; see
     /// `advanced/opening_settlement.rs`.
     opening_warrior_recon: bool,
+    /// A selective rewrite of the opening reconnaissance pass: only a Warrior
+    /// escorting the initial Settler acts first, while normal settlement
+    /// candidate filtering stays in force. Opt-in gene
+    /// `opening-warrior-recon-2`; see `advanced/opening_settlement.rs`.
+    opening_warrior_recon_2: bool,
     /// A Missionary on its last charge explores the fog within
     /// `MISSIONARY_EXPLORE_RADIUS` for up to `MISSIONARY_EXPLORE_TURNS` turns
     /// before spending it — unless a city of ours is slipping or an untouched
@@ -7358,6 +7363,7 @@ impl AdvancedAi {
             native_emergency_purchase: false,
             order_retry: false,
             opening_warrior_recon: false,
+            opening_warrior_recon_2: false,
             missionary_last_charge_explores: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
             missionary_evades_raiders: false,
@@ -28171,10 +28177,11 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|pos| {
                 let tile = g.map.get(pos)?;
-                // During the one-city opening the recon gene must not let the
-                // native board's complete map decide a site the player has not
-                // observed. The Warrior moves before this scan and exposes
-                // whole radius-two city footprints for this exact filter.
+                // Historical opening-recon v1 must not let the native board's
+                // complete map decide a site the player has not observed. The
+                // Warrior moves before this scan and exposes whole radius-two
+                // city footprints for that v1-only filter; v2 keeps this
+                // shipped candidate path intact.
                 if !self.opening_settlement_footprint_known(g, pid, pos) {
                     return None;
                 }
@@ -29962,7 +29969,7 @@ impl AdvancedAi {
                             }
                         })
                         .or_else(|| {
-                            if !self.opening_settlement_recon_active(g, pid) {
+                            if !self.opening_warrior_recon_v1_active(g, pid) {
                                 self.base
                                     .best_reachable_settle_site(
                                         g,
