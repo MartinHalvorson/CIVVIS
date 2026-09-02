@@ -3228,6 +3228,34 @@ intentionally outside the model when they are unique Great People, policies, or
 other systems CivVis does not yet simulate; they are not field divergences in
 rows the model claims to ship.
 
+### Shipped: an enemy's attacks left, formation tier and embarked flag cross (2026-09-01, PR #3014)
+
+`hostiles[]`, `rivals[].units[]` and `minors[].units[]` carried hp, moves,
+xp, promotions, charges, the static `combat`/`ranged` figures and
+fortification — and none of the three per-unit facts the seat's OWN units
+have exported since 2026-08: `attacks_remaining`
+(`Unit:GetAttacksRemaining()`, `SelectedUnit.lua:62`), `formation`
+(`Unit:GetMilitaryFormation()` through `CivvisMilitaryFormation`,
+`UnitPanel.lua:2259`) and `embarked` (`Unit:IsEmbarked()`,
+`UnitFlagManager.lua:603`). So every enemy Corps or Army was priced on the
+board as a plain unit — 10 or 17 CS short of the figure its flag shows — an
+enemy that had already struck this turn read as one that could still strike,
+and an enemy's embarkation was derived from its tile alone. The mod now
+exports all three for every visible foreign unit, wrapped exactly as the
+neighbouring fields are (`try(…, nil)`; the tier's `-1` stays "could not
+read"). On the board, `formation` and `embarked` reach a planted foreign unit
+through the same `apply_unit_observation` the seat's own units use
+(`Unit::formation` → `Game::unit_formation_bonus`, `Unit::host_embarked` →
+`Game::is_embarked`); `attacks_remaining` now sets `Unit::attacks_left` on
+every foreign planting site (`apply_foreign_unit_strikes`: hostiles, rivals
+and city-states, both import paths). An export without the keys — every
+recording before this — reads exactly as before: tier 0, the fresh-turn
+allowance, the tile's word on embarkation. Two tests pin it: a hostile
+exported at tier 2 is priced 17 CS above the same hostile at tier 0 by
+`Game::unit_strength` (a Corps +10, `None` and `-1` unchanged), and
+`attacks_remaining: 0` reaches the planted hostile and rival unit on both
+paths.
+
 ### How to re-measure
 
 The border table is one join: `orders.sqlite` (`kind='unit' and
