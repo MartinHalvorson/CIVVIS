@@ -2109,6 +2109,10 @@ pub const GENES: &[Gene] = &[
     // fronts into extra Recovery; immediate city danger still takes Recovery
     // independently, including city-state pressure. One family version plays.
     Gene { tag: "recovery-reads-the-war-2", field: "recovery_reads_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_reads_the_war_2, disable: AdvancedAi::disable_recovery_reads_the_war_2 },
+    // Version two preserves V1 and adds a roll-top lethal rotation only when
+    // the wounded destination is safer and the relief survives the front.
+    // Geometry and the joint planner's own rotation policy stay unchanged.
+    Gene { tag: "swap-rotation-2", field: "swap_rotation_2", kind: Kind::OptIn, enable: AdvancedAi::enable_swap_rotation_2, disable: AdvancedAi::disable_swap_rotation_2 },
     // Version 2 narrows an already-staged Conquest plan to one nearby,
     // holdable city, then keeps that objective rather than extending a war
     // from an empire-wide army estimate.
@@ -2127,6 +2131,19 @@ pub const GENES: &[Gene] = &[
     // ranged attack does not make. Priced on the arena beside
     // `battle-planner-2`. See `advanced/battle_planner.rs`.
     Gene { tag: "strike-reach", field: "strike_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_strike_reach, disable: AdvancedAi::disable_strike_reach },
+    // `safest-stand` (2026-09-02): the battle planner's heal rotation moved a
+    // wounded or exposed unit to the nearest tile the danger field read as
+    // zero — and when there was none, skipped the unit in silence, leaving it
+    // to the ladder, which twelve times over the seven live games of 2026-09-02
+    // attacked with it. The largest row of that day's loss taxonomy (38 of 145)
+    // was a unit killed under 50 hp with no rotation line for it. With this
+    // on, a unit with no zero-danger tile in reach takes the least dangerous
+    // one — a heal tile preferred, its own tile if that is the least — and
+    // fortifies there, unless even the least would remove it, when the
+    // ladder keeps it for a last blow. An exposed but healthy unit falls back
+    // only where the step cuts the danger by the rotation's margin. Priced on
+    // the arena beside `battle-planner-2`. See `advanced/battle_planner.rs`.
+    Gene { tag: "safest-stand", field: "safest_stand", kind: Kind::OptIn, enable: AdvancedAi::enable_safest_stand, disable: AdvancedAi::disable_safest_stand },
     // `doomed-blow-veto` (2026-09-02): the battle planner leaves every unit
     // with a legal blow it did not spend to the ladder, which prices the blow
     // on its own clone and takes it more often than the plan does — and the

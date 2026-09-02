@@ -653,11 +653,22 @@ const PANTHEON_FAITH_CARD_FLOOR: f64 = 1.0;
 /// reach. Those are different quantities and this is what the difference cost.
 pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
-/// A named Science seat needs enough cities to support several Campuses and a
-/// couple of launch pads, but the live land-grab ceiling is a different
-/// objective. Six cities keeps the research base broad without asking a
-/// Science race to spend its opening on a sixteen-city settlement campaign.
+/// Verification games need a city horizon that is large enough to establish
+/// an empire, but bounded enough that the endgame is still playable. This is
+/// the operator contract for every live Civilization VI seat; the practical
+/// site scan may still stop an actually exhausted map sooner.
+pub const VERIFICATION_CITY_TARGET_FLOOR: usize = 10;
+pub const VERIFICATION_CITY_TARGET_CEILING: usize = 15;
+
+/// Native Science screens retain their historical six-city contract. The live
+/// verifier has its own operator-directed horizon below, so this baseline does
+/// not change the controller that native evaluation is measuring.
 const SCIENCE_CITY_TARGET_CAP: usize = 6;
+
+/// A live Science verifier needs enough cities to support several Campuses and
+/// launch pads. Twelve stays inside the shared 10–15-city verification band
+/// without turning the game into an unbounded settlement campaign.
+const VERIFICATION_SCIENCE_CITY_TARGET: usize = 12;
 
 /// A Science seat may take the first two cities before its lane owns the plan.
 /// This is the small opening economy that makes the target viable; after it,
@@ -904,6 +915,9 @@ pub struct StrategyCensus {
     /// `strike-reach`: hostiles whose strike reach read tiles the movement
     /// flood did not — the danger the flood alone would have missed.
     pub strike_reach_widened: u32,
+    /// `safest-stand`: units the rotation found no zero-danger tile for and
+    /// stood on the least dangerous one instead.
+    pub battle_plan_fallbacks: u32,
     /// `doomed-blow-veto`: units whose every blow would have left them dead
     /// next turn, taken from the ladder and given to the rotation.
     pub battle_plan_doomed: u32,
@@ -1014,6 +1028,7 @@ impl StrategyCensus {
         self.battle_plan_dropped_blows += other.battle_plan_dropped_blows;
         self.battle_plan_rotations += other.battle_plan_rotations;
         self.strike_reach_widened += other.strike_reach_widened;
+        self.battle_plan_fallbacks += other.battle_plan_fallbacks;
         self.battle_plan_doomed += other.battle_plan_doomed;
         self.battle_plan_slots += other.battle_plan_slots;
         self.battle_plan_positioned += other.battle_plan_positioned;
@@ -5998,6 +6013,11 @@ pub struct AdvancedAi {
     /// mirrored board a ranged hostile needs no line of sight of its own.
     /// Opt-in gene; see `advanced/battle_planner.rs`.
     strike_reach: bool,
+    /// `safest-stand`: a wounded or exposed unit the battle planner's
+    /// rotation finds no zero-danger tile for takes the least dangerous tile
+    /// in reach and fortifies, instead of being left to the ladder in
+    /// silence. Opt-in gene; see `advanced/battle_planner.rs`.
+    safest_stand: bool,
     /// `siege-train`: a force whose objective is an enemy city plays the
     /// siege as a state machine — stage, invest, reduce, take, hold — kept
     /// across turns per city. Opt-in gene; see `advanced/siege_train.rs`.
@@ -6054,6 +6074,10 @@ pub struct AdvancedAi {
     /// behind it, so the line does not open when it leaves. Opt-in gene
     /// `swap-rotation`; see `advanced/swap_rotation.rs`.
     swap_rotation: bool,
+    /// Version two preserves V1 below its static line and additionally rotates
+    /// a roll-top lethal unit into a safer stand when the relief survives the
+    /// inherited front. One family version plays. Opt-in `swap-rotation-2`.
+    swap_rotation_2: bool,
     /// A shooter's tile beside a melee friend that stands nearer the enemy
     /// earns two screen weights — the arena's own definition of screened.
     /// Opt-in gene `screen-the-shooters`; see `advanced/close_as_a_body.rs`.
@@ -6159,6 +6183,11 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// The live Civilization VI bridge's operator contract: every verification
+    /// game plans a 10–15 city empire, subject to genuinely viable sites.
+    /// Native evaluation and frozen controllers retain their historical
+    /// city-target behavior.
+    verification_city_target: bool,
     /// Who may be a target, when a war is declared and when peace is sued
     /// for, read off the Objective Board's own requirements: a rival whose
     /// nearest city's Siege bill is over the whole roster is no target, a
@@ -7756,6 +7785,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             strike_reach: false,
+            safest_stand: false,
             siege_train: false,
             sieges: BTreeMap::new(),
             settler_site_gate: false,
@@ -7770,6 +7800,7 @@ impl AdvancedAi {
             settler_capture_scars: BTreeMap::new(),
             settler_never_idles: false,
             swap_rotation: false,
+            swap_rotation_2: false,
             screen_the_shooters: false,
             science_building_first: false,
             skip_the_prophet_race: false,
@@ -7786,6 +7817,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            verification_city_target: false,
             war_policy_via_board: false,
             war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,
@@ -11081,6 +11113,22 @@ impl AdvancedAi {
         } else {
             ordinary_city_target
         };
+        // The live verification contract is a horizon, not a promise to make
+        // an impossible Settler. It deliberately sits after every expansion
+        // variant so a religious conversion race, a science phase, or an
+        // experimental arm cannot silently return the seat to a six- or
+        // eight-city plan. `city_target_meets_the_map` below remains the
+        // hard practical-site gate.
+        let desired_cities = if self.verification_city_target {
+            desired_cities
+                .clamp(
+                    VERIFICATION_CITY_TARGET_FLOOR,
+                    VERIFICATION_CITY_TARGET_CEILING,
+                )
+                .max(cities.len())
+        } else {
+            desired_cities
+        };
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -11123,9 +11171,12 @@ impl AdvancedAi {
             && !(self.science_expansion_phase
                 && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN))
         {
-            desired_cities
-                .min(SCIENCE_CITY_TARGET_CAP)
-                .max(cities.len())
+            let cap = if self.verification_city_target {
+                VERIFICATION_SCIENCE_CITY_TARGET
+            } else {
+                SCIENCE_CITY_TARGET_CAP
+            };
+            desired_cities.min(cap).max(cities.len())
         } else {
             desired_cities
         };
@@ -29077,7 +29128,42 @@ impl AdvancedAi {
         prefilter_limit: Option<usize>,
         score_cache: Option<&mut BTreeMap<Pos, f64>>,
     ) -> Vec<(Pos, f64)> {
-        self.settle_sites_scanning(g, pid, from, radius, prefilter_limit, score_cache, false)
+        self.settle_sites_scanning(
+            g,
+            pid,
+            from,
+            radius,
+            prefilter_limit,
+            score_cache,
+            false,
+            false,
+        )
+    }
+
+    /// The map-room census is allowed to count the scanner's emergency-grade
+    /// sites for a live verification game. The ordinary Settler picker still
+    /// ranks normal sites first and reaches these only after those sites have
+    /// gone, so this raises the long-term plan without making a marginal site
+    /// outrank a good nearby one.
+    fn settle_sites_for_room(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+        prefilter_limit: Option<usize>,
+        include_emergency: bool,
+    ) -> Vec<(Pos, f64)> {
+        self.settle_sites_scanning(
+            g,
+            pid,
+            from,
+            radius,
+            prefilter_limit,
+            None,
+            false,
+            include_emergency,
+        )
     }
 
     /// How many more cities the map can actually seat, counted rather than
@@ -29101,12 +29187,13 @@ impl AdvancedAi {
         };
         let mut sites: Vec<(Pos, f64)> = Vec::new();
         for origin in origins {
-            sites.extend(self.settle_sites_with_limit(
+            sites.extend(self.settle_sites_for_room(
                 g,
                 pid,
                 *origin,
                 radius,
                 Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
+                self.verification_city_target,
             ));
         }
         sites.sort_by(|a, b| {
@@ -29148,7 +29235,7 @@ impl AdvancedAi {
     /// place for "settleable" to drift.
     fn settle_site_exists(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> bool {
         !self
-            .settle_sites_scanning(g, pid, from, radius, None, None, true)
+            .settle_sites_scanning(g, pid, from, radius, None, None, true, false)
             .is_empty()
     }
 
@@ -29162,6 +29249,7 @@ impl AdvancedAi {
         prefilter_limit: Option<usize>,
         mut score_cache: Option<&mut BTreeMap<Pos, f64>>,
         stop_at_first: bool,
+        include_emergency: bool,
     ) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let mut emergency_sites = Vec::new();
@@ -29331,8 +29419,8 @@ impl AdvancedAi {
                 }
             }
         }
-        if sites.is_empty() {
-            sites = emergency_sites;
+        if sites.is_empty() || include_emergency {
+            sites.extend(emergency_sites);
         }
         if self.campus_adjacency_threshold_2 && !stop_at_first && sites.len() > 1 {
             self.campus_threshold_settle_rerank(g, &mut sites);

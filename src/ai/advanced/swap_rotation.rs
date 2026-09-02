@@ -49,12 +49,23 @@
 //! when off. Priced on the arena first; the whole-game screen is the
 //! no-harm check (`docs/DOCTRINE_ARENA.md`, "The gate for a tactical gene").
 //!
-//! **Not on the live bridge.** The host's own swap operation is not driven
-//! over the Civilization VI channel and two `MOVE_TO` orders cannot emulate
-//! one — the first is refused. `docs/MOVEMENT.md` states that limit; this
-//! gene is a CIVVIS-side decision until a host verb exists.
+//! **Live bridge.** The host's own swap operation was not driven over the
+//! Civilization VI channel when V1 landed, and two `MOVE_TO` orders cannot
+//! emulate one — the first is refused. The bridge now
+//! translates `Action::Swap` as the host's `SWAP_UNITS` operation, so a
+//! controller choice here reaches both native and live play.
+//!
+//! **Version two preserves V1 and adds the emergency V1 cannot see.** At or
+//! below `withdraw_hp` it takes exactly V1's relief, including its health-first
+//! order. Above that static line V2 also rotates a unit when the top of the
+//! visible attackers' damage rolls can remove it next turn. That extra case is
+//! accepted only when the wounded unit takes less roll-top damage on the
+//! relief's tile and the relief survives the same field on the front. It does
+//! not widen the geometry to siege rings or alter the joint battle planner's
+//! separately measured rotation policy.
 
 use super::{AdvancedAi, ForcePosture};
+use crate::ai::{BasicAi, COMBAT_ROLL_MAX};
 use crate::game::{Action, Game};
 
 /// How much healthier the relief has to be before a rotation is worth two
@@ -71,8 +82,14 @@ impl AdvancedAi {
     /// Deliberately a pure read: it names the swap and the caller applies
     /// it, so the choice is testable without a board mutation and the engine
     /// keeps the last word on legality.
-    pub(super) fn swap_rotation_relief(&self, g: &Game, pid: usize, uid: u32) -> Option<u32> {
-        if !self.swap_rotation {
+    pub(super) fn swap_rotation_relief(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        _objective: Option<crate::Pos>,
+    ) -> Option<u32> {
+        if !self.swap_rotation && !self.swap_rotation_2 {
             return None;
         }
         let unit = g.units.get(&uid)?;
@@ -82,7 +99,18 @@ impl AdvancedAi {
         if g.rules.units[unit.kind].class != "military" {
             return None;
         }
-        if unit.hp > self.base.w.withdraw_hp.round() as i32 {
+        let withdraw_at = self.base.w.withdraw_hp.round() as i32;
+        // V1 is left exact below its static line. V2's only new reach is a
+        // unit above that line whose visible roll-top field is already lethal.
+        let emergency = if self.swap_rotation_2 && unit.hp > withdraw_at {
+            let envelopes = self.base.enemy_attack_envelopes(g, pid);
+            let here =
+                BasicAi::incoming_damage(g, pid, uid, unit.pos, &envelopes).total * COMBAT_ROLL_MAX;
+            (here + f64::EPSILON >= f64::from(unit.hp)).then_some((envelopes, here))
+        } else {
+            None
+        };
+        if unit.hp > withdraw_at && emergency.is_none() {
             return None;
         }
         // In contact: the whole point is to hold the tile while the wounded
@@ -103,7 +131,8 @@ impl AdvancedAi {
             return None;
         }
         // The relief: adjacent, ours, military, melee-capable, healthier by
-        // the margin, and standing further from the enemy than we are.
+        // the margin, and standing further from the enemy contact. The V2-only
+        // emergency also has to make both resulting stands survivable.
         let mut best: Option<(i32, u32)> = None;
         for pos in g.nbrs(unit.pos) {
             for other_id in g.unit_ids_at(pos) {
@@ -127,9 +156,24 @@ impl AdvancedAi {
                 if theirs <= ours {
                     continue;
                 }
-                // The freshest relief, then the lowest id so the choice is a
-                // function of the board alone.
-                if best.is_none_or(|(hp, id)| other.hp > hp || (other.hp == hp && other.id < id)) {
+                if let Some((envelopes, here)) = emergency.as_ref() {
+                    let withdrawal = BasicAi::incoming_damage(g, pid, uid, other.pos, envelopes)
+                        .total
+                        * COMBAT_ROLL_MAX;
+                    let relief = BasicAi::incoming_damage(g, pid, other.id, unit.pos, envelopes)
+                        .total
+                        * COMBAT_ROLL_MAX;
+                    if withdrawal + f64::EPSILON >= *here
+                        || relief + f64::EPSILON >= f64::from(other.hp)
+                    {
+                        continue;
+                    }
+                }
+                // V2 intentionally keeps V1's health-first order so every
+                // historical trigger is behavior-identical.
+                let better =
+                    best.is_none_or(|(hp, id)| other.hp > hp || (other.hp == hp && other.id < id));
+                if better {
                     best = Some((other.hp, other.id));
                 }
             }
@@ -149,14 +193,18 @@ impl AdvancedAi {
         // A front only exists while a group is fighting for it. A muster or a
         // march has no line to keep whole, and `Recover` is the posture that
         // has already decided to leave.
-        let engaged = self.force_groups.iter().any(|group| {
-            group.units.contains(&uid)
-                && matches!(group.posture, ForcePosture::Engage | ForcePosture::Hold)
+        let group = self
+            .force_groups
+            .iter()
+            .find(|group| group.units.contains(&uid));
+        let objective = group.map(|group| group.objective);
+        let engaged = group.is_some_and(|group| {
+            matches!(group.posture, ForcePosture::Engage | ForcePosture::Hold)
         });
         if !engaged {
             return None;
         }
-        let relief = self.swap_rotation_relief(g, pid, uid)?;
+        let relief = self.swap_rotation_relief(g, pid, uid, objective)?;
         let action = Action::Swap {
             unit: uid,
             other: relief,
@@ -201,12 +249,23 @@ mod tests {
     fn the_gene_ships_off_and_is_registered() {
         let ai = AdvancedAi::new();
         assert!(!ai.swap_rotation, "an opt-in ships off");
+        assert!(!ai.swap_rotation_2, "the successor also ships off");
         assert!(super::super::GENES
             .iter()
             .any(|gene| gene.opt_in() && gene.field == "swap_rotation"));
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "swap_rotation_2"));
         let mut on = AdvancedAi::new();
         on.enable_swap_rotation();
         assert!(on.swap_rotation);
+        assert!(!on.swap_rotation_2);
+        on.enable_swap_rotation_2();
+        assert!(!on.swap_rotation);
+        assert!(on.swap_rotation_2);
+        on.enable_swap_rotation();
+        assert!(on.swap_rotation);
+        assert!(!on.swap_rotation_2, "selecting v1 clears v2");
         on.disable_swap_rotation();
         assert!(!on.swap_rotation);
     }
@@ -224,11 +283,11 @@ mod tests {
         wound(&mut g, hurt, 30);
         let mut ai = AdvancedAi::new();
         assert!(
-            ai.swap_rotation_relief(&g, 0, hurt).is_none(),
+            ai.swap_rotation_relief(&g, 0, hurt, None).is_none(),
             "off, the gene names nothing"
         );
         ai.enable_swap_rotation();
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), Some(fresh));
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), Some(fresh));
         assert!(g
             .apply(
                 0,
@@ -266,14 +325,14 @@ mod tests {
         // A healthy front-liner is not rotated: it is still the right unit
         // for the tile.
         let (g, ai, hurt, _) = setup(90, "warrior", 100, behind);
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // A relief no healthier than the unit it replaces buys nothing.
         let (g, ai, hurt, _) = setup(30, "warrior", 40, behind);
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // A shooter is not put into contact; that is the position
         // `screen-the-shooters` exists to avoid.
         let (g, ai, hurt, _) = setup(30, "archer", 100, behind);
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // A relief no further from the enemy than we are is not behind the
         // line — swapping two exposed tiles is not a rotation.
         let (g, ai, hurt, _) = setup(30, "warrior", 100, at(10, 5));
@@ -282,7 +341,7 @@ mod tests {
             g.wdist(front, enemy),
             "the fixture puts both on the same rank"
         );
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
         // And a wounded unit nobody is standing next to can simply walk.
         let mut g = open_field();
         let hurt = g.spawn_unit("warrior", 0, front);
@@ -291,7 +350,61 @@ mod tests {
         wound(&mut g, hurt, 30);
         let mut ai = AdvancedAi::new();
         ai.enable_swap_rotation();
-        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt), None);
+        assert_eq!(ai.swap_rotation_relief(&g, 0, hurt, None), None);
+    }
+
+    /// Below the historical withdrawal line V2 is deliberately V1: even when
+    /// a stronger but slightly less healthy relief exists, both versions make
+    /// the same health-first choice.
+    #[test]
+    fn version_two_preserves_v1_below_the_static_line() {
+        let mut g = open_field();
+        let front = at(10, 6);
+        let hurt = g.spawn_unit("warrior", 0, front);
+        let freshest = g.spawn_unit("warrior", 0, at(9, 6));
+        let stronger = g.spawn_unit("swordsman", 0, at(9, 7));
+        g.spawn_unit("warrior", 1, at(11, 6));
+        wound(&mut g, hurt, 30);
+        wound(&mut g, stronger, 90);
+
+        let mut v1 = AdvancedAi::new();
+        v1.enable_swap_rotation();
+        assert_eq!(v1.swap_rotation_relief(&g, 0, hurt, None), Some(freshest));
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_swap_rotation_2();
+        assert_eq!(
+            v2.swap_rotation_relief(&g, 0, hurt, None),
+            Some(freshest),
+            "the new version does not rewrite V1's proven trigger"
+        );
+    }
+
+    /// Above the static line V1 sees no recovery event. V2 sees that the top
+    /// of the visible blow can remove the unit, that the city behind is safer,
+    /// and that the modern relief survives the inherited front.
+    #[test]
+    fn version_two_rotates_a_roll_top_emergency() {
+        let mut g = open_field();
+        let front = at(10, 6);
+        let hurt = g.spawn_unit("warrior", 0, front);
+        let behind = at(9, 6);
+        let relief = g.spawn_unit("modern_armor", 0, behind);
+        g.spawn_unit("tank", 1, at(11, 6));
+        wound(&mut g, hurt, 60);
+        g.place_city(0, behind, Some("Refuge".to_string()));
+
+        let mut v1 = AdvancedAi::new();
+        v1.enable_swap_rotation();
+        assert_eq!(
+            v1.swap_rotation_relief(&g, 0, hurt, None),
+            None,
+            "sixty hit points is above V1's static line"
+        );
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_swap_rotation_2();
+        assert_eq!(v2.swap_rotation_relief(&g, 0, hurt, None), Some(relief));
     }
 
     /// The step fires only for a group that is holding a front, and it

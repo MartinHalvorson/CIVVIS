@@ -1091,6 +1091,10 @@ impl AdvancedAi {
         for gene in super::GENES.iter().filter(|gene| gene.live()) {
             (gene.enable)(self);
         }
+        // This is deployment policy rather than a screenable treatment: every
+        // verification game shares the same 10–15 city horizon, including
+        // ablation arms that temporarily withhold one live treatment.
+        self.verification_city_target = true;
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -3301,6 +3305,7 @@ impl AdvancedAi {
     /// `swap_rotation`.
     pub fn enable_swap_rotation(&mut self) {
         self.swap_rotation = true;
+        self.swap_rotation_2 = false;
     }
 
     /// The twin of `enable_swap_rotation`.
@@ -4020,6 +4025,19 @@ impl AdvancedAi {
         self.war_policy_via_board = false;
     }
 
+    /// Version two keeps V1's field-front swap and adds a roll-top lethal
+    /// rotation when the wounded destination is safer and the relief survives.
+    /// One family version plays at a time.
+    pub fn enable_swap_rotation_2(&mut self) {
+        self.swap_rotation = false;
+        self.swap_rotation_2 = true;
+    }
+
+    /// The twin of `enable_swap_rotation_2`.
+    pub fn disable_swap_rotation_2(&mut self) {
+        self.swap_rotation_2 = false;
+    }
+
     /// Turn an existing Conquest plan into one nearby, holdable city only when
     /// its complete spare-included bill is already staged. This successor
     /// replaces v1's multi-city expedition, retains a single objective while
@@ -4047,6 +4065,19 @@ impl AdvancedAi {
     /// The twin of `enable_strike_reach`.
     pub fn disable_strike_reach(&mut self) {
         self.strike_reach = false;
+    }
+
+    /// `safest-stand`: when the battle planner's heal rotation finds no tile
+    /// the danger field reads as zero, the wounded or exposed unit takes the
+    /// least dangerous tile in reach — its own if that is the least — and
+    /// fortifies, instead of being left to the ladder. See `battle_planner`.
+    pub fn enable_safest_stand(&mut self) {
+        self.safest_stand = true;
+    }
+
+    /// The twin of `enable_safest_stand`.
+    pub fn disable_safest_stand(&mut self) {
+        self.safest_stand = false;
     }
 
     /// `doomed-blow-veto`: a unit whose every blow this turn would leave it
