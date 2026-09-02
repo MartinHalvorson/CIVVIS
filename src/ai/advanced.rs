@@ -6876,6 +6876,9 @@ mod opening_settlement;
 /// `quest-boost`. See `advanced/city_state_quests.rs`.
 pub(crate) mod city_state_quests;
 
+/// A known Galápagos or Bermuda science job just beyond the ordinary
+/// settlement forecast's second ring remains a purchasable city asset.
+mod science_wonder_sites;
 /// `wonder-adjacent-sites` prices a settle site beside a natural wonder the
 /// way the engine pays it; `wonder-ring-recon` sends an explorer to the
 /// unseen ring of a natural wonder near home before it picks a frontier. Two
@@ -28096,6 +28099,7 @@ impl AdvancedAi {
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
         value += self.wonder_footprint_value(g, &positions);
+        value += self.water_science_wonder_site_value(g, pid, pos);
         value += Self::early_city_water_adjustment(g, pid, pos);
         let enemy_distance = g
             .cities
@@ -29413,7 +29417,7 @@ impl AdvancedAi {
                     .map(|_| {
                         // `contested_land_first`: a contested site is never
                         // cut before it is priced.
-                        self.settlement_prefilter_score_for(g, pid, pos)
+                        self.settlement_prefilter_score_with_water_science_wonder(g, pid, pos)
                             + self.contested_land_credit(g, pid, pos)
                     })
                     .unwrap_or(0.0);
