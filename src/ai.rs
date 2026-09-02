@@ -16544,7 +16544,7 @@ impl BasicAi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::advanced::AdvancedAi;
+    use crate::ai::advanced::{AdvancedAi, PEACETIME_UPGRADE_FLOOR};
     use crate::parallel::WorkPool;
 
     /// ⚠⚠ THE SHIPPED PANTHEON CHOICE IS A CONSTANT, AND THIS IS THE PROOF.
@@ -18338,10 +18338,10 @@ mod tests {
     }
 
     /// `modernize-before-spending`: a one-era breakthrough modernizes the
-    /// army before the purchase pass, keeping 100 + 25 per city for it; a
+    /// army before the purchase pass, keeping a fixed purchase buffer. A
     /// treasury that cannot clear that floor waits; withheld, nothing moves.
     #[test]
-    fn a_breakthrough_modernizes_the_army_before_the_purchase_pass() {
+    fn a_breakthrough_modernizes_the_army_with_a_fixed_peacetime_reserve() {
         let (mut g, source, _) = island_colony_game(1);
         g.players[0].civ = "Egypt".to_string();
         grant_tech_with_prerequisites(&mut g, 0, "iron_working");
@@ -18354,7 +18354,8 @@ mod tests {
             }
         }
         let warrior = g.spawn_test_unit("warrior", 0, source);
-        let floor = 100.0 + 25.0 * g.player_city_ids(0).len() as f64;
+        let floor = PEACETIME_UPGRADE_FLOOR;
+        assert_eq!(floor, 100.0);
         g.players[0].gold = floor + 110.0;
 
         let mut withheld = g.clone();

@@ -504,6 +504,10 @@ const TIMED_WAR_BODIES: usize = 4;
 /// `modernize-before-spending`: a successor at least this much stronger is a
 /// breakthrough worth spending on at peace (Warrior 20 -> Swordsman 35).
 pub(crate) const MODERNIZATION_GAP: f64 = 10.0;
+/// `modernize-before-spending`: Gold retained after a peaceful breakthrough
+/// upgrade. A fixed buffer leaves room for an ordinary purchase without making
+/// a wide empire wait for a city-scaled stockpile it spends before upgrading.
+pub(crate) const PEACETIME_UPGRADE_FLOOR: f64 = 100.0;
 /// `modernize-before-spending`: the treasury kept while a war, a threatened
 /// city or a barbarian gap makes every upgrade urgent — `BasicAi::upgrade_units`'s
 /// own wartime floor.
@@ -5630,9 +5634,10 @@ pub struct AdvancedAi {
     /// or a barbarian quality gap (floor `WARTIME_UPGRADE_FLOOR`), or a
     /// breakthrough — some unit is offered a successor at least
     /// `MODERNIZATION_GAP` strength stronger, roughly one era — where the
-    /// pass keeps `100 + 25 x cities` Gold for the purchase pass. Veterans
-    /// go first (`VETERAN_UPGRADE_WEIGHT` per promotion). An appointed war
-    /// package runs its own exact pass and this stands down for it.
+    /// pass keeps `PEACETIME_UPGRADE_FLOOR` Gold for the purchase pass.
+    /// Veterans go first (`VETERAN_UPGRADE_WEIGHT` per promotion). An
+    /// appointed war package runs its own exact pass and this stands down for
+    /// it.
     modernize_before_spending: bool,
     /// The army's turn planned from a ranked Objective Board — Defend,
     /// Relieve, Siege, Destroy, ClearCamp, Escort, Deter, Recon rows valued in
@@ -9380,7 +9385,7 @@ impl AdvancedAi {
         let floor = if threatened {
             WARTIME_UPGRADE_FLOOR
         } else {
-            100.0 + 25.0 * g.player_city_ids(pid).len() as f64
+            PEACETIME_UPGRADE_FLOOR
         };
         let taken = BasicAi::modernize_army(g, pid, floor, VETERAN_UPGRADE_WEIGHT);
         if taken > 0 {
