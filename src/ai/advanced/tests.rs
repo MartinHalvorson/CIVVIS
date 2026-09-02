@@ -46113,3 +46113,151 @@ fn the_walk_deadline_off_leaves_the_clock_and_the_step_alone() {
         "the deadline never speaks while the gene is off"
     );
 }
+
+/// `standing-still-is-a-risk`: the safe-step guard's last resort demands a
+/// neighbour a full 5.0 risk points safer than the route step it rejected,
+/// and when none is, it leaves the unit where it stands — a tile whose own
+/// risk it never measured. Over 39 live Civ VI runs that is **527** distinct
+/// settler-turns standing still ("the safe-step guard rejected every
+/// neighbour"), 13.5 a game and the largest single cause.
+///
+/// The fixture rings a settler with visible hostiles and searches for the
+/// exact standstill: a route step over the limit, no neighbour the shipped
+/// rule will take, and a neighbour strictly safer than staying put. Off, the
+/// settler does not move. On, it retreats to the safer tile — the direction
+/// it is refused for being backwards is the one that lowers its risk.
+#[test]
+fn a_settler_that_will_not_move_still_stands_somewhere() {
+    let mut game = Game::new_full(2, 44, 28, 4_242, 120, 0, false);
+    let home = game.units[&game.player_unit_ids(0)[0]].pos;
+    let land = |game: &Game, p: Pos| {
+        game.map
+            .get(p)
+            .is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+    };
+    let origin = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|p| {
+            game.wdist(home, *p) > 8
+                && game.wdisk(*p, 1).into_iter().all(|n| land(&game, n))
+                && game.units.values().all(|u| game.wdist(u.pos, *p) > 4)
+        })
+        .expect("a quiet land neighbourhood");
+    let ring: Vec<Pos> = game
+        .wdisk(origin, 2)
+        .into_iter()
+        .filter(|p| game.wdist(origin, *p) == 2 && land(&game, *p))
+        .collect();
+    for p in ring {
+        game.spawn_test_unit("warrior", 1, p);
+    }
+    game.at_war.insert((0, 1));
+    let settler = game.spawn_test_unit("settler", 0, origin);
+
+    // Find a stand/target pair the shipped rule answers by not moving, while
+    // a strictly safer neighbour is reachable.
+    let ai = AdvancedAi::new();
+    let visible = ai.battlefront_visibility(&game, 0);
+    let risk = |game: &Game, p: Pos| {
+        ai.settlement_tile_risk_with_support(game, 0, Some(settler), p, &visible, true)
+    };
+    let mut standstill = None;
+    let mut safe_standstill: Option<(Pos, Pos)> = None;
+    'search: for stand in game.wdisk(origin, 3) {
+        if !land(&game, stand) || !game.unit_ids_at(stand).is_empty() {
+            continue;
+        }
+        game.units.get_mut(&settler).unwrap().pos = stand;
+        for target in game.wdisk(origin, 5) {
+            if !land(&game, target) || game.wdist(stand, target) < 2 {
+                continue;
+            }
+            let Some(next) = game
+                .route_step(settler, target, 0)
+                .filter(|next| game.can_move(settler, *next))
+            else {
+                continue;
+            };
+            let planned = risk(&game, next);
+            if planned <= SETTLER_STEP_RISK_LIMIT {
+                continue;
+            }
+            let staying = risk(&game, stand);
+            let current_distance = game.wdist(stand, target);
+            let mut shipped_rule_moves = false;
+            let mut safer_than_staying = false;
+            for n in game.nbrs(stand) {
+                if n == next || game.map.get(n).is_none() || !game.can_move(settler, n) {
+                    continue;
+                }
+                let neighbour = risk(&game, n);
+                let progress = current_distance - game.wdist(n, target);
+                if neighbour + 5.0 < planned && !(progress < 0 && neighbour > planned * 0.5) {
+                    shipped_rule_moves = true;
+                }
+                if neighbour < staying {
+                    safer_than_staying = true;
+                }
+            }
+            if !shipped_rule_moves && safer_than_staying {
+                if staying > SETTLER_STEP_RISK_LIMIT {
+                    standstill = Some((stand, target, staying));
+                    break 'search;
+                }
+                // A standstill on ground that is itself safe: the guard is
+                // working, and the gene must leave it alone.
+                safe_standstill.get_or_insert((stand, target));
+            }
+        }
+    }
+    let (stand, target, staying) =
+        standstill.expect("the ringed settler has a standstill the shipped rule will not break");
+
+    // Off: the guard rejects every neighbour and the settler stays put on a
+    // tile more dangerous than one it could reach.
+    game.units.get_mut(&settler).unwrap().pos = stand;
+    let off = AdvancedAi::new();
+    assert!(!off.standing_still_is_a_risk);
+    let moved = off.settler_step_toward_safe(&mut game, 0, settler, target);
+    assert!(!moved, "off: the guard reports no move");
+    assert_eq!(
+        game.units[&settler].pos, stand,
+        "off: the settler stands on its exposed tile"
+    );
+
+    // On: it retreats to a tile strictly safer than the one it was standing on.
+    game.units.get_mut(&settler).unwrap().pos = stand;
+    game.units.get_mut(&settler).unwrap().acted = false;
+    game.units.get_mut(&settler).unwrap().moves_left =
+        game.rules.units[game.units[&settler].kind].moves;
+    let mut on = AdvancedAi::new();
+    on.enable_standing_still_is_a_risk();
+    let moved = on.settler_step_toward_safe(&mut game, 0, settler, target);
+    let landed = game.units[&settler].pos;
+    assert!(moved, "on: a standstill on dangerous ground is answered");
+    assert_ne!(landed, stand, "on: the settler left the exposed tile");
+    assert!(
+        risk(&game, landed) < staying,
+        "on: it moved to STRICTLY safer ground — landed {landed:?} at {:.1} against {staying:.1}",
+        risk(&game, landed)
+    );
+
+    // The danger bar: a standstill on ground that is itself under the limit
+    // is the guard waiting out a dangerous route, and the gene leaves it be.
+    if let Some((safe_stand, safe_target)) = safe_standstill {
+        game.units.get_mut(&settler).unwrap().pos = safe_stand;
+        game.units.get_mut(&settler).unwrap().acted = false;
+        game.units.get_mut(&settler).unwrap().moves_left =
+            game.rules.units[game.units[&settler].kind].moves;
+        assert!(
+            risk(&game, safe_stand) <= SETTLER_STEP_RISK_LIMIT,
+            "the fixture's safe standstill is under the limit"
+        );
+        let moved = on.settler_step_toward_safe(&mut game, 0, settler, safe_target);
+        assert!(!moved, "a standstill on safe ground is still a standstill");
+        assert_eq!(game.units[&settler].pos, safe_stand);
+    }
+}
