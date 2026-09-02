@@ -1,8 +1,8 @@
 {
  "what": "The deployed genome's per-gene compute cost, from the screens docs/gene_ledger.json draws on. compute_cost_pct is the percent change in wall seconds per completed turn per enabled major seat (docs/GENE_SCREEN.md). Regenerate with `python3 tools/genome_cost.py write`; `check` fails when this file and the ledger disagree, so the bill cannot move without the diff showing which gene moved it.",
  "not_a_total": "summed_cost_pct adds marginal costs each measured with the rest of the genome enabled. They do not compose \u2014 two genes that walk the same list cost less together than apart \u2014 so this is an indicator that TRACKS the bill, not the bill. Compare it with itself over time; never quote it as what the genome costs.",
- "deployed_genes": 68,
- "priced": 68,
+ "deployed_genes": 69,
+ "priced": 69,
  "resolved_beyond_one_se": 24,
  "summed_cost_pct": 9.178,
  "summed_positive_cost_pct": 22.126,
@@ -327,6 +327,15 @@
    "compute_cost_pct": 0.121,
    "compute_cost_se_pct": 0.739,
    "win_diff_pp": -0.108241,
+   "resolved": false,
+   "source": "2026-09-01-standard-continuous-5424-total-seats-20260901T043243Z-7b6c.json",
+   "cost_per_point": null
+  },
+  {
+   "tag": "enter-the-prophet-race",
+   "compute_cost_pct": 0.077,
+   "compute_cost_se_pct": 0.779,
+   "win_diff_pp": -0.460794,
    "resolved": false,
    "source": "2026-09-01-standard-continuous-5424-total-seats-20260901T043243Z-7b6c.json",
    "cost_per_point": null

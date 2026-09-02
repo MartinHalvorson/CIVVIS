@@ -680,13 +680,15 @@ RETAINED_SELECTION_RULE = (
     "multiple versions of one gene qualify, only the version with the higher "
     "such average ships; every other screenable gene is off"
 )
-#: ⭐ THE OPERATOR'S PINS. The explicit 2026-08-31 selection contains no
-#: exceptions: every deployed gene must earn its place from the three latest
-#: batches, so this list stays empty.
-OPERATOR_DEFAULT_ON = ()
+#: ⭐ THE OPERATOR'S PINS. The operator directed the AI to keep the Holy Site
+#: research entry path available by default, rather than letting the recent
+#: batch average strand every eligible victory lane before Astrology.
+OPERATOR_DEFAULT_ON = (
+    "enter-the-prophet-race",
+)
 
 #: A pin over a gene no batch has priced is still represented for historical
-#: ledgers. The current selection deliberately has no such override.
+#: ledgers.
 def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
     """The operator's pins that no reporting batch has priced yet, sorted.
 
@@ -2079,8 +2081,10 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 "the version that ships; every other screenable tag is off"
                 if deployment_policy == DEPLOYMENT_POLICY else
                 "operator-retained-selection: " + RETAINED_SELECTION_RULE + "; exactly "
-                "the tags in deployment_genome are on, and a reporting-only batch refresh "
-                "retains that selected set while its batch columns remain published evidence"
+                "the tags in deployment_genome are on, with operator_default_on added and "
+                "operator_default_off removed from the retained selection; a reporting-only "
+                "batch refresh retains that selected set while its batch columns remain "
+                "published evidence"
             ),
             "batch_rule": "read over the reporting batches that priced the gene, newest first, "
                           "at most batch_rule_window of them, each reading the ranking's wins "
@@ -2103,8 +2107,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and "
                 "OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained "
                 "deployment_genome and the held ones are out of it, while batch_decisions "
-                "records what the batch rule would say as evidence; the current selection "
-                "has no manual pins or holds"
+                "records what the batch rule would say as evidence; its current manual "
+                "defaults are on: " + (", ".join(pinned) or "none") + "; off: "
+                + (", ".join(held) or "none")
                 if deployment_policy == RETAINED_DEPLOYMENT_POLICY else
                 "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and "
                 "OPERATOR_DEFAULT_OFF, 2026-08-26); a pinned gene is in deployment_genome "
@@ -2200,7 +2205,8 @@ def render_rust(ledger: dict) -> str:
     retained = rules["deployment_policy"] == RETAINED_DEPLOYMENT_POLICY
     provenance = (
         [
-            "// together; this reporting-only publication retains `DEPLOYMENT_GENOME`.",
+            "// together; this reporting-only publication retains `DEPLOYMENT_GENOME` plus",
+            "// the operator's explicit on/off overrides.",
             "// Each selected tag averages at least +5 wins/10k total seats across its",
             "// available latest-three `BATCH_COLUMNS`; one higher-average version ships per family.",
         ]
@@ -2213,9 +2219,9 @@ def render_rust(ledger: dict) -> str:
     )
     genome_description = (
         [
-            "/// The screenable genes averaging at least +5 wins per 10,000 total seats",
-            "/// over their available latest-three batch readings; every other screenable",
-            "/// gene is off. One higher-average version ships per family.",
+            "/// The screenable genes selected from the available latest-three batch readings,",
+            "/// plus the operator's on pins and minus the operator's off holds. One",
+            "/// higher-average version ships per family.",
         ]
         if retained else
         [
@@ -2229,7 +2235,7 @@ def render_rust(ledger: dict) -> str:
             "/// No manual on overrides: every deployed gene meets the published",
             "/// available-latest-three-batches average-at-least-+5 criterion.",
         ]
-        if retained else
+        if retained and not rules["operator_default_on"] else
         [
             "/// ⭐ The genes the operator named on by hand. Each is in",
             "/// `DEPLOYMENT_GENOME` whatever its `BATCH_COLUMNS` read, and the rule's",
@@ -3300,14 +3306,19 @@ def render_parts(ledger: dict) -> tuple[str, str]:
     if retained:
         default_authority = (
             "the explicit retained selection (`docs/gene_ledger.json`, "
-            "`rules.deployment_genome`): a gene is on only when its available readings "
-            "in the latest three reporting batches average at least +5 wins per 10,000 "
-            "total seats; qualifying versions compete by that average and every other "
-            "screenable gene is off."
+            "`rules.deployment_genome`): a gene is on when its available readings in the "
+            "latest three reporting batches average at least +5 wins per 10,000 total seats, "
+            "or when the operator explicitly pins it on; qualifying versions compete by "
+            "that average and every other screenable gene is off."
         )
-        pins_reference = (
-            "**Selected defaults.** No named overrides remain: the deployed set is exactly "
-            "the available-latest-three-batches average-at-least-+5 selection, with the "
+        pins_reference = "**Selected defaults.** " + (
+            "The operator additionally pins **on**: "
+            + ", ".join(f"`{tag}`" for tag in ledger["rules"]["operator_default_on"])
+            + ". Those pins override the retained batch-average selection, while the legacy "
+              "batch-rule readings remain visible in `rules.batch_decisions`."
+            if ledger["rules"]["operator_default_on"] else
+            "No named overrides remain: the deployed set is exactly the "
+            "available-latest-three-batches average-at-least-+5 selection, with the "
             "higher-average version winning any family collision. The legacy batch-rule "
             "readings remain visible in `rules.batch_decisions`, but do not change a default "
             "during table rotation."
