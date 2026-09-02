@@ -64,10 +64,10 @@ use std::collections::BTreeMap;
 use super::objective_board::{ObjectiveKey, ObjectiveKind, Requisition};
 use super::{AdvancedAi, BasicAi, ForceDomain, StrategicPlan};
 use crate::game::{Action, Game, Item};
+use crate::name::Name;
 use crate::reasoning::plain;
 use crate::rules::UnitSpec;
 use crate::think;
-use crate::name::Name;
 
 /// A Deter requisition asks at most this many bodies.
 pub const DETER_REQUISITION_MAX: usize = 3;
@@ -294,8 +294,7 @@ impl AdvancedAi {
                         worth > had + 1e-12
                             || ((worth - had).abs() <= 1e-12
                                 && (power > had_power
-                                    || (power == had_power
-                                        && name.as_str() < had_name.as_str())))
+                                    || (power == had_power && name.as_str() < had_name.as_str())))
                     });
                     if better {
                         best = Some((worth, power, *name));
@@ -435,8 +434,7 @@ impl AdvancedAi {
         pid: usize,
         reserve: f64,
     ) -> Option<Order> {
-        if !self.requisitions_on() || self.requisitions_served.borrow().bought_this_turn(g.turn)
-        {
+        if !self.requisitions_on() || self.requisitions_served.borrow().bought_this_turn(g.turn) {
             return None;
         }
         let bank = g.players[pid].gold;
@@ -610,7 +608,8 @@ impl AdvancedAi {
             return;
         }
         self.assess_board_if_stale(g, pid, plan);
-        let purchases = std::mem::take(&mut self.requisitions_served.borrow_mut().purchases_uncounted);
+        let purchases =
+            std::mem::take(&mut self.requisitions_served.borrow_mut().purchases_uncounted);
         self.census.requisition_purchases += purchases;
         let cities = g.player_city_ids(pid);
         let unserved = self
@@ -917,10 +916,7 @@ mod tests {
             .into_iter()
             .find(|requisition| requisition.kind == ObjectiveKind::Siege)
             .expect("the Siege row is short");
-        assert!(
-            requisition.unmet.siege >= 1,
-            "walls stand: {requisition:?}"
-        );
+        assert!(requisition.unmet.siege >= 1, "walls stand: {requisition:?}");
         assert_eq!(UnitRole::of(&requisition, g.turn), Some(UnitRole::Siege));
         let order = ai
             .requisition_production_item(&g, 0, home)
