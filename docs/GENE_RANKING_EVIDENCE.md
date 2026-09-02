@@ -192,6 +192,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `native-emergency-purchase-2` | off (unmeasured) | Version two buys the same local answer only for damage this turn or last that a visible at-war military unit can legally follow with a City Center attack. | 1 \| 2 |
 | `recovery-reads-the-war-2` | off (unmeasured) | Measure Recovery against the strongest current major opponent within the campaign planner's reach. | 1 \| 2 |
 | `siege-is-progress-3` | off (unmeasured) | Reset war fatigue once per enemy city only after a nearby own land force is observed reducing its wall or city health. | 1 \| 1 |
+| `strike-reach` | off (unmeasured) | `strike-reach`: the battle planner's danger field reads every hostile's reach the way the engine resolves a blow — a unit that stops in our zone of control keeps its movement for the strike, so a melee unit two tiles off can close and hit — and on the mirrored board a ranged hostile needs no line of sight of its own. | 1 \| 1 |
 
 ## Removed from the code
 

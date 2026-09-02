@@ -2127,8 +2127,8 @@ class AnAbandonedGameIsRetiredSoItCounts(unittest.TestCase):
         self.assertFalse(orders.request_retire(missing, "civvis-run", 150))
 
 
-class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
-    """The sole current early stop is below 60 % of the leader after turn 150.
+class AGameUnderHalfTheLeadersScoreAfterTurn50IsAbandoned(unittest.TestCase):
+    """The sole current early stop is below half of the leader after turn 50.
 
     The first qualifying reading ends the game and is filed as its own reason.
     """
@@ -2138,76 +2138,73 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         return {"kind": kind, "ctx": ctx, "turn": turn, "score": score,
                 "rival_best": rival}
 
-    def test_the_line_is_sixty_percent_from_turn_150(self):
-        # ⚠ 0.40 shipped here while docs/CIV6_COMPUTER_CONTROL.md, the ladder's
-        # row comment and the operator all said 60 %. The prose was the policy.
-        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.60)
-        self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 150)
+    def test_the_line_is_half_from_turn_51(self):
+        """"After turn 50" starts at turn 51, not on turn 50 itself."""
+        self.assertEqual(civ6_play.DEFAULT_LEADER_SCORE_RATIO, 0.50)
+        self.assertEqual(civ6_play.LEADER_SCORE_MIN_TURN, 51)
 
-    def test_targeted_science_is_not_abandoned_for_a_score_gap(self):
-        self.assertFalse(civ6_play.leader_score_stop_allowed(
+    def test_targeted_science_is_abandoned_for_a_score_gap(self):
+        self.assertTrue(civ6_play.leader_score_stop_allowed(
             civvis_decides=True, victory_target="science"))
 
-    def test_adaptive_and_other_targeted_lanes_keep_the_score_stop(self):
+    def test_every_other_lane_also_keeps_the_score_stop(self):
         for decides, target in ((False, "science"), (True, "civvis"),
                                 (True, "culture"), (True, None)):
             with self.subTest(decides=decides, target=target):
                 self.assertTrue(civ6_play.leader_score_stop_allowed(
                     civvis_decides=decides, victory_target=target))
 
-    def test_one_reading_under_the_line_immediately_abandons_with_the_standing(self):
+    def test_one_reading_under_half_immediately_abandons_with_the_standing(self):
         state = {}
         verdict = civ6_play.below_leader_score_reading(
-            state, self._turn(150, 59, 100), 0.60)
+            state, self._turn(51, 49, 100), 0.50)
         self.assertEqual(verdict, {
-            "rule": "below_leader_score", "turn": 150, "score": 59,
-            "rival_best": 100, "score_ratio": 0.59,
-            "score_ratio_ceiling": 0.60, "min_turn": 150,
+            "rule": "below_leader_score", "turn": 51, "score": 49,
+            "rival_best": 100, "score_ratio": 0.49,
+            "score_ratio_ceiling": 0.50, "min_turn": 51,
         })
         self.assertEqual(state, {})
 
-    def test_nothing_fires_before_turn_150_however_far_behind(self):
+    def test_nothing_fires_through_turn_50_however_far_behind(self):
         state = {}
-        for turn in range(1, 150):
+        for turn in range(1, 51):
             self.assertIsNone(civ6_play.below_leader_score_reading(
-                state, self._turn(turn, 10, 500), 0.60))
+                state, self._turn(turn, 10, 500), 0.50))
         self.assertEqual(state, {})
 
     def test_at_the_line_is_not_under_it_but_the_next_low_reading_ends_it(self):
         state = {}
-        # Exactly 60 % is not under the line.
+        # Exactly half is not more than 50 % behind.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(150, 300, 500), 0.60))
+            state, self._turn(51, 50, 100), 0.50))
         self.assertEqual(civ6_play.below_leader_score_reading(
-            state, self._turn(151, 299, 500), 0.60)["turn"], 151)
+            state, self._turn(52, 49, 100), 0.50)["turn"], 52)
 
     def test_only_a_readable_agent_turn_is_a_termination_reading(self):
         state = {}
         # No standing is not a decision to abandon.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(171, 300, None), 0.60))
+            state, self._turn(171, 300, None), 0.50))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(172, 300, 0), 0.60))
+            state, self._turn(172, 300, 0), 0.50))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(173, None, 500), 0.60))
+            state, self._turn(173, None, 500), 0.50))
         # Other contexts and event kinds are not termination readings either.
-        # ⚠ These two used to read 300/500 against a 0.40 line — 60 % is not
-        # under 40 %, so they returned None whatever `ctx` and `kind` said and
-        # proved nothing. 100/500 is 20 %: it fires on an agent `turn` event and
-        # must stay silent on every other one.
+        # 100/500 is 20 %: it fires on an agent `turn` event and must stay
+        # silent on every other one.
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(174, 100, 500, ctx="spectator"), 0.60))
+            state, self._turn(174, 100, 500, ctx="spectator"), 0.50))
         self.assertIsNone(civ6_play.below_leader_score_reading(
-            state, self._turn(174, 100, 500, kind="state"), 0.60))
+            state, self._turn(174, 100, 500, kind="state"), 0.50))
         self.assertEqual(civ6_play.below_leader_score_reading(
-            state, self._turn(174, 100, 500), 0.60)["turn"], 174)
+            state, self._turn(174, 100, 500), 0.50)["turn"], 174)
         self.assertEqual(state, {})
 
     def test_zero_or_an_invalid_line_plays_every_game_out(self):
         for ceiling in (0, 0.0, -1, 1.5, True, None, "0.6"):
             with self.subTest(ceiling=ceiling):
                 state = {}
-                for turn in range(150, 190):
+                for turn in range(51, 190):
                     self.assertIsNone(civ6_play.below_leader_score_reading(
                         state, self._turn(turn, 10, 500), ceiling))
                 self.assertEqual(state, {})
@@ -2216,8 +2213,8 @@ class AGameUnderTheLeadersScoreAfterTurn150IsAbandoned(unittest.TestCase):
         """`reason` is the only field saying how a game ended. The harness's
         own stop takes it; a game that exited or stalled in the same poll keeps
         that ending; a refusal still outranks everything."""
-        abandoned = {"rule": "below_leader_score", "turn": 150,
-                     "score_ratio": 0.59, "score_ratio_ceiling": 0.60}
+        abandoned = {"rule": "below_leader_score", "turn": 51,
+                     "score_ratio": 0.49, "score_ratio_ceiling": 0.50}
         state = {"abandoned": abandoned, "seat": {"x": 1}, "configured": True,
                  "ruleset_match": True, "mode_mismatch": False}
         self.assertEqual(civ6_play.summary_reason(state, "stopped"), "abandoned")

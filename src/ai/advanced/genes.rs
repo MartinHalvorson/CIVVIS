@@ -2113,6 +2113,20 @@ pub const GENES: &[Gene] = &[
     // holdable city, then keeps that objective rather than extending a war
     // from an empire-wide army estimate.
     Gene { tag: "city-campaign-2", field: "city_campaign_2", kind: Kind::OptIn, enable: AdvancedAi::enable_city_campaign_2, disable: AdvancedAi::disable_city_campaign_2 },
+    // `strike-reach` (2026-09-02): the battle planner's danger field read a
+    // hostile's reach off `Game::attack_reach`, whose movement flood writes
+    // zero movement into a tile that enters our zone of control — so a melee
+    // unit two tiles off, or a shooter one step out of range, read as no
+    // danger at all. Measured on the seven live games of 2026-09-02 with
+    // the planner on: of 58 units the rotation stood on a tile the field
+    // read as zero and that died there anyway, 36 killers were in sight at
+    // the start of the turn and 34 of them within one move and a blow. This
+    // reads the reach the way the engine resolves the blow (`approach_reach`
+    // keeps the movement a zone-of-control stop leaves), and on the
+    // mirrored board drops the per-unit line-of-sight test a Civilization VI
+    // ranged attack does not make. Priced on the arena beside
+    // `battle-planner-2`. See `advanced/battle_planner.rs`.
+    Gene { tag: "strike-reach", field: "strike_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_strike_reach, disable: AdvancedAi::disable_strike_reach },
     // `doomed-blow-veto` (2026-09-02): the battle planner leaves every unit
     // with a legal blow it did not spend to the ladder, which prices the blow
     // on its own clone and takes it more often than the plan does — and the

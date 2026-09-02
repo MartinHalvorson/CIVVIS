@@ -1912,12 +1912,12 @@ class BatchRefreshSecondsTests(unittest.TestCase):
 
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """The one early stop is forwarded verbatim when the launcher names
-        it; absent, the harness's own 0.40 default holds."""
+        it; absent, the harness's own 0.50 default holds."""
         cmd = climb.play_command(
-            self._play_args(restart_below_leader_ratio=0.40), "t",
+            self._play_args(restart_below_leader_ratio=0.50), "t",
             Path("orders.sqlite"), Path("civvis_orders"))
         self.assertIn("--restart-below-leader-ratio", cmd)
-        self.assertEqual(cmd[cmd.index("--restart-below-leader-ratio") + 1], "0.4")
+        self.assertEqual(cmd[cmd.index("--restart-below-leader-ratio") + 1], "0.5")
         self.assertNotIn(
             "--restart-below-leader-ratio",
             climb.play_command(self._play_args(), "t",
@@ -2267,7 +2267,7 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
 class AbandonedGamesAreNotReloaded(unittest.TestCase):
     """⚠ AN ABANDONED GAME MUST STAY ABANDONED.
 
-    The operator rule retires a run under 60% of the leader at turn 150+. A
+    The operator rule retires a run below half of the leader after turn 50. A
     retirement leaves the turn stale while the end screens settle, which now
     reads as "frozen" — so without this guard the resume path would reload the
     very game the rule had just ended.
