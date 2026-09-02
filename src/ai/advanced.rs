@@ -5101,6 +5101,11 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Version two of `eureka-chasing-builder`: only the final Builder action
+    /// for the technology or civic being researched right now earns a capped
+    /// tiebreak premium. V1's global future-boost bidding remains measurable
+    /// as its own control. Opt-in gene `eureka-chasing-builder-2`.
+    eureka_chasing_builder_2: bool,
     /// Version 2 of `enter-the-prophet-race`: pay the secondary race's entry
     /// fee only when the board-aware religious-opening rank admits this seat.
     /// That requires two cities and an actual or placeable Holy Site, limits
@@ -7449,6 +7454,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            eureka_chasing_builder_2: false,
             enter_the_prophet_race_2: false,
             early_project_restraint_2: false,
             first_district_first: false,
@@ -22443,7 +22449,10 @@ impl AdvancedAi {
     /// this city while a major war is active has stronger evidence: the contact
     /// is a locally competitive hostile force, not merely a scout. Reuse the
     /// same wall-first/local-land-defender order as the damage path so the
-    /// threatened city can reclaim a Settler before the first hit lands.
+    /// threatened city can reclaim a Settler before the first hit lands. If a
+    /// visible hostile can already execute an attack on the City Center, put
+    /// the local defender first: a forty-production wall cannot answer the
+    /// attack that arrives before the wall completes.
     fn preemptive_major_war_defense_item(
         &self,
         g: &Game,
@@ -22451,9 +22460,21 @@ impl AdvancedAi {
         city: u32,
         threatened_city: Option<u32>,
         active_major_war: bool,
+        imminent_attack: bool,
     ) -> Option<Item> {
         if !active_major_war || threatened_city != Some(city) {
             return None;
+        }
+        if imminent_attack {
+            if let Some(unit) = self
+                .base
+                .best_military(g, pid, city, Some(false))
+                .or_else(|| self.base.best_military(g, pid, city, None))
+            {
+                return Some(Item::Unit {
+                    unit: Name::new(&unit),
+                });
+            }
         }
         for building in ["walls", "medieval_walls", "renaissance_walls"] {
             let wall = Item::Building {
@@ -22508,10 +22529,6 @@ impl AdvancedAi {
         pid: usize,
         threatened_city: Option<u32>,
     ) {
-        if !self.base.garrison_under_fire && !self.native_emergency_purchase {
-            return;
-        }
-
         let active_major_war = g.players.iter().any(|player| {
             player.id != pid
                 && player.alive
@@ -22519,6 +22536,24 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
+        // `siege-preempts-the-queue` already supplies an operator-armed
+        // local-defence contract for a barbarian ring. Reuse that contract for
+        // the narrower rival-war case only when the plan has named this city,
+        // the battlefront observation is live, and the war is active. This
+        // keeps the default and frozen controllers byte-identical while making
+        // the existing major-war branch reachable for the deployed live arm
+        // that currently carries `siege-preempts-the-queue`.
+        let armed_major_war_threat = self.base.siege_preempts_the_queue
+            && self.battlefront_observation
+            && active_major_war
+            && threatened_city.is_some();
+        if !self.base.garrison_under_fire
+            && !self.native_emergency_purchase
+            && !armed_major_war_threat
+        {
+            return;
+        }
+        let visible = armed_major_war_threat.then(|| self.battlefront_visibility(g, pid));
         let mut best: Option<(i32, u32, Option<Item>, Item)> = None;
         for city in g.player_city_ids(pid) {
             let committed = g.cities[&city].queue.first().cloned();
@@ -22536,6 +22571,11 @@ impl AdvancedAi {
                 city,
                 threatened_city,
                 active_major_war,
+                armed_major_war_threat
+                    && threatened_city == Some(city)
+                    && visible
+                        .as_ref()
+                        .is_some_and(|visible| Self::imminent_city_attack(g, pid, city, visible)),
             );
             let Some(defence) = siege_defence.or(native_defence).or(preemptive_defence) else {
                 continue;
@@ -38459,6 +38499,12 @@ impl AdvancedAi {
         // (`heritage_tourism`, `satellite_broadcasts`, `sports_media`) are
         // not on an expansion deck.
         self.strategic_policies(g, pid, self.policy_lane(g, pid, &plan));
+        // Defense must read the active war before diplomacy can accept the
+        // plan's peace offer. The planning clone clears `at_war` immediately
+        // when that offer is applied; running this handoff afterward made the
+        // major-war branch disappear on exactly the turn a threatened city
+        // needed it.
+        self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
@@ -38469,12 +38515,6 @@ impl AdvancedAi {
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
 
-        // The baseline emergency chooser only receives empty queues, and the
-        // Recovery governor intentionally preserves active ones. Let the
-        // live-only bleeding response reclaim one unsafe commitment, then let
-        // the existing wall doctrine protect the plan's one threatened city
-        // before it begins taking damage.
-        self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
         self.border_parity_production(g, pid);

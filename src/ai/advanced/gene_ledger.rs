@@ -17,11 +17,13 @@
 //! screens are marked `legacy` in `docs/gene_ledger.json`: history retained
 //! as evidence beside the batch rule's answer.
 //!
-//! ★★★★ THE CURRENT DEPLOYMENT SELECTION (operator, 2026-08-28). A screenable
-//! gene is on exactly when its on arm beat the baseline (`win_delta_pp > 0`) in
-//! **each** of the three latest reporting batches and its displayed pooled
-//! *Diff* is positive; every other screenable gene is off. The chosen tags are
-//! written as `DEPLOYMENT_GENOME`, one version per family.
+//! ★★★★ THE CURRENT DEPLOYMENT SELECTION (operator, 2026-09-02). A screenable
+//! gene is on exactly when the completed-player-seat-weighted average of its
+//! unrounded on-versus-baseline `win_delta_pp` readings from its latest three
+//! reporting batches is strictly greater than +3 wins per 10,000 player seats.
+//! A gene with fewer than three readings uses every available reading; every
+//! other screenable gene is off. The chosen tags are written as
+//! `DEPLOYMENT_GENOME`, one version per family.
 //!
 //! The three displayed batch columns and the historical `batch_rule` remain
 //! recorded as evidence. The selected genome uses
@@ -52,9 +54,9 @@
 //! not a deployment rule; `GENE_HEURISTIC_RANKING.md` prints them beside
 //! the rule's answer.
 //!
-//! Verdicts still say what screens proved; the three current direct
-//! on-versus-baseline readings plus displayed *Diff* decide this explicit
-//! selection.
+//! Verdicts still say what screens proved; the latest three direct
+//! on-versus-baseline readings and their exact completed-seat-weighted average
+//! decide this explicit selection.
 //!
 //! The verdict block at the end of `genes.rs` is **generated** by
 //! `tools/genes.py` from `gene_screen --analyze --json` outputs and
@@ -246,8 +248,9 @@ pub fn deployment_policy() -> &'static str {
     table::DEPLOYMENT_POLICY
 }
 
-/// Whether a tag is in the explicit deployment genome: each selected tag beat
-/// its baseline in all three latest batches and has a positive displayed Diff.
+/// Whether a tag is in the explicit deployment genome: its available latest
+/// three on-versus-baseline readings have a completed-seat-weighted average
+/// strictly above +3 wins per 10,000 player seats.
 pub fn deployment_default_on(tag: &str) -> bool {
     table::DEPLOYMENT_GENOME.contains(&tag)
 }
