@@ -42822,6 +42822,7 @@ fn the_flee_keeps_priority_over_the_owner_step() {
         .commitments()
         .open_for(Kind::Settle, Owner::Unit(settler))
         .is_some());
+}
 // ═══ wounded-out-of-reach ═══════════════════════════════════════════════════
 
 /// `wounded-out-of-reach` is a native opt-in, off in both controllers, with
