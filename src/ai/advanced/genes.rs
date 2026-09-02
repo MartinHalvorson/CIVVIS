@@ -1959,8 +1959,8 @@ pub const GENES: &[Gene] = &[
 
     Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
     // Replace v1's global opening timer with a concrete, currently buildable
-    // first-building debt in the project's own district. A developed city
-    // may race immediately; an undeveloped one waits at any turn.
+    // first-building debt in the project's own district. Lane-aligned points
+    // and immediate race swings stay live; only off-lane churn waits.
     Gene { tag: "early-project-restraint-2", field: "early_project_restraint_2", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint_2, disable: AdvancedAi::disable_early_project_restraint_2 },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

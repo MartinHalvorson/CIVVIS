@@ -17702,10 +17702,18 @@ fn project_restraint_v2_reads_first_building_debt_instead_of_a_clock() {
     let city = game.player_city_ids(0)[0];
     install_ai_test_district(&mut game, city, "campus");
     game.players[0].techs.insert(crate::name!("writing"));
+    // Keep the valuation above the restraint cap even in an off-lane plan,
+    // so this test observes the gate rather than an already-cheap project.
+    std::sync::Arc::make_mut(&mut game.rules)
+        .projects
+        .get_mut("campus_research_grants")
+        .unwrap()
+        .ongoing_yields
+        .insert("culture".to_string(), 1_000.0);
     game.turn = 51;
 
     let plan = StrategicPlan {
-        strategy: GrandStrategy::Science,
+        strategy: GrandStrategy::Culture,
         target_player: None,
         target_city: None,
         threatened_city: None,
@@ -17734,6 +17742,18 @@ fn project_restraint_v2_reads_first_building_debt_instead_of_a_clock() {
         v2.district_project_value(&game, 0, city, "campus_research_grants", &plan),
         EARLY_GPP_PROJECT_FALLBACK_CAP,
         "v2 must wait while the Campus can build its first Library"
+    );
+
+    let science_plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        ..plan.clone()
+    };
+    let science_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &science_plan);
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &science_plan,),
+        science_stock,
+        "a Scientist project must remain live for the Science lane even before its Library"
     );
 
     let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];

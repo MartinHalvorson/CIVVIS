@@ -5013,7 +5013,9 @@ pub struct AdvancedAi {
     // ---- append: e-f ------------------------------------------------
     /// Version 2 of `early-project-restraint`: a repeatable Great-Person
     /// project waits only while its own district owes a first building that
-    /// this city can start now. The arbitrary opening clock is gone.
+    /// this city can start now, and only when its points do not serve the
+    /// empire's active lane or change the live race immediately. The arbitrary
+    /// opening clock is gone.
     /// Opt-in gene `early-project-restraint-2`.
     early_project_restraint_2: bool,
     /// `first-district-first`: a city's FIRST specialty district outranks
@@ -12323,6 +12325,33 @@ impl AdvancedAi {
         })
     }
 
+    /// Whether any completion points advance the empire's active lane.
+    ///
+    /// A Science empire should not sacrifice its Scientist race merely to
+    /// finish a Library first; the project's normal value already compares
+    /// that race with the building. V2's restraint is for off-lane project
+    /// churn, where a concrete first building is the compounding move.
+    fn project_serves_great_person_lane(
+        lane: GrandStrategy,
+        awards: &BTreeMap<String, f64>,
+    ) -> bool {
+        awards.iter().any(|(kind, award)| {
+            *award > f64::EPSILON
+                && match lane {
+                    GrandStrategy::Science => matches!(kind.as_str(), "scientist" | "engineer"),
+                    GrandStrategy::Culture => {
+                        matches!(kind.as_str(), "writer" | "artist" | "musician")
+                    }
+                    GrandStrategy::Religion => kind == "prophet",
+                    GrandStrategy::Diplomacy => kind == "merchant",
+                    GrandStrategy::Conquest => matches!(kind.as_str(), "general" | "admiral"),
+                    GrandStrategy::Expansion | GrandStrategy::Recovery => {
+                        matches!(kind.as_str(), "engineer" | "merchant")
+                    }
+                }
+        })
+    }
+
     /// Evaluate a repeatable district project as a bounded race move. The
     /// ongoing conversion is valued over the actual build horizon, while the
     /// completion award is priced against the live global Great Person race.
@@ -12365,6 +12394,7 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
+        let great_person_lane = self.great_person_lane(g, pid, plan);
         let repeatable_gpp_project = spec.repeatable && !spec.completion_gpp.is_empty();
         let named_race_exception = Self::early_project_race_exception(g, pid, &gpp_awards);
         let early_gpp_project_restrained = repeatable_gpp_project
@@ -12373,6 +12403,7 @@ impl AdvancedAi {
                 && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS))
                 || (self.early_project_restraint_2
                     && Self::project_first_building_debt(g, pid, cid, project)
+                    && !Self::project_serves_great_person_lane(great_person_lane, &gpp_awards)
                     && !Self::project_changes_great_person_race(g, pid, &gpp_awards)));
         let host_competition_gpp_scores = [
             (
@@ -12395,7 +12426,6 @@ impl AdvancedAi {
         // out of the loop: `raced_lane` short-circuits on any plan that is not
         // `Expansion`, but `victory_focus` behind it is an empire-wide sweep
         // and this is `production_value`'s hot path.
-        let great_person_lane = self.great_person_lane(g, pid, plan);
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
