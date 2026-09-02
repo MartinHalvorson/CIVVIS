@@ -1963,6 +1963,55 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertNotIn("EndTurnBlockingChanged = onGameCoreTick", self.source)
 
 
+class CivvisEnvoyBlockerRecoveryTest(unittest.TestCase):
+    """A skipped optional envoy prompt must not wedge a CIVVIS seat.
+
+    The owner continuation `civvis-20260902T055200Z-cont4` reached turn 146
+    with the CIVVIS answer complete, then stopped after
+    `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` was answered `civvis_complete`.
+    The prompt is not a token-spending decision here: CIVVIS can keep the token
+    for a later board. It is the native "considered" flag that must be cleared,
+    followed by the forced end-turn fallback because a quiet Game Core cannot be
+    expected to publish a second sighting.
+    """
+
+    def setUp(self) -> None:
+        self.source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def test_the_prompt_is_marked_with_a_fresh_influence_handle(self) -> None:
+        helper = self.source.split("CivvisMarkEnvoyConsidered = function", 1)[1].split(
+            "local function currentBlocker", 1
+        )[0]
+        self.assertIn("player:GetInfluence()", helper)
+        self.assertIn("fresh:IsGivingTokensConsidered()", helper)
+        self.assertIn("fresh:SetGivingTokensConsidered(true)", helper)
+        self.assertIn("return ran and marked == true", helper)
+
+    def test_the_first_civvis_envoy_blocker_sighting_dismisses_and_forces(self) -> None:
+        handler = self.source.split("local blocker = currentBlocker(pid);", 1)[1].split(
+            "-- Only if the same blocker", 1
+        )[0]
+        envoy = handler.split(
+            'if name == "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" then', 1
+        )[1].split("\n\t\t\t\t\t\tend", 1)[0]
+        self.assertIn("CivvisMarkEnvoyConsidered(player)", envoy)
+        self.assertIn("dismissBlocker(pid, blocker)", envoy)
+        self.assertIn("same_pass_forced = true", envoy)
+        self.assertIn('REASON = "UserForced"', envoy)
+        self.assertLess(
+            envoy.index("CivvisMarkEnvoyConsidered(player)"),
+            envoy.index("dismissBlocker(pid, blocker)"),
+        )
+
+    def test_the_civvis_envoy_order_arm_still_does_not_spend_or_clear(self) -> None:
+        handler = self.source.split('if kind == "envoy" then', 1)[1].split(
+            "\n\t-- ★★★★★ CIVVIS'S OWN POLICY", 1
+        )[0]
+        self.assertNotIn("CivvisMarkEnvoyConsidered", handler)
+        self.assertNotIn("SetGivingTokensConsidered", handler)
+        self.assertNotIn("envoySpendOrder", handler)
+
+
 class PeacetimeWarFloorsTest(unittest.TestCase):
     """On a CIVVIS seat, the ladder's war floors require an actual war.
 
