@@ -4711,6 +4711,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Version 2 of `coalition-before-war`: make one strike-time joint-war
+    /// invitation to a credible partner, without alliance or Envoy setup.
+    /// Opt-in gene `coalition-before-war-2`; see `advanced/coalition.rs`.
+    coalition_before_war_2: bool,
     /// `campus-through-expansion`: a Science seat prices the Campus and its
     /// buildings in the Science lane while its plan still reads Expansion,
     /// and no city's first specialty district may be an Entertainment
@@ -7169,6 +7173,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            coalition_before_war_2: false,
             campus_through_expansion: false,
             district_planning_2: false,
             cheapest_wonder_first: false,

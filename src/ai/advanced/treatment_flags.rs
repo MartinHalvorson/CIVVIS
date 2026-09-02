@@ -2269,6 +2269,7 @@ impl AdvancedAi {
     /// first identifier.
     pub fn enable_coalition_before_war(&mut self) {
         self.coalition_before_war = true;
+        self.coalition_before_war_2 = false;
     }
 
     /// The twin of `enable_coalition_before_war`.
@@ -3586,6 +3587,22 @@ impl AdvancedAi {
     /// The twin of `enable_never_an_empty_queue_3`.
     pub fn disable_never_an_empty_queue_3(&mut self) {
         self.never_an_empty_queue_3 = false;
+    }
+
+    /// At the ready strike, invite one credible neighbour to a joint war and
+    /// wait no more than one turn. Credible means the target is close to a
+    /// victory or the partner has the grievance and combined power that make
+    /// the Basic controller accept. Unlike version one, this performs no
+    /// alliance courtship, diverts no Envoys and never retries. Opt-in gene
+    /// `coalition-before-war-2`.
+    pub fn enable_coalition_before_war_2(&mut self) {
+        self.coalition_before_war_2 = true;
+        self.coalition_before_war = false;
+    }
+
+    /// The twin of `enable_coalition_before_war_2`.
+    pub fn disable_coalition_before_war_2(&mut self) {
+        self.coalition_before_war_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

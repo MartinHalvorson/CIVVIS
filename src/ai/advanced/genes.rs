@@ -1916,6 +1916,9 @@ pub const GENES: &[Gene] = &[
     // V2 waits for a Eureka only when its final trigger is already queued and
     // the node is within two turns. The broad v1 remains measurable.
     Gene { tag: "boost-wait-research-2", field: "boost_wait_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research_2, disable: AdvancedAi::disable_boost_wait_research_2 },
+    // Version 2 of `coalition-before-war`: no alliance proposals or Envoy
+    // diversion, just one credible joint-war invitation at the ready strike.
+    Gene { tag: "coalition-before-war-2", field: "coalition_before_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_coalition_before_war_2, disable: AdvancedAi::disable_coalition_before_war_2 },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
