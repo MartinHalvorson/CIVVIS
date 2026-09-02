@@ -376,15 +376,32 @@ def utc_stamp() -> str:
 #: measured at 3.8 s between the board going out and the first poll on the live
 #: Emperor lane (run civvis-20260901T195234Z, receipt-stamped events), paid on the
 #: opening board and again on every replan frame, while the brain answered 50 ms
-#: after the board reached it. Four ticks polls ~7.5× as often and is still
-#: 64 publish batches apart — an order of magnitude short of the every-publish
-#: query that deadlocked run 20260730T110209Z.
-ORDERS_POLL_TICKS = 4
-#: The three poll budgets, scaled by the same 30/4 so every wall-clock allowance
-#: is exactly what it was (`test_poll_budgets_keep_their_wall_clock`).
-ORDERS_WAIT_POLLS = 300
-ORDERS_FALLBACK_POLLS = 900
-COMBAT_FRAME_POLLS = 150
+#: after the board reached it. Four ticks polled ~7.5× as often and cut early
+#: turns about fourfold.
+#:
+#: ★★★★★ AND THE REMAINDER IS STILL A FIFTH OF EVERY GAME. Measured 2026-09-02
+#: over every `state` → its `orders` on the live Emperor lane, which is the mod's
+#: poll interval plus the brain's 50 ms:
+#:
+#:     civvis-20260902T095330Z  534 waits  median 0.94s  12.27 min  17.9 % of the run
+#:     civvis-20260902T040909Z  480 waits  median 0.98s  12.91 min  23.0 %
+#:     civvis-20260902T181200Z  335 waits  median 0.63s   6.01 min  18.2 %
+#:
+#: A board arrives at a uniformly random point inside the interval, so the mean
+#: wait is half of it and halving the interval halves the wait: 3-6.5 min back
+#: per game. Two ticks is still 32 publish batches apart — thirty-two times the
+#: every-publish query that deadlocked run 20260730T110209Z, and the floor
+#: `test_the_mod_never_polls_on_every_tick` has always allowed.
+#:
+#: ⚠ Do not go to 1. That IS the every-publish query, and it deadlocked a run.
+ORDERS_POLL_TICKS = 2
+#: The three poll budgets, scaled by the same 30/2 so every wall-clock allowance
+#: is exactly what it was (`test_poll_budgets_keep_their_wall_clock` pins the
+#: products at 1200, 3600 and 600 ticks; change one of these four and that test
+#: fails until the other three follow).
+ORDERS_WAIT_POLLS = 600
+ORDERS_FALLBACK_POLLS = 1800
+COMBAT_FRAME_POLLS = 300
 
 
 def startup_event_proves_game_started(event: dict) -> bool:
