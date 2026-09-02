@@ -11226,9 +11226,8 @@ impl AdvancedAi {
                                         .filter(|player| player.is_minor)
                                         .filter(|player| {
                                             self.campaign_target_legal(g, pid, player.id)
-                                                && self.war_policy_target_feasible(
-                                                    g, pid, player.id,
-                                                )
+                                                && self
+                                                    .war_policy_target_feasible(g, pid, player.id)
                                         })
                                         .map(|player| player.id),
                                 );
