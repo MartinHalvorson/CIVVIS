@@ -1860,6 +1860,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
     Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
     Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
+    // Appended at the END, above the markers, so a running screen keeps its
+    // positional genome. The 2026-09-01 Emperor foundations: the Campus
+    // through the Expansion plan, the trade network, the Industrial chain.
+    Gene { tag: "campus-through-expansion", field: "campus_through_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_through_expansion, disable: AdvancedAi::disable_campus_through_expansion },
+    Gene { tag: "trade-route-network", field: "trade_route_network", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_route_network, disable: AdvancedAi::disable_trade_route_network },
+    Gene { tag: "industrial-chain-debt", field: "industrial_chain_debt", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_chain_debt, disable: AdvancedAi::disable_industrial_chain_debt },
     // Appended at the END so a running screen keeps its positional genome.
     // 461 of our units died in combat across the 32 live runs of 2026-08-30..09-01,
     // 408 to barbarians; 352 were at or below 50 HP at the killing blow, 334 had been

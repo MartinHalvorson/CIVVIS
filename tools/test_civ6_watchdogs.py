@@ -181,6 +181,29 @@ class CivilianLossTest(unittest.TestCase):
             )
         ))
 
+    def test_observed_improvement_pairs_last_charge_builder_without_verification(self) -> None:
+        # A retired live run can contain the host acceptance witness but not the
+        # later order_verified callback. The improvement event has no Builder id,
+        # so the last host position is the conservative join key.
+        events = [
+            {"kind": "state", "turn": 8, "units": [
+                {"id": 17, "kind": "UNIT_BUILDER", "build_charges": 1,
+                 "x": 3, "y": 4},
+            ]},
+            {"kind": "host_move", "turn": 8, "unit": 17,
+             "unit_kind": "UNIT_BUILDER", "x": 4, "y": 5},
+            {"kind": "improved", "turn": 8, "x": 4, "y": 5,
+             "im": "IMPROVEMENT_FARM"},
+            {"kind": "unit_lost", "turn": 8, "unit": 17,
+             "unit_kind": "UNIT_BUILDER"},
+        ]
+
+        report = civ6_watchdogs.civilian_losses(events)
+
+        self.assertEqual(report["expected_builder_consumptions"], 1)
+        self.assertEqual(report["non_founding_losses"], 0)
+        self.assertEqual(report["unresolved_losses"], 0)
+
     def test_civilian_loss_is_a_loud_verdict(self) -> None:
         report = {"civilian_losses": {
             "non_founding_losses": 2,

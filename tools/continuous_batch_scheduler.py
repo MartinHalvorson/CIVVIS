@@ -74,6 +74,12 @@ DEFAULT_POLL_SECONDS = 300.0
 INITIAL_CHECK_TIMEOUT_SECONDS = 20 * 60.0
 DEADLINE_TERMINATION_GRACE_SECONDS = 30.0
 ACTIVE_SEGMENT_POLL_SECONDS = 5.0
+# An operator's ``cut`` request is a file beside the state, adopted by the
+# running daemon within this many seconds.  It never needs the daemon's lock.
+CUT_REQUEST_SCHEMA = "continuous_batch_cut_request/v1"
+CUT_REQUEST_NAME = "cut-request.json"
+CUT_REQUEST_POLL_SECONDS = 1.0
+DEADLINE_REQUESTED_VIA_CUT = "cut_request"
 
 
 class SchedulerError(RuntimeError):
@@ -326,7 +332,16 @@ def load_state(path: Path, *, seed_floor: int | None, goal_games: int,
                 and state["goal_completed_games"] == next_goal_games
                 and deadline is None
             )
-            if not consumed_deadline and not successor_rotation:
+            # A ``cut`` deadline was never a command-line contract: the daemon
+            # wrote it itself, its successor goal is the original goal, so the
+            # unchanged service arguments must keep loading the frozen state.
+            cut_deadline = (
+                isinstance(deadline, dict)
+                and deadline.get("requested_via") == DEADLINE_REQUESTED_VIA_CUT
+                and deadline.get("original_goal_completed_games") == goal_games
+                and deadline.get("cutoff_at") is not None
+            )
+            if not consumed_deadline and not successor_rotation and not cut_deadline:
                 raise SchedulerError(
                     f"state has a {state['goal_completed_games']:,}-game boundary, not "
                     f"the requested {goal_games:,}. Start a distinct state directory instead.")
@@ -619,23 +634,29 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
             "process_group": process.pid,
             "started_at": utc_now(),
             "launch_state": "running",
+            "complete_games_at_start": int(batch.get("complete_games") or 0),
         })
         atomic_json(state_pathname, state)
+        print(f"{utc_now()} segment_started seed_first={reservation['seed_first']} "
+              f"target_games={reservation['target_games']} pid={process.pid}", flush=True)
         stopped_at_deadline = False
         stopped_at: str | None = None
         try:
             while True:
-                if deadline_at is None:
-                    returncode = process.wait()
-                    break
-                seconds_left = (deadline_at - dt.datetime.now(dt.timezone.utc)).total_seconds()
-                if seconds_left <= 0:
-                    stopped_at_deadline = True
-                    stopped_at = utc_now()
-                    returncode = terminate_owned_process(process)
-                    break
+                adopted = adopt_cut_request(state_root, state_pathname, state)
+                if adopted is not None:
+                    deadline_at = adopted
+                wait_seconds = CUT_REQUEST_POLL_SECONDS
+                if deadline_at is not None:
+                    seconds_left = (deadline_at - dt.datetime.now(dt.timezone.utc)).total_seconds()
+                    if seconds_left <= 0:
+                        stopped_at_deadline = True
+                        stopped_at = utc_now()
+                        returncode = terminate_owned_process(process)
+                        break
+                    wait_seconds = min(seconds_left, CUT_REQUEST_POLL_SECONDS)
                 try:
-                    returncode = process.wait(timeout=min(seconds_left, 1.0))
+                    returncode = process.wait(timeout=wait_seconds)
                     break
                 except subprocess.TimeoutExpired:
                     continue
@@ -692,6 +713,10 @@ def verify_deadline_invocation(state: dict[str, Any], *, deadline_at: dt.datetim
     deadline = state["current"].get("deadline")
     if deadline_at is None:
         if isinstance(deadline, dict) and deadline.get("cutoff_at") is None:
+            if deadline.get("requested_via") == DEADLINE_REQUESTED_VIA_CUT:
+                # The daemon persisted this one itself from a cut request; a
+                # restart re-reads it from state, so nothing can be lost.
+                return
             raise SchedulerError("this running state has a deadline; pass its --deadline-at again")
         return
     if next_goal_games is None:
@@ -823,6 +848,118 @@ def snapshot_complete_prefix(raw_rows: Path, target: Path) -> tuple[dict[str, An
             pass
         raise SchedulerError(f"deadline ledger cannot be safely frozen: {error}") from error
     return status, dropped_records
+
+
+def cut_request_path(state_root: Path) -> Path:
+    return state_root / CUT_REQUEST_NAME
+
+
+def write_cut_request(state_root: Path, *, deadline_at: dt.datetime,
+                      note: str | None = None) -> Path:
+    """Ask the running scheduler to stop at ``deadline_at`` and freeze what it has.
+
+    The request is a file beside the state, so it never needs the daemon's
+    exclusive lock, a restart, or a hand-edited state file.  The daemon adopts
+    it within a second into the same ``continuous_batch_deadline/v1`` block a
+    ``--deadline-at`` launch persists, so the snapshot, validation and audit
+    trail are the tool's.  The successor rotation keeps the original goal.
+    """
+    path = cut_request_path(state_root)
+    if path.exists():
+        raise SchedulerError(
+            f"a cut request is already pending at {path}; the scheduler has not adopted it "
+            "(is it running?)")
+    request: dict[str, Any] = {
+        "schema": CUT_REQUEST_SCHEMA,
+        "deadline_at": utc_timestamp(deadline_at),
+        "requested_at": utc_now(),
+    }
+    if note:
+        request["note"] = note
+    atomic_json(path, request)
+    return path
+
+
+def adopt_cut_request(state_root: Path, state_pathname: Path,
+                      state: dict[str, Any]) -> dt.datetime | None:
+    """Install a pending cut request as the running batch's deadline.
+
+    Returns the adopted deadline, or ``None`` when nothing is pending.  A
+    request that cannot apply is kept beside the state under a ``.rejected``
+    name with its reason: the daemon never dies over an operator file, and the
+    operator can read why nothing happened.
+    """
+    path = cut_request_path(state_root)
+    if not path.exists():
+        return None
+    batch = state["current"]
+    raw = path.read_text(encoding="utf-8")
+    try:
+        try:
+            request = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise SchedulerError(f"cut request is not JSON: {error}") from error
+        if not isinstance(request, dict) or request.get("schema") != CUT_REQUEST_SCHEMA:
+            raise SchedulerError(f"cut request schema must be {CUT_REQUEST_SCHEMA!r}")
+        deadline_at = parse_utc_timestamp(request.get("deadline_at"), name="cut request deadline")
+        if batch["phase"] != "running":
+            raise SchedulerError(f"batch is {batch['phase']!r}, not running")
+        if batch_deadline(batch) is not None:
+            raise SchedulerError("batch already has an unconsumed deadline")
+    except SchedulerError as error:
+        rejected = path.with_name(
+            f"cut-request.rejected-{utc_now().replace(':', '')}-{secrets.token_hex(2)}.json")
+        atomic_json(rejected, {"rejected": str(error), "request": raw})
+        path.unlink()
+        print(f"{utc_now()} cut_request_rejected {error}", flush=True)
+        return None
+    batch["deadline"] = {
+        "schema": CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+        "deadline_at": utc_timestamp(deadline_at),
+        "next_goal_completed_games": positive_int(
+            batch.get("goal_completed_games"), name="cut successor goal"),
+        "requested_via": DEADLINE_REQUESTED_VIA_CUT,
+        "requested_at": request.get("requested_at"),
+    }
+    if request.get("note"):
+        batch["deadline"]["note"] = str(request["note"])
+    # Durable first: once the state names the deadline a restart honours it.
+    atomic_json(state_pathname, state)
+    adopted = batch_directory(state_root, batch) / CUT_REQUEST_NAME
+    adopted.parent.mkdir(parents=True, exist_ok=True)
+    path.replace(adopted)
+    print(f"{utc_now()} cut_request_adopted deadline_at={batch['deadline']['deadline_at']}",
+          flush=True)
+    return deadline_at
+
+
+def read_state(state_root: Path) -> dict[str, Any]:
+    """Read an existing state file without the daemon's lock or goal reconciliation."""
+    path = state_root / "scheduler-state.json"
+    if not path.exists():
+        raise SchedulerError(f"no scheduler state at {path}")
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SchedulerError(f"state {path} is invalid JSON: {error}") from error
+    if not isinstance(state, dict):
+        raise SchedulerError(f"state {path} is not an object")
+    validate_state(state)
+    return state
+
+
+def scheduler_is_running(state_root: Path) -> bool:
+    """True when another process holds this state directory's exclusive lock."""
+    lock_path = state_root / "scheduler.lock"
+    if not lock_path.exists():
+        return False
+    with lock_path.open("a+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    return False
 
 
 def seal_deadline_cutoff(state_root: Path, state_pathname: Path, state: dict[str, Any], *,
@@ -1378,6 +1515,8 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
          jobs: int, machine: str | None, agent: str | None, publish: bool) -> str:
     """Advance one durable boundary: a segment, freeze, publication, or rotation."""
     batch = state["current"]
+    if batch["phase"] == "running":
+        adopt_cut_request(state_root, state_pathname, state)
     deadline = batch_deadline(batch)
     now = dt.datetime.now(dt.timezone.utc)
     live = active_reservation(batch) if batch["phase"] == "running" else None
@@ -1465,19 +1604,76 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
     raise SchedulerError(f"unsupported batch phase {phase!r}")
 
 
-def print_status(state_root: Path, state: dict[str, Any]) -> None:
+def status_report(state_root: Path, state: dict[str, Any]) -> dict[str, Any]:
+    """One machine-readable status: progress, rate, ETA, daemon and cut state.
+
+    Reads rows through the validated reader only; it never persists anything,
+    so it is safe while the daemon owns the state directory.
+    """
     batch = state["current"]
     status = refresh_status(state_root, state)
+    goal = int(batch["goal_completed_games"])
+    complete = int(status["complete_games"])
+    live = active_reservation(batch) if batch["phase"] == "running" else None
+    rate_per_hour: float | None = None
+    eta_at: str | None = None
+    if live is not None and live.get("launch_state") == "running" \
+            and isinstance(live.get("complete_games_at_start"), int):
+        started = parse_utc_timestamp(live.get("started_at"), name="live segment start")
+        elapsed = (dt.datetime.now(dt.timezone.utc) - started).total_seconds()
+        played = complete - int(live["complete_games_at_start"])
+        if elapsed >= 60 and played > 0:
+            rate_per_hour = round(played * 3600.0 / elapsed, 1)
+            remaining = goal - complete
+            eta = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+                seconds=remaining * elapsed / played)
+            eta_at = utc_timestamp(eta.replace(microsecond=0))
+    deadline = batch.get("deadline") if isinstance(batch.get("deadline"), dict) else None
+    return {
+        "schema": "continuous_batch_status/v1",
+        "state_dir": str(state_root),
+        "batch": batch["id"],
+        "phase": batch["phase"],
+        "complete_games": complete,
+        "complete_seats": int(status["complete_seats"]),
+        "goal_completed_games": goal,
+        "remaining_games": goal - complete,
+        "reserved_segments": len(batch["reservations"]),
+        "next_seed": state["next_seed"],
+        "publication": batch["publication"].get("stage", "not_started"),
+        "publication_pr": batch["publication"].get("pr_number"),
+        "source_commit": (batch.get("source") or {}).get("commit"),
+        "scheduler_running": scheduler_is_running(state_root),
+        "cut_request_pending": cut_request_path(state_root).exists(),
+        "deadline_at": deadline.get("deadline_at") if deadline else None,
+        "deadline_cutoff_at": deadline.get("cutoff_at") if deadline else None,
+        "games_per_hour": rate_per_hour,
+        "eta_at": eta_at,
+    }
+
+
+def print_status(state_root: Path, state: dict[str, Any], *, as_json: bool = False) -> None:
+    report = status_report(state_root, state)
+    if as_json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
     print("continuous completed-game scheduler")
-    print(f"  batch: {batch['id']} ({batch['phase']})")
-    print(f"  complete: {status['complete_games']:,} games / {status['complete_seats']:,} seats")
-    print(f"  boundary: {batch['goal_completed_games']:,} validated completed games")
-    print(f"  reserved segments: {len(batch['reservations'])}; next seed: {state['next_seed']:,}")
-    print(f"  publication: {batch['publication'].get('stage', 'not_started')}")
-    deadline = batch.get("deadline")
-    if isinstance(deadline, dict):
-        suffix = " (cut off)" if deadline.get("cutoff_at") is not None else ""
-        print(f"  deadline: {deadline.get('deadline_at')}{suffix}")
+    print(f"  batch: {report['batch']} ({report['phase']})")
+    print(f"  complete: {report['complete_games']:,} games / {report['complete_seats']:,} seats")
+    print(f"  boundary: {report['goal_completed_games']:,} validated completed games "
+          f"({report['remaining_games']:,} remaining)")
+    if report["games_per_hour"] is not None:
+        print(f"  rate: {report['games_per_hour']:,} games/hour; boundary ETA {report['eta_at']}")
+    print(f"  reserved segments: {report['reserved_segments']}; next seed: {report['next_seed']:,}")
+    print(f"  source: {report['source_commit'] or 'not pinned yet'}")
+    pr = f" (PR #{report['publication_pr']})" if report["publication_pr"] else ""
+    print(f"  publication: {report['publication']}{pr}")
+    print(f"  scheduler: {'running (lock held)' if report['scheduler_running'] else 'not running'}")
+    if report["cut_request_pending"]:
+        print("  cut request: pending, not yet adopted")
+    if report["deadline_at"] is not None:
+        suffix = f" (cut off at {report['deadline_cutoff_at']})" if report["deadline_cutoff_at"] else ""
+        print(f"  deadline: {report['deadline_at']}{suffix}")
 
 
 def machine_from_config(repo: Path) -> str | None:
@@ -1488,7 +1684,12 @@ def machine_from_config(repo: Path) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("run", "status"), nargs="?", default="run")
+    parser.add_argument("command", choices=("run", "status", "cut", "publish"), nargs="?",
+                        default="run",
+                        help=("run: serve rotations (the launchd service); status: read-only "
+                              "progress, safe while the service runs; cut: ask the running "
+                              "service to freeze at --at/--in and stop; publish: open the "
+                              "table PR for a frozen batch once (used after --no-publish)"))
     parser.add_argument("--state-dir", type=Path, required=True,
                         help="private durable scheduler state and batch rows")
     parser.add_argument("--repo", type=Path, default=ROOT,
@@ -1514,8 +1715,46 @@ def main(argv: list[str] | None = None) -> int:
                         help="perform one durable transition instead of serving forever")
     parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS,
                         help="retry delay after a clean interrupted segment")
+    parser.add_argument("--json", action="store_true",
+                        help="status: print one JSON object instead of text")
+    parser.add_argument("--at", metavar="UTC",
+                        help="cut: absolute ISO-8601 instant to stop at (default: now)")
+    parser.add_argument("--in", dest="in_minutes", type=float, metavar="MINUTES",
+                        help="cut: stop this many minutes from now")
+    parser.add_argument("--note", help="cut: free-text reason kept in the deadline record")
     args = parser.parse_args(argv)
     try:
+        if args.command == "status":
+            state_root = args.state_dir.expanduser().resolve()
+            print_status(state_root, read_state(state_root), as_json=args.json)
+            return 0
+        if args.command == "cut":
+            state_root = args.state_dir.expanduser().resolve()
+            if args.at is not None and args.in_minutes is not None:
+                raise SchedulerError("cut takes --at or --in, not both")
+            if args.in_minutes is not None and args.in_minutes < 0:
+                raise SchedulerError("--in must not be negative")
+            deadline_at = (parse_utc_timestamp(args.at, name="--at") if args.at is not None
+                           else dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+                           + dt.timedelta(minutes=args.in_minutes or 0.0))
+            state = read_state(state_root)
+            batch = state["current"]
+            if batch["phase"] != "running":
+                raise SchedulerError(
+                    f"batch {batch['id']} is {batch['phase']!r}; only a running batch can be cut")
+            if batch_deadline(batch) is not None:
+                raise SchedulerError("this batch already has a pending deadline")
+            path = write_cut_request(state_root, deadline_at=deadline_at, note=args.note)
+            running = scheduler_is_running(state_root)
+            print(f"cut request written: {path}")
+            print(f"  stop at: {utc_timestamp(deadline_at)}")
+            print("  the running scheduler adopts it within a few seconds, stops the games at "
+                  "that instant, freezes the validated prefix and exits awaiting publication."
+                  if running else
+                  "  WARNING: no scheduler holds this state directory; the request waits until "
+                  "one starts.")
+            print(f"  watch: python3 {Path(__file__).name} status --state-dir {state_root}")
+            return 0
         goal = positive_int(args.goal_games, name="--goal-games")
         deadline_at = (parse_utc_timestamp(args.deadline_at, name="--deadline-at")
                        if args.deadline_at else None)
@@ -1546,19 +1785,28 @@ def main(argv: list[str] | None = None) -> int:
                 deadline_at=deadline_at, next_goal_games=next_goal_games)
             if not state_file.exists():
                 atomic_json(state_file, state)
-            if args.command == "status":
-                print_status(state_root, state)
-                return 0
             verify_deadline_invocation(
                 state, deadline_at=deadline_at, next_goal_games=next_goal_games)
             machine = args.machine or machine_from_config(repo)
+            publish = not args.no_publish
+            once = args.once
+            if args.command == "publish":
+                phase = state["current"]["phase"]
+                if phase not in {"frozen", "publishing"}:
+                    raise SchedulerError(
+                        f"batch {state['current']['id']} is {phase!r}; publish applies to a "
+                        "frozen batch (cut or complete one first)")
+                publish, once = True, True
             while True:
                 outcome = tick(
                     state_root, state_file, state, repo=repo, jobs=jobs,
-                    machine=machine, agent=args.publisher_agent, publish=not args.no_publish,
+                    machine=machine, agent=args.publisher_agent, publish=publish,
                 )
                 print(f"{utc_now()} {outcome}", flush=True)
-                if args.once or outcome in {"awaiting_publication"}:
+                if outcome == "published":
+                    print("next: restart the scheduler service (launchctl kickstart -k gui/$UID/<label>) "
+                          "so it rotates onto the merge commit and starts the next batch", flush=True)
+                if once or outcome in {"awaiting_publication"}:
                     return 0
                 if outcome == "partial_segment":
                     time.sleep(args.poll_seconds)
