@@ -5984,6 +5984,14 @@ fn civvis_node_name<T>(
             "ethiopian_oromo_cavalry" => Some("oromo_cavalry"),
             "maori_toa" => Some("toa"),
             "chinese_crouching_tiger" => Some("crouching_tiger"),
+            "gaul_gaesatae" => Some("gaesatae"),
+            "japanese_samurai" => Some("samurai"),
+            "macedonian_hypaspist" => Some("hypaspist"),
+            "indian_varu" => Some("varu"),
+            "mali_mandekalu_cavalry" => Some("mandekalu_cavalry"),
+            "russian_cossack" => Some("cossack"),
+            "american_rough_rider" => Some("rough_rider"),
+            "vietnamese_voi_chien" => Some("voi_chien"),
             "lahore_nihang" => Some("nihang"),
             "antiair_gun" => Some("anti_air_gun"),
             _ => None,
@@ -6125,9 +6133,9 @@ fn civvis_unit_name(civ6: &str) -> String {
         // Firaxis retained Poland's implementation id after the unit's display
         // name became Winged Hussar.
         "polish_hussar" => "winged_hussar".to_string(),
-        // CIVVIS does not yet carry these unique unit specifications. Firaxis's
-        // own UnitReplaces table names their exact stock role, which is preferable
-        // to deleting a visible hostile from the board entirely.
+        // These two unique unit specifications are still absent from CIVVIS.
+        // Firaxis's own UnitReplaces table names their exact stock role, which
+        // is preferable to deleting a visible hostile from the board entirely.
         "scottish_highlander" => "ranger".to_string(),
         "korean_hwacha" => "field_cannon".to_string(),
         _ => base,
@@ -6148,8 +6156,9 @@ fn civvis_improvement_name(civ6: &str) -> String {
 
 /// The CIVVIS unit that stands in for a Civilization VI promotion class, for a
 /// unique whose own name is unmodelled and that REPLACES nothing — `UnitReplaces`
-/// has no row for a Malón Raider, a Varu or a Nihang, so the `base` fallback one
-/// rung up never fires for them.
+/// has no row for a Malón Raider or a Nihang, so the `base` fallback one rung up
+/// never fires for them. Varu is now modeled exactly and therefore no longer
+/// reaches this class fallback.
 ///
 /// Run `civvis-20260801T175955Z` was LOST at turn 140 with two
 /// `UNIT_MAPUCHE_MALON_RAIDER` sitting two tiles from the final city, dropped as
