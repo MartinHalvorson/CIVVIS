@@ -2355,6 +2355,15 @@ pub struct StateGreatPerson {
     /// recruitment, so the unit carries its own copy into the production AI.
     #[serde(default)]
     pub required_district: Option<String>,
+    /// Firaxis `ActionRequiresMissingBuildingType` for this exact physical
+    /// individual. The building must be absent: some activations, such as
+    /// James of St. George's, supply it themselves.
+    #[serde(default)]
+    pub required_missing_building: Option<String>,
+    /// Firaxis `ActionRequiresCityGreatWorkObjectType` for this exact physical
+    /// individual, for example `GREATWORKOBJECT_ARTIFACT` for Mary Leakey.
+    #[serde(default)]
+    pub required_great_work: Option<String>,
     #[serde(default)]
     pub charges: i32,
     #[serde(default)]
@@ -2441,6 +2450,14 @@ pub struct StateGreatPersonOffer {
     /// cannot activate without an already-completed district of that family.
     #[serde(default)]
     pub required_district: Option<String>,
+    /// Firaxis `ActionRequiresMissingBuildingType`. This is a negative gate:
+    /// the named building must be absent in at least one eligible city.
+    #[serde(default)]
+    pub required_missing_building: Option<String>,
+    /// Firaxis `ActionRequiresCityGreatWorkObjectType`, retained as the raw
+    /// host object name until the mirror translates it to a CIVVIS work kind.
+    #[serde(default)]
+    pub required_great_work: Option<String>,
 }
 
 /// One founded religion as the host's Religion screen lists it: its type, the
@@ -3519,15 +3536,17 @@ pub struct StateSnapshot {
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_costs: Option<BTreeMap<String, f64>>,
     /// The named Great Person currently offered by Firaxis for each class,
-    /// including the one hard prerequisite the class label cannot express.
+    /// including the hard prerequisites the class label cannot express.
     ///
     /// A Great Scientist is not necessarily usable at a Campus: Hildegard of
     /// Bingen requires a Holy Site, while Mary Leakey requires a Theater
-    /// district. The planner previously read only the class and could spend a
-    /// whole Campus-project race on an individual it had no possible way to
-    /// activate. The host's `ActionRequiresCompletedDistrictType` is the
-    /// authoritative necessary condition, carried here without attempting to
-    /// recreate every named effect in CIVVIS's ruleset.
+    /// district and an Archaeological Museum slot. James of St. George also
+    /// requires the Castle building to be missing because his activation adds
+    /// the Medieval Walls. The planner previously read only the class and
+    /// could spend a whole Campus-project race on an individual it had no
+    /// possible way to activate. Carry the host's three exact prerequisite
+    /// columns without attempting to recreate every named effect in CIVVIS's
+    /// ruleset.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_offers: Option<BTreeMap<String, StateGreatPersonOffer>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
@@ -4521,6 +4540,34 @@ fn apply_live_great_person_activation_needs(
                     .to_string()
             })
         });
+        let required_missing_building = person
+            .required_missing_building
+            .as_deref()
+            .filter(|required| !required.trim().is_empty())
+            .and_then(|required| {
+                let building = civvis_node_name(&game.rules.buildings, required, "BUILDING_");
+                if building.is_none() {
+                    let issue = format!("great_person_unit_building:{required}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                }
+                building
+            });
+        let required_great_work = person
+            .required_great_work
+            .as_deref()
+            .filter(|required| !required.trim().is_empty())
+            .and_then(|required| {
+                let work = great_person_required_work_kind(required);
+                if work.is_none() {
+                    let issue = format!("great_person_unit_work:{required}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                }
+                work.map(str::to_string)
+            });
         let individual = person
             .individual
             .as_deref()
@@ -4531,6 +4578,8 @@ fn apply_live_great_person_activation_needs(
             kind,
             individual,
             required_district,
+            required_missing_building,
+            required_great_work,
         });
     }
     game.players[0].live_great_person_activation_needs = needs;
@@ -4543,10 +4592,44 @@ fn apply_live_great_person_activation_needs(
 /// Great Scientist but requires a Holy Site, and Mary Leakey as a Great
 /// Scientist but requires a Theater. A Campus-only science empire can recruit
 /// both and leave their physical units stranded indefinitely. Do not guess at
-/// all of Firaxis's positional conditions here; `required_district` is the
-/// authoritative *necessary* infrastructure condition, so the absence of that
-/// district is a safe reason not to spend another point, project, or patronage
-/// purchase on the live offer.
+/// all of Firaxis's positional conditions here; these three exported columns
+/// are authoritative *necessary* conditions, so their absence is a safe reason
+/// not to spend another point, project, or patronage purchase on the live offer.
+///
+/// The live bridge has one additional fidelity constraint for Artifact offers:
+/// the compact ruleset represents Palace/Apadana's flexible host slots as
+/// `any`, but Firaxis's `GREATWORKOBJECT_ARTIFACT` is accepted only by an
+/// Archaeological Museum (or another explicitly artifact-typed slot). Keep
+/// that correction at the bridge boundary so the native simulator's existing
+/// universal-slot semantics remain unchanged for headless AI tests and saves.
+fn live_great_work_offer_has_capacity(game: &crate::game::Game, pid: usize, kind: &str) -> bool {
+    if kind == "artifact" {
+        let has_typed_artifact_slot =
+            game.cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .any(|city| {
+                    city.buildings.iter().any(|building| {
+                        game.rules
+                            .buildings
+                            .get(building)
+                            .and_then(|spec| spec.great_work_slots.get(kind))
+                            .is_some_and(|count| *count > 0)
+                    }) || city.wonders.keys().any(|wonder| {
+                        game.rules
+                            .wonders
+                            .get(wonder)
+                            .and_then(|spec| spec.great_work_slots.get(kind))
+                            .is_some_and(|count| *count > 0)
+                    })
+                });
+        if !has_typed_artifact_slot {
+            return false;
+        }
+    }
+    game.can_house_great_works(pid, kind, 1)
+}
+
 fn apply_live_great_person_offer_blockers(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -4592,57 +4675,121 @@ fn apply_live_great_person_offer_blockers(
         {
             individuals.insert(kind.clone(), individual);
         }
-        let Some(required_district) = offer
+        let mut reasons = Vec::new();
+
+        if let Some(required_district) = offer
             .required_district
             .as_deref()
             .filter(|district| !district.trim().is_empty())
-        else {
-            continue;
-        };
-
-        // Check the exact host name first. This covers `DISTRICT_CITY_CENTER`,
-        // which CIVVIS deliberately does not store in `City::districts` because
-        // every city already owns one. Then compare CIVVIS district families so
-        // a unique like Russia's Lavra satisfies Firaxis's `DISTRICT_HOLY_SITE`
-        // prerequisite without pretending the two literal names are equal.
-        let required_family =
-            civvis_node_name(&game.rules.districts, required_district, "DISTRICT_")
-                .map(|district| game.district_family(crate::name::Name::new(&district)));
-        let active = (required_district.eq_ignore_ascii_case("DISTRICT_CITY_CENTER")
-            && !state.cities.is_empty())
-            || state.cities.iter().any(|city| {
-                city.districts.iter().any(|district| {
-                    if !district.complete || district.pillaged {
-                        return false;
+        {
+            // Check the exact host name first. This covers
+            // `DISTRICT_CITY_CENTER`, which CIVVIS deliberately does not store
+            // in `City::districts` because every city already owns one. Then
+            // compare CIVVIS district families so a unique like Russia's
+            // Lavra satisfies Firaxis's `DISTRICT_HOLY_SITE` prerequisite
+            // without pretending the two literal names are equal.
+            let required_family =
+                civvis_node_name(&game.rules.districts, required_district, "DISTRICT_")
+                    .map(|district| game.district_family(crate::name::Name::new(&district)));
+            let active = (required_district.eq_ignore_ascii_case("DISTRICT_CITY_CENTER")
+                && !state.cities.is_empty())
+                || state.cities.iter().any(|city| {
+                    city.districts.iter().any(|district| {
+                        if !district.complete || district.pillaged {
+                            return false;
+                        }
+                        district.kind.eq_ignore_ascii_case(required_district)
+                            || required_family.is_some_and(|family| {
+                                civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_")
+                                    .is_some_and(|district| {
+                                        game.district_family(crate::name::Name::new(&district))
+                                            == family
+                                    })
+                            })
+                    })
+                });
+            if !active {
+                if required_family.is_none() {
+                    let issue = format!("great_person_offer_district:{required_district}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
                     }
-                    district.kind.eq_ignore_ascii_case(required_district)
-                        || required_family.is_some_and(|family| {
-                            civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_")
-                                .is_some_and(|district| {
-                                    game.district_family(crate::name::Name::new(&district))
-                                        == family
-                                })
-                        })
-                })
-            });
-        if active {
-            continue;
-        }
-        if required_family.is_none() {
-            let issue = format!("great_person_offer_district:{required_district}");
-            if !unmapped.contains(&issue) {
-                unmapped.push(issue);
+                }
+                reasons.push(format!("requires an active {required_district}"));
             }
         }
-        let individual = offer
-            .individual
+
+        if let Some(required_missing_building) = offer
+            .required_missing_building
             .as_deref()
-            .filter(|individual| !individual.trim().is_empty())
-            .unwrap_or(class);
-        blockers.insert(
-            kind,
-            format!("the live {individual} offer requires an active {required_district}"),
-        );
+            .filter(|building| !building.trim().is_empty())
+        {
+            match civvis_node_name(
+                &game.rules.buildings,
+                required_missing_building,
+                "BUILDING_",
+            ) {
+                Some(required_building) => {
+                    let missing = state.cities.iter().all(|city| {
+                        !city.buildings.iter().any(|building| {
+                            civvis_node_name(&game.rules.buildings, building, "BUILDING_")
+                                .is_some_and(|building| {
+                                    game.building_is_family(
+                                        crate::name::Name::new(&building),
+                                        crate::name::Name::new(&required_building),
+                                    )
+                                })
+                        })
+                    });
+                    if !missing {
+                        reasons.push(format!(
+                            "requires a city without {required_missing_building}"
+                        ));
+                    }
+                }
+                None => {
+                    let issue = format!("great_person_offer_building:{required_missing_building}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                    reasons.push(format!(
+                        "requires an unmapped missing building {required_missing_building}"
+                    ));
+                }
+            }
+        }
+
+        if let Some(required_great_work) = offer
+            .required_great_work
+            .as_deref()
+            .filter(|work| !work.trim().is_empty())
+        {
+            match great_person_required_work_kind(required_great_work) {
+                Some(work) if live_great_work_offer_has_capacity(game, 0, work) => {}
+                Some(work) => reasons.push(format!("requires an open {work} Great Work slot")),
+                None => {
+                    let issue = format!("great_person_offer_work:{required_great_work}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                    reasons.push(format!(
+                        "requires an unmapped Great Work object {required_great_work}"
+                    ));
+                }
+            }
+        }
+
+        if !reasons.is_empty() {
+            let individual = offer
+                .individual
+                .as_deref()
+                .filter(|individual| !individual.trim().is_empty())
+                .unwrap_or(class);
+            blockers.insert(
+                kind,
+                format!("the live {individual} offer {}", reasons.join("; ")),
+            );
+        }
     }
     game.players[0].live_great_person_offers = Some(offered_classes);
     game.players[0].live_great_person_offer_individuals = individuals;
@@ -9556,6 +9703,34 @@ fn great_work_kind(object: &str) -> Option<&'static str> {
         "GREATWORKOBJECT_ARTIFACT" => Some("artifact"),
         "GREATWORKOBJECT_MUSIC" => Some("music"),
         "GREATWORKOBJECT_RELIC" => Some("relic"),
+        _ => None,
+    }
+}
+
+/// Normalize Firaxis's per-individual Great Work prerequisite to the work
+/// kind used by CIVVIS's housing and production rules.
+///
+/// The live control mod sends the database spelling, but accepting the bare
+/// lower-case spelling keeps the mirror compatible with test fixtures and an
+/// older bridge that may already have stripped the prefix. `ART` is included
+/// even though the stock database uses the concrete sculpture/portrait/
+/// landscape object types; it is a harmless forward-compatible alias.
+fn great_person_required_work_kind(object: &str) -> Option<&'static str> {
+    let object = object.trim().to_ascii_uppercase();
+    match object.as_str() {
+        "GREATWORKOBJECT_WRITING" | "WRITING" => Some("writing"),
+        "GREATWORKOBJECT_LANDSCAPE"
+        | "GREATWORKOBJECT_PORTRAIT"
+        | "GREATWORKOBJECT_SCULPTURE"
+        | "GREATWORKOBJECT_ART"
+        | "LANDSCAPE"
+        | "PORTRAIT"
+        | "SCULPTURE"
+        | "ART" => Some("art"),
+        "GREATWORKOBJECT_RELIGIOUS" | "RELIGIOUS" => Some("religious_art"),
+        "GREATWORKOBJECT_ARTIFACT" | "ARTIFACT" => Some("artifact"),
+        "GREATWORKOBJECT_MUSIC" | "MUSIC" => Some("music"),
+        "GREATWORKOBJECT_RELIC" | "RELIC" => Some("relic"),
         _ => None,
     }
 }
