@@ -692,6 +692,59 @@
     "upgrade_to": "field_cannon",
     "obsolete_tech": "advanced_ballistics"
   },
+  "gaesatae": {
+    "class": "military", "cost": 60, "moves": 2, "strength": 20,
+    "unique_to": "Gaul", "replaces": "warrior", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "man_at_arms",
+    "obsolete_tech": "replaceable_parts"
+  },
+  "samurai": {
+    "class": "military", "cost": 160, "maintenance": 3, "moves": 2, "strength": 48,
+    "civic": "feudalism", "requires_resource": "iron", "resource_cost": 10,
+    "unique_to": "Japan", "replaces": "man_at_arms", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "musketman",
+    "obsolete_tech": "replaceable_parts"
+  },
+  "hypaspist": {
+    "class": "military", "cost": 100, "maintenance": 2, "moves": 2, "strength": 38,
+    "tech": "iron_working", "requires_resource": "iron", "resource_cost": 5,
+    "unique_to": "Macedon", "replaces": "swordsman", "promotion_class": "melee",
+    "zone_of_control": true, "upgrade_to": "man_at_arms",
+    "obsolete_tech": "replaceable_parts"
+  },
+  "varu": {
+    "class": "military", "cost": 120, "maintenance": 2, "moves": 2, "strength": 40,
+    "sight": 3, "tech": "horseback_riding", "unique_to": "India", "cavalry": true,
+    "promotion_class": "heavy_cavalry", "zone_of_control": true,
+    "upgrade_to": "cuirassier", "obsolete_tech": "combustion"
+  },
+  "mandekalu_cavalry": {
+    "class": "military", "cost": 220, "maintenance": 4, "moves": 4, "strength": 55,
+    "tech": "stirrups", "requires_resource": "iron", "resource_cost": 10,
+    "unique_to": "Mali", "replaces": "knight", "cavalry": true,
+    "promotion_class": "heavy_cavalry", "zone_of_control": true,
+    "upgrade_to": "cuirassier", "obsolete_tech": "composites"
+  },
+  "cossack": {
+    "class": "military", "cost": 340, "maintenance": 5, "moves": 5, "strength": 67,
+    "tech": "military_science", "requires_resource": "horses", "resource_cost": 10,
+    "unique_to": "Russia", "replaces": "cavalry", "cavalry": true,
+    "promotion_class": "light_cavalry", "zone_of_control": true,
+    "upgrade_to": "helicopter"
+  },
+  "rough_rider": {
+    "class": "military", "cost": 385, "maintenance": 2, "moves": 5, "strength": 67,
+    "tech": "ballistics", "unique_to": "America", "replaces": "cuirassier",
+    "cavalry": true, "promotion_class": "heavy_cavalry", "zone_of_control": true,
+    "upgrade_to": "tank", "obsolete_tech": "combustion"
+  },
+  "voi_chien": {
+    "class": "military", "cost": 200, "maintenance": 3, "moves": 3,
+    "sight": 3, "strength": 35, "ranged_strength": 40, "range": 2,
+    "tech": "machinery", "unique_to": "Vietnam", "replaces": "crossbowman",
+    "promotion_class": "ranged", "upgrade_to": "field_cannon",
+    "obsolete_tech": "advanced_ballistics"
+  },
   "heavy_chariot": {
     "class": "military", "cost": 65, "maintenance": 1, "moves": 2, "strength": 28,
     "clear_terrain_start_movement": 1,

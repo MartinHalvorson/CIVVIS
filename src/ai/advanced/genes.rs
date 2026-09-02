@@ -1946,6 +1946,7 @@ pub const GENES: &[Gene] = &[
     // so a walker past twelve turns founds the best site within reach.
     Gene { tag: "settler-walk-deadline", field: "settler_walk_deadline", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_deadline, disable: AdvancedAi::disable_settler_walk_deadline },
 
+    Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing
