@@ -4773,6 +4773,13 @@ pub struct AdvancedAi {
     /// `commitments::COMMITMENT_PATIENCE` consecutive forgotten turns, parking
     /// the site. Opt-in gene; see `advanced/commitments.rs`.
     commitment_patience: bool,
+    /// `commitment-owner-acts`: after the unit pass, every open settle or
+    /// improve commitment whose owner still has movement and received no
+    /// order gets the commitment's own next step — found, improve, or the
+    /// route step toward the target when it is safe — or is released with a
+    /// recorded reason when that step is illegal or the owner stands inside
+    /// a hostile's reach. Opt-in gene; see `advanced/commitments.rs`.
+    commitment_owner_acts: bool,
     /// `capture-go-or-stand-down`: a declared war's objective that no unit of
     /// ours has been within `commitments::CAPTURE_PRESENCE_RADIUS` of for
     /// `commitments::CAPTURE_GO_TURNS` consecutive turns is stood down
@@ -7190,6 +7197,7 @@ impl AdvancedAi {
             cheapest_wonder_first: false,
             connect_the_luxury: false,
             commitment_patience: false,
+            commitment_owner_acts: false,
             capture_go_or_stand_down: false,
             capture_stood_down: BTreeMap::new(),
             capture_go_or_stand_down_2: false,
@@ -38009,6 +38017,11 @@ impl AdvancedAi {
             BasicAi::upgrade_units(g, pid);
         }
         self.advanced_units(g, pid, &plan);
+        // `commitment-owner-acts`: the owners the unit pass left standing with
+        // movement and an open decision act on it now, or the decision is
+        // released with its reason. Exact no-op while the gene is off. See
+        // `advanced/commitments.rs`.
+        self.commitment_owners_act(g, pid);
         // A capture can end the appointment during movement. Re-read it now,
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
