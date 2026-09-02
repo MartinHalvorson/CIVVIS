@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from civ6_control.capture_budget import CaptureBudget, RESCUE_INTERVAL_SECONDS
+from civ6_control.capture_budget import (CHEAP_ATTEMPT_SECONDS, CaptureBudget,
+                                          RESCUE_INTERVAL_SECONDS)
 
 
 class FakeClock:
@@ -82,12 +83,35 @@ class CaptureBudgetTest(unittest.TestCase):
         self.budget.spend("DiplomacyActionView", "unavailable")
         allowed, _ = self.budget.spend("DiplomacyActionView", "unavailable")
         self.assertFalse(allowed)
-        self.budget.record_success("DiplomacyActionView")
+        self.budget.record_attempt("DiplomacyActionView", 9.9, dismissed=True)
         allowed, _ = self.budget.spend("DiplomacyActionView", "unavailable")
         self.assertTrue(allowed)
 
-    def test_success_on_an_unknown_screen_is_harmless(self):
-        self.budget.record_success("NeverSeen")
+    def test_a_cheap_attempt_clears_the_wait_even_without_a_click(self):
+        """Measured 2026-09-02: `capture_pause_reason()` reported a 100 % CPU
+        spin while captures returned in 0.07 s. Rationing a 70 ms rescue saves
+        nothing and delays the only thing that can dismiss a leader screen."""
+        self.budget.spend("DiplomacyActionView", "unavailable")
+        allowed, _ = self.budget.spend("DiplomacyActionView", "unavailable")
+        self.assertFalse(allowed)
+        self.budget.record_attempt("DiplomacyActionView", 0.07, dismissed=False)
+        allowed, _ = self.budget.spend("DiplomacyActionView", "unavailable")
+        self.assertTrue(allowed, "a cheap attempt disproves the preflight")
+
+    def test_an_expensive_failed_attempt_keeps_the_wait(self):
+        """The whole point: 23.5 s that dismissed nothing must not repeat."""
+        self.budget.spend("DiplomacyActionView", "unavailable")
+        self.budget.record_attempt("DiplomacyActionView", 23.5, dismissed=False)
+        allowed, _ = self.budget.spend("DiplomacyActionView", "unavailable")
+        self.assertFalse(allowed)
+
+    def test_the_cheap_threshold_separates_a_healthy_capture_from_a_doomed_one(self):
+        """0.06-0.11 s healthy, 3.5 s doomed with the breaker, 11.0 s without."""
+        self.assertGreater(CHEAP_ATTEMPT_SECONDS, 0.5)
+        self.assertLess(CHEAP_ATTEMPT_SECONDS, 3.5)
+
+    def test_an_attempt_on_an_unknown_screen_is_harmless(self):
+        self.budget.record_attempt("NeverSeen", 0.1, dismissed=True)
         allowed, _ = self.budget.spend("NeverSeen", "unavailable")
         self.assertTrue(allowed)
 
@@ -133,6 +157,18 @@ class OnlyThePixelPathIsRationed(unittest.TestCase):
         self.assertIn('needs_pixels = screen in ("DiplomacyActionView", "LeaderView",',
                       source)
         self.assertIn("if needs_pixels and not allowed:", source)
+
+    def test_the_attempt_is_timed_from_before_the_photograph(self):
+        """Both captures are the attempt; timing only the click would call a
+        23.5 s ask cheap."""
+        source = self._source()
+        # Scope to the handler: `screenshot(` is called from the setup code too.
+        block = source[source.index('elif kind in ("autoclose_desktop", "autoclose_stuck"):'):
+                       source.index('elif kind == "retired":')]
+        self.assertIn("attempt_started = time.monotonic()", block)
+        self.assertLess(block.index("attempt_started = time.monotonic()"),
+                        block.index("screenshot(shot)"))
+        self.assertIn("DESKTOP_RESCUE_BUDGET.record_attempt(", block)
 
     def test_the_pixel_screens_match_the_dispatch_below_them(self):
         """The two lists have to name the same screens or one of them is a lie."""

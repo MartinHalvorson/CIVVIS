@@ -55,6 +55,12 @@ import time
 #: rescue attempts still land inside its window.
 RESCUE_INTERVAL_SECONDS = 60.0
 
+#: An attempt at or under this many seconds proves the host can capture after
+#: all, whatever the preflight said, and clears the schedule. A healthy capture
+#: is 0.06-0.11 s and a doomed one is 3.5 s with the fallback breaker or 11.0 s
+#: without, so anything in between is comfortably on the right side.
+CHEAP_ATTEMPT_SECONDS = 2.0
+
 
 class CaptureBudget:
     """Per-screen permission to spend a native capture on the desktop rescue.
@@ -93,15 +99,24 @@ class CaptureBudget:
         return False, (f"{unavailable_reason}; skipped, next attempt in "
                        f"{self._interval - waited:.0f}s")
 
-    def record_success(self, screen: object) -> None:
-        """A rescue that actually dismissed something clears the schedule.
+    def record_attempt(self, screen: object, seconds: float,
+                       dismissed: bool = False) -> None:
+        """What the attempt actually cost, and whether it landed.
 
-        ⚠ A SCREEN CLOSING IS NOT SUCCESS.  The first draft reset the schedule
-        on the mod's `autoclose gone:true`, which fires at the end of almost
-        every one of these stalls -- the phantom context tears itself down on
-        its own -- so the interval reset before it ever bound and the budget
-        allowed every ask.  Only a click that landed is evidence the pixel path
-        works on this screen, and that is the one thing worth being eager
-        about.
+        ★★★★★ THE PREFLIGHT IS A PREDICTION, AND THE ATTEMPT IS THE ANSWER.
+        `capture_pause_reason()` reports "systemstatusd is spinning at 100 %
+        CPU" whenever that daemon is busy, and measured on this host on
+        2026-09-02 that can be true while captures return in 0.07 s -- the
+        spin and the stall come and go independently. Rationing a rescue that
+        costs 70 ms saves nothing and delays the one thing that can dismiss a
+        stuck leader screen, so an attempt that came back CHEAP clears the
+        schedule and the next ask goes straight through.
+
+        ⚠ A SCREEN CLOSING IS NOT SUCCESS.  The first draft reset on the mod's
+        `autoclose gone:true`, which fires at the end of almost every one of
+        these stalls -- the phantom context tears itself down on its own -- so
+        the interval reset before it ever bound. Only a click that LANDED, or
+        an attempt that was cheap, is evidence worth being eager about.
         """
-        self._last_attempt.pop(str(screen), None)
+        if dismissed or float(seconds) <= CHEAP_ATTEMPT_SECONDS:
+            self._last_attempt.pop(str(screen), None)

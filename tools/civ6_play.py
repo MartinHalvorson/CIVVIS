@@ -3503,6 +3503,7 @@ def _play(args: argparse.Namespace) -> int:
                       f"attempts; {budget_note}")
                 return
             shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
+            attempt_started = time.monotonic()
             if allowed:
                 screenshot(shot)
             print(f"[{kind}] {screen} {reason} "
@@ -3529,11 +3530,16 @@ def _play(args: argparse.Namespace) -> int:
                         "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
                 ok, how = dismiss_visually_confirmed_popup()
-                if ok:
-                    # The pixel path landed a click on this screen, so it is
-                    # worth being eager about next time regardless of what the
-                    # host says about capture.
-                    DESKTOP_RESCUE_BUDGET.record_success(screen)
+                # ★ THE PREFLIGHT IS A PREDICTION; THIS IS THE ANSWER.
+                # `capture_pause_reason()` says "systemstatusd is spinning"
+                # whenever that daemon is busy, and measured on this host the
+                # spin can be true while captures return in 0.07 s. Rationing a
+                # rescue that costs 70 ms saves nothing and delays the only
+                # thing that can dismiss a stuck leader screen, so an attempt
+                # that came back cheap -- or one whose click landed -- clears
+                # the schedule.
+                DESKTOP_RESCUE_BUDGET.record_attempt(
+                    screen, time.monotonic() - attempt_started, dismissed=ok)
             elif screen == "WorldCongressBetweenTurns":
                 ok = dismiss_world_congress_between_turns()
                 how = "World Congress close control"
