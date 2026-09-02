@@ -42946,6 +42946,9 @@ fn the_science_lane_widens_while_a_city_can_still_mature() {
 
     let mut off = AdvancedAi::new();
     off.enable_live_bridge();
+    // Deployment defaults may select this independent arm; withhold it so
+    // this half continues to test the Science expansion phase itself.
+    off.disable_science_expansion_phase();
     off.victory_target = Some(VictoryTarget::Science);
     assert_eq!(
         off.assess(&game, 0).desired_cities,
