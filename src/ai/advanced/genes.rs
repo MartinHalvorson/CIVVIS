@@ -1916,6 +1916,16 @@ pub const GENES: &[Gene] = &[
     // V2 waits for a Eureka only when its final trigger is already queued and
     // the node is within two turns. The broad v1 remains measurable.
     Gene { tag: "boost-wait-research-2", field: "boost_wait_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research_2, disable: AdvancedAi::disable_boost_wait_research_2 },
+    // `battle-planner` (2026-09-02): the force's turn planned jointly instead
+    // of unit by unit — a danger field from the engine's exact pair on a
+    // probe of the board, a beam-searched kill sequence (ranged before the
+    // melee finisher, kills at 1.15× the hit points, return damage and every
+    // end tile's danger priced, three vetoes) replayed on one clone before it
+    // lands, and a heal rotation that steps the wounded and the exposed to a
+    // tile nothing can strike. Replaces `prioritize_immediate_kills` and
+    // `fire-plan` at their seam; the ladder leaves the planned units alone.
+    // Priced on the arena first. See `advanced/battle_planner.rs`.
+    Gene { tag: "battle-planner", field: "battle_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner, disable: AdvancedAi::disable_battle_planner },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

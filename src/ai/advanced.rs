@@ -857,6 +857,13 @@ pub struct StrategyCensus {
     /// Wounded front-liners traded out of the line for a fresh unit. See
     /// `advanced/swap_rotation.rs`.
     pub swap_rotations: u32,
+    /// `battle-planner`: kills the plan expected, kills its verifying clone
+    /// saw, blows the clone or the board refused, and units rotated out to
+    /// heal. See `advanced/battle_planner.rs`.
+    pub battle_plan_kills: u32,
+    pub battle_plan_verified_kills: u32,
+    pub battle_plan_dropped_blows: u32,
+    pub battle_plan_rotations: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -925,6 +932,10 @@ impl StrategyCensus {
 
     /// Accumulate another agent's turns into this total.
     pub fn absorb(&mut self, other: &StrategyCensus) {
+        self.battle_plan_kills += other.battle_plan_kills;
+        self.battle_plan_verified_kills += other.battle_plan_verified_kills;
+        self.battle_plan_dropped_blows += other.battle_plan_dropped_blows;
+        self.battle_plan_rotations += other.battle_plan_rotations;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -4614,6 +4625,16 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `battle-planner`: the force's turn planned jointly — the danger
+    /// field, the kill plan, the heal rotation — ahead of the per-unit
+    /// ladder, which then leaves the planned units alone. Opt-in gene; see
+    /// `advanced/battle_planner.rs`.
+    battle_planner: bool,
+    /// Units the battle plan ordered this turn. Empty with the gene off.
+    battle_planner_ordered: BTreeSet<u32>,
+    /// Units the battle plan pulled out to heal, kept out of the kill plan
+    /// until `battle_planner::RETURN_HP`; pruned as they heal or die.
+    battle_planner_recovering: BTreeSet<u32>,
     /// `air-surge-2`: version two of `air_surge` — the science–domination
     /// loop. The original one-appointment surge remains a separately
     /// measurable family member; this continuation lets the Formal-War clock
@@ -6345,6 +6366,11 @@ mod swap_rotation;
 /// opt-in gene; see `advanced/fire_plan.rs`.
 mod fire_plan;
 
+/// The battle planner: the force's turn planned jointly — the danger field,
+/// the kill plan and the heal rotation — ahead of the per-unit ladder. One
+/// opt-in gene; see `advanced/battle_planner.rs`.
+mod battle_planner;
+
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
 mod close_as_a_body;
@@ -7153,6 +7179,9 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            battle_planner: false,
+            battle_planner_ordered: BTreeSet::new(),
+            battle_planner_recovering: BTreeSet::new(),
             air_surge_2: false,
             border_parity_2: false,
             boosted_bargain_first: false,
@@ -35070,6 +35099,12 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         decline_settlers: bool,
     ) -> bool {
+        // `battle-planner`: a unit the plan has already struck with, moved
+        // or rotated out this turn stays where the plan put it. Always
+        // false with the gene off. See `advanced/battle_planner.rs`.
+        if self.battle_planner_claims(uid) {
+            return self.base.fortify_or_stop(g, pid, uid);
+        }
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
@@ -36850,14 +36885,29 @@ impl AdvancedAi {
         // Resolve those exact, positive exchanges before the remaining unit
         // loop runs, then rebuild once if the board changed so the force
         // picture does not retain a dead defender in its old group.
-        if self.victory_planning && self.prioritize_immediate_kills(g, pid, plan) > 0 {
-            self.rebuild_force_groups(g, pid, plan);
-            self.force_groups_dirty = false;
+        //
+        // `battle-planner` takes this seam over: the turn's kills are planned
+        // jointly and verified on one clone, the wounded are rotated out,
+        // and the planned units are marked so the ladder below leaves them
+        // alone. The immediate-kill pass and `fire-plan` are its unplanned
+        // predecessors and do not run beside it. See
+        // `advanced/battle_planner.rs`.
+        if self.battle_planner {
+            if self.plan_battle(g, pid, plan) {
+                self.rebuild_force_groups(g, pid, plan);
+                self.force_groups_dirty = false;
+            }
+            self.fire_plan_orders = fire_plan::FirePlan::default();
+        } else {
+            if self.victory_planning && self.prioritize_immediate_kills(g, pid, plan) > 0 {
+                self.rebuild_force_groups(g, pid, plan);
+                self.force_groups_dirty = false;
+            }
+            // `fire-plan`: this turn's kills, drawn once from the board the
+            // unit loop is about to play, so the shooters that finish them go
+            // first. Empty with the gene off. See `advanced/fire_plan.rs`.
+            self.plan_fire(g, pid);
         }
-        // `fire-plan`: this turn's kills, drawn once from the board the unit
-        // loop is about to play, so the shooters that finish them go first.
-        // Empty with the gene off. See `advanced/fire_plan.rs`.
-        self.plan_fire(g, pid);
         // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
         // once from the start-of-turn board so units planned in parallel
         // agree on them. Nothing is read with both genes off. See

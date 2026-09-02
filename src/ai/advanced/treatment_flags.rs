@@ -3588,6 +3588,19 @@ impl AdvancedAi {
         self.never_an_empty_queue_3 = false;
     }
 
+    /// The force's turn is planned jointly — the danger field, a
+    /// beam-searched kill sequence verified on one clone, and a heal
+    /// rotation — ahead of the per-unit ladder, which leaves the planned
+    /// units alone. See `battle_planner`.
+    pub fn enable_battle_planner(&mut self) {
+        self.battle_planner = true;
+    }
+
+    /// The twin of `enable_battle_planner`.
+    pub fn disable_battle_planner(&mut self) {
+        self.battle_planner = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
