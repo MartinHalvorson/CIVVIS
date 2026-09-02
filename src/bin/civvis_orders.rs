@@ -1870,10 +1870,12 @@ fn append_luxury_buy_order(
                 .then_with(|| right.player.cmp(&left.player))
         });
     let Some(seller) = seller else {
-        let peaceful_rivals = state.rivals.iter().filter(|rival| !rival.at_war);
-        let all_catalogues_known = peaceful_rivals
-            .clone()
-            .all(|rival| rival.tradeable_luxuries.is_some());
+        let mut peaceful_rivals = state.rivals.iter().filter(|rival| !rival.at_war);
+        let has_peaceful_rival = peaceful_rivals.clone().next().is_some();
+        let all_catalogues_known = has_peaceful_rival
+            && peaceful_rivals
+                .clone()
+                .all(|rival| rival.tradeable_luxuries.is_some());
         let known_stock = peaceful_rivals.any(|rival| {
             rival
                 .tradeable_luxuries
