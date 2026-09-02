@@ -216,6 +216,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
 | `veterans-withdraw-early` | off (unmeasured) | A promoted unit keeps hit points in hand before it withdraws. | 1 \| 1 |
+| `war-policy-via-board` | off (unmeasured) | `war-policy-via-board`: target feasibility, the declaration and the peace term read off the board. | 1 \| 1 |
 | `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
 
 ## Removed from the code

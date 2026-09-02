@@ -1282,3 +1282,68 @@ requirement and is the Reserve's anchor only; a Relieve row's need is the
 Defend's less what stands within six, read once a turn; sea forces exist
 for the three sea rows and take the shipped sea mover unchanged. The
 `victory_planning` gate does not apply: the board runs for every major seat.
+
+## 26. War policy via the board: feasibility, the declaration, the peace term (2026-09-02, opt-in gene `war-policy-via-board`)
+
+The board of §24 writes what every objective *costs* — a Siege row's
+`ForceNeed` is the bill for that city — and the strategic layer still
+decided the wars on empire totals: `assess` ranked rivals by
+`rival_value_with_culture` (distance, power, score, victory pressure) with
+no test that the army could ever take a city of theirs; the elective
+declaration asked `my_power > target_power × 1.32 + 12` (or the campaign's
+bill, or the domination ratio) and a staged stack of three; and the peace
+chain sued the moment `my_power < theirs × 0.62` — "outmatched" — whatever
+the front looked like, so a defensive war whose threatened city was held
+by a served force was begged out of on the empire total while the field
+was even.
+
+`war-policy-via-board` (`src/ai/advanced/war_policy.rs`, opt-in, off,
+byte-identical when off; reads the board when `objective-board` is on and
+the board's own `siege_requirement` either way):
+
+1. **Feasibility.** A rival whose nearest city's Siege requirement is over
+   the whole roster's strength (`campaign_field_army`) is not a target:
+   `assess` drops it from the candidates it ranks and from the campaign's
+   own choice. A rival whose clock is short (`urgent_victory_threat`) is
+   untouched — denial is not elective. "Not a target" (Detail) names the
+   city and the two numbers.
+2. **Declaration.** An elective or campaign war opens only when the
+   strength on the objective city's 3–5 ring (`staged_campaign_units`)
+   meets that city's Siege requirement, no other major war is being
+   fought, and every Defend row is served (no Defend requisition open). The
+   `close_enough` and `staged` gates stand; the "Holding off war" line
+   carries the board's reason.
+3. **Peace.** The `0.62` term is replaced: peace is sued for only when no
+   Siege row against that rival is feasible (the board's Siege rows against
+   them, else their nearest city) **and** either the tide ledger reads net
+   negative over its window — §24's `one_war` exchange, kept here per rival
+   at war, gene or no gene — or an urgent Defend row has gone unserved for
+   three turns. A defensive war with a served Defend row and an even tide
+   is fought, not begged. Every other peace term stands; the tribute the
+   `0.62` rout licensed is not claimed by this term (white peace).
+
+**Reading.** Fires (`gene_screen --games 6 --jobs 3 --genes
+objective-board,war-policy-via-board --p-on 0.75 --start-seed 97700250`,
+`docs/gene_screens/fires/war-policy-via-board.json`): on in 25 of 36 seats,
+win −15.3 pp ± 12.1, share −2.35 pp ± 1.16 (z −2.02) — fires, and reads
+against at six games. Whole-game no-harm (`--games 24 --jobs 4 --difficulty
+emperor --genes objective-board,war-policy-via-board --p-on 0.75
+--start-seed 97700200`, 144 seats,
+`docs/gene_screens/war-policy-via-board-noharm.json`): on 114 / off 30, win
+**14.9 % v 23.3 %, −8.4 pp ± 7.1 (z −1.19)**, share **−0.84 pp ± 1.18
+(z −0.71)**, `~`; objective-board on the same seats **+15.8 pp ± 4.6
+(z +3.43)**, share +2.24 pp (z +2.17). Not significant, and the sign is
+against on both probes: the suspicion is the feasibility bar — a Siege
+requirement is the campaign bill (defenders + city + walls, × 1.5) × 1.25,
+and the campaign itself plans on three quarters of its bill, so a roster
+the campaign would have marched with is refused a target here, and an
+army that never gets a target never gets the score a war brings. The
+ledger prices it at scale; the natural repair is to read feasibility at
+the campaign's own planning fraction.
+
+**What this does not say.** The tide is the war ledger's unit and city
+losses, so a war with no exchange reads even; the unserved-Defend clock
+reads the board as it stood at the last unit pass; the declaration's ring
+strength counts `staged_campaign_units` (3–5 out, no enemy territory), so
+a stack inside three is not staged; a city-state target is gated like a
+major.
