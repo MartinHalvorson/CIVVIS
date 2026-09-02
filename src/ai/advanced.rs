@@ -869,6 +869,11 @@ pub struct StrategyCensus {
     pub battle_plan_verified_kills: u32,
     pub battle_plan_dropped_blows: u32,
     pub battle_plan_rotations: u32,
+    /// `battle-planner-2`: slots the positions plan laid out, units it
+    /// placed, and units the pace held back on the approach.
+    pub battle_plan_slots: u32,
+    pub battle_plan_positioned: u32,
+    pub battle_plan_paced: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -941,6 +946,9 @@ impl StrategyCensus {
         self.battle_plan_verified_kills += other.battle_plan_verified_kills;
         self.battle_plan_dropped_blows += other.battle_plan_dropped_blows;
         self.battle_plan_rotations += other.battle_plan_rotations;
+        self.battle_plan_slots += other.battle_plan_slots;
+        self.battle_plan_positioned += other.battle_plan_positioned;
+        self.battle_plan_paced += other.battle_plan_paced;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -4655,6 +4663,11 @@ pub struct AdvancedAi {
     /// Units the battle plan pulled out to heal, kept out of the kill plan
     /// until `battle_planner::RETURN_HP`; pruned as they heal or die.
     battle_planner_recovering: BTreeSet<u32>,
+    /// `battle-planner-2`: version two of `battle_planner` — the positions
+    /// plan joins the kill plan and the heal rotation. One version of the
+    /// family plays; `enable_battle_planner_2` turns version one off. See
+    /// `advanced/battle_planner.rs`.
+    battle_planner_2: bool,
     /// `air-surge-2`: version two of `air_surge` — the science–domination
     /// loop. The original one-appointment surge remains a separately
     /// measurable family member; this continuation lets the Formal-War clock
@@ -7262,6 +7275,7 @@ impl AdvancedAi {
             battle_planner: false,
             battle_planner_ordered: BTreeSet::new(),
             battle_planner_recovering: BTreeSet::new(),
+            battle_planner_2: false,
             air_surge_2: false,
             border_parity_2: false,
             boosted_bargain_first: false,
@@ -37179,9 +37193,10 @@ impl AdvancedAi {
         // jointly and verified on one clone, the wounded are rotated out,
         // and the planned units are marked so the ladder below leaves them
         // alone. The immediate-kill pass and `fire-plan` are its unplanned
-        // predecessors and do not run beside it. See
+        // predecessors and do not run beside it. Either version of the
+        // family; version two adds the positions plan inside. See
         // `advanced/battle_planner.rs`.
-        if self.battle_planner {
+        if self.battle_planner_on() {
             if self.plan_battle(g, pid, plan) {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
