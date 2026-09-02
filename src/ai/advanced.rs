@@ -760,11 +760,6 @@ pub const RAPID_EXPANSION_CITY_CEILING: usize = 15;
 /// next cities from a rival.
 const RAPID_EXPANSION_SETTLE_FLOOR: usize = 3;
 
-/// A rapid Settler fills the closest legal ring before it spends turns on a
-/// more distant prize. Cities must be at least four tiles apart, so this is
-/// the first useful ring rather than an artificial overlap.
-const RAPID_EXPANSION_EASY_SITE_RADIUS: i32 = 4;
-
 /// Settlers the land grab keeps in flight from the first city, before the
 /// per-three-cities widening. Two: the capital may queue its next Settler
 /// while the last one walks, which is how the second and third cities come
@@ -28725,6 +28720,69 @@ impl AdvancedAi {
         self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
     }
 
+    /// Spend a rapid settler's whole legal movement allowance toward its
+    /// target. The ordinary route field is deliberately hex-based, so its
+    /// first step can land on rough ground and strand a two-movement Settler
+    /// with a point unused. The rapid wave needs its cities to compound on
+    /// schedule; choose a safe endpoint from the engine's movement-aware
+    /// reach instead, while leaving the ordinary controller unchanged.
+    fn rapid_settler_stride_toward_safe(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        let current = g.units[&uid].pos;
+        let current_distance = g.wdist(current, target);
+        if current_distance <= 0 {
+            return false;
+        }
+        let visible = self
+            .settlement_safety
+            .then(|| self.battlefront_visibility(g, pid));
+        let mut best: Option<(Pos, i32, f64, f64)> = None;
+        for (destination, (moves_left, path)) in g.approach_reach(uid) {
+            let distance = g.wdist(destination, target);
+            if distance >= current_distance {
+                continue;
+            }
+            let risk = if let Some(visible) = visible.as_ref() {
+                let Some(worst) = path
+                    .iter()
+                    .map(|position| {
+                        self.settlement_tile_risk(g, pid, Some(uid), *position, visible)
+                    })
+                    .max_by(f64::total_cmp)
+                else {
+                    continue;
+                };
+                if worst > SETTLER_STEP_RISK_LIMIT {
+                    continue;
+                }
+                worst
+            } else {
+                0.0
+            };
+            let replace =
+                best.is_none_or(|(old_destination, old_distance, old_moves, old_risk)| {
+                    distance < old_distance
+                        || (distance == old_distance
+                            && (moves_left > old_moves
+                                || (moves_left == old_moves
+                                    && (risk < old_risk
+                                        || (risk == old_risk && destination < old_destination)))))
+                });
+            if replace {
+                best = Some((destination, distance, moves_left, risk));
+            }
+        }
+        if let Some((destination, _, _, _)) = best {
+            return self.base.path_walk_to(g, pid, uid, destination);
+        }
+        self.settler_step_toward_safe(g, pid, uid, target)
+    }
+
     /// Move either a Settler or the military leader of its linked formation
     /// without walking the civilian into a visible capture envelope.
     ///
@@ -29882,6 +29940,48 @@ impl AdvancedAi {
         best
     }
 
+    /// Choose the nearest eligible, reachable city claim for version one's
+    /// compounding wave. The normal ranking is value-first and can send a
+    /// just-built Settler past a legal five-step city to a richer nine-step
+    /// one; that is the opposite of the rapid profile's stated land-race
+    /// policy. All of the ordinary target-memory filters remain in force.
+    fn rapid_closest_settler_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        avoid: Option<Pos>,
+    ) -> Option<(Pos, f64)> {
+        let from = g.units[&uid].pos;
+        let radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
+            g.map.width + g.map.height
+        } else {
+            SETTLER_LAND_FALLBACK_RADIUS
+        };
+        let mut candidates = self
+            .settle_sites(g, pid, from, radius)
+            .into_iter()
+            .filter(|(position, value)| {
+                Some(*position) != avoid
+                    && self.early_settler_site_allowed(g, pid, uid, *position)
+                    && !self.settler_site_is_dead(uid, *position)
+                    && (!self.settler_threat_detour_on()
+                        || !self.settler_threat_deferrals.contains_key(position))
+                    && !self.settler_target_reserved_by_other(g, pid, uid, *position)
+                    && self.settler_target_clears_floor(g, from, *position, *value)
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| {
+            g.wdist(from, left.0)
+                .cmp(&g.wdist(from, right.0))
+                .then_with(|| right.1.total_cmp(&left.1))
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        candidates
+            .into_iter()
+            .find(|(position, _)| *position == from || g.route_step(uid, *position, 0).is_some())
+    }
+
     fn best_settler_target(
         &self,
         g: &Game,
@@ -29890,16 +29990,9 @@ impl AdvancedAi {
         local_radius: i32,
         avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
-        // The ordinary city scorer may pay a travel premium for a richer
-        // eight-tile site. Rapid expansion instead needs the next city on
-        // the board quickly enough to help build the following Settler, so it
-        // exhausts the first legal ring first. The global pass below remains
-        // available as soon as that ring is actually empty.
-        let local_radius = if self.rapid_city_expansion {
-            local_radius.min(RAPID_EXPANSION_EASY_SITE_RADIUS)
-        } else {
-            local_radius
-        };
+        if self.rapid_city_expansion {
+            return self.rapid_closest_settler_target(g, pid, uid, avoid);
+        }
         let mut score_cache = BTreeMap::new();
         let local = self.best_reachable_settle_site_except_cached(
             g,
@@ -29918,14 +30011,10 @@ impl AdvancedAi {
                 avoid,
                 &mut score_cache,
             );
-            return if self.rapid_city_expansion {
-                local.or(global)
-            } else {
-                match (local, global) {
-                    (Some(local), Some(global)) if global.1 > local.1 + 5.0 => Some(global),
-                    (Some(local), _) => Some(local),
-                    (None, global) => global,
-                }
+            return match (local, global) {
+                (Some(local), Some(global)) if global.1 > local.1 + 5.0 => Some(global),
+                (Some(local), _) => Some(local),
+                (None, global) => global,
             };
         }
         let global_radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
@@ -29944,23 +30033,19 @@ impl AdvancedAi {
             avoid,
             &mut score_cache,
         );
-        if self.rapid_city_expansion {
-            local.or(global)
-        } else {
-            match (local, global) {
-                (Some(local), Some(global)) if global.0 != local.0 => {
-                    let from = g.units[&uid].pos;
-                    let extra = (g.wdist(from, global.0) - g.wdist(from, local.0)).max(0) as f64;
-                    let premium = SETTLER_GLOBAL_PREMIUM + extra * SETTLER_EXTRA_TRAVEL_PRICE;
-                    if global.1 > local.1 + premium {
-                        Some(global)
-                    } else {
-                        Some(local)
-                    }
+        match (local, global) {
+            (Some(local), Some(global)) if global.0 != local.0 => {
+                let from = g.units[&uid].pos;
+                let extra = (g.wdist(from, global.0) - g.wdist(from, local.0)).max(0) as f64;
+                let premium = SETTLER_GLOBAL_PREMIUM + extra * SETTLER_EXTRA_TRAVEL_PRICE;
+                if global.1 > local.1 + premium {
+                    Some(global)
+                } else {
+                    Some(local)
                 }
-                (Some(local), _) => Some(local),
-                (None, global) => global,
             }
+            (Some(local), _) => Some(local),
+            (None, global) => global,
         }
     }
 
@@ -30833,7 +30918,7 @@ impl AdvancedAi {
     /// has held for `SETTLER_IDLE_PATIENCE` turns. See
     /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let acted = self.advanced_settler_step_inner(g, pid, uid);
+        let acted = self.advanced_settler_step_inner(g, pid, uid, true);
         if acted || !self.settler_never_idles {
             return acted;
         }
@@ -30858,7 +30943,13 @@ impl AdvancedAi {
         self.settler_watchdog_step(g, pid, uid)
     }
 
-    fn advanced_settler_step_inner(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    fn advanced_settler_step_inner(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        allow_arrival_follow_up: bool,
+    ) -> bool {
         let current = g.units[&uid].pos;
         if self.live_settler_capture_lessons {
             self.settler_last_seen.insert(uid, current);
@@ -31641,9 +31732,25 @@ impl AdvancedAi {
         // reach unless the guard walks in too or the city is founded now.
         let moved = if self.civilian_out_of_reach || self.long_settler_escort_active(uid, target) {
             self.settler_step_out_of_reach(g, pid, uid, target)
+        } else if self.rapid_city_expansion {
+            self.rapid_settler_stride_toward_safe(g, pid, uid, target)
         } else {
             self.settler_step_toward_safe(g, pid, uid, target)
         };
+        // A Settler may found after moving, but this controller historically
+        // waited for its next turn when a rapid-expansion walker reached its
+        // target on the final step. Re-enter the established arrival path so
+        // its loyalty and safety checks remain authoritative before founding.
+        // The follow-up is deliberately bounded to one pass: reaching a newly
+        // selected fallback may still consume this turn's movement, but cannot
+        // turn one unit step into an unbounded march.
+        if moved
+            && allow_arrival_follow_up
+            && self.rapid_city_expansion
+            && g.units.get(&uid).is_some_and(|unit| unit.pos == target)
+        {
+            return self.advanced_settler_step_inner(g, pid, uid, false);
+        }
         // ★★★★ "marching" is printed ABOVE, before the step is attempted, so the
         // journal has never been able to tell a march from a hold. Measured on the
         // live ladder: settlers cross **0.78 tiles/turn on 2 movement points**,
