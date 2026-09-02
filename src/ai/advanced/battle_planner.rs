@@ -62,7 +62,8 @@
 //!    and enemy; with no enemy within `CONTACT_BAND` they stand at the
 //!    front's depth from the objective instead. Shooter slots stand at
 //!    attack range from the most finishable targets with line of sight and a
-//!    front slot between them and the enemy; siege slots in range of the
+//!    front slot between them and the enemy, or one tile further back where
+//!    no front slot covers them; siege slots in range of the
 //!    objective city behind a front slot; support slots beside the most
 //!    front slots; and a unit under `HEAL_SLOT_HP`, where the board heals,
 //!    takes a heal slot — a tile the field reads as zero, a district or
@@ -1764,7 +1765,13 @@ impl AdvancedAi {
         };
 
         // Shooter slots: at range from the most finishable targets, in line
-        // of sight, a front slot between them and the enemy where one is.
+        // of sight, behind a front slot; where no front slot covers a tile at
+        // range, one tile further back instead — a shooter the plan places
+        // has no shot this turn, and standing unscreened at range only puts
+        // it inside the enemy foot's reach for nothing, where a tile back it
+        // steps in and fires next turn (measured: four archers and two
+        // warriors read −69 ± 29 a seed with the unscreened tile at range
+        // taken first). Unscreened at range is the last resort.
         let n_shooter = by_role.get(&SlotRole::Shooter).map_or(0, Vec::len);
         if n_shooter > 0 {
             let range = by_role[&SlotRole::Shooter]
@@ -1781,27 +1788,35 @@ impl AdvancedAi {
                     .map(|contact| contact.pos)
                     .collect()
             };
-            let mut candidates: Vec<(bool, f64, i32, Pos)> = pool
+            let mut candidates: Vec<(u8, f64, i32, Pos)> = pool
                 .iter()
                 .copied()
-                .filter(|tile| {
-                    !taken.contains(tile)
-                        && depth(*tile) >= range.min(2)
-                        && aims.iter().any(|aim| {
-                            g.wdist(*tile, *aim) == range && g.line_of_sight_from(*tile, *aim)
-                        })
-                })
-                .map(|tile| {
-                    (
-                        screened(tile),
+                .filter(|tile| !taken.contains(tile) && depth(*tile) >= range.min(2))
+                .filter_map(|tile| {
+                    let at_range = aims.iter().any(|aim| {
+                        g.wdist(tile, *aim) == range && g.line_of_sight_from(tile, *aim)
+                    });
+                    let standoff = depth(tile) >= range + 1
+                        && aims.iter().any(|aim| g.wdist(tile, *aim) == range + 1);
+                    let tier = if at_range && screened(tile) {
+                        0
+                    } else if standoff {
+                        1
+                    } else if at_range {
+                        2
+                    } else {
+                        return None;
+                    };
+                    Some((
+                        tier,
                         g.tile_defense_bonus(tile),
                         g.wdist(tile, group.anchor),
                         tile,
-                    )
+                    ))
                 })
                 .collect();
             candidates.sort_by(|a, b| {
-                b.0.cmp(&a.0)
+                a.0.cmp(&b.0)
                     .then_with(|| b.1.total_cmp(&a.1))
                     .then_with(|| a.2.cmp(&b.2))
                     .then_with(|| a.3.cmp(&b.3))
