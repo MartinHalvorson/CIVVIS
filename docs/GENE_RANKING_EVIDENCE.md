@@ -190,6 +190,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `battle-planner-3` | off (unmeasured) | `battle-planner-3`: version three of `battle_planner` — the siege's taker left to the siege, the host's strike preview over the closed form, and the previews asked for. | 1 \| 3 |
 | `boosted-bargain-first-2` | off (unmeasured) | Let a one-turn boosted technology break a close ordinary fallback decision after every forced lane goal stands down. | 1 \| 2 |
 | `border-parity-3` | off (unmeasured) | Version three of `border-parity`: fill one local garrison debt only when two visible non-recon land bodies from the same peaceful major are staged beside the city. | 1 \| 3 |
+| `chase-every-boost-2` | off (unmeasured) | Version two only lets a city finish the final production trigger for the technology or civic already in progress, before that study ends. | 1 \| 2 |
 | `conversion-majority-alarm-2` | off (unmeasured) | Read each rival civilization's progress toward its own majority, then use the least-converted holdout as the conjunctive victory clock. | 1 \| 2 |
 | `diplomatic-lane-forecast-2` | off (unmeasured) | Version 2 waits until a current suzerainty or already-earned Diplomatic Victory Point proves a real foothold before projecting Congress turns. | 1 \| 2 |
 | `district-planning-3` | off (unmeasured) | `district-planning-3`: retain the joint district-site plan, but make a Gold purchase only for its highest-value unowned site when that city is idle and can start the district next. | 1 \| 3 |

@@ -4914,6 +4914,13 @@ pub struct AdvancedAi {
     /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
     /// `chase-every-boost`; see `advanced/chase_every_boost.rs`.
     chase_every_boost: bool,
+    /// Version two of `chase-every-boost`: only a final city-production
+    /// trigger for the technology or civic already under study earns a
+    /// capped tiebreak, and only while that city can finish it before the
+    /// study does. It deliberately leaves v1's global research, Builder, and
+    /// combat hooks off. One family version plays at a time. Opt-in gene
+    /// `chase-every-boost-2`; see `advanced/chase_every_boost.rs`.
+    chase_every_boost_2: bool,
     /// Version 2 of `coalition-before-war`: make one strike-time joint-war
     /// invitation to a credible partner, with only directly useful military
     /// alliance and enemy-client Envoy setup.
@@ -7582,6 +7589,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             chase_every_boost: false,
+            chase_every_boost_2: false,
             coalition_before_war_2: false,
             campus_through_expansion: false,
             district_planning_2: false,

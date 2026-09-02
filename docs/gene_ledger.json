@@ -1628,6 +1628,15 @@
           "chain-payback-window-2": null
         }
       },
+      "chase-every-boost": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "chase-every-boost": null,
+          "chase-every-boost-2": null
+        }
+      },
       "coalition-before-war": {
         "rule_on": [
           "coalition-before-war"

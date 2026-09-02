@@ -1973,7 +1973,14 @@ pub const GENES: &[Gene] = &[
     // Priced on the arena first. See `advanced/battle_planner.rs`.
     Gene { tag: "battle-planner", field: "battle_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner, disable: AdvancedAi::disable_battle_planner },
 
+    // Version one expands every boost trigger across research, production,
+    // Builders, and combat. It remains the broad family control for direct
+    // comparison with the selective successor below.
     Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
+    // Version two pays only an active study's final city-production trigger,
+    // and only when the city can complete it before that study. It does not
+    // steer research, Builder actions, or combat; one family version plays.
+    Gene { tag: "chase-every-boost-2", field: "chase_every_boost_2", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost_2, disable: AdvancedAi::disable_chase_every_boost_2 },
     // Replace v1's global opening timer with a concrete, currently buildable
     // first-building debt in the project's own district. Lane-aligned points
     // and immediate race swings stay live; only off-lane churn waits.
