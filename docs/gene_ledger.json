@@ -1489,6 +1489,15 @@
           "coastal-city-sites-2": null
         }
       },
+      "conversion-majority-alarm": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "conversion-majority-alarm": null,
+          "conversion-majority-alarm-2": null
+        }
+      },
       "diplomatic-lane-forecast": {
         "rule_on": [],
         "head": null,

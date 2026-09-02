@@ -847,10 +847,24 @@ impl AdvancedAi {
     /// [`Self::conversion_majority_alarm`].
     pub fn enable_conversion_majority_alarm(&mut self) {
         self.conversion_majority_alarm = true;
+        self.conversion_majority_alarm_2 = false;
     }
 
     pub fn disable_conversion_majority_alarm(&mut self) {
         self.conversion_majority_alarm = false;
+    }
+
+    /// Read each rival civilization's progress toward its own majority, then
+    /// average those equal shares. Version 2 of `conversion-majority-alarm`;
+    /// enabling it selects this family version.
+    pub fn enable_conversion_majority_alarm_2(&mut self) {
+        self.conversion_majority_alarm = false;
+        self.conversion_majority_alarm_2 = true;
+    }
+
+    /// The twin of `enable_conversion_majority_alarm_2`.
+    pub fn disable_conversion_majority_alarm_2(&mut self) {
+        self.conversion_majority_alarm_2 = false;
     }
 
     /// Score the Culture lane by where the two tourist curves are when the
