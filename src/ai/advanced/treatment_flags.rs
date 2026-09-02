@@ -2309,12 +2309,27 @@ impl AdvancedAi {
     /// the trigger still needs. See [`AdvancedAi::eureka_builder_premium`].
     /// Opt-in gene `eureka-chasing-builder`.
     pub fn enable_eureka_chasing_builder(&mut self) {
+        self.eureka_chasing_builder_2 = false;
         self.eureka_chasing_builder = true;
     }
 
     /// The twin of `enable_eureka_chasing_builder`.
     pub fn disable_eureka_chasing_builder(&mut self) {
         self.eureka_chasing_builder = false;
+    }
+
+    /// Version two rewards only a final, immediately usable Builder eureka
+    /// step for the technology or civic currently in progress. It replaces
+    /// the broad v1 premium for this seat. Opt-in gene
+    /// `eureka-chasing-builder-2`.
+    pub fn enable_eureka_chasing_builder_2(&mut self) {
+        self.eureka_chasing_builder = false;
+        self.eureka_chasing_builder_2 = true;
+    }
+
+    /// The twin of `enable_eureka_chasing_builder_2`.
+    pub fn disable_eureka_chasing_builder_2(&mut self) {
+        self.eureka_chasing_builder_2 = false;
     }
 
     /// A unit, building or district that completes an unresearched
@@ -3841,6 +3856,19 @@ impl AdvancedAi {
     /// The twin of `enable_veteran_retreat_margin`.
     pub fn disable_veteran_retreat_margin(&mut self) {
         self.base.veteran_retreat_margin = false;
+    }
+
+    /// The army's turn planned from a ranked Objective Board — rows valued in
+    /// hammers with a requirement and a deadline — and served by persistent
+    /// task forces, in place of proximity force groups and the posture
+    /// ladder; `force_groups` is built from the forces. See `objective_board`.
+    pub fn enable_objective_board(&mut self) {
+        self.objective_board = true;
+    }
+
+    /// The twin of `enable_objective_board`.
+    pub fn disable_objective_board(&mut self) {
+        self.objective_board = false;
     }
 
     // ---- append: a-b ------------------------------------------------

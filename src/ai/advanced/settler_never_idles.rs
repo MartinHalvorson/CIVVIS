@@ -1030,6 +1030,11 @@ mod tests {
         assert!(AdvancedAi::inside_rival_sphere(&g, 0, plot));
         let mut ai = AdvancedAi::new();
         ai.enable_engine_repairs();
+        // This fixture exercises the guard's off-to-on transition. The
+        // deployment ledger may select it from its batch evidence, so hold it
+        // off explicitly before proving the unguarded forecast path.
+        ai.disable_exhaustion_loyalty_guard();
+        assert!(!ai.exhaustion_loyalty_guard);
         assert_eq!(
             ai.settle_site_loyalty_verdict(&g, 0, plot),
             None,

@@ -16,9 +16,9 @@
     "withholdable_live_count": 40
   },
   "genome_coverage": {
-    "capability_toggles": 285,
+    "capability_toggles": 287,
     "measured_by_a_screen": 73,
-    "reachable_as_a_gene": 244,
+    "reachable_as_a_gene": 246,
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 41,
     "unreachable_toggles": [
