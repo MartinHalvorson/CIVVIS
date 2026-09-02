@@ -216,6 +216,77 @@ class SalvageableLossTest(unittest.TestCase):
         self.assertIsNone(report["roster"]["salvageable_share"])
 
 
+class EvacuationTest(unittest.TestCase):
+    """The death shape measured on the 08-30..09-01 ledger: the victim began
+    its death turn wounded, had been ordered to leave, and never moved."""
+
+    def _events(self) -> list[dict]:
+        return [
+            {"kind": "seat", "local_player": 0},
+            # Turn 9, first frame: the warrior is already under the withdrawal
+            # line; the second frame is the board after its (unexecuted) order.
+            {"kind": "state", "turn": 9, "frame": 0, "gold": 5,
+             "units": [_unit(1, "UNIT_WARRIOR", 2, 2, hp=40), _unit(2, "UNIT_ARCHER", 6, 6, hp=100)],
+             "hostiles": []},
+            {"kind": "state", "turn": 9, "frame": 1, "gold": 5,
+             "units": [_unit(1, "UNIT_WARRIOR", 2, 2, hp=40), _unit(2, "UNIT_ARCHER", 6, 6, hp=100)],
+             "hostiles": []},
+            {"kind": "order_failed", "turn": 9, "order_kind": "unit", "subject": 1,
+             "verb": "MOVE_TO", "reason": "did_not_move", "checked_on": 10},
+            {"kind": "move_noop", "turn": 9, "unit": 1, "from": [2, 2], "want": [3, 2], "why": "zoc"},
+            {"kind": "move_fallback", "turn": 9, "unit": 1, "from": [2, 2], "want": [3, 2],
+             "sent": [1, 2], "why": "zoc"},
+            {"kind": "move_noop", "turn": 9, "unit": 1, "from": [2, 2], "want": [1, 2],
+             "why": "unknown", "after_fallback": True},
+            # The archer was ordered too, and the host walked it.
+            {"kind": "order_verified", "turn": 9, "order_kind": "unit", "subject": 2, "verb": "MOVE_TO"},
+            {"kind": "host_move", "turn": 9, "unit": 2, "from_x": 6, "from_y": 6, "x": 7, "y": 6},
+            {"kind": "state", "turn": 10, "frame": 0, "gold": 5,
+             "units": [_unit(1, "UNIT_WARRIOR", 2, 2, hp=40), _unit(2, "UNIT_ARCHER", 7, 6, hp=100)],
+             "hostiles": []},
+            {"kind": "combat", "turn": 10,
+             "attacker": {"player": 63, "id": 901, "kind": "UNIT_HORSEMAN", "type": "unit"},
+             "defender": {"player": 0, "id": 1, "kind": "UNIT_WARRIOR", "type": "unit"},
+             "damage_to_defender": 40, "damage_to_attacker": 10, "defender_killed": True,
+             "attacker_killed": False},
+            {"kind": "combat", "turn": 10,
+             "attacker": {"player": 63, "id": 902, "kind": "UNIT_HORSEMAN", "type": "unit"},
+             "defender": {"player": 0, "id": 2, "kind": "UNIT_ARCHER", "type": "unit"},
+             "damage_to_defender": 100, "damage_to_attacker": 0, "defender_killed": True,
+             "attacker_killed": False},
+            # A city strike on a district is not a unit death.
+            {"kind": "combat", "turn": 10,
+             "attacker": {"player": 0, "id": 65536, "type": "district", "gone": True},
+             "defender": {"player": 63, "id": 903, "kind": "UNIT_HORSEMAN", "type": "unit"},
+             "damage_to_defender": 20, "defender_killed": False, "attacker_killed": True},
+        ]
+
+    def test_the_wounded_victim_with_the_unexecuted_move_is_counted_once(self) -> None:
+        section = ledger.evacuation_section(self._events(), 0)
+        self.assertEqual(section["deaths"], 2)
+        self.assertEqual(section["deaths_wounded_at_turn_start"], 1, "the warrior began turn 10 at 40 hp")
+        self.assertEqual(
+            section["deaths_after_unexecuted_move"], 1,
+            "the warrior's turn-9 MOVE_TO never became a host move; the archer's did",
+        )
+        self.assertEqual(section["move_noop"], 2)
+        self.assertEqual(section["move_noop_reasons"], {"zoc": 1, "unknown": 1})
+        self.assertEqual(section["move_fallback"], 1)
+        self.assertEqual(section["move_fallback_reasons"], {"zoc": 1})
+
+    def test_a_mod_with_no_combat_events_says_nothing(self) -> None:
+        self.assertIsNone(ledger.evacuation_section([{"kind": "seat", "local_player": 0}], 0))
+
+    def test_the_report_carries_the_section_and_the_text_names_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _write_run(Path(tmp), self._events(), [(9, 1, 1, "MOVE_TO", 3, 2)])
+            report = ledger.ledger(run)
+            text = ledger.render(report) if hasattr(ledger, "render") else ""
+        self.assertEqual(report["evacuation"]["deaths_after_unexecuted_move"], 1)
+        if text:
+            self.assertIn("never executed", text)
+
+
 class CityOccupationTest(unittest.TestCase):
     def test_a_captured_city_is_counted_and_a_lost_one_is_not_a_capture(self) -> None:
         events = [
