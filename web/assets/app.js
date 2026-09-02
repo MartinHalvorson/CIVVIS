@@ -326,21 +326,21 @@ const CIV6_UNIT_ICON_TYPES = [
   "artillery", "at_crew", "barbarian_horse_archer", "barbarian_horseman",
   "battering_ram", "battleship", "biplane",
   "bireme", "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
-  "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
-  "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "galley",
+  "cossack", "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
+  "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "gaesatae", "galley",
   "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
-  "horseman", "infantry", "inquisitor", "ironclad", "jet_bomber",
+  "horseman", "hypaspist", "infantry", "inquisitor", "ironclad", "jet_bomber",
   "jet_fighter", "keshig", "knight", "kongo_shield_bearer", "legion",
-  "line_infantry", "machine_gun", "man_at_arms", "maryannu_chariot_archer",
-  "mechanized_infantry", "medic", "military_engineer", "missile_cruiser",
+  "line_infantry", "machine_gun", "man_at_arms", "mandekalu_cavalry",
+  "maryannu_chariot_archer", "mechanized_infantry", "medic", "military_engineer", "missile_cruiser",
   "missionary", "mobile_sam", "modern_armor", "modern_at", "musketman",
   "naturalist", "nau", "nihang", "nuclear_submarine", "observation_balloon",
   "oromo_cavalry", "pike_and_shot", "pikeman", "pitati_archer", "privateer",
-  "quadrireme", "ranger", "rock_band", "rocket_artillery",
-  "saka_horse_archer", "scout", "settler", "siege_tower", "skirmisher",
+  "quadrireme", "ranger", "rock_band", "rocket_artillery", "rough_rider",
+  "saka_horse_archer", "samurai", "scout", "settler", "siege_tower", "skirmisher",
   "slinger", "spearman", "spec_ops", "spy", "submarine", "supply_convoy",
-  "swordsman", "tagma", "tank", "toa", "trader", "trebuchet", "war_cart",
-  "warrior", "warrior_monk", "winged_hussar"
+  "swordsman", "tagma", "tank", "toa", "trader", "trebuchet", "varu", "voi_chien",
+  "war_cart", "warrior", "warrior_monk", "winged_hussar"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
   CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));
