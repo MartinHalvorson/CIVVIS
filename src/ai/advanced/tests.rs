@@ -22221,6 +22221,79 @@ fn a_long_overseas_journey_adds_a_naval_guard_after_embarkation() {
     );
 }
 
+/// A long expedition can outrun the only available naval hull. The live
+/// bridge must bind a routeable ship beyond the local escort radius so the
+/// military turn can close the gap; otherwise the water safety floor holds the
+/// Settler forever even though naval cover exists on the same connected sea.
+#[test]
+fn a_live_embarked_settler_summons_a_distant_routeable_naval_guard() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&first_water]));
+    game.remove_unit(probe);
+
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let next_water = game
+        .route_step(settler, target, 0)
+        .expect("the overseas route has a second water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&next_water]));
+    let sea_guard_pos = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| {
+            game.rules.is_water(&game.map.tiles[position])
+                && game.wdist(*position, first_water) > SETTLER_ESCORT_SEARCH_RADIUS
+        })
+        .expect("the connected sea has a distant water tile");
+    let sea_guard = game.spawn_test_unit("galley", 0, sea_guard_pos);
+    let route_distance = game
+        .route_distance(sea_guard, first_water, 0)
+        .expect("the distant hull can reach the Settler's connected sea");
+    assert!(route_distance > SETTLER_ESCORT_SEARCH_RADIUS as usize);
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_formationless_settler_shadow();
+    live.enable_live_settler_capture_lessons();
+    live.settler_targets.insert(settler, target);
+    live.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    live.settler_guards.insert(settler, land_guard);
+
+    for uid in [settler, land_guard, sea_guard] {
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.moves_left = 2.0;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+
+    assert!(
+        !live.advanced_settler_step(&mut game, 0, settler),
+        "the live floor waits for the distant hull to close before taking another water step"
+    );
+    assert_eq!(live.settler_sea_guards.get(&settler), Some(&sea_guard));
+
+    let before = game.units[&sea_guard].pos;
+    assert_eq!(live.stacked_guard_step(&mut game, 0, sea_guard), Some(true));
+    assert_ne!(game.units[&sea_guard].pos, before);
+}
+
 /// An embarked land escort cannot protect a Settler from a naval unit hidden
 /// in the fog. The live water floor holds the committed expedition before its
 /// next water-to-water step until a naval guard is bound; native behavior is
