@@ -6020,7 +6020,12 @@ fn settler_capture_escape_reached(
     })
 }
 
-fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
+fn combat_evidence(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    attacker: i64,
+    target: Option<(i32, i32)>,
+) -> bool {
     evidence.iter().any(|event| {
         event.get("kind").and_then(|k| k.as_str()) == Some("combat")
             && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
@@ -6029,6 +6034,18 @@ fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> 
                 .and_then(|a| a.get("id"))
                 .and_then(|id| id.as_i64())
                 == Some(attacker)
+            && target.is_none_or(|(x, y)| {
+                event
+                    .get("defender")
+                    .and_then(|defender| defender.get("x"))
+                    .and_then(|value| value.as_i64())
+                    == Some(i64::from(x))
+                    && event
+                        .get("defender")
+                        .and_then(|defender| defender.get("y"))
+                        .and_then(|value| value.as_i64())
+                        == Some(i64::from(y))
+            })
     })
 }
 
@@ -6233,19 +6250,32 @@ fn verify_unit_order(
                 Verdict::Failed("no_city".to_string())
             }
         }
-        // An air strike is a ranged strike flown from the base: the target
-        // plot harmed on the next frame, or a combat on the ledger, proves it.
+        // An ordinary strike must be attributed to this attacker and this
+        // target. A foreign unit can harm the same plot between frames, which
+        // is not proof that this request landed. AIR_ATTACK retains the target
+        // harm fallback because aircraft can resolve through a host/UI path
+        // that does not emit the same combat record; an exact host refusal
+        // still wins over collateral damage.
         "ATTACK" | "RANGE_ATTACK" | "AIR_ATTACK" => {
-            let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
-            if harmed || combat_evidence(evidence, turn, id) {
+            let exact_combat = combat_evidence(evidence, turn, id, order.pos);
+            let refusal = strike_refusal_reason(evidence, turn, id, order.pos);
+            let target_damage_observed = order.pos.is_some_and(|p| target_harmed(before, after, p));
+            let air_target_harmed = verb == "AIR_ATTACK" && target_damage_observed;
+            if exact_combat || (air_target_harmed && refusal.is_none()) {
                 Verdict::Verified
             } else {
                 // The host's own reason when it gave one; see
                 // `strike_refusal_reason`.
-                Verdict::Failed(
-                    strike_refusal_reason(evidence, turn, id, order.pos)
-                        .unwrap_or_else(|| "target_unharmed".to_string()),
-                )
+                Verdict::Failed(refusal.unwrap_or_else(|| {
+                    if air_target_harmed {
+                        "target_unharmed".to_string()
+                    } else if target_damage_observed && (verb == "ATTACK" || verb == "RANGE_ATTACK")
+                    {
+                        "attacker_unproven".to_string()
+                    } else {
+                        "target_unharmed".to_string()
+                    }
+                }))
             }
         }
         // A rebase lands the aircraft on the new base plot at once (the
@@ -6656,7 +6686,7 @@ fn verify_order_with_context(
             if harmed
                 || order
                     .subject
-                    .is_some_and(|id| combat_evidence(evidence, turn, id))
+                    .is_some_and(|id| combat_evidence(evidence, turn, id, order.pos))
             {
                 Verdict::Verified
             } else {
@@ -11029,6 +11059,44 @@ mod tests {
             verdict("RANGE_ATTACK", std::slice::from_ref(&wordless)),
             Verdict::Failed(reason) if reason == "host_refused_strike"
         ));
+        // Damage at the requested plot is not enough: another unit may have
+        // caused it while this attack was refused. The refusal remains the
+        // authoritative outcome for the requested attacker/target pair.
+        let mut collateral = before.clone();
+        collateral.hostiles[0].hp = 40.0;
+        let collateral_combat = event(
+            r#"{"kind":"combat","turn":30,"attacker":{"id":202},"defender":{"id":0,"x":5,"y":4}}"#,
+        );
+        let collateral_order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("RANGE_ATTACK".to_string()),
+            pos: Some((5, 4)),
+        };
+        assert!(matches!(
+            verify_unit_order(
+                &collateral_order,
+                30,
+                &before,
+                &collateral,
+                &tiles,
+                std::slice::from_ref(&collateral_combat),
+                LaterFrames::default(),
+            ),
+            Verdict::Failed(reason) if reason == "attacker_unproven"
+        ));
+        assert!(matches!(
+            verify_unit_order(
+                &collateral_order,
+                30,
+                &before,
+                &collateral,
+                &tiles,
+                &[wordless.clone(), collateral_combat],
+                LaterFrames::default(),
+            ),
+            Verdict::Failed(reason) if reason == "host_refused_strike"
+        ));
         // Another plot's, another turn's or another unit's refusal is not ours.
         let elsewhere = event(
             r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":6,"y":4,"why":"Target is out of range [p4r]"}"#,
@@ -11045,7 +11113,9 @@ mod tests {
         ));
         // A refusal beside a combat on the ledger: the refusal was an earlier
         // frame's and the combat is the proof the strike landed.
-        let fought = event(r#"{"kind":"combat","turn":30,"attacker":{"id":101}}"#);
+        let fought = event(
+            r#"{"kind":"combat","turn":30,"attacker":{"id":101},"defender":{"id":0,"x":5,"y":4}}"#,
+        );
         assert!(matches!(
             verdict("ATTACK", &[war, fought]),
             Verdict::Verified
@@ -16068,7 +16138,7 @@ mod order_postcondition_tests {
     }
 
     #[test]
-    fn an_attack_is_verified_by_the_target_or_the_combat_record() {
+    fn an_attack_requires_its_own_targeted_combat_record() {
         let mut before = frame(50);
         before.units = vec![unit(7, "UNIT_ARCHER", 10, 10)];
         let mut enemy = unit(900, "UNIT_WARRIOR", 11, 10);
@@ -16081,11 +16151,17 @@ mod order_postcondition_tests {
         let mut hurt = enemy.clone();
         hurt.hp = 70.0;
         wounded.hostiles = vec![hurt];
-        assert_eq!(check(&strike, &before, &wounded, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&strike, &before, &wounded, &[]),
+            failed("attacker_unproven")
+        );
 
         let mut killed = frame(51);
         killed.units = before.units.clone();
-        assert_eq!(check(&strike, &before, &killed, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&strike, &before, &killed, &[]),
+            failed("attacker_unproven")
+        );
 
         let mut untouched = frame(51);
         untouched.units = before.units.clone();
@@ -16094,7 +16170,9 @@ mod order_postcondition_tests {
             check(&strike, &before, &untouched, &[]),
             failed("target_unharmed")
         );
-        let combat = event(r#"{"kind":"combat","turn":50,"attacker":{"id":7,"player":0}}"#);
+        let combat = event(
+            r#"{"kind":"combat","turn":50,"attacker":{"id":7,"player":0},"defender":{"id":900,"x":11,"y":10}}"#,
+        );
         assert_eq!(
             check(&strike, &before, &untouched, &[combat]),
             Verdict::Verified
