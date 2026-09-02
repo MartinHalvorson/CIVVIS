@@ -4080,6 +4080,20 @@ impl AdvancedAi {
         self.safest_stand = false;
     }
 
+    /// `doomed-blow-veto`: a unit whose every blow this turn would leave it
+    /// dead on the enemy's next turn — the return damage plus the danger
+    /// field at the stand against its hit points — is taken from the ladder,
+    /// which would attack with it, and given to the heal rotation as an
+    /// exposed unit. See `battle_planner`.
+    pub fn enable_doomed_blow_veto(&mut self) {
+        self.doomed_blow_veto = true;
+    }
+
+    /// The twin of `enable_doomed_blow_veto`.
+    pub fn disable_doomed_blow_veto(&mut self) {
+        self.doomed_blow_veto = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

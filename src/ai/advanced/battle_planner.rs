@@ -185,6 +185,23 @@
 //! danger by `ROTATE_DANGER_MARGIN`. Census `battle_plan_fallbacks`; the
 //! rotation's Decision line says "falls back to the least danger" or "holds
 //! under fire and fortifies".
+//! **`doomed-blow-veto`** (opt-in, separate from the version family): the
+//! plan leaves every unit with a legal blow it did not spend to the ladder,
+//! which prices the blow on its own clone and takes it more often — and the
+//! ladder's reply price reads the movement flood, not the danger field.
+//! Twelve of the 145 losses in the 2026-09-02 taxonomy were such an attack:
+//! the unit struck, stood beside its target, and was removed on the enemy's
+//! turn. With the gene on, `doomed_shooters` reads every candidate blow of
+//! every shooter — return damage (a melee blow's) plus the field's danger at
+//! the stand — and a shooter with no blow that leaves it above zero is not
+//! armed: if it is wounded or exposed where it stands the rotation takes it
+//! out of reach (or to the least danger under `safest-stand`); if it is safe
+//! where it stands it holds that ground and fortifies — the ladder's attack
+//! is the one thing denied it. (The first cut rotated every doomed unit and
+//! read −338 ± 84 on the_ridge: a unit safe on its hill was walked off it.)
+//! A unit with one survivable blow keeps the ladder's freedom, and
+//! the kill plan's own vetoes and values are unchanged. Census
+//! `battle_plan_doomed`; one Decision line per plan when it fires.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -910,6 +927,43 @@ fn search_kill_sequence(
     best
 }
 
+/// `doomed-blow-veto`: the shooters whose every candidate blow would leave
+/// them dead on the enemy's next turn — the return damage of the blow (a
+/// melee blow's; a ranged blow takes none) plus the danger field at the
+/// stand, at or over the unit's hit points. Such a unit has no blow worth
+/// the ladder's freedom: the rotation takes it as exposed instead.
+fn doomed_shooters(
+    shooters: &[Shooter],
+    targets: &[Target],
+    candidates: &[Candidate],
+    field: &mut DangerField,
+) -> BTreeSet<u32> {
+    let mut doomed = BTreeSet::new();
+    for (index, shooter) in shooters.iter().enumerate() {
+        let mut any = false;
+        let mut survivable = false;
+        for candidate in candidates.iter().filter(|c| c.shooter == index) {
+            any = true;
+            let target = &targets[candidate.target];
+            let def = effective_strength(candidate.def_base, target.hp);
+            let back = if candidate.ranged {
+                0.0
+            } else {
+                candidate.return_on(def)
+            };
+            let after = field.danger(candidate.from, shooter.uid);
+            if f64::from(shooter.hp) - back - after > 0.0 {
+                survivable = true;
+                break;
+            }
+        }
+        if any && !survivable {
+            doomed.insert(shooter.uid);
+        }
+    }
+    doomed
+}
+
 impl AdvancedAi {
     /// Whether the battle plan has already ordered this unit this turn, so
     /// the per-unit ladder leaves it where the plan put it.
@@ -939,8 +993,15 @@ impl AdvancedAi {
                 "a unit stopped by our zone of control keeps its movement for the blow; \
                  the danger field, the rotation and the slots read that reach");
         }
-        let (blows, armed, wanted) = self.kill_sequence_in(g, pid, &mut field);
+        let (blows, armed, wanted, doomed) = self.kill_sequence_in(g, pid, &mut field);
         self.battle_planner_wanted_previews = wanted;
+        self.census.battle_plan_doomed += doomed.len() as u32;
+        if !doomed.is_empty() {
+            think!(self.journal(), Military, Decision,
+                "Battle plan: {} unit(s) have no blow they would survive", doomed.len();
+                "return damage plus the danger at every stand reaches their hit points; \
+                 the rotation takes them as exposed and the ladder leaves them alone");
+        }
         let mut struck = false;
         let mut strikers = BTreeSet::new();
         if !blows.is_empty() {
@@ -956,7 +1017,7 @@ impl AdvancedAi {
         if struck {
             field = DangerField::with_reach(g, pid, self.strike_reach);
         }
-        let rotations = self.rotate_wounded(g, pid, &mut field, &strikers);
+        let rotations = self.rotate_wounded(g, pid, &mut field, &strikers, &doomed);
         self.census.battle_plan_rotations += rotations;
         // `battle-planner-2` (and three): the positions plan, on a force
         // picture that no longer holds the defenders the kill plan removed.
@@ -1034,22 +1095,29 @@ impl AdvancedAi {
         wanted
     }
 
-    /// The ordered blows, every unit that had a legal blow to offer, and the
-    /// pairs version three wants the host to price.
+    /// The ordered blows, every unit that had a legal blow to offer, the
+    /// pairs version three wants the host to price, and — `doomed-blow-veto`
+    /// — the shooters whose every blow would leave them dead next turn.
     fn kill_sequence_in(
         &self,
         g: &Game,
         pid: usize,
         field: &mut DangerField,
-    ) -> (Vec<Blow>, BTreeSet<u32>, Vec<WantedPreview>) {
-        let (shooters, targets, candidates, armed) = self.strike_candidates(g, pid, field);
+    ) -> (Vec<Blow>, BTreeSet<u32>, Vec<WantedPreview>, BTreeSet<u32>) {
+        let (shooters, targets, candidates, mut armed) = self.strike_candidates(g, pid, field);
         if candidates.is_empty() {
-            return (Vec::new(), armed, Vec::new());
+            return (Vec::new(), armed, Vec::new(), BTreeSet::new());
         }
+        let doomed = if self.doomed_blow_veto {
+            doomed_shooters(&shooters, &targets, &candidates, field)
+        } else {
+            BTreeSet::new()
+        };
+        armed.retain(|uid| !doomed.contains(uid));
         let wanted = self.wanted_previews_of(&shooters, &targets, &candidates);
         let (sequence, score) = search_kill_sequence(&shooters, &targets, &candidates, field);
         if score <= 0.0 || sequence.is_empty() {
-            return (Vec::new(), armed, wanted);
+            return (Vec::new(), armed, wanted, doomed);
         }
         let mut dealt = vec![0.0; targets.len()];
         let mut blows = Vec::with_capacity(sequence.len());
@@ -1070,7 +1138,7 @@ impl AdvancedAi {
                 finishes: dealt[candidate.target] >= f64::from(target.hp) * KILL_MARGIN,
             });
         }
-        (blows, armed, wanted)
+        (blows, armed, wanted, doomed)
     }
 
     /// Every legal blow each eligible unit could make this turn, from its
@@ -1599,6 +1667,7 @@ impl AdvancedAi {
         pid: usize,
         field: &mut DangerField,
         strikers: &BTreeSet<u32>,
+        doomed: &BTreeSet<u32>,
     ) -> u32 {
         let heals = !g.is_arena() || g.tactics.heal;
         let mut ids = g.player_unit_ids(pid);
@@ -1632,6 +1701,21 @@ impl AdvancedAi {
             // would walk it out of reach one turn and back into it the next.
             let margin = if heals { ROTATE_DANGER_MARGIN } else { 0 };
             let exposed = here > f64::from(unit.hp - margin);
+            // `doomed-blow-veto`: a unit with no blow it would survive that is
+            // neither wounded nor exposed where it stands holds that ground
+            // and fortifies — the ladder's attack is the one thing denied it;
+            // one that is also exposed rotates like any other.
+            if doomed.contains(&uid) && !(wounded || exposed) {
+                self.base.fortify_or_stop(g, pid, uid);
+                self.battle_planner_ordered.insert(uid);
+                if let Some(now) = g.units.get(&uid) {
+                    think!(self.journal(), Military, Decision,
+                        "Battle plan: the {} at {:?} holds rather than strike", now.kind, now.pos;
+                        "{} hp, danger {here:.0} where it stands; every blow it has would leave it dead next turn",
+                        now.hp);
+                }
+                continue;
+            }
             if !(wounded || exposed) {
                 continue;
             }
@@ -2996,7 +3080,7 @@ mod tests {
         fortify(&mut g, enemy);
         let mut ai = version_two();
         let mut field = DangerField::new(&g, 0);
-        let (blows, armed, _) = ai.kill_sequence_in(&g, 0, &mut field);
+        let (blows, armed, _, _) = ai.kill_sequence_in(&g, 0, &mut field);
         assert!(armed.contains(&archer), "the archer has a shot to offer");
         assert!(
             !armed.contains(&warrior),
@@ -3676,5 +3760,130 @@ mod tests {
             "left to the ladder"
         );
         assert_eq!(ai.census.battle_plan_fallbacks, 0);
+    }
+
+    /// `doomed-blow-veto` is an opt-in that ships off and is registered.
+    #[test]
+    fn doomed_blow_veto_ships_off_and_is_registered() {
+        let ai = AdvancedAi::new();
+        assert!(!ai.doomed_blow_veto, "an opt-in ships off");
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "doomed_blow_veto"));
+        let mut on = AdvancedAi::new();
+        on.enable_doomed_blow_veto();
+        assert!(on.doomed_blow_veto);
+        on.disable_doomed_blow_veto();
+        assert!(!on.doomed_blow_veto);
+        super::super::test_support::opt_in_off_in_both_controllers("doomed-blow-veto", |ai| {
+            ai.doomed_blow_veto
+        });
+    }
+
+    /// A warrior whose one blow — on an archer two tiles off along a clear
+    /// row — is struck from a tile the archer and a swordsman both reach: the
+    /// return plus the danger at the stand is over its hit points, so it is
+    /// doomed. The same warrior against the archer alone has a blow it
+    /// survives and is not.
+    #[test]
+    fn a_shooter_with_no_survivable_blow_is_doomed_and_one_with_a_survivable_blow_is_not() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(10, 4));
+        let archer = g.spawn_unit("archer", 1, at(12, 4));
+        let ai = AdvancedAi::new();
+        {
+            let mut field = DangerField::new(&g, 0);
+            let (shooters, targets, candidates, armed) = ai.strike_candidates(&g, 0, &mut field);
+            assert!(
+                armed.contains(&ours),
+                "the warrior has a blow on the archer"
+            );
+            assert!(
+                candidates.iter().all(|c| c.from == at(11, 4)),
+                "struck from the one stand beside it"
+            );
+            let doomed = doomed_shooters(&shooters, &targets, &candidates, &mut field);
+            assert!(doomed.is_empty(), "the archer alone is a blow it survives");
+        }
+        let sword = g.spawn_unit("swordsman", 1, at(11, 5));
+        assert_eq!(
+            g.wdist(g.units[&sword].pos, at(11, 4)),
+            1,
+            "the swordsman covers the stand"
+        );
+        assert_eq!(
+            g.wdist(g.units[&sword].pos, at(10, 4)),
+            2,
+            "and not the warrior's own tile"
+        );
+        let mut field = DangerField::new(&g, 0);
+        let (shooters, targets, candidates, armed) = ai.strike_candidates(&g, 0, &mut field);
+        assert!(armed.contains(&ours));
+        let stand = field.danger(at(11, 4), ours);
+        let home = field.danger(at(10, 4), ours);
+        assert!(
+            stand > 80.0,
+            "the stand is nearly lethal on its own: {stand}"
+        );
+        assert!(
+            home < 80.0,
+            "the warrior is not exposed where it stands: {home}"
+        );
+        let doomed = doomed_shooters(&shooters, &targets, &candidates, &mut field);
+        assert!(doomed.contains(&ours), "no blow it would survive");
+        assert!(g.units.contains_key(&archer));
+    }
+
+    /// Played: with the gene off the doomed warrior is left to the ladder —
+    /// the plan orders nothing for it; with the gene on, safe where it stands,
+    /// it holds its ground and fortifies and the archer is untouched; wounded
+    /// as well, it is the rotation's and steps out of reach.
+    #[test]
+    fn with_the_veto_the_doomed_unit_is_rotated_instead_of_left_to_attack() {
+        let mut g = open_field();
+        g.tactics.heal = true;
+        let ours = g.spawn_unit("warrior", 0, at(10, 4));
+        let archer = g.spawn_unit("archer", 1, at(12, 4));
+        g.spawn_unit("swordsman", 1, at(11, 5));
+        let plan = conquest(&g);
+        let mut off_board = g.clone();
+        let mut off = version_two();
+        off.plan_battle(&mut off_board, 0, &plan);
+        assert!(
+            !off.battle_planner_ordered.contains(&ours),
+            "off, the ladder has it"
+        );
+        assert_eq!(off.census.battle_plan_doomed, 0);
+        let mut ai = version_two();
+        ai.enable_doomed_blow_veto();
+        ai.plan_battle(&mut g, 0, &plan);
+        assert_eq!(ai.census.battle_plan_doomed, 1);
+        assert!(ai.battle_planner_ordered.contains(&ours), "on, the plan's");
+        let now = &g.units[&ours];
+        assert_eq!(
+            now.pos,
+            at(10, 4),
+            "safe where it stands, it holds its ground"
+        );
+        assert!(now.fortified, "and fortifies");
+        assert_eq!(ai.census.battle_plan_rotations, 0);
+        assert!(g.units.contains_key(&archer), "and struck nothing");
+        assert!(
+            !ai.battle_planner_recovering.contains(&ours),
+            "not a recovery"
+        );
+        // Wounded as well, the same unit is the rotation's and steps out of reach.
+        let mut g2 = off_board.clone();
+        wound(&mut g2, ours, 40);
+        let mut hurt = version_two();
+        hurt.enable_doomed_blow_veto();
+        hurt.plan_battle(&mut g2, 0, &plan);
+        assert!(hurt.battle_planner_ordered.contains(&ours));
+        assert_ne!(
+            g2.units[&ours].pos,
+            at(10, 4),
+            "wounded, it steps out of reach"
+        );
+        assert!(hurt.battle_planner_recovering.contains(&ours));
     }
 }

@@ -918,6 +918,9 @@ pub struct StrategyCensus {
     /// `safest-stand`: units the rotation found no zero-danger tile for and
     /// stood on the least dangerous one instead.
     pub battle_plan_fallbacks: u32,
+    /// `doomed-blow-veto`: units whose every blow would have left them dead
+    /// next turn, taken from the ladder and given to the rotation.
+    pub battle_plan_doomed: u32,
     /// `battle-planner-2`: slots the positions plan laid out, units it
     /// placed, and units the pace held back on the approach.
     pub battle_plan_slots: u32,
@@ -1026,6 +1029,7 @@ impl StrategyCensus {
         self.battle_plan_rotations += other.battle_plan_rotations;
         self.strike_reach_widened += other.strike_reach_widened;
         self.battle_plan_fallbacks += other.battle_plan_fallbacks;
+        self.battle_plan_doomed += other.battle_plan_doomed;
         self.battle_plan_slots += other.battle_plan_slots;
         self.battle_plan_positioned += other.battle_plan_positioned;
         self.battle_plan_paced += other.battle_plan_paced;
@@ -4928,6 +4932,11 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `doomed-blow-veto`: a unit whose every blow this turn would leave it
+    /// dead on the enemy's next — return damage plus the danger at the stand
+    /// against its hit points — is rotated instead of left to the ladder to
+    /// attack. Opt-in gene; see `advanced/battle_planner.rs`.
+    doomed_blow_veto: bool,
     /// Hunt every Eureka and Inspiration: the union of the boost-aware
     /// research, builder and production habits, over every trigger the engine
     /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
@@ -7640,6 +7649,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            doomed_blow_veto: false,
             chase_every_boost: false,
             chase_every_boost_2: false,
             coalition_before_war_2: false,
