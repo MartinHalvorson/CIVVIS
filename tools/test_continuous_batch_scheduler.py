@@ -298,37 +298,22 @@ class PublicationMetadata(unittest.TestCase):
             agent="continuous-batch", coordinated="#1234", computer="Test Mac")
         self.assertIn("5,000 validated completed games / 30,000 seats / 5,000 wins", body)
         self.assertIn("changes no game mechanics", body)
-        self.assertIn("retaining the selected default genome", body)
+        self.assertIn("reselects the default genome", body)
         self.assertIn("Computer: `Test Mac`", body)
         self.assertIn("Coordinated with: #1234", body)
         self.assertIn("publish validated 5,000-completed-game", body)
         self.assertIn("overwrite-guard: allow this report deliberately regenerates", body)
 
-    def test_every_publication_explicitly_preserves_the_selected_defaults(self):
-        genome = ("current-a", "current-b")
+    def test_every_publication_reselects_defaults_from_its_latest_three_reports(self):
         self.assertEqual(
-            scheduler.reporting_write_command("docs/gene_screens/example.json", genome),
+            scheduler.reporting_write_command("docs/gene_screens/example.json"),
             [
                 sys.executable, "tools/genes.py", "write",
-                "--preserve-deployment-defaults",
-                "--retained-deployment-genome", '["current-a","current-b"]',
+                "--reselect-deployment-defaults",
                 "--reporting-batch",
                 "docs/gene_screens/example.json",
             ],
         )
-
-    def test_publication_selection_comes_from_the_merged_main_base(self):
-        def output(_repo, *args):
-            if args == ("merge-base", "HEAD", "origin/main"):
-                return "base-commit"
-            self.assertEqual(args, ("show", "base-commit:docs/gene_ledger.json"))
-            return json.dumps({"rules": {"deployment_genome": ["current-a", "current-b"]}})
-
-        with mock.patch.object(scheduler, "git_output", side_effect=output):
-            base, genome = scheduler.deployment_genome_at_publication_base(Path("/worktree"))
-
-        self.assertEqual(base, "base-commit")
-        self.assertEqual(genome, ("current-a", "current-b"))
 
     def test_the_guard_knows_every_path_genes_py_write_records(self):
         """⭐ The allowed set is DERIVED from the writers, not restated here.
