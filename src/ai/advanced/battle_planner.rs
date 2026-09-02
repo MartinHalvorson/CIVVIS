@@ -143,6 +143,32 @@
 //!   `Game::host_previews` on the turn's next frame.
 
 //!
+//! **`strike-reach`** (opt-in, separate from the version family so any
+//! version can carry it): the danger field's reach. Read off
+//! `Game::attack_reach`, a hostile's reach is the movement flood's, and
+//! `flow_past` writes zero movement into a tile that enters our zone of
+//! control — so a melee unit two tiles off could not close and strike, and a
+//! shooter one step out of range could not step and shoot, and the field read
+//! zero at every tile only such a unit could hit. The engine does not resolve
+//! a blow that way: a unit stopped by a zone of control keeps its unused
+//! movement for the attack (`approach_reach`, `do_attack`), and on the live
+//! host it is the ordinary way a unit dies — measured over the seven games of
+//! 2026-09-02 with the planner on, the rotation stood 58 units on a tile the
+//! field read as zero that were killed there, 36 of the killers in sight at
+//! the start of the turn and 34 of those within one move and a blow, 17 of
+//! them melee at exactly two tiles. With the gene on, `DangerField` stands
+//! each hostile at the start of its own turn on the probe (full movement, no
+//! zone-of-control memory), takes `approach_reach` for the tiles it can end
+//! on with the movement it keeps there, and counts a melee blow on every
+//! neighbour of a stand with movement left and a ranged blow on every tile in
+//! range of one (a siege unit only from its own tile, as before). On the
+//! mirrored board — `MIRRORED_SEAT` with `Game::host_observed` filled — the
+//! ranged blow also drops the per-unit line-of-sight test: a Civilization VI
+//! ranged attack needs the target tile visible to the player, not a line from
+//! the unit, and the barbarian's other units see for it. Native boards keep
+//! the test, which is the engine's own `do_ranged` rule there. The kill plan,
+//! the rotation and the positions plan read the same field, so all three
+//! move with it; nothing else changes.
 //! **`safest-stand`** (opt-in, separate from the version family): the
 //! rotation's answer when no tile in reach reads as zero. Until this the
 //! rotation skipped such a unit in silence and the ladder played it — over
@@ -272,6 +298,107 @@ fn wounded_penalty(hp: i32) -> f64 {
     (10.0 - hp.clamp(0, 100) as f64 / 10.0).round()
 }
 
+/// Whether `pid` is the live seat on a mirrored board: the one place the host
+/// has shown the seat what it can see. Empty everywhere else, including every
+/// arena and screen board, so a rule keyed on it is inert there.
+fn mirrored_board(g: &Game, pid: usize) -> bool {
+    pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty()
+}
+
+/// `strike-reach`: every tile the hostile `uid` could strike on its next
+/// turn, read the way the engine resolves the blow rather than the way the
+/// movement flood records it. The hostile is stood at the start of its own
+/// turn on `probe` — full movement, no zone-of-control memory from the turn
+/// it has just ended — `approach_reach` gives the tiles it can end on with
+/// the movement it keeps there (a zone-of-control stop keeps it; `flow_past`
+/// zeroes it), and from its own tile and every stand with movement left it
+/// strikes each neighbour (melee) or each tile in range (ranged; a siege unit
+/// only from its own tile unless it may attack after moving). Ranged blows
+/// keep the engine's line-of-sight test on a native board and drop it on the
+/// mirrored one, where the host's rule is the player's visibility. Ascending
+/// and distinct, like `attack_reach`. The probe is left as it was found.
+fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos> {
+    let Some(saved) = probe.units.get(&uid).cloned() else {
+        return Vec::new();
+    };
+    let spec = &probe.rules.units[saved.kind];
+    if spec.class != "military" || !(spec.is_melee_capable() || spec.has_ranged_attack()) {
+        return Vec::new();
+    }
+    if spec.domain.as_deref() == Some("air") {
+        return probe.attack_reach(uid);
+    }
+    let max_moves = probe.unit_max_moves(uid);
+    if max_moves <= 0.0 {
+        return Vec::new();
+    }
+    let melee = spec.is_melee_capable();
+    let ranged = spec.has_ranged_attack();
+    let siege = spec.siege;
+    let sea = spec.domain.as_deref() == Some("sea");
+    if let Some(live) = probe.units.get_mut(&uid) {
+        live.moves_left = max_moves;
+        live.moved = false;
+        live.acted = false;
+        live.zoc_stopped = false;
+        live.started_turn_in_zoc = false;
+    }
+    let mut stands: Vec<(Pos, f64)> = vec![(saved.pos, max_moves)];
+    stands.extend(
+        probe
+            .approach_reach(uid)
+            .into_iter()
+            .map(|(pos, (kept, _path))| (pos, kept)),
+    );
+    if let Some(live) = probe.units.get_mut(&uid) {
+        *live = saved.clone();
+    }
+    let range = if ranged {
+        probe.unit_attack_range(uid).max(1)
+    } else {
+        0
+    };
+    let after_move = probe.promotion_effect(&saved, "attack_after_move") > 0.0;
+    let host_sight = mirrored_board(probe, pid);
+    let mut targets: Vec<Pos> = Vec::new();
+    for (from, kept) in stands {
+        if kept <= 0.0 {
+            continue;
+        }
+        // A land unit standing on water is embarked there and strikes nothing.
+        let embarked = !sea
+            && probe
+                .map
+                .get(from)
+                .is_some_and(|tile| probe.rules.is_water(tile));
+        if embarked {
+            continue;
+        }
+        if melee {
+            for target in probe.nbrs(from) {
+                if probe.map.tiles.contains_key(&target)
+                    && probe.unit_can_melee_target_domain(uid, target)
+                {
+                    targets.push(target);
+                }
+            }
+        }
+        if ranged && (!siege || from == saved.pos || after_move) {
+            for target in probe.wdisk(from, range) {
+                if target != from
+                    && probe.map.tiles.contains_key(&target)
+                    && (host_sight || probe.unit_has_line_of_sight_from(uid, from, target))
+                {
+                    targets.push(target);
+                }
+            }
+        }
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    targets
+}
+
 /// Each source's expected blow on one of our units at one tile: `None` is a
 /// city or Encampment strike; a unit source is named so a plan that kills it
 /// can leave its blow out.
@@ -293,11 +420,23 @@ pub(super) struct DangerField {
     reaches: Vec<(u32, Vec<Pos>)>,
     /// (tile, our unit) → each source's expected blow there.
     cache: BTreeMap<(Pos, u32), Blows>,
+    /// `strike-reach`: hostiles whose strike reach held a tile the movement
+    /// flood did not. Zero with the gene off.
+    pub(super) widened: u32,
 }
 
 impl DangerField {
+    /// The field on the movement flood's reach (`Game::attack_reach`).
     pub(super) fn new(g: &Game, pid: usize) -> Self {
+        Self::with_reach(g, pid, false)
+    }
+
+    /// The field on the flood's reach, or with `strike_reach` on the reach
+    /// the engine resolves a blow over (`strike_reach_of`).
+    pub(super) fn with_reach(g: &Game, pid: usize, strike_reach: bool) -> Self {
+        let mut probe = g.speculative_clone();
         let mut reaches = Vec::new();
+        let mut widened = 0u32;
         for unit in g.units.values() {
             let spec = &g.rules.units[unit.kind];
             if unit.owner == pid
@@ -308,7 +447,16 @@ impl DangerField {
             {
                 continue;
             }
-            let reach = g.attack_reach(unit.id);
+            let flood = g.attack_reach(unit.id);
+            let reach = if strike_reach {
+                let strike = strike_reach_of(&mut probe, pid, unit.id);
+                if strike.iter().any(|tile| flood.binary_search(tile).is_err()) {
+                    widened += 1;
+                }
+                strike
+            } else {
+                flood
+            };
             if !reach.is_empty() {
                 reaches.push((unit.id, reach));
             }
@@ -316,9 +464,10 @@ impl DangerField {
         reaches.sort_by_key(|(id, _)| *id);
         DangerField {
             pid,
-            probe: g.speculative_clone(),
+            probe,
             reaches,
             cache: BTreeMap::new(),
+            widened,
         }
     }
 
@@ -467,6 +616,12 @@ impl DangerField {
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn danger(g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
     DangerField::new(g, pid).danger(tile, uid)
+}
+
+/// The same reading on the strike reach (`strike-reach` on).
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn strike_danger(g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
+    DangerField::with_reach(g, pid, true).danger(tile, uid)
 }
 
 /// One of our units that could strike this turn.
@@ -776,7 +931,14 @@ impl AdvancedAi {
                 .get(uid)
                 .is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP)
         });
-        let mut field = DangerField::new(g, pid);
+        let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+        self.census.strike_reach_widened += field.widened;
+        if field.widened > 0 {
+            think!(self.journal(), Military, Detail,
+                "Strike reach: {} hostile(s) can hit tiles the movement flood read as safe", field.widened;
+                "a unit stopped by our zone of control keeps its movement for the blow; \
+                 the danger field, the rotation and the slots read that reach");
+        }
         let (blows, armed, wanted) = self.kill_sequence_in(g, pid, &mut field);
         self.battle_planner_wanted_previews = wanted;
         let mut struck = false;
@@ -792,7 +954,7 @@ impl AdvancedAi {
             struck = self.apply_blows(g, pid, &verified);
         }
         if struck {
-            field = DangerField::new(g, pid);
+            field = DangerField::with_reach(g, pid, self.strike_reach);
         }
         let rotations = self.rotate_wounded(g, pid, &mut field, &strikers);
         self.census.battle_plan_rotations += rotations;
@@ -3223,6 +3385,135 @@ mod tests {
             .iter()
             .all(|archer| !g.attack_reach(*archer).contains(&far)));
         assert_eq!(danger(&g, 0, far, ours), 0.0);
+    }
+
+    /// `strike-reach` is an opt-in that ships off and is registered.
+    #[test]
+    fn strike_reach_ships_off_and_is_registered() {
+        let ai = AdvancedAi::new();
+        assert!(!ai.strike_reach, "an opt-in ships off");
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "strike_reach"));
+        let mut on = AdvancedAi::new();
+        on.enable_strike_reach();
+        assert!(on.strike_reach);
+        on.disable_strike_reach();
+        assert!(!on.strike_reach);
+        super::super::test_support::opt_in_off_in_both_controllers("strike-reach", |ai| {
+            ai.strike_reach
+        });
+    }
+
+    /// A melee enemy two tiles off: the movement flood writes zero movement
+    /// into the tile beside us, so `attack_reach` — and the field on it —
+    /// read zero where we stand; the strike reach knows the unit keeps its
+    /// movement for the blow when our zone of control stops it, and reads
+    /// the blow. Three tiles off, both read zero.
+    #[test]
+    fn a_melee_enemy_two_tiles_off_is_no_danger_to_the_flood_and_a_blow_to_the_strike_reach() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(10, 6));
+        let enemy = g.spawn_unit("warrior", 1, at(12, 6));
+        let tile = at(10, 6);
+        assert_eq!(g.wdist(g.units[&enemy].pos, tile), 2);
+        assert!(g.unit_max_moves(enemy) >= 2.0);
+        assert!(
+            !g.attack_reach(enemy).contains(&tile),
+            "the flood stops at our zone of control"
+        );
+        assert_eq!(danger(&g, 0, tile, ours), 0.0);
+        let read = strike_danger(&g, 0, tile, ours);
+        let (att, def) = g.melee_exchange_strengths(enemy, ours).expect("a pair");
+        assert!(
+            read > 0.0,
+            "the strike reach prices the closing blow: {read}"
+        );
+        assert!(
+            (read - expected_damage(att, def)).abs() < 1e-9,
+            "{read} v {}",
+            expected_damage(att, def)
+        );
+        // Beyond one move and a blow, nothing.
+        let far = at(9, 6);
+        assert_eq!(g.wdist(g.units[&enemy].pos, far), 3);
+        assert_eq!(strike_danger(&g, 0, far, ours), 0.0);
+        assert_eq!(danger(&g, 0, far, ours), 0.0);
+    }
+
+    /// The same board, played: a 30-hit-point warrior two tiles from the
+    /// enemy holds where it stands under the flood's reading — its own tile
+    /// reads zero — and under `strike-reach` steps to a tile the closing blow
+    /// cannot follow it to.
+    #[test]
+    fn with_strike_reach_the_wounded_unit_steps_out_of_the_closing_blow() {
+        let mut g = open_field();
+        g.tactics.heal = true;
+        let hurt = g.spawn_unit("warrior", 0, at(10, 6));
+        let enemy = g.spawn_unit("warrior", 1, at(12, 6));
+        wound(&mut g, hurt, 30);
+        let plan = conquest(&g);
+        let mut flood = g.clone();
+        let mut v1 = AdvancedAi::new();
+        v1.enable_battle_planner();
+        v1.plan_battle(&mut flood, 0, &plan);
+        assert_eq!(
+            flood.units[&hurt].pos,
+            at(10, 6),
+            "the flood reads its tile as safe, so it holds"
+        );
+        assert!(flood.units[&hurt].fortified);
+        let mut ai = AdvancedAi::new();
+        ai.enable_battle_planner();
+        ai.enable_strike_reach();
+        ai.plan_battle(&mut g, 0, &plan);
+        let after = &g.units[&hurt];
+        assert_ne!(
+            after.pos,
+            at(10, 6),
+            "it left the tile the enemy can close on"
+        );
+        assert!(
+            g.wdist(after.pos, g.units[&enemy].pos) >= 3,
+            "beyond one move and a blow"
+        );
+        assert!(after.fortified);
+        assert!(strike_danger(&g, 0, after.pos, hurt) <= NO_DANGER);
+        assert_eq!(ai.census.strike_reach_widened, 1);
+        assert_eq!(ai.census.battle_plan_rotations, 1);
+    }
+
+    /// A siege unit behind a mountain — a shooter that fires only from its
+    /// own tile, so a sidestep cannot open the line: no line of sight, so
+    /// the flood and the strike reach on a native board both read zero — the
+    /// engine's own `do_ranged` refuses that shot there. On the mirrored
+    /// board the host's rule is the player's visibility, and the strike
+    /// reach reads the shot.
+    #[test]
+    fn on_the_mirrored_board_a_shooter_needs_no_line_of_sight_of_its_own() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(10, 6));
+        let archer = g.spawn_unit("catapult", 1, at(8, 6));
+        let tile = at(10, 6);
+        g.map.tiles.get_mut(&at(9, 6)).expect("a tile").terrain = "mountain".into();
+        assert!(g.rules.units[g.units[&archer].kind].siege);
+        assert!(
+            !g.unit_has_line_of_sight_from(archer, at(8, 6), tile),
+            "the mountain blocks the line"
+        );
+        assert!(!g.attack_reach(archer).contains(&tile));
+        assert_eq!(danger(&g, 0, tile, ours), 0.0);
+        assert_eq!(
+            strike_danger(&g, 0, tile, ours),
+            0.0,
+            "a native board keeps the engine's rule"
+        );
+        // The live seat, shown the board by the host.
+        let observed: BTreeSet<Pos> = g.map.tiles.keys().copied().collect();
+        g.host_observed = Arc::new(observed);
+        let read = strike_danger(&g, 0, tile, ours);
+        assert!(read > 0.0, "the mirrored board reads the shot: {read}");
+        assert_eq!(danger(&g, 0, tile, ours), 0.0, "the flood still does not");
     }
 
     /// `safest-stand` is an opt-in that ships off and is registered.

@@ -901,6 +901,9 @@ pub struct StrategyCensus {
     pub battle_plan_verified_kills: u32,
     pub battle_plan_dropped_blows: u32,
     pub battle_plan_rotations: u32,
+    /// `strike-reach`: hostiles whose strike reach read tiles the movement
+    /// flood did not — the danger the flood alone would have missed.
+    pub strike_reach_widened: u32,
     /// `safest-stand`: units the rotation found no zero-danger tile for and
     /// stood on the least dangerous one instead.
     pub battle_plan_fallbacks: u32,
@@ -1010,6 +1013,7 @@ impl StrategyCensus {
         self.battle_plan_verified_kills += other.battle_plan_verified_kills;
         self.battle_plan_dropped_blows += other.battle_plan_dropped_blows;
         self.battle_plan_rotations += other.battle_plan_rotations;
+        self.strike_reach_widened += other.strike_reach_widened;
         self.battle_plan_fallbacks += other.battle_plan_fallbacks;
         self.battle_plan_slots += other.battle_plan_slots;
         self.battle_plan_positioned += other.battle_plan_positioned;
@@ -5983,6 +5987,12 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `strike-reach`: the battle planner's danger field reads a hostile's
+    /// reach the way the engine resolves a blow — a unit that stops in our
+    /// zone of control keeps its movement for the strike — and on the
+    /// mirrored board a ranged hostile needs no line of sight of its own.
+    /// Opt-in gene; see `advanced/battle_planner.rs`.
+    strike_reach: bool,
     /// `safest-stand`: a wounded or exposed unit the battle planner's
     /// rotation finds no zero-danger tile for takes the least dangerous tile
     /// in reach and fortifies, instead of being left to the ladder in
@@ -7744,6 +7754,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            strike_reach: false,
             safest_stand: false,
             siege_train: false,
             sieges: BTreeMap::new(),

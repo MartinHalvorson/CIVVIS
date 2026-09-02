@@ -175,60 +175,41 @@ def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
               f"always play Rome / Trajan ({ROMAN_LEADER})", flush=True)
     return ROMAN_LEADER
 
-# ★★★ EVERY VERIFICATION GAME IS PLAYED OUT — WITH ONE EXCEPTION. Operator
-# policy: play verification games out in full, except at or after turn 150
-# when our score is under 60 % of the leader's score. An explicitly targeted
-# Science race is exempt from that score stop: Science can trail score while it
-# converts Rocketry and Space Race projects into a win, so score is not a valid
-# loss certificate for that lane.
+# ★★★ THE VERIFICATION SCORE CALL. The operator's current standing rule is
+# deliberately simple and applies to every live lane: after turn 50, retire a
+# game when its readable score is strictly below half of the best met rival's
+# score. "After turn 50" starts on turn 51; exactly half is not more than 50 %
+# behind and remains in play. Science is intentionally not exempt: this is an
+# operator loss certificate for verification capacity, not a prediction of the
+# eventual victory type.
 #
-# ⚠ THE NUMBER HERE WAS 0.40 AND EVERY PROSE STATEMENT OF THE POLICY SAID 60 %.
-# `docs/CIV6_COMPUTER_CONTROL.md` ("under 60 % of the leader after turn 150 is
-# the one exception", `--restart-below-leader-ratio 0.60`) and `civ6_ladder.py`'s
-# row comment both described the rule the operator restated on 2026-08-27:
-# "only call games early at turn 150 or later if we are at less than 60 % score
-# of the leader". The constant, the climb's help, the supervisor's default and
-# their tests all carried 0.40 instead, so every game between 40 % and 60 % of
-# the leader was played to turn 250 against policy. The prose was right and the
-# code was wrong; this makes them agree at 0.60.
-#
-# Until then the harness carried four early stops, and on King they ended 73
-# of 81 games before the game could: the three-cities-by-turn-32 and
-# second-settler-captured opening restarts (#2505; 25 and 10 games), the
-# score-science-culture deficit restart (#2319; 36 games — its former 0.70
-# default lived in the supervisor even where the login shell unset it) and
-# the measured win-rate table behind the old abandon floor (#2174; off). All
-# four are gone. What remains is the operator's one rule, and it is a default
-# of the harness itself, not of a launcher: at or after turn 150, a readable
-# score under 60 % of the leader's immediately abandons the game, unless the
-# run is explicitly targeted at Science. A seat still within reach of the field
-# — two thirds of the leader's score at turn 150 — stays in play to finish its
-# game.
+# This is a harness default rather than a launcher-only setting so direct
+# civ6_play invocations and supervisor-driven games use the same rule. A caller
+# can still deliberately pass 0 to disable the configurable score rule, but
+# production verification games forward the 0.50 default.
 #
 # "The leader" is the best-scoring rival the seat has met — `rival_best` in
 # the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
-# majors the seat's diplomacy has met). A rival still unmet at turn 150 is
+# majors the seat's diplomacy has met). A rival still unmet at turn 51 is
 # invisible to the rule, which errs toward playing on.
 #
 # A missing standing is not evidence either way, so it does not end a game.
 # An abandoned game is filed as its own ending (`reason: "abandoned"` with the
 # verdict), never as a stall, a wedge or a defeat.
-LEADER_SCORE_MIN_TURN = 150
-DEFAULT_LEADER_SCORE_RATIO = 0.60
+LEADER_SCORE_MIN_TURN = 51
+DEFAULT_LEADER_SCORE_RATIO = 0.50
 
 
 def leader_score_stop_allowed(*, civvis_decides: bool,
                               victory_target: str | None) -> bool:
-    """Whether the generic score-abandon rule may end this live run.
+    """Whether the standing operator score call may end this live run.
 
-    A targeted Science run can be materially behind on score after turn 150
-    and still be on the only useful path to a Science victory: its score often
-    catches up only after Rocketry, Spaceports, and launch projects complete.
-    The turn limit and the actual victory/defeat events remain the termination
-    criteria for that lane. Adaptive CIVVIS runs keep the standing rule because
-    they have not committed to Science.
+    The answer is deliberately independent of the decision-worker mode and
+    victory target.  Keeping this small policy boundary lets the live loop and
+    recorded-run census prove they apply the same no-exceptions rule.
     """
-    return not (civvis_decides and victory_target == "science")
+    del civvis_decides, victory_target
+    return True
 
 
 def _nonnegative_metric(value: object) -> float | int | None:
@@ -290,7 +271,7 @@ def partial_summary(tag: str, config: dict, state: dict) -> dict:
 def below_leader_score_reading(
     _state: dict, event: dict, score_ratio_ceiling: float
 ) -> dict | None:
-    """Return the immediate turn-150 under-the-leader termination verdict.
+    """Return the immediate post-turn-50 under-the-leader termination verdict.
 
     `score_ratio_ceiling` outside (0, 1] — 0 from the command line — disables
     the rule, and every game is played to its end. Only an agent `turn` event
@@ -3563,8 +3544,8 @@ def _play(args: argparse.Namespace) -> int:
             return True
         # And OUR decision that the game is lost — the operator's one rule:
         # under the configured share of the leader's score on a readable turn
-        # at or after 150. An explicitly targeted Science lane is intentionally
-        # exempt; see `leader_score_stop_allowed`.
+        # after turn 50. Every victory lane, including Science, uses it; see
+        # `leader_score_stop_allowed`.
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         ) if leader_score_stop_allowed(
@@ -4170,12 +4151,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--restart-below-leader-ratio", type=float,
                     default=DEFAULT_LEADER_SCORE_RATIO,
                     help="immediately abandon on a readable turn at or after "
-                         "LEADER_SCORE_MIN_TURN when our score is under this "
-                         "share of the leader's (best met rival); 0 plays every "
-                         "game out. Current operator policy: 0.60 (less than "
-                         "60%% of the leader's score), and no "
-                         "other early stop; explicitly targeted Science runs "
-                         "are exempt because score lags that victory path")
+                        "LEADER_SCORE_MIN_TURN (turn 51) when our score is under this "
+                        "share of the leader's (best met rival); 0 plays every "
+                        "game out. Current operator policy: after turn 50, "
+                        "0.50 (strictly below half of the leader's score), "
+                        "with no victory-lane exemption")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="accepted for compatibility; live games always select "
