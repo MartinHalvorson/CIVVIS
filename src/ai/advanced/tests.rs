@@ -2315,9 +2315,9 @@ fn the_live_city_ceiling_reads_the_map_through_the_fog() {
 }
 
 /// ★★★★ Once the fog was priced (#1754) the cadence bound the count: 25–30
-/// turns at "N of N wanted" on every rung across batch 4. The verification
-/// horizon now deliberately sits above those early rungs, so keep testing the
-/// cadence in isolation as well as the live ten-city floor.
+/// turns at "N of N wanted" on every rung across batch 4. The shared
+/// production horizon now deliberately sits above those early rungs, so keep
+/// testing the cadence in isolation as well as the live ten-city floor.
 #[test]
 fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
     let mut game = Game::new_full(2, 74, 46, 11, 250, 0, false);
@@ -2355,7 +2355,7 @@ fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
     // `the_land_grab_wants_the_land_not_a_rung` for the seat as deployed.
     live.disable_land_grab();
     let mut paced = live.clone();
-    paced.verification_city_target = false;
+    paced.shared_city_target = false;
     let mut stock_pace = paced.clone();
     stock_pace.disable_era_paced_expansion();
 
@@ -2363,8 +2363,8 @@ fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
         game.turn = turn;
         assert_eq!(
             live.assess(&game, 0).desired_cities,
-            VERIFICATION_CITY_TARGET_FLOOR,
-            "the live verification floor holds at t{turn}"
+            SHARED_CITY_TARGET_FLOOR,
+            "the shared production floor holds at t{turn}"
         );
         assert_eq!(
             stock_pace.assess(&game, 0).desired_cities,
@@ -2434,14 +2434,14 @@ fn the_land_grab_wants_the_land_not_a_rung() {
         "the live seat carries the treatment in both settler routes"
     );
     let mut raw_land_grab = live.clone();
-    raw_land_grab.verification_city_target = false;
+    raw_land_grab.shared_city_target = false;
     let mut rungs = AdvancedAi::new();
     rungs.enable_live_bridge();
     rungs.disable_rapid_city_expansion();
     rungs.disable_rapid_city_expansion_2();
     rungs.disable_city_target_meets_the_map();
     rungs.disable_land_grab();
-    rungs.verification_city_target = false;
+    rungs.shared_city_target = false;
     assert!(!rungs.land_grab && !rungs.base.land_grab);
 
     for turn in [1, 50, 100, 120, 170, 240] {
@@ -2453,10 +2453,7 @@ fn the_land_grab_wants_the_land_not_a_rung() {
         );
         assert_eq!(
             live.assess(&game, 0).desired_cities,
-            capacity.clamp(
-                VERIFICATION_CITY_TARGET_FLOOR,
-                VERIFICATION_CITY_TARGET_CEILING,
-            ),
+            capacity.clamp(SHARED_CITY_TARGET_FLOOR, SHARED_CITY_TARGET_CEILING,),
             "the live verifier bounds the land grab at t{turn}"
         );
         assert!(
@@ -2503,7 +2500,7 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
     game.turn = 1;
     let opening = ai.assess(&game, 0);
     assert_eq!(
-        opening.desired_cities, VERIFICATION_SCIENCE_CITY_TARGET,
+        opening.desired_cities, SHARED_SCIENCE_CITY_TARGET,
         "Science must cap the live land-grab horizon"
     );
     assert_eq!(
@@ -2539,7 +2536,7 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
 
     game.turn = game.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS);
     let handoff = ai.assess(&game, 0);
-    assert_eq!(handoff.desired_cities, VERIFICATION_SCIENCE_CITY_TARGET);
+    assert_eq!(handoff.desired_cities, SHARED_SCIENCE_CITY_TARGET);
     assert_eq!(
         handoff.strategy,
         GrandStrategy::Science,
@@ -43811,8 +43808,8 @@ fn a_settler_stops_standing_still_for_a_guard_it_cannot_see_a_reason_to_wait_for
 }
 
 /// `science-expansion-phase` remains an evaluable native hypothesis: it can
-/// widen the Science land grab while a new city can still mature. A live
-/// verification game deliberately keeps that experiment inside the operator's
+/// widen the Science land grab while a new city can still mature. The shared
+/// production profiles deliberately keep that experiment inside the operator's
 /// 10–15-city horizon, then the named Science contract returns to twelve.
 #[test]
 fn the_science_lane_widens_natively_but_live_verification_stays_bounded() {
@@ -43876,14 +43873,11 @@ fn the_science_lane_widens_natively_but_live_verification_stays_bounded() {
     game.turn = until - 1;
     assert_eq!(
         live.assess(&game, 0).desired_cities,
-        widened.clamp(
-            VERIFICATION_CITY_TARGET_FLOOR,
-            VERIFICATION_CITY_TARGET_CEILING,
-        ),
-        "a live Science phase stays inside the verification horizon"
+        widened.clamp(SHARED_CITY_TARGET_FLOOR, SHARED_CITY_TARGET_CEILING,),
+        "a live Science phase stays inside the shared horizon"
     );
     game.turn = until;
-    let live_contract = shared.clamp(1, VERIFICATION_SCIENCE_CITY_TARGET);
+    let live_contract = shared.clamp(1, SHARED_SCIENCE_CITY_TARGET);
     assert_eq!(
         live.assess(&game, 0).desired_cities,
         live_contract,
@@ -43894,10 +43888,7 @@ fn the_science_lane_widens_natively_but_live_verification_stays_bounded() {
     live.victory_target = Some(VictoryTarget::Diplomacy);
     assert_eq!(
         live.assess(&game, 0).desired_cities,
-        shared.clamp(
-            VERIFICATION_CITY_TARGET_FLOOR,
-            VERIFICATION_CITY_TARGET_CEILING,
-        ),
+        shared.clamp(SHARED_CITY_TARGET_FLOOR, SHARED_CITY_TARGET_CEILING,),
         "every live lane stays inside the same horizon"
     );
 
@@ -43912,11 +43903,12 @@ fn the_science_lane_widens_natively_but_live_verification_stays_bounded() {
 }
 
 /// A rival religion used to narrow the live horizon to eight cities, and an
-/// explicit Science lane then narrowed it again to six. The verifier's city
-/// goal must be independent of that victory-specific caution: all lanes need
-/// enough cities to exercise their production, district, and growth systems.
+/// explicit Science lane then narrowed it again to six. The live verifier and
+/// active native tournament must share a city goal independent of that
+/// victory-specific caution: all lanes need enough cities to exercise their
+/// production, district, and growth systems.
 #[test]
-fn every_live_verification_lane_aims_for_ten_to_fifteen_cities() {
+fn verification_and_standard_tournament_share_the_ten_to_fifteen_city_contract() {
     let mut game = Game::new_full(2, 74, 46, 11_733, 250, 0, false);
     for pid in 0..2 {
         let settler = game
@@ -43933,6 +43925,19 @@ fn every_live_verification_lane_aims_for_ten_to_fifteen_cities() {
     game.victory_conditions.religious = true;
     game.players[1].religion = Some("Rival Faith".to_string());
 
+    #[derive(Clone, Copy)]
+    enum Profile {
+        LiveVerification,
+        StandardTournament,
+        NativeDeployment,
+    }
+    let profiles = [
+        ("live verification", Profile::LiveVerification),
+        // `gene_screen::seat_with_genome` starts here before it flips the
+        // individual genes in a drawn tournament genome.
+        ("standard tournament", Profile::StandardTournament),
+        ("native deployment", Profile::NativeDeployment),
+    ];
     for lane in [
         VictoryTarget::Science,
         VictoryTarget::Culture,
@@ -43941,17 +43946,30 @@ fn every_live_verification_lane_aims_for_ten_to_fifteen_cities() {
         VictoryTarget::Domination,
         VictoryTarget::Score,
     ] {
-        let mut ai = AdvancedAi::targeting(lane);
-        ai.enable_live_bridge();
-        // This test pins the policy horizon. The separate map-room test keeps
-        // proving that a truly exhausted map can still stop Settler production.
-        ai.disable_city_target_meets_the_map();
-        let desired = ai.assess(&game, 0).desired_cities;
-        assert!(
-            (VERIFICATION_CITY_TARGET_FLOOR..=VERIFICATION_CITY_TARGET_CEILING).contains(&desired),
-            "{lane:?} planned {desired} cities instead of the verification band"
-        );
+        for (profile, configuration) in profiles {
+            let mut ai = AdvancedAi::targeting(lane);
+            match configuration {
+                Profile::LiveVerification => ai.enable_live_bridge(),
+                Profile::StandardTournament => ai.enable_engine_repairs_universe(),
+                Profile::NativeDeployment => ai.enable_engine_repairs(),
+            }
+            assert!(
+                ai.shared_city_target,
+                "{profile} must carry the fixed shared city horizon"
+            );
+            // This test pins the policy horizon. The separate map-room test
+            // keeps proving that a truly exhausted map can still stop Settler
+            // production.
+            ai.disable_city_target_meets_the_map();
+            let desired = ai.assess(&game, 0).desired_cities;
+            assert!(
+                (SHARED_CITY_TARGET_FLOOR..=SHARED_CITY_TARGET_CEILING).contains(&desired),
+                "{profile} {lane:?} planned {desired} cities instead of the shared band"
+            );
+        }
     }
+    assert!(!AdvancedAi::new().shared_city_target);
+    assert!(!AdvancedAi::legacy().shared_city_target);
 }
 
 /// `first-luxury-first`: 46% of King city-turns are Amenity-short (11 games,
