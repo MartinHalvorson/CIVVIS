@@ -1345,6 +1345,7 @@ head of each queue only; the Deter requisition is the board's, so
 not served (the exploration governor buys scouts); the purchase and the
 production pass read the board as assessed this turn (production assesses
 it first), the Gold pass one turn behind.
+
 ## 26. War policy via the board: feasibility, the declaration, the peace term (2026-09-02, opt-in gene `war-policy-via-board`)
 
 The board of §24 writes what every objective *costs* — a Siege row's
