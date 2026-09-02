@@ -1973,6 +1973,15 @@
           "science-victory-drive-2": null
         }
       },
+      "settler-backlog-brake": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "settler-backlog-brake": null,
+          "settler-backlog-brake-2": null
+        }
+      },
       "settler-guard-holds": {
         "rule_on": [
           "settler-guard-holds-2"

@@ -1755,6 +1755,9 @@ pub const GENES: &[Gene] = &[
     // A parked Settler holds the Settler pipeline instead of opening it for a
     // replacement; see `BasicAi::settler_backlog_brake`.
     Gene { tag: "settler-backlog-brake", field: "settler_backlog_brake", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_backlog_brake, disable: AdvancedAi::disable_settler_backlog_brake },
+    // V2 keeps V1's full stop at six cities or more, but a parked walker no
+    // longer ends the high-leverage three-to-five-city growth wave.
+    Gene { tag: "settler-backlog-brake-2", field: "settler_backlog_brake_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_backlog_brake_2, disable: AdvancedAi::disable_settler_backlog_brake_2 },
     // A housing-bound city builds its Granary ahead of the argmax; see
     // `advanced_production`.
     Gene { tag: "first-granary-reserve", field: "first_granary_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve, disable: AdvancedAi::disable_first_granary_reserve },

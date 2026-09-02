@@ -3022,6 +3022,11 @@ pub struct BasicAi {
     /// for a replacement when a Settler parks — and the replacement then
     /// refuses the same sites. See `parked_settlers`.
     pub(crate) settler_backlog_brake: bool,
+    /// Version two of the backlog brake: V1's same full stop, but only after
+    /// the empire has matured to `SETTLER_BACKLOG_V2_MIN_CITIES`. The first
+    /// three-to-five-city growth wave retains the ordinary pipeline. Set
+    /// through the Advanced gene toggle.
+    pub(crate) settler_backlog_brake_2: bool,
     /// Let a second Settler enter the pipeline while one is already walking,
     /// once the empire holds two cities and is still at least two short of
     /// its target. Set only through `AdvancedAi::enable_parallel_settlers`
@@ -4899,6 +4904,7 @@ impl BasicAi {
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
+            settler_backlog_brake_2: false,
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
@@ -5361,6 +5367,7 @@ impl BasicAi {
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
+            settler_backlog_brake_2: false,
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
@@ -8753,6 +8760,14 @@ impl BasicAi {
     /// Settlers keep their pace whatever a walker is doing.
     pub(crate) const SETTLER_BACKLOG_MIN_CITIES: usize = 3;
 
+    /// V2 waits until the empire has a useful economic base before a parked
+    /// civilian may end the settlement wave. In the live King evidence behind
+    /// V1, the two low-city runs ended on five and six cities after contributing
+    /// six starts behind parked Settlers; the other concentrated-incident runs
+    /// ended with nine to fourteen cities. Six keeps the vulnerable growth wave
+    /// open while retaining the mature-empire brake.
+    pub(crate) const SETTLER_BACKLOG_V2_MIN_CITIES: usize = 6;
+
     /// Advance each owned Settler's idle counter, once per turn.
     ///
     /// Position is the whole tell. A settler with a target it can reach moves
@@ -8761,7 +8776,9 @@ impl BasicAi {
     /// oscillating between two — and in all three cases it is not going to
     /// found a city on its own.
     fn refresh_settler_idle(&mut self, g: &Game, pid: usize) {
-        if !(self.settler_strand_discount || self.settler_backlog_brake)
+        if !(self.settler_strand_discount
+            || self.settler_backlog_brake
+            || self.settler_backlog_brake_2)
             || self.settler_idle_turn == Some(g.turn)
         {
             return;
@@ -11489,9 +11506,16 @@ impl BasicAi {
             // `stranded-settler-discount` above subtracts a Settler idle
             // twelve turns so its replacement may start — and the replacement
             // refuses the same sites. See `settler_backlog_brake`.
-            let parked_brake = self.settler_backlog_brake
-                && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES
-                && self.parked_settlers(g, pid, Self::SETTLER_BACKLOG_IDLE_TURNS) > 0;
+            let v1_scope =
+                self.settler_backlog_brake && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES;
+            let v2_scope =
+                self.settler_backlog_brake_2 && n_cities >= Self::SETTLER_BACKLOG_V2_MIN_CITIES;
+            let parked = if v1_scope || v2_scope {
+                self.parked_settlers(g, pid, Self::SETTLER_BACKLOG_IDLE_TURNS)
+            } else {
+                0
+            };
+            let parked_brake = (v1_scope || v2_scope) && parked > 0;
             let none_in_flight = !parked_brake && settlers.saturating_sub(stranded) < pipeline;
             // ★★★★ THE HOST'S FLOOR, NOT THE GENOME'S. See `host_settler_pop`:
             // Civilization VI starts a Settler at population 2, and the live
@@ -19430,6 +19454,69 @@ mod tests {
             ai.stranded_settlers(&game, 0),
             0,
             "the discount is off, so nothing is stranded for it"
+        );
+    }
+
+    /// V2 reaches the baseline governor that owns most city queues: a parked
+    /// Settler cannot stop a three-city growth wave, but it does stop new
+    /// Settlers after the empire matures to six cities. V1 still stops at
+    /// three.
+    #[test]
+    fn settler_backlog_v2_waits_for_a_mature_baseline_empire() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("BACKLOG_RESCUE", 91_774),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("a starting settler");
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).expect("capital exists").pop = 5;
+        let capital = game.cities[&city].pos;
+        let parked = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .find(|position| game.wdist(capital, *position) == 3)
+            .expect("a parked tile");
+        game.spawn_unit("settler", 0, parked);
+
+        let mut ai = BasicAi::new();
+        ai.land_grab = true;
+        ai.w.city_target = 16.0;
+        ai.w.settler_stop_turn = 250.0;
+        ai.settler_backlog_brake_2 = true;
+        for turn in 1..=BasicAi::SETTLER_BACKLOG_IDLE_TURNS + 1 {
+            game.turn = turn;
+            ai.refresh_settler_idle(&game, 0);
+        }
+        let pick = |ai: &BasicAi, settlers| {
+            ai.pick_item(&game, 0, city, 3, settlers, 99, 99, 99, 99, 99, 99)
+        };
+        assert!(
+            matches!(pick(&ai, 1), Some(Item::Unit { unit }) if unit == "settler"),
+            "a parked walker does not stop the three-city growth wave"
+        );
+        let mature_pick = ai.pick_item(&game, 0, city, 6, 1, 99, 99, 99, 99, 99, 99);
+        assert!(
+            !matches!(mature_pick, Some(Item::Unit { unit }) if unit == "settler"),
+            "the same parked walker stops a mature empire's replacement cascade"
+        );
+        ai.settler_backlog_brake_2 = false;
+        ai.settler_backlog_brake = true;
+        assert!(
+            !matches!(pick(&ai, 1), Some(Item::Unit { unit }) if unit == "settler"),
+            "V1 still closes the whole pipeline"
         );
     }
 
