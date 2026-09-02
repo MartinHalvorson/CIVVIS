@@ -401,6 +401,101 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
 SALVAGEABLE_HP = 30
 
 
+#: `withdraw_hp` (45): the line at which the controller's own recovery puts a
+#: unit into persistent withdrawal. A unit that starts the turn it dies on at
+#: or below it had already been told to leave.
+WOUNDED_HP = 45
+
+
+def evacuation_section(
+    events: list[dict[str, Any]], local_player: int | None
+) -> dict[str, Any] | None:
+    """Whether the seat's evacuations happen, from the run's own events.
+
+    Measured on the 32 ledger runs of 2026-08-30..09-01 that reached turn
+    100: 461 of our units died in combat, 408 of them to barbarians; 352
+    were at or below 50 HP when the killing blow landed and 334 had been
+    hit on an earlier turn and left in reach. The order on the death turn
+    was, in most cases, a `MOVE_TO` — and 383 of the 461 made no host move
+    on the turn before they died. The decision to leave was taken; the leg
+    the host accepted never happened. That is the shape this section
+    counts, so a run can say whether the mod-side answer
+    (`CivvisBoard.moveNoop` / `move_fallback`) changed it.
+
+    - ``deaths``: our units killed by a unit.
+    - ``deaths_wounded_at_turn_start``: of those, at or below `WOUNDED_HP`
+      on the first frame of the turn they died — the recovery line had
+      already been crossed when the turn began.
+    - ``deaths_after_unexecuted_move``: of those, ordered `MOVE_TO` on the
+      death turn or the one before with no host move on that turn.
+    - ``move_noop`` / ``move_fallback``: the mod's same-pass answers, with
+      the host's reasons.
+
+    `None` when the run has no `combat` event at all (a mod that predates
+    the ledger), which is a different statement from a run with no deaths.
+    """
+    if not any(event.get("kind") == "combat" for event in events):
+        return None
+    states = _states(events)
+    deaths: list[tuple[int, int]] = []
+    for event in events:
+        if event.get("kind") != "combat":
+            continue
+        attacker = event.get("attacker") or {}
+        defender = event.get("defender") or {}
+        if (
+            local_player is not None
+            and defender.get("player") == local_player
+            and defender.get("type") == "unit"
+            and attacker.get("type") == "unit"
+            and event.get("defender_killed")
+            and isinstance(defender.get("id"), int)
+            and isinstance(event.get("turn"), int)
+        ):
+            deaths.append((defender["id"], event["turn"]))
+    move_orders: set[tuple[int, int]] = set()
+    host_moves: set[tuple[int, int]] = set()
+    noop_reasons: collections.Counter = collections.Counter()
+    fallback_reasons: collections.Counter = collections.Counter()
+    for event in events:
+        kind = event.get("kind")
+        turn = event.get("turn")
+        if not isinstance(turn, int):
+            continue
+        if kind in ("order_verified", "order_failed"):
+            if event.get("order_kind") == "unit" and event.get("verb") == "MOVE_TO" and isinstance(
+                event.get("subject"), int
+            ):
+                move_orders.add((event["subject"], turn))
+        elif kind == "host_move" and isinstance(event.get("unit"), int):
+            host_moves.add((event["unit"], turn))
+        elif kind == "move_noop":
+            noop_reasons[str(event.get("why") or "unknown")] += 1
+        elif kind == "move_fallback":
+            fallback_reasons[str(event.get("why") or "unknown")] += 1
+    wounded = 0
+    unexecuted = 0
+    for uid, turn in deaths:
+        board = states.get(turn)
+        if board is not None:
+            hp = _own_units(board).get(uid, {}).get("hp")
+            if isinstance(hp, (int, float)) and hp <= WOUNDED_HP:
+                wounded += 1
+        if any(
+            (uid, t) in move_orders and (uid, t) not in host_moves for t in (turn, turn - 1)
+        ):
+            unexecuted += 1
+    return {
+        "deaths": len(deaths),
+        "deaths_wounded_at_turn_start": wounded,
+        "deaths_after_unexecuted_move": unexecuted,
+        "move_noop": sum(noop_reasons.values()),
+        "move_noop_reasons": dict(noop_reasons.most_common()),
+        "move_fallback": sum(fallback_reasons.values()),
+        "move_fallback_reasons": dict(fallback_reasons.most_common()),
+    }
+
+
 def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
     states = _states(events)
     turns = sorted(states)
@@ -582,6 +677,7 @@ def ledger(run_dir: Path, hof: Path | None = None) -> dict[str, Any]:
         "orders": orders_section(events, unit_orders),
         "arrival": arrival_section(events, unit_orders),
         "combat": combat_section(events, local_player),
+        "evacuation": evacuation_section(events, local_player),
         "roster": roster_section(events),
         "hover": hover_section(events, unit_orders),
     }
@@ -658,6 +754,15 @@ def render(report: dict[str, Any]) -> str:
                 f"actual−predicted mean {preview['mean_actual_minus_predicted']:+.2f}, "
                 f"{preview['within_20pct_of_30']} within ±6"
             )
+    evacuation = report.get("evacuation")
+    if evacuation and evacuation["deaths"]:
+        lines.append(
+            f"           {evacuation['deaths']} of ours killed by a unit: "
+            f"{evacuation['deaths_wounded_at_turn_start']} began that turn at or below "
+            f"{WOUNDED_HP} hp, {evacuation['deaths_after_unexecuted_move']} had a MOVE_TO that "
+            f"never executed on that turn or the one before; host answered "
+            f"{evacuation['move_noop']} no-op legs with {evacuation['move_fallback']} fallback steps"
+        )
     roster = report["roster"]
     lines.append(
         f"  roster   {roster['military_units_gone']} military units left the board: "

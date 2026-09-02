@@ -198,6 +198,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
+| `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
 
 ## Removed from the code
 
