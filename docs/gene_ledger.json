@@ -20,7 +20,7 @@
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
     "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one source, (win_on - 1/players) * 10000; last, prior and third are the three most recent sources that priced the gene, newest first, so a new source shifts last to prior and prior to third; they are published evidence - the default reads batch_columns, not these",
     "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its on-arm seats - the ranking's `Diff`, the whole on-off difference",
-    "default_on": "operator-retained-selection: each selected gene averages at least +5 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off; exactly the tags in deployment_genome are on, and a reporting-only batch refresh retains that selected set while its batch columns remain published evidence",
+    "default_on": "operator-retained-selection: each selected gene averages at least +5 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off; exactly the tags in deployment_genome are on, with operator_default_on added and operator_default_off removed from the retained selection; a reporting-only batch refresh retains that selected set while its batch columns remain published evidence",
     "batch_rule": "read over the reporting batches that priced the gene, newest first, at most batch_rule_window of them, each reading the ranking's wins +- per 10,000 total seats: (1) three batches all below batch_rule_remove_below -> remove the gene from the pool; (2) two or three batches negative -> off; (3) three batches all positive -> on; (4) three batches, exactly two positive, mean > batch_rule_average -> on; (5) one or two batches, exactly one positive, mean > batch_rule_average -> on; (6) two batches both positive -> on; (7) otherwise off - no batch, or a zero, is neither positive nor negative",
     "batch_rule_window": 3,
     "batch_rule_average": 7,
@@ -1314,9 +1314,11 @@
       "wonder-score-tally": "off"
     },
     "removals_due": [],
-    "operator_default_on": [],
+    "operator_default_on": [
+      "enter-the-prophet-race"
+    ],
     "operator_default_off": [],
-    "operator_pins": "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained deployment_genome and the held ones are out of it, while batch_decisions records what the batch rule would say as evidence; the current selection has no manual pins or holds",
+    "operator_pins": "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained deployment_genome and the held ones are out of it, while batch_decisions records what the batch rule would say as evidence; its current manual defaults are on: enter-the-prophet-race; off: none",
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
     "deployment_policy": "operator-retained-selection",
     "deployment_genome": [
@@ -1344,6 +1346,7 @@
       "elective-war-yields-to-a-lane",
       "enemy-of-my-enemy",
       "engine-faith-price",
+      "enter-the-prophet-race",
       "escort-cap-holds",
       "exchange-is-the-engines",
       "expansion-pays-back",
@@ -2048,7 +2051,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 68
+    "default_on": 69
   },
   "genes": [
     {
