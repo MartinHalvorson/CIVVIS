@@ -303,6 +303,21 @@ class SpaceRaceTest(unittest.TestCase):
             self.assertIn("science-victory-drive: engaged t88",
                           rr.render(rr.report(run, 25)))
 
+    def test_the_v2_drive_uses_the_genome_header_instead_of_the_shared_phrase(self) -> None:
+        header = json.dumps({
+            "kind": "genome",
+            "treatments": ["science-victory-drive-2"],
+        })
+        why = (header + "\n"
+               "[why] t88 Strategy/Decision Driving for a science victory | "
+               "leading the field\n")
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), self._rows(), why=why)
+            race = rr.report(run, 25)["space_race"]
+            self.assertEqual(race["drive_version"], "science-victory-drive-2")
+            self.assertIn("science-victory-drive-2: engaged t88",
+                          rr.render(rr.report(run, 25)))
+
     def test_a_run_without_a_why_log_says_so_rather_than_claiming_silence(self) -> None:
         with TemporaryDirectory() as tmp:
             run = write_run(Path(tmp), self._rows())
