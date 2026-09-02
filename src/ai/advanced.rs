@@ -9147,7 +9147,7 @@ impl AdvancedAi {
                 // evidence than a modest hostile/friendly ratio difference at
                 // a healthy neighbour. Keep the credit bounded and behind the
                 // same critical-threat gate above.
-                let damage_priority = if breached {
+                let damage_priority = if self.battlefront_observation && breached {
                     let city_missing =
                         f64::from((CITY_MAX_HP - city.hp).max(0)) / f64::from(CITY_MAX_HP);
                     let wall_missing = if wall_max > 0 {
