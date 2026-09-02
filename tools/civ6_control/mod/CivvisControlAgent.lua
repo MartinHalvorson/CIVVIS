@@ -14887,6 +14887,36 @@ CivvisQueue.drain = function(player, pid, turn)
 						and ActivityTypes.ACTIVITY_OPERATION ~= nil
 						and UnitManager.GetActivityType(unit) == ActivityTypes.ACTIVITY_OPERATION;
 				end, false) == true;
+				-- A MOVE_TO can leave the unit on its exact destination while Civ VI
+				-- keeps the path operation active until the next turn.  Waiting for the
+				-- deactivation event is normally correct, but turn-start ownership
+				-- cleanup can cancel that operation first and discard the dependent row.
+				-- Once the expected plot is reached, cancel only that landed operation
+				-- through the same shipped command used by start-of-turn cleanup.  A
+				-- unit still short of its destination remains protected by the active
+				-- operation guard above.
+				if active_operation and entry.expect ~= nil and arrived then
+					local cancel = CMD["UNITCOMMAND_CANCEL"];
+					local can_cancel = cancel ~= nil and try(function()
+						return UnitManager.CanStartCommand(unit, cancel, false, true) == true;
+					end, false) == true;
+					if can_cancel and pcall(function() UnitManager.RequestCommand(unit, cancel); end) then
+						-- RequestCommand can itself be asynchronous. Re-read the host
+						-- activity instead of assuming the cancel returned after the
+						-- operation deactivated; otherwise the dependent operation can
+						-- lose the same race this guard is meant to prevent.
+						local deactivated = try(function()
+							return ActivityTypes ~= nil
+								and ActivityTypes.ACTIVITY_OPERATION ~= nil
+								and UnitManager.GetActivityType(unit) ~= ActivityTypes.ACTIVITY_OPERATION;
+						end, false) == true;
+						active_operation = not deactivated;
+						emit("queue_operation_cancelled", {
+							turn = turn, unit = subject, x = ux, y = uy,
+							reason = "landed_before_deactivation",
+						});
+					end
+				end
 				local ready = (entry.ready or arrived or spent or moved_from_origin
 					or entry.wait >= grace) and not active_operation;
 				-- See `CivvisBoard.moveNoop`: a leg the host accepted, whose unit
