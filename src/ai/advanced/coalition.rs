@@ -72,6 +72,13 @@
 //! Before the strike it proposes only a military alliance to such a partner,
 //! and adds Envoy value only when that directly unseats the target from a
 //! nearby client city-state.
+//!
+//! Version 3 keeps only a concrete, already-active second front. A neighbour
+//! who is fighting the target now can turn a military alliance into the
+//! engine's immediate +5 combat strength against that common enemy when we
+//! declare. It makes one such offer only to a mutually non-hostile partner;
+//! it neither spends Envoys nor asks for a Joint War, so a ready army never
+//! waits on a speculative diplomatic answer.
 
 use std::collections::BTreeMap;
 
@@ -106,6 +113,10 @@ pub(crate) const COALITION_UNBOUND_BONUS: f64 = 60.0;
 /// Our grievances against a neighbour above this and it is no partner (the
 /// stock alliance filter's ceiling).
 pub(crate) const COALITION_GRIEVANCE_CEILING: f64 = 75.0;
+/// A v3 active-front ally must still be a low-grievance counterpart. At this
+/// ceiling the ordinary Advanced deal value of friendship plus a military
+/// alliance remains positive even on the non-military plan paths.
+pub(crate) const COALITION_ACTIVE_FRONT_GRIEVANCE_CEILING: f64 = 50.0;
 
 /// The coalition being built for one target, carried from the turn the war
 /// desk first holds the target until the war starts or the target changes.
@@ -134,7 +145,10 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<usize> {
-        if !self.coalition_before_war && !self.coalition_before_war_2 {
+        if !self.coalition_before_war
+            && !self.coalition_before_war_2
+            && !self.coalition_before_war_3
+        {
             return None;
         }
         let appointed = self
@@ -218,14 +232,23 @@ impl AdvancedAi {
 
     /// One alliance proposal per turn of the window, to the best neighbour
     /// of the target: `military` when free on both sides, else the first
-    /// free kind. Nothing outside the window or before Civil Service.
+    /// free kind. Version three instead asks one already-engaged neighbour
+    /// for a military alliance and never needs a Joint War. Nothing outside
+    /// the window or before Civil Service.
     pub(crate) fn coalition_alliance_step(&mut self, g: &mut Game, pid: usize) {
-        if !self.coalition_before_war && !self.coalition_before_war_2 {
+        if !self.coalition_before_war
+            && !self.coalition_before_war_2
+            && !self.coalition_before_war_3
+        {
             return;
         }
         let Some(target) = self.coalition.as_ref().map(|c| c.target) else {
             return;
         };
+        if self.coalition_before_war_3 {
+            self.coalition_active_front_alliance_step(g, pid, target);
+            return;
+        }
         if !g.players[pid]
             .civics
             .contains(&crate::name!("civil_service"))
@@ -345,6 +368,114 @@ impl AdvancedAi {
         }
     }
 
+    /// Version three's only setup: a neighbour already at war with the
+    /// target is a proven second front. A level-one military alliance gives
+    /// us the engine's +5 versus that common enemy as soon as we declare, so
+    /// this is useful even though an alliance has not had time to level up.
+    ///
+    /// Unlike v2, this neither infers an Advanced recipient's hidden plan
+    /// from the Basic controller's acceptance rule nor spends a ready strike
+    /// waiting for a Joint War. The bilateral grievance and denunciation
+    /// filters retain a deal the public relationship board can support.
+    fn coalition_active_front_alliance_step(&mut self, g: &mut Game, pid: usize, target: usize) {
+        // An alliance cannot improve the coming declaration while a treaty
+        // still makes that declaration illegal; preserve the military slot
+        // for the instant the war desk can actually use its common-enemy
+        // strength.
+        if g.peace_treaty_until(pid, target).is_some() {
+            return;
+        }
+        if !g.players[pid]
+            .civics
+            .contains(&crate::name!("civil_service"))
+        {
+            return;
+        }
+        let turn = g.turn;
+        let grievance = |holder: usize, against: usize| {
+            g.players[holder]
+                .grievances
+                .get(&against)
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let denounced = |holder: usize, against: usize| {
+            g.players[holder]
+                .denounced_until
+                .get(&against)
+                .is_some_and(|until| *until > turn)
+        };
+        let military_taken = |who: usize| {
+            g.players[who]
+                .alliances
+                .values()
+                .any(|alliance| alliance.ends > turn && alliance.kind == "military")
+        };
+        if military_taken(pid) {
+            return;
+        }
+        let partner = self
+            .coalition_neighbours(g, pid, target)
+            .into_iter()
+            .filter(|partner| {
+                g.has_met(pid, *partner)
+                    && g.is_at_war(*partner, target)
+                    && !g.is_at_war(pid, *partner)
+                    && g.alliance_with(pid, *partner).is_none()
+                    && !military_taken(*partner)
+                    && !denounced(pid, *partner)
+                    && !denounced(*partner, pid)
+                    && grievance(pid, *partner) < COALITION_ACTIVE_FRONT_GRIEVANCE_CEILING
+                    && grievance(*partner, pid) < COALITION_ACTIVE_FRONT_GRIEVANCE_CEILING
+                    && !self
+                        .coalition
+                        .as_ref()
+                        .is_some_and(|coalition| coalition.alliance_asked.contains_key(partner))
+                    && !g.pending_deals.iter().any(|deal| {
+                        deal.expires >= turn
+                            && ((deal.from == pid && deal.to == *partner)
+                                || (deal.from == *partner && deal.to == pid))
+                    })
+            })
+            .max_by(|left, right| {
+                g.military_power(*left)
+                    .total_cmp(&g.military_power(*right))
+                    .then_with(|| right.cmp(left))
+            });
+        let Some(partner) = partner else {
+            return;
+        };
+        let proposal = Action::ProposeDeal {
+            player: partner,
+            give_gold: 0.0,
+            request_gold: 0.0,
+            // `no_free_passage`: passage is sold, not bundled.
+            open_borders: !self.base.no_free_passage
+                && g.players[pid]
+                    .civics
+                    .contains(&crate::name!("early_empire")),
+            friendship: true,
+            peace: false,
+            alliance: Some("military".to_string()),
+        };
+        if g.apply(pid, &proposal).is_err() {
+            return;
+        }
+        if let Some(coalition) = self.coalition.as_mut() {
+            coalition.alliance_asked.insert(partner, turn);
+        }
+        *g.players[pid]
+            .counters
+            .entry("coalition:alliances_proposed".to_string())
+            .or_insert(0) += 1;
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            think!(self.journal(), Diplomacy, Decision,
+                   "Allying with {} against {}", g.players[partner].civ, g.players[target].civ;
+                   "they are already fighting our target; the military alliance gives our coming \
+                    declaration its immediate common-enemy combat bonus without delaying it");
+        }
+    }
+
     /// The envoy term: what a city-state's place NEXT TO THE TARGET is worth
     /// — proximity, plus the target as its suzerain to unseat, or nobody —
     /// amortised over the envoys the suzerainty still needs. Zero outside
@@ -356,7 +487,13 @@ impl AdvancedAi {
         minor: usize,
         needed: i64,
     ) -> i64 {
-        if !self.coalition_before_war && !self.coalition_before_war_2 {
+        if !self.coalition_before_war
+            && !self.coalition_before_war_2
+            && !self.coalition_before_war_3
+        {
+            return 0;
+        }
+        if self.coalition_before_war_3 {
             return 0;
         }
         let Some(target) = self.coalition.as_ref().map(|c| c.target) else {
@@ -471,7 +608,13 @@ impl AdvancedAi {
         pid: usize,
         target: usize,
     ) -> bool {
-        if !self.coalition_before_war && !self.coalition_before_war_2 {
+        if !self.coalition_before_war
+            && !self.coalition_before_war_2
+            && !self.coalition_before_war_3
+        {
+            return false;
+        }
+        if self.coalition_before_war_3 {
             return false;
         }
         let Some(coalition) = self.coalition.as_ref().filter(|c| c.target == target) else {
@@ -591,14 +734,21 @@ mod tests {
     fn coalition_before_war_is_a_native_opt_in_off_in_both_controllers() {
         opt_in_off_in_both_controllers("coalition-before-war", |ai| ai.coalition_before_war);
         opt_in_off_in_both_controllers("coalition-before-war-2", |ai| ai.coalition_before_war_2);
+        opt_in_off_in_both_controllers("coalition-before-war-3", |ai| ai.coalition_before_war_3);
 
         let mut ai = AdvancedAi::new();
         ai.enable_coalition_before_war();
         assert!(ai.coalition_before_war);
         assert!(!ai.coalition_before_war_2);
+        assert!(!ai.coalition_before_war_3);
         ai.enable_coalition_before_war_2();
         assert!(!ai.coalition_before_war);
         assert!(ai.coalition_before_war_2);
+        assert!(!ai.coalition_before_war_3);
+        ai.enable_coalition_before_war_3();
+        assert!(!ai.coalition_before_war);
+        assert!(!ai.coalition_before_war_2);
+        assert!(ai.coalition_before_war_3);
     }
 
     /// Open land at exactly `distance` from `anchor`, for seating a city.
@@ -706,6 +856,12 @@ mod tests {
     fn coalition_v2_ai() -> AdvancedAi {
         let mut ai = AdvancedAi::new();
         ai.enable_coalition_before_war_2();
+        ai
+    }
+
+    fn coalition_v3_ai() -> AdvancedAi {
+        let mut ai = AdvancedAi::new();
+        ai.enable_coalition_before_war_3();
         ai
     }
 
@@ -974,6 +1130,77 @@ mod tests {
         game.turn += 1;
         assert!(!ai.coalition_invites_before_declaring(&mut game, 0, 1));
         assert!(game.pending_deals.iter().all(|deal| deal.from != 0));
+    }
+
+    /// Version three asks only a neighbour that already has the target at
+    /// war. The resulting level-one military alliance is enough for the
+    /// engine's immediate common-enemy combat bonus; it neither spends Envoys
+    /// nor waits at the strike for a Joint War reply.
+    #[test]
+    fn v3_allies_with_an_active_front_without_holding_the_declaration() {
+        let (mut game, plan, near, _) = coalition_board();
+        let mut ai = coalition_v3_ai();
+        ai.coalition_observe(&mut game, 0, &plan);
+
+        // A peaceful neighbour is not a v3 candidate, even though it is
+        // legally adjacent to the target.
+        ai.coalition_alliance_step(&mut game, 0);
+        assert!(game.pending_deals.is_empty());
+
+        // Even an active front is held until our treaty with the intended
+        // target expires: otherwise an alliance would consume the military
+        // slot while the declaration remains illegal.
+        game.at_war.insert((1, 2));
+        game.peace_treaties.insert((0, 1), game.turn + 1);
+        ai.coalition_alliance_step(&mut game, 0);
+        assert!(game.pending_deals.is_empty());
+        game.peace_treaties.clear();
+
+        // The neighbour is now fighting the target. V3 makes exactly one
+        // military proposal, and does not run either of v2's costly hooks.
+        ai.coalition_alliance_step(&mut game, 0);
+        let proposal = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0 && deal.to == 2)
+            .expect("the existing target front receives the alliance offer")
+            .clone();
+        assert_eq!(proposal.alliance.as_deref(), Some("military"));
+        assert_eq!(proposal.joint_war_target, None);
+        assert_eq!(ai.coalition_city_state_bonus(&game, 0, near, 1), 0);
+        assert!(!ai.coalition_invites_before_declaring(&mut game, 0, 1));
+        ai.coalition_alliance_step(&mut game, 0);
+        assert_eq!(
+            game.pending_deals
+                .iter()
+                .filter(|deal| deal.from == 0 && deal.to == 2)
+                .count(),
+            1,
+            "a v3 window does not re-ask its active-front partner"
+        );
+
+        // Once our declaration begins, accepting that already-written deal
+        // gives our Warrior the military-alliance +5 against the target.
+        // `melee_exchange_strengths` is the engine's combat arithmetic, so
+        // this checks the actual bonus rather than duplicating it here.
+        game.at_war.insert((0, 1));
+        let attacker_pos = game.cities[&game.player_city_ids(0)[0]].pos;
+        let defender_pos = game.cities[&game.player_city_ids(1)[0]].pos;
+        let attacker = game.spawn_test_unit("warrior", 0, attacker_pos);
+        let defender = game.spawn_test_unit("warrior", 1, defender_pos);
+        let before = game
+            .melee_exchange_strengths(attacker, defender)
+            .expect("two live Warriors")
+            .0;
+        game.current = 2;
+        game.apply(2, &Action::AcceptDeal { deal: proposal.id })
+            .expect("the active-front neighbour accepts the military alliance");
+        game.current = 0;
+        let after = game
+            .melee_exchange_strengths(attacker, defender)
+            .expect("the Warriors remain live")
+            .0;
+        assert_eq!(after, before + 5.0);
     }
 
     /// The strike: every eligible neighbour is invited to a joint war and the

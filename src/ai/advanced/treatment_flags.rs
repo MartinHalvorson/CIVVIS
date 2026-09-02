@@ -2376,6 +2376,7 @@ impl AdvancedAi {
     pub fn enable_coalition_before_war(&mut self) {
         self.coalition_before_war = true;
         self.coalition_before_war_2 = false;
+        self.coalition_before_war_3 = false;
     }
 
     /// The twin of `enable_coalition_before_war`.
@@ -3807,11 +3808,28 @@ impl AdvancedAi {
     pub fn enable_coalition_before_war_2(&mut self) {
         self.coalition_before_war_2 = true;
         self.coalition_before_war = false;
+        self.coalition_before_war_3 = false;
     }
 
     /// The twin of `enable_coalition_before_war_2`.
     pub fn disable_coalition_before_war_2(&mut self) {
         self.coalition_before_war_2 = false;
+    }
+
+    /// Recruit only a target neighbour already fighting it. The accepted
+    /// military alliance makes that real second front an immediate combat
+    /// bonus when we declare; this version neither diverts Envoys nor holds
+    /// a ready declaration for a speculative joint-war answer. Opt-in gene
+    /// `coalition-before-war-3`.
+    pub fn enable_coalition_before_war_3(&mut self) {
+        self.coalition_before_war_3 = true;
+        self.coalition_before_war = false;
+        self.coalition_before_war_2 = false;
+    }
+
+    /// The twin of `enable_coalition_before_war_3`.
+    pub fn disable_coalition_before_war_3(&mut self) {
+        self.coalition_before_war_3 = false;
     }
 
     /// The force's turn is planned jointly — the danger field, a

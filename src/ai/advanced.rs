@@ -4926,6 +4926,12 @@ pub struct AdvancedAi {
     /// alliance and enemy-client Envoy setup.
     /// Opt-in gene `coalition-before-war-2`; see `advanced/coalition.rs`.
     coalition_before_war_2: bool,
+    /// Version 3 of `coalition-before-war`: ally only with a neighbouring
+    /// major already fighting our intended target. That proven second front
+    /// supplies the military alliance's immediate combat bonus without a
+    /// speculative joint-war offer, Envoy diversion, or declaration delay.
+    /// Opt-in gene `coalition-before-war-3`; see `advanced/coalition.rs`.
+    coalition_before_war_3: bool,
     /// `campus-through-expansion`: a Science seat prices the Campus and its
     /// buildings in the Science lane while its plan still reads Expansion,
     /// and no city's first specialty district may be an Entertainment
@@ -7582,6 +7588,7 @@ impl AdvancedAi {
             chase_every_boost: false,
             chase_every_boost_2: false,
             coalition_before_war_2: false,
+            coalition_before_war_3: false,
             campus_through_expansion: false,
             district_planning_2: false,
             district_planning_3: false,
