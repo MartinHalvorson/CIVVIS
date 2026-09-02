@@ -7832,7 +7832,7 @@ impl AdvancedAi {
                     pos: unit.pos,
                     when: g.turn,
                     owner: unit.owner,
-                    kind: unit.kind.clone(),
+                    kind: unit.kind,
                 },
             );
         }
