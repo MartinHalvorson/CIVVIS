@@ -13239,8 +13239,7 @@ impl LiveMirror {
         ));
         self.game.blocked_strikes =
             Arc::new(blocked_strikes_from(&state.refused_strikes, &self.civ6_of));
-        self.game.host_previews =
-            Arc::new(host_previews_from(&state.host_previews, &self.civ6_of));
+        self.game.host_previews = Arc::new(host_previews_from(&state.host_previews, &self.civ6_of));
         // ⚠ ONE ORDERED STEP LIST, WALKED BY BOTH PASSES. See
         // `HOST_STATE_STEPS`: everything this method and `rebuild_from_state`
         // apply from the host state is written there once and told apart by

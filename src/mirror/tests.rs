@@ -8995,14 +8995,25 @@ fn a_host_strike_preview_reaches_the_board() {
     .expect("write events");
 
     let previews = host_previews_on(&path, 40);
-    assert_eq!(previews.len(), 2, "two keys this turn; last turn's and the combat's stay out");
+    assert_eq!(
+        previews.len(),
+        2,
+        "two keys this turn; last turn's and the combat's stay out"
+    );
     let archer = &previews[&(3342338, 7, 5, "RANGE_ATTACK".to_string())];
     assert_eq!(
-        (archer.defender_strength, archer.damage_to_defender, archer.defender_wall_damage),
+        (
+            archer.defender_strength,
+            archer.damage_to_defender,
+            archer.defender_wall_damage
+        ),
         (12.0, 38, 0),
         "the frame-1 answer replaces frame 0's, and an absent field lands as zero"
     );
-    assert!(host_previews_on(&path, 41).is_empty(), "per turn, not cumulative");
+    assert!(
+        host_previews_on(&path, 41).is_empty(),
+        "per turn, not cumulative"
+    );
 
     let unit_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 3342338i64)].into_iter().collect();
     let filed = host_previews_from(&previews, &unit_ids);

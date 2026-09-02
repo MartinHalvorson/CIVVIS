@@ -1817,7 +1817,12 @@ impl Game {
     /// `preview` order asked for it: `(attacker_strength, defender_strength,
     /// damage_to_attacker, damage_to_defender)`. `ranged` picks the
     /// RANGE_ATTACK answer over the melee one. See `Game::host_previews`.
-    pub fn host_preview(&self, uid: u32, target: Pos, ranged: bool) -> Option<(f64, f64, i32, i32)> {
+    pub fn host_preview(
+        &self,
+        uid: u32,
+        target: Pos,
+        ranged: bool,
+    ) -> Option<(f64, f64, i32, i32)> {
         let preview = self.host_previews.get(&(uid, target, ranged))?;
         Some((
             preview.attacker_strength,
