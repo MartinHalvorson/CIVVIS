@@ -1958,6 +1958,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "battle-planner", field: "battle_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner, disable: AdvancedAi::disable_battle_planner },
 
     Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
+    // Version 2 of `battle-planner` (2026-09-02): the positions plan joins the
+    // kill plan and the heal rotation — slots laid against the enemy contact
+    // and the objective, a minimum-cost assignment with reservations, moves
+    // front to rear, pacing on the approach. One version of the family plays.
+    // Priced on the arena against version 1. See
+    // `AdvancedAi::enable_battle_planner_2`.
+    Gene { tag: "battle-planner-2", field: "battle_planner_2", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner_2, disable: AdvancedAi::disable_battle_planner_2 },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing

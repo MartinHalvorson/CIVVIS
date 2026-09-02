@@ -3679,6 +3679,22 @@ impl AdvancedAi {
         self.battle_planner = false;
     }
 
+    /// Version two of `battle_planner`: the positions plan — slots laid
+    /// against the enemy contact and the objective, a minimum-cost
+    /// assignment with reservations, moves front to rear, pacing on the
+    /// approach — joins the kill plan and the heal rotation. One version of
+    /// a family plays, so this turns version one off. Opt-in gene
+    /// `battle-planner-2`. See `battle_planner`.
+    pub fn enable_battle_planner_2(&mut self) {
+        self.battle_planner = false;
+        self.battle_planner_2 = true;
+    }
+
+    /// The twin of `enable_battle_planner_2`.
+    pub fn disable_battle_planner_2(&mut self) {
+        self.battle_planner_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
