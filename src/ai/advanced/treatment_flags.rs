@@ -3871,6 +3871,17 @@ impl AdvancedAi {
         self.objective_board = false;
     }
 
+    /// `war-policy-via-board`: target feasibility, the declaration and the
+    /// peace term read off the board. See `advanced/war_policy.rs`.
+    pub fn enable_war_policy_via_board(&mut self) {
+        self.war_policy_via_board = true;
+    }
+
+    /// The twin of `enable_war_policy_via_board`.
+    pub fn disable_war_policy_via_board(&mut self) {
+        self.war_policy_via_board = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

@@ -245,7 +245,7 @@ impl AdvancedAi {
     /// The war ledger's loss counts for our war with `other`:
     /// (our units, their units, our cities, their cities). Zero before the
     /// first blow: the record is opened on demand.
-    fn one_war_ledger(g: &Game, pid: usize, other: usize) -> (u32, u32, u32, u32) {
+    pub(super) fn one_war_ledger(g: &Game, pid: usize, other: usize) -> (u32, u32, u32, u32) {
         let key = (pid.min(other), pid.max(other));
         g.wars
             .get(&key)
