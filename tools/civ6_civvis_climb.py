@@ -1698,7 +1698,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
 
 
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
-                         started_at: float, latest=None, recent=None) -> Path | None:
+                         started_at: float, latest=None, recent=None,
+                         used_saves=None) -> Path | None:
     """The autosave a frozen attempt should be reloaded from, or None.
 
     ★★★★★ A FROZEN GAME WAS SCORED AS A LOSS WITH ITS SAVE ON DISK. Three
@@ -1718,8 +1719,10 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     (a timeout or a locked screen is a different story), reached
     `--resume-min-turn`, did not already reach an end screen, the resume
     budget is not spent, and an autosave written since the attempt began
-    exists (never one from an earlier game). Everything else falls through to
-    the ledger exactly as before.
+    exists (never one from an earlier game). The live caller also supplies the
+    saves already tried by this attempt; a short rolling-autosave list must not
+    make a later stride clamp back onto the same board. Everything else falls
+    through to the ledger exactly as before.
     """
     if why != "frozen" or resumes_so_far >= args.max_resumes:
         return None
@@ -1740,8 +1743,12 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     # PLEASE WAIT spin twice on 2026-08-24.  Each successive recovery therefore
     # walks one autosave farther back, preserving the match while giving the
     # engine a different turn boundary to simulate.
+    used = {Path(save).name for save in (used_saves or ())}
     if latest is not None:
-        return latest(newer_than=started_at)
+        save = latest(newer_than=started_at)
+        if save is None or save.name in used:
+            return None
+        return save
     finder = recent if recent is not None else _recent_autosaves
     saves = finder(newer_than=started_at)
     # ⚠⚠ NEVER RELOAD THE SAVE OF THE TURN THAT JUST PARKED. `saves` is newest
@@ -1765,7 +1772,16 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     saves = [save for save in saves if _autosave_turn(save) != turn]
     step = RESUME_STEPS[min(resumes_so_far, len(RESUME_STEPS) - 1)]
     index = min(step, len(saves) - 1)
-    return saves[index] if 0 <= index < len(saves) else None
+    if not 0 <= index < len(saves):
+        return None
+    # Keep the established one/four/nine-back choice whenever possible. If a
+    # short rolling list made that choice clamp onto a save already tried by
+    # this attempt, search farther back first, then wrap toward newer unused
+    # saves. This preserves the stride sequence while guaranteeing progress.
+    for candidate_index in list(range(index, len(saves))) + list(range(index - 1, -1, -1)):
+        if saves[candidate_index].name not in used:
+            return saves[candidate_index]
+    return None
 
 
 # How far back each successive resume reaches, as an index into the autosaves
@@ -2395,8 +2411,10 @@ def main() -> int:
                 write_settler_capture_dossiers(run_tag)
                 # Read once per run: this is the attempt's row unless it resumes.
                 record = outcome_of(run_tag)
-                save = resume_from_autosave(record, why, len(resumes), args,
-                                            attempt_started_at)
+                save = resume_from_autosave(
+                    record, why, len(resumes), args, attempt_started_at,
+                    used_saves={resume["save"] for resume in resumes},
+                )
                 if save is None:
                     break
                 cont = f"{tag}-cont{len(resumes) + 1}"

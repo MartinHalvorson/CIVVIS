@@ -1605,6 +1605,23 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
             saves[2],
         )
 
+    def test_a_short_rolling_list_never_reuses_a_clamped_resume(self):
+        args = self._Args()
+        args.max_resumes = 6
+        saves = [Path(f"/saves/AutoSave_{n:04d}.Civ6Save") for n in range(88, 78, -1)]
+        finder = lambda newer_than=None: saves
+        used = {"AutoSave_0087.Civ6Save", "AutoSave_0084.Civ6Save",
+                "AutoSave_0079.Civ6Save"}
+
+        self.assertEqual(
+            climb.resume_from_autosave(
+                {"last_turn": 88}, "frozen", 3, args, 1234.5,
+                recent=finder, used_saves=used,
+            ),
+            Path("/saves/AutoSave_0080.Civ6Save"),
+            "a clamped stride must skip saves already used by this attempt",
+        )
+
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
         spawned = []
 
@@ -1747,6 +1764,30 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(row["reason"], "attempt frozen; resume failed")
         self.assertTrue(row["resume_failed"]["tag"].endswith("-cont1"))
         self.assertEqual([r["from_turn"] for r in row["resumes"]], [102])
+
+    def test_the_live_rotation_does_not_replay_a_short_list(self):
+        verdicts = ["frozen"] * 4 + ["exited"]
+        saved_wait = climb.wait_watching_the_turn
+        saved_recent = climb._recent_autosaves
+        climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path(f"/saves/AutoSave_{n:04d}.Civ6Save") for n in range(88, 78, -1)
+        ]
+        try:
+            code, rows = self.climb_with(
+                [{"last_turn": 88}] * 5, attempts=1,
+            )
+        finally:
+            climb.wait_watching_the_turn = saved_wait
+            climb._recent_autosaves = saved_recent
+
+        self.assertEqual(code, 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            [resume["save"] for resume in rows[0]["resumes"]],
+            ["AutoSave_0087.Civ6Save", "AutoSave_0084.Civ6Save",
+             "AutoSave_0079.Civ6Save", "AutoSave_0080.Civ6Save"],
+        )
 
     def test_resumes_can_be_switched_off(self):
         verdicts = ["frozen"]
