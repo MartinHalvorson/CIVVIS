@@ -5011,6 +5011,11 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Version 2 of `early-project-restraint`: a repeatable Great-Person
+    /// project waits only while its own district owes a first building that
+    /// this city can start now. The arbitrary opening clock is gone.
+    /// Opt-in gene `early-project-restraint-2`.
+    early_project_restraint_2: bool,
     /// `first-district-first`: a city's FIRST specialty district outranks
     /// the queue filler. Three edits inside `production_value`, all gated:
     /// a per-city first-district bonus beside `first_copy`, a gentler cost
@@ -7291,6 +7296,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            early_project_restraint_2: false,
             first_district_first: false,
             escort_cap_holds: false,
             first_granary_reserve: false,
@@ -12246,6 +12252,44 @@ impl AdvancedAi {
         mine < cost && mine + award + f64::EPSILON >= cost
     }
 
+    /// Whether this project's own district has a concrete first-building
+    /// debt the city can pay now.
+    ///
+    /// V1 inferred underdevelopment from the global turn number and therefore
+    /// suppressed a project even after the relevant district was developed.
+    /// V2 asks the board directly. A locked building is not debt yet, a
+    /// district family with no building is never debt, and one standing family
+    /// building is enough to release the project at any turn.
+    fn project_first_building_debt(g: &Game, pid: usize, cid: u32, project: &str) -> bool {
+        let spec = &g.rules.projects[project];
+        let city = &g.cities[&cid];
+        let Some(district) = spec.district else {
+            return false;
+        };
+        let family = g.district_family(district);
+        if city.buildings.iter().any(|building| {
+            g.rules.buildings[building]
+                .district
+                .is_some_and(|built| g.district_family(built) == family)
+        }) {
+            return false;
+        }
+        g.rules.buildings.iter().any(|(building, building_spec)| {
+            building_spec.buildable
+                && !building_spec.wonder
+                && building_spec
+                    .district
+                    .is_some_and(|built| g.district_family(built) == family)
+                && g.can_produce(
+                    pid,
+                    cid,
+                    &Item::Building {
+                        building: *building,
+                    },
+                )
+        })
+    }
+
     /// Evaluate a repeatable district project as a bounded race move. The
     /// ongoing conversion is valued over the actual build horizon, while the
     /// completion award is priced against the live global Great Person race.
@@ -12288,11 +12332,14 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
-        let early_gpp_project_restrained = self.early_project_restraint
-            && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS)
-            && spec.repeatable
+        let ordinary_gpp_project = spec.repeatable
             && !spec.completion_gpp.is_empty()
             && !Self::early_project_race_exception(g, pid, &gpp_awards);
+        let early_gpp_project_restrained = ordinary_gpp_project
+            && ((self.early_project_restraint
+                && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS))
+                || (self.early_project_restraint_2
+                    && Self::project_first_building_debt(g, pid, cid, project)));
         let host_competition_gpp_scores = [
             (
                 "EMERGENCY_WORLDS_FAIR",

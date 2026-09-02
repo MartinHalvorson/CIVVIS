@@ -17684,6 +17684,102 @@ fn opening_gpp_projects_wait_except_for_prophets_and_exceptional_scientists() {
 }
 
 #[test]
+fn project_restraint_v2_reads_first_building_debt_instead_of_a_clock() {
+    let mut game = Game::new(2, 24, 16, 7_106, 200, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "campus");
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.turn = 51;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ordinary = AdvancedAi::new();
+    let mut v1 = AdvancedAi::new();
+    v1.enable_early_project_restraint();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_early_project_restraint_2();
+
+    let scientist_cost = game.gp_cost(0, "scientist");
+    game.players[1]
+        .gpp
+        .insert("scientist".to_string(), scientist_cost - 1.0);
+
+    let stock_debt =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert!(
+        stock_debt > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "the fixture needs a project whose race value can outrun the missing-building penalty"
+    );
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v2 must wait while the Campus can build its first Library"
+    );
+
+    let award = game.project_completion_gpp_awards(0, city, "campus_research_grants")["scientist"];
+    let cost = game.gp_cost(0, "scientist");
+    game.players[0]
+        .gpp
+        .insert("scientist".to_string(), cost - award);
+    assert!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan)
+            > EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "a one-project claim on Aryabhata must still override concrete building debt"
+    );
+    game.players[0].gpp.insert("scientist".to_string(), 0.0);
+
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    let developed = v2.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert_eq!(developed, stock_debt + 420.0);
+    assert_eq!(
+        v1.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v1's opening timer must remain measurable and unchanged"
+    );
+
+    game.cities.get_mut(&city).unwrap().buildings.clear();
+    game.turn = game.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS);
+    let late_stock =
+        ordinary.district_project_value(&game, 0, city, "campus_research_grants", &plan);
+    assert_eq!(
+        v1.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        late_stock,
+        "v1 must release the project at its historical deadline"
+    );
+    assert_eq!(
+        v2.district_project_value(&game, 0, city, "campus_research_grants", &plan),
+        EARLY_GPP_PROJECT_FALLBACK_CAP,
+        "v2 must keep reading an unpaid, buildable Library debt after the clock expires"
+    );
+
+    let mut family = AdvancedAi::new();
+    family.enable_early_project_restraint();
+    family.enable_early_project_restraint_2();
+    assert!(!family.early_project_restraint && family.early_project_restraint_2);
+    family.enable_early_project_restraint();
+    assert!(family.early_project_restraint && !family.early_project_restraint_2);
+}
+
+#[test]
 fn defensive_recovery_force_gap_outranks_rear_city_great_person_project() {
     let mut game = Game::new(2, 24, 16, 7_104, 200, 0);
     let settler = game

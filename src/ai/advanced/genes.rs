@@ -1958,6 +1958,10 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "battle-planner", field: "battle_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner, disable: AdvancedAi::disable_battle_planner },
 
     Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
+    // Replace v1's global opening timer with a concrete, currently buildable
+    // first-building debt in the project's own district. A developed city
+    // may race immediately; an undeveloped one waits at any turn.
+    Gene { tag: "early-project-restraint-2", field: "early_project_restraint_2", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint_2, disable: AdvancedAi::disable_early_project_restraint_2 },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing

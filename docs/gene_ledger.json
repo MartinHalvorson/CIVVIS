@@ -1498,6 +1498,15 @@
           "district-planning-2": null
         }
       },
+      "early-project-restraint": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "early-project-restraint": null,
+          "early-project-restraint-2": null
+        }
+      },
       "first-builder-reserve": {
         "rule_on": [],
         "head": null,
