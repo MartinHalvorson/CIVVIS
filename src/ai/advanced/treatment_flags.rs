@@ -2208,6 +2208,7 @@ impl AdvancedAi {
     /// city development; an open Prophet race and a clutch for an exceptional
     /// Scientist remain forcing. Opt-in gene `early-project-restraint`.
     pub fn enable_early_project_restraint(&mut self) {
+        self.early_project_restraint_2 = false;
         self.early_project_restraint = true;
     }
 
@@ -3695,6 +3696,20 @@ impl AdvancedAi {
     /// The twin of `enable_battle_planner`.
     pub fn disable_battle_planner(&mut self) {
         self.battle_planner = false;
+    }
+
+    /// Restrain an off-lane repeatable Great-Person project only while its
+    /// district owes a first building this city can start now. Lane projects
+    /// and immediate race swings remain available. Version 2 of
+    /// `early-project-restraint`; one family member plays at a time.
+    pub fn enable_early_project_restraint_2(&mut self) {
+        self.early_project_restraint = false;
+        self.early_project_restraint_2 = true;
+    }
+
+    /// The twin of `enable_early_project_restraint_2`.
+    pub fn disable_early_project_restraint_2(&mut self) {
+        self.early_project_restraint_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------
