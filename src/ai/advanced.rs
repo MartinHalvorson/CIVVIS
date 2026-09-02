@@ -5101,6 +5101,14 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Version 2 of `enter-the-prophet-race`: pay the secondary race's entry
+    /// fee only when the board-aware religious-opening rank admits this seat.
+    /// That requires two cities and an actual or placeable Holy Site, limits
+    /// new entrants to the remaining global slots, and keeps an empire that
+    /// has already committed ahead of an uninvested rival. The admitted race
+    /// still moves research, district priority, patronage, and the prize as
+    /// one package. Opt-in gene `enter-the-prophet-race-2`.
+    enter_the_prophet_race_2: bool,
     /// Version 2 of `early-project-restraint`: a repeatable Great-Person
     /// project waits only while its own district owes a first building that
     /// this city can start now, and only when its points do not serve the
@@ -7441,6 +7449,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            enter_the_prophet_race_2: false,
             early_project_restraint_2: false,
             first_district_first: false,
             escort_cap_holds: false,
@@ -14015,13 +14024,14 @@ impl AdvancedAi {
         rivals_at_last_call >= open_slots
     }
 
-    /// Whether the optional secondary Prophet race is compatible with the
-    /// seat's explicit lane. Science has a long, dead-end-free beeline and the
-    /// 2026-09-01 deployment screen showed the race cutting its Science wins
-    /// from 12/16 to 3/16 when it pulled that lane into Astrology, Holy Sites,
-    /// and Prophet patronage.
+    /// Whether either optional secondary Prophet-race version is compatible
+    /// with the seat's explicit lane. Science has a long, dead-end-free
+    /// beeline and the 2026-09-01 deployment screen showed the race cutting
+    /// its Science wins from 12/16 to 3/16 when it pulled that lane into
+    /// Astrology, Holy Sites, and Prophet patronage.
     fn prophet_race_enabled_for(&self, target: Option<VictoryTarget>) -> bool {
-        self.enter_the_prophet_race && target != Some(VictoryTarget::Science)
+        (self.enter_the_prophet_race || self.enter_the_prophet_race_2)
+            && target != Some(VictoryTarget::Science)
     }
 
     /// The secondary Prophet-race package has to agree on one admission gate:
@@ -14035,6 +14045,7 @@ impl AdvancedAi {
     ) -> bool {
         self.prophet_race_enabled_for(target)
             && self.prophet_race_open_for(g, pid)
+            && (!self.enter_the_prophet_race_2 || self.religious_opening_viable(g, pid))
             && !self.skip_prophet_race_2_for(g, pid, target)
     }
 

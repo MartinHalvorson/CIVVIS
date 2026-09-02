@@ -2010,6 +2010,10 @@ pub const GENES: &[Gene] = &[
     // Version 3 of `border-parity`: one local garrison against an actually
     // visible two-body staging group; buy it without touching production.
     Gene { tag: "border-parity-3", field: "border_parity_3", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_3, disable: AdvancedAi::disable_border_parity_3 },
+    // Version 2 enters only after the existing religious-opening rank proves
+    // the seat has two cities, a real Holy Site path, and one of the remaining
+    // Prophet slots. The four-part commitment still moves as one package.
+    Gene { tag: "enter-the-prophet-race-2", field: "enter_the_prophet_race_2", kind: Kind::OptIn, enable: AdvancedAi::enable_enter_the_prophet_race_2, disable: AdvancedAi::disable_enter_the_prophet_race_2 },
     // The generic upgrade pass runs after the purchase pass has spent the
     // treasury, so the army never modernizes: ~3 UPGRADE orders per live
     // game, Heavy Chariot the commonest unit at t150. Upgrade FIRST at the
