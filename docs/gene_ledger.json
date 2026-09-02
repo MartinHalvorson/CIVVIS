@@ -1476,6 +1476,15 @@
           "coastal-city-sites-2": null
         }
       },
+      "diplomatic-lane-forecast": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "diplomatic-lane-forecast": null,
+          "diplomatic-lane-forecast-2": null
+        }
+      },
       "district-coverage": {
         "rule_on": [
           "district-coverage-2"
@@ -1496,6 +1505,15 @@
         "versions": {
           "district-planning": 0.244584,
           "district-planning-2": null
+        }
+      },
+      "early-project-restraint": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "early-project-restraint": null,
+          "early-project-restraint-2": null
         }
       },
       "first-builder-reserve": {

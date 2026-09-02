@@ -252,6 +252,11 @@ const STRATEGIC_WONDER_TOURISM_RATE: f64 = 95.0;
 /// way is the same envoy. `ENVOY_PRODUCTION_VALUE` is the other lanes' price.
 const DIPLOMATIC_ENVOY_PRODUCTION_VALUE: f64 = 300.0;
 
+/// A speculative Congress runway can nominate Diplomacy, but cannot outrank
+/// Religion's realised opening floor (46). Earned DVP and suzerainties still
+/// raise the baseline score past this cap normally.
+const DIPLOMATIC_FORECAST_OPENING_CAP: i32 = 45;
+
 /// Rings around a settle site inside which a rival major's owned tiles read as
 /// a provocation. See `AdvancedAi::foreign_border_pressure`.
 const FOREIGN_BORDER_RADIUS: i32 = 3;
@@ -4502,6 +4507,14 @@ pub struct AdvancedAi {
     /// **Off by default.** Screenable: the native board convenes the same
     /// Congress, banks the same Favor and awards the same points.
     pub diplomatic_lane_forecast: bool,
+    /// Version 2 of [`Self::diplomatic_lane_forecast`]: a Favor balance alone
+    /// is not a diplomatic race. Project the Congress calendar only after an
+    /// actual Diplomatic Victory Point or a current suzerainty proves the
+    /// empire has a foothold in the lane, and cap that projection below
+    /// realised lane progress.
+    ///
+    /// **Off by default.** Screenable.
+    pub diplomatic_lane_forecast_2: bool,
     /// Whether a major we are NOT at war with, whose army is parked inside
     /// reach of one of our cities, counts toward that city's danger.
     ///
@@ -4811,13 +4824,17 @@ pub struct AdvancedAi {
     /// `district-planning-2`: the plan's own tile buy competes out of the
     /// treasury reserve (never spending below half of it) instead of
     /// waiting for 200 Gold of surplus headroom, and the purchase bars
-    /// drop to adjacency 2 with an edge of 1 over owned ground. Measured
-    /// motive: no recorded live game has ever bought a plot — replaying
-    /// Emperor game 20260901T132005Z at t40/t44, the plan priced the
-    /// adjacency-4 Campus plot at score 905 against a floor of 120 and the
-    /// headroom rule alone refused it, while three cities then placed
-    /// campuses at adjacency 1 or lower beside that ground. Version 2 of
-    /// `district-planning`; shared behaviour reads `district_planning_on`.
+    /// drop to adjacency 2 with an edge of 1 over owned ground. A workable
+    /// tile carrying at least 5 Science in a Science lane — or the one
+    /// connector that immediately opens it — also competes as a strategic
+    /// asset; that exceptional route may draw through the general reserve,
+    /// but preserves the funded war and immediate-defender floors. Measured
+    /// motive: no recorded live game has ever bought a
+    /// plot — replaying Emperor game 20260901T132005Z at t40/t44, the plan
+    /// priced the adjacency-4 Campus plot at score 905 against a floor of
+    /// 120 and the headroom rule alone refused it, while three cities then
+    /// placed campuses at adjacency 1 or lower beside that ground. Version
+    /// 2 of `district-planning`; shared behaviour reads `district_planning_on`.
     district_planning_2: bool,
     /// `cheapest-wonder-first`: a wonder this city can finish within
     /// `CHEAPEST_WONDER_TURNS` turns, in one of the empire's strongest
@@ -5041,6 +5058,13 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Version 2 of `early-project-restraint`: a repeatable Great-Person
+    /// project waits only while its own district owes a first building that
+    /// this city can start now, and only when its points do not serve the
+    /// empire's active lane or change the live race immediately. The arbitrary
+    /// opening clock is gone.
+    /// Opt-in gene `early-project-restraint-2`.
+    early_project_restraint_2: bool,
     /// `first-district-first`: a city's FIRST specialty district outranks
     /// the queue filler. Three edits inside `production_value`, all gated:
     /// a per-city first-district bonus beside `first_copy`, a gentler cost
@@ -7260,6 +7284,7 @@ impl AdvancedAi {
             conversion_majority_alarm: false,
             culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
+            diplomatic_lane_forecast_2: false,
             frontier_massing_alarm: false,
             envoy_priority: false,
             coordinated_finish: false,
@@ -7340,6 +7365,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            early_project_restraint_2: false,
             first_district_first: false,
             escort_cap_holds: false,
             first_granary_reserve: false,
@@ -9325,7 +9351,26 @@ impl AdvancedAi {
     /// points, and 0 says it does not arrive. A seat already at twenty reads
     /// 100 without any of the arithmetic.
     fn diplomatic_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
-        if !self.diplomatic_lane_forecast || !g.victory_conditions.diplomatic {
+        if !(self.diplomatic_lane_forecast || self.diplomatic_lane_forecast_2)
+            || !g.victory_conditions.diplomatic
+        {
+            return 0;
+        }
+        // Version 1 treated Favor as enough evidence to commit the whole plan
+        // to Diplomacy.  But Favor is a spendable snapshot, not a point on the
+        // victory track or a source that keeps paying it.  V2 waits until an
+        // earned Congress point or a living city-state we actually lead makes
+        // the long calendar projection an observed foothold rather than a
+        // speculative opening.
+        if self.diplomatic_lane_forecast_2
+            && g.players[pid].dvp <= 0
+            && !g.players.iter().any(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && g.suzerain_of(minor.id) == Some(pid)
+            })
+        {
             return 0;
         }
         let needed = crate::game::DIPLOMATIC_VICTORY_POINTS - g.players[pid].dvp;
@@ -9393,7 +9438,15 @@ impl AdvancedAi {
         let carry = blind + (1.0 - blind) * share;
 
         let forecast = f64::from(sessions) * per_session * carry;
-        ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32
+        let score =
+            ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32;
+        if self.diplomatic_lane_forecast_2 {
+            // The calendar is a candidate signal, not unearned progress: the
+            // lane table's actual DVP/suzerain tally may still grow beyond it.
+            score.min(DIPLOMATIC_FORECAST_OPENING_CAP)
+        } else {
+            score
+        }
     }
 
     /// How much of the Culture bar this empire will have cleared when the
@@ -12298,6 +12351,104 @@ impl AdvancedAi {
         mine < cost && mine + award + f64::EPSILON >= cost
     }
 
+    /// Whether this project's own district has a concrete first-building
+    /// debt the city can pay now.
+    ///
+    /// V1 inferred underdevelopment from the global turn number and therefore
+    /// suppressed a project even after the relevant district was developed.
+    /// V2 asks the board directly. A locked building is not debt yet, a
+    /// district family with no building is never debt, and one standing family
+    /// building is enough to release the project at any turn.
+    fn project_first_building_debt(g: &Game, pid: usize, cid: u32, project: &str) -> bool {
+        let spec = &g.rules.projects[project];
+        let city = &g.cities[&cid];
+        let Some(district) = spec.district else {
+            return false;
+        };
+        let family = g.district_family(district);
+        let first_building = match family.as_str() {
+            "campus" => "library",
+            "holy_site" => "shrine",
+            "commercial_hub" => "market",
+            "harbor" => "lighthouse",
+            "encampment" => "barracks",
+            "industrial_zone" => "workshop",
+            "theater_square" => "amphitheater",
+            _ => return false,
+        };
+        if city.buildings.iter().any(|building| {
+            g.rules.buildings[building]
+                .district
+                .is_some_and(|built| g.district_family(built) == family)
+        }) {
+            return false;
+        }
+        BasicAi::civ_building(g, pid, cid, first_building).is_some()
+    }
+
+    /// Whether this completion changes a live Great-Person race immediately.
+    ///
+    /// V1 made named exceptions only for Prophets and a short list of
+    /// Scientists. V2 keeps the building debt subordinate to the board's
+    /// generic forcing facts: one completion either recruits the current
+    /// person or overtakes the leading rival. The ordinary affinity and
+    /// project valuation still decide whether that newly admitted move wins
+    /// the queue.
+    fn project_changes_great_person_race(
+        g: &Game,
+        pid: usize,
+        awards: &BTreeMap<String, f64>,
+    ) -> bool {
+        awards.iter().any(|(kind, award)| {
+            if *award <= f64::EPSILON
+                || !g.great_person_class_earnable(pid, kind)
+                || !g.great_person_class_offered_now(pid, kind)
+                || g.live_great_person_offer_blocker(pid, kind).is_some()
+            {
+                return false;
+            }
+            let cost = g.gp_cost(pid, kind);
+            let mine = g.players[pid].gpp.get(kind).copied().unwrap_or(0.0);
+            let rival = g
+                .players
+                .iter()
+                .filter(|player| {
+                    player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+                })
+                .map(|player| player.gpp.get(kind).copied().unwrap_or(0.0))
+                .fold(0.0_f64, f64::max);
+            (mine < cost && mine + award + f64::EPSILON >= cost)
+                || (rival > mine && mine + award > rival)
+        })
+    }
+
+    /// Whether any completion points advance the empire's active lane.
+    ///
+    /// A Science empire should not sacrifice its Scientist race merely to
+    /// finish a Library first; the project's normal value already compares
+    /// that race with the building. V2's restraint is for off-lane project
+    /// churn, where a concrete first building is the compounding move.
+    fn project_serves_great_person_lane(
+        lane: GrandStrategy,
+        awards: &BTreeMap<String, f64>,
+    ) -> bool {
+        awards.iter().any(|(kind, award)| {
+            *award > f64::EPSILON
+                && match lane {
+                    GrandStrategy::Science => matches!(kind.as_str(), "scientist" | "engineer"),
+                    GrandStrategy::Culture => {
+                        matches!(kind.as_str(), "writer" | "artist" | "musician")
+                    }
+                    GrandStrategy::Religion => kind == "prophet",
+                    GrandStrategy::Diplomacy => kind == "merchant",
+                    GrandStrategy::Conquest => matches!(kind.as_str(), "general" | "admiral"),
+                    GrandStrategy::Expansion | GrandStrategy::Recovery => {
+                        matches!(kind.as_str(), "engineer" | "merchant")
+                    }
+                }
+        })
+    }
+
     /// Evaluate a repeatable district project as a bounded race move. The
     /// ongoing conversion is valued over the actual build horizon, while the
     /// completion award is priced against the live global Great Person race.
@@ -12340,11 +12491,17 @@ impl AdvancedAi {
         let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
-        let early_gpp_project_restrained = self.early_project_restraint
-            && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS)
-            && spec.repeatable
-            && !spec.completion_gpp.is_empty()
-            && !Self::early_project_race_exception(g, pid, &gpp_awards);
+        let great_person_lane = self.great_person_lane(g, pid, plan);
+        let repeatable_gpp_project = spec.repeatable && !spec.completion_gpp.is_empty();
+        let named_race_exception = Self::early_project_race_exception(g, pid, &gpp_awards);
+        let early_gpp_project_restrained = repeatable_gpp_project
+            && !named_race_exception
+            && ((self.early_project_restraint
+                && g.turn < g.standard_duration(EARLY_PROJECT_RESTRAINT_STANDARD_TURNS))
+                || (self.early_project_restraint_2
+                    && Self::project_first_building_debt(g, pid, cid, project)
+                    && !Self::project_serves_great_person_lane(great_person_lane, &gpp_awards)
+                    && !Self::project_changes_great_person_race(g, pid, &gpp_awards)));
         let host_competition_gpp_scores = [
             (
                 "EMERGENCY_WORLDS_FAIR",
@@ -12366,7 +12523,6 @@ impl AdvancedAi {
         // out of the loop: `raced_lane` short-circuits on any plan that is not
         // `Expansion`, but `victory_focus` behind it is an empire-wide sweep
         // and this is `production_value`'s hot path.
-        let great_person_lane = self.great_person_lane(g, pid, plan);
         for (kind, award) in gpp_awards {
             // Patronage outcome B can set this class's completion award to
             // zero. Ongoing yield conversion may still justify the project,
@@ -18370,6 +18526,17 @@ impl AdvancedAi {
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
                 if let Action::BuyPlot { city, pos, cost } = &action {
+                    // A highly productive Science tile — or its one cheap
+                    // connector — is a durable science asset, not ordinary
+                    // surplus ground. Its scorer keeps the actual
+                    // war/defence floor, but lets it compete with the unit
+                    // and building candidates below instead of hiding it
+                    // behind the broad working reserve.
+                    if let Some(score) = self.exceptional_science_plot_score(g, pid, plan, &action)
+                    {
+                        candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
+                        continue;
+                    }
                     // See `district_planning`: the plan may have named this
                     // very plot for a very valuable district site. That buy
                     // competes as a strategic purchase, not a surplus one —
@@ -18633,10 +18800,20 @@ impl AdvancedAi {
                     .and_then(|id| g.cities.get(&id))
                     .map(|city| city.name.clone())
                     .unwrap_or_else(|| "the empire".to_string());
+                let reserve_report = if g.players[pid].gold + f64::EPSILON >= reserve {
+                    format!(
+                        "{:.0} left above a reserve of {reserve:.0}",
+                        g.players[pid].gold
+                    )
+                } else {
+                    format!(
+                        "{:.0} left after drawing on a reserve of {reserve:.0}",
+                        g.players[pid].gold
+                    )
+                };
                 think!(self.journal(), Economy, Decision, "Buying {what} for {where_}";
-                       "{spent:.0} Gold, worth {score:.0} to the {} plan; {:.0} left \
-                        above a reserve of {reserve:.0}",
-                       plan.strategy.as_str(), g.players[pid].gold);
+                       "{spent:.0} Gold, worth {score:.0} to the {} plan; {reserve_report}",
+                       plan.strategy.as_str());
             }
             purchased = true;
             purchased_units += is_unit as usize;

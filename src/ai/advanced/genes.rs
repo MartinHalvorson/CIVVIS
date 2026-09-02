@@ -1927,6 +1927,9 @@ pub const GENES: &[Gene] = &[
     // V2 waits for a Eureka only when its final trigger is already queued and
     // the node is within two turns. The broad v1 remains measurable.
     Gene { tag: "boost-wait-research-2", field: "boost_wait_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research_2, disable: AdvancedAi::disable_boost_wait_research_2 },
+    // Version 2 of `diplomatic-lane-forecast`: Favor alone is not a race;
+    // require an earned foothold and cap the Congress projection below a real opening.
+    Gene { tag: "diplomatic-lane-forecast-2", field: "diplomatic_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_lane_forecast_2, disable: AdvancedAi::disable_diplomatic_lane_forecast_2 },
     // Appended at the END so a running screen keeps its positional genome.
     // 461 of our units died in combat across the 32 live runs of 2026-08-30..09-01,
     // 408 to barbarians; 352 were at or below 50 HP at the killing blow, 334 had been
@@ -1958,6 +1961,10 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "battle-planner", field: "battle_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner, disable: AdvancedAi::disable_battle_planner },
 
     Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
+    // Replace v1's global opening timer with a concrete, currently buildable
+    // first-building debt in the project's own district. Lane-aligned points
+    // and immediate race swings stay live; only off-lane churn waits.
+    Gene { tag: "early-project-restraint-2", field: "early_project_restraint_2", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint_2, disable: AdvancedAi::disable_early_project_restraint_2 },
     // `siege-train` (2026-09-02): the siege as a state machine per objective
     // city — stage on the 3–5 ring out of the city's strike reach until the
     // strength there meets the bill (defenders within six, city, walls,
