@@ -12076,6 +12076,124 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     );
 }
 
+/// A placed Spaceport leaves the production queue but still occupies the
+/// district plot. The live mirror stores that state as a tile foundation, so
+/// it must consume the same cap as a queued or completed pad. This is the
+/// t193/t207 shape from civvis-20260901T230916Z: a lower-production city with
+/// an unfinished foundation must keep a higher-production city from opening a
+/// fresh fourth commitment.
+#[test]
+fn science_spaceport_cap_counts_placed_foundations_as_commitments() {
+    let mut game = Game::new_full(1, 40, 24, 71_004, 320, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found capital");
+    let mut cities = game.player_city_ids(0);
+    while cities.len() < 4 {
+        found_test_city(&mut game, 0);
+        cities = game.player_city_ids(0);
+    }
+    game.max_turns = 0;
+    game.players[0].techs.insert(crate::name!("rocketry"));
+    game.players[0]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+
+    // Normalize the fixture so the only variable is the Spaceport state.
+    for city in &cities {
+        let center = game.cities[city].pos;
+        for position in game.cities[city].owned_tiles.clone() {
+            if position == center {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+        }
+    }
+    for (rank, city) in cities.iter().copied().enumerate() {
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            city,
+            Yields {
+                production: rank as f64 * 100.0,
+                ..Yields::default()
+            },
+        );
+    }
+
+    install_ai_test_district(&mut game, cities[0], "spaceport");
+    install_ai_test_district(&mut game, cities[1], "spaceport");
+
+    let foundation_city = cities[2];
+    let foundation_item = game
+        .producible_items(0, foundation_city)
+        .into_iter()
+        .find(|item| {
+            matches!(item, Item::District { district, .. }
+                if game.district_family(*district) == "spaceport")
+        })
+        .expect("the third city can place a Spaceport");
+    let foundation_pos = match foundation_item {
+        Item::District { pos, .. } => pos,
+        item => panic!("expected a Spaceport item, got {item:?}"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city: foundation_city,
+            item: foundation_item,
+        },
+    )
+    .expect("place a Spaceport foundation");
+    // Civ VI removes a placed district from the queue once its plot is chosen.
+    game.cities.get_mut(&foundation_city).unwrap().queue.clear();
+    assert!(game.map.tiles[&foundation_pos]
+        .district_foundation
+        .as_ref()
+        .is_some_and(|foundation| game.district_family(foundation.district) == "spaceport"));
+
+    let free_city = cities[3];
+    let free_item = game
+        .producible_items(0, free_city)
+        .into_iter()
+        .find(|item| {
+            matches!(item, Item::District { district, .. }
+                if game.district_family(*district) == "spaceport")
+        })
+        .expect("the fourth city can place a Spaceport");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(AdvancedAi::science_spaceport_commitments(&game, 0), 3);
+    assert_eq!(
+        ai.science_spaceport_retained_cities(&game, 0),
+        std::iter::once(foundation_city).collect(),
+        "an existing foundation fills the final launch-site slot before a fresh city"
+    );
+    assert_eq!(
+        ai.production_value(&game, 0, free_city, &free_item, &plan, &ai.counts(&game, 0)),
+        -10_000.0,
+        "the cap must veto a fresh Spaceport once foundations fill it"
+    );
+}
+
 /// ★★★★ The last fifty turns of a Settler game are a tally, and the science
 /// lane spent them on a launch pad (civvis-20260816T093036Z: Spaceport at
 /// t226 + Manhattan Project, 871 vs 1,157; T101521Z: two Spaceports after
