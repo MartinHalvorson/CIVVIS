@@ -76,7 +76,8 @@ SPACE_CHAIN = (
 )
 
 #: What the seat's own journal says about the race, by the phrase that only
-#: that decision writes. The drive is `science-victory-drive`; the two
+#: that decision writes. The two drive versions share the phrase, so the
+#: effective treatment is read from the genome header as well; the two
 #: refusals are the horizons that can stop the race — the gene's own and the
 #: stock one it replaces.
 RACE_MARKS = {
@@ -85,6 +86,11 @@ RACE_MARKS = {
     "drive_refusal": "The science drive cannot land the race",
     "stock_refusal": "cannot finish before the turn limit",
 }
+
+SCIENCE_DRIVE_VERSIONS = (
+    "science-victory-drive-2",
+    "science-victory-drive",
+)
 
 
 class ReportError(RuntimeError):
@@ -231,6 +237,33 @@ def rival_projects(state: dict) -> int:
     return best
 
 
+def science_drive_version(why: Path) -> str | None:
+    """Read the effective Science-drive treatment from a run's genome header.
+
+    `science-victory-drive` and its v2 replacement deliberately write the same
+    human-readable journal phrase. Looking at that phrase alone therefore
+    mislabels a v2 run as v1, which made the live run report contradict its
+    `treatments` header. Older runs have no genome header and retain the
+    unknown fallback used by the report before the versioned treatment existed.
+    """
+    try:
+        with why.open(errors="ignore") as handle:
+            first = handle.readline()
+    except OSError:
+        return None
+    try:
+        header = json.loads(first)
+    except json.JSONDecodeError:
+        return None
+    treatments = header.get("treatments") if isinstance(header, dict) else None
+    if not isinstance(treatments, list):
+        return None
+    return next(
+        (version for version in SCIENCE_DRIVE_VERSIONS if version in treatments),
+        None,
+    )
+
+
 def space_race(rows: Sequence[dict], run: Path) -> dict:
     """Whether the seat that led in science ever raced for the science victory.
 
@@ -283,6 +316,7 @@ def space_race(rows: Sequence[dict], run: Path) -> dict:
     marks = {key: {"count": 0, "first_turn": None, "last": None}
              for key in RACE_MARKS}
     why = run / "why.log"
+    drive_version = science_drive_version(why) if why.exists() else None
     if why.exists():
         with why.open(errors="ignore") as handle:
             for line in handle:
@@ -308,6 +342,7 @@ def space_race(rows: Sequence[dict], run: Path) -> dict:
         "projects_done": sum(1 for name, _ in SPACE_CHAIN if name in completed),
         "best_rival_projects": rival_projects(last),
         "journal": marks,
+        "drive_version": drive_version,
         "journal_read": why.exists(),
     }
 
@@ -449,15 +484,16 @@ def render(data: dict) -> str:
             lines.append("    journal: no why.log beside this run")
         else:
             drive, stand = journal["drive"], journal["stand_down"]
+            drive_label = race["drive_version"] or "science-victory-drive"
             if drive["count"]:
                 engaged = f"engaged t{drive['first_turn']}"
                 if stand["count"]:
                     engaged += f", stood down {stand['count']}×"
-                lines.append(f"    science-victory-drive: {engaged}")
+                lines.append(f"    {drive_label}: {engaged}")
             else:
                 # Not the same as "the gene is off": a run recorded before the
                 # gene merged writes no such line either. Say which is unknown.
-                lines.append("    science-victory-drive: never engaged "
+                lines.append(f"    {drive_label}: never engaged "
                              "(or the run predates it)")
             refused = (journal["drive_refusal"]["count"]
                        + journal["stock_refusal"]["count"])
