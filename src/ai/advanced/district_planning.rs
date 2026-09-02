@@ -482,9 +482,7 @@ impl AdvancedAi {
                         .then_with(|| right.0.cmp(&left.0))
                 })
         };
-        let Some((science_pos, science_yields, total_cost, final_gold)) = target else {
-            return None;
-        };
+        let (science_pos, science_yields, total_cost, final_gold) = target?;
         let score = self.yield_value(science_yields, GrandStrategy::Science) * 24.0
             - PLAN_BUY_COST_CHARGE * total_cost;
         if score + f64::EPSILON < PLAN_BUY_SCORE_FLOOR {
