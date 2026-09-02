@@ -3871,6 +3871,17 @@ impl AdvancedAi {
         self.objective_board = false;
     }
 
+    /// `requisitions`: the Objective Board's shortfall reaches production
+    /// and the treasury. See `advanced/requisitions.rs`.
+    pub fn enable_requisitions(&mut self) {
+        self.requisitions = true;
+    }
+
+    /// The twin of `enable_requisitions`.
+    pub fn disable_requisitions(&mut self) {
+        self.requisitions = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
