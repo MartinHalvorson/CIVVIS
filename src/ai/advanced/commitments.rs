@@ -999,10 +999,13 @@ impl AdvancedAi {
     /// inside a hostile's reach, where the civilian-safety flee keeps
     /// priority and a decision must not pull the unit deeper in. A released
     /// site is parked for the hysteresis window, the way `commitment-patience`
-    /// parks a retired one, so the next pick is a different one. The one hold
-    /// it leaves standing is the step that is itself inside a hostile's reach
-    /// or over the settler step-risk limit: a passing raider is a wait, not a
-    /// new decision, and `commitment-patience` prices how long.
+    /// parks a retired one, so the next pick is a different one. The holds it
+    /// leaves standing are the step that is itself inside a hostile's reach or
+    /// over the settler step-risk limit: a passing raider is a wait, not a new
+    /// decision, and `commitment-patience` prices how long. With
+    /// `route-block-is-a-wait` on, a step that is merely not legal this turn
+    /// joins them, bounded by the same `COMMITMENT_PATIENCE` — see the field
+    /// doc for the live measurement that says a route block is transient too.
     ///
     /// Exact no-op while the gene is off.
     pub(super) fn commitment_owners_act(&mut self, g: &mut Game, pid: usize) {
@@ -1033,7 +1036,7 @@ impl AdvancedAi {
                 .filter(|c| c.target == Target::Tile(site))
                 .map_or(0, |c| c.forgotten_streak);
             let unit_kind = g.units[&uid].kind;
-            let act = self.commitment_owner_act(g, pid, kind, uid, site);
+            let act = self.commitment_owner_act(g, pid, kind, uid, site, streak);
             let field = match act {
                 OwnerAct::Completed => "owner_completed",
                 OwnerAct::Stepped(_) => "owner_stepped",
@@ -1077,6 +1080,7 @@ impl AdvancedAi {
         kind: Kind,
         uid: u32,
         site: Pos,
+        streak: u32,
     ) -> OwnerAct {
         let current = g.units[&uid].pos;
         // A linked civilian has no move of its own; the formation carrying
@@ -1102,10 +1106,23 @@ impl AdvancedAi {
                 Kind::Capture => OwnerAct::Held("a capture has no unit owner"),
             };
         }
-        let Some(next) = g
+        // `route-block-is-a-wait`: a step that is not legal THIS TURN is a
+        // wait, not a new decision. `route_step` returns `None` for a zone of
+        // control exactly as it does for no route at all (the predicate is
+        // private to `game`), and `can_move` refuses a tile a passing unit
+        // will vacate — so the unbounded release below discards sites over
+        // blockers that clear on their own. Measured over 53 live runs: 502
+        // of 547 releases are this one turn, and 18% of the settle drops sit
+        // within two tiles of the site. Hold until the block outlasts
+        // `COMMITMENT_PATIENCE` consecutive forgotten turns, which
+        // `reconcile_units` counts whether or not `commitment_patience` is on.
+        let route_step = g
             .route_step(uid, site, 0)
-            .filter(|next| g.can_move(uid, *next))
-        else {
+            .filter(|next| g.can_move(uid, *next));
+        let Some(next) = route_step else {
+            if self.route_block_is_a_wait && streak < COMMITMENT_PATIENCE {
+                return OwnerAct::Held("no legal route step toward it this turn");
+            }
             self.release_commitment(g, pid, kind, uid, site);
             return OwnerAct::Released("no legal route step toward it this turn");
         };
@@ -1122,6 +1139,10 @@ impl AdvancedAi {
         }
         if self.base.path_move(g, pid, uid, next) {
             OwnerAct::Stepped(next)
+        } else if self.route_block_is_a_wait && streak < COMMITMENT_PATIENCE {
+            // Same patience as the no-step case above: the mover refused this
+            // turn's step, which the next turn may well allow.
+            OwnerAct::Held("the route step toward it was refused")
         } else {
             self.release_commitment(g, pid, kind, uid, site);
             OwnerAct::Released("the route step toward it was refused")
@@ -1757,6 +1778,111 @@ mod tests {
         assert_eq!(
             off.commitments().endings.get(&(Kind::Settle, "retired")),
             None
+        );
+    }
+
+    /// `route-block-is-a-wait`: a turn with no legal route step is a WAIT.
+    /// The owner keeps its site and tries again, and only a block that
+    /// outlasts `COMMITMENT_PATIENCE` consecutive forgotten turns releases
+    /// it. Off, the first blocked turn drops the target and parks the site —
+    /// which over 53 live Civ VI runs is 502 of 547 releases, 18% of the
+    /// settle drops landing within two tiles of the site.
+    ///
+    /// The bound must not need `commitment-patience`: that gene is not in
+    /// `DEPLOYMENT_GENOME`, so this test leaves it off and still expects the
+    /// release to arrive.
+    #[test]
+    fn a_blocked_route_step_waits_before_it_gives_the_site_up() {
+        use crate::game::Action;
+
+        // A settler with a target no land route reaches: `route_step` returns
+        // `None` every turn, the same reading a zone of control produces.
+        let fixture = || {
+            let mut game = Game::new_full(2, 24, 16, 5_150, 200, 0, false);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|id| game.units[id].kind == "settler")
+                .expect("a starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            let home = game.cities[&game.player_city_ids(0)[0]].pos;
+            let settler = game.spawn_test_unit("settler", 0, home);
+            let unreachable = game
+                .wdisk(home, 6)
+                .into_iter()
+                .filter(|pos| game.rules.is_water(&game.map.tiles[pos]))
+                .min()
+                .expect("a water tile a land unit cannot route to");
+            (game, settler, unreachable)
+        };
+        let round = |ai: &mut AdvancedAi, game: &mut Game, rounds: u32| {
+            for _ in 0..rounds {
+                // Production order: `commitment_owners_act` runs before
+                // `reconcile_commitments` within one turn.
+                ai.commitment_owners_act(game, 0);
+                ai.reconcile_commitments(game, 0);
+                game.turn += 1;
+            }
+        };
+
+        // Off: the very first blocked turn drops the target and parks it.
+        let (mut game, settler, unreachable) = fixture();
+        let mut off = AdvancedAi::new();
+        off.enable_commitment_owner_acts();
+        off.settler_targets.insert(settler, unreachable);
+        round(&mut off, &mut game, 1);
+        assert!(
+            !off.settler_targets.contains_key(&settler),
+            "off: one blocked turn is enough to drop the site"
+        );
+        assert!(
+            off.settler_site_is_dead(settler, unreachable),
+            "off: and to park it for the hysteresis window"
+        );
+
+        // On: the same turn holds, and the site is still the settler's.
+        let (mut game, settler, unreachable) = fixture();
+        let mut ai = AdvancedAi::new();
+        ai.enable_commitment_owner_acts();
+        ai.enable_route_block_is_a_wait();
+        ai.settler_targets.insert(settler, unreachable);
+        round(&mut ai, &mut game, 1);
+        assert_eq!(
+            ai.settler_targets.get(&settler),
+            Some(&unreachable),
+            "on: a blocked turn holds the decision"
+        );
+        assert!(
+            !ai.settler_site_is_dead(settler, unreachable),
+            "on: and does not park the site"
+        );
+        assert_eq!(
+            game.players[0].counters.get("commit:settle:owner_held"),
+            Some(&1)
+        );
+
+        // The wait is BOUNDED: a block that outlasts the patience releases.
+        let (mut game, settler, unreachable) = fixture();
+        let mut bounded = AdvancedAi::new();
+        bounded.enable_commitment_owner_acts();
+        bounded.enable_route_block_is_a_wait();
+        bounded.settler_targets.insert(settler, unreachable);
+        // One round registers the commitment; COMMITMENT_PATIENCE forgotten
+        // readings then accumulate on it before the release is due.
+        round(&mut bounded, &mut game, 1 + COMMITMENT_PATIENCE);
+        assert_eq!(
+            bounded.settler_targets.get(&settler),
+            Some(&unreachable),
+            "short of the patience the decision still stands"
+        );
+        round(&mut bounded, &mut game, 1);
+        assert!(
+            !bounded.settler_targets.contains_key(&settler),
+            "a block that outlasts the patience releases the site"
+        );
+        assert!(
+            bounded.settler_site_is_dead(settler, unreachable),
+            "and parks it, exactly as the ungated path did"
         );
     }
 

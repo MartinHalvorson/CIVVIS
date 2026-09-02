@@ -5871,6 +5871,31 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// A route step that is not legal THIS TURN is a wait, not a new
+    /// decision. `commitment_owners_act` releases a settle or improve
+    /// decision the moment `route_step` yields no enterable neighbour —
+    /// dropping the target AND parking the site for
+    /// `SETTLER_TARGET_HYSTERESIS_TURNS`. Measured over 53 live Civ VI runs:
+    /// **502 of 547** releases (92%) are that one-turn block — 316 improve,
+    /// 158 settle, plus 28 refused steps — and **18%** of the settle drops
+    /// happen within two tiles of the site. The blockers named by the
+    /// `Settler HELD short` journal are transient by construction: 604
+    /// "the next tile refuses it and nothing is standing there" (a zone of
+    /// control, which `route_step` cannot distinguish from no route at all)
+    /// and 751 "the safe-step guard rejected every neighbour" (a passing
+    /// raider), against 48 readings naming a unit that will move on.
+    ///
+    /// With the gene on, such a turn HOLDS the decision instead. The unit
+    /// keeps its site and tries again next turn, and only a block that
+    /// outlasts `COMMITMENT_PATIENCE` consecutive forgotten turns releases
+    /// it — the same patience `commitment_patience` prices for a hostile's
+    /// reach, applied to the route. The bound is self-contained: it reads
+    /// `forgotten_streak`, which `reconcile_units` already increments on
+    /// every turn the owner did not act, so the gene works with
+    /// `commitment-patience` off (it is not in `DEPLOYMENT_GENOME`).
+    ///
+    /// Opt-in gene `route-block-is-a-wait`.
+    route_block_is_a_wait: bool,
     /// Version two of `recovery_reads_the_war`: keep version one's successful
     /// comparison against the strongest current major opponent and repair the
     /// posture it selects. Recovery keeps its defensive production, food and
@@ -6008,6 +6033,36 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// The safe-step guard's last resort never prices the tile the unit is
+    /// standing on. When a Settler's route step is over
+    /// `SETTLER_STEP_RISK_LIMIT`, `settlement_unit_step_toward_safe` looks
+    /// for a neighbour a full 5.0 risk points safer than that step — and if
+    /// none is, it returns without moving at all. Standing still is treated
+    /// as free. It is not: the settler journal's own escort line says
+    /// standing on open ground outside a city is how eight of the last
+    /// twenty-eight Settlers were taken.
+    ///
+    /// Measured over 39 live Civ VI runs carrying a settler journal: **527**
+    /// distinct settler-turns ended with "the safe-step guard rejected every
+    /// neighbour" — 13.5 a game, the single largest cause of a Settler
+    /// standing still, against 353 turns lost to a refused next tile.
+    ///
+    /// With the gene on, a guard that would otherwise not move — and that is
+    /// standing on a tile ITSELF over `SETTLER_STEP_RISK_LIMIT` — compares
+    /// that tile against the neighbours it can reach and steps to the safest
+    /// one that is STRICTLY safer than staying. Safety orders the pick,
+    /// progress toward the target breaks its ties. A neighbour no better than
+    /// the current tile is still refused, and the step the guard rejected is
+    /// never re-entered, so the rule can only lower the unit's own exposure.
+    ///
+    /// The danger bar is load-bearing. Without it the gene also fired on
+    /// standstills where the unit was already safe — the guard working as
+    /// intended, waiting out a dangerous route — and a 24-game probe read
+    /// -8.3 pp ± 6.1 on win against +2.81 done Δpp (z +2.68) on the same
+    /// batch: the mechanism was right and the trigger was too wide.
+    ///
+    /// Opt-in gene `standing-still-is-a-risk`.
+    standing_still_is_a_risk: bool,
     /// `strike-reach`: the battle planner's danger field reads a hostile's
     /// reach the way the engine resolves a blow — a unit that stops in our
     /// zone of control keeps its movement for the strike — and on the
@@ -7775,6 +7830,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            route_block_is_a_wait: false,
             recovery_reads_the_war_2: false,
             requisitions: false,
             requisitions_served: RefCell::new(requisitions::Served::default()),
@@ -7792,6 +7848,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            standing_still_is_a_risk: false,
             strike_reach: false,
             safest_stand: false,
             siege_train: false,
@@ -28885,12 +28942,46 @@ impl AdvancedAi {
             })
             .collect::<Vec<_>>();
         alternatives.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.2.cmp(&b.2)));
-        for (_, risk, position, progress) in alternatives {
+        for &(_, risk, position, progress) in &alternatives {
             if risk + 5.0 >= planned_risk || (progress < 0 && risk > planned_risk * 0.5) {
                 continue;
             }
             if self.base.path_move(g, pid, moving_uid, position) {
                 return true;
+            }
+        }
+        // `standing-still-is-a-risk`: every neighbour was refused, so the
+        // guard is about to leave the unit where it stands — a tile whose own
+        // risk it has never measured. Price staying the same way, and take
+        // the safest reachable neighbour that strictly improves on it.
+        // Safety orders the pick; progress toward the target breaks ties.
+        if self.standing_still_is_a_risk {
+            let staying = self.settlement_tile_risk_with_support(
+                g,
+                pid,
+                risk_uid,
+                current,
+                &visible,
+                !formation_outmatched,
+            );
+            // Only a tile that is ITSELF over the limit is worth leaving. A
+            // standstill on safe ground is the guard working: the route is
+            // dangerous and waiting costs only tempo. Firing there traded
+            // tempo for nothing and read -8.3 pp on a 24-game probe, against
+            // +2.81 done Δpp on the same batch — the mechanism was right and
+            // the trigger was too wide.
+            if staying <= SETTLER_STEP_RISK_LIMIT {
+                return false;
+            }
+            let mut safer: Vec<&(f64, f64, Pos, i32)> = alternatives
+                .iter()
+                .filter(|(_, risk, _, _)| *risk < staying)
+                .collect();
+            safer.sort_by(|a, b| a.1.total_cmp(&b.1).then(b.3.cmp(&a.3)).then(a.2.cmp(&b.2)));
+            for &&(_, _, position, _) in &safer {
+                if self.base.path_move(g, pid, moving_uid, position) {
+                    return true;
+                }
             }
         }
         false
