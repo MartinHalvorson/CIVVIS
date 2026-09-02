@@ -3630,6 +3630,35 @@ fn on_a_mirrored_board_the_sea_scout_arm_reads_the_fog_past_charted_water() {
         live.base.naval_recon_is_the_missing_arm(&game, 0),
         "fog past the coast and no hull afloat: the sea scout is the missing arm"
     );
+
+    // V3 aligns the advanced reservation path with the Basic picker: when a
+    // land eye is also missing, the broader continental frontier takes the
+    // one idle queue before the sea scout. Keep this on a clone so the v1
+    // mirror regression below still proves that its ordinary reservation is
+    // available.
+    let mut land_gap = game.clone();
+    land_gap.players[0].explored.remove(&center);
+    let mut land_first = AdvancedAi::new();
+    land_first.enable_live_bridge_universe();
+    land_first.enable_naval_recon_3();
+    assert!(
+        land_first.base.recon_is_the_missing_arm(&land_gap, 0),
+        "the fixture gives v3 an uncharted land frontier as well as the sea fog"
+    );
+    land_first.reserve_idle_naval_recon(&mut land_gap, 0, &plan);
+    assert!(
+        land_gap.cities[&city].queue.is_empty(),
+        "v3 leaves the idle coastal queue for the simultaneous land eye"
+    );
+    land_first.reserve_idle_land_recon(&mut land_gap, 0, &plan);
+    assert!(
+        matches!(
+            land_gap.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "scout"
+        ),
+        "the land scout can claim the queue that v3 declined"
+    );
+
     live.reserve_idle_naval_recon(&mut game, 0, &plan);
     assert!(
         matches!(
@@ -21616,6 +21645,115 @@ fn a_long_overseas_journey_adds_a_naval_guard_after_embarkation() {
     );
 }
 
+/// An embarked land escort cannot protect a Settler from a naval unit hidden
+/// in the fog. The live water floor holds the committed expedition before its
+/// next water-to-water step until a naval guard is bound; native behavior is
+/// unchanged when the HostOnly capture lessons are off.
+#[test]
+fn a_live_embarked_settler_holds_without_a_naval_guard() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&first_water]));
+    game.remove_unit(probe);
+
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let next_water = game
+        .route_step(settler, target, 0)
+        .expect("the overseas route has a second water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&next_water]));
+    let mut live = AdvancedAi::new();
+    live.enable_live_formationless_settler_shadow();
+    live.enable_live_settler_capture_lessons();
+    live.settler_targets.insert(settler, target);
+    live.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    live.settler_guards.insert(settler, land_guard);
+
+    assert!(
+        !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "the live bridge must hold the water leg without naval cover"
+    );
+    assert_eq!(game.units[&settler].pos, first_water);
+    assert_eq!(game.units[&land_guard].pos, first_water);
+
+    let mut native_game = game.clone();
+    let mut native = AdvancedAi::new();
+    native.settler_targets.insert(settler, target);
+    native.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    assert!(
+        native.settler_step_out_of_reach(&mut native_game, 0, settler, target),
+        "the HostOnly floor must not alter native water movement"
+    );
+    assert_ne!(native_game.units[&settler].pos, first_water);
+}
+
+/// Once a naval unit occupies the water layer and can mirror the next step,
+/// the live floor permits the embarked expedition to advance.
+#[test]
+fn a_live_embarked_settler_advances_with_a_naval_guard() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    game.remove_unit(probe);
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let next_water = game
+        .route_step(settler, target, 0)
+        .expect("the overseas route has a second water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&next_water]));
+    let sea_guard = game.spawn_test_unit("galley", 0, first_water);
+    let mut live = AdvancedAi::new();
+    live.enable_live_formationless_settler_shadow();
+    live.enable_live_settler_capture_lessons();
+    live.settler_targets.insert(settler, target);
+    live.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    live.settler_guards.insert(settler, land_guard);
+    live.settler_sea_guards.insert(settler, sea_guard);
+    let before = game.units[&settler].pos;
+
+    assert!(live.settler_step_out_of_reach(&mut game, 0, settler, target));
+    assert_ne!(game.units[&settler].pos, before);
+    assert_eq!(
+        game.units[&settler].pos, game.units[&sea_guard].pos,
+        "the naval layer mirrors the water movement"
+    );
+}
+
 #[test]
 fn expedition_guard_memory_remaps_and_releases_both_layers() {
     let (_game, home, target) = stacked_escort_fixture();
@@ -38991,6 +39129,57 @@ fn version_two_genes_are_opt_in_and_turn_version_one_off() {
         (v2.disable)(&mut ai);
         assert_eq!(reads(&ai)[i], (false, false), "{tag}: disabled");
     }
+}
+
+/// `naval-recon-3` is a separate, screenable land-first treatment. It
+/// replaces both earlier versions, so its one peacetime Galley cannot inherit
+/// v2's unconditional second-hull opening or preempt a missing land scout.
+#[test]
+fn naval_recon_three_is_opt_in_and_turns_prior_versions_off() {
+    let v3 = GENES
+        .iter()
+        .find(|gene| gene.tag == "naval-recon-3")
+        .expect("version 3 is published");
+    assert!(v3.opt_in() && v3.screenable() && !v3.live());
+
+    let mut ai = AdvancedAi::new();
+    assert!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ) == (true, false, false)
+    );
+    ai.enable_naval_recon_2();
+    assert_eq!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ),
+        (false, true, false),
+        "v2 has one version active"
+    );
+    ai.enable_naval_recon_3();
+    assert_eq!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ),
+        (false, false, true),
+        "v3 replaces both prior versions"
+    );
+    ai.disable_naval_recon_3();
+    assert_eq!(
+        (
+            ai.base.naval_recon,
+            ai.base.naval_recon_2,
+            ai.base.naval_recon_3
+        ),
+        (false, false, false),
+        "v3 remains independently reversible"
+    );
 }
 
 /// `power_the_laboratory_2`: a building's powered half is credited only in a

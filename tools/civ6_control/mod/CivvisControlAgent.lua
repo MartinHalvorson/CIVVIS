@@ -17969,12 +17969,39 @@ local function tick()
 					-- and that cycle repeated unchanged until the watchdog killed the
 					-- game. The forfeit ladder ran every time and dismissed every time.
 					--
-					-- `fillPolicies` returns nil the moment no slot is open, so on the
-					-- turns that are already right this costs one culture lookup.
+					-- A policy deck request is an asynchronous transaction. On the live
+					-- 2026-09-01 run `civvis-20260901T230916Z`, turns 184--208 kept
+					-- returning `FILL_CIVIC_SLOT` after the full deck request succeeded:
+					-- one Economic slot was still empty, while the same-turn replan was
+					-- correctly deferred as `same_turn_transaction_in_flight`. Calling
+					-- `fillPolicies` here would submit a second transaction against that
+					-- in-flight request. The first `civvis_complete` answer then stopped
+					-- the next board publication, so the old second-sighting forfeit could
+					-- never run and the game stayed on the same turn.
+					--
+					-- Force this hard blocker in the same pass after CIVVIS has answered.
+					-- The forced end turn gives the engine a fresh turn in which the
+					-- policy transaction can settle and the targeted repair can run. Keep
+					-- the filler for the non-racing path, where CIVVIS has not answered
+					-- this turn and an open slot can still be filled safely.
 					if name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then
-						local filled = fillPolicies(player);
-						if filled then
-							answered = answered .. "+" .. tostring(filled);
+						if answered == "civvis_complete" then
+							local dropped = dismissBlocker(pid, blocker);
+							answered = answered .. "+forced";
+							emit("dismissed", { turn = turn, blocker = name,
+							                    dismissed = dropped, attempts = attempts,
+							                    answered = answered, parked = 0,
+							                    forfeit = 0, forced = true, same_pass = true });
+							same_pass_forced = true;
+							pcall(function()
+								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								                 { REASON = "UserForced" });
+							end);
+						else
+							local filled = fillPolicies(player);
+							if filled then
+								answered = answered .. "+" .. tostring(filled);
+							end
 						end
 					end
 					-- ⚠⚠⚠ AND THE SAME THING AGAIN ON PRODUCTION, WHICH PARKS THE
