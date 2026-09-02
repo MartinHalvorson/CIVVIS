@@ -2045,6 +2045,15 @@
           "wonder-adjacent-sites": null,
           "wonder-adjacent-sites-2": null
         }
+      },
+      "wonder-ring-recon": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "wonder-ring-recon": null,
+          "wonder-ring-recon-2": null
+        }
       }
     },
     "posterior_shapes": [

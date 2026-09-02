@@ -2767,12 +2767,26 @@ impl AdvancedAi {
     /// `wonder-ring-recon`; see `advanced/wonder_sites.rs` and
     /// `BasicAi::wonder_ring_recon`.
     pub fn enable_wonder_ring_recon(&mut self) {
+        self.base.wonder_ring_recon_2 = false;
         self.base.wonder_ring_recon = true;
     }
 
     /// The twin of `enable_wonder_ring_recon`.
     pub fn disable_wonder_ring_recon(&mut self) {
         self.base.wonder_ring_recon = false;
+    }
+
+    /// Preserve every nearby natural-wonder pocket V1 scouts, but spend at
+    /// most one extra tile of travel to expose more of its footprint. This is
+    /// version two of `wonder-ring-recon`, so enabling it turns V1 off.
+    pub fn enable_wonder_ring_recon_2(&mut self) {
+        self.base.wonder_ring_recon = false;
+        self.base.wonder_ring_recon_2 = true;
+    }
+
+    /// The twin of `enable_wonder_ring_recon_2`.
+    pub fn disable_wonder_ring_recon_2(&mut self) {
+        self.base.wonder_ring_recon_2 = false;
     }
 
     /// Keep one Builder per city while there is still land to improve, priced

@@ -2744,6 +2744,13 @@ pub struct BasicAi {
     /// (`AdvancedAi::enable_wonder_ring_recon`); the goal search is
     /// `wonder_ring_goal` in `advanced/wonder_sites.rs`.
     pub(crate) wonder_ring_recon: bool,
+    /// Version two preserves every wonder pocket V1 would scout, but among
+    /// goals no more than one tile beyond V1's nearest it picks the tile that
+    /// reveals the most of the pocket. It therefore buys information without
+    /// turning the local errand into a longer expedition. Opt-in gene
+    /// `wonder-ring-recon-2`; see `wonder_ring_goal_2` in
+    /// `advanced/wonder_sites.rs`.
+    pub(crate) wonder_ring_recon_2: bool,
     /// Walk an exploring unit onto a tribal village it can see and reach this
     /// turn before it marches past toward fog. A village is an economy prize
     /// (techs, boosts, builders, envoys, era score) that rivals consume first
@@ -4873,6 +4880,7 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             wonder_ring_recon: false,
+            wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
             sea_answers: false,
@@ -5336,6 +5344,7 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             wonder_ring_recon: false,
+            wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
             sea_answers: false,
@@ -14690,14 +14699,18 @@ impl BasicAi {
                 .iter()
                 .any(|t| g.wdist(*t, pos) <= EXPLORE_COMMIT_THREAT_RADIUS)
         };
-        // See `wonder_ring_recon`: the unseen ring of a natural wonder beside
-        // home is walked before any frontier, held goal or not — the pocket is
-        // small, close, and the only place a site beside the wonder can be.
-        if self.wonder_ring_recon {
+        // See `wonder_ring_recon`: a natural-wonder pocket beside home is
+        // walked before any frontier, held goal or not. V1 clears every nearby
+        // wonder's unseen pocket nearest-tile first; V2 preserves every trigger
+        // and allows at most one extra tile to reveal more of that pocket.
+        if self.wonder_ring_recon || self.wonder_ring_recon_2 {
             let reserved = self.reserved_explore_goals(g, pid, uid);
-            if let Some(goal) =
+            let wonder_goal = if self.wonder_ring_recon_2 {
+                self.wonder_ring_goal_2(g, pid, uid, dry_only, &dead, &threats, &reserved)
+            } else {
                 self.wonder_ring_goal(g, pid, uid, dry_only, &dead, &threats, &reserved)
-            {
+            };
+            if let Some(goal) = wonder_goal {
                 if self.explore_commit {
                     self.explore_goal.borrow_mut().insert(uid, (goal, g.turn));
                 }
