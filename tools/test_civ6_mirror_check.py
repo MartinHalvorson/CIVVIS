@@ -48,6 +48,22 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertTrue(civ6_mirror_check.exact_host_frame(96, 96, 95))
         self.assertFalse(civ6_mirror_check.exact_host_frame(96, 95, 95))
 
+    def test_live_same_turn_replans_are_deferred_until_completion(self) -> None:
+        self.assertTrue(
+            civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 85, 3)
+        )
+        self.assertFalse(
+            civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 86, 3)
+        )
+        self.assertFalse(
+            civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 85, 1)
+        )
+        self.assertFalse(
+            civ6_mirror_check.live_same_turn_frame_handoff(
+                86, 86, 85, 3, archive=True
+            )
+        )
+
     def test_archive_state_still_requires_a_completed_boundary(self) -> None:
         self.assertFalse(
             civ6_mirror_check.exact_host_frame(251, 251, 250, archive=True)
@@ -671,12 +687,18 @@ class MirrorCheckTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
             events.write_text(
-                json.dumps({"kind": "state", "turn": 60, "units": [{"id": 1}]}) + "\n"
+                json.dumps({"kind": "state", "turn": 60, "frame": 0, "units": [{"id": 1}]}) + "\n"
+                + json.dumps({"kind": "state", "turn": 60, "frame": 1, "units": [{"id": 2}]}) + "\n"
                 + json.dumps({"kind": "state", "turn": 61, "units": [{"id": 2}]}) + "\n"
             )
 
             self.assertEqual(civ6_mirror_check.latest_state(temporary, upto=60)["turn"], 60)
             self.assertEqual(civ6_mirror_check.latest_state(temporary)["turn"], 61)
+            latest, same_turn_frames = civ6_mirror_check.latest_state_and_frame_count(
+                temporary, upto=60
+            )
+            self.assertEqual(latest["frame"], 1)
+            self.assertEqual(same_turn_frames, 2)
 
     def test_active_trade_routes_compare_endpoint_pairs_not_trader_positions(self) -> None:
         state = {
