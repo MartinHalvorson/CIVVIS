@@ -1607,3 +1607,68 @@ fact in the table and is not tactical: the export carries `upgrade_to` and
 the Gold to cover it, and about seven were taken, because `upgrade_units`
 runs after the unit loop and `unit_gold_upgrade_offer` refuses a unit that
 has acted. Both are the next sections' work. Live reading: after the arm.
+
+## 29. The rotation's silence: no tile out of reach (2026-09-02, opt-in gene `safest-stand`)
+
+§28's largest row — 38 of 145 losses — was a unit killed under 50 hit
+points that the rotation had logged nothing for. The sub-census
+(`scratchpad/loss_taxonomy.py`, class a3): 19 were healthy at the start of
+our turn and felled inside one enemy turn; 12 were a ladder attack by the
+wounded unit, which then stood beside its target; 11 fell on turns the
+planner logged nothing at all; 3 stood on a city tile. The mechanism for
+the wounded ones is one line of `rotate_wounded`: a unit under `ROTATE_HP`
+or over its danger margin takes the nearest tile the field reads as zero,
+and when there is none — `safe.first()` is `None` — the loop `continue`s.
+Nothing is logged, the unit is not marked, and the ladder plays it: it
+attacks, or holds without fortifying, or walks toward the group's anchor.
+
+**`safest-stand`** (`src/ai/advanced/battle_planner.rs`, opt-in, off;
+separate from the version family). With it on, `least_danger_stand` ranks
+the unit's own tile and every reachable tile by the field's reading, then
+the heal preference, then the distance, and the unit takes the least —
+moving if it is elsewhere, holding if it is here — and fortifies, marked
+ordered and recovering like any rotation. Two refusals: a stand the field
+says would still remove the unit is no stand (the ladder keeps it for a last
+blow), and an exposed-but-healthy unit falls back only where the step cuts
+the danger by `ROTATE_DANGER_MARGIN`, so a front unit is not walked off its
+line for a few points. Census `battle_plan_fallbacks`; the rotation's
+Decision line says "falls back to the least danger" or "holds under fire and
+fortifies", with the danger where it stood and where it stands.
+
+**The gate (§13), ci binaries of this branch; every number
+`advanced+battle-planner-2+strike-reach+safest-stand` less
+`advanced+battle-planner-2+strike-reach` — the arm it would join.**
+
+- `battle_bench` control `advanced` v `advanced`, 60 seeds: +0.00 ± 0.00,
+  0 diverging. Treatment, 100 seeds × 2 seatings: default band **+17.6 ±
+  33.4 a seed (t 0.53; 51/42/7)**, exchange 1.03 v 0.97; four archers and
+  two warriors **+25.0 ± 25.0 (t 1.00; 47/43/10)**, 1.06 v 0.94; four
+  warriors and two spearmen **+14.7 ± 14.5 (t 1.01; 42/30/28)**, 1.08 v
+  0.93. Fires 97, 93 and 94 of 100. **Alone**, on the flood's reach
+  (`advanced+battle-planner-2+safest-stand` v `advanced+battle-planner-2`):
+  **−60.4 ± 33.9 (t −1.78; 43/48/9)**, exchange 0.93 v 1.07 — the least
+  dangerous tile by a field that reads zero where the enemy can strike is
+  not the least dangerous tile; the gene is read and armed beside
+  `strike-reach`, not instead of it.
+- `doctrine_arena` control, 12 seeds: +0.0, no divergence. Curriculum, 40
+  seeds × 2 roles: central_position **+80.5 ± 24.8 (t 3.25, sign p 0.0025,
+  21/5)**, the_defile +12.0 ± 8.4, the_storming +3.0 ± 31.8 (fires 7/40);
+  the rest null — hammer_and_anvil −87.0 ± 64.4, the_breakthrough −32.8 ±
+  34.6, the_reserve −32.0 ± 72.6, the_relief −21.2 ± 51.9; pooled −11.1 ±
+  11.2, kills per loss 0.99 v 1.01.
+- The captured 60-engagement file, 40 seeds × 2 roles: healing on **+13.2 ±
+  2.3 a seed (t 5.67; 552 better / 369 worse)**, kills per loss **1.04
+  against 0.96**; healing off −0.7 ± 2.0 (344/366), 0.99 v 1.01 — with
+  nothing to recover to, a unit that holds under fire is only a unit that
+  holds. Cities +535/−580 against +580/−535 with healing on: the same trade
+  `strike-reach` makes, a little more of it.
+- Fires (`gene_screen --games 6 --jobs 3 --genes safest-stand --start-seed
+  97600200`, `docs/gene_screens/fires/safest-stand.json`): on in 12 of 24
+  seats, win +0.0 pp ± 14.4, share +0.25 pp — fires, nothing more.
+
+**What this does not say.** The captured file is where the live seat's
+fights are, and there the gene reads as `strike-reach` read: a steady
+material gain from units that stop dying where they stand, paid for in
+assaults not pressed. The a3 row's other half — a healthy unit that
+attacked into its own death — is §30's. Live reading: after the arm, with
+the lanes back.

@@ -915,6 +915,9 @@ pub struct StrategyCensus {
     /// `strike-reach`: hostiles whose strike reach read tiles the movement
     /// flood did not — the danger the flood alone would have missed.
     pub strike_reach_widened: u32,
+    /// `safest-stand`: units the rotation found no zero-danger tile for and
+    /// stood on the least dangerous one instead.
+    pub battle_plan_fallbacks: u32,
     /// `battle-planner-2`: slots the positions plan laid out, units it
     /// placed, and units the pace held back on the approach.
     pub battle_plan_slots: u32,
@@ -1022,6 +1025,7 @@ impl StrategyCensus {
         self.battle_plan_dropped_blows += other.battle_plan_dropped_blows;
         self.battle_plan_rotations += other.battle_plan_rotations;
         self.strike_reach_widened += other.strike_reach_widened;
+        self.battle_plan_fallbacks += other.battle_plan_fallbacks;
         self.battle_plan_slots += other.battle_plan_slots;
         self.battle_plan_positioned += other.battle_plan_positioned;
         self.battle_plan_paced += other.battle_plan_paced;
@@ -6000,6 +6004,11 @@ pub struct AdvancedAi {
     /// mirrored board a ranged hostile needs no line of sight of its own.
     /// Opt-in gene; see `advanced/battle_planner.rs`.
     strike_reach: bool,
+    /// `safest-stand`: a wounded or exposed unit the battle planner's
+    /// rotation finds no zero-danger tile for takes the least dangerous tile
+    /// in reach and fortifies, instead of being left to the ladder in
+    /// silence. Opt-in gene; see `advanced/battle_planner.rs`.
+    safest_stand: bool,
     /// `siege-train`: a force whose objective is an enemy city plays the
     /// siege as a state machine — stage, invest, reduce, take, hold — kept
     /// across turns per city. Opt-in gene; see `advanced/siege_train.rs`.
@@ -7766,6 +7775,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             strike_reach: false,
+            safest_stand: false,
             siege_train: false,
             sieges: BTreeMap::new(),
             settler_site_gate: false,

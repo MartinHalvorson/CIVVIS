@@ -4067,6 +4067,19 @@ impl AdvancedAi {
         self.strike_reach = false;
     }
 
+    /// `safest-stand`: when the battle planner's heal rotation finds no tile
+    /// the danger field reads as zero, the wounded or exposed unit takes the
+    /// least dangerous tile in reach — its own if that is the least — and
+    /// fortifies, instead of being left to the ladder. See `battle_planner`.
+    pub fn enable_safest_stand(&mut self) {
+        self.safest_stand = true;
+    }
+
+    /// The twin of `enable_safest_stand`.
+    pub fn disable_safest_stand(&mut self) {
+        self.safest_stand = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
