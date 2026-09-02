@@ -1377,7 +1377,7 @@ class DialogueCloseConfigTests(unittest.TestCase):
 
 
 class DealSessionConfigTests(unittest.TestCase):
-    """Verification must not open an answer-required diplomacy modal by default."""
+    """Civvis needs sessions; ordinary play keeps the non-modal default."""
 
     @staticmethod
     def _config(**changes):
@@ -1391,13 +1391,24 @@ class DealSessionConfigTests(unittest.TestCase):
                      speed="GAMESPEED_ONLINE", map="Continents.lua",
                      leader="LEADER_TRAJAN", **changes))
 
-    def test_direct_deals_are_the_safe_verification_default(self):
+    def test_ordinary_play_keeps_direct_deals_by_default(self):
         self.assertIs(self._config()["DealSessions"], False)
 
-    def test_interactive_deal_sessions_are_an_explicit_opt_in(self):
+    def test_civvis_decider_uses_working_sessions_by_default(self):
+        self.assertIs(self._config(civvis_decides=True)["DealSessions"], True)
+
+    def test_interactive_deal_sessions_can_be_explicitly_enabled(self):
         self.assertIs(self._config(deal_sessions=True)["DealSessions"], True)
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
-        self.assertIn('ap.add_argument("--deal-sessions", action="store_true",', source)
+        self.assertIn('ap.add_argument("--deal-sessions", dest="deal_sessions",', source)
+
+    def test_civvis_decider_can_explicitly_opt_out(self):
+        self.assertIs(
+            self._config(civvis_decides=True, deal_sessions=False)["DealSessions"],
+            False,
+        )
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--no-deal-sessions", dest="deal_sessions",', source)
 
 
 class CounterResolutionConfigTests(unittest.TestCase):

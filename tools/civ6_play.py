@@ -579,6 +579,15 @@ def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
         dialogue_seconds = 0.25
+    # A direct `SendWorkingDeal` has no session for the rival to evaluate.
+    # CIVVIS-driven games therefore need the session path for their buy/sell
+    # orders to produce an answer; ordinary/manual games keep the non-modal
+    # direct path unless the caller opts in explicitly.  `None` is the parser's
+    # intentional "choose from the mode" value, while False remains a real
+    # escape hatch for hosts whose UI cannot carry deal sessions.
+    deal_sessions = getattr(args, "deal_sessions", None)
+    if deal_sessions is None:
+        deal_sessions = bool(getattr(args, "civvis_decides", False))
     config = {
         "RunTag": args.tag,
         "AutoStart": True,
@@ -824,13 +833,7 @@ def build_config(args: argparse.Namespace) -> dict:
         # A diplomacy screen is a blocker. Keep its in-game timer explicit and
         # bounded so old launchers cannot silently restore a multi-second close.
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
-        # Outgoing deal sessions open `DiplomacyActionView`.  That view can require
-        # an answer rather than a close action, so an unattended verification run
-        # can remain blocked even after the popup ladder and desktop backstop have
-        # both acted.  The direct-send lane retains the trade request without
-        # opening a modal; make it the verification default and leave sessions as
-        # an explicit diagnostic opt-in.
-        "DealSessions": bool(getattr(args, "deal_sessions", False)),
+        "DealSessions": bool(deal_sessions),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -3238,6 +3241,7 @@ def _play(args: argparse.Namespace) -> int:
               f"victory={args.civvis_victory} "
               f"war_from_plan={args.civvis_war_from_plan} "
               f"refresh_seconds={refresh} "
+              f"deal_sessions={config['DealSessions']} "
               f"forced={args.civvis_with or 'none'} "
               f"withheld={args.civvis_without or 'none'} bin={binary}")
 
@@ -4485,9 +4489,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--dialogue-seconds", type=float, default=0.25,
                     help="maximum in-game diplomacy close delay (capped at 2s)")
-    ap.add_argument("--deal-sessions", action="store_true",
-                    help="use interactive diplomacy deal sessions (diagnostic only; "
-                         "verification runs use direct sends to avoid modal screens)")
+    ap.add_argument("--deal-sessions", dest="deal_sessions", action="store_true",
+                    default=None,
+                    help="use interactive diplomacy deal sessions; Civvis-driven "
+                         "games enable this by default")
+    ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
+                    help="keep direct diplomacy sends even for a Civvis-driven game")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
     # fast because something is waiting behind it; nothing is waiting behind this
     # one, because the game is over. The operator's standing brief asks for ten

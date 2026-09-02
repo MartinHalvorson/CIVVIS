@@ -185,6 +185,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `contested-suzerainty-brake` | off (unmeasured) | Stop paying for a city-state race this seat cannot hold: the leading rival is a major we are at war with and is level or ahead, or the seat has already sunk `CONTESTED_ENVOY_STACK_CAP` envoys and a rival is within one. | 1 \| 1 |
 | `doomed-blow-veto` | off (unmeasured) | `doomed-blow-veto`: a unit whose every blow this turn would leave it dead on the enemy's next turn — the return damage plus the danger field at the stand against its hit points — is taken from the ladder, which would attack with it, and given to the heal rotation as an exposed unit. | 1 \| 1 |
 | `missionary-last-charge-explores-2` | off (unmeasured) | Send a last-charge Missionary on a long, routeable expedition before it spends the charge: up to thirty-six tiles, through borders religious units may cross, while still yielding to an endangered own city or an untouched city beside it. | 1 \| 2 |
 | `route-block-is-a-wait` | off (unmeasured) | A route step that is not legal this turn holds the decision instead of releasing it, bounded by `COMMITMENT_PATIENCE` consecutive forgotten turns. | 1 \| 1 |
