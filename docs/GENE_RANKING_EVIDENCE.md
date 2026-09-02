@@ -215,6 +215,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-site-gate` | off (unmeasured) | `settler-site-gate`: a city starts a Settler only while an acceptable, unclaimed site worth founding exists. | 1 \| 1 |
 | `settler-target-floor` | off (unmeasured) | `settler-target-floor`: a Settler is never sent to a site not worth the walk. | 1 \| 1 |
 | `settler-walk-deadline` | off (unmeasured) | A Settler out of a city past its deadline founds the best legal site within reach instead of chasing the ranked one it has not reached. | 1 \| 1 |
+| `siege-is-progress-3` | off (unmeasured) | Reset war fatigue once per enemy city only after a nearby own land force is observed reducing its wall or city health. | 1 \| 1 |
 | `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
 | `siege-train` | off (unmeasured) | A force whose objective is an enemy city plays the siege as a state machine — stage on the ring out of the city's reach until the bill is met, seal the ring spread-first, reduce walls before the garrison, reserve one taker and walk in when the city is within its blow. | 1 \| 1 |
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |

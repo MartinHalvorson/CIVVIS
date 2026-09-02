@@ -566,11 +566,25 @@ impl AdvancedAi {
     ///
     /// Opt-in gene `siege-is-progress-2`. See `AdvancedAi::siege_is_progress_2`.
     pub fn enable_siege_is_progress_2(&mut self) {
+        self.siege_is_progress_3 = false;
         self.siege_is_progress_2 = true;
     }
 
     pub fn disable_siege_is_progress_2(&mut self) {
         self.siege_is_progress_2 = false;
+    }
+
+    /// Reset war fatigue once per enemy city only after a nearby own land
+    /// force is observed reducing its wall or city health. Version 3 replaces
+    /// v2's proximity-only reset and remains independently reversible.
+    pub fn enable_siege_is_progress_3(&mut self) {
+        self.siege_is_progress_2 = false;
+        self.siege_is_progress_3 = true;
+    }
+
+    /// The twin of `enable_siege_is_progress_3`.
+    pub fn disable_siege_is_progress_3(&mut self) {
+        self.siege_is_progress_3 = false;
     }
     /// Escort live settlers by shadowing with ordinary moves instead of
     /// Civilization VI's formation channel, which stalls.

@@ -5046,6 +5046,14 @@ pub struct AdvancedAi {
     /// state for `siege_is_progress_2`, rebuilt from the current at-war set
     /// each observation.
     campaign_cities_reached: BTreeSet<u32>,
+    /// Last observed city and wall health for each current enemy city. Version
+    /// 3 compares this baseline only while one of our land units is on the
+    /// siege ring, so damage elsewhere is not credited to our campaign.
+    campaign_city_health_v3: BTreeMap<u32, (i32, i32)>,
+    /// Enemy cities whose first proven-damage reset has already been spent in
+    /// the current war. Unlike v2's proximity set, leaving the ring does not
+    /// clear this state; peace does.
+    campaign_cities_pressured_v3: BTreeSet<u32>,
     /// Version 2 of `campus_adjacency_threshold`: the same district pricing,
     /// plus the lever the gene's own survey said was missing — CITY SITING.
     /// The best legal Campus plot of a founded city never reached the
@@ -6056,6 +6064,11 @@ pub struct AdvancedAi {
     /// campaign still walking to its target is not offered away as stalled.
     /// Opt-in gene `siege-is-progress-2`.
     siege_is_progress_2: bool,
+    /// Version 3 credits progress only once per enemy city and only after an
+    /// arrived land force is observed reducing that city's walls or health.
+    /// Mere proximity and repeated damage cannot indefinitely defer peace.
+    /// Opt-in gene `siege-is-progress-3`.
+    siege_is_progress_3: bool,
     /// The Science strategy's per-pad district bonus stops once the empire
     /// holds as many Spaceports as the race stage can use — one until the
     /// Earth Satellite is up, two until the Mars Base is away, three for the
@@ -7555,6 +7568,8 @@ impl AdvancedAi {
 
             chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
+            campaign_city_health_v3: BTreeMap::new(),
+            campaign_cities_pressured_v3: BTreeSet::new(),
             campus_adjacency_threshold_2: false,
 
             coalition_before_war: false,
@@ -7685,6 +7700,7 @@ impl AdvancedAi {
             settler_guard_holds_2: false,
             settler_target_hysteresis_2: false,
             siege_is_progress_2: false,
+            siege_is_progress_3: false,
             spaceport_surplus_veto: false,
             skip_the_prophet_race_2: false,
 
@@ -8080,6 +8096,52 @@ impl AdvancedAi {
             self.campaign_cities_reached = reached_now;
         } else {
             self.campaign_cities_reached.clear();
+        }
+        // Version 3 requires proof that an arrived force is changing the
+        // board. Each enemy city can buy exactly one reset in a continuous
+        // war: leaving and returning, or landing more damage, does not renew
+        // it. Rebuild the health baselines and retain spent credits only for
+        // cities whose owners remain at war, so a later war starts clean.
+        if self.siege_is_progress_3 {
+            let at_war_cities = g
+                .cities
+                .iter()
+                .filter(|(_, city)| city.owner != pid && g.is_at_war(pid, city.owner))
+                .map(|(city, _)| *city)
+                .collect::<BTreeSet<_>>();
+            self.campaign_city_health_v3
+                .retain(|city, _| at_war_cities.contains(city));
+            self.campaign_cities_pressured_v3
+                .retain(|city| at_war_cities.contains(city));
+
+            let mut siege_advanced = false;
+            for city in at_war_cities {
+                let observed = &g.cities[&city];
+                let health = (observed.hp, observed.wall_hp);
+                let arrived = g.units.values().any(|unit| {
+                    unit.owner == pid
+                        && g.rules.units[unit.kind].class == "military"
+                        && !matches!(
+                            g.rules.units[unit.kind].domain.as_deref(),
+                            Some("sea" | "air")
+                        )
+                        && g.wdist(unit.pos, observed.pos) <= 2
+                });
+                let damaged = self
+                    .campaign_city_health_v3
+                    .get(&city)
+                    .is_some_and(|before| health.0 < before.0 || health.1 < before.1);
+                if arrived && damaged && self.campaign_cities_pressured_v3.insert(city) {
+                    siege_advanced = true;
+                }
+                self.campaign_city_health_v3.insert(city, health);
+            }
+            if siege_advanced {
+                self.last_campaign_progress = g.turn;
+            }
+        } else {
+            self.campaign_city_health_v3.clear();
+            self.campaign_cities_pressured_v3.clear();
         }
         let major_war = g.players.iter().any(|p| {
             p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, p.id)

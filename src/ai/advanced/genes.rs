@@ -2086,6 +2086,11 @@ pub const GENES: &[Gene] = &[
     // family plays: `enable_battle_planner_3` turns one and two off. See
     // `advanced/battle_planner.rs`.
     Gene { tag: "battle-planner-3", field: "battle_planner_3", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner_3, disable: AdvancedAi::disable_battle_planner_3 },
+    // Version 3 grants one fatigue reset per enemy city only after a nearby
+    // land force is observed reducing its walls or health. Mere arrival no
+    // longer reads as progress, and repeated hits cannot postpone peace
+    // indefinitely. One family version plays at a time.
+    Gene { tag: "siege-is-progress-3", field: "siege_is_progress_3", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_is_progress_3, disable: AdvancedAi::disable_siege_is_progress_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
