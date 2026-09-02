@@ -5063,11 +5063,6 @@ pub struct AdvancedAi {
     /// empire holds plus the sites the map can still seat, counted best-first
     /// with the scanner's own spacing. See `map_settlement_room`.
     city_target_meets_the_map: bool,
-    /// The live Civilization VI bridge's operator contract: every verification
-    /// game plans a 10–15 city empire, subject to genuinely viable sites.
-    /// Native evaluation and frozen controllers retain their historical
-    /// city-target behavior.
-    verification_city_target: bool,
     /// The plot a Barbarian Outpost stands on is bought for the city inside
     /// whose three rings it sits, when being rid of the outpost is worth more
     /// than the plot's quote. Opt-in gene `camp-tile-buyout`; see
@@ -6149,6 +6144,11 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// The live Civilization VI bridge's operator contract: every verification
+    /// game plans a 10–15 city empire, subject to genuinely viable sites.
+    /// Native evaluation and frozen controllers retain their historical
+    /// city-target behavior.
+    verification_city_target: bool,
     /// Who may be a target, when a war is declared and when peace is sued
     /// for, read off the Objective Board's own requirements: a rival whose
     /// nearest city's Siege bill is over the whole roster is no target, a
@@ -7627,7 +7627,6 @@ impl AdvancedAi {
             close_as_a_body: false,
             culture_floor: false,
             city_target_meets_the_map: false,
-            verification_city_target: false,
             camp_tile_buyout: false,
             contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
             coastal_city_sites: false,
@@ -7774,6 +7773,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            verification_city_target: false,
             war_policy_via_board: false,
             war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,
