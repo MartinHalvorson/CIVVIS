@@ -1951,3 +1951,23 @@ guard caught the change.
 The anchor keeps **18,508 decisions** and moves from v31's
 `0x66d9_754b_9443_6085` to **`0xb880_bcae_d9b0_9877`**. Live observed capacity
 is unchanged; only native/offline fallback behavior is corrected.
+
+## v33 (2026-09-02) — frequent unique unit profiles reach the mirror
+
+The live run archive recorded 624 unit approximations across nine host types;
+239 Russian Cossacks, 227 Japanese Samurai and 82 Macedonian Hypaspists made
+up 548 of them. The mirror was therefore evaluating the wrong combat strength,
+movement, sight, cost or upgrade row whenever one of those units appeared. The
+installed Gathering Storm `DebugGameplay.sqlite` now supplies exact static
+profiles for the eight observed unique units that had no CIVVIS row, and both
+host translation directions and the Civ VI unit glyph atlas know their names.
+The database's special abilities remain a separate follow-up where the current
+engine has no corresponding aura or post-attack primitive; this change removes
+the much larger static-data mismatch without inventing those effects.
+
+This is a shared rules-data correction, not a controller treatment: the frozen
+anchor's five profiles include civilizations that can build the newly modeled
+units, so the behavior guard caught a real change. The anchor moves from v32's
+**18,508 decisions and `0xb880_bcae_d9b0_9877`** to **18,922 decisions and
+`0xf78c_7e99_7434_1c40`**. The audited rules fingerprint moves from
+`fnv1a64:7c1bacacca3d4120` to `fnv1a64:e69039571d195263`.

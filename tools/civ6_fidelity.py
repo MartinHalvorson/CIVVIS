@@ -758,6 +758,14 @@ ALIASES = {
     "ethiopian_oromo_cavalry": "oromo_cavalry",
     "lahore_nihang": "nihang",
     "antiair_gun": "anti_air_gun",
+    "gaul_gaesatae": "gaesatae",
+    "japanese_samurai": "samurai",
+    "macedonian_hypaspist": "hypaspist",
+    "indian_varu": "varu",
+    "mali_mandekalu_cavalry": "mandekalu_cavalry",
+    "russian_cossack": "cossack",
+    "american_rough_rider": "rough_rider",
+    "vietnamese_voi_chien": "voi_chien",
     # Warrior Monk promotions carry a MONK_ prefix in the shipped table, and
     # three more differ by a word. Same blind spot as the unique units.
     "monk_shadow_strike": "shadow_strike",
