@@ -35656,6 +35656,177 @@ fn district_planning_2_is_a_registered_reversible_opt_in() {
     assert!(!ai.district_planning_2);
 }
 
+/// Version 3 is an independent screenable arm. Every district-planning
+/// version carries the shared site/menu planner, but only one can own the
+/// purchase policy at a time.
+#[test]
+fn district_planning_3_is_a_native_opt_in_off_and_versions_are_exclusive() {
+    assert!(!AdvancedAi::new().district_planning_3);
+    assert!(!AdvancedAi::legacy().district_planning_3);
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "district-planning-3")
+        .expect("version 3 is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_district_planning();
+    assert!(ai.district_planning);
+    ai.enable_district_planning_2();
+    assert!(!ai.district_planning);
+    assert!(ai.district_planning_2);
+    ai.enable_district_planning_3();
+    assert!(!ai.district_planning && !ai.district_planning_2);
+    assert!(ai.district_planning_3 && ai.district_planning_on());
+    ai.enable_district_planning();
+    assert!(ai.district_planning && !ai.district_planning_2 && !ai.district_planning_3);
+}
+
+/// Version 3 funds only the plan's current head for an idle city. It removes
+/// version 1's extra 200-Gold headroom, but leaves the full normal reserve in
+/// place instead of version 2's half-reserve spend.
+#[test]
+fn version_three_buys_only_an_idle_high_quality_head_above_full_reserve() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .filter(|n| game.wdist(*n, center) == 3)
+                    .count()
+                    == 3
+        })
+        .expect("a ring-two corner plot");
+    assert_eq!(
+        raise_mountains_beside(&mut game, target, 3, |g, pos| g.wdist(pos, center) == 3),
+        3
+    );
+    game.players[0].explored.insert(target);
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes the high-adjacency site");
+    let plan = district_planning_lane(game.turn);
+    let mut ai = AdvancedAi::new();
+    ai.enable_district_planning_3();
+    let counts = ai.counts(&game, 0);
+    let mut cache = DistrictPlanCache::default();
+    assert!(
+        ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache)
+            .is_some(),
+        "the plan's first, high-quality site is eligible when the city is idle"
+    );
+
+    game.cities
+        .get_mut(&city)
+        .expect("the planning city exists")
+        .queue
+        .push(Item::Unit {
+            unit: Name::new("warrior"),
+        });
+    let mut cache = DistrictPlanCache::default();
+    assert_eq!(
+        ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache),
+        None,
+        "a city committed to another build does not pre-buy a district plot"
+    );
+    game.cities
+        .get_mut(&city)
+        .expect("the planning city exists")
+        .queue
+        .clear();
+
+    // One-city Science reserve is 300; v3 can spend the Gold above it, but
+    // cannot erode it.
+    game.players[0].gold = 300.0 + cost;
+    assert!(ai.advanced_gold_spending(&mut game, 0, &plan));
+    assert_eq!(game.map.tiles[&target].owner_city, Some(city));
+    assert!(
+        game.players[0].gold >= 300.0 - f64::EPSILON,
+        "v3 preserved the full reserve: {}",
+        game.players[0].gold
+    );
+}
+
+/// The relaxed adjacency-2/edge-1 admission was specific to v2. Version 3
+/// keeps version 1's quality bar while changing only the funding timing.
+#[test]
+fn version_three_refuses_the_two_mountain_site() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .filter(|n| game.wdist(*n, center) == 3)
+                    .count()
+                    == 3
+        })
+        .expect("a ring-two corner plot");
+    assert_eq!(
+        raise_mountains_beside(&mut game, target, 2, |g, pos| g.wdist(pos, center) == 3),
+        2
+    );
+    game.players[0].explored.insert(target);
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    let plan = district_planning_lane(game.turn);
+    let mut ai = AdvancedAi::new();
+    ai.enable_district_planning_3();
+    let counts = ai.counts(&game, 0);
+    let mut cache = DistrictPlanCache::default();
+    assert_eq!(
+        ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache),
+        None,
+        "version 3 keeps the adjacency-3 quality bar"
+    );
+}
+
+/// The high-Science tile and bridge route is deliberately a version-2
+/// experiment. Version 3 limits itself to district sites that the idle city
+/// can immediately start, rather than treating a general yield tile as one.
+#[test]
+fn version_three_does_not_chase_v2s_exceptional_science_asset() {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
+        .expect("an unowned ring-two plot");
+    game.players[0].explored.insert(target);
+    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
+        target,
+        Yields {
+            science: 10.0,
+            ..Yields::default()
+        },
+    );
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    let action = Action::BuyPlot {
+        city,
+        pos: target,
+        cost,
+    };
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_district_planning_3();
+    assert_eq!(
+        ai.exceptional_science_plot_score(&game, 0, &district_planning_lane(game.turn), &action),
+        None,
+        "v3 does not buy a general high-Science asset outside the district plan"
+    );
+}
+
 /// Version 2 lowers the purchase bars: the two-mountain plot version 1
 /// calls "not worth Gold" clears the adjacency-2 bar and the score floor.
 #[test]

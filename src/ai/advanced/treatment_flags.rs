@@ -1803,6 +1803,8 @@ impl AdvancedAi {
     /// append-point check reads a line's first identifier, which for any `pub
     /// fn` is `pub`.)
     pub fn enable_district_planning(&mut self) {
+        self.district_planning_2 = false;
+        self.district_planning_3 = false;
         self.district_planning = true;
     }
 
@@ -3569,12 +3571,30 @@ impl AdvancedAi {
     /// rule refused it, while three cities placed campuses at adjacency ≤ 1
     /// beside that ground.
     pub fn enable_district_planning_2(&mut self) {
+        self.district_planning = false;
+        self.district_planning_3 = false;
         self.district_planning_2 = true;
     }
 
     /// The twin of `enable_district_planning_2`.
     pub fn disable_district_planning_2(&mut self) {
         self.district_planning_2 = false;
+    }
+
+    /// `district-planning-3`: retain the joint district-site plan, but make
+    /// a Gold purchase only for its highest-value unowned site when that city
+    /// is idle and can start the district next. The full working reserve stays
+    /// intact, and version 2's speculative high-Science and bridge purchases
+    /// are deliberately absent. One family version plays at a time.
+    pub fn enable_district_planning_3(&mut self) {
+        self.district_planning = false;
+        self.district_planning_2 = false;
+        self.district_planning_3 = true;
+    }
+
+    /// The twin of `enable_district_planning_3`.
+    pub fn disable_district_planning_3(&mut self) {
+        self.district_planning_3 = false;
     }
 
     /// Version 2 of `air_surge`: the science–domination loop. The original
@@ -3806,6 +3826,21 @@ impl AdvancedAi {
     /// The twin of `enable_battle_planner_2`.
     pub fn disable_battle_planner_2(&mut self) {
         self.battle_planner_2 = false;
+    }
+
+    /// `battle-planner-3`: version three of `battle_planner` — the siege's
+    /// taker left to the siege, the host's strike preview over the closed
+    /// form, and the previews asked for. One version of a family plays, so
+    /// this turns versions one and two off. See `battle_planner`.
+    pub fn enable_battle_planner_3(&mut self) {
+        self.battle_planner = false;
+        self.battle_planner_2 = false;
+        self.battle_planner_3 = true;
+    }
+
+    /// The twin of `enable_battle_planner_3`.
+    pub fn disable_battle_planner_3(&mut self) {
+        self.battle_planner_3 = false;
     }
 
     /// A force whose objective is an enemy city plays the siege as a state
