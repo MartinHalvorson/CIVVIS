@@ -3481,8 +3481,20 @@ def _play(args: argparse.Namespace) -> int:
             # service would be a new outage, not a saving.
             needs_pixels = screen in ("DiplomacyActionView", "LeaderView",
                                       "DiplomacyDealView")
-            allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend(
-                screen, popup_clear.capture_pause_reason())
+            try:
+                capture_state = popup_clear.capture_pause_reason()
+            except Exception as error:  # noqa: BLE001 - see below
+                # ⚠ THIS RUNS INSIDE `record`, WHICH DRIVES THE WHOLE GAME. An
+                # exception here would end the run over a question that is only
+                # an optimisation. `capture_pause_reason` catches
+                # `CaptureUnavailable`, but `_native_binary()` beneath it can
+                # still raise `TimeoutExpired` if the Swift helper has to be
+                # recompiled. Unknown means "try it and find out", which is
+                # exactly the old behaviour.
+                capture_state = None
+                print(f"[{kind}] could not read capture availability ({error}); "
+                      "treating it as available", file=sys.stderr)
+            allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend(screen, capture_state)
             if needs_pixels and not allowed:
                 # The event is already in events.jsonl -- `record` writes it
                 # before this chain runs -- so returning here loses no history,

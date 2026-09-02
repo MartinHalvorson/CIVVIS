@@ -144,6 +144,16 @@ class OnlyThePixelPathIsRationed(unittest.TestCase):
         named = set(re.findall(r'"([A-Za-z]+)"', source[guard:source.index(")", guard)]))
         self.assertEqual(named, {"DiplomacyActionView", "LeaderView", "DiplomacyDealView"})
 
+    def test_an_unreadable_capture_state_never_ends_the_run(self):
+        """`record` drives the whole game; a failed availability probe is an
+        optimisation question, not a reason to stop playing."""
+        source = self._source()
+        block = source[source.index("capture_state = popup_clear.capture_pause_reason()"):
+                       source.index("allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend")]
+        self.assertIn("except Exception", block)
+        self.assertIn("capture_state = None", block,
+                      "unknown must mean 'try it', which is the old behaviour")
+
     def test_the_photograph_is_skipped_rather_than_taken_blind(self):
         """A capture the host cannot take is 11 s either way; do not spend it
         just because the screen has a capture-free dismissal."""
