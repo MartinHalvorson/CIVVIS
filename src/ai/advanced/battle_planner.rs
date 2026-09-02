@@ -118,6 +118,30 @@
 //! whole-game screen is the no-harm check (`docs/DOCTRINE_ARENA.md`, "The
 //! gate for a tactical gene").
 
+//!
+//! **Version three** (`battle-planner-3`, `enable_battle_planner_3` turns
+//! versions one and two off; `battle_planner_on()` covers all three) is
+//! version two plus three readings of the wider machinery:
+//!
+//! - **The taker is the siege's.** A unit `siege_train.rs` has reserved
+//!   (`unit_is_reserved`) is skipped by the kill plan, the heal rotation and
+//!   the positions plan — the Take blow is the siege train's own step, and
+//!   the planner never spends the unit that walks in.
+//! - **The host's price beats the closed form.** Where
+//!   `Game::host_preview` holds the host's own `SimulateAttackInto` reading
+//!   for a `(unit, target, ranged)` pair (a `preview` order answered the
+//!   frame before), the candidate carries the host's damage both ways in
+//!   place of `expected_damage`'s centre roll, and a blow the host says
+//!   kills the attacker is vetoed outright — no kill is worth the unit on
+//!   the host's word. Native boards hold no previews, so the closed form
+//!   stands there.
+//! - **Asking for the price.** Before the search, the top
+//!   [`MAX_WANTED_PREVIEWS`] candidate pairs by closed-form damage from the
+//!   unit's own tile that have no host reading yet are published through
+//!   [`AdvancedAi::wanted_previews`]; `civvis_orders` turns them into
+//!   `preview` orders ahead of the frame's strikes, and the answers reach
+//!   `Game::host_previews` on the turn's next frame.
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -138,6 +162,9 @@ pub(super) const BEAM_WIDTH: usize = 32;
 pub(super) const MAX_SHOOTERS: usize = 12;
 /// Targets a plan considers at once.
 pub(super) const MAX_TARGETS: usize = 8;
+/// `battle-planner-3`: candidate pairs asked of the host a frame, by
+/// closed-form damage.
+pub(super) const MAX_WANTED_PREVIEWS: usize = 24;
 /// Stands kept per (shooter, target): the unit's own tile, then the safest.
 const FROM_TILES_PER_PAIR: usize = 3;
 /// How much of next turn's expected damage a striker's end tile costs, on
@@ -460,6 +487,29 @@ struct Candidate {
     ranged: bool,
     att: f64,
     def_base: f64,
+    /// `battle-planner-3`: the host's own reading of this pair from the
+    /// unit's tile, `(damage to the defender, damage to the attacker)`,
+    /// when `Game::host_preview` holds one. Replaces the closed form.
+    host: Option<(f64, f64)>,
+}
+
+impl Candidate {
+    /// The damage this blow deals against a defender at `def`: the host's
+    /// reading when it has one, the centre roll otherwise.
+    fn damage_on(&self, def: f64) -> f64 {
+        self.host.map_or_else(
+            || expected_damage(self.att, def),
+            |(to_defender, _)| to_defender,
+        )
+    }
+
+    /// The damage a melee blow takes back from a defender at `def`.
+    fn return_on(&self, def: f64) -> f64 {
+        self.host.map_or_else(
+            || expected_damage(def, self.att),
+            |(_, to_attacker)| to_attacker,
+        )
+    }
 }
 
 /// A blow the plan has chosen, in the words the board needs.
@@ -540,7 +590,7 @@ impl BeamState {
         }
         let remaining = (f64::from(target.hp) - self.dealt[candidate.target]).max(1.0);
         let def = effective_strength(candidate.def_base, remaining.round() as i32);
-        let damage = expected_damage(candidate.att, def);
+        let damage = candidate.damage_on(def);
         let dealt = self.dealt[candidate.target] + damage;
         let kill = dealt >= f64::from(target.hp) * KILL_MARGIN;
         let gain = if kill {
@@ -557,8 +607,13 @@ impl BeamState {
         let mut returned = 0.0;
         let mut dies = false;
         if !candidate.ranged {
-            returned = expected_damage(def, candidate.att);
+            returned = candidate.return_on(def);
             if returned >= f64::from(shooter.hp) {
+                // The host's word that the attacker dies is a veto, whatever
+                // the kill is worth (`battle-planner-3`).
+                if candidate.host.is_some() {
+                    return None;
+                }
                 // The return kills the attacker: only for a kill worth more
                 // than the unit, and then at the price of the unit.
                 if !(kill && target.kill_value > shooter.value) {
@@ -702,7 +757,8 @@ impl AdvancedAi {
                 .is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP)
         });
         let mut field = DangerField::new(g, pid);
-        let (blows, armed) = self.kill_sequence_in(g, pid, &mut field);
+        let (blows, armed, wanted) = self.kill_sequence_in(g, pid, &mut field);
+        self.battle_planner_wanted_previews = wanted;
         let mut struck = false;
         let mut strikers = BTreeSet::new();
         if !blows.is_empty() {
@@ -720,10 +776,11 @@ impl AdvancedAi {
         }
         let rotations = self.rotate_wounded(g, pid, &mut field, &strikers);
         self.census.battle_plan_rotations += rotations;
-        // `battle-planner-2`: the positions plan, on a force picture that no
-        // longer holds the defenders the kill plan removed. The caller's own
-        // rebuild after a strike is the version-one contract and stands.
-        if self.battle_planner_2 {
+        // `battle-planner-2` (and three): the positions plan, on a force
+        // picture that no longer holds the defenders the kill plan removed.
+        // The caller's own rebuild after a strike is the version-one
+        // contract and stands.
+        if self.positions_plan_on() {
             if struck {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
@@ -741,20 +798,76 @@ impl AdvancedAi {
         self.kill_sequence_in(g, pid, &mut field).0
     }
 
-    /// The ordered blows, and every unit that had a legal blow to offer.
+    /// `battle-planner-3`: the pairs the kill plan wants the host to price —
+    /// `(unit, target tile, ranged)` — as the last plan left them. Empty
+    /// with the version off. `civvis_orders` reads it after `take_turn` and
+    /// issues a `preview` order per pair.
+    pub fn wanted_previews(&self) -> Vec<(u32, Pos, bool)> {
+        self.battle_planner_wanted_previews.clone()
+    }
+
+    /// The top [`MAX_WANTED_PREVIEWS`] candidate pairs by closed-form
+    /// damage, read from the unit's own tile (where the host would simulate
+    /// them), that the host has not priced yet.
+    fn wanted_previews_of(
+        &self,
+        shooters: &[Shooter],
+        targets: &[Target],
+        candidates: &[Candidate],
+    ) -> Vec<(u32, Pos, bool)> {
+        if !self.battle_planner_3 {
+            return Vec::new();
+        }
+        let mut ranked: Vec<(f64, u32, Pos, bool)> = candidates
+            .iter()
+            .filter(|candidate| {
+                candidate.host.is_none() && candidate.from == shooters[candidate.shooter].pos
+            })
+            .map(|candidate| {
+                let target = &targets[candidate.target];
+                let damage = candidate.damage_on(effective_strength(candidate.def_base, target.hp));
+                (
+                    damage,
+                    shooters[candidate.shooter].uid,
+                    target.pos,
+                    candidate.ranged,
+                )
+            })
+            .collect();
+        ranked.sort_by(|a, b| {
+            b.0.total_cmp(&a.0)
+                .then_with(|| a.1.cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+                .then_with(|| a.3.cmp(&b.3))
+        });
+        let mut wanted: Vec<(u32, Pos, bool)> = Vec::new();
+        for (_, uid, pos, ranged) in ranked {
+            if wanted.len() >= MAX_WANTED_PREVIEWS {
+                break;
+            }
+            if !wanted.contains(&(uid, pos, ranged)) {
+                wanted.push((uid, pos, ranged));
+            }
+        }
+        wanted
+    }
+
+    /// The ordered blows, every unit that had a legal blow to offer, and the
+    /// pairs version three wants the host to price.
     fn kill_sequence_in(
         &self,
         g: &Game,
         pid: usize,
         field: &mut DangerField,
-    ) -> (Vec<Blow>, BTreeSet<u32>) {
+    ) -> (Vec<Blow>, BTreeSet<u32>, Vec<(u32, Pos, bool)>) {
         let (shooters, targets, candidates, armed) = self.strike_candidates(g, pid, field);
         if candidates.is_empty() {
-            return (Vec::new(), armed);
+            return (Vec::new(), armed, Vec::new());
         }
+        let wanted = self.wanted_previews_of(&shooters, &targets, &candidates);
         let (sequence, score) = search_kill_sequence(&shooters, &targets, &candidates, field);
         if score <= 0.0 || sequence.is_empty() {
-            return (Vec::new(), armed);
+            return (Vec::new(), armed, wanted);
         }
         let mut dealt = vec![0.0; targets.len()];
         let mut blows = Vec::with_capacity(sequence.len());
@@ -763,7 +876,7 @@ impl AdvancedAi {
             let target = &targets[candidate.target];
             let remaining = (f64::from(target.hp) - dealt[candidate.target]).max(1.0);
             let def = effective_strength(candidate.def_base, remaining.round() as i32);
-            let expected = expected_damage(candidate.att, def);
+            let expected = candidate.damage_on(def);
             dealt[candidate.target] += expected;
             blows.push(Blow {
                 unit: shooters[candidate.shooter].uid,
@@ -775,7 +888,7 @@ impl AdvancedAi {
                 finishes: dealt[candidate.target] >= f64::from(target.hp) * KILL_MARGIN,
             });
         }
-        (blows, armed)
+        (blows, armed, wanted)
     }
 
     /// Every legal blow each eligible unit could make this turn, from its
@@ -868,6 +981,8 @@ impl AdvancedAi {
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
                 || self.battle_planner_recovering.contains(&uid)
                 || self.guard_is_bound_to_any_settler(uid)
+                // `battle-planner-3`: the siege's taker is not the plan's.
+                || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
                 continue;
             }
@@ -925,6 +1040,7 @@ impl AdvancedAi {
                                     ranged: true,
                                     att,
                                     def_base: def + wounded_penalty(target.hp),
+                                    host: None,
                                 });
                             }
                         }
@@ -941,17 +1057,32 @@ impl AdvancedAi {
                                     ranged: false,
                                     att,
                                     def_base: def + wounded_penalty(target.hp),
+                                    host: None,
                                 });
                             }
                         }
                     }
                     found
                 };
-                let found = if stand == unit.pos {
+                let mut found = if stand == unit.pos {
                     read(g)
                 } else {
                     field.at_stand(uid, stand, read).unwrap_or_default()
                 };
+                // `battle-planner-3`: the host's own reading of the pair
+                // replaces the closed form for that pair, from every stand:
+                // the reading is made of the defender's tile and health and
+                // the attacker's health and promotions, none of which a move
+                // changes (a river crossing is the one term it misses).
+                if self.battle_planner_3 {
+                    for candidate in &mut found {
+                        candidate.host = g
+                            .host_preview(uid, targets[candidate.target].pos, candidate.ranged)
+                            .map(|(_, _, to_attacker, to_defender)| {
+                                (f64::from(to_defender), f64::from(to_attacker))
+                            });
+                    }
+                }
                 own.extend(found);
             }
             if own.is_empty() {
@@ -974,10 +1105,8 @@ impl AdvancedAi {
                     .drain(..)
                     .map(|candidate| {
                         let danger = field.danger(candidate.from, uid);
-                        let damage = expected_damage(
-                            candidate.att,
-                            effective_strength(candidate.def_base, target.hp),
-                        );
+                        let damage =
+                            candidate.damage_on(effective_strength(candidate.def_base, target.hp));
                         (
                             candidate.from != unit.pos,
                             danger,
@@ -1042,10 +1171,10 @@ impl AdvancedAi {
                     candidate.shooter == shooter && target_order.contains(&candidate.target)
                 })
                 .map(|candidate| {
-                    expected_damage(
-                        candidate.att,
-                        effective_strength(candidate.def_base, targets[candidate.target].hp),
-                    )
+                    candidate.damage_on(effective_strength(
+                        candidate.def_base,
+                        targets[candidate.target].hp,
+                    ))
                 })
                 .fold(0.0, f64::max)
         };
@@ -1308,6 +1437,8 @@ impl AdvancedAi {
                 || g.city_at(unit.pos).is_some()
                 || g.encampment_at(unit.pos).is_some()
                 || self.guard_is_bound_to_any_settler(uid)
+                // `battle-planner-3`: the siege's taker holds its post.
+                || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
                 continue;
             }
@@ -1503,10 +1634,15 @@ fn assign_min_cost(cost: &[Vec<f64>]) -> Vec<usize> {
 }
 
 impl AdvancedAi {
-    /// Either version of the battle planner. The seam reads this; the
-    /// positions plan itself reads `battle_planner_2`.
+    /// Any version of the battle planner. The seam reads this; the
+    /// positions plan itself reads `positions_plan_on`.
     pub(super) fn battle_planner_on(&self) -> bool {
-        self.battle_planner || self.battle_planner_2
+        self.battle_planner || self.battle_planner_2 || self.battle_planner_3
+    }
+
+    /// Versions two and three lay out the positions plan.
+    fn positions_plan_on(&self) -> bool {
+        self.battle_planner_2 || self.battle_planner_3
     }
 
     /// The slot a role stands in. `None` is a role the plan does not place.
@@ -1593,6 +1729,8 @@ impl AdvancedAi {
                         ForceRole::Recon | ForceRole::AirStrike
                     )
                     && !city_in_reach(*uid)
+                    // `battle-planner-3`: the siege's taker is not placed.
+                    && !(self.battle_planner_3 && self.unit_is_reserved(*uid))
             })
             .collect();
         members.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
@@ -2084,7 +2222,7 @@ impl AdvancedAi {
         field: &mut DangerField,
         armed: &BTreeSet<u32>,
     ) {
-        if !self.battle_planner_2 {
+        if !self.positions_plan_on() {
             return;
         }
         let groups = self.force_groups.clone();
@@ -2300,6 +2438,185 @@ mod tests {
         ai
     }
 
+    fn version_three() -> AdvancedAi {
+        let mut ai = AdvancedAi::new();
+        ai.enable_battle_planner_3();
+        ai
+    }
+
+    /// File the host's reading of one pair on the board.
+    fn host_preview(
+        g: &mut Game,
+        uid: u32,
+        target: Pos,
+        ranged: bool,
+        to_attacker: i32,
+        to_defender: i32,
+    ) {
+        let mut previews = (*g.host_previews).clone();
+        previews.insert(
+            (uid, target, ranged),
+            crate::game::HostStrikePreview {
+                attacker_strength: 0.0,
+                defender_strength: 0.0,
+                damage_to_attacker: to_attacker,
+                damage_to_defender: to_defender,
+                defender_wall_damage: 0,
+            },
+        );
+        g.host_previews = Arc::new(previews);
+    }
+
+    #[test]
+    fn version_three_ships_off_is_registered_and_turns_the_others_off() {
+        let ai = AdvancedAi::new();
+        assert!(!ai.battle_planner_3, "an opt-in ships off");
+        assert!(ai.wanted_previews().is_empty());
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "battle_planner_3"));
+        let mut on = AdvancedAi::new();
+        on.enable_battle_planner();
+        on.enable_battle_planner_2();
+        assert_eq!((on.battle_planner, on.battle_planner_2), (false, true));
+        on.enable_battle_planner_3();
+        assert_eq!(
+            (on.battle_planner, on.battle_planner_2, on.battle_planner_3),
+            (false, false, true),
+            "one version of the family plays: version three turns one and two off"
+        );
+        assert!(on.battle_planner_on() && on.positions_plan_on());
+        on.disable_battle_planner_3();
+        assert!(!on.battle_planner_3 && !on.battle_planner_on());
+        super::super::test_support::opt_in_off_in_both_controllers("battle-planner-3", |ai| {
+            ai.battle_planner_3
+        });
+    }
+
+    /// A unit the siege has reserved as its taker is not spent by the kill
+    /// plan, not rotated, not placed: version two plans it, version three
+    /// leaves it to the siege train.
+    #[test]
+    fn a_reserved_taker_is_not_planned() {
+        let mut g = open_field();
+        let taker = g.spawn_unit("warrior", 0, at(9, 7));
+        let victim = g.spawn_unit("warrior", 1, at(10, 7));
+        wound(&mut g, victim, 25);
+        let mut v2 = version_two();
+        assert!(
+            v2.kill_sequence(&g, 0)
+                .iter()
+                .any(|blow| blow.unit == taker),
+            "version two spends the warrior on the wounded enemy"
+        );
+        v2.reserved_units.insert(taker);
+        assert!(
+            v2.kill_sequence(&g, 0)
+                .iter()
+                .any(|blow| blow.unit == taker),
+            "version two does not read the reservation"
+        );
+        let mut v3 = version_three();
+        v3.reserved_units.insert(taker);
+        assert!(
+            v3.kill_sequence(&g, 0).is_empty(),
+            "the taker is the siege's"
+        );
+        let plan = conquest(&g);
+        v3.force_groups = vec![force(&g, at(10, 7), ForcePosture::Engage)];
+        assert!(!v3.plan_battle(&mut g, 0, &plan));
+        assert!(g.units.contains_key(&victim), "nothing struck");
+        assert_eq!(g.units[&taker].pos, at(9, 7), "not rotated, not placed");
+        assert_eq!(v3.census.battle_plan_positioned, 0);
+        // Released, the same unit is planned again.
+        v3.reserved_units.clear();
+        assert!(!v3.kill_sequence(&g, 0).is_empty());
+    }
+
+    /// The host's reading of a pair replaces the closed form: an archer's
+    /// shot the host prices at 47 plans 47, whatever the centre roll says;
+    /// and the pairs without a reading are what the plan asks the host for.
+    #[test]
+    fn a_host_preview_overrides_the_closed_form() {
+        let mut g = open_field();
+        let archer = g.spawn_unit("archer", 0, at(8, 7));
+        let victim = g.spawn_unit("warrior", 1, at(10, 7));
+        wound(&mut g, victim, 60);
+        let v3 = version_three();
+        let closed: Vec<Blow> = v3.kill_sequence(&g, 0);
+        let shot = closed
+            .iter()
+            .find(|blow| blow.unit == archer && blow.from == at(8, 7))
+            .expect("the archer shoots from its tile");
+        assert!(
+            (shot.expected - 47.0).abs() > 1.0,
+            "the fixture's centre roll is not 47"
+        );
+        // Asked for: the pair, before the host has answered.
+        let mut ai = version_three();
+        let plan = conquest(&g);
+        let mut board = g.clone();
+        ai.plan_battle(&mut board, 0, &plan);
+        assert!(
+            ai.wanted_previews().contains(&(archer, at(10, 7), true)),
+            "{:?}",
+            ai.wanted_previews()
+        );
+        // Answered: the plan carries the host's number.
+        host_preview(&mut g, archer, at(10, 7), true, 0, 47);
+        let priced = v3.kill_sequence(&g, 0);
+        let shot = priced
+            .iter()
+            .find(|blow| blow.unit == archer && blow.from == at(8, 7))
+            .expect("the archer still shoots from its tile");
+        assert_eq!(shot.expected, 47.0);
+        let mut ai = version_three();
+        ai.plan_battle(&mut g.clone(), 0, &plan);
+        assert!(
+            !ai.wanted_previews().contains(&(archer, at(10, 7), true)),
+            "an answered pair is not asked again"
+        );
+        // Version two never reads the host.
+        let v2 = version_two();
+        let shot = v2
+            .kill_sequence(&g, 0)
+            .into_iter()
+            .find(|blow| blow.unit == archer && blow.from == at(8, 7))
+            .expect("version two shoots too");
+        assert!((shot.expected - 47.0).abs() > 1.0);
+    }
+
+    /// A blow the host says kills the attacker is vetoed, however the closed
+    /// form prices it and whatever the kill is worth.
+    #[test]
+    fn a_preview_predicted_death_is_vetoed() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(9, 7));
+        let victim = g.spawn_unit("warrior", 1, at(10, 7));
+        wound(&mut g, victim, 25);
+        let v3 = version_three();
+        assert!(
+            v3.kill_sequence(&g, 0)
+                .iter()
+                .any(|blow| blow.unit == ours && !blow.ranged),
+            "the closed form finishes the wounded warrior"
+        );
+        host_preview(&mut g, ours, at(10, 7), false, 100, 60);
+        assert!(
+            v3.kill_sequence(&g, 0).is_empty(),
+            "the host says the attacker dies: vetoed"
+        );
+        // A survivable host reading plans the blow with the host's damage.
+        host_preview(&mut g, ours, at(10, 7), false, 12, 60);
+        let blows = v3.kill_sequence(&g, 0);
+        let blow = blows
+            .iter()
+            .find(|blow| blow.unit == ours)
+            .expect("the survivable blow is planned");
+        assert_eq!(blow.expected, 60.0);
+        assert!(blow.finishes);
+    }
+
     #[test]
     fn version_two_ships_off_is_registered_and_turns_version_one_off() {
         let ai = AdvancedAi::new();
@@ -2435,7 +2752,7 @@ mod tests {
         fortify(&mut g, enemy);
         let mut ai = version_two();
         let mut field = DangerField::new(&g, 0);
-        let (blows, armed) = ai.kill_sequence_in(&g, 0, &mut field);
+        let (blows, armed, _) = ai.kill_sequence_in(&g, 0, &mut field);
         assert!(armed.contains(&archer), "the archer has a shot to offer");
         assert!(
             !armed.contains(&warrior),

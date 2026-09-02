@@ -2046,6 +2046,18 @@ pub const GENES: &[Gene] = &[
     // objective left the second threatened city with nothing. Priced on the
     // arena first. See `advanced/objective_board.rs`.
     Gene { tag: "objective-board", field: "objective_board", kind: Kind::OptIn, enable: AdvancedAi::enable_objective_board, disable: AdvancedAi::disable_objective_board },
+    // Version three of `battle-planner`: version two plus the siege train's
+    // reserved taker left alone by the kill plan, the heal rotation and the
+    // positions plan (the Take blow is the siege's own), the host's own
+    // strike preview (`Game::host_preview`, a `preview` order answered the
+    // frame before) in place of the closed form for a pair it has priced —
+    // a blow the host says kills the attacker is vetoed outright — and the
+    // top 24 unpriced pairs by closed-form damage published through
+    // `wanted_previews()` for `civvis_orders` to ask. Native boards hold no
+    // previews, so the arena prices the taker rule alone. One version of the
+    // family plays: `enable_battle_planner_3` turns one and two off. See
+    // `advanced/battle_planner.rs`.
+    Gene { tag: "battle-planner-3", field: "battle_planner_3", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner_3, disable: AdvancedAi::disable_battle_planner_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
