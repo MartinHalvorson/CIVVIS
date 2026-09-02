@@ -3247,7 +3247,10 @@ mod tests {
         {
             let mut field = DangerField::new(&g, 0);
             let (shooters, targets, candidates, armed) = ai.strike_candidates(&g, 0, &mut field);
-            assert!(armed.contains(&ours), "the warrior has a blow on the archer");
+            assert!(
+                armed.contains(&ours),
+                "the warrior has a blow on the archer"
+            );
             assert!(
                 candidates.iter().all(|c| c.from == at(11, 4)),
                 "struck from the one stand beside it"
@@ -3256,15 +3259,29 @@ mod tests {
             assert!(doomed.is_empty(), "the archer alone is a blow it survives");
         }
         let sword = g.spawn_unit("swordsman", 1, at(11, 5));
-        assert_eq!(g.wdist(g.units[&sword].pos, at(11, 4)), 1, "the swordsman covers the stand");
-        assert_eq!(g.wdist(g.units[&sword].pos, at(10, 4)), 2, "and not the warrior's own tile");
+        assert_eq!(
+            g.wdist(g.units[&sword].pos, at(11, 4)),
+            1,
+            "the swordsman covers the stand"
+        );
+        assert_eq!(
+            g.wdist(g.units[&sword].pos, at(10, 4)),
+            2,
+            "and not the warrior's own tile"
+        );
         let mut field = DangerField::new(&g, 0);
         let (shooters, targets, candidates, armed) = ai.strike_candidates(&g, 0, &mut field);
         assert!(armed.contains(&ours));
         let stand = field.danger(at(11, 4), ours);
         let home = field.danger(at(10, 4), ours);
-        assert!(stand > 80.0, "the stand is nearly lethal on its own: {stand}");
-        assert!(home < 80.0, "the warrior is not exposed where it stands: {home}");
+        assert!(
+            stand > 80.0,
+            "the stand is nearly lethal on its own: {stand}"
+        );
+        assert!(
+            home < 80.0,
+            "the warrior is not exposed where it stands: {home}"
+        );
         let doomed = doomed_shooters(&shooters, &targets, &candidates, &mut field);
         assert!(doomed.contains(&ours), "no blow it would survive");
         assert!(g.units.contains_key(&archer));
