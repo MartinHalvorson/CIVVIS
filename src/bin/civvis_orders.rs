@@ -8564,9 +8564,7 @@ mod tests {
 
         let deployed_opt_in = civvis::ai::GENES
             .iter()
-            .find(|gene| {
-                gene.opt_in() && civvis::ai::ledger_default_on(gene.tag) == Some(true)
-            })
+            .find(|gene| gene.opt_in() && civvis::ai::ledger_default_on(gene.tag) == Some(true))
             .map(|gene| gene.tag)
             .expect("the deployment genome selects an opt-in alongside the held treatment");
         let mixed = super::forced_live_treatments(&[
