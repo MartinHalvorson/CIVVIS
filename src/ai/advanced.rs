@@ -4463,6 +4463,13 @@ pub struct AdvancedAi {
     /// **Off by default.** Screenable: the native board convenes the same
     /// Congress, banks the same Favor and awards the same points.
     pub diplomatic_lane_forecast: bool,
+    /// Version 2 of [`Self::diplomatic_lane_forecast`]: a Favor balance alone
+    /// is not a diplomatic race.  Project the Congress calendar only after an
+    /// actual Diplomatic Victory Point or a current suzerainty proves the
+    /// empire has a foothold in the lane.
+    ///
+    /// **Off by default.** Screenable.
+    pub diplomatic_lane_forecast_2: bool,
     /// Whether a major we are NOT at war with, whose army is parked inside
     /// reach of one of our cities, counts toward that city's danger.
     ///
@@ -7129,6 +7136,7 @@ impl AdvancedAi {
             conversion_majority_alarm: false,
             culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
+            diplomatic_lane_forecast_2: false,
             frontier_massing_alarm: false,
             envoy_priority: false,
             coordinated_finish: false,
@@ -9178,7 +9186,26 @@ impl AdvancedAi {
     /// points, and 0 says it does not arrive. A seat already at twenty reads
     /// 100 without any of the arithmetic.
     fn diplomatic_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
-        if !self.diplomatic_lane_forecast || !g.victory_conditions.diplomatic {
+        if !(self.diplomatic_lane_forecast || self.diplomatic_lane_forecast_2)
+            || !g.victory_conditions.diplomatic
+        {
+            return 0;
+        }
+        // Version 1 treated Favor as enough evidence to commit the whole plan
+        // to Diplomacy.  But Favor is a spendable snapshot, not a point on the
+        // victory track or a source that keeps paying it.  V2 waits until an
+        // earned Congress point or a living city-state we actually lead makes
+        // the long calendar projection an observed foothold rather than a
+        // speculative opening.
+        if self.diplomatic_lane_forecast_2
+            && g.players[pid].dvp <= 0
+            && !g.players.iter().any(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && g.suzerain_of(minor.id) == Some(pid)
+            })
+        {
             return 0;
         }
         let needed = crate::game::DIPLOMATIC_VICTORY_POINTS - g.players[pid].dvp;

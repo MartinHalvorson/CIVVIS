@@ -36446,6 +36446,92 @@ fn diplomatic_lane_forecast_still_has_to_be_earned() {
     );
 }
 
+/// V2 keeps the calendar arithmetic, but a bank of Favor by itself is no
+/// longer permission to switch the whole plan to Diplomacy.  A point actually
+/// earned from Congress or a city-state already under our suzerainty is the
+/// concrete foothold that turns the projection back on.
+#[test]
+fn diplomatic_lane_forecast_two_waits_for_a_concrete_foothold() {
+    let mut v1 = AdvancedAi::new();
+    v1.enable_diplomatic_lane_forecast();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_diplomatic_lane_forecast_2();
+    let shipped = AdvancedAi::new();
+    let mut game = Game::new(6, 40, 26, 5_104, 250, 9);
+    game.turn = 60;
+    game.players[0].diplomatic_favor = 2_000.0;
+
+    let speculative = v1.lane_progress_table(&game, 0)[3];
+    assert!(speculative > 0, "v1 sees the large Favor balance");
+    assert_eq!(
+        v2.lane_progress_table(&game, 0)[3],
+        shipped.lane_progress_table(&game, 0)[3],
+        "v2 does not treat Favor alone as a diplomatic opening"
+    );
+
+    game.players[0].dvp = 1;
+    assert_eq!(
+        v2.lane_progress_table(&game, 0)[3],
+        v1.lane_progress_table(&game, 0)[3],
+        "an earned point restores the same Congress projection"
+    );
+
+    let mut suzerain = game.clone();
+    suzerain.players[0].dvp = 0;
+    let minor = suzerain
+        .players
+        .iter()
+        .find(|player| player.alive && player.is_minor && !player.is_barbarian)
+        .expect("fixture has a living city-state")
+        .id;
+    suzerain.players[0].envoys = vec![(minor, 3)];
+    assert_eq!(suzerain.suzerain_of(minor), Some(0));
+    assert_eq!(
+        v2.lane_progress_table(&suzerain, 0)[3],
+        v1.lane_progress_table(&suzerain, 0)[3],
+        "a current suzerainty is a durable Favor source and also restores v2"
+    );
+}
+
+/// `diplomatic-lane-forecast-2` is a distinct screenable version.  Switching
+/// versions is exclusive, so no screen arm can accidentally combine v1's
+/// speculative opening with v2's foothold gate.
+#[test]
+fn diplomatic_lane_forecast_two_is_opt_in_and_turns_version_one_off() {
+    let v2 = GENES
+        .iter()
+        .find(|gene| gene.tag == "diplomatic-lane-forecast-2")
+        .expect("version 2 is published");
+    assert!(v2.opt_in() && v2.screenable() && !v2.live());
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_diplomatic_lane_forecast();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (true, false),
+        "v1 begins as the sole active version"
+    );
+    ai.enable_diplomatic_lane_forecast_2();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (false, true),
+        "v2 turns the speculative version off"
+    );
+    ai.enable_diplomatic_lane_forecast();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (true, false),
+        "v1 can likewise replace v2"
+    );
+    ai.enable_diplomatic_lane_forecast_2();
+    ai.disable_diplomatic_lane_forecast_2();
+    assert_eq!(
+        (ai.diplomatic_lane_forecast, ai.diplomatic_lane_forecast_2),
+        (false, false),
+        "v2 remains independently reversible"
+    );
+}
+
 // ═══ Surprise-war mobilization: violent opening, structural off-ramp ═══
 
 fn install_surprise_war(game: &mut Game, attacker: usize, defender: usize, started: u32) {

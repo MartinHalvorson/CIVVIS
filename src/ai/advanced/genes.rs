@@ -1912,6 +1912,9 @@ pub const GENES: &[Gene] = &[
     // V2 waits for a Eureka only when its final trigger is already queued and
     // the node is within two turns. The broad v1 remains measurable.
     Gene { tag: "boost-wait-research-2", field: "boost_wait_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research_2, disable: AdvancedAi::disable_boost_wait_research_2 },
+    // Version 2 of `diplomatic-lane-forecast`: Favor alone is not a race;
+    // wait for an earned DVP or current suzerainty before projecting Congress.
+    Gene { tag: "diplomatic-lane-forecast-2", field: "diplomatic_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_lane_forecast_2, disable: AdvancedAi::disable_diplomatic_lane_forecast_2 },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
