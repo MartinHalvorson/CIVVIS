@@ -6859,10 +6859,18 @@ local function exportState(player, pid, turn, frame)
 				class = classType,
 				empty_slots = emptySlots,
 				-- The timeline moves on as soon as this person is recruited, so the
-				-- current offer cannot tell the planner what district this physical
-				-- unit still needs. Carry the exact per-individual database gate.
+				-- current offer cannot tell the planner which exact city conditions
+				-- this physical unit still needs. Carry all three per-individual
+				-- database gates: completed district, missing building, and Great Work
+				-- object. `ActionRequiresMissingBuildingType` is intentionally kept
+				-- separate from a normal prerequisite because James of St. George
+				-- supplies the missing Medieval Walls himself.
 				required_district = individualRow ~= nil
 					and individualRow.ActionRequiresCompletedDistrictType or nil,
+				required_missing_building = individualRow ~= nil
+					and individualRow.ActionRequiresMissingBuildingType or nil,
+				required_great_work = individualRow ~= nil
+					and individualRow.ActionRequiresCityGreatWorkObjectType or nil,
 				charges = try(function() return gp:GetActionCharges(); end, 0),
 				can_activate = try(function()
 					return UnitManager.CanStartCommand(
@@ -8950,6 +8958,8 @@ local function exportState(player, pid, turn, frame)
 							out[class] = {
 								individual = info.GreatPersonIndividualType,
 								required_district = info.ActionRequiresCompletedDistrictType,
+								required_missing_building = info.ActionRequiresMissingBuildingType,
+								required_great_work = info.ActionRequiresCityGreatWorkObjectType,
 							};
 							any = true;
 						end

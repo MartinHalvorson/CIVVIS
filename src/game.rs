@@ -4341,6 +4341,16 @@ pub struct LiveGreatPersonActivationNeed {
     /// prerequisite. `None` means Firaxis named no completed-district gate.
     #[serde(default)]
     pub required_district: Option<String>,
+    /// CIVVIS building-family spelling for Firaxis's
+    /// `ActionRequiresMissingBuildingType` gate. This is a negative
+    /// prerequisite: the building must be absent because the activation may
+    /// supply it (James of St. George is the stock example).
+    #[serde(default)]
+    pub required_missing_building: Option<String>,
+    /// CIVVIS Great Work object kind for Firaxis's
+    /// `ActionRequiresCityGreatWorkObjectType` gate, such as `artifact`.
+    #[serde(default)]
+    pub required_great_work: Option<String>,
 }
 
 /// Aggregate public standings reported by an authoritative host for one
