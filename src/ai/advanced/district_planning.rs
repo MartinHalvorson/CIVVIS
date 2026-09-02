@@ -339,9 +339,19 @@ impl AdvancedAi {
             .cities
             .entry(city)
             .or_insert_with(|| self.city_district_plan(g, pid, plan, city));
-        let row = planned
+        let row_index = planned
             .iter()
-            .find(|row| row.pos == pos && row.purchase.is_some())?;
+            .position(|row| row.pos == pos && row.purchase.is_some())?;
+        // Version 3 only funds the first district the coordinated plan would
+        // ask an idle city to start now. V2 could buy a lower-priority site
+        // while the city was committed elsewhere, then also spend through the
+        // reserve on its independent high-Science asset path. A purchased
+        // plot is useful only once its district can enter the next production
+        // decision, and this preserves the full ordinary reserve until then.
+        if self.district_planning_3 && (row_index != 0 || !g.cities[&city].queue.is_empty()) {
+            return None;
+        }
+        let row = &planned[row_index];
         let variant = row.district;
         let (min_adjacency, min_edge) = if self.district_planning_2 {
             (PLAN_BUY_MIN_ADJACENCY_2, PLAN_BUY_MIN_EDGE_2)
