@@ -4175,7 +4175,10 @@ fn reconcile_incoming_route_deltas(game: &mut crate::game::Game, cities: &[State
 
 /// The engine id and target vocabulary of one host World Congress resolution,
 /// or `None` when the model has no such resolution (Arms Control, Sovereignty,
-/// the Diplomatic Victory resolution) or the target does not translate.
+/// the Diplomatic Victory resolution) or the target does not translate. The
+/// Diplomatic Victory row is intentionally filtered from the unmapped report
+/// by [`is_known_congress_noop`], because its standing is imported separately
+/// through `congress_dvp`.
 ///
 /// Targets follow the engine's own `congress_resolution` rosters: a player is
 /// its SEAT as a decimal string, a resource/district/building/feature/project
@@ -4201,6 +4204,15 @@ fn civvis_congress_effect(
         .strip_suffix("_NAME")
         .or_else(|| localized_target.strip_suffix("_DESCRIPTION"))
         .unwrap_or(localized_target);
+    // `ChosenThing` is not always the engine row name. The Heritage
+    // Organization popup has emitted both `GREATWORKOBJECT_WRITING` and the
+    // localized-key spelling `LOC_GREAT_WORK_OBJECT_WRITING_NAME`; normalize
+    // the latter before the class-like target match below.
+    let normalized_target = target
+        .strip_prefix("GREAT_WORK_OBJECT_")
+        .map(|rest| format!("GREATWORKOBJECT_{rest}"))
+        .unwrap_or_else(|| target.to_string());
+    let target = normalized_target.as_str();
     let seat = || {
         target
             .parse::<usize>()
@@ -4282,6 +4294,17 @@ fn civvis_congress_effect(
     })
 }
 
+/// A host resolution whose effect is already represented by another
+/// authoritative export and therefore has no `CongressEffect` on the model.
+///
+/// Diplomatic Victory changes the standings reported in `congress_dvp`; it
+/// does not change a yield, policy, or unlock on the mirrored board. Keeping
+/// it out of `unmapped` prevents a known, correctly handled resolution from
+/// masking actual bridge gaps while leaving unknown resolution kinds visible.
+fn is_known_congress_noop(resolution: &StateResolution) -> bool {
+    resolution.kind == "WC_RES_DIPLOVICTORY"
+}
+
 /// Extend the ordinary host-player map with the anonymous major seats that a
 /// Congress table exposes even when the seat has not met those players.
 ///
@@ -4350,6 +4373,7 @@ fn apply_host_congress(
     for resolution in resolutions {
         match civvis_congress_effect(&game.rules, resolution, &congress_seat_of_host, expires) {
             Some(effect) => game.active_congress_effects.push(effect),
+            None if is_known_congress_noop(resolution) => {}
             None => {
                 let issue = format!(
                     "congress:{}:{}:{}",
