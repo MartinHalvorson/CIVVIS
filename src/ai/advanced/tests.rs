@@ -994,6 +994,94 @@ fn a_housing_bound_city_reserves_its_granary() {
     assert!(!ai.first_granary_reserve);
 }
 
+/// V2 reserves one Builder only for a concrete first-copy luxury debt, after
+/// expansion is covered, and keeps a receipt after paying it once.
+#[test]
+fn first_builder_reserve_2_is_a_one_shot_after_expansion() {
+    let (mut game, capital, home) = empire_with_a_capital(71_155);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    game.turn = 30;
+    game.players[0]
+        .techs
+        .extend([crate::name!("mining"), crate::name!("irrigation")]);
+    let work = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != home)
+        .expect("the capital owns a workable plot");
+    {
+        let tile = game.map.tiles.get_mut(&work).expect("work plot");
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = true;
+        tile.resource = Some(crate::name!("silk"));
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    game.cities.get_mut(&capital).unwrap().pop = 6;
+    assert!(
+        game.valid_improvements(0, work)
+            .contains(&crate::name!("plantation")),
+        "Silk is immediately connectable"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_first_builder_reserve_2();
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    let cities = game.player_city_ids(0);
+    let counts = ai.counts(&game, 0);
+    assert_eq!(counts.builders, 0);
+    assert!(
+        ai.empire_amenity_deficit(&game, 0) > 0.0,
+        "the first luxury has an immediate empire payoff"
+    );
+    assert_eq!(
+        ai.first_builder_reserve_2_city(&game, 0, &plan, &counts, &cities),
+        None,
+        "the Builder cannot consume the queue that owes the next Settler"
+    );
+
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let counts = ai.counts(&game, 0);
+    let target = ai
+        .first_builder_reserve_2_city(&game, 0, &plan, &counts, &cities)
+        .expect("a Settler in flight exposes the first-copy luxury debt");
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&target].queue.first(), Some(&builder));
+    assert!(
+        ai.first_builder_reserve_2_paid,
+        "paying the luxury debt records the one-shot receipt"
+    );
+    game.remove_unit(settler);
+    game.cities.get_mut(&target).unwrap().queue.clear();
+    let counts = ai.counts(&game, 0);
+    assert_eq!(
+        ai.first_builder_reserve_2_city(&game, 0, &plan, &counts, &cities),
+        None,
+        "spending or losing that Builder must not reserve replacements"
+    );
+
+    ai.enable_first_builder_reserve();
+    assert!(ai.first_builder_reserve && !ai.first_builder_reserve_2);
+    ai.enable_first_builder_reserve_2();
+    assert!(!ai.first_builder_reserve && ai.first_builder_reserve_2);
+    assert!(!AdvancedAi::legacy().first_builder_reserve_2);
+    let gene = crate::ai::gene("first-builder-reserve-2").expect("registered v2");
+    assert!(gene.opt_in() && gene.screenable());
+}
+
 /// `connect-the-luxury`: an owned, unimproved Plantation luxury with
 /// Irrigation unknown names Irrigation; once Irrigation is in, nothing; and
 /// the research step takes it ahead of the lane's beeline. Off, nothing.

@@ -5105,6 +5105,15 @@ pub struct AdvancedAi {
     /// Opt-in gene `first-builder-reserve`.
     first_builder_reserve: bool,
 
+    /// Version two reserves one Builder only for an owned, immediately
+    /// connectable first-copy luxury while the empire is Amenity-short and
+    /// expansion is already covered. Opt-in gene `first-builder-reserve-2`.
+    first_builder_reserve_2: bool,
+    /// Runtime receipt for version two's one-opening decision. V1 accidentally
+    /// interpreted "first" as "whenever the empire currently has zero" and
+    /// repeatedly pre-empted queues after Builders spent their last charge.
+    first_builder_reserve_2_paid: bool,
+
     /// Reserve the first Campus building a city owes ahead of ordinary
     /// production, on the same measured pattern as `first_builder_reserve`.
     ///
@@ -7212,6 +7221,8 @@ impl AdvancedAi {
             escort_patience_runs_out: false,
             encampment_seals_the_pass: false,
             first_builder_reserve: false,
+            first_builder_reserve_2: false,
+            first_builder_reserve_2_paid: false,
             first_research_building_reserve: false,
             expansion_schedule: false,
             flip_nearby_city_states: false,
@@ -18621,6 +18632,78 @@ impl AdvancedAi {
         counts
     }
 
+    /// The fastest safe queue that can turn an owned first-copy luxury into
+    /// Amenities, once the expansion pipeline is covered.
+    ///
+    /// This is the concrete payoff v1 never asked for. "Some Builder work"
+    /// included ordinary farms and late repairs and v1 forced replacements
+    /// forever. V2 requires an unlocked Builder improvement that actually
+    /// connects a luxury the empire cannot already access, a current Amenity
+    /// deficit, and either a Settler in flight or the planned city count.
+    fn first_builder_reserve_2_city(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+        city_ids: &[u32],
+    ) -> Option<u32> {
+        let expansion_covered = counts.settlers > 0 || city_ids.len() >= plan.desired_cities.max(2);
+        if !self.first_builder_reserve_2
+            || self.first_builder_reserve_2_paid
+            || counts.builders > 0
+            || !expansion_covered
+            || self.empire_amenity_deficit(g, pid) <= 0.0
+        {
+            return None;
+        }
+        let has_luxury_debt = city_ids.iter().any(|cid| {
+            g.cities[cid].owned_tiles.iter().any(|pos| {
+                let Some(tile) = g.map.get(*pos) else {
+                    return false;
+                };
+                let Some(resource) = tile.resource.filter(|resource| {
+                    tile.improvement.is_none()
+                        && g.rules.resources[resource].class == "luxury"
+                        && g.resource_access_count(pid, resource.as_str()) == 0
+                }) else {
+                    return false;
+                };
+                g.valid_improvements(pid, *pos).iter().any(|improvement| {
+                    let spec = &g.rules.improvements[improvement];
+                    spec.builder_buildable && spec.resources.contains(&resource)
+                })
+            })
+        });
+        if !has_luxury_debt {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        city_ids
+            .iter()
+            .copied()
+            .filter(|cid| {
+                let city = &g.cities[cid];
+                let recently_hit =
+                    city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4;
+                city.queue.is_empty()
+                    && plan.threatened_city != Some(*cid)
+                    && !recently_hit
+                    && g.can_produce(pid, *cid, &builder)
+            })
+            .min_by(|left, right| {
+                let left_turns = g.item_remaining_cost_for_city(pid, *left, &builder)
+                    / g.city_yields(*left).production.max(1.0);
+                let right_turns = g.item_remaining_cost_for_city(pid, *right, &builder)
+                    / g.city_yields(*right).production.max(1.0);
+                left_turns
+                    .total_cmp(&right_turns)
+                    .then_with(|| left.cmp(right))
+            })
+    }
+
     /// Record one empty production turn without counting repeated bridge
     /// observations of the same host turn.  A gap or a rewind breaks the
     /// streak: a city that built something in between must not inherit an old
@@ -22801,6 +22884,12 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        if self.first_builder_reserve_2 && counts.builders > 0 {
+            self.first_builder_reserve_2_paid = true;
+        }
+        let first_builder_reserve_2_city = (!economic_recovery)
+            .then(|| self.first_builder_reserve_2_city(g, pid, plan, &counts, &city_ids))
+            .flatten();
         // The baseline `amenity_districts` policy is otherwise unreachable
         // from this targeted/science governor. Claim at most one legal,
         // unthreatened repair before the generic scorer fills the queues.
@@ -22968,7 +23057,10 @@ impl AdvancedAi {
             // more of it. A Builder is priced at 260 and a Library
             // at about 960 against a Settler's 1,560 by the same argmax, for
             // the same reason.
-            if committed.is_none() && self.first_builder_reserve && counts.builders == 0 {
+            let reserve_first_builder = committed.is_none()
+                && counts.builders == 0
+                && (self.first_builder_reserve || first_builder_reserve_2_city == Some(cid));
+            if reserve_first_builder {
                 let builder = Item::Unit {
                     unit: crate::name!("builder"),
                 };
@@ -22984,6 +23076,9 @@ impl AdvancedAi {
                     .is_ok()
                 {
                     counts.add_item(g, &builder);
+                    if self.first_builder_reserve_2 {
+                        self.first_builder_reserve_2_paid = true;
+                    }
                     self.clear_idle_production_streak(cid);
                     continue;
                 }
