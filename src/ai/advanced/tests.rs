@@ -719,6 +719,84 @@ fn major_war_threat_preempts_an_undamaged_settler_queue() {
 }
 
 #[test]
+fn armed_siege_preempts_an_imminent_major_war_queue_with_a_defender() {
+    // A named city can be full-health and still be one legal attack away from
+    // falling. The live arm already carries `siege-preempts-the-queue`; that
+    // gate must reach the existing major-war handoff before damage is exported.
+    let (mut game, city, _) = empire_with_a_capital(71_146);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.turn = 90;
+    game.at_war.insert((0, 1));
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&city).expect("capital exists").pop = 2;
+
+    let city_pos = game.cities[&city].pos;
+    let attack_tile =
+        game.nbrs(city_pos)
+            .into_iter()
+            .find(|position| {
+                *position != city_pos
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the city needs an accessible attack tile");
+    let horseman = game.spawn_test_unit("horseman", 1, attack_tile);
+    assert!(game.player_can_see(0, attack_tile));
+    assert!(game.attack_reach(horseman).contains(&city_pos));
+
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    assert!(game.can_produce(0, city, &settler));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: settler.clone(),
+        },
+    )
+    .expect("queue the unsafe expansion commitment");
+
+    let mut pipeline = game.clone();
+    let mut pipeline_ai = AdvancedAi::new();
+    pipeline_ai.enable_siege_preempts_the_queue();
+    pipeline_ai.take_turn(&mut pipeline, 0);
+    assert!(
+        matches!(pipeline.cities[&city].queue.first(), Some(Item::Unit { unit }) if pipeline.rules.units[unit].is_melee_capable()),
+        "the full turn pipeline must defend before diplomacy can clear the war: {:?}",
+        pipeline.cities[&city].queue.first()
+    );
+
+    let mut unobserved = AdvancedAi::new();
+    unobserved.enable_siege_preempts_the_queue();
+    unobserved.battlefront_observation = false;
+    unobserved.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&settler),
+        "the armed treatment must not bypass the live battlefront gate"
+    );
+
+    let mut live = AdvancedAi::new();
+    live.enable_siege_preempts_the_queue();
+    live.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+    let Some(Item::Unit { unit }) = game.cities[&city].queue.first().cloned() else {
+        panic!("an imminent major-war city must reclaim its queue for a defender");
+    };
+    assert_ne!(unit, crate::name!("settler"));
+    assert!(
+        game.rules.units[&unit].is_melee_capable(),
+        "the imminent defense must be locally holdable, not {unit}"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy
@@ -11052,6 +11130,89 @@ fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
 }
 
 #[test]
+fn enter_the_prophet_race_2_waits_for_a_feasible_commitment() {
+    let mut game = Game::new_full(4, 34, 20, 76_108, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    for tech in ["animal_husbandry", "mining"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+
+    assert!(!v2.enter_the_prophet_race);
+    assert!(
+        !v2.enter_the_prophet_race_2,
+        "the new family member is opt-in"
+    );
+    v2.enable_enter_the_prophet_race();
+    assert!(v2.enter_the_prophet_race);
+    assert!(!v2.enter_the_prophet_race_2);
+    v2.enable_enter_the_prophet_race_2();
+    assert!(!v2.enter_the_prophet_race);
+    assert!(v2.enter_the_prophet_race_2);
+    v2.enable_enter_the_prophet_race();
+    assert!(v2.enter_the_prophet_race);
+    assert!(
+        !v2.enter_the_prophet_race_2,
+        "the last enabled version wins"
+    );
+    v2.enable_enter_the_prophet_race_2();
+
+    assert!(v2.prophet_race_open_for(&game, 0));
+    assert!(
+        !v2.religious_opening_viable(&game, 0),
+        "one city cannot pay a secondary lane's district commitment"
+    );
+    assert!(!v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    v2.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("astrology"),
+        "v2 must not charge the research fee before the production path exists"
+    );
+
+    let capital = game.player_city_ids(0)[0];
+    let anchor = game.cities[&capital].pos;
+    found_nearby_test_city(&mut game, 0, anchor);
+    game.players[0].research = None;
+    assert!(
+        v2.religious_opening_viable(&game, 0),
+        "two cities and a placeable Holy Site make this seat a real contender"
+    );
+    assert!(v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    v2.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("astrology"));
+
+    v2.take_turn_inner(&mut game, 0);
+    assert!(v2.base.enter_prophet_race);
+    assert!(v2.base.pursue_religion);
+
+    game.players[0].religion = Some("Feasible Faith".to_string());
+    v2.take_turn_inner(&mut game, 0);
+    assert!(
+        !v2.base.enter_prophet_race,
+        "a founder no longer pays an entry fee"
+    );
+    assert!(
+        v2.base.pursue_religion,
+        "the admitted package still uses the religion it won"
+    );
+}
+
+#[test]
 fn skip_the_prophet_race_2_leaves_only_a_last_call_race() {
     let mut game = Game::new_full(6, 74, 46, 76_107, 250, 0, false);
     let mut cities = Vec::new();
@@ -15878,6 +16039,11 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     live.disable_settler_never_idles();
+    // This arm is about the deployed rate forecast. The separately selected
+    // exhaustion guard is covered by its own fixture and would reject this
+    // site before that forecast gets to speak.
+    live.disable_exhaustion_loyalty_guard();
+    assert!(!live.exhaustion_loyalty_guard);
     // The deployed rate forecast remains independently covered after the
     // withheld frontier-floor control above.
     live.frontier_loyalty = false;
@@ -23978,18 +24144,24 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
     assert!(live.settlement_safety);
+    // The deployment ledger may select either native hysteresis version. This
+    // fixture instead proves that the live capture bridge supplies its own
+    // bounded recovery when both screened variants are withheld.
+    live.disable_settler_target_hysteresis();
+    live.disable_settler_target_hysteresis_2();
+    assert!(!live.settler_target_hysteresis);
+    assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_routing_recovery_on());
     assert!(
-        !live.settler_target_hysteresis_2,
-        "the average-based deployment selection keeps the hysteresis arm off"
+        !live.settler_target_hysteresis_on(),
+        "route recovery does not implicitly restore a withheld hysteresis arm"
     );
-    live.disable_settler_target_hysteresis_2();
-    assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_threat_detour_on());
 
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge();
     withheld.disable_live_settler_capture_lessons();
+    withheld.disable_settler_target_hysteresis();
     withheld.disable_settler_target_hysteresis_2();
     withheld.disable_settler_threat_detour();
     assert!(!withheld.settler_routing_recovery_on());
@@ -39126,9 +39298,10 @@ fn builder_tries_the_next_tile_follows_the_ledger() {
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
-    assert!(
-        !deployment.base.builder_tries_the_next_tile,
-        "not selected by the current three-batch deployment policy"
+    assert_eq!(
+        Some(deployment.base.builder_tries_the_next_tile),
+        crate::ai::advanced::gene_ledger::ledger_default_on("builder-tries-the-next-tile"),
+        "the deployment controller must follow the ledger"
     );
 }
 
@@ -42934,6 +43107,9 @@ fn the_science_lane_widens_while_a_city_can_still_mature() {
 
     let mut off = AdvancedAi::new();
     off.enable_live_bridge();
+    // Deployment defaults may select this independent arm; withhold it so
+    // this half continues to test the Science expansion phase itself.
+    off.disable_science_expansion_phase();
     off.victory_target = Some(VictoryTarget::Science);
     assert_eq!(
         off.assess(&game, 0).desired_cities,

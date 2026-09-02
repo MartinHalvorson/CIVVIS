@@ -1163,12 +1163,13 @@ fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     // This test isolates the live-only race's era and queue limits. The
-    // separately scored tally lane intentionally does not share them, so it
-    // is held off here whatever the deployment selection says about it —
-    // the operator pinned it on (2026-08-27) and then off (2026-08-28), and
-    // neither reading is this test's subject.
+    // separately scored tally lane and bargain variant intentionally do not
+    // share them, so they are held off here whatever the deployment selection
+    // says about them. In particular, `cheapest-wonder-first` adds its own
+    // 25-turn ordinary-race cap; neither treatment is this test's subject.
     live.disable_wonder_score_tally();
-    assert!(!live.wonder_score_tally);
+    live.disable_cheapest_wonder_first();
+    assert!(!live.wonder_score_tally && !live.cheapest_wonder_first);
     let raced = live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
     assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
 

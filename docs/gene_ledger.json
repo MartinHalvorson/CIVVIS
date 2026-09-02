@@ -20,11 +20,13 @@
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
     "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one source, (win_on - 1/players) * 10000; last, prior and third are the three most recent sources that priced the gene, newest first, so a new source shifts last to prior and prior to third; they are published evidence - the default reads batch_columns, not these",
     "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its on-arm seats - the ranking's `Diff`, the whole on-off difference",
-    "default_on": "operator-retained-selection: each selected gene averages at least +5 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off; exactly the tags in deployment_genome are on, with operator_default_on added and operator_default_off removed from the retained selection; a reporting-only batch refresh retains that selected set while its batch columns remain published evidence",
+    "default_on": "operator-retained-selection: each selected gene has a completed-total-seat-weighted average strictly above +3 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off; exactly the tags in deployment_genome are on, and a reporting-only batch refresh retains that selected set while its batch columns remain published evidence",
     "batch_rule": "read over the reporting batches that priced the gene, newest first, at most batch_rule_window of them, each reading the ranking's wins +- per 10,000 total seats: (1) three batches all below batch_rule_remove_below -> remove the gene from the pool; (2) two or three batches negative -> off; (3) three batches all positive -> on; (4) three batches, exactly two positive, mean > batch_rule_average -> on; (5) one or two batches, exactly one positive, mean > batch_rule_average -> on; (6) two batches both positive -> on; (7) otherwise off - no batch, or a zero, is neither positive nor negative",
     "batch_rule_window": 3,
     "batch_rule_average": 7,
     "batch_rule_remove_below": -10,
+    "retained_selection_min_average": 3,
+    "retained_selection_weighting": "completed total player seats",
     "batch_columns": {
       "age-closer": [
         -6,
@@ -1314,79 +1316,93 @@
       "wonder-score-tally": "off"
     },
     "removals_due": [],
-    "operator_default_on": [
-      "enter-the-prophet-race"
-    ],
+    "operator_default_on": [],
     "operator_default_off": [],
-    "operator_pins": "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained deployment_genome and the held ones are out of it, while batch_decisions records what the batch rule would say as evidence; its current manual defaults are on: enter-the-prophet-race; off: none",
+    "operator_pins": "the genes the operator named by hand (genes.py OPERATOR_DEFAULT_ON and OPERATOR_DEFAULT_OFF, 2026-08-26); the pinned ones are in the retained deployment_genome and the held ones are out of it, while batch_decisions records what the batch rule would say as evidence; the current selection has no manual pins or holds",
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
     "deployment_policy": "operator-retained-selection",
     "deployment_genome": [
       "air-surge",
       "amenity-district-path",
+      "amenity-project-preemption-2",
       "apostle-promotion-by-role",
-      "army-target-weighs-enemy",
       "barbarian-bargain",
       "barbarian-settler-capture",
+      "blind-objective-strength",
+      "boost-unlock-research",
+      "build-what-cards-boost",
+      "builder-tries-the-next-tile",
       "campaign-pillage",
       "canal-city",
       "capital-settler-after-completion",
-      "capture-go-or-stand-down-2",
+      "chain-payback-window-2",
+      "cheapest-wonder-first",
+      "chokepoint-claim",
       "chokepoint-siting",
+      "close-as-a-body",
       "commitment-patience",
       "connect-the-luxury",
       "contested-land-first",
       "culture-building-debt",
-      "culture-lane-forecast",
       "defensible-sites",
       "district-coverage-2",
       "district-planning",
       "domination-city-count",
+      "early-archers",
       "elective-war-in-reach",
       "elective-war-yields-to-a-lane",
       "enemy-of-my-enemy",
       "engine-faith-price",
-      "enter-the-prophet-race",
-      "escort-cap-holds",
+      "escort-unstick",
       "exchange-is-the-engines",
+      "exhaustion-loyalty-guard",
       "expansion-pays-back",
       "fire-plan",
+      "first-granary-reserve",
       "first-luxury-first",
+      "flip-nearby-city-states",
       "frontier-massing-alarm",
-      "gold-for-the-young-city",
       "government-ladder-2",
       "great-person-housing",
       "holy-lane-parity",
       "holy-site-where-the-threat-is-2",
       "idle-faith-patronage",
-      "island-exploration",
       "lane-release-when-hopeless",
+      "lane-space-race",
       "loyalty-rate-alarm",
       "missionary-last-charge-explores",
-      "naval-recon",
+      "never-an-empty-queue",
       "one-war-at-a-time",
       "opportunistic-war",
+      "overseas-settlement",
       "pantheon-board",
       "pass-picket",
+      "peacetime-deterrence",
+      "power-the-laboratory-2",
       "price-the-suzerainty",
+      "promote-when-wounded",
       "quest-boost",
       "quest-trade-route",
-      "recon-replacement",
       "recorded-tactical-step",
       "recovery-reads-the-war",
-      "religion-race-is-closed",
+      "relief-column-marches",
       "science-building-first",
       "science-chain-alarm",
-      "science-opening-band",
+      "science-expansion-phase",
+      "science-multiplier-payoff",
       "science-victory-drive-2",
       "settle-sooner",
+      "settlement-gap-target",
       "settler-guard-holds-2",
       "settler-second-look",
+      "settler-target-hysteresis",
       "settler-threat-detour",
       "slot-kind-tiebreak",
       "solvency-first-trade-slot",
       "spaceport-surplus-veto",
+      "strike-opening",
       "treasury-at-work-2",
+      "unit-cost-efficiency",
       "unit-objective-memory",
       "war-economy",
       "wide-map-capacity",
@@ -1406,9 +1422,11 @@
         }
       },
       "amenity-project-preemption": {
-        "rule_on": [],
+        "rule_on": [
+          "amenity-project-preemption-2"
+        ],
         "head": "amenity-project-preemption",
-        "ships": null,
+        "ships": "amenity-project-preemption-2",
         "versions": {
           "amenity-project-preemption": -0.037946,
           "amenity-project-preemption-2": null
@@ -1452,20 +1470,20 @@
         }
       },
       "capture-go-or-stand-down": {
-        "rule_on": [
-          "capture-go-or-stand-down-2"
-        ],
+        "rule_on": [],
         "head": null,
-        "ships": "capture-go-or-stand-down-2",
+        "ships": null,
         "versions": {
           "capture-go-or-stand-down": null,
           "capture-go-or-stand-down-2": null
         }
       },
       "chain-payback-window": {
-        "rule_on": [],
+        "rule_on": [
+          "chain-payback-window-2"
+        ],
         "head": null,
-        "ships": null,
+        "ships": "chain-payback-window-2",
         "versions": {
           "chain-payback-window": null,
           "chain-payback-window-2": null
@@ -1529,6 +1547,24 @@
           "early-project-restraint-2": null
         }
       },
+      "enter-the-prophet-race": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "enter-the-prophet-race": null,
+          "enter-the-prophet-race-2": null
+        }
+      },
+      "eureka-chasing-builder": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "eureka-chasing-builder": null,
+          "eureka-chasing-builder-2": null
+        }
+      },
       "first-builder-reserve": {
         "rule_on": [],
         "head": null,
@@ -1561,11 +1597,9 @@
         }
       },
       "naval-recon": {
-        "rule_on": [
-          "naval-recon"
-        ],
+        "rule_on": [],
         "head": "naval-recon",
-        "ships": "naval-recon",
+        "ships": null,
         "versions": {
           "naval-recon": -0.045836,
           "naval-recon-2": null,
@@ -1573,9 +1607,11 @@
         }
       },
       "never-an-empty-queue": {
-        "rule_on": [],
+        "rule_on": [
+          "never-an-empty-queue"
+        ],
         "head": null,
-        "ships": null,
+        "ships": "never-an-empty-queue",
         "versions": {
           "never-an-empty-queue": null,
           "never-an-empty-queue-2": null,
@@ -1592,9 +1628,11 @@
         }
       },
       "power-the-laboratory": {
-        "rule_on": [],
+        "rule_on": [
+          "power-the-laboratory-2"
+        ],
         "head": "power-the-laboratory",
-        "ships": null,
+        "ships": "power-the-laboratory-2",
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
@@ -1632,9 +1670,11 @@
         }
       },
       "settler-target-hysteresis": {
-        "rule_on": [],
+        "rule_on": [
+          "settler-target-hysteresis"
+        ],
         "head": "settler-target-hysteresis",
-        "ships": null,
+        "ships": "settler-target-hysteresis",
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
@@ -1676,7 +1716,7 @@
       "standard",
       "legacy"
     ],
-    "deployment_policy_meaning": "a reporting-only table refresh retains the preceding deployment_genome; each selected gene averages at least +5 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off. The new batch columns are evidence and cannot change a default"
+    "deployment_policy_meaning": "a reporting-only table refresh retains the preceding deployment_genome; each selected gene has a completed-total-seat-weighted average strictly above +3 wins per 10,000 total seats over its available readings from the latest three reporting batches; when multiple versions of one gene qualify, only the version with the higher such average ships; every other screenable gene is off. The new batch columns are evidence and cannot change a default"
   },
   "sources": [
     {
@@ -2051,7 +2091,7 @@
     "helps": 16,
     "hurts": 0,
     "unresolved": 57,
-    "default_on": 69
+    "default_on": 85
   },
   "genes": [
     {
@@ -2237,7 +2277,7 @@
     {
       "tag": "army-target-weighs-enemy",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": -1,
       "wins_prior_10k": 18,
       "wins_third_10k": 30,
@@ -2417,7 +2457,7 @@
     {
       "tag": "blind-objective-strength",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -23,
       "wins_prior_10k": 0,
       "wins_third_10k": 30,
@@ -3137,7 +3177,7 @@
     {
       "tag": "escort-unstick",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 38,
       "wins_prior_10k": 36,
       "wins_third_10k": 72,
@@ -3632,7 +3672,7 @@
     {
       "tag": "lane-space-race",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -12,
       "wins_prior_10k": 11,
       "wins_third_10k": null,
@@ -3767,7 +3807,7 @@
     {
       "tag": "naval-recon",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 17,
       "wins_prior_10k": -20,
       "wins_third_10k": 16,
@@ -3992,7 +4032,7 @@
     {
       "tag": "peacetime-deterrence",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 16,
       "wins_prior_10k": 21,
       "wins_third_10k": 1,
@@ -4127,7 +4167,7 @@
     {
       "tag": "promote-when-wounded",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 7,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -4217,7 +4257,7 @@
     {
       "tag": "recon-replacement",
       "verdict": "helps",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 36,
       "wins_prior_10k": 30,
       "wins_third_10k": 48,
@@ -4532,7 +4572,7 @@
     {
       "tag": "science-multiplier-payoff",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": -8,
       "wins_third_10k": null,
@@ -4667,7 +4707,7 @@
     {
       "tag": "settlement-gap-target",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -4757,7 +4797,7 @@
     {
       "tag": "settler-target-hysteresis",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": -18,
       "wins_third_10k": 15,
@@ -5027,7 +5067,7 @@
     {
       "tag": "strike-opening",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 1,
       "wins_prior_10k": 4,
       "wins_third_10k": 17,
@@ -5072,7 +5112,7 @@
     {
       "tag": "unit-cost-efficiency",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": null,
       "wins_third_10k": null,

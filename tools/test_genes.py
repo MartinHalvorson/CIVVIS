@@ -533,10 +533,10 @@ class TheOperatorPins(unittest.TestCase):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         pins = rules["operator_default_on"]
-        expected_pins = {"enter-the-prophet-race"}
+        expected_pins = set()
         self.assertEqual(tuple(sorted(expected_pins)), gene_ledger.OPERATOR_DEFAULT_ON)
         self.assertEqual(pins, sorted(expected_pins))
-        self.assertEqual(len(pins), 1)
+        self.assertEqual(len(pins), 0)
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
         self.assertTrue(genome)
@@ -909,36 +909,53 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
 class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
     """The checked-in ledger's selection follows its recorded policy.
 
-    The current reporting-only selection keeps the genes averaging at least
-    +5 wins per 10,000 total seats over their available latest-three batch
-    readings, plus any explicit operator overrides. Both policy forms preserve
-    the one-version-per-family invariant and expose the legacy batch-rule
-    reading as evidence.
+    The current reporting-only selection keeps exactly the genes whose
+    available latest-three batch readings have a completed-total-seat-weighted
+    average strictly above +3 wins per 10,000 total seats. Both policy forms
+    preserve the one-version-per-family invariant and expose the legacy
+    batch-rule reading as evidence.
     """
 
-    def test_the_current_selection_is_the_available_batch_average_rule_plus_pins(self):
+    def test_the_current_selection_is_exactly_the_weighted_batch_average_rule(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
         self.assertEqual(rules["deployment_policy"], gene_ledger.RETAINED_DEPLOYMENT_POLICY)
-        self.assertEqual(rules["operator_default_on"], ["enter-the-prophet-race"])
+        self.assertEqual(rules["operator_default_on"], [])
         self.assertEqual(rules["operator_default_off"], [])
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
             batches, gene_ledger.screenable_tags()))
-        pins = set(rules["operator_default_on"])
-        self.assertEqual(set(rules["deployment_genome"]), eligible | pins)
-        self.assertEqual(len(eligible), 68)
-        self.assertEqual(len(rules["deployment_genome"]), 69)
-        self.assertNotIn("enter-the-prophet-race", eligible)
-        self.assertEqual(rules["batch_decisions"]["enter-the-prophet-race"], "off")
+        self.assertEqual(set(rules["deployment_genome"]), eligible)
+        self.assertEqual(len(eligible), 85)
         self.assertNotIn("amenity-project-preemption", eligible)
-        self.assertNotIn("amenity-project-preemption-2", eligible)
+        self.assertIn("amenity-project-preemption-2", eligible)
 
-    def test_retained_selection_averages_only_available_batch_readings(self):
-        self.assertEqual(gene_ledger.retained_selection_average([5, None, None]), 5)
-        self.assertEqual(gene_ledger.retained_selection_average([4, 6, None]), 5)
-        self.assertIsNone(gene_ledger.retained_selection_average([None, None, None]))
+    def test_retained_selection_weights_only_available_batch_readings_by_seats(self):
+        self.assertEqual(
+            gene_ledger.retained_selection_average([5, None, None], [100, None, None]), 5)
+        self.assertEqual(
+            gene_ledger.retained_selection_average([4, 6, None], [5_000, 15_000, None]), 5.5)
+        # A small +50 reading cannot swamp a large neutral batch.
+        self.assertEqual(
+            gene_ledger.retained_selection_average([50, 0, None], [100, 9_900, None]), 0.5)
+        self.assertIsNone(
+            gene_ledger.retained_selection_average([None, None, None], [100, 100, 100]))
+
+    def test_retained_selection_uses_unrounded_batch_values_at_the_strict_boundary(self):
+        # The printed batch cell rounds +2.9 to +3, but the explicit rule is
+        # strictly greater than +3 and must use the measured rate itself.
+        row = {
+            "players": 6,
+            "win_on": 1 / 6 + 2.9 / 10_000,
+            "n_on": 10_000,
+            "source_seats": 10_000,
+        }
+        self.assertEqual(gene_ledger.total_seat_batch_wins(row), 3)
+        self.assertEqual(
+            gene_ledger.retained_deployment_genome_from_batches(
+                [{"meta": {"seats": 10_000}, "rows": {"sample": row}}], ["sample"]),
+            ())
 
     def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())

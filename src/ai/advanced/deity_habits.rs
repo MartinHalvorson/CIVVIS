@@ -69,6 +69,10 @@ pub(super) const EUREKA_CHASE_ERA_REACH: usize = 2;
 pub(super) const EUREKA_BUILDER_VALUE_PER_POINT: f64 = 0.5;
 /// `eureka_chasing_builder`: the ceiling on one improvement's premium.
 pub(super) const EUREKA_BUILDER_VALUE_CAP: f64 = 40.0;
+/// `eureka_chasing_builder_2`: even an immediate, final-step boost may only
+/// break a close Builder tie. The improvement's own yields remain the reason
+/// to spend a charge there; the boost is the tiebreaker that lands now.
+pub(super) const EUREKA_BUILDER_V2_OWN_VALUE_FRACTION: f64 = 0.75;
 /// `eureka_chasing_production`: what one point of granted research is worth
 /// on `production_value`'s raw scale (a Settler or a district sits in the
 /// hundreds to low thousands before the turns divisor). Machinery's 120
@@ -369,6 +373,65 @@ impl AdvancedAi {
         premium.min(EUREKA_BUILDER_VALUE_CAP)
     }
 
+    /// `eureka_chasing_builder_2`: a Builder may break a close improvement
+    /// tie only for the final step of the technology or civic the empire is
+    /// researching *now*. V1 offered every future boost in both trees at
+    /// once, so a farm could outrank a resource or a needed yield merely
+    /// because it was one of six Feudalism farms or a future Irrigation step.
+    ///
+    /// The engine grants a boost's research immediately only when that node
+    /// is active (`Game::check_boosts`), and a partial multi-step trigger has
+    /// no value until the unknown later steps arrive. Restricting the premium
+    /// to that concrete, final action makes the benefit real this turn. Its
+    /// own-value cap keeps the ordinary improvement ranking in charge.
+    pub(super) fn eureka_builder_v2_premium(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        base_value: f64,
+    ) -> f64 {
+        if !self.eureka_chasing_builder_2 {
+            return 0.0;
+        }
+        let tile = &g.map.tiles[&pos];
+        let Some(pid) = tile
+            .owner_city
+            .and_then(|cid| g.cities.get(&cid))
+            .map(|city| city.owner)
+        else {
+            return 0.0;
+        };
+        let player = &g.players[pid];
+        let active_tech = player.research.as_deref();
+        let active_civic = player.civic.as_deref();
+        let premium: f64 = self
+            .eureka_chases(g, pid)
+            .iter()
+            .filter(|chase| {
+                chase.remaining == 1
+                    && (active_tech == Some(chase.node.as_str())
+                        || active_civic == Some(chase.node.as_str()))
+                    && if let Some(named) = chase.trigger.strip_prefix("improvement:") {
+                        named == improvement
+                    } else if let Some(named) =
+                        chase.trigger.strip_prefix("improvement_on_resource:")
+                    {
+                        named == improvement && tile.resource.is_some()
+                    } else if let Some(resource) = chase.trigger.strip_prefix("improve_resource:") {
+                        tile.resource.as_deref() == Some(resource)
+                            && Self::improvement_connects(g, improvement, resource)
+                    } else {
+                        false
+                    }
+            })
+            .map(|chase| chase.per_step() * EUREKA_BUILDER_VALUE_PER_POINT)
+            .sum();
+        premium
+            .min(EUREKA_BUILDER_VALUE_CAP)
+            .min(base_value.max(0.0) * EUREKA_BUILDER_V2_OWN_VALUE_FRACTION)
+    }
+
     /// `eureka_chasing_production`: the research this queue item earns toward
     /// a boost, on `production_value`'s raw scale. Zero when the gene is off
     /// or nothing is chased.
@@ -410,6 +473,13 @@ mod tests {
     #[test]
     fn eureka_chasing_builder_is_a_native_opt_in_off_in_both_controllers() {
         opt_in_off_in_both_controllers("eureka-chasing-builder", |ai| ai.eureka_chasing_builder);
+    }
+
+    #[test]
+    fn eureka_chasing_builder_v2_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("eureka-chasing-builder-2", |ai| {
+            ai.eureka_chasing_builder_2
+        });
     }
 
     #[test]
@@ -626,6 +696,73 @@ mod tests {
             plain.improvement_value(&game, pos, "quarry", strategy),
             "a boost in hand is not chased"
         );
+    }
+
+    /// V2 only pays where the boost changes the active research immediately,
+    /// and cannot turn a weak quarry into the entire reason to spend a Builder
+    /// charge there. V1 remains the broad historical control.
+    #[test]
+    fn eureka_chasing_builder_v2_is_an_active_final_step_tiebreak() {
+        let (mut game, cid, home) = capital_board(41_006);
+        let pos = bare_ring_tile(&game, cid, home);
+        {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.feature = None;
+            tile.improvement = None;
+            tile.hills = true;
+            tile.resource = Some(name!("stone"));
+        }
+        game.players[0].techs.insert(name!("mining"));
+        let strategy = GrandStrategy::Expansion;
+        let plain = AdvancedAi::new();
+        let mut v1 = AdvancedAi::new();
+        v1.enable_eureka_chasing_builder();
+        let mut v2 = AdvancedAi::new();
+        v2.enable_eureka_chasing_builder_2();
+
+        let off = plain.improvement_value(&game, pos, "quarry", strategy);
+        let v1_idle = v1.improvement_value(&game, pos, "quarry", strategy);
+        let v2_idle = v2.improvement_value(&game, pos, "quarry", strategy);
+        assert!(v1_idle > off, "v1 still prices the future Masonry boost");
+        assert_eq!(
+            v2_idle, off,
+            "v2 ignores an inactive Masonry boost rather than steering every Builder toward it"
+        );
+
+        game.players[0].research = Some("masonry".to_string());
+        let v2_active = v2.improvement_value(&game, pos, "quarry", strategy);
+        let premium = v2_active - off;
+        assert!(
+            premium > 0.0,
+            "the active Masonry quarry is still actionable"
+        );
+        assert!(
+            premium <= off * EUREKA_BUILDER_V2_OWN_VALUE_FRACTION + 1e-9,
+            "the immediate boost stays a tiebreak: +{premium} on a base {off}"
+        );
+
+        game.players[0].research = None;
+        game.players[0].civic = Some("feudalism".to_string());
+        let v2_partial = v2.improvement_value(&game, pos, "farm", strategy)
+            - plain.improvement_value(&game, pos, "farm", strategy);
+        assert_eq!(
+            v2_partial, 0.0,
+            "one of six Feudalism farms is not paid before it can actually trigger the boost"
+        );
+    }
+
+    #[test]
+    fn eureka_chasing_builder_versions_are_mutually_exclusive() {
+        let mut ai = AdvancedAi::new();
+        ai.enable_eureka_chasing_builder();
+        assert!(ai.eureka_chasing_builder);
+        assert!(!ai.eureka_chasing_builder_2);
+        ai.enable_eureka_chasing_builder_2();
+        assert!(!ai.eureka_chasing_builder);
+        assert!(ai.eureka_chasing_builder_2);
+        ai.enable_eureka_chasing_builder();
+        assert!(ai.eureka_chasing_builder);
+        assert!(!ai.eureka_chasing_builder_2);
     }
 
     /// The production half: with Archery known and no Archer alive, each of

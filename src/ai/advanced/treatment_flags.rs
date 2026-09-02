@@ -2294,12 +2294,27 @@ impl AdvancedAi {
     /// the trigger still needs. See [`AdvancedAi::eureka_builder_premium`].
     /// Opt-in gene `eureka-chasing-builder`.
     pub fn enable_eureka_chasing_builder(&mut self) {
+        self.eureka_chasing_builder_2 = false;
         self.eureka_chasing_builder = true;
     }
 
     /// The twin of `enable_eureka_chasing_builder`.
     pub fn disable_eureka_chasing_builder(&mut self) {
         self.eureka_chasing_builder = false;
+    }
+
+    /// Version two rewards only a final, immediately usable Builder eureka
+    /// step for the technology or civic currently in progress. It replaces
+    /// the broad v1 premium for this seat. Opt-in gene
+    /// `eureka-chasing-builder-2`.
+    pub fn enable_eureka_chasing_builder_2(&mut self) {
+        self.eureka_chasing_builder = false;
+        self.eureka_chasing_builder_2 = true;
+    }
+
+    /// The twin of `enable_eureka_chasing_builder_2`.
+    pub fn disable_eureka_chasing_builder_2(&mut self) {
+        self.eureka_chasing_builder_2 = false;
     }
 
     /// A unit, building or district that completes an unresearched
@@ -3260,6 +3275,7 @@ impl AdvancedAi {
     /// `pursue_religion` for the prize. An explicit Science lane stays on its
     /// pure beeline. See `enter_the_prophet_race`.
     pub fn enable_enter_the_prophet_race(&mut self) {
+        self.enter_the_prophet_race_2 = false;
         self.enter_the_prophet_race = true;
     }
 
@@ -3788,6 +3804,22 @@ impl AdvancedAi {
     /// The twin of `enable_anvil`.
     pub fn disable_anvil(&mut self) {
         self.anvil = false;
+    }
+
+    /// Enter the secondary Great Prophet race only when the board-aware
+    /// religious-opening rank admits this seat: two cities, a real Holy Site
+    /// path, and one of the remaining global slots. The entry fee and prize
+    /// still move together. Version 2 of `enter-the-prophet-race`; enabling it
+    /// selects this family version.
+    pub fn enable_enter_the_prophet_race_2(&mut self) {
+        self.enter_the_prophet_race = false;
+        self.enter_the_prophet_race_2 = true;
+    }
+
+    /// The twin of `enable_enter_the_prophet_race_2`.
+    pub fn disable_enter_the_prophet_race_2(&mut self) {
+        self.enter_the_prophet_race_2 = false;
+        self.base.enter_prophet_race = false;
     }
 
     /// Upgrade the standing army before the purchase pass, at strategic

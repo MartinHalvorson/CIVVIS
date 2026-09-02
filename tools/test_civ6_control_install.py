@@ -2067,6 +2067,67 @@ class MeleeStrikeCarriesTheAttackModifierTest(unittest.TestCase):
         self.assertNotIn("\nlocal function attackModifiers", source)
 
 
+class CityDispositionVerbsAreWiredTest(unittest.TestCase):
+    """`KEEP`, `RAZE` and `LIBERATE` on a captured city go through the shipped
+    DESTROY command with its directive flag, and the export names the city the
+    host is waiting on.
+
+    `Action::KeepCity` / `RazeCity` / `LiberateCity` are mandatory on the board
+    and were untranslated on the bridge, so the host's default (the soft
+    `CONSIDER_RAZE_CITY` blocker: keep) took every city. Firaxis's
+    `Base/Assets/UI/Popups/RazeCity.lua:15-55` sets
+    `tParameters[UnitOperationTypes.PARAM_FLAGS]` to a `CityDestroyDirectives`
+    value and requests `CityCommandTypes.DESTROY` after `CanStartCommand` with
+    the same table; `:71` finds the city with `GetNextCapturedCity()` and `:86`
+    the loser with `GetJustConqueredFrom()`.
+    """
+
+    def _agent_source(self) -> str:
+        return (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def _city_block(self) -> str:
+        source = self._agent_source()
+        handler = source.split("local function applyOrder", 1)[1]
+        block = handler.split('if kind == "city" then', 1)[1]
+        return block.split("\n\tend\n", 1)[0]
+
+    def test_each_verb_is_a_destroy_directive_gated_by_can_start_command(self) -> None:
+        block = self._city_block()
+        self.assertIn('KEEP = "KEEP", RAZE = "RAZE", LIBERATE = "LIBERATE_FOUNDER",', block)
+        self.assertIn("CityDestroyDirectives[directiveName]", block)
+        self.assertIn("params[UnitOperationTypes.PARAM_FLAGS] = directive;", block)
+        self.assertIn(
+            "CityManager.CanStartCommand(city, CityCommandTypes.DESTROY, params);", block
+        )
+        self.assertIn('return false, "cannot_" .. string.lower(verb);', block)
+        self.assertIn(
+            "CityManager.RequestCommand(city, CityCommandTypes.DESTROY, params);", block
+        )
+        # The engine liberates to the founder; the owner-before-occupation
+        # button has no board action.
+        self.assertNotIn("LIBERATE_PREVIOUS_OWNER", block)
+        self.assertIn('return false, "unknown_city_verb_" .. verb; end', block)
+        self.assertIn('emit("city_disposition", {', block)
+
+    def test_the_export_names_the_city_the_host_is_waiting_on(self) -> None:
+        source = self._agent_source()
+        export = source.split("local function exportState", 1)[1]
+        self.assertIn("player:GetCities():GetNextCapturedCity();", export)
+        record = export.split("cities[#cities + 1] = {\n", 1)[1].split("\n\t\t};", 1)[0]
+        self.assertIn("pendingCaptureId == try(function() return city:GetID(); end, nil))", record)
+        self.assertIn("try(function() return city:GetJustConqueredFrom(); end, nil)", record)
+        self.assertIn(
+            "original_owner = try(function() return city:GetOriginalOwner(); end, nil),", record
+        )
+
+    def test_the_branch_costs_no_main_chunk_local(self) -> None:
+        """See `AgentChunkLocalLimitTest`: the file has no slots to spend."""
+        source = self._agent_source()
+        for name in ("pendingCapture", "directive", "city_disposition"):
+            self.assertNotIn(f"\nlocal {name}", source)
+            self.assertNotIn(f"\nlocal function {name}", source)
+
+
 class SwapVerbIsWiredTest(unittest.TestCase):
     """`SWAP` must resolve `UNITOPERATION_SWAP_UNITS` and request it the way the
     shipped UI does.
