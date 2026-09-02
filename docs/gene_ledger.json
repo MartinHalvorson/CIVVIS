@@ -1529,6 +1529,17 @@
           "early-project-restraint-2": null
         }
       },
+      "enter-the-prophet-race": {
+        "rule_on": [
+          "enter-the-prophet-race"
+        ],
+        "head": null,
+        "ships": "enter-the-prophet-race",
+        "versions": {
+          "enter-the-prophet-race": null,
+          "enter-the-prophet-race-2": null
+        }
+      },
       "eureka-chasing-builder": {
         "rule_on": [],
         "head": null,

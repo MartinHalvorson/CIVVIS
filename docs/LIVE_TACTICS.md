@@ -666,6 +666,29 @@ patrol state. The own-unit export now carries `range` (`Unit:GetRange()`,
 `UnitPanel.lua:2250`), the aircraft's operational reach from the plot it
 stands on, which is its base; the mirror parses it (`StateUnit::range`) and
 does not yet read it onto the board.
+
+**Update (2026-09-02): the captured city's disposition is translated.**
+`Action::KeepCity`, `Action::RazeCity` and `Action::LiberateCity` — mandatory
+and exclusive on the board (`pending_city_capture_actions`: nothing else is
+legal while a capture is unresolved) — were untranslated, and the mirror never
+set `City::captured_from`, so the decision never even arose on the live board:
+the mod lists `ENDTURN_BLOCKING_CONSIDER_RAZE_CITY` as a soft blocker, ends the
+turn over it, and the host's default (keep) took every city. The export now
+names the city the host is waiting on (`GetNextCapturedCity()`,
+`Popups/RazeCity.lua:71`) with `captured_from` (`GetJustConqueredFrom`, `:86`)
+and every own city's `original_owner` (`GetOriginalOwner`, `:85`); the mirror
+maps both onto seats (`apply_city_capture`, both import paths), so the board
+offers exactly the Keep / Raze / Liberate the shipped popup offers. The
+decision crosses as order kind `city`, verb `KEEP` / `RAZE` / `LIBERATE`,
+subject = the host city id, `pos` = the city plot; the mod requests the one
+shipped command for all three, `CityCommandTypes.DESTROY` with the matching
+`CityDestroyDirectives` flag in `PARAM_FLAGS` (`RazeCity.lua:15-55`;
+`LIBERATE_FOUNDER`, since the engine liberates to the founder), gated by
+`CanStartCommand` with the same table — a decline is `cannot_keep` /
+`cannot_raze` / `cannot_liberate`. Verdicts: KEEP = still ours with the flag
+clear next frame (`not_kept`); RAZE = gone or a citizen smaller next turn, or
+the decision consumed on a same-turn frame (`not_razed`); LIBERATE = the
+founder holds the plot (`liberated_to_another` / `not_liberated`).
 ## 17. Price it like the engine — and the null it measured (2026-08-26)
 
 Two opt-in genes (`src/ai/advanced/engine_pricing.rs`) replace the
