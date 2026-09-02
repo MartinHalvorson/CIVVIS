@@ -4133,6 +4133,30 @@ impl AdvancedAi {
         self.doomed_blow_veto = false;
     }
 
+    /// A route step that is not legal this turn holds the decision instead
+    /// of releasing it, bounded by `COMMITMENT_PATIENCE` consecutive
+    /// forgotten turns. See the field doc on `AdvancedAi`.
+    pub fn enable_route_block_is_a_wait(&mut self) {
+        self.route_block_is_a_wait = true;
+    }
+
+    /// The twin of `enable_route_block_is_a_wait`.
+    pub fn disable_route_block_is_a_wait(&mut self) {
+        self.route_block_is_a_wait = false;
+    }
+
+    /// A safe-step guard that would not move at all steps to the safest
+    /// reachable neighbour that is strictly safer than standing still. See
+    /// the field doc on `AdvancedAi`.
+    pub fn enable_standing_still_is_a_risk(&mut self) {
+        self.standing_still_is_a_risk = true;
+    }
+
+    /// The twin of `enable_standing_still_is_a_risk`.
+    pub fn disable_standing_still_is_a_risk(&mut self) {
+        self.standing_still_is_a_risk = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
