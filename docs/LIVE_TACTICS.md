@@ -765,3 +765,75 @@ What to read first: `move_noop_reasons` on the first runs with
 `MoveFallback` on. The reason distribution decides the next repair —
 `occupied` and `zoc` are pathing the mirror could model; `unknown` is a
 host behaviour still to be found.
+
+## 21. The battle planner: the force's turn as one decision (2026-09-02, opt-in gene `battle-planner`)
+
+Every step above leaves the unit-at-a-time decision in place: §15 orders the
+loop, §18 rotates one pair, and each unit still prices its own attack from
+where it stands. `battle-planner` (`src/ai/advanced/battle_planner.rs`,
+opt-in, off) plans the turn jointly, in three parts, each on the engine's own
+arithmetic rather than a copy of it:
+
+1. **A danger field.** `danger(tile, unit)` is what every visible hostile that
+   can reach and strike the tile next turn (`Game::attack_reach`) would do to
+   our unit standing there unfortified — `melee_exchange_strengths` /
+   `ranged_strike_strengths` and `expected_damage`, read on one speculative
+   probe with the unit relocated onto the tile — plus the strike of every
+   walled city or Encampment within two. One engine fact fell out of writing
+   the test: stepping into a tile beside an enemy ends a move here (zone of
+   control), so a melee unit two tiles off cannot close and strike in one turn
+   and the field correctly reads zero there.
+2. **A kill plan.** Every legal blow each unit could make, from its tile or
+   after a move (never a siege unit that moved; a siege unit within range of
+   an enemy city is left to the ladder), priced with the exact pair; a beam
+   search (width 32, ≤12 shooters, ≤8 targets) over the ordered sequence,
+   kills counted at 1.15× the hit points, ranged before the melee finisher,
+   return damage and every end tile's danger charged on
+   `tactical_attack_result_in`'s scale, a penalty for a target left at 1–30
+   with a finisher to spare, and three vetoes (a return that kills the
+   attacker, a striker under 50 hp not finishing from safety, melee into a
+   walled city — cities are not targets here). The sequence is replayed on
+   ONE clone through `tactical_attack_result_in` and refused blows dropped
+   before it lands. It replaces `prioritize_immediate_kills` and `fire-plan`
+   at their seam; the ladder leaves the planned units alone.
+3. **A heal rotation.** A unit under 50 hp, or where the danger exceeds its
+   hit points minus 20, steps to the nearest reachable tile with no danger
+   (a district, friendly ground and an `adjacent_heal` neighbour preferred),
+   fortifies, and stays out of the kill plan until 80 hp; a fresh friend
+   behind it takes an `Action::Swap` instead where one is legal. On a board
+   that does not heal only the lethal reading fires and nothing is
+   remembered, for the reason `healing_step` gives.
+
+**The gate (§13), read in order.** `battle_bench` control `advanced` v
+`advanced`, 60 seeds: **+0.00 ± 0.00, 0 diverging**. Treatment, 200 seeds ×
+2 seatings each: the default combined band **+476.2 ± 25.8 a seed (t 18.4;
+182 better / 17 worse / 1 tied)**, exchange ratio **2.52 against 0.40**;
+four archers and two warriors **+338.7 ± 21.3 (t 15.9; 173/22/5)**, 1.98
+against 0.50; four warriors and two spearmen **+99.5 ± 11.8 (t 8.4;
+141/33/26)**, 1.49 against 0.67. Doctrine control, 12 seeds: +0.0 with no
+divergence on any of the twelve boards. Treatment, 40 seeds × 2 role swaps,
+the rows: **the_reserve +368.2 ± 57.4 (t 6.41, 33/3, fires 39/40)**,
+**central_position +194.2 ± 30.7 (t 6.32, 33/6, 40/40)**,
+**hammer_and_anvil +161.2 ± 49.2 (t 3.27, sign p 0.029, 25/11, 40/40)**,
+**the_storming +422.5 ± 77.6 (t 5.44, sign p 0.0002, 26/5, 40/40)**; every
+board positive, the pooled row +278.3 ± 17.6 at **1.31 kills per loss
+against 0.76**. Cities taken stay +1/−1 each way: the assault is not solved,
+the garrison's defenders are killed more cheaply.
+
+**Where the profile moved.** `focus` — the share of a side's blows on the
+unit it had already hurt — is the column the plan claims and the one that
+moved on every board: the_reserve 99 %/94 % against 93 %/78 %,
+central_position 100 %/85 % against 96 %/60 %, hammer_and_anvil 77 %/100 %
+against 66 %/98 %, the_storming 97 %/96 % against 91 %/81 %. On the_storming
+the besieger's `salvag.` fell **54 % → 41 %** and its arrival spread
+**7.69 → 5.90**, with `absent` up 1 % → 10 % — wounded units pulled out of the
+ring rather than ground down in it, which is §19's diagnosis answered on the
+symptom and not the cause. On the boards it was winning the winner's
+salvageable share rose (the_reserve 40 → 43 %), the expected shape.
+
+**What this does not say.** The fires probe (6 games, 36 seats, gene on in
+8) reads `~`; the whole-game screen at scale is the no-harm check that
+follows, and §7 and §17 record how little a tactical swing of this size has
+moved a win rate before. Movement of the units that are not striking is
+still `coordinated_tactical_step`'s; a `positions_plan` is the follow-up the
+module is shaped for, and pricing the city assault jointly is the other.

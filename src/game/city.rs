@@ -1373,6 +1373,10 @@ impl Game {
     pub fn citizen_strategy(&self, cid: u32) -> CitizenStrategy {
         let city = &self.cities[&cid];
         let player = &self.players[city.owner];
+        let population_settler = matches!(
+            city.queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
+        ) && self.settler_consumes_population(city.owner, cid);
         let mut weights = Yields {
             food: 1.25,
             production: 1.55,
@@ -1421,7 +1425,12 @@ impl Game {
             match item {
                 Item::Unit { unit } if unit == "settler" => {
                     focus = "expansion".to_string();
-                    weights.food += 0.55;
+                    // A population-consuming Settler gets an exact food budget
+                    // below. Provision Settlers do not shrink their city and
+                    // retain the ordinary growth appetite.
+                    if !population_settler {
+                        weights.food += 0.55;
+                    }
                     weights.production += 1.15;
                 }
                 Item::Unit { unit } | Item::Formation { unit, .. } => {
@@ -1608,6 +1617,17 @@ impl Game {
             weights.food *= 0.55;
             0.0
         };
+        if population_settler {
+            // Production completes after this turn's growth step, then removes
+            // one citizen. Bank at most the smaller city's next growth cost so
+            // it can recover that citizen immediately afterward. Food above
+            // that threshold has no marginal value while the Settler is in the
+            // queue: nutrition remains a hard constraint, while discretionary
+            // citizens optimize production and the empire's other yields.
+            let post_settler_growth = self.growth_cost((city.pop - 1).max(1));
+            growth_ceiling = growth_ceiling.min((post_settler_growth - city.food).max(0.0));
+            weights.food = 0.0;
+        }
         let food_target = 2.0 * city.pop as f64 + growth_surplus.min(growth_ceiling);
         CitizenStrategy {
             focus,
@@ -1767,7 +1787,13 @@ impl Game {
             fallback_tier: u8,
         }
 
-        let growth_supported = strategy.food_target > 2.0 * city.pop.max(0) as f64 + 1e-9;
+        // A zero food weight means food is a constraint, not an objective.
+        // The Settler budget uses that state: rank every usable job by its
+        // other yields first, then let the nutrition swaps below buy only the
+        // food still required. Putting food-bearing tiles in the preferred
+        // tier here would optimize food beyond that explicit target.
+        let growth_supported = strategy.weights.food > 1e-9
+            && strategy.food_target > 2.0 * city.pop.max(0) as f64 + 1e-9;
 
         let mut cands: Vec<Job> = city
             .owned_tiles
@@ -7688,3 +7714,6 @@ impl Game {
         items
     }
 }
+
+#[cfg(test)]
+mod tests;

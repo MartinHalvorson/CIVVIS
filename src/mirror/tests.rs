@@ -528,6 +528,50 @@ fn a_civ_qualifier_is_stripped_and_great_is_not() {
     );
 }
 
+/// The most frequent live approximations must use their shipped unique rows.
+///
+/// The local run corpus recorded 239 Cossack, 227 Samurai and 82 Hypaspist
+/// observations as ordinary units.  Those substitutions changed combat strength
+/// (and, for several rows, movement, sight or upgrade timing) in the threat board.
+/// Keep both translation entry points covered: production queues use
+/// `civvis_node_name`, while unit observations use `resolved_civvis_unit_name`.
+#[test]
+fn frequent_unique_units_keep_their_civ6_static_profiles() {
+    let rules = crate::rules::Rules::embedded();
+    let cases = [
+        ("UNIT_GAUL_GAESATAE", "gaesatae", 20.0, 2.0, 2),
+        ("UNIT_JAPANESE_SAMURAI", "samurai", 48.0, 2.0, 2),
+        ("UNIT_MACEDONIAN_HYPASPIST", "hypaspist", 38.0, 2.0, 2),
+        ("UNIT_INDIAN_VARU", "varu", 40.0, 2.0, 3),
+        (
+            "UNIT_MALI_MANDEKALU_CAVALRY",
+            "mandekalu_cavalry",
+            55.0,
+            4.0,
+            2,
+        ),
+        ("UNIT_RUSSIAN_COSSACK", "cossack", 67.0, 5.0, 2),
+        ("UNIT_AMERICAN_ROUGH_RIDER", "rough_rider", 67.0, 5.0, 2),
+        ("UNIT_VIETNAMESE_VOI_CHIEN", "voi_chien", 35.0, 3.0, 3),
+    ];
+    for (host, name, strength, moves, sight) in cases {
+        assert_eq!(
+            civvis_node_name(&rules.units, host, "UNIT_").as_deref(),
+            Some(name),
+            "production queue translation for {host}"
+        );
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, host).as_deref(),
+            Some(name),
+            "unit observation translation for {host}"
+        );
+        let spec = &rules.units[name];
+        assert_eq!(spec.strength, strength, "combat for {name}");
+        assert_eq!(spec.moves, moves, "movement for {name}");
+        assert_eq!(spec.sight, sight, "sight for {name}");
+    }
+}
+
 /// A stripped prefix is only a civilization qualifier when the destination
 /// rules row says it is a unique unit. Otherwise a missing exact row must not
 /// silently turn a modern host unit into an older ordinary unit.

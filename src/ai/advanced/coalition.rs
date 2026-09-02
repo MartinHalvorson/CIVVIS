@@ -63,6 +63,15 @@
 //! Counters: `coalition:opened`, `coalition:alliances_proposed`,
 //! `coalition:envoys`, `coalition:joint_wars_proposed`,
 //! `coalition:held_declarations`.
+//!
+//! Version 2 keeps only the part with a bounded, immediate payoff. At the
+//! ready strike it invites one neighbour whose acceptance is supported by the
+//! public board: either the target is already at terminal victory pressure,
+//! or that neighbour has the grievance and combined power the Basic
+//! controller requires. It consumes the invitation turn, then never retries.
+//! Before the strike it proposes only a military alliance to such a partner,
+//! and adds Envoy value only when that directly unseats the target from a
+//! nearby client city-state.
 
 use std::collections::BTreeMap;
 
@@ -125,7 +134,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<usize> {
-        if !self.coalition_before_war {
+        if !self.coalition_before_war && !self.coalition_before_war_2 {
             return None;
         }
         let appointed = self
@@ -211,6 +220,9 @@ impl AdvancedAi {
     /// of the target: `military` when free on both sides, else the first
     /// free kind. Nothing outside the window or before Civil Service.
     pub(crate) fn coalition_alliance_step(&mut self, g: &mut Game, pid: usize) {
+        if !self.coalition_before_war && !self.coalition_before_war_2 {
+            return;
+        }
         let Some(target) = self.coalition.as_ref().map(|c| c.target) else {
             return;
         };
@@ -242,7 +254,8 @@ impl AdvancedAi {
         };
         let free_kind = |partner: usize| {
             COALITION_ALLIANCE_KINDS.iter().copied().find(|kind| {
-                !kind_taken(pid, kind)
+                (!self.coalition_before_war_2 || *kind == "military")
+                    && !kind_taken(pid, kind)
                     && !kind_taken(partner, kind)
                     && (*kind != "research"
                         || (g.tree_effect(pid, "research_agreements") > 0.0
@@ -287,6 +300,8 @@ impl AdvancedAi {
                     && !asked_recently(*partner)
                     && grievance(pid, *partner) < COALITION_GRIEVANCE_CEILING
                     && self.rival_victory_pressure(g, *partner).progress < 82
+                    && (!self.coalition_before_war_2
+                        || self.coalition_credible_partner(g, pid, *partner, target))
             })
             .filter_map(|partner| free_kind(partner).map(|kind| (partner, kind)))
             .max_by(|left, right| {
@@ -341,7 +356,7 @@ impl AdvancedAi {
         minor: usize,
         needed: i64,
     ) -> i64 {
-        if !self.coalition_before_war {
+        if !self.coalition_before_war && !self.coalition_before_war_2 {
             return 0;
         }
         let Some(target) = self.coalition.as_ref().map(|c| c.target) else {
@@ -369,6 +384,9 @@ impl AdvancedAi {
             return 0;
         }
         let holder = g.suzerain_of(minor);
+        if self.coalition_before_war_2 && holder != Some(target) {
+            return 0;
+        }
         if holder == Some(pid) {
             let mine = g.envoys_at(pid, minor);
             let rival = g
@@ -419,6 +437,30 @@ impl AdvancedAi {
             && g.peace_treaty_until(pid, target).is_none()
     }
 
+    /// Whether the public board supports expecting this partner to join.
+    /// Terminal victory pressure is the Advanced controller's acceptance
+    /// escape hatch. Otherwise mirror the Basic controller's exact grievance
+    /// and joint-power gate, so version two does not spend a strike turn on a
+    /// merely legal but predictably refused invitation.
+    fn coalition_credible_partner(
+        &self,
+        g: &Game,
+        pid: usize,
+        partner: usize,
+        target: usize,
+    ) -> bool {
+        if self.rival_victory_pressure(g, target).progress >= 78 {
+            return true;
+        }
+        let grievance = g.players[partner]
+            .grievances
+            .get(&target)
+            .copied()
+            .unwrap_or(0.0);
+        let joint_power = g.military_power(pid) + g.military_power(partner);
+        grievance >= 20.0 && joint_power > g.military_power(target) * 1.2 + 20.0
+    }
+
     /// At the strike: invite every eligible neighbour of the target to a
     /// joint war and hold the declaration while an answer is due. `true`
     /// consumes the turn's war-opening decision; `false` lets the desk
@@ -429,7 +471,7 @@ impl AdvancedAi {
         pid: usize,
         target: usize,
     ) -> bool {
-        if !self.coalition_before_war {
+        if !self.coalition_before_war && !self.coalition_before_war_2 {
             return false;
         }
         let Some(coalition) = self.coalition.as_ref().filter(|c| c.target == target) else {
@@ -440,6 +482,13 @@ impl AdvancedAi {
             deal.from == pid && deal.joint_war_target == Some(target) && deal.expires >= turn
         });
         if let Some(sent) = coalition.invited {
+            if self.coalition_before_war_2 {
+                // The invitation call already consumed one strike decision.
+                // Keep it held only if this method is revisited in that same
+                // turn; on the next turn declare instead of retrying or
+                // extending the wait.
+                return pending && turn == sent;
+            }
             if pending && turn < sent + COALITION_JOINT_WAR_PATIENCE {
                 *g.players[pid]
                     .counters
@@ -457,11 +506,13 @@ impl AdvancedAi {
                 return false;
             }
         }
-        let partners: Vec<usize> =
+        let mut partners: Vec<usize> =
             self.coalition_neighbours(g, pid, target)
                 .into_iter()
                 .filter(|partner| {
                     self.coalition_joint_war_partner(g, pid, *partner, target)
+                        && (!self.coalition_before_war_2
+                            || self.coalition_credible_partner(g, pid, *partner, target))
                         && !coalition
                             .joint_war_asked
                             .get(partner)
@@ -471,6 +522,22 @@ impl AdvancedAi {
                         })
                 })
                 .collect();
+        if self.coalition_before_war_2 {
+            partners.sort_by(|left, right| {
+                let grievance = |partner: usize| {
+                    g.players[partner]
+                        .grievances
+                        .get(&target)
+                        .copied()
+                        .unwrap_or(0.0)
+                };
+                g.military_power(*right)
+                    .total_cmp(&g.military_power(*left))
+                    .then_with(|| grievance(*right).total_cmp(&grievance(*left)))
+                    .then_with(|| left.cmp(right))
+            });
+            partners.truncate(1);
+        }
         let mut invited = 0;
         for partner in partners {
             if g.apply(
@@ -523,6 +590,15 @@ mod tests {
     #[test]
     fn coalition_before_war_is_a_native_opt_in_off_in_both_controllers() {
         opt_in_off_in_both_controllers("coalition-before-war", |ai| ai.coalition_before_war);
+        opt_in_off_in_both_controllers("coalition-before-war-2", |ai| ai.coalition_before_war_2);
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_coalition_before_war();
+        assert!(ai.coalition_before_war);
+        assert!(!ai.coalition_before_war_2);
+        ai.enable_coalition_before_war_2();
+        assert!(!ai.coalition_before_war);
+        assert!(ai.coalition_before_war_2);
     }
 
     /// Open land at exactly `distance` from `anchor`, for seating a city.
@@ -624,6 +700,12 @@ mod tests {
     fn coalition_ai() -> AdvancedAi {
         let mut ai = AdvancedAi::new();
         ai.enable_coalition_before_war();
+        ai
+    }
+
+    fn coalition_v2_ai() -> AdvancedAi {
+        let mut ai = AdvancedAi::new();
+        ai.enable_coalition_before_war_2();
         ai
     }
 
@@ -826,6 +908,72 @@ mod tests {
             ai.coalition_city_state_bonus(&game, 0, near, 2),
             i64::from(COALITION_CITY_STATE_RADIUS + 1 - 4) * COALITION_CITY_STATE_PER_TILE / 2
         );
+    }
+
+    /// Version two refuses speculative setup, then asks a credible partner
+    /// only for the military alliance and values only a target-held client.
+    /// At the strike it invites once and declares next turn after a refusal.
+    #[test]
+    fn v2_limits_setup_and_invites_one_credible_partner_once() {
+        let (mut game, plan, near, _) = coalition_board();
+        let mut ai = coalition_v2_ai();
+        ai.coalition_observe(&mut game, 0, &plan);
+
+        // A merely legal neighbour gets no speculative alliance, and an open
+        // city-state gets no proximity-only Envoy premium.
+        ai.coalition_alliance_step(&mut game, 0);
+        assert!(game.pending_deals.is_empty());
+        assert_eq!(ai.coalition_city_state_bonus(&game, 0, near, 1), 0);
+        assert!(!ai.coalition_credible_partner(&game, 0, 2, 1));
+
+        // Unseating the target from its own nearby client is direct value.
+        game.players[1].envoys_free = 3;
+        for _ in 0..3 {
+            game.current = 1;
+            game.apply(1, &Action::SendEnvoy { player: near })
+                .expect("the target places an envoy");
+        }
+        game.current = 0;
+        assert_eq!(game.suzerain_of(near), Some(1));
+        assert!(ai.coalition_city_state_bonus(&game, 0, near, 1) > 0);
+
+        // A resentful neighbour with enough combined power is credible. V2
+        // asks it only for the military alliance, never a fallback kind.
+        game.players[2].grievances.insert(1, 40.0);
+        let home = game.cities[&game.player_city_ids(2)[0]].pos;
+        for _ in 0..6 {
+            game.spawn_test_unit("warrior", 2, home);
+        }
+        assert!(ai.coalition_credible_partner(&game, 0, 2, 1));
+        ai.coalition_alliance_step(&mut game, 0);
+        let alliance = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0 && deal.to == 2)
+            .expect("the credible neighbour gets an alliance proposal");
+        assert_eq!(alliance.alliance.as_deref(), Some("military"));
+        let alliance_id = alliance.id;
+        game.current = 2;
+        game.apply(2, &Action::RejectDeal { deal: alliance_id })
+            .expect("the alliance can be refused");
+        game.current = 0;
+
+        assert!(ai.coalition_invites_before_declaring(&mut game, 0, 1));
+        let invitations: Vec<_> = game
+            .pending_deals
+            .iter()
+            .filter(|deal| deal.from == 0 && deal.joint_war_target == Some(1))
+            .collect();
+        assert_eq!(invitations.len(), 1);
+        let id = invitations[0].id;
+
+        game.current = 2;
+        game.apply(2, &Action::RejectDeal { deal: id })
+            .expect("the invitation can be refused");
+        game.current = 0;
+        game.turn += 1;
+        assert!(!ai.coalition_invites_before_declaring(&mut game, 0, 1));
+        assert!(game.pending_deals.iter().all(|deal| deal.from != 0));
     }
 
     /// The strike: every eligible neighbour is invited to a joint war and the
