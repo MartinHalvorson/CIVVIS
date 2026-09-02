@@ -69,8 +69,10 @@
 //! **Arenas that do not heal.** `healing_step` refuses recovery on a
 //! Tactics board with healing off, because nothing recovers there and a
 //! unit pulled out never comes back. The rotation follows the same rule: on
-//! such a board only the danger trigger fires — a unit that would be
-//! removed next turn still steps out of reach — and nothing is remembered.
+//! such a board only the lethal trigger fires — a unit the field says would
+//! be removed next turn still steps out of reach — and nothing is
+//! remembered, so a unit is never walked out of reach one turn and back
+//! into it the next.
 //!
 //! `Kind::OptIn`, off in `AdvancedAi::new()` and `legacy()`, byte-identical
 //! when off: `plan_battle` returns before it reads the board, the ordered
@@ -500,7 +502,9 @@ impl BeamState {
                 cost += DANGER_WEIGHT * loss_value(danger, shooter.cost);
             }
         }
-        if shooter.hp < WOUNDED_STRIKER_HP && !(kill && danger <= NO_DANGER) {
+        // A wounded unit strikes only to finish, only from safety, and
+        // never as a trade of itself.
+        if shooter.hp < WOUNDED_STRIKER_HP && (dies || !(kill && danger <= NO_DANGER)) {
             return None;
         }
         let mut next = self.clone();
@@ -1109,7 +1113,11 @@ impl AdvancedAi {
             }
             let here = field.danger(unit.pos, uid);
             let wounded = heals && (unit.hp < ROTATE_HP || self.battle_planner_recovering.contains(&uid));
-            let exposed = here > f64::from(unit.hp - ROTATE_DANGER_MARGIN);
+            // Where nothing heals, a unit is pulled out only when it would
+            // otherwise be removed: without a recovery to remember, a margin
+            // would walk it out of reach one turn and back into it the next.
+            let margin = if heals { ROTATE_DANGER_MARGIN } else { 0 };
+            let exposed = here > f64::from(unit.hp - margin);
             if !(wounded || exposed) {
                 continue;
             }
