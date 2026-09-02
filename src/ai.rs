@@ -6771,10 +6771,16 @@ impl BasicAi {
             .into_iter()
             .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
             .collect();
-        // ⚠ Cleared, not remapped. It records "this unit took a step FROM here on
-        // THIS turn", and the turn is over by the time a board is rebuilt, so every
-        // entry in it is already stale.
-        self.last_path_step_from.borrow_mut().clear();
+        // ⚠ Remapped, not cleared. A replan can rebuild the live board after a
+        // host-accepted step but before that host turn ends. Clearing this trail
+        // then forgets the step the reversal guard must reject, so the replan can
+        // immediately walk the unit back where it started. The turn tag makes a
+        // carried trail inert on the following turn, when a return step is legal.
+        let path_steps = std::mem::take(&mut *self.last_path_step_from.borrow_mut());
+        *self.last_path_step_from.borrow_mut() = path_steps
+            .into_iter()
+            .filter_map(|(uid, trail)| map.get(&uid).map(|new| (*new, trail)))
+            .collect();
         let explore_last = std::mem::take(self.explore_last.get_mut());
         *self.explore_last.get_mut() = explore_last
             .into_iter()
@@ -17010,6 +17016,36 @@ mod tests {
         );
         assert_eq!(next_turn.tiles.len(), 2);
         assert_eq!(next_turn.observed_turn, Some(game.turn));
+    }
+
+    #[test]
+    fn a_live_replan_remaps_the_same_turn_path_guard() {
+        let (mut game, _, scout) = scouted_world();
+        game.turn = 42;
+        let home = game.units[&scout].pos;
+        let next = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| game.can_move(scout, *pos))
+            .expect("the lone Scout has an open neighboring tile");
+        let mut ai = BasicAi::new();
+
+        assert!(ai.path_move(&mut game, 0, scout, next));
+        game.remove_unit(scout);
+        let remapped = game.spawn_test_unit("scout", 0, next);
+        ai.remap_unit_memory(&std::collections::BTreeMap::from([(scout, remapped)]));
+
+        assert!(
+            !ai.path_move(&mut game, 0, remapped, home),
+            "a same-turn fresh-board replan must not undo the step it just observed"
+        );
+        assert_eq!(game.units[&remapped].pos, next);
+
+        game.turn += 1;
+        assert!(
+            ai.path_move(&mut game, 0, remapped, home),
+            "the remapped trail expires with its host turn"
+        );
     }
 
     #[test]
