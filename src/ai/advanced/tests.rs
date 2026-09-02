@@ -43111,7 +43111,10 @@ fn walk_out(ai: &mut AdvancedAi, game: &Game, settler: u32, out: u32) {
 
 #[test]
 fn settler_walk_deadline_is_off_by_default_and_toggles() {
-    assert!(!AdvancedAi::new().settler_walk_deadline, "an opt-in ships off");
+    assert!(
+        !AdvancedAi::new().settler_walk_deadline,
+        "an opt-in ships off"
+    );
     assert!(!AdvancedAi::legacy().settler_walk_deadline);
     let mut ai = AdvancedAi::new();
     ai.enable_settler_walk_deadline();
@@ -43167,18 +43170,29 @@ fn a_settler_inside_its_deadline_is_left_to_the_ordinary_step() {
     assert_eq!(ai.settler_turns_out(settler), 0);
     // A clock one turn short of the deadline is still inside it.
     let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
-    assert!(deadline >= 2, "the deadline is turns, not a moment: {deadline}");
+    assert!(
+        deadline >= 2,
+        "the deadline is turns, not a moment: {deadline}"
+    );
     game.turn += 1;
     walk_out(&mut ai, &game, settler, deadline - 1);
     assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
-    assert_eq!(game.cities.len(), cities, "nothing founded inside the deadline");
+    assert_eq!(
+        game.cities.len(),
+        cities,
+        "nothing founded inside the deadline"
+    );
     assert!(game.units.contains_key(&settler));
     // A walk that began after the band turn is the ordinary search's, however
     // long it runs: the gene is about the opening.
     game.turn += 1;
     ai.settler_walk_clock.insert(
         settler,
-        (AdvancedAi::expansion_band_turn(&game) + 1, game.turn, deadline + 5),
+        (
+            AdvancedAi::expansion_band_turn(&game) + 1,
+            game.turn,
+            deadline + 5,
+        ),
     );
     assert_eq!(ai.settler_walk_deadline_step(&mut game, 0, settler), None);
     assert_eq!(game.cities.len(), cities);
@@ -43212,7 +43226,10 @@ fn the_deadline_pick_is_the_best_legal_site_within_reach() {
     let picked = ai
         .settler_walk_deadline_site(&game, 0, settler)
         .expect("the deadline finds a site");
-    assert_eq!(picked.0, expected.0, "the pick is the argmax: {picked:?} vs {expected:?}");
+    assert_eq!(
+        picked.0, expected.0,
+        "the pick is the argmax: {picked:?} vs {expected:?}"
+    );
     assert!((picked.1 - expected.1).abs() < 1e-9);
     assert!(
         game.wdist(picked.0, here) <= SETTLER_WALK_DEADLINE_RADIUS,
@@ -43236,7 +43253,11 @@ fn the_deadline_pick_is_the_best_legal_site_within_reach() {
     let other = game.spawn_test_unit("settler", 0, open_ground_at(&game, here, 5));
     ai.settler_targets.insert(other, picked.0);
     let again = ai.settler_walk_deadline_site(&game, 0, settler);
-    assert_ne!(again.map(|(pos, _)| pos), Some(picked.0), "a reserved site is skipped");
+    assert_ne!(
+        again.map(|(pos, _)| pos),
+        Some(picked.0),
+        "a reserved site is skipped"
+    );
 }
 
 #[test]
@@ -43294,8 +43315,14 @@ fn a_settler_past_its_deadline_founds_within_reach_and_says_so() {
         game.wdist(founded_at, here) <= SETTLER_WALK_DEADLINE_RADIUS,
         "the city stands within reach of where the walk ended"
     );
-    assert!(game.city_at(founded_at).is_some(), "the city is on the chosen site");
-    assert!(!game.units.contains_key(&settler), "the Settler became the city");
+    assert!(
+        game.city_at(founded_at).is_some(),
+        "the city is on the chosen site"
+    );
+    assert!(
+        !game.units.contains_key(&settler),
+        "the Settler became the city"
+    );
     assert!(
         journal
             .iter()

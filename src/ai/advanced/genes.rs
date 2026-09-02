@@ -1930,13 +1930,13 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
+    Gene { tag: "settler-walk-deadline", field: "settler_walk_deadline", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_deadline, disable: AdvancedAi::disable_settler_walk_deadline },
     // ---- append: s-s ------------------------------------------------
     // Forensic of 2026-09-01 over the 08-31 King and 09-01 Emperor live runs
     // (`advanced/settler_walk_deadline.rs`): with every host-only expansion
     // gene live the seat builds its Settlers on schedule and they do not
     // convert — walks of 13–15 turns, a third of Emperor Settlers taken —
     // so a walker past twelve turns founds the best site within reach.
-    Gene { tag: "settler-walk-deadline", field: "settler_walk_deadline", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_deadline, disable: AdvancedAi::disable_settler_walk_deadline },
     // ---- append: t-z ------------------------------------------------
 ];
 
