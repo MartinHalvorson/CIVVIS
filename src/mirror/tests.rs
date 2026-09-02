@@ -8072,6 +8072,95 @@ fn a_razed_own_city_does_not_survive_in_the_mirror() {
         .is_none());
 }
 
+/// ★★★ THE CAPTURE DECISION CROSSES. `captured_from` (`GetJustConqueredFrom`,
+/// present while `GetNextCapturedCity()` names the city) and `original_owner`
+/// (`GetOriginalOwner`) land on the mirrored city as seats, so the board
+/// offers the same Keep / Raze / Liberate the shipped popup does — and stops
+/// offering them when the export no longer carries the decision.
+#[test]
+fn a_captured_citys_pending_disposition_reaches_the_board_and_clears() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 20,
+        width: 10,
+        height: 10,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(7, 3, "TERRAIN_GRASS")],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 20,
+        ..StateSnapshot::default()
+    };
+    state.cities.push(StateCity {
+        id: 10,
+        name: "Home".to_string(),
+        x: 3,
+        y: 3,
+        pop: 5,
+        capital: true,
+        ..StateCity::default()
+    });
+    // Taken this turn from Rome (Firaxis player 3); founded by Greece (5).
+    state.cities.push(StateCity {
+        id: 20,
+        name: "Antium".to_string(),
+        x: 7,
+        y: 3,
+        pop: 4,
+        captured_from: Some(3),
+        original_owner: Some(5),
+        ..StateCity::default()
+    });
+    for (player, civ) in [(3, "CIVILIZATION_ROME"), (5, "CIVILIZATION_GREECE")] {
+        state.rivals.push(StateRival {
+            player,
+            civ: civ.to_string(),
+            at_war: player == 3,
+            ..StateRival::default()
+        });
+    }
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    let antium = mirror
+        .game
+        .city_at(crate::hex::offset_to_axial(7, 3))
+        .unwrap();
+    assert_eq!(
+        mirror.game.cities[&antium].captured_from,
+        Some(1),
+        "Rome sits on seat 1"
+    );
+    assert_eq!(
+        mirror.game.cities[&antium].original_owner, 2,
+        "Greece sits on seat 2"
+    );
+    let pending = mirror.game.legal_city_disposition_actions(0);
+    for action in [
+        crate::game::Action::KeepCity { city: antium },
+        crate::game::Action::RazeCity { city: antium },
+        crate::game::Action::LiberateCity { city: antium },
+    ] {
+        assert!(
+            pending.contains(&action),
+            "{action:?} missing from {pending:?}"
+        );
+    }
+
+    // The host took a directive: the export no longer names the city, and
+    // the board stops asking.
+    state.turn += 1;
+    state.cities[1].captured_from = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.cities[&antium].captured_from, None);
+    assert_eq!(mirror.game.cities[&antium].original_owner, 2);
+    assert!(mirror.game.legal_city_disposition_actions(0).is_empty());
+
+    // A loser the board has no seat for leaves the flag clear rather than
+    // pointing the engine at a player that is not there.
+    state.turn += 1;
+    state.cities[1].captured_from = Some(9);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.cities[&antium].captured_from, None);
+}
+
 /// ★★★★ A rival's unique unit must reach the board as what it REPLACES.
 ///
 /// `UNIT_NORWEGIAN_LONGSHIP` was dropped on every turn it was visible on live run
