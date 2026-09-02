@@ -1386,11 +1386,16 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
     };
     let mut ai = AdvancedAi::new();
     assert!(!ai.boosted_bargain_first, "the gene ships off");
-    assert!(!AdvancedAi::legacy().boosted_bargain_first);
+    assert!(!ai.boosted_bargain_first_2, "v2 ships off too");
+    assert!(
+        !AdvancedAi::legacy().boosted_bargain_first
+            && !AdvancedAi::legacy().boosted_bargain_first_2
+    );
     game.players[0].boosted_techs.insert(crate::name!("mining"));
     assert_eq!(ai.boosted_bargain_tech(&game, 0), None, "off, nothing");
     ai.enable_boosted_bargain_first();
     assert!(ai.boosted_bargain_first);
+    assert!(!ai.boosted_bargain_first_2);
     let science: f64 = game
         .player_city_ids(0)
         .into_iter()
@@ -1422,6 +1427,119 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
     );
     ai.disable_boosted_bargain_first();
     assert!(!ai.boosted_bargain_first);
+}
+
+#[test]
+fn boosted_bargain_versions_are_registered_reversible_and_exclusive() {
+    for (tag, field) in [
+        ("boosted-bargain-first", "boosted_bargain_first"),
+        ("boosted-bargain-first-2", "boosted_bargain_first_2"),
+    ] {
+        assert!(
+            GENES
+                .iter()
+                .any(|gene| gene.opt_in() && gene.tag == tag && gene.field == field),
+            "{tag} must be a registered native opt-in"
+        );
+        assert!(
+            crate::ai::advanced::gene_ledger::screenable(tag),
+            "the ledger must be able to price {tag} independently"
+        );
+    }
+    let mut ai = AdvancedAi::new();
+    ai.enable_boosted_bargain_first();
+    assert!(ai.boosted_bargain_first && !ai.boosted_bargain_first_2);
+    ai.enable_boosted_bargain_first_2();
+    assert!(!ai.boosted_bargain_first && ai.boosted_bargain_first_2);
+    ai.enable_boosted_bargain_first();
+    assert!(ai.boosted_bargain_first && !ai.boosted_bargain_first_2);
+    ai.disable_boosted_bargain_first();
+    assert!(!ai.boosted_bargain_first);
+    ai.enable_boosted_bargain_first_2();
+    ai.disable_boosted_bargain_first_2();
+    assert!(!ai.boosted_bargain_first_2);
+}
+
+/// Version one reads price alone and interrupts Seasteads for boosted Mining.
+/// Version two never enters while that lane goal has a legal prerequisite.
+#[test]
+fn boosted_bargain_v2_does_not_interrupt_a_forced_lane_goal() {
+    let (mut game, city, _) = empire_with_a_capital(71_121);
+    game.cities.get_mut(&city).expect("capital").pop = 24;
+    game.players[0]
+        .techs
+        .retain(|tech| tech != &crate::name!("mining"));
+    game.players[0].boosted_techs.insert(crate::name!("mining"));
+    game.players[0].research = None;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    let mut v1_game = game.clone();
+    let mut v1 = AdvancedAi::new();
+    v1.enable_boosted_bargain_first();
+    v1.advanced_research(&mut v1_game, 0, &plan);
+    assert_eq!(v1_game.players[0].research.as_deref(), Some("mining"));
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_boosted_bargain_first_2();
+    v2.advanced_research(&mut game, 0, &plan);
+    let selected = game.players[0].research.as_deref().expect("a lane step");
+    assert_ne!(selected, "mining", "v2 must not force the side bargain");
+    assert!(
+        v2.tech_leads_to(&game, selected, "seasteads"),
+        "the selected node must remain on the Diplomacy beeline; picked {selected}"
+    );
+}
+
+/// Once no forcing contract owns research, v2 may use a one-turn Eureka to
+/// break a close fallback decision. On this board Sailing is the ordinary
+/// Recovery pick; boosted Animal Husbandry retains over ninety percent of its
+/// value and finishes in one turn.
+#[test]
+fn boosted_bargain_v2_breaks_only_a_close_unforced_fallback() {
+    let (mut game, city, _) = empire_with_a_capital(71_122);
+    game.cities.get_mut(&city).expect("capital").pop = 60;
+    game.players[0].research = None;
+    game.players[0]
+        .boosted_techs
+        .insert(crate::name!("animal_husbandry"));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    let mut ordinary_game = game.clone();
+    AdvancedAi::new().advanced_research(&mut ordinary_game, 0, &plan);
+    assert_eq!(
+        ordinary_game.players[0].research.as_deref(),
+        Some("sailing"),
+        "fixture: Sailing is the ordinary highest-value fallback"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_boosted_bargain_first_2();
+    assert_eq!(
+        v2.boosted_bargain_tech_2(&game, 0, plan.strategy, &crate::name!("sailing")),
+        Some(crate::name!("animal_husbandry"))
+    );
+    v2.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("animal_husbandry"),
+        "the one-turn close-value Eureka breaks the fallback tie"
+    );
 }
 
 /// `cheapest-wonder-first`: a one-city empire whose capital can finish a

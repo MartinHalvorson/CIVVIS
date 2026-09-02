@@ -359,6 +359,13 @@ const UNRESOLVED_MAJOR_BORDER_RADIUS: i32 = 5;
 /// of them prerequisite-met and within two turns — 72 beakers for 2.7 techs
 /// against a lane beeline that never looks sideways.
 const BOOSTED_BARGAIN_TURNS: f64 = 2.0;
+/// `boosted-bargain-first-2`: a side technology gets at most one turn of
+/// research, and only after every forced lane goal has stood down. The value
+/// floor keeps "discounted" from becoming a synonym for "unwanted": the
+/// bargain must retain nearly all of the ordinary fallback winner's board
+/// value before its Eureka breaks the tie.
+const BOOSTED_BARGAIN_V2_TURNS: f64 = 1.0;
+const BOOSTED_BARGAIN_V2_VALUE_FLOOR: f64 = 0.90;
 /// `cheapest-wonder-first`: a wonder within this many turns of done, in a
 /// city producing at least `CHEAPEST_WONDER_CITY_SHARE` of the empire's
 /// best, is a bargain the race opens for. Eight live King games ignored 17
@@ -4775,6 +4782,10 @@ pub struct AdvancedAi {
     /// science is researched before the lane's beeline resumes. See
     /// `boosted_bargain_tech`.
     boosted_bargain_first: bool,
+    /// `boosted-bargain-first-2`: after every forced lane goal stands down, a
+    /// boosted technology within one turn may break a close ordinary fallback
+    /// decision. See `boosted_bargain_tech_2`.
+    boosted_bargain_first_2: bool,
     /// `border-parity`: in peacetime, once a met major's city stands within
     /// `BORDER_PARITY_CONTACT_RADIUS` of ours, keep the seat's military power
     /// at `BORDER_PARITY_RATIO` of the strongest such neighbour's by buying
@@ -7443,6 +7454,7 @@ impl AdvancedAi {
             border_parity_2: false,
             border_parity_3: false,
             boosted_bargain_first: false,
+            boosted_bargain_first_2: false,
             border_parity: false,
             age_closer: false,
             builder_avoid: BTreeMap::new(),
@@ -13473,17 +13485,27 @@ impl AdvancedAi {
                     })
                     .cloned()
             });
-            let pick = goal_pick.or_else(|| {
-                available
-                    .iter()
-                    .max_by(|a, b| {
-                        self.tech_value(g, pid, a, plan.strategy)
-                            .partial_cmp(&self.tech_value(g, pid, b, plan.strategy))
-                            .unwrap()
-                            .then_with(|| b.cmp(a))
-                    })
-                    .cloned()
-            });
+            let fallback_pick = available
+                .iter()
+                .max_by(|a, b| {
+                    self.tech_value(g, pid, a, plan.strategy)
+                        .partial_cmp(&self.tech_value(g, pid, b, plan.strategy))
+                        .unwrap()
+                        .then_with(|| b.cmp(a))
+                })
+                .cloned();
+            // V1 above can replace a forced goal merely because a side node
+            // is cheap. V2 enters only here, after `goal_pick` is absent, and
+            // may replace the ordinary fallback only with a one-turn boosted
+            // node of nearly equal board value.
+            let pick = if let Some(goal_pick) = goal_pick {
+                Some(goal_pick)
+            } else {
+                fallback_pick.map(|ordinary| {
+                    self.boosted_bargain_tech_2(g, pid, plan.strategy, &ordinary)
+                        .unwrap_or(ordinary)
+                })
+            };
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
@@ -14003,6 +14025,51 @@ impl AdvancedAi {
             .filter(|(remaining, _)| *remaining <= science * BOOSTED_BARGAIN_TURNS)
             .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
             .map(|(_, tech)| tech.as_str())
+    }
+
+    /// `boosted-bargain-first-2`: the best already-boosted available node
+    /// that finishes within one turn and retains at least
+    /// `BOOSTED_BARGAIN_V2_VALUE_FLOOR` of the ordinary fallback winner's
+    /// strategic value. `advanced_research` asks only when no forced lane goal
+    /// produced a pick, so this can break a close fallback decision but cannot
+    /// interrupt a victory, war, defence, religion, luxury, or infrastructure
+    /// beeline.
+    fn boosted_bargain_tech_2(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        ordinary: &Name,
+    ) -> Option<Name> {
+        if !self.boosted_bargain_first_2 {
+            return None;
+        }
+        let player = &g.players[pid];
+        let science = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.city_yields(cid).science)
+            .sum::<f64>()
+            .max(1.0);
+        let value_floor =
+            self.tech_value(g, pid, ordinary, strategy) * BOOSTED_BARGAIN_V2_VALUE_FLOOR;
+        g.available_techs(pid)
+            .into_iter()
+            .filter(|tech| player.boosted_techs.contains(tech))
+            .filter_map(|tech| {
+                let remaining =
+                    g.tech_cost(tech.as_str()) * (1.0 - Self::boost_frac(g, &tech, true));
+                (remaining <= science * BOOSTED_BARGAIN_V2_TURNS
+                    && self.tech_value(g, pid, &tech, strategy) + f64::EPSILON >= value_floor)
+                    .then(|| (self.tech_value(g, pid, &tech, strategy), remaining, tech))
+            })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.total_cmp(&left.1))
+                    .then_with(|| right.2.cmp(&left.2))
+            })
+            .map(|(_, _, tech)| tech)
     }
 
     fn prophet_race_open_for(&self, g: &Game, pid: usize) -> bool {
