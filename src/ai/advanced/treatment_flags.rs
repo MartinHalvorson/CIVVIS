@@ -499,6 +499,20 @@ impl AdvancedAi {
         self.base.naval_recon_2 = false;
     }
 
+    /// Version 3 of `naval-recon`: let a simultaneously missing land scout
+    /// take the idle queue before the one peacetime sea scout. One version per
+    /// family is active in a screen.
+    pub fn enable_naval_recon_3(&mut self) {
+        self.base.naval_recon = false;
+        self.base.naval_recon_2 = false;
+        self.base.naval_recon_3 = true;
+    }
+
+    /// The twin of `enable_naval_recon_3`.
+    pub fn disable_naval_recon_3(&mut self) {
+        self.base.naval_recon_3 = false;
+    }
+
     /// A building whose powered half would be switched on the day it stands —
     /// the city is powered and stays powered with the building's own demand —
     /// is priced with that half, so the Lab, Stock Exchange and Factory in
@@ -1335,6 +1349,7 @@ impl AdvancedAi {
     /// then a conquest posture only after the practical frontier is exhausted.
     /// See [`AdvancedAi::rapid_city_expansion`].
     pub fn enable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion_2 = false;
         self.rapid_city_expansion = true;
         self.base.enable_rapid_city_expansion();
     }
@@ -2300,11 +2315,25 @@ impl AdvancedAi {
     /// reads a method line's first identifier.
     pub fn enable_boost_wait_research(&mut self) {
         self.boost_wait_research = true;
+        self.boost_wait_research_2 = false;
     }
 
     /// The twin of `enable_boost_wait_research`.
     pub fn disable_boost_wait_research(&mut self) {
         self.boost_wait_research = false;
+    }
+
+    /// Wait only on a two-turn node whose final boost trigger is already at
+    /// the front of an owned city queue, using the boost as a light tie-break.
+    /// Opt-in gene `boost-wait-research-2`.
+    pub fn enable_boost_wait_research_2(&mut self) {
+        self.boost_wait_research_2 = true;
+        self.boost_wait_research = false;
+    }
+
+    /// The twin of `enable_boost_wait_research_2`.
+    pub fn disable_boost_wait_research_2(&mut self) {
+        self.boost_wait_research_2 = false;
     }
 
     /// Credit a technology or civic with the boosts it makes chaseable by
@@ -2630,11 +2659,25 @@ impl AdvancedAi {
     /// method line's first identifier.
     pub fn enable_first_builder_reserve(&mut self) {
         self.first_builder_reserve = true;
+        self.first_builder_reserve_2 = false;
     }
 
     /// The twin of `enable_first_builder_reserve`.
     pub fn disable_first_builder_reserve(&mut self) {
         self.first_builder_reserve = false;
+    }
+
+    /// Reserve one Builder for an immediately connectable first-copy luxury
+    /// when Amenities are short and expansion is covered, retaining a
+    /// lifetime receipt. Opt-in gene `first-builder-reserve-2`.
+    pub fn enable_first_builder_reserve_2(&mut self) {
+        self.first_builder_reserve_2 = true;
+        self.first_builder_reserve = false;
+    }
+
+    /// The twin of `enable_first_builder_reserve_2`.
+    pub fn disable_first_builder_reserve_2(&mut self) {
+        self.first_builder_reserve_2 = false;
     }
     /// Reserve the cheapest Campus building a city owes ahead of ordinary
     /// production. See `AdvancedAi::first_research_building_reserve`; opt-in
@@ -2680,7 +2723,9 @@ impl AdvancedAi {
     /// here rather than under a marker: the append-point check reads a method
     /// line's first identifier.
     pub fn enable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue = false;
         self.never_an_empty_queue_2 = true;
+        self.never_an_empty_queue_3 = false;
     }
 
     /// The twin of `enable_never_an_empty_queue_2`.
@@ -2694,6 +2739,8 @@ impl AdvancedAi {
     /// method line's first identifier.
     pub fn enable_never_an_empty_queue(&mut self) {
         self.never_an_empty_queue = true;
+        self.never_an_empty_queue_2 = false;
+        self.never_an_empty_queue_3 = false;
     }
 
     /// The twin of `enable_never_an_empty_queue`.
@@ -3475,6 +3522,86 @@ impl AdvancedAi {
         self.industrial_chain_debt = false;
     }
 
+    /// Version 2 of `skip-the-prophet-race`: retain version 1's published
+    /// behavior, but screen the narrower last-call decision independently.
+    /// One version per family is active in a screen.
+    pub fn enable_skip_the_prophet_race_2(&mut self) {
+        self.skip_the_prophet_race = false;
+        self.skip_the_prophet_race_2 = true;
+    }
+
+    /// The twin of `enable_skip_the_prophet_race_2`.
+    pub fn disable_skip_the_prophet_race_2(&mut self) {
+        self.skip_the_prophet_race_2 = false;
+    }
+
+    /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
+    /// with a body before anything else is built, bought when no defender
+    /// exists, and a recon unit is not a defender. A `BasicAi` flag; see
+    /// `advanced/siege_response.rs`.
+    pub fn enable_siege_preempts_the_queue(&mut self) {
+        self.base.enable_siege_preempts_the_queue();
+    }
+
+    /// The twin of `enable_siege_preempts_the_queue`.
+    pub fn disable_siege_preempts_the_queue(&mut self) {
+        self.base.disable_siege_preempts_the_queue();
+    }
+
+    /// `guard-breaks-the-pin`: a Settler's stacked guard strikes the raider
+    /// whose zone of control pins the pair when the trade is worth it. See
+    /// `advanced/siege_response.rs`.
+    pub fn enable_guard_breaks_the_pin(&mut self) {
+        self.guard_breaks_the_pin = true;
+    }
+
+    /// The twin of `enable_guard_breaks_the_pin`.
+    pub fn disable_guard_breaks_the_pin(&mut self) {
+        self.guard_breaks_the_pin = false;
+    }
+
+    /// `settler-target-floor`: a Settler is never sent to a site not worth the
+    /// walk. See `advanced/settler_target_floor.rs`.
+    pub fn enable_settler_target_floor(&mut self) {
+        self.settler_target_floor = true;
+    }
+
+    /// The twin of `enable_settler_target_floor`.
+    pub fn disable_settler_target_floor(&mut self) {
+        self.settler_target_floor = false;
+    }
+
+    /// Version two of `rapid-city-expansion`: aim at the measured five-city
+    /// opening band without version one's immediate fifteen-city order,
+    /// non-empty queue preemption, closest-site override, founding-pantheon
+    /// override, or automatic conquest pivot. One family member plays, so
+    /// enabling this version turns version one off.
+    pub fn enable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion = false;
+        self.rapid_city_expansion_2 = true;
+        self.base.enable_rapid_city_expansion_2();
+    }
+
+    /// The twin of `enable_rapid_city_expansion_2`.
+    pub fn disable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion_2 = false;
+        self.base.disable_rapid_city_expansion_2();
+    }
+
+    /// Version three of `never-an-empty-queue`: tolerate one transient empty
+    /// turn, then recover a persistent stall with a civilian candidate above
+    /// the hard veto. Enabling it selects this family version exclusively.
+    pub fn enable_never_an_empty_queue_3(&mut self) {
+        self.never_an_empty_queue = false;
+        self.never_an_empty_queue_2 = false;
+        self.never_an_empty_queue_3 = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue_3`.
+    pub fn disable_never_an_empty_queue_3(&mut self) {
+        self.never_an_empty_queue_3 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
@@ -3487,7 +3614,6 @@ impl AdvancedAi {
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
-
     // ---- append: t-z ------------------------------------------------
 }
 

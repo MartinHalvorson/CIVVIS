@@ -1403,6 +1403,15 @@
           "amenity-project-preemption-2": null
         }
       },
+      "boost-wait-research": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "boost-wait-research": null,
+          "boost-wait-research-2": null
+        }
+      },
       "border-parity": {
         "rule_on": [],
         "head": null,
@@ -1472,6 +1481,15 @@
           "district-planning-2": null
         }
       },
+      "first-builder-reserve": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "first-builder-reserve": null,
+          "first-builder-reserve-2": null
+        }
+      },
       "government-ladder": {
         "rule_on": [
           "government-ladder-2"
@@ -1502,7 +1520,8 @@
         "ships": "naval-recon",
         "versions": {
           "naval-recon": -0.045836,
-          "naval-recon-2": null
+          "naval-recon-2": null,
+          "naval-recon-3": null
         }
       },
       "never-an-empty-queue": {
@@ -1511,7 +1530,8 @@
         "ships": null,
         "versions": {
           "never-an-empty-queue": null,
-          "never-an-empty-queue-2": null
+          "never-an-empty-queue-2": null,
+          "never-an-empty-queue-3": null
         }
       },
       "power-the-laboratory": {
@@ -1521,6 +1541,15 @@
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
+        }
+      },
+      "rapid-city-expansion": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "rapid-city-expansion": null,
+          "rapid-city-expansion-2": null
         }
       },
       "science-victory-drive": {
@@ -1552,6 +1581,15 @@
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
+        }
+      },
+      "skip-the-prophet-race": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "skip-the-prophet-race": null,
+          "skip-the-prophet-race-2": null
         }
       },
       "treasury-at-work": {

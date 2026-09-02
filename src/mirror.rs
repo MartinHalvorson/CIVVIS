@@ -331,6 +331,16 @@ struct TilesDeltaStamp {
     delta: bool,
 }
 
+/// Which board a `tiles` line belongs to, read beside [`TilesChunk`] for the
+/// same reason as [`TilesDeltaStamp`]: the opening sweep carries no `frame`
+/// (it is frame 0), a mid-turn delta carries the frame it was swept on.
+#[derive(Deserialize)]
+struct TilesBoardStamp {
+    turn: u32,
+    #[serde(default)]
+    frame: u32,
+}
+
 /// The seat's view of the world at one turn, assembled from its `tiles` chunks.
 ///
 /// Deliberately not a `Game`: the holes have to survive into whatever consumes
@@ -494,16 +504,38 @@ pub fn snapshot_from_events_at(
 ) -> std::io::Result<Snapshot> {
     let raw = std::fs::read_to_string(path)?;
     let state_line = latest_state_line(&raw, turn);
+    // ★★★★ THE MOD WRITES THE TURN'S STATE FIRST AND ITS TILES SECOND.
+    //
+    // `beginTurn` in the mod is `exportState` then `exportTiles`, so in
+    // `events.jsonl` every turn's sweep and delta sit BELOW the state line
+    // they describe. Stopping at the state line therefore answered every
+    // board on the PREVIOUS turn's map — and turn 1 on no map at all: every
+    // live run of 2026-09-01 opened with "no revealed terrain or no state
+    // yet", 0 orders, and the first Settler skipped its first turn
+    // (`civvis-20260901T212354Z` … `T210954Z`, six of six). A tiles line
+    // below the selected state still belongs to it when it is the same turn
+    // and no later frame than the state's; a later frame's delta stays out
+    // (`snapshot_stops_at_the_selected_state_before_a_later_mid_turn_delta`).
+    let board = state_line
+        .and_then(|limit| raw.lines().nth(limit))
+        .and_then(|line| state_from_json(line).ok())
+        .map(|state| (state.turn, state.frame));
     // In stream order, so a later chunk's plot wins whichever kind it is;
     // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
     // see `Snapshot::merge_delta`.
     let mut snapshot = Snapshot::default();
     for (line_number, line) in raw.lines().enumerate() {
-        if state_line.is_some_and(|limit| line_number > limit) {
-            break;
-        }
         if !line.contains("\"tiles\"") {
             continue;
+        }
+        if state_line.is_some_and(|limit| line_number > limit) {
+            let same_board = board.is_some_and(|(board_turn, board_frame)| {
+                serde_json::from_str::<TilesBoardStamp>(line)
+                    .is_ok_and(|stamp| stamp.turn == board_turn && stamp.frame <= board_frame)
+            });
+            if !same_board {
+                continue;
+            }
         }
         if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
             if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
@@ -5324,7 +5356,11 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
 
     #[rustfmt::skip]
     const STATE: &[&str] = &[
-        "kind", "event", "run", "ctx", "turn", "frame", "techs", "civics", "research",
+        // Wall-clock stamps are telemetry metadata, not mirrored game facts,
+        // but they are intentional top-level keys on every live state export.
+        // Keep them out of the gap stream so a real state-schema addition is
+        // not buried under `schema:state.t` and `schema:state.utc` noise.
+        "kind", "event", "run", "ctx", "turn", "frame", "t", "utc", "techs", "civics", "research",
         "science_projects", "science_victory_points", "science_victory_points_per_turn",
         "science_victory_points_needed", "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "used_governments",

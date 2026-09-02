@@ -151,6 +151,27 @@ local function emit(kind, payload)
 	payload.kind = kind;
 	payload.ctx = "agent";
 	payload.run = cfg.RunTag or "unset";
+	-- Mod-side write time in seconds on whichever clock this Lua sandbox offers
+	-- (none of them is guaranteed; a build with none simply omits `t`). The
+	-- harness stamps receipt as `utc`; the two together separate the log's
+	-- delivery delay from the agent's own cadence, which receipt alone could not
+	-- (lines reach the harness in batches, so 13 polls read as one instant).
+	pcall(function()
+		local t = Automation.GetTime();
+		if type(t) == "number" then payload.t = t; end
+	end);
+	if payload.t == nil then
+		pcall(function()
+			local t = UI.GetElapsedTime();
+			if type(t) == "number" then payload.t = t; end
+		end);
+	end
+	if payload.t == nil then
+		pcall(function()
+			local t = os.clock();
+			if type(t) == "number" then payload.t = t; end
+		end);
+	end
 	-- ⚠⚠ THE TRAILING NEWLINE IS REQUIRED, NOT COSMETIC. `Automation.Log` does not
 	-- terminate its record — measured: the log's final byte was `}`. `watch.py`
 	-- splits on newlines and holds the unterminated tail as `partial`, so the LAST
@@ -14628,6 +14649,7 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         settler_barbarian_combat_guard_rescued = 0,
 	                         builder_barbarian_capture_held = 0,
 	                         builder_capture_escaped = 0,
+	                         active_fire_civilian_held = 0,
 	                         move_noop = 0, move_fallback = 0 },
 	                escortHolds = {}, moveAttempts = {} };
 
@@ -14643,6 +14665,7 @@ CivvisBoard.reset = function()
 	                     settler_barbarian_combat_guard_rescued = 0,
 	                     builder_barbarian_capture_held = 0,
 	                     builder_capture_escaped = 0,
+	                     active_fire_civilian_held = 0,
 	                     move_noop = 0, move_fallback = 0 };
 	CivvisBoard.moveAttempts = {};
 	CivvisBoard.escortHolds = {};
@@ -15736,15 +15759,15 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
--- Builders are civilians too.  A live Civ 6 run lost a Builder immediately
--- after CIVVIS moved it from the capital onto a tile reachable by a visible
--- barbarian Warrior; the normal civilian bridge only protected Settlers, so
--- the Builder disappeared before the next export.  Keep this repair narrow:
--- inspect only visible barbarian units, only a host-proven same-turn Builder
--- leg, and only refuse the hand-off when no co-located combat escort is
--- proven to take that exact leg.  The planner still owns the destination and
--- the existing opt-in advanced Builder gene remains independent of this
--- actuation floor.
+-- Builders are civilians too.  One live Civ 6 run lost a Builder immediately
+-- after CIVVIS moved it onto `FEATURE_BURNING_FOREST`; there was no combat or
+-- capture callback, and the tile became `FEATURE_BURNT_FOREST` two turns later.
+-- The normal civilian bridge only protected Settlers, so the Builder
+-- disappeared before the next export.  Keep this repair narrow: inspect only
+-- visible barbarian units, only a host-proven same-turn Builder leg, and only
+-- refuse the hand-off when no co-located combat escort is proven to take that
+-- exact leg.  The planner still owns the destination and the existing opt-in
+-- advanced Builder gene remains independent of this actuation floor.
 CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 	local player = try(function() return Players[pid]; end, nil);
 	if player == nil then return; end
@@ -15970,6 +15993,89 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
+-- Gathering Storm's forest-fire damage table is more dangerous than the
+-- feature's ordinary movement/defense row suggests: turns 0-2 carry a 101%
+-- `UNIT_KILLED_CIVILIAN` damage row for both forest and jungle fires.  The
+-- board already exports the host's authoritative feature name, but a CIVVIS
+-- MOVE_TO can be applied between exports.  Refuse a civilian's exposed handoff
+-- into an active fire tile at the last host-leg boundary.  This is deliberately
+-- host-only: the feature may start or spread after the model's last observation,
+-- and no escort makes a civilian immune to a random-event kill.
+CivvisBoard.holdActiveFireCivilianLegs = function(pid, turn, rows)
+	local function activeFireAt(x, y)
+		local plot = try(function() return Map.GetPlot(x, y); end, nil);
+		if plot == nil then return nil; end
+		local feature = typeName("Features", "FeatureType",
+			try(function() return plot:GetFeatureType(); end, -1));
+		if feature == "FEATURE_BURNING_FOREST" or feature == "FEATURE_BURNING_JUNGLE" then
+			return feature;
+		end
+		return nil;
+	end
+	local function civilian(unit)
+		local row = try(function() return GameInfo.Units[unitTypeName(unit)]; end, nil);
+		if row == nil then return false; end
+		return (tonumber(row.Combat) or 0) <= 0
+			and (tonumber(row.RangedCombat) or 0) <= 0
+			and (tonumber(row.Bombard) or 0) <= 0
+			and (tonumber(row.AntiAirCombat) or 0) <= 0;
+	end
+	local function alreadyHeld(row)
+		return row._civvis_builder_barbarian_capture_hold == true
+			or row._civvis_settler_barbarian_combat_hold == true
+			or row._civvis_settler_scout_hold == true;
+	end
+	local held = {};
+	for _, row in ipairs(rows) do
+		local subject = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and not alreadyHeld(row) and subject ~= nil
+				and wantX ~= nil and wantY ~= nil and held[subject] == nil then
+			local unit = liveUnit(pid, subject);
+			if unit ~= nil and civilian(unit) then
+				local fromX = tonumber(try(function() return unit:GetX(); end, nil));
+				local fromY = tonumber(try(function() return unit:GetY(); end, nil));
+				local capped = CivvisBoard.capToTurn(unit, wantX, wantY);
+				if fromX ~= nil and fromY ~= nil and capped ~= false then
+					local sentX, sentY = wantX, wantY;
+					if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
+					local feature = activeFireAt(sentX, sentY);
+					if feature ~= nil and (sentX ~= fromX or sentY ~= fromY) then
+						held[subject] = {
+							unit = subject, unit_kind = unitTypeName(unit),
+							fromX = fromX, fromY = fromY,
+							wantX = wantX, wantY = wantY,
+							sentX = sentX, sentY = sentY, feature = feature,
+						};
+					end
+				end
+			end
+		end
+	end
+	-- A later replan frame must not put the same civilian back onto the fire
+	-- after the first row was held.  Keep the original decision visible in the
+	-- order ledger; only the host hand-off is declined.
+	for subject in pairs(held) do
+		for _, row in ipairs(rows) do
+			if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+					and tonumber(row.subject) == subject then
+				row._civvis_active_fire_civilian_hold = true;
+			end
+		end
+	end
+	for subject, heldLeg in pairs(held) do
+		CivvisBoard.stats.active_fire_civilian_held =
+			CivvisBoard.stats.active_fire_civilian_held + 1;
+		emit("active_fire_civilian_hold", {
+			turn = turn, unit = subject, unit_kind = heldLeg.unit_kind,
+			from = { heldLeg.fromX, heldLeg.fromY },
+			want = { heldLeg.wantX, heldLeg.wantY },
+			sent = { heldLeg.sentX, heldLeg.sentY }, feature = heldLeg.feature,
+		});
+	end
+end;
+
 -- Cancel stale host movement on combat units before the board owns them.
 --
 -- `GetQueuedDestination` catches an ordinary multi-turn MOVE_TO, but it is
@@ -16185,6 +16291,7 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisBoard.holdVisibleScoutCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
+	CivvisBoard.holdActiveFireCivilianLegs(pid, turn, rows);
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -16244,6 +16351,11 @@ local function applyOrders(player, pid, turn, rows)
 			countRefusal(kind, "builder_barbarian_capture_hold");
 			ordered[index] = true;
 			return false, "builder_barbarian_capture_hold";
+		end
+		if row._civvis_active_fire_civilian_hold == true then
+			countRefusal(kind, "active_fire_civilian_hold");
+			ordered[index] = true;
+			return false, "active_fire_civilian_hold";
 		end
 		-- This move is still a CIVVIS decision and must remain in the order
 		-- accounting.  The bridge declined only its exposed host hand-off; emit
@@ -16554,6 +16666,10 @@ local function applyOrders(player, pid, turn, rows)
 		-- already exposed before the current order frame.
 		builder_barbarian_capture_held = CivvisBoard.stats.builder_barbarian_capture_held,
 		builder_capture_escaped = CivvisBoard.stats.builder_capture_escaped,
+		-- Civilian MOVE_TO legs refused because the host's actual destination is
+		-- an active forest/jungle fire.  Random-event escorts do not prevent the
+		-- shipped `UNIT_KILLED_CIVILIAN` outcome.
+		active_fire_civilian_held = CivvisBoard.stats.active_fire_civilian_held,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
@@ -17113,9 +17229,18 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- ended. A busy-wait on a channel whose other half needs the same thread is a
 	-- deadlock, not a delay.
 	--
-	-- Polling every `OrdersPollTicks` costs 1/30th the queries and still answers
-	-- within milliseconds of the orders landing.
-	local every = cfg.OrdersPollTicks or 30;
+	-- Polling every `OrdersPollTicks` ticks bounds the queries — but note what a
+	-- tick IS here: `settleTurn` runs from `tick()`, which `onGameCoreTick` calls
+	-- once per `TickEvery` (16) publish batches. Thirty of those was 480 publish
+	-- batches per poll, and on the live Emperor lane (run 195234Z, receipt-stamped)
+	-- that was **3.8 s** between the board going out and the first poll, paid on
+	-- the opening board AND on every replan frame while the brain had answered
+	-- 50 ms after the board reached it: state → orders median 3.95 s, replan →
+	-- frame state median 3.84 s, on turns of 13–20 s. Four ticks is 64 publish
+	-- batches per poll — still an order of magnitude short of the every-publish
+	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
+	-- scaled by the same factor so every wall-clock allowance is unchanged.
+	local every = cfg.OrdersPollTicks or 4;
 	if awaiting.ticks % every ~= 0 then return false; end
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
@@ -17179,7 +17304,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- opening board's stale-answer and built-in ladders below never apply
 	-- to a frame — a stale answer is the very board this frame replaces.
 	if frame > 0 then
-		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 20) then
+		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 150) then
 			awaiting.done = true;
 			awaiting.source = "civvis";
 			-- Every trigger, and the cap: a brain that could not answer this
@@ -17195,7 +17320,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	end
 
 	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
-	if awaiting.polls >= (cfg.OrdersWaitPolls or 40) then
+	if awaiting.polls >= (cfg.OrdersWaitPolls or 300) then
 		local stale = newestAnsweredTurn(turn);
 		local maxStale = cfg.OrdersMaxStale or 4;
 		if stale ~= nil and stale > 0 and (turn - stale) <= maxStale then
@@ -17216,7 +17341,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- a mechanism given authority with no floor for being wrong. Past the budget the
 	-- built-in heuristics run and the turn is recorded as `fallback`, which is a
 	-- number to watch — a run that is mostly fallback is not a measurement of CIVVIS.
-	if awaiting.polls >= (cfg.OrdersFallbackPolls or 120) then
+	if awaiting.polls >= (cfg.OrdersFallbackPolls or 900) then
 		-- ⚠ SET THE SOURCE *BEFORE* RUNNING THE FALLBACK. `playFallback` emits the
 		-- turn record, which reads `awaiting.source` — assigning after the call made
 		-- every fallback turn report `orders_source: pending`, so the one field that
@@ -17380,6 +17505,57 @@ local function playTurn(player, pid, turn)
 		ticks_seen = ticksSeen, ticks_taken = ticksTaken,
 		blocker = blockerName(currentBlocker(pid)),
 	});
+end
+
+-- ★★★★ THE TURN-START BOARD READ EVERY UNIT'S MOVEMENT BEFORE THE ENGINE
+-- RESTORED IT.
+--
+-- `tick` reaches `beginTurn` from `LocalPlayerTurnBegin` with `IsTurnActive()`
+-- already true, and `GetMovesRemaining()` still answers LAST turn's leftover:
+-- a Warrior that spent both moves reads 0, a Scout that spent one of three
+-- reads 2. The board trusts that export (`Seat::moves_at_turn_start`), plans
+-- the unit as it stands, and leaves it unmentioned, so the unit is skipped.
+-- Measured on `civvis-20260901T212354Z`: the first Settler read 0 on turns 3
+-- and 5, walked on 2, 4 and 6 only, and founded the capital on turn 6 for a
+-- two-hex walk. Across turns 20-60 of a mature run a quarter of frame-0 unit
+-- rows were 0-move rows; the frame published later the same turn read full
+-- movement for 290 of 293 of them.
+--
+-- So the turn is not opened until every unit reads its full allowance, or
+-- `MOVES_RESTORED_PATIENCE` ticks have passed — a unit the engine walked on a
+-- queued path before `cancelQueuedPaths` ran is legitimately short and must
+-- not hold the turn. `lastTurnSeen` is left at the previous turn so the next
+-- tick retries; ticks come undivided from `EndTurnBlockingChanged` and 1-in-16
+-- from `GameCoreEventPublishComplete`, so the wait is a fraction of a second.
+-- On `CivvisBoard` rather than as locals: the main chunk is at Lua's
+-- 199-local ceiling (`test_main_chunk_locals_stay_under_the_limit`).
+CivvisBoard.MOVES_RESTORED_PATIENCE = 12;
+CivvisBoard.movesRestoredWait = { turn = -1, ticks = 0 };
+function CivvisBoard.movementNotYetRestored(player, turn)
+	local movesRestoredWait = CivvisBoard.movesRestoredWait;
+	if movesRestoredWait.turn ~= turn then
+		movesRestoredWait.turn = turn;
+		movesRestoredWait.ticks = 0;
+	end
+	local short = 0;
+	eachUnit(player, function(unit)
+		local max = tonumber(try(function() return unit:GetMaxMoves(); end, 0)) or 0;
+		local left = tonumber(try(function() return unit:GetMovesRemaining(); end, -1)) or -1;
+		if max > 0 and left >= 0 and left < max then short = short + 1; end
+	end);
+	if short == 0 then
+		if movesRestoredWait.ticks > 0 then
+			emit("moves_restored", { turn = turn, ticks = movesRestoredWait.ticks });
+		end
+		return false;
+	end
+	movesRestoredWait.ticks = movesRestoredWait.ticks + 1;
+	if movesRestoredWait.ticks > CivvisBoard.MOVES_RESTORED_PATIENCE then
+		emit("moves_restored", { turn = turn, ticks = movesRestoredWait.ticks,
+		                         short = short, gave_up = true });
+		return false;
+	end
+	return true;
 end
 
 local function tick()
@@ -17950,6 +18126,9 @@ local function tick()
 
 		local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 		if turn ~= lastTurnSeen then
+			-- See `movementNotYetRestored`: the board waits for the engine to
+			-- hand the units their turn's movement, not the previous turn's dregs.
+			if cfg.CivvisDecides and CivvisBoard.movementNotYetRestored(player, turn) then return; end
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
@@ -18089,12 +18268,39 @@ local function tick()
 					-- and that cycle repeated unchanged until the watchdog killed the
 					-- game. The forfeit ladder ran every time and dismissed every time.
 					--
-					-- `fillPolicies` returns nil the moment no slot is open, so on the
-					-- turns that are already right this costs one culture lookup.
+					-- A policy deck request is an asynchronous transaction. On the live
+					-- 2026-09-01 run `civvis-20260901T230916Z`, turns 184--208 kept
+					-- returning `FILL_CIVIC_SLOT` after the full deck request succeeded:
+					-- one Economic slot was still empty, while the same-turn replan was
+					-- correctly deferred as `same_turn_transaction_in_flight`. Calling
+					-- `fillPolicies` here would submit a second transaction against that
+					-- in-flight request. The first `civvis_complete` answer then stopped
+					-- the next board publication, so the old second-sighting forfeit could
+					-- never run and the game stayed on the same turn.
+					--
+					-- Force this hard blocker in the same pass after CIVVIS has answered.
+					-- The forced end turn gives the engine a fresh turn in which the
+					-- policy transaction can settle and the targeted repair can run. Keep
+					-- the filler for the non-racing path, where CIVVIS has not answered
+					-- this turn and an open slot can still be filled safely.
 					if name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then
-						local filled = fillPolicies(player);
-						if filled then
-							answered = answered .. "+" .. tostring(filled);
+						if answered == "civvis_complete" then
+							local dropped = dismissBlocker(pid, blocker);
+							answered = answered .. "+forced";
+							emit("dismissed", { turn = turn, blocker = name,
+							                    dismissed = dropped, attempts = attempts,
+							                    answered = answered, parked = 0,
+							                    forfeit = 0, forced = true, same_pass = true });
+							same_pass_forced = true;
+							pcall(function()
+								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								                 { REASON = "UserForced" });
+							end);
+						else
+							local filled = fillPolicies(player);
+							if filled then
+								answered = answered .. "+" .. tostring(filled);
+							end
 						end
 					end
 					-- ⚠⚠⚠ AND THE SAME THING AGAIN ON PRODUCTION, WHICH PARKS THE

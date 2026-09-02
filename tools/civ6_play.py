@@ -390,6 +390,22 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+#: How often the control mod polls SQLite for CIVVIS's answer, in agent ticks —
+#: each tick is `TickEvery` (16) game-core publish batches. Thirty ticks was
+#: measured at 3.8 s between the board going out and the first poll on the live
+#: Emperor lane (run civvis-20260901T195234Z, receipt-stamped events), paid on the
+#: opening board and again on every replan frame, while the brain answered 50 ms
+#: after the board reached it. Four ticks polls ~7.5× as often and is still
+#: 64 publish batches apart — an order of magnitude short of the every-publish
+#: query that deadlocked run 20260730T110209Z.
+ORDERS_POLL_TICKS = 4
+#: The three poll budgets, scaled by the same 30/4 so every wall-clock allowance
+#: is exactly what it was (`test_poll_budgets_keep_their_wall_clock`).
+ORDERS_WAIT_POLLS = 300
+ORDERS_FALLBACK_POLLS = 900
+COMBAT_FRAME_POLLS = 150
+
+
 def startup_event_proves_game_started(event: dict) -> bool:
     """Return whether an event proves the in-game agent has loaded.
 
@@ -4339,11 +4355,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,
                     help="post governors to cities (untested since the crash)")
-    ap.add_argument("--orders-poll-ticks", type=int, default=30,
+    ap.add_argument("--orders-poll-ticks", type=int, default=ORDERS_POLL_TICKS,
                     help="game ticks between SQL polls for orders")
-    ap.add_argument("--orders-wait-polls", type=int, default=40,
+    ap.add_argument("--orders-wait-polls", type=int, default=ORDERS_WAIT_POLLS,
                     help="polls to wait for THIS turn before accepting a stale answer")
-    ap.add_argument("--orders-fallback-polls", type=int, default=120,
+    ap.add_argument("--orders-fallback-polls", type=int, default=ORDERS_FALLBACK_POLLS,
                     help="polls before giving up on CIVVIS and running the built-ins")
     ap.add_argument("--orders-max-stale", type=int, default=4,
                     help="how many turns behind a reusable CIVVIS answer may be")
@@ -4384,7 +4400,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="mid-turn combat frames per turn: after the opening orders "
                          "settle on a turn that issued a strike, re-export the board "
                          "and let CIVVIS re-plan the same turn (0 = off)")
-    ap.add_argument("--combat-frame-polls", type=int, default=20,
+    ap.add_argument("--combat-frame-polls", type=int, default=COMBAT_FRAME_POLLS,
                     help="polls to wait for a combat frame's answer before the frame "
                          "is abandoned by name and the turn ends")
     ap.add_argument("--replan-frames", type=int, default=2,
