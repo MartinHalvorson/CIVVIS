@@ -1796,7 +1796,7 @@ impl AdvancedAi {
                     let at_range = aims.iter().any(|aim| {
                         g.wdist(tile, *aim) == range && g.line_of_sight_from(tile, *aim)
                     });
-                    let standoff = depth(tile) >= range + 1
+                    let standoff = depth(tile) > range
                         && aims.iter().any(|aim| g.wdist(tile, *aim) == range + 1);
                     let tier = if at_range && screened(tile) {
                         0
