@@ -53,9 +53,10 @@
 //!    long expedition, or when the settler is gone.
 //!
 //! Visibility follows every other civilian-risk path: raiders inside the
-//! turn-start vision frame (`battlefront_visibility`), never through fog.
-//! The live seat only ever exports what it sees, so this is also what the
-//! bridge can act on.
+//! current vision frame (`battlefront_visibility`) are exact, while the live
+//! capture lessons retain a bounded last-seen projection after a visible unit
+//! leaves the host's visible-only export. Native boards only get that second
+//! behavior when `hostile-memory` is explicitly enabled.
 //!
 //! Off, every touched path is unchanged.
 //!
@@ -93,6 +94,7 @@ use crate::game::{Action, Game};
 use crate::reasoning::plain;
 use crate::think;
 use crate::Pos;
+use std::collections::BTreeSet;
 
 /// Raiders farther than this many times their movement allowance from a
 /// civilian cannot reach it even on roads (a road step costs at least a
@@ -110,7 +112,7 @@ pub(super) const REACH_SCAN_RADIUS: i32 = 10;
 /// current tile for the hostile phase.
 const LIVE_SCOUT_CAPTURE_RADIUS: i32 = 2;
 /// How long a hostile the seat has actually seen keeps counting after it walks
-/// back into the fog, under `hostile-memory`.
+/// back into the fog, under `hostile-memory` or the live capture lessons.
 ///
 /// ⚠ THE HOSTILE LIST IS VISIBLE-ONLY AND THE SETTLERS DIE TO WHAT IS NOT ON
 /// IT. Twenty-eight real settler losses over eleven live King runs
@@ -195,6 +197,8 @@ impl AdvancedAi {
     /// native set, and nothing else. The live capture lessons already widen
     /// the *current* visible set to every at-war owner; this gene adds that
     /// owner rule to native/evaluator boards and remembers stale sightings.
+    /// The live lessons also remember stale hostiles, but keep the same
+    /// all-at-war owner scope they use for the current frame.
     ///
     /// 1. **Every owner the seat is at war with**, not the Barbarian player
     ///    alone. `resolve_entered_units` hands a Settler to whichever hostile
@@ -229,36 +233,27 @@ impl AdvancedAi {
         // player is present in the mirrored unit table.
         let current_frame_includes_all_hostiles =
             self.hostile_memory || self.live_settler_capture_lessons;
+        let uses_memory = current_frame_includes_all_hostiles;
         let visible = self.battlefront_visibility(g, pid);
-        for unit in g.units.values() {
-            if current_frame_includes_all_hostiles {
-                if unit.owner == pid || !g.is_at_war(pid, unit.owner) {
-                    continue;
+        let in_scope = |owner: usize| {
+            owner < g.players.len()
+                && g.is_at_war(pid, owner)
+                && if current_frame_includes_all_hostiles {
+                    owner != pid
+                } else {
+                    Some(owner) == g.barb_pid
                 }
-            } else if Some(unit.owner) != g.barb_pid || g.wdist(unit.pos, around) > radius {
-                continue;
-            }
-            let seen_now = g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid);
-            // Where the seat believes this unit stands, and how stale that
-            // belief is. Off, only a unit in sight this turn counts and the
-            // memory is never written, so `seen_now` is the whole gate and
-            // `from` is the unit's own tile — byte for byte what shipped.
-            let (from, pad) = if seen_now {
-                (unit.pos, 0)
-            } else {
-                let Some(&(last_seen, when)) = self.hostile_last_seen.get(&unit.id) else {
-                    continue;
-                };
-                let elapsed = g.turn.saturating_sub(when);
-                if elapsed > HOSTILE_MEMORY_TURNS {
-                    continue;
-                }
-                (last_seen, elapsed as i32)
-            };
+        };
+        let mut add_raider = |kind: &crate::name::Name,
+                              owner: usize,
+                              unit_id: Option<u32>,
+                              from: Pos,
+                              pad: i32,
+                              seen_now: bool| {
             if g.wdist(from, around) > radius + pad {
-                continue;
+                return;
             }
-            let spec = &g.rules.units[unit.kind];
+            let spec = &g.rules.units[kind];
             let domain = spec.domain.as_deref();
             // A recon unit is an engine-managed scout for the BARBARIAN seat;
             // a major's or a Free City's Scout captures a civilian like
@@ -267,25 +262,27 @@ impl AdvancedAi {
             // can still price a major or Free City Scout.
             let engine_managed_scout = spec.promotion_class == "recon"
                 && !self.live_barbarian_scouts_capture
-                && (!current_frame_includes_all_hostiles || g.players[unit.owner].is_barbarian);
+                && (!current_frame_includes_all_hostiles || g.players[owner].is_barbarian);
             if spec.class != "military" || domain == Some("air") || engine_managed_scout {
-                continue;
+                return;
             }
-            let farthest = (g.unit_max_moves(unit.id) * REACH_SCAN_MOVE_MULTIPLE).ceil() as i32 + 1;
+            let movement = unit_id
+                .map(|uid| g.unit_max_moves(uid))
+                .unwrap_or(spec.moves);
+            let farthest = (movement * REACH_SCAN_MOVE_MULTIPLE).ceil() as i32 + 1;
             if g.wdist(from, around) > farthest.max(1) + 1 + pad {
-                continue;
+                return;
             }
             let is_live_scout =
                 spec.promotion_class == "recon" && self.live_barbarian_scouts_capture;
             let mut reach = if seen_now {
-                g.threat_reach(unit.id)
+                unit_id.map(|uid| g.threat_reach(uid)).unwrap_or_default()
             } else {
                 // The projection. `threat_reach` is unavailable by
-                // construction — it starts from `units[&uid].pos`, which is
-                // where the unit REALLY is, not where the seat last saw it —
-                // so this is the geometric envelope the bridge already uses as
-                // its own conservative floor, from the remembered tile, grown
-                // by one turn of allowance for every turn since.
+                // construction — it starts from the unit's true current
+                // position, not where the seat last saw it — so this is the
+                // geometric envelope from the remembered tile, grown by one
+                // turn of allowance for every turn since.
                 let projected = (spec.moves.ceil() as i32 + pad).max(1);
                 g.wdisk(from, projected)
                     .into_iter()
@@ -298,10 +295,10 @@ impl AdvancedAi {
             };
             if is_live_scout {
                 // `threat_reach` is the exact movement flood and remains the
-                // source of truth for every native/evaluator unit.  On the
+                // source of truth for every native/evaluator unit. On the
                 // live seat, however, the host's conservative scout guard
                 // intentionally ignores terrain/path answers when the
-                // destination contains a civilian.  Union only its measured
+                // destination contains a civilian. Union only its measured
                 // two-hex land floor so the native route and host refusal
                 // cannot disagree on the first leg.
                 reach.extend(
@@ -315,13 +312,8 @@ impl AdvancedAi {
                 // that the native movement flood cannot reproduce: when
                 // `GetMoveToPathEx` cannot answer for a civilian-occupied
                 // destination, it treats every land tile within the unit's
-                // static `BaseMoves` radius as reachable.  A barbarian Horse
-                // Archer exposed this at live t21: the exact flood stopped at
-                // terrain, the host refused the planned escape tile as inside
-                // the four-hex envelope, and the Settler was captured on its
-                // current tile.  Union the same geometric land floor for the
-                // live bridge only; native/evaluator boards retain the exact
-                // terrain-aware answer.
+                // static `BaseMoves` radius as reachable. Union the same
+                // geometric land floor for the live bridge only.
                 let radius = spec.moves.ceil() as i32;
                 reach.extend(
                     g.wdisk(from, radius)
@@ -336,6 +328,64 @@ impl AdvancedAi {
                 sea: domain == Some("sea"),
                 reach,
             });
+        };
+
+        let mut current_keys = BTreeSet::new();
+        for unit in g.units.values() {
+            if !in_scope(unit.owner) {
+                continue;
+            }
+            let key = super::hostile_memory_key(g, unit);
+            if uses_memory {
+                current_keys.insert(key);
+            }
+            let seen_now = g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid);
+            // Off, only a unit in sight this turn counts and the memory is
+            // never written, so `seen_now` is the whole gate and `from` is the
+            // unit's own tile — byte for byte what shipped.
+            let (from, pad) = if seen_now {
+                (unit.pos, 0)
+            } else {
+                if !uses_memory {
+                    continue;
+                }
+                let Some(record) = self.hostile_last_seen.get(&key) else {
+                    continue;
+                };
+                let elapsed = g.turn.saturating_sub(record.when);
+                if elapsed > HOSTILE_MEMORY_TURNS {
+                    continue;
+                }
+                (record.pos, elapsed as i32)
+            };
+            add_raider(&unit.kind, unit.owner, Some(unit.id), from, pad, seen_now);
+        }
+
+        // `LiveMirror::new` rebuilds the foreign roster from the visible-only
+        // `hostiles[]` export, so a unit that walked into fog is absent from
+        // `g.units` rather than present with a hidden position. Feed those
+        // remembered records directly into the same projected envelope. The
+        // stable Civ 6 key prevents a currently visible unit from being counted
+        // twice; it also prevents a fresh-board CIVVIS id from being mistaken
+        // for a different hostile.
+        if uses_memory {
+            for (key, record) in &self.hostile_last_seen {
+                if current_keys.contains(key) || !in_scope(record.owner) {
+                    continue;
+                }
+                let elapsed = g.turn.saturating_sub(record.when);
+                if elapsed > HOSTILE_MEMORY_TURNS {
+                    continue;
+                }
+                add_raider(
+                    &record.kind,
+                    record.owner,
+                    None,
+                    record.pos,
+                    elapsed as i32,
+                    false,
+                );
+            }
         }
         BarbarianReach { raiders }
     }

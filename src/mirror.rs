@@ -7328,11 +7328,12 @@ fn apply_foreign_unit_strikes(game: &mut crate::game::Game, uid: u32, unit: &Sta
 }
 
 /// Record what the host said about one visible unit under the board's unit id —
-/// see `Game::host_unit_facts` for who reads which. A unit that carries none of
-/// the keys (an older mod) leaves no entry, so every reader falls back to the
-/// board's own rule; a unit that carries any of them gets an entry whose absent
-/// members are real absences — no successor, no operation. Foreign units use
-/// this primarily for the host's movement allowance in threat floods.
+/// see `Game::host_unit_facts` for who reads which. The stable Civ 6 id is
+/// retained even when the older mod carries none of the optional fact keys:
+/// live decision memory must survive the fresh-board rebuild and cannot key a
+/// last-seen hostile by the transient CIVVIS id. Optional absent members remain
+/// real absences — no successor, no operation. Foreign units use this primarily
+/// for the host's movement allowance in threat floods.
 fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
     let finite = |value: Option<f64>| value.filter(|value| value.is_finite());
     let exported = unit.upgrade_to.is_some()
@@ -7346,7 +7347,13 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
         || unit.spy_operation_end_turn.is_some()
         || unit.spy_missions_available.is_some();
     if !exported {
-        Arc::make_mut(&mut game.host_unit_facts).remove(&uid);
+        Arc::make_mut(&mut game.host_unit_facts).insert(
+            uid,
+            crate::game::HostUnitFacts {
+                civ6_id: Some(unit.id),
+                ..Default::default()
+            },
+        );
         return;
     }
     let upgrade = (unit.upgrade_to.is_some() || unit.upgrade_blocked_reason.is_some()).then(|| {
@@ -7378,6 +7385,7 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
     Arc::make_mut(&mut game.host_unit_facts).insert(
         uid,
         crate::game::HostUnitFacts {
+            civ6_id: Some(unit.id),
             upgrade,
             maintenance: finite(unit.maintenance).filter(|bill| *bill >= 0.0),
             religious_strength: finite(unit.religious_strength),

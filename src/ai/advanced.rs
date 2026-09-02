@@ -1683,6 +1683,24 @@ struct TurnStartHostile {
     sea: bool,
 }
 
+/// What the live bridge last knew about one hostile after that unit left the
+/// visible-only export. The key is the host's stable Civ 6 id, not the
+/// transient CIVVIS unit id assigned while rebuilding a planning board.
+#[derive(Clone, Debug, PartialEq)]
+struct RememberedHostile {
+    pos: Pos,
+    when: u32,
+    owner: usize,
+    kind: Name,
+}
+
+fn hostile_memory_key(g: &Game, unit: &crate::game::Unit) -> i64 {
+    g.host_unit_facts
+        .get(&unit.id)
+        .and_then(|facts| facts.civ6_id)
+        .unwrap_or(unit.id as i64)
+}
+
 /// A committed expansion route that is long enough to keep its guards even
 /// when no hostile is visible yet.  The destination is part of the record so
 /// a retarget cannot accidentally carry an old expedition's escort along.
@@ -5435,11 +5453,11 @@ pub struct AdvancedAi {
     /// `civilian_safety::HOSTILE_MEMORY_TURNS` turns after it walks back into
     /// the fog. See `AdvancedAi::barbarian_reach`.
     hostile_memory: bool,
-    /// Where each at-war military unit was last seen, and on which turn —
-    /// written once a turn by `observe_turn_start_hostiles` while
-    /// `hostile_memory` is on, and read by nothing else. Empty otherwise, so
-    /// the reach behaves exactly as it did before the gene existed.
-    hostile_last_seen: BTreeMap<u32, (Pos, u32)>,
+    /// Where each in-scope military unit was last seen, and the facts needed
+    /// to project its capture reach after the visible-only host export drops
+    /// it. The key is the stable Civ 6 id when the live mirror provides one;
+    /// native boards fall back to their stable in-game unit id.
+    hostile_last_seen: BTreeMap<i64, RememberedHostile>,
     /// `gold-income-floor`: Markets, Lighthouses, gold buildings and the
     /// Commercial Hub or Harbor are priced by the income the empire is
     /// short of the floor. See `advanced/yield_floors.rs`.
@@ -7144,6 +7162,7 @@ impl AdvancedAi {
         self.settler_dead_sites.clear();
         self.settler_last_seen.clear();
         self.early_settler_homes.clear();
+        self.hostile_last_seen.clear();
         self.settler_vanished.clear();
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
@@ -7752,14 +7771,14 @@ impl AdvancedAi {
     /// the live bridge calls it before its finishing volley, `take_turn`
     /// calls it as a fallback. A no-op unless `settler_stack_discipline`.
     pub fn observe_turn_start_hostiles(&mut self, g: &Game, pid: usize) {
-        // `hostile-memory` rides the same observation point and nothing else:
+        // Hostile memory rides the same observation point and nothing else:
         // this is the one call every seat makes before it has moved anything,
         // so it is the only place on the board where "what the seat could see
-        // at the start of its turn" is still true. It is deliberately OUTSIDE
-        // the shadow's gate below — the shadow is a host-only treatment, while
-        // the memory feeds `barbarian_reach`, which a native board reaches
-        // through `civilian-out-of-reach`.
-        if self.hostile_memory {
+        // at the start of its turn" is still true. The live capture lessons
+        // use the same bounded memory for barbarian sightings, while the
+        // opt-in `hostile-memory` gene additionally widens the owner scope on
+        // native/evaluator boards.
+        if self.hostile_memory || self.live_settler_capture_lessons {
             self.remember_visible_hostiles(g, pid);
         }
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
@@ -7797,17 +7816,19 @@ impl AdvancedAi {
         }
     }
 
-    /// `hostile-memory`: remember where every at-war military unit the seat
-    /// can see right now is standing, and forget anything older than
-    /// [`civilian_safety::HOSTILE_MEMORY_TURNS`].
+    /// Remember where every in-scope military unit the seat can see right now
+    /// is standing, and forget anything older than
+    /// [`civilian_safety::HOSTILE_MEMORY_TURNS`]. `hostile-memory` includes
+    /// every at-war owner; the live capture lessons retain barbarian sightings
+    /// without changing the native owner scope.
     ///
-    /// The recorded fact is deliberately only what the seat SAW: the position
-    /// and the turn. `barbarian_reach` projects the envelope from that tile
-    /// and never asks the unit where it really is, which is the difference
-    /// between remembering a raider and reading the fog.
+    /// The recorded fact is deliberately only what the seat SAW: the position,
+    /// turn, owner and unit kind. `barbarian_reach` projects the envelope from
+    /// that tile and never asks the unit where it really is, which is the
+    /// difference between remembering a raider and reading the fog.
     fn remember_visible_hostiles(&mut self, g: &Game, pid: usize) {
-        self.hostile_last_seen.retain(|_, (_, when)| {
-            *when <= g.turn && g.turn - *when <= civilian_safety::HOSTILE_MEMORY_TURNS
+        self.hostile_last_seen.retain(|_, record| {
+            record.when <= g.turn && g.turn - record.when <= civilian_safety::HOSTILE_MEMORY_TURNS
         });
         for unit in g.units.values() {
             if unit.owner == pid
@@ -7820,7 +7841,16 @@ impl AdvancedAi {
             if spec.class != "military" || spec.domain.as_deref() == Some("air") {
                 continue;
             }
-            self.hostile_last_seen.insert(unit.id, (unit.pos, g.turn));
+            let key = hostile_memory_key(g, unit);
+            self.hostile_last_seen.insert(
+                key,
+                RememberedHostile {
+                    pos: unit.pos,
+                    when: g.turn,
+                    owner: unit.owner,
+                    kind: unit.kind,
+                },
+            );
         }
     }
 
