@@ -1,8 +1,9 @@
 # The air surge
 
 `air-surge` is an opt-in heuristic gene: beeline Advanced Flight from three
-technologies out, raise an Aerodrome and a bomber wing, and take a named rival
-city with the cavalry behind it. Off in production
+technologies out, raise an Aerodrome, launch with two Bombers and two cavalry,
+then grow the wing toward its sustainable ceiling while taking a named rival
+city. Off in production
 (`PRODUCTION_OPT_INS`); `gene_screen --genes air-surge` prices it.
 
 Implementation: `src/ai/advanced/air_surge.rs`. Tests:
@@ -59,6 +60,14 @@ consequences follow directly:
   negotiates tile by tile. With neither Horses nor Iron the surge falls back to
   the strongest melee body it can build and records that it did.
 
+A sustainable wing is calculated from the actual Aluminum income after other
+Aluminum-consuming units, not from whether a single deposit is connected.
+For example, two improved sources produce **+4 Aluminum per turn**, so four
+Bombers are sustainable. The initial campaign does not wait for all four:
+two Bombers plus two cavalry launch the war; the remaining planes and bodies
+are built behind the opening captures. A stockpile can temporarily fund only
+that two-plane launch package while the planner waits for a replacement source.
+
 ## ⚠ Reachability: measured, and it is the headline
 
 `air_surge_census_at_deployment_scale` plays the shipped shape (six players,
@@ -90,7 +99,9 @@ flat screen as "the wing does not help".** Run the census first: it separates
 ### The same census at 600 turns
 
 `CIVVIS_AIR_SURGE_TURNS=600` gives the seat long enough to reach the air, and
-on the one seed that does, the whole pipeline runs:
+on the one seed that does, the whole pipeline runs. This is the pre-change
+three-Bomber baseline; it documents the original end-to-end observation, not
+the new four-Bomber sustainable ceiling or two-plane launch threshold:
 
 | seed | closest | appointments | breakthroughs | peak field / Al / bombers | declared | captured | end |
 |---|---|---|---|---|---|---|---|
@@ -123,7 +134,7 @@ One appointment at a time, on one objective city.
 | phase | owns |
 |---|---|
 | `Beeline` | research forced along the chain |
-| `Arm` | Aerodrome, then `AIR_SURGE_BOMBERS` bombers, then `AIR_SURGE_BODIES` cavalry; denounce runs alongside |
+| `Arm` | Aerodrome, then the two-Bomber/two-cavalry launch package; continue toward `AIR_SURGE_BOMBERS` Bombers and `AIR_SURGE_BODIES` cavalry while denouncement runs alongside |
 | `Strike` | the declaration |
 | `Exploit` | the war, pressed on the appointed city |
 
@@ -134,6 +145,15 @@ most needs the beeline.
 The grand strategy is taken only from `Strike`: three technologies of Conquest
 posture would pay for the wing with the economy that has to build it. A home
 `Recovery` still outranks the appointment.
+
+## Fresh-board identity
+
+The live `--fresh-board` mirror reconstructs `City::id` values each frame, so
+an id retained from the previous frame is not a durable city identity. An air
+surge therefore retains the objective City Center coordinate and rebinds the
+current frame's id from that coordinate before checking its owner. This avoids
+aborting a campaign as “objective changed owner” when the same enemy city is
+still standing and merely received a different reconstructed id.
 
 ## Two ways in
 

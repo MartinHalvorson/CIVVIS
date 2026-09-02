@@ -51,6 +51,9 @@ local onIncoming = rawget(_G, "CivvisOnIncomingDeal")
 assert(type(onIncoming) == "function", "CivvisControlAgent.lua did not export CivvisOnIncomingDeal")
 local trade = rawget(_G, "CivvisTrade")
 assert(type(trade) == "table", "CivvisControlAgent.lua did not export CivvisTrade")
+local tradeableLuxuries = rawget(_G, "CivvisTradeableLuxuries")
+assert(type(tradeableLuxuries) == "function",
+	"CivvisControlAgent.lua did not export CivvisTradeableLuxuries")
 
 local failures = 0
 local function check(name, got, want)
@@ -284,6 +287,24 @@ local function itemOfKind(state, kind)
 	end
 	return nil
 end
+
+-- The exporter and the buy planner must see the same useful catalogue: the
+-- rival's side of the host deal, minus luxuries the seat already owns. This
+-- is the exact live failure guard; choosing by rival Gold alone sent a
+-- `buy_no_luxury` ask to the richest rival even though another rival could
+-- sell a copy.
+local catalogue, cataloguePlayer = fixture({
+	theirPossible = { RESOURCE_AMBER = 1, RESOURCE_JADE = 1 },
+	own = { RESOURCE_AMBER = 1 },
+})
+local candidates = tradeableLuxuries(cataloguePlayer, 7, 3)
+check("the stock probe asks the rival side", catalogue.possibleArgs[1] .. ":" .. catalogue.possibleArgs[2], "3:7")
+check("the stock probe skips an owned luxury", candidates[1], "RESOURCE_JADE")
+check("the stock probe returns only useful luxuries", #candidates, 1)
+
+local emptyCatalogue, emptyCataloguePlayer = fixture({ theirPossible = { RESOURCE_IRON = 5 } })
+local noCandidates = tradeableLuxuries(emptyCataloguePlayer, 7, 3)
+check("the stock probe distinguishes no luxury from an error", #noCandidates, 0)
 
 local function sellOrder(pid, subject, player, turn, verb, floor)
 	return applyOrder(player, pid, {

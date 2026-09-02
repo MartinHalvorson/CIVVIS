@@ -8865,6 +8865,109 @@ fn a_great_persons_plot_is_occupied_ground_the_builder_routes_around() {
     );
 }
 
+/// `range_attack_refused` and `war_refused` for the CURRENT turn become the
+/// state's `refused_strikes`, and the mirror files them on the board as
+/// `Game::blocked_strikes` in CIVVIS ids and axial tiles. Last turn's refusals
+/// and the DeclareWar `war_refused` (which names a `target` player, not a
+/// unit and plot) stay out.
+#[test]
+fn a_strike_the_host_refused_this_turn_reaches_the_board() {
+    let dir = std::env::temp_dir().join(format!("civvis_strikes_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let path = dir.join("events.jsonl");
+    std::fs::write(
+        &path,
+        concat!(
+            r#"{"kind":"range_attack_refused","turn":40,"unit":3342338,"unit_kind":"UNIT_ARCHER","x":7,"y":5,"moves":2,"attacks":1,"activity":"ACTIVITY_AWAKE","why":"No line of sight [p4r]"}"#,
+            "\n",
+            r#"{"kind":"war_refused","turn":40,"unit":5111818,"verb":"ATTACK","x":8,"y":5,"players":[3],"target_owner":3}"#,
+            "\n",
+            r#"{"kind":"war_refused","turn":40,"target":3,"at_war":false,"has_met":true}"#,
+            "\n",
+            r#"{"kind":"range_attack_refused","turn":39,"unit":3342338,"x":6,"y":5,"why":"Target is out of range [p4r]"}"#,
+            "\n",
+        ),
+    )
+    .expect("write events");
+
+    let refused = refused_strikes_on(&path, 40);
+    assert_eq!(
+        refused,
+        [(3342338, 7, 5), (5111818, 8, 5)].into_iter().collect(),
+        "this turn's two named pairs, and neither last turn's nor the DeclareWar refusal"
+    );
+    assert!(
+        refused_strikes_on(&path, 41).is_empty(),
+        "per turn, not cumulative"
+    );
+
+    let unit_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 3342338i64), (9u32, 5111818i64)]
+        .into_iter()
+        .collect();
+    let blocked = blocked_strikes_from(&refused, &unit_ids);
+    assert_eq!(
+        blocked,
+        [
+            (7u32, crate::hex::offset_to_axial(7, 5)),
+            (9u32, crate::hex::offset_to_axial(8, 5)),
+        ]
+        .into_iter()
+        .collect(),
+        "translated to CIVVIS unit ids and axial tiles"
+    );
+    let unmapped: std::collections::BTreeMap<u32, i64> = [(7u32, 1i64)].into_iter().collect();
+    assert!(
+        blocked_strikes_from(&refused, &unmapped).is_empty(),
+        "a refusal for a unit the board does not carry gates nothing"
+    );
+
+    // Through the mirror: the exported unit's refusal lands on its board id.
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 40,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots: (0..12)
+            .flat_map(|x| (0..12).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let mut state = StateSnapshot {
+        turn: 40,
+        units: vec![StateUnit {
+            id: 3342338,
+            kind: "UNIT_ARCHER".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            moves: 2.0,
+            ..StateUnit::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    state.refused_strikes = refused;
+    let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let uid = mirror
+        .civ6_of
+        .iter()
+        .find_map(|(uid, civ6)| (*civ6 == 3342338).then_some(*uid))
+        .expect("the archer is mirrored");
+    assert_eq!(
+        *mirror.game.blocked_strikes,
+        [(uid, crate::hex::offset_to_axial(7, 5))]
+            .into_iter()
+            .collect(),
+        "the archer's refused shot is on the board; the unmapped unit's is not"
+    );
+    assert!(mirror
+        .game
+        .strike_blocked(uid, crate::hex::offset_to_axial(7, 5)));
+    assert!(!mirror
+        .game
+        .strike_blocked(uid, crate::hex::offset_to_axial(6, 5)));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_promotion_the_host_refused_is_not_offered_again() {
     let dir = std::env::temp_dir().join(format!("civvis_promo_{}", std::process::id()));
