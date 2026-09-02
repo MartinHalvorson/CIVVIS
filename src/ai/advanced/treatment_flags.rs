@@ -1091,10 +1091,7 @@ impl AdvancedAi {
         for gene in super::GENES.iter().filter(|gene| gene.live()) {
             (gene.enable)(self);
         }
-        // This is deployment policy rather than a screenable treatment: every
-        // verification game shares the same 10–15 city horizon, including
-        // ablation arms that temporarily withhold one live treatment.
-        self.verification_city_target = true;
+        self.apply_shared_city_target_contract();
     }
 
     /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
@@ -1140,11 +1137,14 @@ impl AdvancedAi {
         self.apply_gene_ledger();
     }
 
-    /// Every native repair on, the ledger NOT applied — the two halves and
-    /// nothing else. See `enable_live_bridge_universe`.
+    /// Every native repair on, the ledger NOT applied — the two halves plus
+    /// the fixed shared city horizon. `gene_screen` draws only the registered
+    /// repairs, so this production-profile policy remains fixed across every
+    /// tournament genome. See `enable_live_bridge_universe`.
     pub fn enable_engine_repairs_universe(&mut self) {
         self.enable_engine_repairs_war();
         self.enable_engine_repairs_economy();
+        self.apply_shared_city_target_contract();
     }
 
     /// The military half of [`AdvancedAi::enable_engine_repairs`]: force
@@ -4097,6 +4097,20 @@ impl AdvancedAi {
     /// The twin of `enable_safest_stand`.
     pub fn disable_safest_stand(&mut self) {
         self.safest_stand = false;
+    }
+
+    /// `doomed-blow-veto`: a unit whose every blow this turn would leave it
+    /// dead on the enemy's next turn — the return damage plus the danger
+    /// field at the stand against its hit points — is taken from the ladder,
+    /// which would attack with it, and given to the heal rotation as an
+    /// exposed unit. See `battle_planner`.
+    pub fn enable_doomed_blow_veto(&mut self) {
+        self.doomed_blow_veto = true;
+    }
+
+    /// The twin of `enable_doomed_blow_veto`.
+    pub fn disable_doomed_blow_veto(&mut self) {
+        self.doomed_blow_veto = false;
     }
 
     // ---- append: a-b ------------------------------------------------

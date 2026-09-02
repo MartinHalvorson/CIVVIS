@@ -2147,6 +2147,21 @@ pub const GENES: &[Gene] = &[
     // only where the step cuts the danger by the rotation's margin. Priced on
     // the arena beside `battle-planner-2`. See `advanced/battle_planner.rs`.
     Gene { tag: "safest-stand", field: "safest_stand", kind: Kind::OptIn, enable: AdvancedAi::enable_safest_stand, disable: AdvancedAi::disable_safest_stand },
+    // `doomed-blow-veto` (2026-09-02): the battle planner leaves every unit
+    // with a legal blow it did not spend to the ladder, which prices the blow
+    // on its own clone and takes it more often than the plan does — and the
+    // ladder's reply price reads the movement flood, not the danger field.
+    // Twelve of the 145 losses in the 2026-09-02 taxonomy were a ladder
+    // attack by a unit that then stood beside its target and died; a
+    // 94-hit-point Pikeman struck beside a Field Cannon and was removed the
+    // same enemy turn. With this on, a unit whose EVERY candidate blow would
+    // leave it dead next turn — return damage plus the field's danger at the
+    // stand at or over its hit points — is not armed: the rotation treats it
+    // as exposed and stands it out of reach (or on the least danger under
+    // `safest-stand`) and fortifies, and the ladder leaves it alone. A unit
+    // with one survivable blow keeps the ladder's freedom. Priced on the
+    // arena beside `battle-planner-2`. See `advanced/battle_planner.rs`.
+    Gene { tag: "doomed-blow-veto", field: "doomed_blow_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto, disable: AdvancedAi::disable_doomed_blow_veto },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

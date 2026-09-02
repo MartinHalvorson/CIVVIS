@@ -653,22 +653,22 @@ const PANTHEON_FAITH_CARD_FLOOR: f64 = 1.0;
 /// reach. Those are different quantities and this is what the difference cost.
 pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
-/// Verification games need a city horizon that is large enough to establish
-/// an empire, but bounded enough that the endgame is still playable. This is
-/// the operator contract for every live Civilization VI seat; the practical
-/// site scan may still stop an actually exhausted map sooner.
-pub const VERIFICATION_CITY_TARGET_FLOOR: usize = 10;
-pub const VERIFICATION_CITY_TARGET_CEILING: usize = 15;
+/// Live verification and the native standard tournament need a city horizon
+/// large enough to establish an empire, but bounded enough that the endgame is
+/// still playable. The practical site scan may still stop an actually
+/// exhausted map sooner.
+pub const SHARED_CITY_TARGET_FLOOR: usize = 10;
+pub const SHARED_CITY_TARGET_CEILING: usize = 15;
 
-/// Native Science screens retain their historical six-city contract. The live
-/// verifier has its own operator-directed horizon below, so this baseline does
-/// not change the controller that native evaluation is measuring.
+/// Stock and intentionally isolated native evaluator arms retain their
+/// historical six-city Science contract. The production profiles override it
+/// with the shared horizon below.
 const SCIENCE_CITY_TARGET_CAP: usize = 6;
 
-/// A live Science verifier needs enough cities to support several Campuses and
-/// launch pads. Twelve stays inside the shared 10–15-city verification band
-/// without turning the game into an unbounded settlement campaign.
-const VERIFICATION_SCIENCE_CITY_TARGET: usize = 12;
+/// A shared-production Science seat needs enough cities to support several
+/// Campuses and launch pads. Twelve stays inside the 10–15-city band without
+/// turning the game into an unbounded settlement campaign.
+const SHARED_SCIENCE_CITY_TARGET: usize = 12;
 
 /// A Science seat may take the first two cities before its lane owns the plan.
 /// This is the small opening economy that makes the target viable; after it,
@@ -918,6 +918,9 @@ pub struct StrategyCensus {
     /// `safest-stand`: units the rotation found no zero-danger tile for and
     /// stood on the least dangerous one instead.
     pub battle_plan_fallbacks: u32,
+    /// `doomed-blow-veto`: units whose every blow would have left them dead
+    /// next turn, taken from the ladder and given to the rotation.
+    pub battle_plan_doomed: u32,
     /// `battle-planner-2`: slots the positions plan laid out, units it
     /// placed, and units the pace held back on the approach.
     pub battle_plan_slots: u32,
@@ -1026,6 +1029,7 @@ impl StrategyCensus {
         self.battle_plan_rotations += other.battle_plan_rotations;
         self.strike_reach_widened += other.strike_reach_widened;
         self.battle_plan_fallbacks += other.battle_plan_fallbacks;
+        self.battle_plan_doomed += other.battle_plan_doomed;
         self.battle_plan_slots += other.battle_plan_slots;
         self.battle_plan_positioned += other.battle_plan_positioned;
         self.battle_plan_paced += other.battle_plan_paced;
@@ -4928,6 +4932,11 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `doomed-blow-veto`: a unit whose every blow this turn would leave it
+    /// dead on the enemy's next — return damage plus the danger at the stand
+    /// against its hit points — is rotated instead of left to the ladder to
+    /// attack. Opt-in gene; see `advanced/battle_planner.rs`.
+    doomed_blow_veto: bool,
     /// Hunt every Eureka and Inspiration: the union of the boost-aware
     /// research, builder and production habits, over every trigger the engine
     /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
@@ -6162,6 +6171,12 @@ pub struct AdvancedAi {
     /// Mere proximity and repeated damage cannot indefinitely defer peace.
     /// Opt-in gene `siege-is-progress-3`.
     siege_is_progress_3: bool,
+    /// The live verification bridge and native standard tournament universe
+    /// share this 10–15-city horizon, subject to genuinely viable sites. It
+    /// is a production-profile policy rather than a screenable gene, so every
+    /// tournament genome and live ablation keeps it; stock, legacy, and
+    /// intentionally isolated evaluator arms retain their historical target.
+    shared_city_target: bool,
     /// The Science strategy's per-pad district bonus stops once the empire
     /// holds as many Spaceports as the race stage can use — one until the
     /// Earth Satellite is up, two until the Mars Base is away, three for the
@@ -6179,11 +6194,6 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
-    /// The live Civilization VI bridge's operator contract: every verification
-    /// game plans a 10–15 city empire, subject to genuinely viable sites.
-    /// Native evaluation and frozen controllers retain their historical
-    /// city-target behavior.
-    verification_city_target: bool,
     /// Who may be a target, when a war is declared and when peace is sued
     /// for, read off the Objective Board's own requirements: a rival whose
     /// nearest city's Siege bill is over the whole roster is no target, a
@@ -7645,6 +7655,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            doomed_blow_veto: false,
             chase_every_boost: false,
             chase_every_boost_2: false,
             coalition_before_war_2: false,
@@ -7809,11 +7820,11 @@ impl AdvancedAi {
             settler_target_hysteresis_2: false,
             siege_is_progress_2: false,
             siege_is_progress_3: false,
+            shared_city_target: false,
             spaceport_surplus_veto: false,
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
-            verification_city_target: false,
             war_policy_via_board: false,
             war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,
@@ -10907,6 +10918,14 @@ impl AdvancedAi {
         self.urgent_victory_threat(g, target)
     }
 
+    /// The city horizon is a shared production contract, not a screenable
+    /// treatment: live verification and the native standard tournament must
+    /// agree even while a gene screen or a live ablation flips individual
+    /// treatments.
+    fn apply_shared_city_target_contract(&mut self) {
+        self.shared_city_target = true;
+    }
+
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
         let cities = g.player_city_ids(pid);
         let my_power = g.military_power(pid);
@@ -11109,18 +11128,16 @@ impl AdvancedAi {
         } else {
             ordinary_city_target
         };
-        // The live verification contract is a horizon, not a promise to make
+        // The shared production contract is a horizon, not a promise to make
         // an impossible Settler. It deliberately sits after every expansion
         // variant so a religious conversion race, a science phase, or an
-        // experimental arm cannot silently return the seat to a six- or
-        // eight-city plan. `city_target_meets_the_map` below remains the
-        // hard practical-site gate.
-        let desired_cities = if self.verification_city_target {
+        // experimental arm cannot silently return either verification or the
+        // standard tournament to a six- or eight-city plan.
+        // `city_target_meets_the_map` below remains the hard practical-site
+        // gate.
+        let desired_cities = if self.shared_city_target {
             desired_cities
-                .clamp(
-                    VERIFICATION_CITY_TARGET_FLOOR,
-                    VERIFICATION_CITY_TARGET_CEILING,
-                )
+                .clamp(SHARED_CITY_TARGET_FLOOR, SHARED_CITY_TARGET_CEILING)
                 .max(cities.len())
         } else {
             desired_cities
@@ -11167,8 +11184,8 @@ impl AdvancedAi {
             && !(self.science_expansion_phase
                 && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN))
         {
-            let cap = if self.verification_city_target {
-                VERIFICATION_SCIENCE_CITY_TARGET
+            let cap = if self.shared_city_target {
+                SHARED_SCIENCE_CITY_TARGET
             } else {
                 SCIENCE_CITY_TARGET_CAP
             };
@@ -29147,10 +29164,10 @@ impl AdvancedAi {
     }
 
     /// The map-room census is allowed to count the scanner's emergency-grade
-    /// sites for a live verification game. The ordinary Settler picker still
-    /// ranks normal sites first and reaches these only after those sites have
-    /// gone, so this raises the long-term plan without making a marginal site
-    /// outrank a good nearby one.
+    /// sites for a shared production profile. The ordinary Settler picker
+    /// still ranks normal sites first and reaches these only after those sites
+    /// have gone, so this raises the long-term plan without making a marginal
+    /// site outrank a good nearby one.
     fn settle_sites_for_room(
         &self,
         g: &Game,
@@ -29199,7 +29216,7 @@ impl AdvancedAi {
                 *origin,
                 radius,
                 Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
-                self.verification_city_target,
+                self.shared_city_target,
             ));
         }
         sites.sort_by(|a, b| {
