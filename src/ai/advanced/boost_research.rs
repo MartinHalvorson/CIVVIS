@@ -168,9 +168,7 @@ impl AdvancedAi {
         // the family that ever measured significantly negative (share -3.4 pp,
         // z -3.2). The gene keeps the wait, unlock, beeline, production, builder
         // and kill hooks; the live screen prices the union.
-        if !self.boost_first_research
-            || !Self::boost_in_hand(g, pid, node, techs)
-        {
+        if !self.boost_first_research || !Self::boost_in_hand(g, pid, node, techs) {
             return 1.0;
         }
         let frac = Self::boost_frac(g, node, techs).clamp(0.0, 0.99);

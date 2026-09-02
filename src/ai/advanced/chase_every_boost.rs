@@ -895,9 +895,6 @@ mod tests {
         // The in-hand scale is the one old-family hook the gene does NOT arm:
         // see `boost_in_hand_scale` for the isolation that removed it.
         assert_eq!(ai.boost_in_hand_scale(&game, 0, "masonry", true), 1.0);
-        assert!(
-            (ai.boost_in_hand_scale(&game, 0, "craftsmanship", false) - 1.0).abs()
-                < 1e-9
-        );
+        assert!((ai.boost_in_hand_scale(&game, 0, "craftsmanship", false) - 1.0).abs() < 1e-9);
     }
 }

@@ -4665,11 +4665,6 @@ pub struct AdvancedAi {
     /// needs Mining first. Opt-in gene `boost-unlock-research`; see
     /// `advanced/boost_research.rs`.
     boost_unlock_research: bool,
-    /// Hunt every Eureka and Inspiration: the union of the boost-aware
-    /// research, builder and production habits, over every trigger the engine
-    /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
-    /// `chase-every-boost`; see `advanced/chase_every_boost.rs`.
-    chase_every_boost: bool,
     /// The Gold purchase scorer prices a build at its card-boosted rate, so
     /// items a slotted card discounts lose purchase priority to items no card
     /// touches. Opt-in gene `buy-what-cards-cannot-boost`; see
@@ -4719,6 +4714,11 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Hunt every Eureka and Inspiration: the union of the boost-aware
+    /// research, builder and production habits, over every trigger the engine
+    /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
+    /// `chase-every-boost`; see `advanced/chase_every_boost.rs`.
+    chase_every_boost: bool,
     /// `campus-through-expansion`: a Science seat prices the Campus and its
     /// buildings in the Science lane while its plan still reads Expansion,
     /// and no city's first specialty district may be an Entertainment
@@ -7182,13 +7182,13 @@ impl AdvancedAi {
             boost_wait_research: false,
             boost_wait_research_2: false,
             boost_unlock_research: false,
-            chase_every_boost: false,
             buy_what_cards_cannot_boost: false,
             build_what_cards_boost: false,
             amenity_project_preemption_2: false,
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            chase_every_boost: false,
             campus_through_expansion: false,
             district_planning_2: false,
             cheapest_wonder_first: false,
