@@ -1362,6 +1362,35 @@ fn fog_uses_last_seen_tiles_and_cities_and_never_remembers_units() {
 }
 
 #[test]
+fn fog_learns_a_city_founded_on_previously_explored_ground() {
+    let (mut game, origin) = controlled_game(91_011);
+    let explored_position = along(&game, origin, 2);
+    let unexplored_position = along(&game, origin, -2);
+
+    // This is historical map knowledge, not current sight.  A later settlement
+    // at this plot must reach the map just as it does in Civilization VI, while
+    // a settlement where the player has never explored must remain hidden.
+    game.reveal(0, explored_position, 0);
+    assert!(game.players[0].explored.contains(&explored_position));
+    assert!(!game.player_visibility(0).contains(&explored_position));
+
+    let known_city = game.found_city_for(1, explored_position, Some("New Horizon".to_string()));
+    let hidden_city = game.found_city_for(1, unexplored_position, Some("Still Hidden".to_string()));
+    game.refresh_player_visibility(0);
+
+    let observation = crate::obs::observation(&game, 0);
+    let cities = observation["cities"].as_array().expect("a city list");
+    assert!(
+        cities.iter().any(|city| city["id"] == known_city),
+        "a city founded on explored ground must appear through fog"
+    );
+    assert!(
+        !cities.iter().any(|city| city["id"] == hidden_city),
+        "a city founded on unexplored ground must stay hidden"
+    );
+}
+
+#[test]
 fn moving_sight_updates_the_live_perimeter_but_holds_contacts_until_player_end_turn() {
     let (mut game, origin) = controlled_game(91_010);
     let trailing = along(&game, origin, -2);
