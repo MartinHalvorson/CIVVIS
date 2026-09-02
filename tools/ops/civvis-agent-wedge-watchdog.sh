@@ -81,9 +81,24 @@ PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 # ⚠ IT LOWERS THE BAR; IT DOES NOT SKIP THE PROOF. A silent run still has to
 # fail the same forced end turn as any other: `nudge_end_turn`, wait
 # `NUDGE_SETTLE_S`, ask again, and restart only if nothing moved. This buys
-# about three minutes of the roughly seven a handoff costs — measured on run
+# 181 s of the roughly seven minutes a handoff costs — measured on run
 # civvis-20260902T162829Z-cont3, whose last event was 17:35:51Z and whose
 # fifth strike did not land until 17:41:23Z.
+#
+# ⚠⚠ AND IT ONLY CATCHES THE PARKED-CORE KIND. Silence measured at each strike
+# time, for the three wedges of 2026-09-02:
+#
+#     cont1 (t135)   6s  14s   0s   -> never silent, this rule does not fire
+#     cont2 (t135)  18s  12s   0s   -> never silent, this rule does not fire
+#     cont3 (t153)  89s 150s 331s   -> fires at strike 2, 181 s earlier
+#
+# cont1 and cont2 talked the whole time — `ui_heartbeat`, `await`, `host_move`,
+# `order_verified` — while the turn number stood still. What they were saying
+# names the cause: cont1 spent its five strikes on 26 `autoclose` and 6
+# `autoclose_desktop` for DiplomacyActionView, cont2 added
+# `blocked ENDTURN_BLOCKING_UNITS` to 32 more. That is the desktop-rescue
+# capture stall in its escalated form, and it is #3089's to remove, not this
+# rule's to detect. The five-sample turn rule below still owns that class.
 SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-120}
 SILENCE_CONFIRM=${CIVVIS_WEDGE_SILENCE_CONFIRM:-2}
 SELF_DIR=${0:A:h}
