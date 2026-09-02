@@ -1409,6 +1409,15 @@
           "amenity-project-preemption-2": null
         }
       },
+      "boost-wait-research": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "boost-wait-research": null,
+          "boost-wait-research-2": null
+        }
+      },
       "border-parity": {
         "rule_on": [],
         "head": null,
@@ -1518,7 +1527,8 @@
         "ships": null,
         "versions": {
           "never-an-empty-queue": null,
-          "never-an-empty-queue-2": null
+          "never-an-empty-queue-2": null,
+          "never-an-empty-queue-3": null
         }
       },
       "power-the-laboratory": {

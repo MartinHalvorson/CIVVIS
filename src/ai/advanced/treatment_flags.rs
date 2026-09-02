@@ -2301,11 +2301,25 @@ impl AdvancedAi {
     /// reads a method line's first identifier.
     pub fn enable_boost_wait_research(&mut self) {
         self.boost_wait_research = true;
+        self.boost_wait_research_2 = false;
     }
 
     /// The twin of `enable_boost_wait_research`.
     pub fn disable_boost_wait_research(&mut self) {
         self.boost_wait_research = false;
+    }
+
+    /// Wait only on a two-turn node whose final boost trigger is already at
+    /// the front of an owned city queue, using the boost as a light tie-break.
+    /// Opt-in gene `boost-wait-research-2`.
+    pub fn enable_boost_wait_research_2(&mut self) {
+        self.boost_wait_research_2 = true;
+        self.boost_wait_research = false;
+    }
+
+    /// The twin of `enable_boost_wait_research_2`.
+    pub fn disable_boost_wait_research_2(&mut self) {
+        self.boost_wait_research_2 = false;
     }
 
     /// Credit a technology or civic with the boosts it makes chaseable by
@@ -2681,7 +2695,9 @@ impl AdvancedAi {
     /// here rather than under a marker: the append-point check reads a method
     /// line's first identifier.
     pub fn enable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue = false;
         self.never_an_empty_queue_2 = true;
+        self.never_an_empty_queue_3 = false;
     }
 
     /// The twin of `enable_never_an_empty_queue_2`.
@@ -2695,6 +2711,8 @@ impl AdvancedAi {
     /// method line's first identifier.
     pub fn enable_never_an_empty_queue(&mut self) {
         self.never_an_empty_queue = true;
+        self.never_an_empty_queue_2 = false;
+        self.never_an_empty_queue_3 = false;
     }
 
     /// The twin of `enable_never_an_empty_queue`.
@@ -3540,6 +3558,20 @@ impl AdvancedAi {
     pub fn disable_rapid_city_expansion_2(&mut self) {
         self.rapid_city_expansion_2 = false;
         self.base.disable_rapid_city_expansion_2();
+    }
+
+    /// Version three of `never-an-empty-queue`: tolerate one transient empty
+    /// turn, then recover a persistent stall with a civilian candidate above
+    /// the hard veto. Enabling it selects this family version exclusively.
+    pub fn enable_never_an_empty_queue_3(&mut self) {
+        self.never_an_empty_queue = false;
+        self.never_an_empty_queue_2 = false;
+        self.never_an_empty_queue_3 = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue_3`.
+    pub fn disable_never_an_empty_queue_3(&mut self) {
+        self.never_an_empty_queue_3 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

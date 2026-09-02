@@ -14615,7 +14615,8 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         settler_barbarian_combat_guard_held = 0,
 	                         settler_barbarian_combat_guard_rescued = 0,
 	                         builder_barbarian_capture_held = 0,
-	                         builder_capture_escaped = 0 }, escortHolds = {} };
+	                         builder_capture_escaped = 0,
+	                         active_fire_civilian_held = 0 }, escortHolds = {} };
 
 CivvisBoard.reset = function()
 	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
@@ -14628,7 +14629,8 @@ CivvisBoard.reset = function()
 	                     settler_barbarian_combat_guard_held = 0,
 	                     settler_barbarian_combat_guard_rescued = 0,
 	                     builder_barbarian_capture_held = 0,
-	                     builder_capture_escaped = 0 };
+	                     builder_capture_escaped = 0,
+	                     active_fire_civilian_held = 0 };
 	CivvisBoard.escortHolds = {};
 end;
 
@@ -15460,15 +15462,15 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
--- Builders are civilians too.  A live Civ 6 run lost a Builder immediately
--- after CIVVIS moved it from the capital onto a tile reachable by a visible
--- barbarian Warrior; the normal civilian bridge only protected Settlers, so
--- the Builder disappeared before the next export.  Keep this repair narrow:
--- inspect only visible barbarian units, only a host-proven same-turn Builder
--- leg, and only refuse the hand-off when no co-located combat escort is
--- proven to take that exact leg.  The planner still owns the destination and
--- the existing opt-in advanced Builder gene remains independent of this
--- actuation floor.
+-- Builders are civilians too.  One live Civ 6 run lost a Builder immediately
+-- after CIVVIS moved it onto `FEATURE_BURNING_FOREST`; there was no combat or
+-- capture callback, and the tile became `FEATURE_BURNT_FOREST` two turns later.
+-- The normal civilian bridge only protected Settlers, so the Builder
+-- disappeared before the next export.  Keep this repair narrow: inspect only
+-- visible barbarian units, only a host-proven same-turn Builder leg, and only
+-- refuse the hand-off when no co-located combat escort is proven to take that
+-- exact leg.  The planner still owns the destination and the existing opt-in
+-- advanced Builder gene remains independent of this actuation floor.
 CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 	local player = try(function() return Players[pid]; end, nil);
 	if player == nil then return; end
@@ -15694,6 +15696,89 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 	end
 end;
 
+-- Gathering Storm's forest-fire damage table is more dangerous than the
+-- feature's ordinary movement/defense row suggests: turns 0-2 carry a 101%
+-- `UNIT_KILLED_CIVILIAN` damage row for both forest and jungle fires.  The
+-- board already exports the host's authoritative feature name, but a CIVVIS
+-- MOVE_TO can be applied between exports.  Refuse a civilian's exposed handoff
+-- into an active fire tile at the last host-leg boundary.  This is deliberately
+-- host-only: the feature may start or spread after the model's last observation,
+-- and no escort makes a civilian immune to a random-event kill.
+CivvisBoard.holdActiveFireCivilianLegs = function(pid, turn, rows)
+	local function activeFireAt(x, y)
+		local plot = try(function() return Map.GetPlot(x, y); end, nil);
+		if plot == nil then return nil; end
+		local feature = typeName("Features", "FeatureType",
+			try(function() return plot:GetFeatureType(); end, -1));
+		if feature == "FEATURE_BURNING_FOREST" or feature == "FEATURE_BURNING_JUNGLE" then
+			return feature;
+		end
+		return nil;
+	end
+	local function civilian(unit)
+		local row = try(function() return GameInfo.Units[unitTypeName(unit)]; end, nil);
+		if row == nil then return false; end
+		return (tonumber(row.Combat) or 0) <= 0
+			and (tonumber(row.RangedCombat) or 0) <= 0
+			and (tonumber(row.Bombard) or 0) <= 0
+			and (tonumber(row.AntiAirCombat) or 0) <= 0;
+	end
+	local function alreadyHeld(row)
+		return row._civvis_builder_barbarian_capture_hold == true
+			or row._civvis_settler_barbarian_combat_hold == true
+			or row._civvis_settler_scout_hold == true;
+	end
+	local held = {};
+	for _, row in ipairs(rows) do
+		local subject = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and not alreadyHeld(row) and subject ~= nil
+				and wantX ~= nil and wantY ~= nil and held[subject] == nil then
+			local unit = liveUnit(pid, subject);
+			if unit ~= nil and civilian(unit) then
+				local fromX = tonumber(try(function() return unit:GetX(); end, nil));
+				local fromY = tonumber(try(function() return unit:GetY(); end, nil));
+				local capped = CivvisBoard.capToTurn(unit, wantX, wantY);
+				if fromX ~= nil and fromY ~= nil and capped ~= false then
+					local sentX, sentY = wantX, wantY;
+					if type(capped) == "table" then sentX, sentY = capped.x, capped.y; end
+					local feature = activeFireAt(sentX, sentY);
+					if feature ~= nil and (sentX ~= fromX or sentY ~= fromY) then
+						held[subject] = {
+							unit = subject, unit_kind = unitTypeName(unit),
+							fromX = fromX, fromY = fromY,
+							wantX = wantX, wantY = wantY,
+							sentX = sentX, sentY = sentY, feature = feature,
+						};
+					end
+				end
+			end
+		end
+	end
+	-- A later replan frame must not put the same civilian back onto the fire
+	-- after the first row was held.  Keep the original decision visible in the
+	-- order ledger; only the host hand-off is declined.
+	for subject in pairs(held) do
+		for _, row in ipairs(rows) do
+			if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+					and tonumber(row.subject) == subject then
+				row._civvis_active_fire_civilian_hold = true;
+			end
+		end
+	end
+	for subject, heldLeg in pairs(held) do
+		CivvisBoard.stats.active_fire_civilian_held =
+			CivvisBoard.stats.active_fire_civilian_held + 1;
+		emit("active_fire_civilian_hold", {
+			turn = turn, unit = subject, unit_kind = heldLeg.unit_kind,
+			from = { heldLeg.fromX, heldLeg.fromY },
+			want = { heldLeg.wantX, heldLeg.wantY },
+			sent = { heldLeg.sentX, heldLeg.sentY }, feature = heldLeg.feature,
+		});
+	end
+end;
+
 -- Cancel stale host movement on combat units before the board owns them.
 --
 -- `GetQueuedDestination` catches an ordinary multi-turn MOVE_TO, but it is
@@ -15909,6 +15994,7 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisBoard.holdVisibleScoutCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
+	CivvisBoard.holdActiveFireCivilianLegs(pid, turn, rows);
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -15968,6 +16054,11 @@ local function applyOrders(player, pid, turn, rows)
 			countRefusal(kind, "builder_barbarian_capture_hold");
 			ordered[index] = true;
 			return false, "builder_barbarian_capture_hold";
+		end
+		if row._civvis_active_fire_civilian_hold == true then
+			countRefusal(kind, "active_fire_civilian_hold");
+			ordered[index] = true;
+			return false, "active_fire_civilian_hold";
 		end
 		-- This move is still a CIVVIS decision and must remain in the order
 		-- accounting.  The bridge declined only its exposed host hand-off; emit
@@ -16276,6 +16367,10 @@ local function applyOrders(player, pid, turn, rows)
 		-- already exposed before the current order frame.
 		builder_barbarian_capture_held = CivvisBoard.stats.builder_barbarian_capture_held,
 		builder_capture_escaped = CivvisBoard.stats.builder_capture_escaped,
+		-- Civilian MOVE_TO legs refused because the host's actual destination is
+		-- an active forest/jungle fire.  Random-event escorts do not prevent the
+		-- shipped `UNIT_KILLED_CIVILIAN` outcome.
+		active_fire_civilian_held = CivvisBoard.stats.active_fire_civilian_held,
 		-- Follow-up orders waiting in the per-unit queue; their outcome lands
 		-- in this turn's `orders_queue` event, not in `applied` above.
 		queued = CivvisQueue.pendingCount(),
@@ -17113,6 +17208,57 @@ local function playTurn(player, pid, turn)
 	});
 end
 
+-- ★★★★ THE TURN-START BOARD READ EVERY UNIT'S MOVEMENT BEFORE THE ENGINE
+-- RESTORED IT.
+--
+-- `tick` reaches `beginTurn` from `LocalPlayerTurnBegin` with `IsTurnActive()`
+-- already true, and `GetMovesRemaining()` still answers LAST turn's leftover:
+-- a Warrior that spent both moves reads 0, a Scout that spent one of three
+-- reads 2. The board trusts that export (`Seat::moves_at_turn_start`), plans
+-- the unit as it stands, and leaves it unmentioned, so the unit is skipped.
+-- Measured on `civvis-20260901T212354Z`: the first Settler read 0 on turns 3
+-- and 5, walked on 2, 4 and 6 only, and founded the capital on turn 6 for a
+-- two-hex walk. Across turns 20-60 of a mature run a quarter of frame-0 unit
+-- rows were 0-move rows; the frame published later the same turn read full
+-- movement for 290 of 293 of them.
+--
+-- So the turn is not opened until every unit reads its full allowance, or
+-- `MOVES_RESTORED_PATIENCE` ticks have passed — a unit the engine walked on a
+-- queued path before `cancelQueuedPaths` ran is legitimately short and must
+-- not hold the turn. `lastTurnSeen` is left at the previous turn so the next
+-- tick retries; ticks come undivided from `EndTurnBlockingChanged` and 1-in-16
+-- from `GameCoreEventPublishComplete`, so the wait is a fraction of a second.
+-- On `CivvisBoard` rather than as locals: the main chunk is at Lua's
+-- 199-local ceiling (`test_main_chunk_locals_stay_under_the_limit`).
+CivvisBoard.MOVES_RESTORED_PATIENCE = 12;
+CivvisBoard.movesRestoredWait = { turn = -1, ticks = 0 };
+function CivvisBoard.movementNotYetRestored(player, turn)
+	local movesRestoredWait = CivvisBoard.movesRestoredWait;
+	if movesRestoredWait.turn ~= turn then
+		movesRestoredWait.turn = turn;
+		movesRestoredWait.ticks = 0;
+	end
+	local short = 0;
+	eachUnit(player, function(unit)
+		local max = tonumber(try(function() return unit:GetMaxMoves(); end, 0)) or 0;
+		local left = tonumber(try(function() return unit:GetMovesRemaining(); end, -1)) or -1;
+		if max > 0 and left >= 0 and left < max then short = short + 1; end
+	end);
+	if short == 0 then
+		if movesRestoredWait.ticks > 0 then
+			emit("moves_restored", { turn = turn, ticks = movesRestoredWait.ticks });
+		end
+		return false;
+	end
+	movesRestoredWait.ticks = movesRestoredWait.ticks + 1;
+	if movesRestoredWait.ticks > CivvisBoard.MOVES_RESTORED_PATIENCE then
+		emit("moves_restored", { turn = turn, ticks = movesRestoredWait.ticks,
+		                         short = short, gave_up = true });
+		return false;
+	end
+	return true;
+end
+
 local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
@@ -17681,6 +17827,9 @@ local function tick()
 
 		local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
 		if turn ~= lastTurnSeen then
+			-- See `movementNotYetRestored`: the board waits for the engine to
+			-- hand the units their turn's movement, not the previous turn's dregs.
+			if cfg.CivvisDecides and CivvisBoard.movementNotYetRestored(player, turn) then return; end
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
