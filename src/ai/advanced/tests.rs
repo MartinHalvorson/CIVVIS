@@ -23991,7 +23991,10 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     assert!(!live.settler_target_hysteresis);
     assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_routing_recovery_on());
-    assert!(live.settler_target_hysteresis_on());
+    assert!(
+        !live.settler_target_hysteresis_on(),
+        "route recovery does not implicitly restore a withheld hysteresis arm"
+    );
     assert!(live.settler_threat_detour_on());
 
     let mut withheld = AdvancedAi::new();
