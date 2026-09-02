@@ -130,3 +130,8 @@ least half of the site it was walking to. The pipeline genes are not the
 lever left in the opening; the walk is. To read it live, put the tag in
 `~/.civvis-live-force-on` when the halt lifts and compare cities@60 and the
 settler fates above on the next runs.
+
+On its native 24-game fires probe the gene fires and **hurts** (win −14.5 ± 5.4 pp,
+share −3.4 ± 1.0 pp, n_on 35): the native board has neither the host's capture
+hold nor its refused moves, so a deadline founding is pure cost there. It is a
+live-seat probe only; a native screen must never default it on.
