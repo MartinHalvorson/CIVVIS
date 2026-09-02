@@ -43925,15 +43925,18 @@ fn verification_and_standard_tournament_share_the_ten_to_fifteen_city_contract()
     game.victory_conditions.religious = true;
     game.players[1].religion = Some("Rival Faith".to_string());
 
-    let profiles: [(&str, fn(&mut AdvancedAi)); 3] = [
-        ("live verification", AdvancedAi::enable_live_bridge),
+    #[derive(Clone, Copy)]
+    enum Profile {
+        LiveVerification,
+        StandardTournament,
+        NativeDeployment,
+    }
+    let profiles = [
+        ("live verification", Profile::LiveVerification),
         // `gene_screen::seat_with_genome` starts here before it flips the
         // individual genes in a drawn tournament genome.
-        (
-            "standard tournament",
-            AdvancedAi::enable_engine_repairs_universe,
-        ),
-        ("native deployment", AdvancedAi::enable_engine_repairs),
+        ("standard tournament", Profile::StandardTournament),
+        ("native deployment", Profile::NativeDeployment),
     ];
     for lane in [
         VictoryTarget::Science,
@@ -43943,9 +43946,13 @@ fn verification_and_standard_tournament_share_the_ten_to_fifteen_city_contract()
         VictoryTarget::Domination,
         VictoryTarget::Score,
     ] {
-        for (profile, configure) in profiles {
+        for (profile, configuration) in profiles {
             let mut ai = AdvancedAi::targeting(lane);
-            configure(&mut ai);
+            match configuration {
+                Profile::LiveVerification => ai.enable_live_bridge(),
+                Profile::StandardTournament => ai.enable_engine_repairs_universe(),
+                Profile::NativeDeployment => ai.enable_engine_repairs(),
+            }
             assert!(
                 ai.shared_city_target,
                 "{profile} must carry the fixed shared city horizon"
