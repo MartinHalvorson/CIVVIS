@@ -34045,6 +34045,31 @@ fn the_surge_window_is_bounded_by_the_horizon_and_the_clock() {
     assert!(ai.air_surge_open(&game, 0));
 }
 
+/// An explicit Science race must keep its research lane at peace, where the
+/// surge is elective, but may still use the same package as a defensive
+/// counter against the one civilization already attacking it.
+#[test]
+fn explicit_science_keeps_elective_air_surge_out_but_allows_a_counter() {
+    let (mut game, _, _) = air_surge_fixture(941_116);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_air_surge();
+
+    assert!(!ai.air_surge_open(&game, 0));
+    ai.maintain_air_surge(&game, 0);
+    assert!(!ai.air_surge_active());
+    assert!(ai.air_surge_research_goal(&game, 0).is_none());
+
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert!(ai.air_surge_open(&game, 0), "one front remains a counter");
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active());
+    assert_eq!(
+        ai.air_surge_research_goal(&game, 0),
+        Some(air_surge::AIR_SURGE_GOAL_TECH)
+    );
+}
+
 /// ★★★★ The gate that matters. The seat reaches its closest approach to
 /// Advanced Flight at turn 258 of 300 with 79 turns of research still to pay
 /// (`air_surge_census_at_deployment_scale`, seed 941200). A gate on the
