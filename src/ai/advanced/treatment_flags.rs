@@ -2229,6 +2229,20 @@ impl AdvancedAi {
         self.civilian_out_of_reach = false;
     }
 
+    /// A unit the next blow could remove leaves the reach of whatever can
+    /// strike it — the roll-top total of visible attackers, or a raider
+    /// remembered in the fog — and a shooter or scout does not end the
+    /// turn inside a raider's reach without a melee unit beside it. See
+    /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
+    pub fn enable_wounded_out_of_reach(&mut self) {
+        self.wounded_out_of_reach = true;
+    }
+
+    /// The twin of `enable_wounded_out_of_reach`.
+    pub fn disable_wounded_out_of_reach(&mut self) {
+        self.wounded_out_of_reach = false;
+    }
+
     /// A Builder chops woods, rainforest or marsh into the Settler, district
     /// or wonder at the front of the owning city's queue, priced as a one-off
     /// lump against the per-turn jobs. See
@@ -2659,11 +2673,25 @@ impl AdvancedAi {
     /// method line's first identifier.
     pub fn enable_first_builder_reserve(&mut self) {
         self.first_builder_reserve = true;
+        self.first_builder_reserve_2 = false;
     }
 
     /// The twin of `enable_first_builder_reserve`.
     pub fn disable_first_builder_reserve(&mut self) {
         self.first_builder_reserve = false;
+    }
+
+    /// Reserve one Builder for an immediately connectable first-copy luxury
+    /// when Amenities are short and expansion is covered, retaining a
+    /// lifetime receipt. Opt-in gene `first-builder-reserve-2`.
+    pub fn enable_first_builder_reserve_2(&mut self) {
+        self.first_builder_reserve_2 = true;
+        self.first_builder_reserve = false;
+    }
+
+    /// The twin of `enable_first_builder_reserve_2`.
+    pub fn disable_first_builder_reserve_2(&mut self) {
+        self.first_builder_reserve_2 = false;
     }
     /// Reserve the cheapest Campus building a city owes ahead of ordinary
     /// production. See `AdvancedAi::first_research_building_reserve`; opt-in

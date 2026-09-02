@@ -1490,6 +1490,15 @@
           "district-planning-2": null
         }
       },
+      "first-builder-reserve": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "first-builder-reserve": null,
+          "first-builder-reserve-2": null
+        }
+      },
       "government-ladder": {
         "rule_on": [
           "government-ladder-2"

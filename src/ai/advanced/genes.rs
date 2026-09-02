@@ -1228,6 +1228,10 @@ pub const GENES: &[Gene] = &[
     // 1,560 by that same argmax; live King seat, Builders were 3% of early city
     // production and only 40% of Campus cities held a Library at turn 100.
     Gene { tag: "first-builder-reserve", field: "first_builder_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_builder_reserve, disable: AdvancedAi::disable_first_builder_reserve },
+    // V2 reserves one Builder only for an owned, immediately connectable
+    // first-copy luxury while Amenities are short and expansion is covered;
+    // after the first Builder appears, it retains a lifetime receipt.
+    Gene { tag: "first-builder-reserve-2", field: "first_builder_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_builder_reserve_2, disable: AdvancedAi::disable_first_builder_reserve_2 },
     // The same sentence for the cheap rung of the research chain, in a city
     // that has already paid for the Campus. 91% of standard Emperor games end
     // on a science victory, so this is the win condition itself.
@@ -1915,6 +1919,14 @@ pub const GENES: &[Gene] = &[
     // Version 2 of `diplomatic-lane-forecast`: Favor alone is not a race;
     // require an earned foothold and cap the Congress projection below a real opening.
     Gene { tag: "diplomatic-lane-forecast-2", field: "diplomatic_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_lane_forecast_2, disable: AdvancedAi::disable_diplomatic_lane_forecast_2 },
+    // Appended at the END so a running screen keeps its positional genome.
+    // 461 of our units died in combat across the 32 live runs of 2026-08-30..09-01,
+    // 408 to barbarians; 352 were at or below 50 HP at the killing blow, 334 had been
+    // hit on an earlier turn and left in reach, 135 were shooters a melee unit walked
+    // onto. The recovery withdraws on the mean blow from visible units; this withdraws
+    // on the top of the roll, remembers raiders in the fog, and screens shooters.
+    // See `advanced/wounded_out_of_reach.rs`.
+    Gene { tag: "wounded-out-of-reach", field: "wounded_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach, disable: AdvancedAi::disable_wounded_out_of_reach },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

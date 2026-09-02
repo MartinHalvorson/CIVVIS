@@ -13289,7 +13289,17 @@ local function applyOrder(player, pid, row, turn)
 					CivvisLedger.strike(unit, subject, verb, x, y, turn);
 				end
 			end
+			-- See `CivvisBoard.moveNoop`: the plot and movement the unit had
+			-- when the leg was requested are what the queue compares against
+			-- to tell a leg the host accepted and never walked from one it is
+			-- still walking.
+			local fromX = tonumber(try(function() return unit:GetX(); end, nil));
+			local fromY = tonumber(try(function() return unit:GetY(); end, nil));
+			local movesBefore = tonumber(try(function() return unit:GetMovesRemaining(); end, nil));
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
+			if moved and verb == "MOVE_TO" then
+				CivvisBoard.noteMoveAttempt(subject, turn, fromX, fromY, x, y, movesBefore);
+			end
 			if not moved then
 				-- ★★★★ NAME THE UNIT AND WHERE IT WOULD NOT GO. `refusals` is
 				-- aggregated by REASON, so 127 `MOVE_TO` refusals on one run could not
@@ -13368,6 +13378,20 @@ local function applyOrder(player, pid, row, turn)
 						return row ~= nil and row.Domain or nil;
 					end),
 				});
+				-- ★★★★ A LEG THE HOST WILL NOT START IS ANSWERED IN THE SAME
+				-- PASS. The refusal above is the ledger's; this is the unit's.
+				-- See `CivvisBoard.fallbackStep`: the nearest legal neighbour
+				-- toward the wanted plot is sent instead of leaving the unit
+				-- where it stands for a turn — which, for a wounded unit inside
+				-- a raider's reach, is the turn it dies on.
+				if verb == "MOVE_TO" and fromX ~= nil and fromY ~= nil then
+					local sent = CivvisBoard.fallbackStep(player, pid, unit, subject,
+					                                      fromX, fromY, x, y, turn, "cannot_start");
+					if sent ~= nil then
+						row.x, row.y = sent.x, sent.y;
+						return true, verb;
+					end
+				end
 			end
 			return moved, verb;
 		end
@@ -14509,7 +14533,16 @@ CivvisQueue.drain = function(player, pid, turn)
 					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
 				local ready = entry.ready or arrived or spent or moved_from_origin
 					or entry.wait >= grace;
-				if ready and CivvisQueue.dropWatch(subject, entry) then
+				-- See `CivvisBoard.moveNoop`: a leg the host accepted, whose unit
+				-- is still on the plot it was sent from with its movement intact
+				-- once the watch runs out, is a no-op. It is named and answered
+				-- here, before the watch is dropped — the drop was the silence.
+				local atOrigin = entry.origin ~= nil and ux == entry.origin.x and uy == entry.origin.y;
+				local noop = ready and entry.expect ~= nil and not arrived and not spent and atOrigin;
+				if noop and CivvisBoard.moveNoop(player, pid, subject, unit, entry, turn, ux, uy, moves) then
+					-- A legal neighbour step went out in its place and the watch
+					-- was re-armed on that plot; nothing else to do this tick.
+				elseif ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready then
 					-- A MOVE_TO can report an operation-ended event, spend its movement,
@@ -14616,7 +14649,9 @@ CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
 	                         settler_barbarian_combat_guard_rescued = 0,
 	                         builder_barbarian_capture_held = 0,
 	                         builder_capture_escaped = 0,
-	                         active_fire_civilian_held = 0 }, escortHolds = {} };
+	                         active_fire_civilian_held = 0,
+	                         move_noop = 0, move_fallback = 0 },
+	                escortHolds = {}, moveAttempts = {} };
 
 CivvisBoard.reset = function()
 	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
@@ -14630,7 +14665,9 @@ CivvisBoard.reset = function()
 	                     settler_barbarian_combat_guard_rescued = 0,
 	                     builder_barbarian_capture_held = 0,
 	                     builder_capture_escaped = 0,
-	                     active_fire_civilian_held = 0 };
+	                     active_fire_civilian_held = 0,
+	                     move_noop = 0, move_fallback = 0 };
+	CivvisBoard.moveAttempts = {};
 	CivvisBoard.escortHolds = {};
 end;
 
@@ -14670,6 +14707,266 @@ end;
 -- Read the host path all the way through the requested plot.  A nil cap is
 -- normally a same-turn path, but it can also mean that WorldInput had no path
 -- data at all.  An escort may be synthesized only in the former case.
+-- ═══ THE EVACUATION LANDS ═══════════════════════════════════════════════════
+--
+-- Measured on the 32 ledger runs of 2026-08-30..09-01 that reached turn 100
+-- (461 combat deaths of our units, 408 to barbarians): the victim had been
+-- ordered `MOVE_TO` on the turn it died or the turn before in the great
+-- majority of cases, and 383 of the 461 made NO host move on the turn before
+-- they died. The decider had chosen the evacuation. The host had accepted the
+-- request — `canOperate` said yes, `RequestOperation` returned — and the unit
+-- stood where it was until the next raider blow. Nothing in this file could
+-- tell that leg from one still walking: the queue watched it for `grace`
+-- ticks and then dropped the watch in silence, and the Rust side discovered
+-- the standstill a turn later as `did_not_move` (5,873 of them across those
+-- 32 runs), by which time the unit was usually dead.
+--
+-- Three things change. A `MOVE_TO` records the plot and movement it left
+-- from (`noteMoveAttempt`). A watched leg whose unit is still on that plot
+-- with its movement intact when the watch runs out is a no-op and is named
+-- by probing the host (`classifyNoop`) — `cannot_start`, `no_path`,
+-- `beyond_turn`, `occupied`, `hostile_on_plot`, `zoc`, `hostile_adjacent`,
+-- `no_moves`, `unknown` — as `move_noop`. And in the same pass the nearest
+-- legal neighbour toward the wanted plot is sent instead (`fallbackStep`,
+-- `move_fallback`), once per unit per turn, so the unit does not spend the
+-- turn standing in reach. A leg the host refuses outright (`operate` false)
+-- takes the same fallback at once.
+--
+-- Every host call is the shipped UI's own:
+--   `UnitManager.GetMoveToPathEx( kUnit, endPlotId )`     WorldInput.lua:961
+--   `UnitManager.CanStartOperation( pUnit, UnitOperationTypes.MOVE_TO, …)`
+--                                                          Panels/UnitPanel.lua:609
+--   `UnitManager.RequestOperation(kUnit, UnitOperationTypes.MOVE_TO, tParameters)`
+--                                                          Civ6Common.lua:163
+--   `Map.GetAdjacentPlot( x, y, direction)`                AdjacencyBonusSupport.lua:95
+--   `Map.GetPlotDistance(…)`                               TradeOverview.lua:436
+--   `kUnit:GetMovesRemaining()`                            WorldInput.lua:971
+--   `pLocalPlayer:GetDiplomacy():IsAtWarWith( iPlayer )`   PartialScreens/CityStates.lua:1508
+--   `playerInfo:IsBarbarian()`                             EndGame/EndGameReplayLogic.lua:74
+--
+-- `MoveFallback = false` in the mod config keeps every part of this off (the
+-- A/B arm; `mod_arms.MoveFallback` on the run summary says which it was).
+
+CivvisBoard.noteMoveAttempt = function(subject, turn, fromX, fromY, wantX, wantY, moves)
+	if subject == nil then return; end
+	local previous = CivvisBoard.moveAttempts[subject];
+	local fallback = previous ~= nil and previous.turn == turn and previous.fallback == true;
+	CivvisBoard.moveAttempts[subject] = {
+		turn = turn, fromX = fromX, fromY = fromY, wantX = wantX, wantY = wantY,
+		moves = moves, fallback = fallback,
+	};
+end;
+
+-- The six plots around (x, y), in direction order, skipping the map edge.
+CivvisBoard.adjacentPlots = function(x, y)
+	local out = {};
+	pcall(function()
+		for direction = 0, DirectionTypes.NUM_DIRECTION_TYPES - 1 do
+			local plot = Map.GetAdjacentPlot(x, y, direction);
+			if plot ~= nil then out[#out + 1] = plot; end
+		end
+	end);
+	return out;
+end;
+
+-- Every plot a combat unit of a player we are at war with stands on, the
+-- Barbarian seat included, keyed "x,y".
+CivvisBoard.hostilePlots = function(pid)
+	local plots = {};
+	local me = try(function() return Players[pid]; end, nil);
+	local diplomacy = nil;
+	if me ~= nil then diplomacy = try(function() return me:GetDiplomacy(); end, nil); end
+	pcall(function()
+		for _, otherId in ipairs(PlayerManager.GetAliveIDs() or {}) do
+			if otherId ~= pid then
+				local other = Players[otherId];
+				local hostile = other ~= nil
+					and (try(function() return other:IsBarbarian(); end, false) == true
+						or (diplomacy ~= nil
+							and try(function() return diplomacy:IsAtWarWith(otherId); end, false) == true));
+				if hostile then
+					eachUnit(other, function(unit)
+						if not CivvisBoard.isCombatEscort(unit) then return; end
+						local x = tonumber(try(function() return unit:GetX(); end, nil));
+						local y = tonumber(try(function() return unit:GetY(); end, nil));
+						if x ~= nil and y ~= nil then plots[x .. "," .. y] = true; end
+					end);
+				end
+			end
+		end
+	end);
+	return plots;
+end;
+
+-- Our own units by plot, as the set of Domain values standing there: a land
+-- unit cannot stack on a land unit, but it can share a plot with a ship.
+CivvisBoard.ownDomainsAt = function(player)
+	local plots = {};
+	eachUnit(player, function(unit)
+		local x = tonumber(try(function() return unit:GetX(); end, nil));
+		local y = tonumber(try(function() return unit:GetY(); end, nil));
+		local domain = try(function()
+			local row = GameInfo.Units[unitTypeName(unit)];
+			return row ~= nil and row.Domain or nil;
+		end, nil);
+		if x ~= nil and y ~= nil and domain ~= nil then
+			local key = x .. "," .. y;
+			plots[key] = plots[key] or {};
+			plots[key][domain] = true;
+		end
+	end);
+	return plots;
+end;
+
+CivvisBoard.unitDomain = function(unit)
+	return try(function()
+		local row = GameInfo.Units[unitTypeName(unit)];
+		return row ~= nil and row.Domain or nil;
+	end, nil);
+end;
+
+-- How many of the plots around (x, y) hold a hostile combat unit.
+CivvisBoard.hostileAdjacent = function(hostile, x, y)
+	local n = 0;
+	for _, plot in ipairs(CivvisBoard.adjacentPlots(x, y)) do
+		local px = tonumber(try(function() return plot:GetX(); end, nil));
+		local py = tonumber(try(function() return plot:GetY(); end, nil));
+		if px ~= nil and py ~= nil and hostile[px .. "," .. py] then n = n + 1; end
+	end
+	return n;
+end;
+
+-- Why a leg the host accepted did not happen, asked of the host itself.
+CivvisBoard.classifyNoop = function(player, pid, unit, fromX, fromY, wantX, wantY, moves)
+	if moves ~= nil and moves <= 0 then return "no_moves"; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = wantX;
+	params[UnitOperationTypes.PARAM_Y] = wantY;
+	if not canOperate(unit, OP["UNITOPERATION_MOVE_TO"], params) then return "cannot_start"; end
+	local destination = try(function() return Map.GetPlotIndex(wantX, wantY); end, nil);
+	local path = nil;
+	if destination ~= nil then
+		path = try(function() return UnitManager.GetMoveToPathEx(unit, destination); end, nil);
+	end
+	local n = 0;
+	if path ~= nil and path.plots ~= nil then
+		for _ in pairs(path.plots) do n = n + 1; end
+	end
+	if path == nil or n <= 1 then return "no_path"; end
+	local last = nil;
+	if path.turns ~= nil then last = tonumber(path.turns[n]); end
+	if last ~= nil and last > 1 then return "beyond_turn"; end
+	local domain = CivvisBoard.unitDomain(unit);
+	local own = CivvisBoard.ownDomainsAt(player)[wantX .. "," .. wantY];
+	if own ~= nil and domain ~= nil and own[domain] == true then return "occupied"; end
+	local hostile = CivvisBoard.hostilePlots(pid);
+	if hostile[wantX .. "," .. wantY] then return "hostile_on_plot"; end
+	if CivvisBoard.hostileAdjacent(hostile, fromX, fromY) > 0 then
+		if CivvisBoard.hostileAdjacent(hostile, wantX, wantY) > 0 then return "zoc"; end
+		return "hostile_adjacent";
+	end
+	return "unknown";
+end;
+
+CivvisBoard.fallbackBetter = function(candidate, best)
+	local dc = candidate.distance;
+	local db = best.distance;
+	if dc < 0 then dc = 99; end
+	if db < 0 then db = 99; end
+	if dc ~= db then return dc < db; end
+	if candidate.exposed ~= best.exposed then return candidate.exposed < best.exposed; end
+	return candidate.index < best.index;
+end;
+
+-- The nearest legal neighbour toward the wanted plot, sent in place of a leg
+-- that will not happen: closest to the destination first, then the plot with
+-- the fewest hostile neighbours, then direction order. The wanted plot
+-- itself is never re-tried (it just failed), a plot a hostile stands on is
+-- an attack, and a plot our own unit of the same domain holds is a stack.
+-- Once per unit per turn. Returns the plot sent, or nil.
+CivvisBoard.fallbackStep = function(player, pid, unit, subject, fromX, fromY, wantX, wantY, turn, why)
+	if cfg.MoveFallback == false then return nil; end
+	local attempt = CivvisBoard.moveAttempts[subject];
+	if attempt ~= nil and attempt.turn == turn and attempt.fallback == true then return nil; end
+	local hostile = CivvisBoard.hostilePlots(pid);
+	local own = CivvisBoard.ownDomainsAt(player);
+	local domain = CivvisBoard.unitDomain(unit);
+	local best = nil;
+	for index, plot in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
+		local px = tonumber(try(function() return plot:GetX(); end, nil));
+		local py = tonumber(try(function() return plot:GetY(); end, nil));
+		if px ~= nil and py ~= nil and not (px == wantX and py == wantY) then
+			local key = px .. "," .. py;
+			local stacked = own[key] ~= nil and domain ~= nil and own[key][domain] == true;
+			if not hostile[key] and not stacked then
+				local params = {};
+				params[UnitOperationTypes.PARAM_X] = px;
+				params[UnitOperationTypes.PARAM_Y] = py;
+				if canOperate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+					local distance = tonumber(try(function()
+						return Map.GetPlotDistance(px, py, wantX, wantY);
+					end, -1)) or -1;
+					local candidate = {
+						x = px, y = py, index = index, params = params,
+						distance = distance,
+						exposed = CivvisBoard.hostileAdjacent(hostile, px, py),
+					};
+					if best == nil or CivvisBoard.fallbackBetter(candidate, best) then
+						best = candidate;
+					end
+				end
+			end
+		end
+	end
+	if best == nil then return nil; end
+	local sent = operate(unit, OP["UNITOPERATION_MOVE_TO"], best.params);
+	if not sent then return nil; end
+	CivvisBoard.stats.move_fallback = CivvisBoard.stats.move_fallback + 1;
+	CivvisBoard.moveAttempts[subject] = {
+		turn = turn, fromX = fromX, fromY = fromY, wantX = wantX, wantY = wantY,
+		moves = nil, fallback = true,
+	};
+	emit("move_fallback", {
+		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
+		from = { fromX, fromY }, want = { wantX, wantY }, sent = { best.x, best.y },
+		why = why, distance = best.distance, exposed = best.exposed,
+	});
+	return { x = best.x, y = best.y };
+end;
+
+-- The queue's answer to a watched leg that never left its origin. Names the
+-- no-op, sends the fallback step, and re-arms the watch on the plot sent.
+-- Returns true when a step went out (the caller leaves the entry alone), false
+-- when the existing drop / `queue_prior_not_arrived` handling should run.
+CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy, moves)
+	if cfg.MoveFallback == false then return false; end
+	if entry == nil or entry.expect == nil then return false; end
+	local wantX, wantY = entry.expect.x, entry.expect.y;
+	local attempt = CivvisBoard.moveAttempts[subject];
+	-- Movement spent since the request means the host is walking the leg;
+	-- that is a slow leg, not a no-op, and it is left alone.
+	if attempt ~= nil and attempt.turn == turn and attempt.moves ~= nil and moves ~= nil
+			and moves < attempt.moves then
+		return false;
+	end
+	local afterFallback = attempt ~= nil and attempt.turn == turn and attempt.fallback == true;
+	local why = CivvisBoard.classifyNoop(player, pid, unit, ux, uy, wantX, wantY, moves);
+	CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;
+	emit("move_noop", {
+		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
+		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
+		ticks = entry.wait, why = why, after_fallback = afterFallback,
+	});
+	if afterFallback then return false; end
+	local sent = CivvisBoard.fallbackStep(player, pid, unit, subject, ux, uy, wantX, wantY, turn, why);
+	if sent == nil then return false; end
+	entry.expect = { x = sent.x, y = sent.y };
+	entry.origin = { x = ux, y = uy };
+	entry.ready = false;
+	entry.wait = 0;
+	return true;
+end;
+
 CivvisBoard.reachesThisTurn = function(unit, x, y)
 	local path = try(function()
 		return UnitManager.GetMoveToPathEx(unit, Map.GetPlotIndex(x, y));
@@ -16334,6 +16631,8 @@ local function applyOrders(player, pid, turn, rows)
 		-- turn. See CivvisBoard.
 		move_capped = CivvisBoard.stats.capped,
 		move_no_reach = CivvisBoard.stats.no_reach,
+		move_noop = CivvisBoard.stats.move_noop,
+		move_fallback = CivvisBoard.stats.move_fallback,
 		-- Reconciliation of a co-located guard with the settler's actual host
 		-- leg.  The shadow counters are host safety operations, not CIVVIS rows.
 		escort_cap_synced = CivvisBoard.stats.escort_cap_synced,
