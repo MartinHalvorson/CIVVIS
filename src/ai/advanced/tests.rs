@@ -303,6 +303,91 @@ fn a_siege_arrival_is_not_a_stalled_war_only_with_v2_gene() {
 }
 
 #[test]
+fn siege_progress_v3_requires_damage_and_spends_one_reset_per_city() {
+    let v3 = GENES
+        .iter()
+        .find(|gene| gene.tag == "siege-is-progress-3")
+        .expect("version 3 is published for gene_screen");
+    assert!(v3.opt_in() && v3.screenable() && !v3.live());
+    assert!(!AdvancedAi::new().siege_is_progress_3);
+    assert!(!AdvancedAi::legacy().siege_is_progress_3);
+
+    let mut family = AdvancedAi::new();
+    family.enable_siege_is_progress_2();
+    assert!(family.siege_is_progress_2 && !family.siege_is_progress_3);
+    family.enable_siege_is_progress_3();
+    assert!(!family.siege_is_progress_2 && family.siege_is_progress_3);
+    family.enable_siege_is_progress_2();
+    assert!(family.siege_is_progress_2 && !family.siege_is_progress_3);
+    family.enable_siege_is_progress_3();
+    family.disable_siege_is_progress_3();
+    assert!(!family.siege_is_progress_2 && !family.siege_is_progress_3);
+
+    let (mut game, _, rival_capital) = timed_war_fixture(11);
+    let rival_capital_position = game.cities[&rival_capital].pos;
+    found_nearby_test_city(&mut game, 1, rival_capital_position);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    game.turn = 120;
+    let landing = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(position, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && (1..=2).contains(&game.wdist(**position, rival_capital_position))
+        })
+        .map(|(position, _)| *position)
+        .min()
+        .expect("the rival capital has a land approach within two tiles");
+    game.spawn_test_unit("warrior", 0, landing);
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut proven = AdvancedAi::new();
+    proven.enable_siege_is_progress_3();
+    proven.major_war_since = Some(80);
+    proven.last_campaign_progress = 80;
+    proven.last_city_count = game.player_city_ids(0).len();
+
+    proven.observe_campaign(&game, 0);
+    assert_eq!(
+        proven.last_campaign_progress, 80,
+        "mere proximity is not proof that the siege is progressing"
+    );
+    proven.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        proven.peace_offers.contains(&1),
+        "an arrived but ineffective force may still end a fatigued war"
+    );
+
+    game.turn = 121;
+    game.cities.get_mut(&rival_capital).unwrap().hp -= 20;
+    proven.observe_campaign(&game, 0);
+    assert_eq!(
+        proven.last_campaign_progress, 121,
+        "observed damage under nearby friendly pressure earns one reset"
+    );
+    assert!(proven.campaign_cities_pressured_v3.contains(&rival_capital));
+
+    game.turn = 122;
+    game.cities.get_mut(&rival_capital).unwrap().hp -= 20;
+    proven.observe_campaign(&game, 0);
+    assert_eq!(
+        proven.last_campaign_progress, 121,
+        "further damage to the same city cannot renew fatigue indefinitely"
+    );
+}
+
+#[test]
 fn banked_envoys_reclaim_a_nonobjective_hostile_suzerain_city_state() {
     // A city-state that follows its hostile Suzerain into war cannot take
     // an Envoy until peace with that major lands. The live bridge should
