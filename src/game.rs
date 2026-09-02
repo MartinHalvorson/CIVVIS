@@ -25146,10 +25146,21 @@ impl Game {
                 .filter(|position| !self.remembered_tile_is_current(pid, **position))
                 .filter_map(|position| self.snapshot_tile(*position).map(|tile| (*position, tile)))
                 .collect();
+            // A city founded on ground the seat has already explored is a map
+            // change Civilization VI reports through fog. Give it an initial
+            // memory even though no unit currently has sight of it. Existing
+            // memories remain strictly last-seen: only current sight may
+            // refresh their population, defenses, or other live details.
+            let explored = &self.players[pid].explored;
+            let remembered_cities = &self.players[pid].remembered_cities;
             let cities: Vec<RememberedCity> = self
                 .cities
                 .values()
-                .filter(|city| visible.contains(&city.pos))
+                .filter(|city| {
+                    visible.contains(&city.pos)
+                        || (explored.contains(&city.pos)
+                            && !remembered_cities.contains_key(&city.id))
+                })
                 .map(|city| self.remember_city(city))
                 .collect();
             let live_city_ids: BTreeSet<u32> = self.cities.keys().copied().collect();
