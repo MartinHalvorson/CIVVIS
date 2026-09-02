@@ -1394,8 +1394,12 @@ t102 for the same reason. Four things follow, all shipped:
   own `active_congress_effects` (`civvis_congress_effect`: player targets
   become seats, `RESOURCE_`/`DISTRICT_`/`BUILDING_`/`PROJECT_`/`FEATURE_`
   targets their CIVVIS node names, class-like targets the engine's own
-  suffixes; Sovereignty, Arms Control and the victory resolution have no model
-  rule and are reported as `congress:…` in the unmapped list) — and applies
+  suffixes; Sovereignty targets are normalized to the six city-state types.
+  Its A outcome is intentionally a host-parity no-op: the installed Gathering
+  Storm host does not apply the shipped city-state `SEND_TRADE_ROUTE_BONUS`
+  rows to origin route yields, while its B outcome disables the matching
+  unique Suzerain bonus. Arms Control and the victory resolution are reported
+  as `congress:…` in the unmapped list) — and applies
   them BEFORE the host-to-model corrections, for the round-6 reason. An export
   without the field leaves the model's simulated Congress alone.
 - **Trade Policy A pays the chosen player's destination city, not the sender.**

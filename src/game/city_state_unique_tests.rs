@@ -534,6 +534,58 @@ fn economic_level_three_shares_unique_suzerain_bonuses_without_relays() {
 }
 
 #[test]
+fn city_state_trade_route_and_sovereignty_match_gathering_storm_host() {
+    let (mut game, _) = game_with_capitals(2, 89_008);
+    let scientific = add_city_state(&mut game, "Geneva");
+    let position = game
+        .map
+        .tiles
+        .iter()
+        .find_map(|(position, tile)| {
+            (tile.owner_city.is_none()
+                && game.rules.is_passable(tile)
+                && !game.rules.is_water(tile))
+            .then_some(*position)
+        })
+        .expect("the map has room for a city-state route destination");
+    let city = game.found_city_for(scientific, position, None);
+
+    let ordinary = game.trade_route_yields(0, city);
+    assert_close(ordinary.gold, 3.0);
+    // The installed Gathering Storm host does not apply its shipped
+    // city-state SEND_TRADE_ROUTE_BONUS trait rows to route origins. This
+    // destination has no district, so there is no other source of Science.
+    assert_close(ordinary.science, 0.0);
+
+    game.active_congress_effects.push(CongressEffect {
+        resolution: "sovereignty".to_string(),
+        outcome: "A".to_string(),
+        target: "scientific".to_string(),
+        expires: game.turn + 1,
+    });
+    let sovereign = game.trade_route_yields(0, city);
+    assert_close(sovereign.gold, ordinary.gold);
+    // Sovereignty A modifies that host-side city-state bonus, which is already
+    // absent in Gathering Storm; it must not invent a Science yield.
+    assert_close(sovereign.science, ordinary.science);
+
+    let suzerain = add_city_state(&mut game, "Hattusa");
+    make_suzerain(&mut game, 0, suzerain);
+    assert!(game.grants_city_state_unique_bonus(0, "Hattusa"));
+    game.active_congress_effects.clear();
+    game.active_congress_effects.push(CongressEffect {
+        resolution: "sovereignty".to_string(),
+        outcome: "B".to_string(),
+        target: "scientific".to_string(),
+        expires: game.turn + 1,
+    });
+    assert!(
+        !game.grants_city_state_unique_bonus(0, "Hattusa"),
+        "Sovereignty B disables a matching type's unique Suzerain bonus"
+    );
+}
+
+#[test]
 fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
     let (mut game, cities) = game_with_capitals(2, 89_002);
     let city = cities[0];

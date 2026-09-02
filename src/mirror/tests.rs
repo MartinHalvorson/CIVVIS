@@ -5398,8 +5398,15 @@ fn host_resolutions_translate_into_the_models_congress_vocabulary() {
     );
     assert_eq!(
         map("WC_RES_SOVEREIGNTY", 1, "MINOR_CIV_TRADE"),
-        None,
-        "no model rule, no effect"
+        Some(("sovereignty".into(), "A".into(), "trade".into()))
+    );
+    assert_eq!(
+        map(
+            "WC_RES_SOVEREIGNTY",
+            2,
+            "LOC_MINOR_CIV_BONUS_SCIENTIFIC_NAME"
+        ),
+        Some(("sovereignty".into(), "B".into(), "scientific".into()))
     );
     assert_eq!(
         map("WC_RES_DIPLOVICTORY", 2, "4"),
