@@ -202,18 +202,36 @@ end
 print("units blocker: parks ready units before claiming completion, holding orders only")
 
 --- ⚠⚠⚠ THE SAME CLAIM-NOT-CHECK DEFECT, MEASURED AGAIN ON THE POLICY SLOT.
---- Run civvis-20260829T022749Z wedged at turn 114 holding 8 cities:
----     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"   1
----     blocked   FILL_CIVIC_SLOT  answered="civvis_complete"  25
----     dismissed FILL_CIVIC_SLOT                              40
---- repeating unchanged until the watchdog killed the game. Dismissing the
---- notification cannot clear a slot end-turn still requires, so the answer
---- has to actually fill it -- exactly as the units blocker parks its units.
-assert(agentSrc:find('if name == "ENDTURN_BLOCKING_FILL_CIVIC_SLOT" then%s+local filled = fillPolicies%(player%)'),
-	"the policy-slot blocker must fill the slot before answering civvis_complete")
-assert(agentSrc:find('answered%s*=%s*answered%s*%.%.%s*"%+"%s*%.%.%s*tostring%(filled%)'),
-	"a filled answer must be distinguishable from a bare civvis_complete")
-print("policy slot: fills the open slot before claiming completion")
+--- Run civvis-20260901T230916Z wedged at turns 184--208 after the full deck
+--- request returned pcall_ok=true while one Economic slot stayed empty:
+---     policy_deck_deferred  why=same_turn_transaction_in_flight
+---     blocked               FILL_CIVIC_SLOT  civvis_complete
+--- The hard blocker stopped the next board publication, so its old
+--- second-sighting forfeit could not run. The same pass must force a fresh
+--- turn after CIVVIS has answered, without racing a second policy request.
+local productionStart = agentSrc:find(
+	"-- ⚠⚠⚠ AND THE SAME THING AGAIN ON PRODUCTION, WHICH PARKS THE",
+	policyStart or 1, true)
+assert(productionStart and productionStart > (policyStart or 0),
+	"the policy blocker arm boundary was not found")
+local policyArm = agentSrc:sub(policyStart, productionStart)
+local policyCompleteStart, policyCompleteEnd = policyArm:find(
+	'if answered == "civvis_complete" then%s+local dropped = dismissBlocker%(pid, blocker%)')
+assert(policyCompleteStart and policyCompleteEnd,
+	"a CIVVIS-complete policy blocker must dismiss in the same pass")
+local policyDismiss = policyArm:find("dismissBlocker(pid, blocker)", 1, true)
+local policyForce = policyArm:find('REASON = "UserForced"', 1, true)
+local policySamePass = policyArm:find("same_pass_forced = true", 1, true)
+assert(policyDismiss and policyForce and policyDismiss < policyForce,
+	"a CIVVIS-complete policy blocker must force the end turn")
+assert(policySamePass and policyForce and policySamePass < policyForce,
+	"a forced policy answer must mark the same pass")
+local policyElseStart = policyArm:find('else%s+local filled = fillPolicies%(player%)', policyCompleteEnd or 1)
+assert(policyElseStart,
+	"the policy filler must remain on the non-racing path")
+assert(not policyArm:sub(policyCompleteEnd + 1, policyElseStart - 1):find("fillPolicies(player)", 1, true),
+	"the CIVVIS-complete policy path must not race a second same-turn request")
+print("policy slot: forces a CIVVIS-complete hard blocker and preserves non-racing fill")
 
 --- ⚠⚠⚠ AND THE SAME SHAPE ON PRODUCTION, WHICH COSTS THE WHOLE GAME.
 --- A city with nothing queued is something end-turn genuinely requires, so
