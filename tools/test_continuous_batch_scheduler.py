@@ -2,6 +2,7 @@
 """Regression tests for the durable 5,000-completed-game rotation state."""
 from __future__ import annotations
 
+import datetime as dt
 import json
 import sys
 import tempfile
@@ -551,6 +552,208 @@ class DeadlineRotation(unittest.TestCase):
                 repo=Path("/repo"), jobs=1, machine="machine", agent="agent", publish=True)
         self.assertEqual(outcome, "active_segment")
         status.assert_not_called()
+
+
+class OperatorCommands(unittest.TestCase):
+    """cut / status / publish never need the daemon's lock, a restart, or a hand-edited state."""
+
+    DEADLINE = scheduler.parse_utc_timestamp("2026-08-26T12:00:00Z", name="test deadline")
+
+    @staticmethod
+    def running_state(root: Path, *, seed: int = 2_000, goal: int = 100):
+        state = scheduler.new_state(seed, goal)
+        scheduler.reserve_segment(state, scheduler.empty_status())
+        path = root / "scheduler-state.json"
+        scheduler.atomic_json(path, state)
+        return state, path
+
+    @staticmethod
+    def consumed_cut_deadline(batch: dict) -> None:
+        batch["deadline"] = {
+            "schema": scheduler.CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+            "deadline_at": "2026-08-26T12:00:00Z",
+            "next_goal_completed_games": 100,
+            "requested_via": scheduler.DEADLINE_REQUESTED_VIA_CUT,
+            "cutoff_at": "2026-08-26T12:00:03Z",
+            "original_goal_completed_games": 100,
+            "actual_completed_games": 2,
+            "raw_rows": batch["rows"],
+            "raw_rows_sha256": "a" * 64,
+            "frozen_rows": batch["rows"],
+            "dropped_trailing_records": 0,
+        }
+        batch["raw_rows"] = batch["rows"]
+
+    def test_cut_request_becomes_the_running_batch_deadline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, path = self.running_state(root)
+            request = scheduler.write_cut_request(root, deadline_at=self.DEADLINE, note="table refresh")
+            with self.assertRaises(scheduler.SchedulerError):
+                scheduler.write_cut_request(root, deadline_at=self.DEADLINE)
+
+            self.assertEqual(scheduler.adopt_cut_request(root, path, state), self.DEADLINE)
+
+            deadline = state["current"]["deadline"]
+            self.assertEqual(deadline["schema"], scheduler.CONTINUOUS_BATCH_DEADLINE_SCHEMA)
+            self.assertEqual(deadline["deadline_at"], "2026-08-26T12:00:00Z")
+            self.assertEqual(deadline["next_goal_completed_games"], 100)
+            self.assertEqual(deadline["requested_via"], scheduler.DEADLINE_REQUESTED_VIA_CUT)
+            self.assertEqual(deadline["note"], "table refresh")
+            scheduler.validate_state(state)
+            self.assertEqual(scheduler.batch_deadline(state["current"]), self.DEADLINE)
+            # Durable before the request file moves into the batch's audit directory.
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["current"]["deadline"]["deadline_at"], "2026-08-26T12:00:00Z")
+            self.assertFalse(request.exists())
+            self.assertTrue((root / state["current"]["directory"] / scheduler.CUT_REQUEST_NAME).is_file())
+            self.assertIsNone(scheduler.adopt_cut_request(root, path, state))
+
+    def test_cut_request_that_cannot_apply_is_set_aside_with_its_reason(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, path = self.running_state(root)
+            state["current"]["phase"] = "frozen"
+            scheduler.write_cut_request(root, deadline_at=self.DEADLINE)
+
+            self.assertIsNone(scheduler.adopt_cut_request(root, path, state))
+
+            self.assertNotIn("deadline", state["current"])
+            self.assertFalse(scheduler.cut_request_path(root).exists())
+            rejected = sorted(root.glob("cut-request.rejected-*.json"))
+            self.assertEqual(len(rejected), 1)
+            record = json.loads(rejected[0].read_text(encoding="utf-8"))
+            self.assertIn("not running", record["rejected"])
+            self.assertIn(scheduler.CUT_REQUEST_SCHEMA, record["request"])
+
+            state["current"]["phase"] = "running"
+            state["current"]["deadline"] = {
+                "schema": scheduler.CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+                "deadline_at": "2026-08-26T13:00:00Z",
+                "next_goal_completed_games": 100,
+            }
+            scheduler.write_cut_request(root, deadline_at=self.DEADLINE)
+            self.assertIsNone(scheduler.adopt_cut_request(root, path, state))
+            self.assertEqual(state["current"]["deadline"]["deadline_at"], "2026-08-26T13:00:00Z")
+            self.assertEqual(len(list(root.glob("cut-request.rejected-*.json"))), 2)
+
+    def test_restart_without_deadline_flags_keeps_a_cut_deadline(self):
+        state = scheduler.new_state(2_100, 100)
+        state["current"]["deadline"] = {
+            "schema": scheduler.CONTINUOUS_BATCH_DEADLINE_SCHEMA,
+            "deadline_at": "2026-08-26T12:00:00Z",
+            "next_goal_completed_games": 100,
+            "requested_via": scheduler.DEADLINE_REQUESTED_VIA_CUT,
+        }
+        scheduler.verify_deadline_invocation(state, deadline_at=None, next_goal_games=None)
+        del state["current"]["deadline"]["requested_via"]
+        with self.assertRaises(scheduler.SchedulerError):
+            scheduler.verify_deadline_invocation(state, deadline_at=None, next_goal_games=None)
+
+    def test_unchanged_service_arguments_load_a_state_frozen_by_a_cut(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, path = self.running_state(root, seed=2_200)
+            batch = state["current"]
+            self.consumed_cut_deadline(batch)
+            batch.update({"phase": "frozen", "goal_completed_games": 2, "complete_games": 2,
+                          "complete_seats": 12, "wins": 2, "frozen_at": "2026-08-26T12:00:03Z"})
+            state["goal_completed_games"] = 2
+            scheduler.validate_state(state)
+            scheduler.atomic_json(path, state)
+
+            loaded = scheduler.load_state(path, seed_floor=None, goal_games=100)
+
+            self.assertEqual(loaded["goal_completed_games"], 2)
+            with self.assertRaises(scheduler.SchedulerError):
+                scheduler.load_state(path, seed_floor=None, goal_games=3_000)
+
+    def test_status_reads_while_another_process_holds_the_lock(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.running_state(root)
+            with (root / "scheduler.lock").open("a+") as lock:
+                scheduler.fcntl.flock(lock.fileno(), scheduler.fcntl.LOCK_EX | scheduler.fcntl.LOCK_NB)
+                import io
+                from contextlib import redirect_stdout
+                buffer = io.StringIO()
+                with redirect_stdout(buffer):
+                    code = scheduler.main(["status", "--state-dir", str(root), "--json"])
+            self.assertEqual(code, 0)
+            report = json.loads(buffer.getvalue())
+            self.assertEqual(report["schema"], "continuous_batch_status/v1")
+            self.assertEqual(report["phase"], "running")
+            self.assertTrue(report["scheduler_running"])
+            self.assertEqual(report["remaining_games"], 100)
+            self.assertIsNone(report["games_per_hour"])
+            self.assertFalse(report["cut_request_pending"])
+
+    def test_cut_command_only_targets_a_running_batch(self):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, path = self.running_state(root)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(scheduler.main(["cut", "--state-dir", str(root), "--in", "0"]), 0)
+            request = json.loads(scheduler.cut_request_path(root).read_text(encoding="utf-8"))
+            self.assertEqual(request["schema"], scheduler.CUT_REQUEST_SCHEMA)
+            scheduler.parse_utc_timestamp(request["deadline_at"], name="request deadline")
+            scheduler.cut_request_path(root).unlink()
+
+            state["current"]["phase"] = "frozen"
+            scheduler.atomic_json(path, state)
+            errors = io.StringIO()
+            with redirect_stderr(errors):
+                self.assertEqual(scheduler.main(["cut", "--state-dir", str(root)]), 2)
+            self.assertIn("only a running batch can be cut", errors.getvalue())
+            self.assertFalse(scheduler.cut_request_path(root).exists())
+
+    def test_publish_command_refuses_a_running_batch(self):
+        import io
+        from contextlib import redirect_stderr
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.running_state(root)
+            errors = io.StringIO()
+            with redirect_stderr(errors):
+                code = scheduler.main([
+                    "publish", "--state-dir", str(root), "--repo", str(scheduler.ROOT),
+                    "--goal-games", "100"])
+            self.assertEqual(code, 2)
+            self.assertIn("publish applies to a frozen batch", errors.getvalue())
+
+    def test_run_segment_adopts_a_cut_request_and_stops_its_child(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, path = self.running_state(root, seed=2_300)
+            batch = state["current"]
+            binary = root / "fake-gene-screen"
+            binary.write_text("#!/bin/sh\nexec sleep 30\n", encoding="utf-8")
+            binary.chmod(0o755)
+            batch["source"] = {"binary": str(binary), "worktree": str(root), "commit": "a"}
+            reservation = batch["reservations"][0]
+            scheduler.write_cut_request(root, deadline_at=dt.datetime.now(dt.timezone.utc))
+
+            result = scheduler.run_segment(root, path, state, batch, reservation, jobs=1)
+
+            self.assertTrue(result.stopped_at_deadline)
+            self.assertIsNotNone(reservation["deadline_stopped_at"])
+            self.assertEqual(reservation["launch_state"], "finished")
+            self.assertEqual(reservation["complete_games_at_start"], 0)
+            self.assertEqual(batch["deadline"]["requested_via"], scheduler.DEADLINE_REQUESTED_VIA_CUT)
+            self.assertIsNotNone(scheduler.batch_deadline(batch))
+            self.assertTrue((root / batch["directory"] / scheduler.CUT_REQUEST_NAME).is_file())
+
+
+    def test_repeated_tick_outcomes_are_logged_once_with_their_count(self):
+        log = scheduler.OutcomeLog()
+        self.assertTrue(log.note("active_segment").endswith(" active_segment"))
+        self.assertIsNone(log.note("active_segment"))
+        self.assertIsNone(log.note("active_segment"))
+        self.assertTrue(log.note("frozen_deadline").endswith(
+            " frozen_deadline (previous outcome repeated 2 more times)"))
+        self.assertTrue(log.note("awaiting_publication").endswith(" awaiting_publication"))
 
 
 if __name__ == "__main__":

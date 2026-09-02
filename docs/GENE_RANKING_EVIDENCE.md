@@ -186,10 +186,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-surge-2` | off (unmeasured) | Version 2 of `air_surge`: the science–domination loop. | 1 \| 2 |
+| `campus-through-expansion` | off (unmeasured) | `campus-through-expansion` (OptIn): a Science seat prices the Campus and its buildings in the Science lane while its plan still reads Expansion, and no city's first specialty district may be an Entertainment Complex. | 1 \| 1 |
 | `commitment-owner-acts` | off (unmeasured) | Every open settle or improve commitment whose owner the unit pass left with movement and no order acts on it after the pass — found, improve, or the safe route step — or is released with a recorded reason. | 1 \| 1 |
 | `district-planning-2` | off (unmeasured) | `district-planning-2`: the district plan's tile buy competes out of the treasury reserve (never spending below half of it) instead of needing 200 Gold of surplus headroom, and the purchase bars drop to adjacency 2 with an edge of 1 over owned ground. | 1 \| 2 |
+| `industrial-chain-debt` | off (unmeasured) | `industrial-chain-debt` (OptIn): an Industrial Zone owes its Workshop, Factory and plant the same flat debt a Campus owes its Library, a regional building is worth the production it reaches, and the Factory and plants join the buildings a repeatable project waits behind. | 1 \| 1 |
 | `settler-site-gate` | off (unmeasured) | `settler-site-gate`: a city starts a Settler only while an acceptable, unclaimed site worth founding exists. | 1 \| 1 |
 | `spaceport-surplus-veto` | off (unmeasured) | `spaceport-surplus-veto` (OptIn): the Science strategy's flat per-pad district bonus stops paying once the empire already holds as many Spaceports as the current race stage can use (`science_drive_desired_pads`). | 1 \| 1 |
+| `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
 
 ## Removed from the code
 

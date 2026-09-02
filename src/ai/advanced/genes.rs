@@ -1871,6 +1871,12 @@ pub const GENES: &[Gene] = &[
     // where the civilian-safety flee keeps priority. Appended at the END so a
     // running screen keeps its positional genome. See `docs/COMMITMENTS.md` §8.
     Gene { tag: "commitment-owner-acts", field: "commitment_owner_acts", kind: Kind::OptIn, enable: AdvancedAi::enable_commitment_owner_acts, disable: AdvancedAi::disable_commitment_owner_acts },
+    // Appended at the END, above the markers, so a running screen keeps its
+    // positional genome. The 2026-09-01 Emperor foundations: the Campus
+    // through the Expansion plan, the trade network, the Industrial chain.
+    Gene { tag: "campus-through-expansion", field: "campus_through_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_through_expansion, disable: AdvancedAi::disable_campus_through_expansion },
+    Gene { tag: "trade-route-network", field: "trade_route_network", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_route_network, disable: AdvancedAi::disable_trade_route_network },
+    Gene { tag: "industrial-chain-debt", field: "industrial_chain_debt", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_chain_debt, disable: AdvancedAi::disable_industrial_chain_debt },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
