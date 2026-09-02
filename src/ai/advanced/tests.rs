@@ -14875,6 +14875,9 @@ fn on_the_tally_seat_a_point_of_culture_is_worth_a_point_of_science() {
     let frozen = AdvancedAi::legacy();
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    let mut without_tally = AdvancedAi::new();
+    without_tally.enable_live_bridge();
+    without_tally.disable_tally_culture();
     assert!(live.tally_culture, "the live seat carries the treatment");
 
     assert!(
@@ -14904,8 +14907,8 @@ fn on_the_tally_seat_a_point_of_culture_is_worth_a_point_of_science() {
             "under {lane:?} culture is worth no less than science on the tally seat"
         );
         assert!(
-            live.yield_value(science_only, lane) == stock.yield_value(science_only, lane),
-            "and the beaker itself is priced as before under {lane:?}"
+            live.yield_value(science_only, lane) == without_tally.yield_value(science_only, lane),
+            "the tally treatment itself does not alter a beaker under {lane:?}"
         );
     }
     assert_eq!(
@@ -14962,11 +14965,8 @@ fn on_the_tally_seat_a_point_of_culture_is_worth_a_point_of_science() {
         "the tally seat closes the Campus-over-Theater gap ({live_gap} vs {stock_gap})"
     );
 
-    let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
-    withheld.disable_tally_culture();
     assert_eq!(
-        withheld.yield_value(culture_only, GrandStrategy::Science),
+        without_tally.yield_value(culture_only, GrandStrategy::Science),
         stock.yield_value(culture_only, GrandStrategy::Science)
     );
     assert!(!stock.tally_culture);
@@ -24736,6 +24736,7 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     // bounded recovery when both screened variants are withheld.
     live.disable_settler_target_hysteresis();
     live.disable_settler_target_hysteresis_2();
+    live.disable_settler_never_idles();
     assert!(!live.settler_target_hysteresis);
     assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_routing_recovery_on());
@@ -24780,18 +24781,20 @@ fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!ai.base.one_shot_recovery);
 }
 
-/// `settle_sooner` is a native opt-in: off in both bare controllers, enabled
+/// `settle_sooner` is a native opt-in: off in both bare controllers, governed
 /// by the current deployment genome, and still flippable by name through
 /// `PRODUCTION_OPT_INS`.
 #[test]
-fn settle_sooner_is_a_native_opt_in_enabled_by_the_ledger() {
+fn settle_sooner_is_a_native_opt_in_governed_by_the_ledger() {
     assert!(!AdvancedAi::new().settle_sooner);
     assert!(!AdvancedAi::legacy().settle_sooner);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
-    assert!(
-        deployed.settle_sooner,
-        "the explicit three-batch selection enables this qualifying arm"
+    let selected = crate::ai::ledger_default_on("settle-sooner")
+        .expect("a registered native opt-in has a deployment selection");
+    assert_eq!(
+        deployed.settle_sooner, selected,
+        "the deployment must follow the recorded selection"
     );
     let enable = GENES
         .iter()
