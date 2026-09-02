@@ -1526,6 +1526,15 @@
           "early-project-restraint-2": null
         }
       },
+      "eureka-chasing-builder": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "eureka-chasing-builder": null,
+          "eureka-chasing-builder-2": null
+        }
+      },
       "first-builder-reserve": {
         "rule_on": [],
         "head": null,
