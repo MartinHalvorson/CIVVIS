@@ -12652,7 +12652,11 @@ impl AdvancedAi {
                 // trying to unlock upgrades, governments and economic cards.
                 // The first three weights remain Recovery's, so this is still
                 // a defensive production posture rather than Conquest under a
-                // second name.
+                // second name. Two preregistered 24-game blocks agreed: over
+                // all 48 games v2 beat v1 by 1.4 win points and 0.35 score-share
+                // points while adding 1.07 techs at turn 150, 3.57 at the end,
+                // and 30 science/turn relative to v1. The result is directional,
+                // not promotion evidence; the gene stays off by default.
                 GrandStrategy::Recovery
                     if self.recovery_reads_the_war_2 && self.victory_planning =>
                 {
