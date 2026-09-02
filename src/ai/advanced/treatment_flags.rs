@@ -2400,21 +2400,35 @@ impl AdvancedAi {
         self.boost_first_research = false;
     }
 
-    /// Hunt every Eureka and Inspiration: the chase table reads every trigger
-    /// the engine can judge (`Game::boost_progress`), a boost in hand scales
-    /// the node, a boost one actionable step away is waited for, the
-    /// beeline walks the goal's prerequisites by their boosted cost, and
-    /// production, builders and kills are paid the research a trigger earns.
-    /// See `advanced/chase_every_boost.rs`. Opt-in gene `chase-every-boost`.
+    /// Version one hunts every Eureka and Inspiration through a global union
+    /// of research, production, Builder, and combat hooks. It stays intact as
+    /// the broad family control. See `advanced/chase_every_boost.rs`. Opt-in
+    /// gene `chase-every-boost`.
     /// Filed above the markers: the append-point check reads a method line's
     /// first identifier.
     pub fn enable_chase_every_boost(&mut self) {
+        self.chase_every_boost_2 = false;
         self.chase_every_boost = true;
     }
 
     /// The twin of `enable_chase_every_boost`.
     pub fn disable_chase_every_boost(&mut self) {
         self.chase_every_boost = false;
+    }
+
+    /// Version two only lets a city finish the final production trigger for
+    /// the technology or civic already in progress, before that study ends.
+    /// Enabling the successor turns the broad version one off, so one family
+    /// version plays. See `advanced/chase_every_boost.rs`. Opt-in gene
+    /// `chase-every-boost-2`.
+    pub fn enable_chase_every_boost_2(&mut self) {
+        self.chase_every_boost = false;
+        self.chase_every_boost_2 = true;
+    }
+
+    /// The twin of `enable_chase_every_boost_2`.
+    pub fn disable_chase_every_boost_2(&mut self) {
+        self.chase_every_boost_2 = false;
     }
 
     /// Take a node the empire would finish before its own eureka lands after
