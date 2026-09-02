@@ -1973,8 +1973,7 @@ pub const GENES: &[Gene] = &[
     // insertion lines. `tools/test_treatment_append_points.py` proves the
     // claim by constructing and merging two synthetic Gene-row pull requests.
     // Version 3 of `border-parity`: one local garrison against an actually
-    // visible two-body staging group; buy it or use an idle queue, never
-    // displace active production.
+    // visible two-body staging group; buy it without touching production.
     Gene { tag: "border-parity-3", field: "border_parity_3", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_3, disable: AdvancedAi::disable_border_parity_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

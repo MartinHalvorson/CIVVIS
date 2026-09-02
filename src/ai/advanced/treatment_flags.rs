@@ -3718,8 +3718,8 @@ impl AdvancedAi {
 
     /// Version three of `border-parity`: fill one local garrison debt only
     /// when two visible non-recon land bodies from the same peaceful major
-    /// are staged beside the city. Buy the answer or use an idle queue; never
-    /// preempt active production. Enabling it selects this family version.
+    /// are staged beside the city. Buy one answer without touching production.
+    /// Enabling it selects this family version.
     pub fn enable_border_parity_3(&mut self) {
         self.border_parity = false;
         self.border_parity_2 = false;

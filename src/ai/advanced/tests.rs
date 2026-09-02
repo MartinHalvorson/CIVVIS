@@ -1574,8 +1574,8 @@ fn a_weak_seat_that_cannot_buy_its_defender_produces_it() {
 
 /// `border-parity-3`: whole-empire weakness and a nearby rival city are no
 /// longer enough. Two actually visible non-recon land bodies staged beside an
-/// ungarrisoned city open exactly one local defender; Gold buys it, an idle
-/// queue can build it, and an active Settler is never displaced.
+/// ungarrisoned city open exactly one local defender purchase; neither an idle
+/// queue nor an active Settler is touched.
 #[test]
 fn visible_border_staging_fills_one_local_garrison_without_preemption() {
     let mut game = Game::new_full(2, 40, 24, 91_779, 250, 0, false);
@@ -1667,12 +1667,12 @@ fn visible_border_staging_fills_one_local_garrison_without_preemption() {
 
     let mut idle = game.clone();
     idle.players[0].gold = 0.0;
+    let mut idle_control = idle.clone();
+    AdvancedAi::new().advanced_production(&mut idle_control, 0, &plan, false);
     ai.advanced_production(&mut idle, 0, &plan, false);
-    assert!(
-        matches!(idle.cities[&ours].queue.first(), Some(Item::Unit { unit })
-            if idle.rules.units[unit].class == "military"),
-        "an idle exposed city starts one defender: {:?}",
-        idle.cities[&ours].queue
+    assert_eq!(
+        idle.cities[&ours].queue, idle_control.cities[&ours].queue,
+        "version three leaves an idle queue to ordinary production"
     );
 
     let mut committed = game.clone();

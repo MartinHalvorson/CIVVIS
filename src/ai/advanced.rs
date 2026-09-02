@@ -4681,8 +4681,8 @@ pub struct AdvancedAi {
     border_parity_2: bool,
     /// `border-parity-3`: replace the whole-empire power ratio with one
     /// concrete local debt. An ungarrisoned city facing two visible,
-    /// non-recon land bodies from the same peaceful major buys one defender,
-    /// or starts it only from an idle queue. See `border_parity_3_target`.
+    /// non-recon land bodies from the same peaceful major buys one defender.
+    /// Production is never displaced or reserved. See `border_parity_3_target`.
     border_parity_3: bool,
     /// `boosted-bargain-first`: a prerequisite-met technology whose Eureka is
     /// in hand and whose remaining cost is at most `BOOSTED_BARGAIN_TURNS` of
@@ -23523,34 +23523,6 @@ impl AdvancedAi {
                             .best_military(g, pid, cid, Some(true))
                             .or_else(|| self.base.best_military(g, pid, cid, Some(false)));
                         if let Some(unit) = defender {
-                            let item = Item::Unit {
-                                unit: Name::new(&unit),
-                            };
-                            if g.can_produce(pid, cid, &item)
-                                && g.apply(
-                                    pid,
-                                    &Action::Produce {
-                                        city: cid,
-                                        item: item.clone(),
-                                    },
-                                )
-                                .is_ok()
-                            {
-                                counts.add_item(g, &item);
-                                self.clear_idle_production_streak(cid);
-                                continue;
-                            }
-                        }
-                    }
-                }
-            }
-            // `border-parity-3`: only a concrete visible staging group opens
-            // this reserve, and only an idle queue pays it. One local body
-            // closes the debt, so this cannot turn the city into a unit pump.
-            if committed.is_none() && self.border_parity_3 {
-                if let Some((_, _, contact, _)) = self.border_parity_3_target(g, pid) {
-                    if contact == cid {
-                        if let Some(unit) = self.border_parity_3_defender(g, pid, cid) {
                             let item = Item::Unit {
                                 unit: Name::new(&unit),
                             };
