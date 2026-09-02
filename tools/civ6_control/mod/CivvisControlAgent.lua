@@ -14870,8 +14870,25 @@ CivvisQueue.drain = function(player, pid, turn)
 				local moved_from_origin = #entry.rows == 0
 					and entry.origin ~= nil
 					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
-				local ready = entry.ready or arrived or spent or moved_from_origin
-					or entry.wait >= grace;
+				-- Arrival is not the same as settlement on the live host. Civ VI can
+				-- place a unit on the requested plot while its MOVE_TO operation is
+				-- still active; a follow-up RequestOperation then returns successfully
+				-- but is ignored by the in-flight path. This was visible in the live
+				-- trace as MOVE_TO -> FORTIFY: the warrior reached its plot, FORTIFY
+				-- was counted as applied, and the next turn's stale-operation cleanup
+				-- cancelled the still-active move with the unit unfortified.
+				--
+				-- Keep the opening rows-less watch's early release: it has no dependent
+				-- order to protect and the next board can re-plan from the landed unit.
+				-- A real queued follow-up must wait for the host operation to deactivate,
+				-- even when the unit has arrived, spent its movement, or raised an event.
+				local active_operation = #entry.rows > 0 and try(function()
+					return ActivityTypes ~= nil
+						and ActivityTypes.ACTIVITY_OPERATION ~= nil
+						and UnitManager.GetActivityType(unit) == ActivityTypes.ACTIVITY_OPERATION;
+				end, false) == true;
+				local ready = (entry.ready or arrived or spent or moved_from_origin
+					or entry.wait >= grace) and not active_operation;
 				-- See `CivvisBoard.moveNoop`: a leg the host accepted, whose unit
 				-- is still on the plot it was sent from with its movement intact
 				-- once the watch runs out, is a no-op. It is named and answered
