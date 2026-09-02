@@ -142,6 +142,24 @@
 //!   `preview` orders ahead of the frame's strikes, and the answers reach
 //!   `Game::host_previews` on the turn's next frame.
 
+//!
+//! **`safest-stand`** (opt-in, separate from the version family): the
+//! rotation's answer when no tile in reach reads as zero. Until this the
+//! rotation skipped such a unit in silence and the ladder played it — over
+//! the seven live games of 2026-09-02 the largest row of the loss taxonomy
+//! (38 of 145) was a unit killed under 50 hit points that the rotation had
+//! logged nothing for, and twelve of those were a ladder attack by the
+//! wounded unit. With the gene on, `least_danger_stand` ranks the unit's own
+//! tile and every reachable tile by the field's reading, then the heal
+//! preference, then the distance, and the unit takes the least — moving if it
+//! is elsewhere, holding if it is here — and fortifies, marked ordered and
+//! recovering like any rotation. Two refusals: a stand the field says would
+//! still remove the unit is no stand (the ladder keeps it for a last blow),
+//! and an exposed-but-healthy unit falls back only where the step cuts the
+//! danger by `ROTATE_DANGER_MARGIN`. Census `battle_plan_fallbacks`; the
+//! rotation's Decision line says "falls back to the least danger" or "holds
+//! under fire and fortifies".
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -1471,6 +1489,7 @@ impl AdvancedAi {
             safe.sort_unstable();
             let relief = self.rotation_relief(g, pid, uid, field, here);
             let mut moved = false;
+            let mut fell_back = false;
             if let Some(relief) = relief {
                 moved = g
                     .apply(
@@ -1483,9 +1502,19 @@ impl AdvancedAi {
                     .is_ok();
             }
             if !moved {
-                let Some(&(_, _, best)) = safe.first() else {
+                let stand = match safe.first() {
+                    Some(&(_, _, best)) => Some(best),
+                    // `safest-stand`: no tile out of reach — the least
+                    // dangerous one, or nothing.
+                    None if self.safest_stand => {
+                        self.least_danger_stand(g, pid, uid, field, here, wounded)
+                    }
+                    None => None,
+                };
+                let Some(best) = stand else {
                     continue;
                 };
+                fell_back = safe.is_empty();
                 if best != unit.pos {
                     if !self.base.path_walk_to(g, pid, uid, best) {
                         continue;
@@ -1496,6 +1525,9 @@ impl AdvancedAi {
             if moved {
                 rotations += 1;
             }
+            if fell_back {
+                self.census.battle_plan_fallbacks += 1;
+            }
             self.base.fortify_or_stop(g, pid, uid);
             self.battle_planner_ordered.insert(uid);
             if heals {
@@ -1504,12 +1536,60 @@ impl AdvancedAi {
             if let Some(now) = g.units.get(&uid) {
                 think!(self.journal(), Military, Decision,
                     "Battle plan: the {} at {:?} {} to heal", now.kind, now.pos,
-                    if moved { "rotates out" } else { "holds and fortifies" };
-                    "{} hp, danger {here:.0} where it stood, {} where it stands",
-                    now.hp, field.danger(now.pos, uid));
+                    match (fell_back, moved) {
+                        (false, true) => "rotates out",
+                        (false, false) => "holds and fortifies",
+                        (true, true) => "falls back to the least danger",
+                        (true, false) => "holds under fire and fortifies",
+                    };
+                    "{} hp, danger {here:.0} where it stood, {} where it stands{}",
+                    now.hp, field.danger(now.pos, uid),
+                    if fell_back { "; no tile in reach is out of reach" } else { "" });
             }
         }
         rotations
+    }
+
+    /// `safest-stand`: the least dangerous tile a unit with no zero-danger
+    /// tile can stand on — the field's reading first, then the heal
+    /// preference, then the distance — or `None` when even that tile would
+    /// remove the unit (the ladder keeps it for a last blow) or, for a unit
+    /// that is exposed but not wounded, when the step does not cut the danger
+    /// by `ROTATE_DANGER_MARGIN` (a healthy unit's line is worth more than a
+    /// few points off the field).
+    fn least_danger_stand(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        field: &mut DangerField,
+        here: f64,
+        wounded: bool,
+    ) -> Option<Pos> {
+        let unit = g.units.get(&uid)?;
+        let mut tiles = vec![unit.pos];
+        tiles.extend(g.reachable(uid));
+        let mut ranked: Vec<(i64, i32, i32, Pos)> = tiles
+            .into_iter()
+            .map(|tile| {
+                (
+                    (field.danger(tile, uid) * 100.0).round() as i64,
+                    -heal_preference(g, pid, tile),
+                    g.wdist(unit.pos, tile),
+                    tile,
+                )
+            })
+            .collect();
+        ranked.sort_unstable();
+        let &(least, _, _, best) = ranked.first()?;
+        let least = least as f64 / 100.0;
+        if least >= f64::from(unit.hp) {
+            return None;
+        }
+        if !wounded && here - least < f64::from(ROTATE_DANGER_MARGIN) {
+            return None;
+        }
+        Some(best)
     }
 }
 
@@ -3143,5 +3223,167 @@ mod tests {
             .iter()
             .all(|archer| !g.attack_reach(*archer).contains(&far)));
         assert_eq!(danger(&g, 0, far, ours), 0.0);
+    }
+
+    /// `safest-stand` is an opt-in that ships off and is registered.
+    #[test]
+    fn safest_stand_ships_off_and_is_registered() {
+        let ai = AdvancedAi::new();
+        assert!(!ai.safest_stand, "an opt-in ships off");
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "safest_stand"));
+        let mut on = AdvancedAi::new();
+        on.enable_safest_stand();
+        assert!(on.safest_stand);
+        on.disable_safest_stand();
+        assert!(!on.safest_stand);
+        super::super::test_support::opt_in_off_in_both_controllers("safest-stand", |ai| {
+            ai.safest_stand
+        });
+    }
+
+    /// A wounded warrior that cannot leave its tile — one movement point
+    /// left, mountains on five sides and an enemy warrior on the sixth: no
+    /// zero-danger tile is in reach, so the rotation as shipped skips it and
+    /// the ladder has it; under `safest-stand` it holds under fire and
+    /// fortifies, is the plan's and is recovering.
+    #[test]
+    fn with_no_tile_out_of_reach_the_wounded_unit_holds_under_fire_and_fortifies() {
+        let mut g = open_field();
+        g.tactics.heal = true;
+        let hurt = g.spawn_unit("warrior", 0, at(10, 6));
+        let enemy = g.spawn_unit("warrior", 1, at(11, 6));
+        wound(&mut g, hurt, 45);
+        for pos in g.nbrs(at(10, 6)) {
+            if pos != at(11, 6) {
+                g.map.tiles.get_mut(&pos).expect("a tile").terrain = "mountain".into();
+            }
+        }
+        g.units.get_mut(&hurt).expect("unit").moves_left = 1.0;
+        assert!(g.reachable(hurt).is_empty(), "boxed in");
+        let here = danger(&g, 0, at(10, 6), hurt);
+        assert!(
+            here > 0.0 && here < 45.0,
+            "in the warrior's reach, not dead: {here}"
+        );
+        let plan = conquest(&g);
+        let mut shipped = g.clone();
+        let mut v2 = version_two();
+        v2.plan_battle(&mut shipped, 0, &plan);
+        assert!(
+            !shipped.units[&hurt].fortified,
+            "as shipped the rotation skips it"
+        );
+        assert!(!v2.battle_planner_ordered.contains(&hurt));
+        assert!(g.units.contains_key(&enemy));
+        let mut ai = version_two();
+        ai.enable_safest_stand();
+        ai.plan_battle(&mut g, 0, &plan);
+        let now = &g.units[&hurt];
+        assert_eq!(now.pos, at(10, 6));
+        assert!(now.fortified, "it holds under fire and fortifies");
+        assert!(ai.battle_planner_ordered.contains(&hurt));
+        assert!(ai.battle_planner_recovering.contains(&hurt));
+        assert_eq!(ai.census.battle_plan_fallbacks, 1);
+        assert_eq!(ai.census.battle_plan_rotations, 0, "it did not move");
+    }
+
+    /// With every tile in reach under some blow, the wounded unit takes the
+    /// least dangerous one. Two archers whose reaches overlap on the
+    /// swordsman's tile and part of its ring; the tile only one of them can
+    /// shoot is where it steps.
+    #[test]
+    fn with_no_tile_out_of_reach_the_wounded_unit_takes_the_least_dangerous_one() {
+        let mut g = open_field();
+        g.tactics.heal = true;
+        let hurt = g.spawn_unit("swordsman", 0, at(11, 6));
+        g.spawn_unit("archer", 1, at(13, 6));
+        g.spawn_unit("archer", 1, at(12, 8));
+        wound(&mut g, hurt, 45);
+        g.units.get_mut(&hurt).expect("unit").moves_left = 1.0;
+        // Wall off every tile in reach that lies beyond both archers, so no
+        // zero-danger tile exists.
+        let mut walls = Vec::new();
+        {
+            let mut field = DangerField::new(&g, 0);
+            for tile in g.reachable(hurt) {
+                if field.danger(tile, hurt) <= NO_DANGER {
+                    walls.push(tile);
+                }
+            }
+        }
+        for pos in walls {
+            g.map.tiles.get_mut(&pos).expect("a tile").terrain = "mountain".into();
+        }
+        let mut field = DangerField::new(&g, 0);
+        let mut tiles = vec![at(11, 6)];
+        tiles.extend(g.reachable(hurt));
+        assert!(tiles.len() > 1, "something is still in reach");
+        let readings: Vec<(Pos, f64)> = tiles
+            .iter()
+            .map(|tile| (*tile, field.danger(*tile, hurt)))
+            .collect();
+        assert!(
+            readings.iter().all(|(_, d)| *d > NO_DANGER),
+            "no tile out of reach: {readings:?}"
+        );
+        let here = field.danger(at(11, 6), hurt);
+        let least = readings
+            .iter()
+            .map(|(_, d)| *d)
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            least < here - 1.0,
+            "a strictly better tile exists: {least} v {here} ({readings:?})"
+        );
+        assert!(least < 45.0, "and it is survivable: {least}");
+        let plan = conquest(&g);
+        let mut ai = version_two();
+        ai.enable_safest_stand();
+        ai.plan_battle(&mut g, 0, &plan);
+        let now = &g.units[&hurt];
+        assert_ne!(now.pos, at(11, 6), "it moved");
+        assert!(now.fortified);
+        let mut after = DangerField::new(&g, 0);
+        let there = after.danger(now.pos, hurt);
+        assert!(
+            (there - least).abs() < 1e-6,
+            "it stands on the least dangerous tile: {there} v {least}"
+        );
+        assert_eq!(ai.census.battle_plan_fallbacks, 1);
+        assert_eq!(ai.census.battle_plan_rotations, 1);
+        assert!(ai.battle_planner_recovering.contains(&hurt));
+    }
+
+    /// A stand the field says would still remove the unit is no stand: the
+    /// ladder keeps it. The boxed-in warrior again, at ten hit points.
+    #[test]
+    fn a_stand_that_would_still_remove_the_unit_is_left_to_the_ladder() {
+        let mut g = open_field();
+        g.tactics.heal = true;
+        let hurt = g.spawn_unit("warrior", 0, at(10, 6));
+        g.spawn_unit("warrior", 1, at(11, 6));
+        wound(&mut g, hurt, 10);
+        for pos in g.nbrs(at(10, 6)) {
+            if pos != at(11, 6) {
+                g.map.tiles.get_mut(&pos).expect("a tile").terrain = "mountain".into();
+            }
+        }
+        g.units.get_mut(&hurt).expect("unit").moves_left = 1.0;
+        assert!(g.reachable(hurt).is_empty());
+        assert!(
+            danger(&g, 0, at(10, 6), hurt) >= 10.0,
+            "lethal where it stands"
+        );
+        let plan = conquest(&g);
+        let mut ai = version_two();
+        ai.enable_safest_stand();
+        ai.plan_battle(&mut g, 0, &plan);
+        assert!(
+            !ai.battle_planner_ordered.contains(&hurt),
+            "left to the ladder"
+        );
+        assert_eq!(ai.census.battle_plan_fallbacks, 0);
     }
 }

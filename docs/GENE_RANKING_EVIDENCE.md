@@ -205,6 +205,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `opening-warrior-recon-2` | off (unmeasured) | Before the first city, let only a Warrior directly escorting the Settler reveal terrain first, then reconsider from the ordinary settlement candidates. | 1 \| 2 |
 | `recovery-reads-the-war-2` | off (unmeasured) | Measure Recovery against the strongest current major opponent within the campaign planner's reach. | 1 \| 2 |
 | `requisitions` | off (unmeasured) | `requisitions`: the Objective Board's shortfall reaches production and the treasury. | 1 \| 1 |
+| `safest-stand` | off (unmeasured) | `safest-stand`: when the battle planner's heal rotation finds no tile the danger field reads as zero, the wounded or exposed unit takes the least dangerous tile in reach — its own if that is the least — and fortifies, instead of being left to the ladder. | 1 \| 1 |
 | `siege-is-progress-3` | off (unmeasured) | Reset war fatigue once per enemy city only after a nearby own land force is observed reducing its wall or city health. | 1 \| 1 |
 | `siege-train` | off (unmeasured) | A force whose objective is an enemy city plays the siege as a state machine — stage on the ring out of the city's reach until the bill is met, seal the ring spread-first, reduce walls before the garrison, reserve one taker and walk in when the city is within its blow. | 1 \| 1 |
 | `veterans-withdraw-early` | off (unmeasured) | A promoted unit keeps hit points in hand before it withdraws. | 1 \| 1 |
