@@ -137,7 +137,9 @@ fn unit_value(cost: f64, strength: f64, siege: bool, captures: bool) -> f64 {
 
 /// Damage that leaves the defender standing, on the same scale.
 fn damage_value(damage: f64, strength: f64, siege: bool, captures: bool) -> f64 {
-    damage * (1.0 + strength / 100.0) + if siege { 18.0 } else { 0.0 } + if captures { 6.0 } else { 0.0 }
+    damage * (1.0 + strength / 100.0)
+        + if siege { 18.0 } else { 0.0 }
+        + if captures { 6.0 } else { 0.0 }
 }
 
 /// Hit points our attacker gives up, on the same scale.
@@ -158,6 +160,11 @@ fn wounded_penalty(hp: i32) -> f64 {
     (10.0 - hp.clamp(0, 100) as f64 / 10.0).round()
 }
 
+/// Each source's expected blow on one of our units at one tile: `None` is a
+/// city or Encampment strike; a unit source is named so a plan that kills it
+/// can leave its blow out.
+type Blows = Arc<Vec<(Option<u32>, f64)>>;
+
 /// The danger field for one frame of the board: what every visible hostile
 /// could do to one of our units on a tile next turn.
 ///
@@ -172,10 +179,8 @@ pub(super) struct DangerField {
     /// next turn (`Game::attack_reach`: full movement, read through units),
     /// ascending and distinct so membership is a binary search.
     reaches: Vec<(u32, Vec<Pos>)>,
-    /// (tile, our unit) → each source's expected blow. `None` is a city or
-    /// Encampment strike; a unit source is named so a plan that kills it can
-    /// leave its blow out.
-    cache: BTreeMap<(Pos, u32), Arc<Vec<(Option<u32>, f64)>>>,
+    /// (tile, our unit) → each source's expected blow there.
+    cache: BTreeMap<(Pos, u32), Blows>,
 }
 
 impl DangerField {
@@ -207,7 +212,7 @@ impl DangerField {
 
     /// Every blow that would land on `uid` standing unfortified on `tile`
     /// next turn, by source.
-    pub(super) fn contributions(&mut self, tile: Pos, uid: u32) -> Arc<Vec<(Option<u32>, f64)>> {
+    pub(super) fn contributions(&mut self, tile: Pos, uid: u32) -> Blows {
         if let Some(hit) = self.cache.get(&(tile, uid)) {
             return Arc::clone(hit);
         }
@@ -217,7 +222,8 @@ impl DangerField {
         let mut out = Vec::new();
         // A garrison is not a combat target: blows on a City Center or an
         // Encampment damage the district, not the unit inside it.
-        let garrisoned = self.probe.city_at(tile).is_some() || self.probe.encampment_at(tile).is_some();
+        let garrisoned =
+            self.probe.city_at(tile).is_some() || self.probe.encampment_at(tile).is_some();
         if !garrisoned {
             self.probe.relocate(uid, tile);
             if let Some(unit) = self.probe.units.get_mut(&uid) {
@@ -261,7 +267,10 @@ impl DangerField {
                         && city.wall_hp > 0
                         && cities.insert(cid)
                     {
-                        out.push((None, expected_damage(self.probe.city_ranged_strength(cid), defence)));
+                        out.push((
+                            None,
+                            expected_damage(self.probe.city_ranged_strength(cid), defence),
+                        ));
                     }
                 }
                 if let Some(cid) = self.probe.encampment_at(pos) {
@@ -271,7 +280,10 @@ impl DangerField {
                         && self.probe.encampment_can_strike(city)
                         && encampments.insert(cid)
                     {
-                        out.push((None, expected_damage(self.probe.city_ranged_strength(cid), defence)));
+                        out.push((
+                            None,
+                            expected_damage(self.probe.city_ranged_strength(cid), defence),
+                        ));
                     }
                 }
             }
@@ -287,7 +299,10 @@ impl DangerField {
 
     /// The whole field at one tile.
     pub(super) fn danger(&mut self, tile: Pos, uid: u32) -> f64 {
-        self.contributions(tile, uid).iter().map(|(_, blow)| blow).sum()
+        self.contributions(tile, uid)
+            .iter()
+            .map(|(_, blow)| blow)
+            .sum()
     }
 
     /// The field with the named enemies already dead.
@@ -314,7 +329,11 @@ impl DangerField {
             .probe
             .apply(self.pid, &Action::MoveTo { unit: uid, to })
             .is_ok()
-            && self.probe.units.get(&uid).is_some_and(|unit| unit.pos == to);
+            && self
+                .probe
+                .units
+                .get(&uid)
+                .is_some_and(|unit| unit.pos == to);
         let out = moved.then(|| read(&self.probe));
         // Put the unit back whatever happened: a refused move may still have
         // walked part of the way.
@@ -462,7 +481,12 @@ impl BeamState {
         let gain = if kill {
             target.kill_value
         } else {
-            damage_value(damage.min(remaining), target.strength, target.siege, target.captures)
+            damage_value(
+                damage.min(remaining),
+                target.strength,
+                target.siege,
+                target.captures,
+            )
         };
         let mut cost = 0.0;
         let mut returned = 0.0;
@@ -580,7 +604,8 @@ fn search_kill_sequence(
         next.truncate(BEAM_WIDTH);
         for state in &next {
             let terminal = state.terminal(shooters, targets, candidates);
-            if terminal > best.1 + 1e-9 || (terminal > best.1 - 1e-9 && !best.0.is_empty() && state.blows < best.0)
+            if terminal > best.1 + 1e-9
+                || (terminal > best.1 - 1e-9 && !best.0.is_empty() && state.blows < best.0)
             {
                 best = (state.blows.clone(), terminal);
             }
@@ -605,8 +630,11 @@ impl AdvancedAi {
         if !self.battle_planner {
             return false;
         }
-        self.battle_planner_recovering
-            .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP));
+        self.battle_planner_recovering.retain(|uid| {
+            g.units
+                .get(uid)
+                .is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP)
+        });
         let mut field = DangerField::new(g, pid);
         let blows = self.kill_sequence_in(g, pid, &mut field);
         let mut struck = false;
@@ -715,7 +743,12 @@ impl AdvancedAi {
                     pos,
                     hp: unit.hp,
                     strength,
-                    kill_value: unit_value(spec.cost, strength, spec.siege, spec.is_melee_capable()),
+                    kill_value: unit_value(
+                        spec.cost,
+                        strength,
+                        spec.siege,
+                        spec.is_melee_capable(),
+                    ),
                     siege: spec.siege,
                     captures: spec.is_melee_capable(),
                 }
@@ -725,9 +758,9 @@ impl AdvancedAi {
             return (Vec::new(), Vec::new(), Vec::new());
         }
         let enemy_city_near = |pos: Pos, range: i32| {
-            g.cities
-                .values()
-                .any(|city| city.owner != pid && g.is_at_war(pid, city.owner) && g.wdist(city.pos, pos) <= range)
+            g.cities.values().any(|city| {
+                city.owner != pid && g.is_at_war(pid, city.owner) && g.wdist(city.pos, pos) <= range
+            })
         };
         let mut ids = g.player_unit_ids(pid);
         ids.sort_unstable();
@@ -756,16 +789,25 @@ impl AdvancedAi {
             };
             // A siege unit within range of an enemy city is the ladder's:
             // its shot is the wall, not a unit.
-            if spec.siege && enemy_city_near(unit.pos, range + g.unit_max_moves(uid).ceil() as i32) {
+            if spec.siege && enemy_city_near(unit.pos, range + g.unit_max_moves(uid).ceil() as i32)
+            {
                 continue;
             }
             let shooter_index = shooters.len();
-            let value = unit_value(spec.cost, g.unit_strength(unit, true), spec.siege, spec.is_melee_capable());
+            let value = unit_value(
+                spec.cost,
+                g.unit_strength(unit, true),
+                spec.siege,
+                spec.is_melee_capable(),
+            );
             let mut own: Vec<Candidate> = Vec::new();
             let mut stands: Vec<Pos> = vec![unit.pos];
             stands.extend(g.reachable(uid));
             for stand in stands {
-                if !targets.iter().any(|target| g.wdist(stand, target.pos) <= range) {
+                if !targets
+                    .iter()
+                    .any(|target| g.wdist(stand, target.pos) <= range)
+                {
                     continue;
                 }
                 let read = |board: &Game| -> Vec<Candidate> {
@@ -775,9 +817,17 @@ impl AdvancedAi {
                             continue;
                         }
                         if spec.has_ranged_attack()
-                            && board.ranged_order_is_legal(pid, uid, target.pos, frame.as_ref(), &viewers)
+                            && board.ranged_order_is_legal(
+                                pid,
+                                uid,
+                                target.pos,
+                                frame.as_ref(),
+                                &viewers,
+                            )
                         {
-                            if let Some((att, def)) = board.ranged_strike_strengths(uid, target.uid, target.pos) {
+                            if let Some((att, def)) =
+                                board.ranged_strike_strengths(uid, target.uid, target.pos)
+                            {
                                 found.push(Candidate {
                                     shooter: shooter_index,
                                     target: target_index,
@@ -788,8 +838,12 @@ impl AdvancedAi {
                                 });
                             }
                         }
-                        if spec.is_melee_capable() && board.melee_order_is_legal(pid, uid, target.pos) {
-                            if let Some((att, def)) = board.melee_exchange_strengths(uid, target.uid) {
+                        if spec.is_melee_capable()
+                            && board.melee_order_is_legal(pid, uid, target.pos)
+                        {
+                            if let Some((att, def)) =
+                                board.melee_exchange_strengths(uid, target.uid)
+                            {
                                 found.push(Candidate {
                                     shooter: shooter_index,
                                     target: target_index,
@@ -817,9 +871,11 @@ impl AdvancedAi {
             // after it, so the search is not spent choosing among tiles
             // that differ only in exposure.
             let mut kept: Vec<Candidate> = Vec::new();
-            for target_index in 0..targets.len() {
-                let mut on_target: Vec<&Candidate> =
-                    own.iter().filter(|candidate| candidate.target == target_index).collect();
+            for (target_index, target) in targets.iter().enumerate() {
+                let mut on_target: Vec<&Candidate> = own
+                    .iter()
+                    .filter(|candidate| candidate.target == target_index)
+                    .collect();
                 if on_target.is_empty() {
                     continue;
                 }
@@ -829,9 +885,16 @@ impl AdvancedAi {
                         let danger = field.danger(candidate.from, uid);
                         let damage = expected_damage(
                             candidate.att,
-                            effective_strength(candidate.def_base, targets[target_index].hp),
+                            effective_strength(candidate.def_base, target.hp),
                         );
-                        (candidate.from != unit.pos, danger, -damage, candidate.from, !candidate.ranged, candidate)
+                        (
+                            candidate.from != unit.pos,
+                            danger,
+                            -damage,
+                            candidate.from,
+                            !candidate.ranged,
+                            candidate,
+                        )
                     })
                     .collect();
                 keyed.sort_by(|a, b| {
@@ -867,7 +930,11 @@ impl AdvancedAi {
         // The most finishable targets, and the shooters with the heaviest
         // blow, within the search's bounds.
         let mut target_order: Vec<usize> = (0..targets.len())
-            .filter(|index| candidates.iter().any(|candidate| candidate.target == *index))
+            .filter(|index| {
+                candidates
+                    .iter()
+                    .any(|candidate| candidate.target == *index)
+            })
             .collect();
         target_order.sort_by(|a, b| {
             targets[*a]
@@ -880,7 +947,9 @@ impl AdvancedAi {
         let heaviest = |shooter: usize| {
             candidates
                 .iter()
-                .filter(|candidate| candidate.shooter == shooter && target_order.contains(&candidate.target))
+                .filter(|candidate| {
+                    candidate.shooter == shooter && target_order.contains(&candidate.target)
+                })
                 .map(|candidate| {
                     expected_damage(
                         candidate.att,
@@ -889,7 +958,8 @@ impl AdvancedAi {
                 })
                 .fold(0.0, f64::max)
         };
-        let mut shooter_order: Vec<usize> = (0..shooters.len()).filter(|s| heaviest(*s) > 0.0).collect();
+        let mut shooter_order: Vec<usize> =
+            (0..shooters.len()).filter(|s| heaviest(*s) > 0.0).collect();
         shooter_order.sort_by(|a, b| {
             heaviest(*b)
                 .total_cmp(&heaviest(*a))
@@ -946,20 +1016,36 @@ impl AdvancedAi {
             };
             if unit.pos != blow.from {
                 let walked = clone
-                    .apply(pid, &Action::MoveTo { unit: blow.unit, to: blow.from })
+                    .apply(
+                        pid,
+                        &Action::MoveTo {
+                            unit: blow.unit,
+                            to: blow.from,
+                        },
+                    )
                     .is_ok()
-                    && clone.units.get(&blow.unit).is_some_and(|unit| unit.pos == blow.from);
+                    && clone
+                        .units
+                        .get(&blow.unit)
+                        .is_some_and(|unit| unit.pos == blow.from);
                 if !walked {
                     dropped += 1;
                     continue;
                 }
             }
             let action = if blow.ranged {
-                Action::Ranged { unit: blow.unit, target: blow.target }
+                Action::Ranged {
+                    unit: blow.unit,
+                    target: blow.target,
+                }
             } else {
-                Action::Attack { unit: blow.unit, target: blow.target }
+                Action::Attack {
+                    unit: blow.unit,
+                    target: blow.target,
+                }
             };
-            let (result, applied) = Self::tactical_attack_result_in(&mut clone, pid, blow.unit, &action, plan);
+            let (result, applied) =
+                Self::tactical_attack_result_in(&mut clone, pid, blow.unit, &action, plan);
             match applied {
                 AppliedAttack::Applied if result.eliminates_enemy_unit || result.value >= 0.0 => {
                     if result.eliminates_enemy_unit {
@@ -983,18 +1069,25 @@ impl AdvancedAi {
             let Some(unit) = g.units.get(&blow.unit) else {
                 continue;
             };
-            if unit.pos != blow.from {
-                if !self.base.path_walk_to(g, pid, blow.unit, blow.from)
-                    || g.units.get(&blow.unit).is_none_or(|unit| unit.pos != blow.from)
-                {
-                    self.census.battle_plan_dropped_blows += 1;
-                    continue;
-                }
+            if unit.pos != blow.from
+                && (!self.base.path_walk_to(g, pid, blow.unit, blow.from)
+                    || g.units
+                        .get(&blow.unit)
+                        .is_none_or(|unit| unit.pos != blow.from))
+            {
+                self.census.battle_plan_dropped_blows += 1;
+                continue;
             }
             let action = if blow.ranged {
-                Action::Ranged { unit: blow.unit, target: blow.target }
+                Action::Ranged {
+                    unit: blow.unit,
+                    target: blow.target,
+                }
             } else {
-                Action::Attack { unit: blow.unit, target: blow.target }
+                Action::Attack {
+                    unit: blow.unit,
+                    target: blow.target,
+                }
             };
             if g.apply(pid, &action).is_ok() {
                 struck = true;
@@ -1019,7 +1112,10 @@ impl AdvancedAi {
             if !seen.insert(blow.defender) {
                 continue;
             }
-            let on_target: Vec<&Blow> = blows.iter().filter(|other| other.defender == blow.defender).collect();
+            let on_target: Vec<&Blow> = blows
+                .iter()
+                .filter(|other| other.defender == blow.defender)
+                .collect();
             let expected: f64 = on_target.iter().map(|other| other.expected).sum();
             let ranged = on_target.iter().filter(|other| other.ranged).count();
             let (kind, hp) = g
@@ -1038,7 +1134,14 @@ impl AdvancedAi {
     /// adjacent, ours, melee-capable, healthier by `RELIEF_HP_MARGIN`,
     /// further from the nearest hostile than the wounded unit, and standing
     /// where the wounded unit would be less exposed.
-    fn rotation_relief(&self, g: &Game, pid: usize, uid: u32, field: &mut DangerField, here: f64) -> Option<u32> {
+    fn rotation_relief(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        field: &mut DangerField,
+        here: f64,
+    ) -> Option<u32> {
         let unit = g.units.get(&uid)?;
         let hostile_distance = |pos: Pos| {
             g.units
@@ -1088,7 +1191,13 @@ impl AdvancedAi {
 
     /// Pull the wounded and the exposed out of reach and fortify them.
     /// Returns how many actually moved or swapped.
-    fn rotate_wounded(&mut self, g: &mut Game, pid: usize, field: &mut DangerField, strikers: &BTreeSet<u32>) -> u32 {
+    fn rotate_wounded(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        field: &mut DangerField,
+        strikers: &BTreeSet<u32>,
+    ) -> u32 {
         let heals = !g.is_arena() || g.tactics.heal;
         let mut ids = g.player_unit_ids(pid);
         ids.sort_unstable();
@@ -1112,7 +1221,8 @@ impl AdvancedAi {
                 continue;
             }
             let here = field.danger(unit.pos, uid);
-            let wounded = heals && (unit.hp < ROTATE_HP || self.battle_planner_recovering.contains(&uid));
+            let wounded =
+                heals && (unit.hp < ROTATE_HP || self.battle_planner_recovering.contains(&uid));
             // Where nothing heals, a unit is pulled out only when it would
             // otherwise be removed: without a recovery to remember, a margin
             // would walk it out of reach one turn and back into it the next.
@@ -1126,13 +1236,27 @@ impl AdvancedAi {
             let mut safe: Vec<(i32, i32, Pos)> = tiles
                 .into_iter()
                 .filter(|tile| field.danger(*tile, uid) <= NO_DANGER)
-                .map(|tile| (-heal_preference(g, pid, tile), g.wdist(unit.pos, tile), tile))
+                .map(|tile| {
+                    (
+                        -heal_preference(g, pid, tile),
+                        g.wdist(unit.pos, tile),
+                        tile,
+                    )
+                })
                 .collect();
             safe.sort_unstable();
             let relief = self.rotation_relief(g, pid, uid, field, here);
             let mut moved = false;
             if let Some(relief) = relief {
-                moved = g.apply(pid, &Action::Swap { unit: uid, other: relief }).is_ok();
+                moved = g
+                    .apply(
+                        pid,
+                        &Action::Swap {
+                            unit: uid,
+                            other: relief,
+                        },
+                    )
+                    .is_ok();
             }
             if !moved {
                 let Some(&(_, _, best)) = safe.first() else {
@@ -1233,7 +1357,9 @@ mod tests {
         assert!(on.battle_planner);
         on.disable_battle_planner();
         assert!(!on.battle_planner);
-        super::super::test_support::opt_in_off_in_both_controllers("battle-planner", |ai| ai.battle_planner);
+        super::super::test_support::opt_in_off_in_both_controllers("battle-planner", |ai| {
+            ai.battle_planner
+        });
     }
 
     /// Off, the plan reads nothing and orders nothing, whatever the board.
@@ -1278,20 +1404,38 @@ mod tests {
         }
         let (hp, blows) = chosen.expect("some wound needs exactly three blows");
         wound(&mut g, victim, hp);
-        assert!(blows.iter().all(|blow| blow.target == at(10, 7)), "{blows:?}");
-        assert!(blows[0].ranged && blows[1].ranged, "the shots go first: {blows:?}");
-        assert!(!blows[2].ranged && blows[2].unit == warrior, "the melee blow is last: {blows:?}");
+        assert!(
+            blows.iter().all(|blow| blow.target == at(10, 7)),
+            "{blows:?}"
+        );
+        assert!(
+            blows[0].ranged && blows[1].ranged,
+            "the shots go first: {blows:?}"
+        );
+        assert!(
+            !blows[2].ranged && blows[2].unit == warrior,
+            "the melee blow is last: {blows:?}"
+        );
         assert!(blows[2].finishes && !blows[0].finishes, "{blows:?}");
         let shooters: BTreeSet<u32> = blows.iter().map(|blow| blow.unit).collect();
-        assert_eq!(shooters, [archer_a, archer_b, warrior].into_iter().collect());
+        assert_eq!(
+            shooters,
+            [archer_a, archer_b, warrior].into_iter().collect()
+        );
         let plan = conquest(&g);
         assert!(ai.plan_battle(&mut g, 0, &plan), "a blow landed");
-        assert!(!g.units.contains_key(&victim), "the victim is finished on the real board");
+        assert!(
+            !g.units.contains_key(&victim),
+            "the victim is finished on the real board"
+        );
         assert_eq!(ai.census.battle_plan_kills, 1);
         assert_eq!(ai.census.battle_plan_verified_kills, 1);
         assert_eq!(ai.census.battle_plan_dropped_blows, 0);
         for uid in [archer_a, archer_b, warrior] {
-            assert!(ai.battle_planner_claims(uid), "the ladder leaves a planned striker alone");
+            assert!(
+                ai.battle_planner_claims(uid),
+                "the ladder leaves a planned striker alone"
+            );
         }
     }
 
@@ -1339,7 +1483,10 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_battle_planner();
         let before = danger(&g, 0, at(10, 6), hurt);
-        assert!(before > 10.0, "the wounded unit is exposed where it stands: {before}");
+        assert!(
+            before > 10.0,
+            "the wounded unit is exposed where it stands: {before}"
+        );
         let plan = conquest(&g);
         ai.plan_battle(&mut g, 0, &plan);
         let after = &g.units[&hurt];
@@ -1372,7 +1519,9 @@ mod tests {
         let expected: f64 = [left, right]
             .into_iter()
             .map(|archer| {
-                let (att, def) = g.ranged_strike_strengths(archer, ours, tile).expect("a pair");
+                let (att, def) = g
+                    .ranged_strike_strengths(archer, ours, tile)
+                    .expect("a pair");
                 expected_damage(att, def)
             })
             .sum();
@@ -1386,7 +1535,9 @@ mod tests {
         assert!((read - expected).abs() < 1e-9, "{read} v {expected}");
         // And a tile beyond both archers' reach reads zero.
         let far = at(10, 12);
-        assert!([left, right].iter().all(|archer| !g.attack_reach(*archer).contains(&far)));
+        assert!([left, right]
+            .iter()
+            .all(|archer| !g.attack_reach(*archer).contains(&far)));
         assert_eq!(danger(&g, 0, far, ours), 0.0);
     }
 }
