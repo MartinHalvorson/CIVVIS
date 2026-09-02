@@ -112,6 +112,12 @@ const THREAT_RELIEF_RADIUS: i32 = 6;
 /// city at 1.2769; this covers that 0.1213 gap without allowing recency to
 /// override a materially worse emergency elsewhere.
 const FRESH_CITY_DAMAGE_PRIORITY: f64 = 0.15;
+/// Maximum ratio credit for a city whose health is already critically low,
+/// even when the last-hit timestamp is unavailable after a bridge rebuild.
+/// Split evenly between the garrison and outer-defense bars, then capped so
+/// damage is only a bounded tie-break within the active-breach emergency tier.
+const CRITICAL_CITY_DAMAGE_PRIORITY: f64 = 0.75;
+const CRITICAL_WALL_DAMAGE_PRIORITY: f64 = 0.75;
 /// Turn the ancient-rush window shuts, after which ordinary campaign rules
 /// resume. `rush_census` finds the first walled capital at turn 80 and 43% of
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
@@ -869,6 +875,11 @@ pub struct StrategyCensus {
     pub battle_plan_verified_kills: u32,
     pub battle_plan_dropped_blows: u32,
     pub battle_plan_rotations: u32,
+    /// `battle-planner-2`: slots the positions plan laid out, units it
+    /// placed, and units the pace held back on the approach.
+    pub battle_plan_slots: u32,
+    pub battle_plan_positioned: u32,
+    pub battle_plan_paced: u32,
     pub expansion: u32,
     pub science: u32,
     pub culture: u32,
@@ -941,6 +952,9 @@ impl StrategyCensus {
         self.battle_plan_verified_kills += other.battle_plan_verified_kills;
         self.battle_plan_dropped_blows += other.battle_plan_dropped_blows;
         self.battle_plan_rotations += other.battle_plan_rotations;
+        self.battle_plan_slots += other.battle_plan_slots;
+        self.battle_plan_positioned += other.battle_plan_positioned;
+        self.battle_plan_paced += other.battle_plan_paced;
         self.expansion += other.expansion;
         self.science += other.science;
         self.culture += other.culture;
@@ -4655,6 +4669,11 @@ pub struct AdvancedAi {
     /// Units the battle plan pulled out to heal, kept out of the kill plan
     /// until `battle_planner::RETURN_HP`; pruned as they heal or die.
     battle_planner_recovering: BTreeSet<u32>,
+    /// `battle-planner-2`: version two of `battle_planner` — the positions
+    /// plan joins the kill plan and the heal rotation. One version of the
+    /// family plays; `enable_battle_planner_2` turns version one off. See
+    /// `advanced/battle_planner.rs`.
+    battle_planner_2: bool,
     /// `air-surge-2`: version two of `air_surge` — the science–domination
     /// loop. The original one-appointment surge remains a separately
     /// measurable family member; this continuation lets the Formal-War clock
@@ -7257,6 +7276,7 @@ impl AdvancedAi {
             battle_planner: false,
             battle_planner_ordered: BTreeSet::new(),
             battle_planner_recovering: BTreeSet::new(),
+            battle_planner_2: false,
             air_surge_2: false,
             border_parity_2: false,
             boosted_bargain_first: false,
@@ -9135,32 +9155,61 @@ impl AdvancedAi {
                 let critical = danger >= 0.90
                     || (danger >= BASTION_PRESSURE
                         && (breached || fresh_damage || imminent_attack));
+                // A fresh timestamp is a useful bridge signal, but it can be
+                // absent after a skipped export or a decider restart. Once a
+                // city is already breached, its remaining health is stronger
+                // evidence than a modest hostile/friendly ratio difference at
+                // a healthy neighbour. Keep the credit bounded and behind the
+                // same critical-threat gate above.
+                let damage_priority = if self.battlefront_observation && breached {
+                    let city_missing =
+                        f64::from((CITY_MAX_HP - city.hp).max(0)) / f64::from(CITY_MAX_HP);
+                    let wall_missing = if wall_max > 0 {
+                        f64::from((wall_max - city.wall_hp).max(0)) / f64::from(wall_max)
+                    } else {
+                        0.0
+                    };
+                    (city_missing * CRITICAL_CITY_DAMAGE_PRIORITY
+                        + wall_missing * CRITICAL_WALL_DAMAGE_PRIORITY)
+                        .min(1.0)
+                } else {
+                    0.0
+                };
+                // A breached city with a currently executable hostile attack
+                // is a distinct emergency from a healthy city merely inside
+                // the same pressure radius. Give that state the first sort
+                // key; the bounded damage/pressure score still orders two
+                // active breaches against one another.
+                let active_breach = breached && imminent_attack;
                 let priority = danger
+                    + damage_priority
                     + if fresh_damage {
                         FRESH_CITY_DAMAGE_PRIORITY
                     } else {
                         0.0
                     };
                 critical.then_some((
+                    u8::from(active_breach),
                     // A city that just lost health is the one the enemy is
-                    // actually shooting. A bounded recency credit lets that
-                    // evidence outrank a modestly higher radius ratio at an
-                    // undamaged neighbour, while a much more dangerous city
-                    // still wins the emergency selection.
+                    // actually shooting. The active-breach tier handles a
+                    // breached city with a current attack envelope; within
+                    // that tier, bounded damage and recency credits order
+                    // otherwise comparable emergencies by severity.
                     priority,
                     danger,
-                    (200 - city.hp).max(0) + (wall_max - city.wall_hp).max(0),
+                    (CITY_MAX_HP - city.hp).max(0) + (wall_max - city.wall_hp).max(0),
                     cid,
                 ))
             })
             .max_by(|left, right| {
                 left.0
-                    .total_cmp(&right.0)
+                    .cmp(&right.0)
                     .then_with(|| left.1.total_cmp(&right.1))
-                    .then_with(|| left.2.cmp(&right.2))
-                    .then_with(|| right.3.cmp(&left.3))
+                    .then_with(|| left.2.total_cmp(&right.2))
+                    .then_with(|| left.3.cmp(&right.3))
+                    .then_with(|| right.4.cmp(&left.4))
             })
-            .map(|(_, _, _, cid)| cid)
+            .map(|(_, _, _, _, cid)| cid)
     }
 
     fn religious_opening_rank(g: &Game, pid: usize) -> Option<(u8, f64, f64)> {
@@ -37172,9 +37221,10 @@ impl AdvancedAi {
         // jointly and verified on one clone, the wounded are rotated out,
         // and the planned units are marked so the ladder below leaves them
         // alone. The immediate-kill pass and `fire-plan` are its unplanned
-        // predecessors and do not run beside it. See
+        // predecessors and do not run beside it. Either version of the
+        // family; version two adds the positions plan inside. See
         // `advanced/battle_planner.rs`.
-        if self.battle_planner {
+        if self.battle_planner_on() {
             if self.plan_battle(g, pid, plan) {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;

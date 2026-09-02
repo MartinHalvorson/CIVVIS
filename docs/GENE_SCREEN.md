@@ -621,7 +621,7 @@ table prints a **religion census** from them, because conversion decided two
 thirds of games on the Pangaea instrument (28% at the screen's shape) and the
 rows could not say one thing about how the losing seat stood in that race.
 
-## ⭐ Science pace: `techs_150`, `science_end` and the `Δ techs@150` column (2026-09-01)
+## ⭐ Science pace: `techs_150` and `science_end` (2026-09-01)
 
 The screen prices every gene by win share, and 52% of its games end on score
 at the 250-turn Online clock — a world in which research speed is invisible.
@@ -631,8 +631,7 @@ deep game 12–33 techs behind, and the science-pace genes
 `science-expansion-phase`, `campus-adjacency-threshold`, the `boost-*`
 family, `research-tier-premium`, `power-the-laboratory`) sat at ranks 24–193
 straddling zero: the instrument could not see what they change. So every row
-now carries a research-speed read beside the outcome, and the ranking prints
-it.
+now carries a research-speed read beside the outcome.
 
 **The rows.** Two fields, both `None` (and not written) in every file older
 than the field, so an old file is byte for byte what it was:
@@ -651,17 +650,14 @@ than the field, so an old file is byte for byte what it was:
 `{diff, se, z, n_on, n_off}` on the same arms the win column counts:
 `science_pace` (`techs_150`), `techs_end` (`techs`) and `science_end`. A file
 whose rows lack a field reads **`null`** there, never a Δ of zero; one row
-without it is enough. The printed table adds a `science pace` block after the
-decisiveness block, sorted by |z| of `techs@150Δ`, only when the rows carry it.
+without it is enough. The printed analysis adds a `science pace` block after
+the decisiveness block, sorted by |z| of `techs@150Δ`, only when the rows carry
+it.
 
-**The ranking.** `GENE_HEURISTIC_RANKING.md` gains one column, **`Δ techs@150
-(last batch)`**, immediately after the three batch columns: the last batch's
-`science_pace` as `+1.23 (z +2.47)`, an en dash for a batch played before the
-screen recorded it. It is evidence beside the sort key and the batch rule and
-enters neither; `tools/genes.py write` regenerates it and `tools/test_genes.py`
-holds the header, the placement and every cell. The column stays blank for the
-three committed batches until a batch played by a screen that records
-`techs_150` enters.
+**The ranking.** `GENE_HEURISTIC_RANKING.md` does not display a science-pace
+column. The `science_pace` JSON block and the printed analysis remain available
+for targeted research assessments; neither enters the ranking sort nor the
+batch rule.
 
 **A science regime is a recipe, not a mode.** Regimes here are flags; the
 retired war regime was `--victories domination,score` on four players. The
@@ -678,8 +674,7 @@ target/ci/gene_screen --analyze target/science-regime.jsonl --json target/scienc
 regime and `tools/genes.py` refuses it as a ledger source, exactly as the war
 regime was refused. Its `science_pace` block is the reading to take from it —
 a science gene's research-speed Δ in a world where the other lanes cannot end
-the game early — and it never enters a default. The standard screen's own
-`science_pace` is what the ranking column prints.
+the game early — and it never enters a default.
 
 ## History
 
