@@ -7182,12 +7182,14 @@ local function exportState(player, pid, turn, frame)
 					pcall(function()
 						local ux = unit:GetX();
 						local uy = unit:GetY();
+						local name = unitTypeName(unit);
 						-- `IsVisible`, not `IsRevealed`: a remembered tile does not show
 						-- who stands on it now. Confirmed on a player-indexed
 						-- `PlayersVisibility` handle, which is the only form that
-						-- answers in a gameplay context.
-						if PlayersVisibility[pid]:IsVisible(ux, uy) then
-							local name = unitTypeName(unit);
+						-- answers in a gameplay context. A visible tile is not a
+						-- detection result, though: `other:GetUnits()` still contains
+						-- a foreign Spy while its operation remains secret.
+						if name ~= "UNIT_SPY" and PlayersVisibility[pid]:IsVisible(ux, uy) then
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
