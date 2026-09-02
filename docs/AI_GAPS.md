@@ -1608,3 +1608,18 @@ per-enemy `EnemyEnvelope { reach, sensitive }` neighbourhood keys already in
 reuse an unmoved enemy's flood across an own move, without changing what any
 seat decides. That would be a perf change with a byte-identical report, which
 is the only kind this subsystem has ever accepted.
+
+## The evacuation was ordered and did not happen (2026-09-01)
+
+Across the 32 live ledger runs of 2026-08-30..09-01 that reached turn 100,
+461 of our units died in combat (408 to barbarians), 352 of them at or
+below 50 HP, and 383 of them made **no host move on the turn before they
+died** — most had a `MOVE_TO` that turn which the host accepted and never
+walked. The controller's recovery had chosen the evacuation; the leg did
+not land, and nothing on the bridge could tell an accepted-but-unwalked leg
+from one still walking until the next turn's `did_not_move`. The failure is
+actuation, in the class `docs/LIVE_TACTICS.md` §20 measures and this repo
+has found to pay; the mod now names and answers the no-op in the same pass
+(`MoveFallback`), the `wounded-out-of-reach` gene withdraws on the top of
+the roll and remembers raiders in the fog, and the ledger row carries
+`deaths_after_unexecuted_move` so the next runs can say whether it moved.
