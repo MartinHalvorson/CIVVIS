@@ -1616,6 +1616,15 @@
           "holy-site-where-the-threat-is-2": null
         }
       },
+      "native-emergency-purchase": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "native-emergency-purchase": null,
+          "native-emergency-purchase-2": null
+        }
+      },
       "naval-recon": {
         "rule_on": [],
         "head": "naval-recon",

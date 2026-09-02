@@ -31,7 +31,7 @@
 //! board a city can bleed to nothing beside a full treasury while the
 //! purchaser runs its ordinary reserve arithmetic.
 //!
-//! ## The four genes
+//! ## The Gold and emergency genes
 //!
 //! 1. **`buy-what-cards-cannot-boost`** — the Gold purchase scorer prices the
 //!    turns a build would take at the card-boosted rate, and scales the Gold
@@ -56,11 +56,20 @@
 //!    if the city can raise them, otherwise the best land defender — the live
 //!    doctrine's own choice — and it spends through the reserve exactly as
 //!    the live path does.
+//! 5. **`native-emergency-purchase-2`** — a narrower successor to version
+//!    one. It requires fresh city damage (this turn or the last) *and* a
+//!    currently visible at-war military unit whose legal attack envelope
+//!    reaches the City Center. That independently corroborates the damage
+//!    record and prevents a departed attacker from buying a defender after the
+//!    emergency has cleared.
 //!
-//! ⚠ The trigger asks for DAMAGE, not for a hostile in sight.
+//! ⚠ Version one asks for DAMAGE, not for a hostile in sight.
 //! `besieged_city_item` records why: reacting to a single raider in range
 //! "bought city count while COSTING score: walls and defenders displace the
-//! buildings and districts score is actually made of".
+//! buildings and districts score is actually made of". Version two preserves
+//! that lesson by requiring the stronger fact that a visible attacker can
+//! legally strike the City Center now, rather than treating mere proximity as
+//! proof.
 //!
 //! Each gene is byte-identical when off: every multiplier reads exactly 1.0
 //! (and `x * 1.0`, `x / (p * 1.0)` are exact in IEEE arithmetic), and the
@@ -137,6 +146,10 @@ pub const PURCHASE_CARD_MULT_RANGE: (f64, f64) = (0.25, 4.0);
 pub const YOUNG_CITY_PREMIUM: f64 = 0.5;
 /// How recently a city must have been struck for the native emergency.
 pub const EMERGENCY_RECENT_TURNS: u32 = 4;
+/// Version two only reacts while the damage is still fresh: this turn or the
+/// immediately preceding turn. A longer-lived scar belongs to version one's
+/// deliberately broader experiment.
+pub const EMERGENCY_V2_FRESH_TURNS: u32 = 1;
 /// `treasury-at-work`: turns of a recurring deficit the working reserve
 /// keeps in the bank, so a purchase never turns a deficit into bankruptcy
 /// before the deck or the army can be corrected.
@@ -226,10 +239,19 @@ impl AdvancedAi {
         young_city_premium_from(here, best)
     }
 
+    /// Whether either native emergency-purchase family member is armed.
+    /// Individual versions remain mutually exclusive through their toggles,
+    /// but the shared purchase and reserve paths deliberately ask this one
+    /// family gate.
+    pub(super) fn native_emergency_purchase_on(&self) -> bool {
+        self.native_emergency_purchase || self.native_emergency_purchase_2
+    }
+
     /// `native-emergency-purchase`: whether this city has confirmed recent
     /// damage. The attacker may already have moved outside the reconstructed
     /// board, but the city damage and attack timestamp remain native evidence
-    /// that its defence must take priority. False while the gene is off.
+    /// that its defence must take priority. Version one intentionally retains
+    /// that broad scar-only rule for direct family comparison.
     pub(super) fn native_city_emergency(&self, g: &Game, pid: usize, cid: u32) -> bool {
         if !self.native_emergency_purchase {
             return false;
@@ -248,11 +270,39 @@ impl AdvancedAi {
         true
     }
 
+    /// `native-emergency-purchase-2`: a damaged city is an emergency only
+    /// when a fresh native damage record agrees with a present, visible legal
+    /// attacker. Reuse the battlefront's terrain- and movement-accurate
+    /// envelope rather than approximating danger with a radius or peeking
+    /// through fog.
+    pub(super) fn native_city_emergency_2(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if !self.native_emergency_purchase_2 {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        if city.hp >= CITY_MAX_HP
+            || city.last_attacked == 0
+            || city.last_attacked > g.turn
+            || g.turn - city.last_attacked > EMERGENCY_V2_FRESH_TURNS
+        {
+            return false;
+        }
+        let visible = g.player_vision_frame(pid);
+        Self::imminent_city_attack(g, pid, cid, &visible)
+    }
+
+    /// The native emergency signal selected by the active family member.
+    pub(super) fn native_city_emergency_on(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        self.native_city_emergency(g, pid, cid) || self.native_city_emergency_2(g, pid, cid)
+    }
+
     /// The emergency's answer for a bleeding city: Walls if the city can raise
     /// them, otherwise the best land defender. This is
     /// `BasicAi::besieged_city_item`'s own choice without its live gate.
     pub(super) fn native_emergency_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        if !self.native_city_emergency(g, pid, cid) {
+        if !self.native_city_emergency_on(g, pid, cid) {
             return None;
         }
         for building in ["walls", "medieval_walls", "renaissance_walls"] {
@@ -311,7 +361,7 @@ impl AdvancedAi {
 
     /// `threatened-city-reserve`: the Gold an ordinary purchase must leave in
     /// the treasury while a city of ours is threatened (`plan.threatened_city`)
-    /// or bleeding (`native_city_emergency`) — one emergency defender at
+    /// or bleeding (`native_city_emergency_on`) — one emergency defender at
     /// today's price, [`FALLBACK_DEFENDER_PRICE`] when nothing military is
     /// unlocked. Exactly 0.0 while the gene is off and while no city is under
     /// threat, so both buyers keep their stock reserve then.
@@ -330,7 +380,7 @@ impl AdvancedAi {
             .is_some_and(|city| city.owner == pid)
             || g.player_city_ids(pid)
                 .into_iter()
-                .any(|cid| self.native_city_emergency(g, pid, cid));
+                .any(|cid| self.native_city_emergency_on(g, pid, cid));
         if !threatened {
             return 0.0;
         }
@@ -511,11 +561,13 @@ mod tests {
         assert!(!ai.build_what_cards_boost, "an opt-in ships off");
         assert!(!ai.gold_for_the_young_city, "an opt-in ships off");
         assert!(!ai.native_emergency_purchase, "an opt-in ships off");
+        assert!(!ai.native_emergency_purchase_2, "a successor ships off");
         let legacy = AdvancedAi::legacy();
         assert!(!legacy.buy_what_cards_cannot_boost);
         assert!(!legacy.build_what_cards_boost);
         assert!(!legacy.gold_for_the_young_city);
         assert!(!legacy.native_emergency_purchase);
+        assert!(!legacy.native_emergency_purchase_2);
 
         let mut ai = AdvancedAi::new();
         ai.enable_buy_what_cards_cannot_boost();
@@ -526,14 +578,26 @@ mod tests {
         assert!(ai.build_what_cards_boost);
         assert!(ai.gold_for_the_young_city);
         assert!(ai.native_emergency_purchase);
+        assert!(!ai.native_emergency_purchase_2);
+        ai.enable_native_emergency_purchase_2();
+        assert!(!ai.native_emergency_purchase, "one emergency version plays");
+        assert!(ai.native_emergency_purchase_2);
+        ai.enable_native_emergency_purchase();
+        assert!(ai.native_emergency_purchase);
+        assert!(
+            !ai.native_emergency_purchase_2,
+            "version one also selects its family"
+        );
         ai.disable_buy_what_cards_cannot_boost();
         ai.disable_build_what_cards_boost();
         ai.disable_gold_for_the_young_city();
         ai.disable_native_emergency_purchase();
+        ai.disable_native_emergency_purchase_2();
         assert!(!ai.buy_what_cards_cannot_boost);
         assert!(!ai.build_what_cards_boost);
         assert!(!ai.gold_for_the_young_city);
         assert!(!ai.native_emergency_purchase);
+        assert!(!ai.native_emergency_purchase_2);
     }
 
     /// `threatened-city-reserve`: the same run bought a Water Mill at t160
@@ -720,6 +784,90 @@ mod tests {
             on.native_city_emergency(&g, 0, city),
             "a freshly struck city stays an emergency even without a visible attacker"
         );
+    }
+
+    #[test]
+    fn native_emergency_v2_requires_fresh_damage_and_a_visible_legal_attacker() {
+        let (mut g, city) = board();
+        g.turn = 30;
+        let city_pos = g.cities[&city].pos;
+        {
+            let state = g.cities.get_mut(&city).unwrap();
+            state.buildings.push(crate::name!("walls"));
+            state.wall_hp = 100;
+            state.hp = 120;
+            state.last_attacked = 29;
+        }
+
+        let mut on = AdvancedAi::new();
+        on.enable_native_emergency_purchase_2();
+        assert!(on.native_emergency_purchase_on());
+        assert!(
+            !on.native_city_emergency_2(&g, 0, city),
+            "a recent scar without a current attacker is not an emergency"
+        );
+        assert!(on.native_emergency_item(&g, 0, city).is_none());
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
+
+        let attack_tile = g
+            .nbrs(city_pos)
+            .into_iter()
+            .find(|position| {
+                g.city_at(*position).is_none()
+                    && g.unit_ids_at(*position).is_empty()
+                    && g.map
+                        .get(*position)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("the city needs an accessible attack tile");
+        g.at_war.insert((0, 1));
+        let attacker = g.spawn_test_unit("warrior", 1, attack_tile);
+        assert!(g.player_can_see(0, attack_tile), "the attacker is observed");
+        assert!(
+            g.attack_reach(attacker).contains(&city_pos),
+            "the attacker can legally strike the City Center"
+        );
+        assert!(on.native_city_emergency_2(&g, 0, city));
+        assert!(
+            on.native_emergency_item(&g, 0, city).is_some(),
+            "the corroborated signal reaches the existing walls-or-defender choice"
+        );
+        let plan = StrategicPlan {
+            strategy: super::super::GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: Some(city),
+            desired_cities: 1,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        let mut purchase = g.clone();
+        purchase.players[0].gold = 1_000.0;
+        let before_purchase = purchase.players[0].gold;
+        assert!(
+            on.emergency_city_defense_purchase(&mut purchase, 0, &plan),
+            "version two opens the existing emergency purchase path"
+        );
+        assert!(
+            purchase.players[0].gold < before_purchase,
+            "the corroborated emergency spends Gold on its local answer"
+        );
+
+        g.remove_unit(attacker);
+        assert!(
+            !on.native_city_emergency_2(&g, 0, city),
+            "a departing attacker clears version two immediately"
+        );
+
+        let attacker = g.spawn_test_unit("warrior", 1, attack_tile);
+        g.cities.get_mut(&city).unwrap().last_attacked = 28;
+        assert!(
+            !on.native_city_emergency_2(&g, 0, city),
+            "even a current attacker cannot revive a two-turn-old scar"
+        );
+        assert!(g.attack_reach(attacker).contains(&city_pos));
     }
 
     #[test]

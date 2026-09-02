@@ -1322,12 +1322,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "gold-for-the-young-city", field: "gold_for_the_young_city", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_for_the_young_city, disable: AdvancedAi::disable_gold_for_the_young_city },
     // `emergency_city_defense_purchase` is gated on `garrison_under_fire`,
     // which only the live bridge sets — on a native board it has never fired
-    // once. The gene adds the native signal: a city that lost health, was
-    // struck within four turns, and has a hostile military unit within three
-    // tiles buys Walls or the best land defender through the reserve. Damage,
-    // not a hostile in sight: `besieged_city_item` records that reacting to
-    // one raider in range cost score.
+    // once. Version one adds a broad native damage timestamp that remains
+    // actionable for four turns, even after an attacker has left the board.
     Gene { tag: "native-emergency-purchase", field: "native_emergency_purchase", kind: Kind::OptIn, enable: AdvancedAi::enable_native_emergency_purchase, disable: AdvancedAi::disable_native_emergency_purchase },
+    // Version two keeps the Walls-or-defender answer but requires two current
+    // facts: damage this turn or last, and a visible at-war military unit with
+    // a legal attack envelope to the City Center. This rejects stale scars and
+    // nearby contacts that cannot actually attack; one family version plays.
+    Gene { tag: "native-emergency-purchase-2", field: "native_emergency_purchase_2", kind: Kind::OptIn, enable: AdvancedAi::enable_native_emergency_purchase_2, disable: AdvancedAi::disable_native_emergency_purchase_2 },
     // Operator request, 2026-08-26: play the city-state quests for the Envoy
     // they pay. `src/game/quests.rs` has modelled the eight shipped
     // `Quests.xml` rows since #430 — every met city-state asks each
