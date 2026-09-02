@@ -2197,6 +2197,13 @@ pub const GENES: &[Gene] = &[
     // city-state is refused by the engine, so the stake cannot be recovered.
     // See `contested_suzerainty_brake`.
     Gene { tag: "contested-suzerainty-brake", field: "contested_suzerainty_brake", kind: Kind::OptIn, enable: AdvancedAi::enable_contested_suzerainty_brake, disable: AdvancedAi::disable_contested_suzerainty_brake },
+    // `detour-keeps-the-site-worth` (2026-09-02): the threat detour takes the
+    // best site whose approach is SAFE, not a site of comparable worth. Over
+    // 53 live Civ VI runs the median detour is +21% better, but 24% of them
+    // give up more than 40% of the deferred site's value (worst -83%). The
+    // gene refuses those and keeps the original target. Appended at the END,
+    // above the markers, so a running screen keeps its positional genome.
+    Gene { tag: "detour-keeps-the-site-worth", field: "detour_keeps_the_site_worth", kind: Kind::OptIn, enable: AdvancedAi::enable_detour_keeps_the_site_worth, disable: AdvancedAi::disable_detour_keeps_the_site_worth },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

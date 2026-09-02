@@ -367,12 +367,126 @@ def rival_identity_mismatches(state, board):
     return mismatches
 
 
+def known_public_number(value, *, positive=False):
+    """Whether a host value is present rather than its unavailable sentinel."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) \
+        and math.isfinite(value) and (value > 0 if positive else value >= 0)
+
+
+def completed_science_projects(projects):
+    """Count the four World Rankings science milestones in a host project list.
+
+    `science_projects` is optional: None is an older control mod, while an empty
+    list is the host's explicit answer that no milestone is complete. Keep this
+    mapping in lockstep with mirror.rs's `completed_strategic_projects`: Civ VI
+    represents the base-game Mars launch as three parts, but the HUD has one Mars
+    milestone only after all three are done.
+    """
+    if not isinstance(projects, list):
+        return None
+    reported = {project for project in projects if isinstance(project, str)}
+    count = int(bool(reported & {
+        "PROJECT_LAUNCH_EARTH_SATELLITE", "launch_earth_satellite",
+    }))
+    count += int(bool(reported & {
+        "PROJECT_LAUNCH_MOON_LANDING", "launch_moon_landing",
+    }))
+    mars_parts = {
+        "PROJECT_LAUNCH_MARS_REACTOR",
+        "PROJECT_LAUNCH_MARS_HABITATION",
+        "PROJECT_LAUNCH_MARS_HYDROPONICS",
+    }
+    count += int(bool(reported & {
+        "PROJECT_LAUNCH_MARS_BASE", "launch_mars_colony",
+    }) or mars_parts <= reported)
+    count += int(bool(reported & {
+        "PROJECT_LAUNCH_EXOPLANET_EXPEDITION", "exoplanet_expedition",
+    }))
+    return count
+
+
+def congress_diplomatic_points(state):
+    """Return the last World Congress standings, keyed by host player id."""
+    congress = state.get("congress_dvp")
+    if not isinstance(congress, dict):
+        return {}
+    return {
+        entry.get("player"): entry.get("points")
+        for entry in congress.get("points") or []
+        if isinstance(entry, dict)
+        and isinstance(entry.get("player"), int)
+        and not isinstance(entry.get("player"), bool)
+        and known_public_number(entry.get("points"))
+    }
+
+
+def public_victory_fact_mismatches(seat, source, player):
+    """Compare host-backed values displayed in one seat's victory tracker.
+
+    Progress percentages and lane targets that CIVVIS derives from several seats
+    are intentionally not here. Every value below has a direct same-seat host
+    source, so a difference is a bridge defect rather than a model disagreement.
+    """
+    victories = player.get("victories") or {}
+    mismatches = []
+
+    def check(lane, board_key, source_key, label, tolerance, *, positive=False):
+        want = source.get(source_key)
+        got = (victories.get(lane) or {}).get(board_key)
+        if known_public_number(want, positive=positive) \
+                and (not known_public_number(got) or abs(got - want) > tolerance):
+            mismatches.append(f"seat {seat} {label} Civ6={want:g} CIVVIS={got!r}")
+
+    check("diplomatic", "points", "dvp", "diplomatic points", 0.51)
+    check("culture", "tourists", "foreign_tourists", "foreign tourists", 0.51)
+    check("culture", "domestic", "domestic_tourists", "domestic tourists", 0.51)
+    check("religious", "cities_following", "cities_following_religion",
+          "cities following religion", 0.51)
+    check("science", "distance", "science_victory_points", "science distance", 0.11)
+    check("science", "speed", "science_victory_points_per_turn", "science speed", 0.11)
+    check("science", "distance_target", "science_victory_points_needed", "science target",
+          0.11, positive=True)
+
+    projects = completed_science_projects(source.get("science_projects"))
+    got_projects = (victories.get("science") or {}).get("projects")
+    if projects is not None \
+            and (not known_public_number(got_projects) or abs(got_projects - projects) > 0.51):
+        mismatches.append(
+            f"seat {seat} science projects Civ6={projects:g} CIVVIS={got_projects!r}"
+        )
+
+    if seat == 0:
+        research = (
+            ("techs", source.get("techs")),
+            ("civics", source.get("civics")),
+        )
+        # The local export carries completed tree names, so an explicit empty
+        # list is a real zero and a missing key remains unknowable.
+        research = ((key, len(values)) for key, values in research if isinstance(values, list))
+    else:
+        # The World Rankings science count is the value victory_races renders
+        # when it is available. Only fall back to the older loop count when the
+        # host could not provide that authoritative counter.
+        techs = source.get("techs_researched")
+        if not known_public_number(techs):
+            techs = source.get("techs")
+        research = (("techs", techs), ("civics", source.get("civics")))
+    for key, want in research:
+        lane = "science" if key == "techs" else "culture"
+        got = (victories.get(lane) or {}).get(key)
+        if known_public_number(want) \
+                and (not known_public_number(got) or abs(got - want) > 0.51):
+            mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
+    return mismatches
+
+
 def public_fact_mismatches(state, board):
     """Compare public player-HUD facts against the host's current export."""
     players = {player.get("id"): player for player in board.get("players") or []}
     # Same compacted-seat rule as `rival_identity_mismatches`. See the note there,
     # including why re-indexing this to `rival["player"]` was a mistake.
     expected = [(0, state)] + list(enumerate(state.get("rivals") or [], start=1))
+    congress_points = congress_diplomatic_points(state)
     mismatches = []
     for seat, source in expected:
         player = players.get(seat, {})
@@ -387,6 +501,16 @@ def public_fact_mismatches(state, board):
             mismatches.append(
                 f"seat {seat} age Civ6={age} CIVVIS={player.get('age')!r}"
             )
+        # A missing live rival DVP is deliberately filled from the last World
+        # Congress table; that is the exact fallback `apply_congress_dvp` uses.
+        # The local seat never uses this stale fallback because its top-level
+        # `dvp` is a fresh per-turn host read.
+        victory_source = source
+        if seat > 0 and source.get("dvp") is None:
+            fallback = congress_points.get(source.get("player"))
+            if fallback is not None:
+                victory_source = {**source, "dvp": fallback}
+        mismatches.extend(public_victory_fact_mismatches(seat, victory_source, player))
         # ⚠ COMPARE THE MAPPING, NOT THE MODEL. `military` on the board is
         # `military_power`, which is deliberately `max(observed, our own strength
         # sum)`. For our OWN seat we can see every unit, so that sum can win the
@@ -461,27 +585,24 @@ def public_fact_mismatches(state, board):
             if isinstance(want, (int, float)) and math.isfinite(want) \
                     and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
                 mismatches.append(f"seat {seat} gold/turn Civ6={want:g} CIVVIS={got!r}")
-            for key, victory in (("techs", "science"), ("civics", "culture")):
-                want = source.get(key)
-                got = ((player.get("victories") or {}).get(victory) or {}).get(key)
-                if isinstance(want, (int, float)) and want >= 0 \
-                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.51):
-                    mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
-            want = source.get("tourism")
-            got = player.get("tourism_per_turn")
-            if isinstance(want, (int, float)) and want >= 0 \
-                    and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
-                mismatches.append(
-                    f"seat {seat} tourism/turn Civ6={want:g} CIVVIS={got!r}"
-                )
+        # The local export calls this `tourism_per_turn`; the same World
+        # Rankings fact is `tourism` on a rival. Both land in the displayed
+        # player field, including the seated empire's culture collection panel.
+        tourism = source.get("tourism_per_turn" if seat == 0 else "tourism")
+        got_tourism = player.get("tourism_per_turn")
+        if known_public_number(tourism) \
+                and (not known_public_number(got_tourism) or abs(got_tourism - tourism) > 0.11):
+            mismatches.append(
+                f"seat {seat} tourism/turn Civ6={tourism:g} CIVVIS={got_tourism!r}"
+            )
 
     ours = players.get(0, {})
     yields = ours.get("yields") or {}
     for key in ("science", "culture"):
         want = state.get(key)
         got = yields.get(key)
-        if isinstance(want, (int, float)) and want > 0 \
-                and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+        if known_public_number(want) \
+                and (not known_public_number(got) or abs(got - want) > 0.11):
             mismatches.append(f"seat 0 {key}/turn Civ6={want:g} CIVVIS={got!r}")
     # Faith per turn is a RATE like science and culture, and it is NOT the
     # sum of the cities: the host pays the Great Person points of a class the
@@ -1451,7 +1572,7 @@ def main(argv=None):
         problems.append("public facts")
         print("PUBLIC   ⚠ " + "; ".join(public_mismatches))
     else:
-        print("PUBLIC   HUD identity, totals, military, economy, research and tourism   OK")
+        print("PUBLIC   HUD age, totals, military, economy, research, victory inputs and tourism   OK")
 
     civ6_cities = {(c["x"], c["y"]) for c in state.get("cities") or []}
     board_cities = {tuple(c["pos"]) for c in board.get("cities", [])

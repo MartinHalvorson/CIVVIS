@@ -3295,10 +3295,12 @@ pub struct StateSnapshot {
     /// half again too fast. An axis nothing reports does not exist; this makes the
     /// approximation's size visible on every turn so it can be tracked, and so any
     /// future decision to close it starts from evidence rather than from a guess.
+    /// `None` on an older export; zero is a real yield during the unsettled
+    /// opening and must not be mistaken for an unavailable answer.
     #[serde(default)]
-    pub science: f64,
+    pub science: Option<f64>,
     #[serde(default)]
-    pub culture: f64,
+    pub culture: Option<f64>,
     /// Exact public empire totals for the active seat. Its city records remain
     /// the source of detailed state; this is the fog-safe aggregate shared with
     /// every rival so a standing never becomes zero merely because the mirror
@@ -6399,8 +6401,9 @@ fn civvis_improvement_name(civ6: &str) -> String {
         .unwrap_or(civ6)
         .to_ascii_lowercase();
     match base.as_str() {
-        // The shipped type id predates the final Civilopedia name.
+        // The shipped type ids predate the final Civilopedia names.
         "beach_resort" => "seaside_resort".to_string(),
+        "mountain_road" => "qhapaq_nan".to_string(),
         _ => base,
     }
 }
@@ -8136,9 +8139,15 @@ pub fn refused_purchases(
 /// `None` when the export carried no yields — an older mod must read as unknown, never
 /// as agreement.
 pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<String> {
-    if state.science <= 0.0 && state.culture <= 0.0 {
+    let science_host = state
+        .science
+        .filter(|value| value.is_finite() && *value >= 0.0);
+    let culture_host = state
+        .culture
+        .filter(|value| value.is_finite() && *value >= 0.0);
+    let (Some(science_host), Some(culture_host)) = (science_host, culture_host) else {
         return None;
-    }
+    };
     let mut science = 0.0f64;
     let mut culture = 0.0f64;
     let mut production = 0.0f64;
@@ -8235,12 +8244,12 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     };
     Some(format!(
         "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}{}",
-        state.science,
+        science_host,
         science,
-        pct(science, state.science),
-        state.culture,
+        pct(science, science_host),
+        culture_host,
         culture,
-        pct(culture, state.culture),
+        pct(culture, culture_host),
         production_part,
         attributed,
         host_amenity_report(state),
@@ -10358,11 +10367,17 @@ fn apply_observed_host_metrics(
     {
         adjustment.production = host_production - derived.production;
     }
-    if state.science.is_finite() && state.science > 0.0 {
-        adjustment.science = state.science - derived.science;
+    if let Some(host_science) = state
+        .science
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    {
+        adjustment.science = host_science - derived.science;
     }
-    if state.culture.is_finite() && state.culture > 0.0 {
-        adjustment.culture = state.culture - derived.culture;
+    if let Some(host_culture) = state
+        .culture
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    {
+        adjustment.culture = host_culture - derived.culture;
     }
     // Faith per turn: the host's top-bar figure against the same sum, applied
     // as a delta like science and culture. Only when the export carries it —

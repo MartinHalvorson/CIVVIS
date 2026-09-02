@@ -46340,3 +46340,150 @@ fn the_contested_suzerainty_brake_is_off_by_default() {
     ai.disable_contested_suzerainty_brake();
     assert!(!ai.contested_suzerainty_brake);
 }
+
+/// `detour-keeps-the-site-worth`: the threat detour takes the best site whose
+/// approach is SAFE, which is not the same as a site worth the walk. Measured
+/// over 53 live Civ VI runs on the 41 detours whose journal prices both ends:
+/// the median detour is +21% better than the site it leaves — so the detour
+/// earns its place and the gene must not disturb it — but 24% give up more
+/// than 40% of that value, the worst -83%.
+///
+/// The fixture threatens the approach to a good site, then retires the
+/// alternates one at a time the way a mid-game map does (a rival takes the
+/// plot, our own city claims its ring, the host blocks it) until the best
+/// safe site left is below the floor. Off, the settler walks to it. On, the
+/// detour is refused and the original target kept, with the deferral rolled
+/// back so the site stays in the ranking.
+#[test]
+fn a_threat_detour_will_not_trade_a_site_for_half_of_one() {
+    let mut game = Game::new_full(2, 44, 28, 8_115, 200, 0, false);
+    let start = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|u| game.units[u].kind == "settler")
+        .expect("a starting settler");
+    let home = game.units[&start].pos;
+    game.apply(0, &crate::game::Action::FoundCity { unit: start })
+        .unwrap();
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let forever = game.turn + 999;
+
+    let mut probe = AdvancedAi::new();
+    probe.settler_threat_detour = true;
+    let (seed_target, _) = probe
+        .best_settler_target(&game, 0, settler, 8, None)
+        .expect("a first settle target");
+    let next = game
+        .route_step(settler, seed_target, 0)
+        .expect("a first route step");
+    // A visible band beside that step, clear of the settler's own tile so the
+    // other directions stay open — one blocked corridor, not a siege.
+    let band: Vec<Pos> = game
+        .wdisk(next, 1)
+        .into_iter()
+        .filter(|p| {
+            game.wdist(home, *p) >= 2
+                && game.unit_ids_at(*p).is_empty()
+                && game
+                    .map
+                    .get(*p)
+                    .is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+        })
+        .collect();
+    assert!(!band.is_empty(), "the corridor has room for a threat band");
+    for p in band {
+        game.spawn_test_unit("warrior", 1, p);
+    }
+    game.at_war.insert((0, 1));
+
+    // The most valuable site behind that corridor is the one worth keeping.
+    let (target, kept) = game
+        .wdisk(home, 9)
+        .into_iter()
+        .filter(|pos| {
+            game.route_step(settler, *pos, 0) == Some(next)
+                && probe.settler_target_has_visible_route_threat(&game, 0, settler, *pos)
+        })
+        .map(|pos| (pos, probe.settle_value(&game, 0, pos)))
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .expect("a threatened site behind the corridor");
+
+    // Retire alternates until the best safe one left is below the floor.
+    let mut retired: Vec<Pos> = Vec::new();
+    let mut poor = None;
+    for _ in 0..30 {
+        let mut walker = AdvancedAi::new();
+        walker.settler_threat_detour = true;
+        walker
+            .settler_dead_sites
+            .entry(settler)
+            .or_default()
+            .extend(retired.iter().map(|pos| (*pos, forever)));
+        let Some(fallback) = walker.detour_settler_around_visible_threat(&game, 0, settler, target)
+        else {
+            break;
+        };
+        if walker.settle_value(&game, 0, fallback) < kept * SETTLER_DETOUR_VALUE_FLOOR {
+            poor = Some(fallback);
+            break;
+        }
+        retired.push(fallback);
+    }
+    let poor = poor.expect("retiring the good alternates leaves a below-floor fallback");
+
+    let seed_ai = |gene: bool| {
+        let mut ai = AdvancedAi::new();
+        ai.settler_threat_detour = true;
+        ai.detour_keeps_the_site_worth = gene;
+        ai.settler_dead_sites
+            .entry(settler)
+            .or_default()
+            .extend(retired.iter().map(|pos| (*pos, forever)));
+        ai
+    };
+
+    // Off: the settler walks to a site worth a fraction of the one it leaves.
+    let mut off = seed_ai(false);
+    assert_eq!(
+        off.detour_settler_around_visible_threat(&game, 0, settler, target),
+        Some(poor),
+        "off: the detour takes the nearest SAFE site, whatever it is worth"
+    );
+    assert!(
+        off.settle_value(&game, 0, poor) < kept * SETTLER_DETOUR_VALUE_FLOOR,
+        "the fixture's fallback really is below the floor"
+    );
+
+    // On: the detour is refused, and the deferral is rolled back so the
+    // original site stays in the ranking for the next turn.
+    let mut on = seed_ai(true);
+    assert_eq!(
+        on.detour_settler_around_visible_threat(&game, 0, settler, target),
+        None,
+        "on: a detour that gives up most of the site's worth is refused"
+    );
+    assert!(
+        !on.settler_threat_deferrals.contains_key(&target),
+        "on: the kept site is not left deferred"
+    );
+
+    // The gene must not disturb a detour that keeps the site's worth: with no
+    // alternate retired, the first fallback is a good one and both agree.
+    let mut plain_off = AdvancedAi::new();
+    plain_off.settler_threat_detour = true;
+    let good = plain_off
+        .detour_settler_around_visible_threat(&game, 0, settler, target)
+        .expect("an unretired detour finds a good alternate");
+    assert!(
+        plain_off.settle_value(&game, 0, good) >= kept * SETTLER_DETOUR_VALUE_FLOOR,
+        "the unretired alternate clears the floor"
+    );
+    let mut plain_on = AdvancedAi::new();
+    plain_on.settler_threat_detour = true;
+    plain_on.detour_keeps_the_site_worth = true;
+    assert_eq!(
+        plain_on.detour_settler_around_visible_threat(&game, 0, settler, target),
+        Some(good),
+        "a detour that keeps the site's worth is untouched"
+    );
+}
