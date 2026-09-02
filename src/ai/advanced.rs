@@ -32409,9 +32409,9 @@ impl AdvancedAi {
         if let Some(retreated) = self.builder_retreat_from_barbarian_capture(g, pid, uid) {
             return retreated;
         }
-        // See `civilian_out_of_reach`: a builder inside a raider's reach
-        // leaves it before it takes a job.
-        if self.civilian_out_of_reach {
+        // The native opt-in and the live capture lessons share the exact
+        // reach response: a builder inside it leaves before it takes a job.
+        if self.civilian_reach_safety_on() {
             if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
                 return acted;
             }
@@ -32431,7 +32431,7 @@ impl AdvancedAi {
                     .apply(pid, &Action::ContributeProject { unit: uid, city })
                     .is_ok();
             }
-            let stepped = if self.civilian_out_of_reach {
+            let stepped = if self.civilian_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, position)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, position)
@@ -32538,15 +32538,11 @@ impl AdvancedAi {
             return self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
         }
 
-        // ⚠ `civilian_out_of_reach` DOES NOT GUARD THE BRANCH ABOVE. When
-        // `builder_tries_the_next_tile` is on it returns before this, and that
-        // path carries only `builder_barbarian_safety`'s weaker check, not the
-        // reach test below. A screen that enables both genes is measuring this
-        // one on the turns the other one does not take.
-        // See `civilian_out_of_reach`: a job tile a raider could stand on
-        // next turn is not a job today.
+        // ⚠ The `builder_tries_the_next_tile` branch above performs the same
+        // reach-checked route step itself. Here the normal sweep also filters
+        // a job tile a raider could stand on next turn before it is assigned.
         let reach = self
-            .civilian_out_of_reach
+            .civilian_reach_safety_on()
             .then(|| self.barbarian_reach(g, pid, current, civilian_safety::REACH_SCAN_RADIUS));
         let job_out_of_reach = |pos: Pos| {
             reach
@@ -32628,7 +32624,7 @@ impl AdvancedAi {
             }),
         };
         target.is_some_and(|pos| {
-            if self.civilian_out_of_reach {
+            if self.civilian_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, pos)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
@@ -32739,7 +32735,12 @@ impl AdvancedAi {
         };
         let mut attempts = BUILDER_ROUTE_ATTEMPTS;
         if let Some(pos) = pinned {
-            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+            let stepped = if self.civilian_reach_safety_on() {
+                self.builder_step_out_of_reach(g, pid, uid, pos)
+            } else {
+                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
+            };
+            if stepped {
                 return true;
             }
             // ⚠ A Builder with nothing left to spend refuses EVERY tile, and
@@ -32764,7 +32765,12 @@ impl AdvancedAi {
             .filter(|pos| Some(*pos) != pinned)
             .take(attempts)
         {
-            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+            let stepped = if self.civilian_reach_safety_on() {
+                self.builder_step_out_of_reach(g, pid, uid, pos)
+            } else {
+                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
+            };
+            if stepped {
                 self.builder_targets.insert(uid, pos);
                 return true;
             }
