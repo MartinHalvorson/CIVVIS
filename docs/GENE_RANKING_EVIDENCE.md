@@ -200,6 +200,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `enter-the-prophet-race-2` | off (unmeasured) | Enter the secondary Great Prophet race only when the board-aware religious-opening rank admits this seat: two cities, a real Holy Site path, and one of the remaining global slots. | 1 \| 2 |
 | `first-builder-reserve-2` | off (unmeasured) | Reserve one Builder for an immediately connectable first-copy luxury when Amenities are short and expansion is covered, retaining a lifetime receipt. | 1 \| 2 |
 | `industrial-chain-debt` | off (unmeasured) | `industrial-chain-debt` (OptIn): an Industrial Zone owes its Workshop, Factory and plant the same flat debt a Campus owes its Library, a regional building is worth the production it reaches, and the Factory and plants join the buildings a repeatable project waits behind. | 1 \| 1 |
+| `modernize-before-spending` | off (unmeasured) | Upgrade the standing army before the purchase pass, at strategic moments. | 1 \| 1 |
 | `naval-recon-3` | off (unmeasured) | Version 3 of `naval-recon`: let a simultaneously missing land scout take the idle queue before the one peacetime sea scout. | 1 \| 3 |
 | `never-an-empty-queue-3` | off (unmeasured) | Version three of `never-an-empty-queue`: tolerate one transient empty turn, then recover a persistent stall with a civilian candidate above the hard veto. | 1 \| 3 |
 | `opening-warrior-recon-2` | off (unmeasured) | Before the first city, let only a Warrior directly escorting the Settler reveal terrain first, then reconsider from the ordinary settlement candidates. | 1 \| 2 |
@@ -211,6 +212,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-train` | off (unmeasured) | A force whose objective is an enemy city plays the siege as a state machine — stage on the ring out of the city's reach until the bill is met, seal the ring spread-first, reduce walls before the garrison, reserve one taker and walk in when the city is within its blow. | 1 \| 1 |
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
+| `veterans-withdraw-early` | off (unmeasured) | A promoted unit keeps hit points in hand before it withdraws. | 1 \| 1 |
 | `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
 
 ## Removed from the code

@@ -3807,6 +3807,27 @@ impl AdvancedAi {
         self.base.enter_prophet_race = false;
     }
 
+    /// Upgrade the standing army before the purchase pass, at strategic
+    /// moments. See `AdvancedAi::modernize_before_spending`; default-on gene
+    /// `modernize-before-spending`.
+    pub fn enable_modernize_before_spending(&mut self) {
+        self.modernize_before_spending = true;
+    }
+    /// The twin of `enable_modernize_before_spending`.
+    pub fn disable_modernize_before_spending(&mut self) {
+        self.modernize_before_spending = false;
+    }
+    /// A promoted unit keeps hit points in hand before it withdraws. See
+    /// `BasicAi::veteran_retreat_margin`; default-on gene
+    /// `veterans-withdraw-early`.
+    pub fn enable_veteran_retreat_margin(&mut self) {
+        self.base.veteran_retreat_margin = true;
+    }
+    /// The twin of `enable_veteran_retreat_margin`.
+    pub fn disable_veteran_retreat_margin(&mut self) {
+        self.base.veteran_retreat_margin = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 
