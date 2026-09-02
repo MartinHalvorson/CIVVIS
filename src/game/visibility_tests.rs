@@ -715,6 +715,10 @@ fn stock_unit_sight_ranges_match_civilization_vi() {
         // against nothing until its alias landed.
         "nau",
         "oromo_cavalry",
+        // The Varu and Voi Chien ship three sight in their own unit rows; the
+        // generic heavy-cavalry and crossbowman fallbacks each had only two.
+        "varu",
+        "voi_chien",
     ]
     .into_iter()
     .collect();

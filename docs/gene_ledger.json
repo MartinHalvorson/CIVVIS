@@ -1458,6 +1458,15 @@
           "chain-payback-window-2": null
         }
       },
+      "coalition-before-war": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "coalition-before-war": null,
+          "coalition-before-war-2": null
+        }
+      },
       "coastal-city-sites": {
         "rule_on": [],
         "head": null,
