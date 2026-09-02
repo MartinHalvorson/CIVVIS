@@ -2068,6 +2068,21 @@ impl AdvancedAi {
         self.expansion_schedule = false;
     }
 
+    /// A Settler out of a city past its deadline founds the best legal site
+    /// within reach instead of chasing the ranked one it has not reached.
+    /// Opt-in gene `settler-walk-deadline`; see
+    /// `advanced/settler_walk_deadline.rs` for the live forensic. Filed above
+    /// the markers: the append-point check reads a method line's first
+    /// identifier.
+    pub fn enable_settler_walk_deadline(&mut self) {
+        self.settler_walk_deadline = true;
+    }
+
+    /// The twin of `enable_settler_walk_deadline`.
+    pub fn disable_settler_walk_deadline(&mut self) {
+        self.settler_walk_deadline = false;
+    }
+
     /// Work food while the opening is behind the pace and no city has reached
     /// the population a Settler needs. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
@@ -3032,6 +3047,20 @@ impl AdvancedAi {
     pub fn disable_commitment_patience(&mut self) {
         self.commitment_patience = false;
         self.builder_avoid.clear();
+    }
+
+    /// Every open settle or improve commitment whose owner the unit pass left
+    /// with movement and no order acts on it after the pass — found, improve,
+    /// or the safe route step — or is released with a recorded reason. Filed
+    /// here rather than under a marker: a whole function under one reads as
+    /// an entry. See `commitment_owner_acts` and `advanced/commitments.rs`.
+    pub fn enable_commitment_owner_acts(&mut self) {
+        self.commitment_owner_acts = true;
+    }
+
+    /// The twin of `enable_commitment_owner_acts`.
+    pub fn disable_commitment_owner_acts(&mut self) {
+        self.commitment_owner_acts = false;
     }
 
     /// `culture-floor`: a culture-yielding building is exempt from the Great
