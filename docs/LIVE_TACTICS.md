@@ -846,3 +846,122 @@ follows, and §7 and §17 record how little a tactical swing of this size has
 moved a win rate before. Movement of the units that are not striking is
 still `coordinated_tactical_step`'s; a `positions_plan` is the follow-up the
 module is shaped for, and pricing the city assault jointly is the other.
+
+## 22. The positions plan: where the units that are not striking stand (2026-09-02, opt-in gene `battle-planner-2`)
+
+§21 left one thing to `coordinated_tactical_step`: the movement of every
+unit the kill plan did not spend and the rotation did not pull out. That
+mover prices one unit's next tile at a time against the group's *anchor* —
+progress, cohesion, threat, spacing, a screen term — and the arena's own
+finding about it (§14) is that it arrives over twice the span `basic` does
+and leaves its shooters unscreened. `battle-planner-2` (version two of the
+family; one version plays, `enable_battle_planner_2` turns version one off)
+replaces that step for the members of an advancing or engaging force with a
+plan laid against the *enemy* and the *objective*:
+
+1. **Slots, not scores.** Front slots (Vanguard and Mobile) stand at
+   distance one from the nearest visible contacts, on our side of them,
+   the best ground first — `tile_defense_bonus` plus five for a river between
+   the slot and the enemy it faces; with no enemy within three of any member
+   they stand at the front's depth from the objective instead. Shooter slots
+   stand at attack range from the three most finishable contacts, in line of
+   sight, with a front slot between them and the enemy where one exists;
+   siege slots in range of the objective city behind a front slot, furthest
+   standoff first; support slots beside the most front slots, behind the
+   line. There are as many slots of a kind as units of that role. Cohesion is
+   a property of the layout alone: there is no scored adjacency or support
+   term, which `docs/TACTICS.md` §4 and §7 swept and refuted.
+2. **A minimum-cost assignment.** Units go to slots by the Hungarian method
+   on route turns (`route_distance` at the unit's movement; one turn for any
+   tile it reaches now) plus the danger field at the slot past the unit's
+   spare hit points (`hp − 30`) at a twentieth of a turn per point. A slot the
+   field says would kill the unit is never taken; a unit with no slot it can
+   take keeps today's step. A unit under 60 hit points, where the board
+   heals, takes a heal slot — a zero-danger tile, a district or friendly
+   ground preferred — and enters the rotation's recovery.
+3. **Reservations and order.** Every assigned tile is reserved; each unit's
+   end tile this turn is the reachable tile nearest its slot that no one else
+   holds and that would not kill it; moves are issued front to rear so a rear
+   unit can enter the tile a front unit vacates, two units standing on each
+   other's slots trade places by `Action::Swap`, and a second pass walks on
+   anyone the first left short once the occupant has gone.
+4. **Pace on the approach only.** With no enemy within two of any member,
+   no unit ends more than the slowest member's pace plus one closer to the
+   objective than that member stood — `close-as-a-body`'s slack, applied as
+   a floor on the end tile rather than a penalty in a score. In contact
+   nothing is paced.
+
+Everything the plan does not place — a unit with no group, a scout, a
+garrison, a member of a holding or mustering force, a unit whose every slot
+was lethal or unreachable — plays the ladder exactly as before, so behaviour
+changes only where a slot plan exists. One "Military/Decision" line per
+force per turn says how many slots were filled, units placed and units paced;
+`StrategyCensus` counts the same three.
+
+**The gate (§13), read as version against version.** `battle_bench`
+control `advanced` v `advanced`, 60 seeds: **+0.00 ± 0.00, 60 tied, no
+divergence**. Treatment `advanced+battle-planner-2` v
+`advanced+battle-planner`, 200 seeds × 2 seatings a cell: the default band
+(warrior warrior spearman archer archer horseman) **+147.1 ± 30.5 a seed
+(t 4.82, p < 0.0001; 122 better / 77 worse / 1 tied)**, exchange ratio
+**1.23 against 0.82**, units lost 1,265 against 1,551, material destroyed
+78,955 against 64,245; four warriors and two spearmen **+32.0 ± 18.1
+(t 1.76, p 0.078; 102/92/6)**, 1.08 against 0.93; four archers and two
+warriors **−9.4 ± 29.3 (t −0.32; 97/99/4)**, 0.95 against 1.05 — a null.
+Fires: 200/200, 200/200 and 199/200 seeds diverged.
+
+`doctrine_arena`, 12 seeds of control: +0.0 with no divergence on any of
+the twelve boards. Treatment, 40 seeds × 2 role swaps, the rows —
+**central_position +182.5 ± 37.9 (t 4.82, sign p 0.0005, 30/8, fires
+40/40)**, **the_storming +285.0 ± 98.2 (t 2.90, sign p 0.014, 24/9,
+40/40)**, **the_breakthrough +104.0 ± 43.8 (t 2.38, 24/13, 40/40)**,
+the_ridge +165.0 ± 94.4 (t 1.75, 23/14), hammer_and_anvil +104.8 ± 64.9
+(t 1.61, 23/16), the_river_line +100.5 ± 74.8 (t 1.34, 22/18),
+oblique_order +62.5 ± 51.5 (t 1.21, 23/12), the_golden_bridge +26.5 ± 29.3,
+double_envelopment +17.0 ± 10.8, the_defile +9.0 ± 13.8 (39/40),
+lake_trasimene −22.8 ± 74.2 (t −0.31, 15/22), the_reserve −44.0 ± 67.2
+(t −0.65, 17/18, 38/40). Pooled **+82.5 ± 18.1 (t 4.57, 236/153)**, kills
+per loss **1.09 against 0.92**, cities taken **+8/−0**: as the besieger on
+the_storming version two takes the city in eight of forty seeds where
+version one takes it in none.
+
+**Where the profile moved.** The columns the plan claims are `arrival`,
+`foot`, `absent` and `screen`, and they moved the way the design says:
+the_storming's besieger arrives in **2.87 turns' spread against 8.43**
+(`foot` the same), screens **57 % against 33 %** of its shooter-turns, and
+loses 2 % of the force to `absent` against 5 %; the_defile's column
+**3.06 against 4.13**, screen **74 % against 55 %**, absent 8 % against 16 %;
+hammer_and_anvil's hammer 1.63 against 2.07 and screen 44 % against 31 %;
+central_position's interior body 3.67 against 5.10, screen 48 % against
+38 %; the_reserve's near reserve 2.35 against 2.74 and screen 43 % against
+33 %, the far reserve 2.71 against 4.03. `salvag.` — the share of a side's
+losses already at or under 30 hit points the turn before — went the other
+way for the besieger on the_storming, **69 % against 49 %**, and on the
+column at the_defile fell 60 % to 40 %: on a board that does not heal a
+unit that holds its slot is ground down in it, and a unit that is pulled
+out never comes back, so the number reads as the slot layout holding
+rather than as a leak (the heal slot exists only where the board heals).
+
+**What it took to get there, in order.** The first cut placed every
+member the kill plan had not spent, and read **−129 ± 30** on four archers
+and two warriors (**80/114/6**), **−243 ± 81** on the_ridge and **−29 ± 18**
+pooled: material destroyed fell, not material lost, because an archer the
+beam had *declined* — a net-negative shot from inside the foot's reach —
+was marked ordered and never reached the ladder's own exact-clone pricing,
+which version one gives it and which takes the shot more often than the
+plan does. So a unit with a blow to offer is the ladder's, and the ranged
+cell came back to −69 ± 29 with the curriculum at +76 ± 17 pooled and every
+board non-negative. The second cut found the rest of it in the shooter
+slots themselves: with four archers and two front slots, two shooters stood
+unscreened at range two — inside the foot's reach, unable to fire this turn
+— so a shooter no front slot covers now stands one tile back and steps in
+to fire next turn, and the cell reads −9 ± 29 with the default and melee
+cells unmoved.
+
+**What this does not say.** The fires probe (`gene_screen --games 6 --genes battle-planner,battle-planner-2
+--start-seed 97400100`, `--analyze` → `docs/gene_screens/fires/battle-planner-2.json`)
+has version two on in 6 of 36 seats and reads win +20.0 pp at z +1.30 with
+share +5.8 pp at z +2.8 — proof the gene fires, and at six games nothing
+more (the run resolves ±44.8 pp on win). The whole-game screen at scale is the
+no-harm check; §7 and §17 record how little a tactical swing has moved a win
+rate before. Pricing the city assault jointly remains the follow-up.
