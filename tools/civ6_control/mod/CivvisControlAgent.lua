@@ -10112,7 +10112,7 @@ end
 
 local function onGovernorAppointed(playerID, governorID)
 	local pending = pendingGovernorAssignments[playerID];
-	if pending == nil or pending.governor ~= governorID then return; end
+	if pending == nil or pending.kind ~= "appoint" or pending.governor ~= governorID then return; end
 	pendingGovernorAssignments[playerID] = nil;
 	local ok = requestGovernorAssignment(
 		playerID, governorID, pending.city_player, pending.city);
@@ -11209,8 +11209,31 @@ local function applyOrder(player, pid, row, turn)
 			end, 0) > 0 then
 				return false, "governor_neutralized";
 			end
+			-- Firaxis accepts an assignment request before the Governor roster
+			-- export reflects it.  Replan frames can therefore replay the same
+			-- semantic order several times in one turn.  A second request is not
+			-- a useful retry: it only produces `not_assigned` verdicts while the
+			-- first request is still in flight.  Keep the request for this turn;
+			-- if the next authoritative export is still unassigned, the next turn
+			-- is a real retry window.
+			local pending = pendingGovernorAssignments[pid];
+			if kind == "governor_assign"
+					and pending ~= nil
+					and pending.kind == "assign"
+					and pending.governor == governor.Index
+					and pending.city_player == cityOwner
+					and pending.city == subject
+					and pending.turn == turn then
+				return false, "governor_assign_pending";
+			end
 			local ok = requestGovernorAssignment(
 				pid, governor.Index, cityOwner, subject);
+			if ok and kind == "governor_assign" then
+				pendingGovernorAssignments[pid] = {
+					kind = "assign", governor = governor.Index,
+					city_player = cityOwner, city = subject, turn = turn,
+				};
+			end
 			return ok, ok and resolved or "governor_assign_throw";
 		end
 		if not try(function() return governors:CanAppoint(); end, false) then
@@ -11222,7 +11245,8 @@ local function applyOrder(player, pid, row, turn)
 			return false, "governor_not_appointable";
 		end
 		pendingGovernorAssignments[pid] = {
-			governor = governor.Index, city_player = cityOwner, city = subject,
+			kind = "appoint", governor = governor.Index,
+			city_player = cityOwner, city = subject,
 		};
 		local params = {};
 		-- The shipped GovernorPanel sends row INDEXES in operation parameters.
