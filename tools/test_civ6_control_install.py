@@ -2067,6 +2067,63 @@ class MeleeStrikeCarriesTheAttackModifierTest(unittest.TestCase):
         self.assertNotIn("\nlocal function attackModifiers", source)
 
 
+class SwapVerbIsWiredTest(unittest.TestCase):
+    """`SWAP` must resolve `UNITOPERATION_SWAP_UNITS` and request it the way the
+    shipped UI does.
+
+    `Action::Swap` was legal in the engine since `do_swap` and priced positive
+    on the arena (docs/LIVE_TACTICS.md §18), and the bridge dropped every one
+    as `unit_action_untranslated`. Firaxis's `Civ6Common.lua:160-161` requests
+    the operation with the destination plot as PARAM_X/PARAM_Y after a
+    four-argument `CanStartOperation(kUnit, SWAP_UNITS, nil, tParameters)`;
+    the mod's `canOperate` is that call, so the check and the request carry
+    the same parameters and a decline is a named refusal.
+    """
+
+    def _agent_source(self) -> str:
+        return (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def test_the_operation_is_resolved_once_in_resolve_actions(self) -> None:
+        source = self._agent_source()
+        resolver = source.split("local function resolveActions()", 1)[1]
+        resolver = resolver.split("local resolved, missing = {}, {};", 1)[0]
+        self.assertIn('"UNITOPERATION_SWAP_UNITS",', resolver)
+
+    def test_the_swap_verb_checks_then_requests_with_the_partners_plot(self) -> None:
+        source = self._agent_source()
+        handler = source.split("local function applyOrder", 1)[1]
+        block = handler.split('if verb == "SWAP" then', 1)[1]
+        block = block.split("\n\t\tend\n", 1)[0]
+
+        self.assertIn('if x == nil or y == nil then return false, "no_dest"; end', block)
+        self.assertIn('local hash = OP["UNITOPERATION_SWAP_UNITS"];', block)
+        self.assertIn("params[UnitOperationTypes.PARAM_X] = x;", block)
+        self.assertIn("params[UnitOperationTypes.PARAM_Y] = y;", block)
+        # The gate and the request carry the same parameter table, and a
+        # decline is named rather than swallowed.
+        self.assertIn(
+            'if not canOperate(unit, hash, params) then return false, "cannot_swap"; end',
+            block,
+        )
+        self.assertIn("return operate(unit, hash, params), verb;", block)
+        # A swap is never a war starter and never reach-capped: neither helper
+        # is consulted on this branch.
+        self.assertNotIn("refuseWarStarter", block)
+        self.assertNotIn("capToTurn", block)
+
+    def test_the_queue_expects_the_unit_on_the_partners_plot(self) -> None:
+        source = self._agent_source()
+        expect = source.split("CivvisQueue.expectFor = function(row)", 1)[1]
+        expect = expect.split("end;", 1)[0]
+        self.assertIn('(verb == "MOVE_TO" or verb == "SWAP")', expect)
+
+    def test_the_branch_costs_no_main_chunk_local(self) -> None:
+        """See `AgentChunkLocalLimitTest`: the file has no slots to spend."""
+        source = self._agent_source()
+        self.assertNotIn("\nlocal swap", source)
+        self.assertNotIn("\nlocal function swap", source)
+
+
 class AgentChunkLocalLimitTest(unittest.TestCase):
     """The agent's main chunk must stay inside Lua's 200-local ceiling.
 
