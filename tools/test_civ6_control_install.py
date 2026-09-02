@@ -104,6 +104,25 @@ class ProtectedInstallTest(unittest.TestCase):
         )
         self.assertIn("local seen = plotRevealed(pid, cx, cy);", rivals)
 
+    def test_state_export_keeps_rival_spies_private_on_visible_city_tiles(self) -> None:
+        """A visible tile must not disclose a rival's covert agent."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local function exportState", 1)[1]
+        rivals = exporter.split("-- Rivals:", 1)[1].split(
+            "-- Met city-states", 1
+        )[0]
+        their_units = rivals.split("local theirUnits = {};", 1)[1].split(
+            "rivals[#rivals + 1] = {", 1
+        )[0]
+        gate = 'if name ~= "UNIT_SPY" and PlayersVisibility[pid]:IsVisible(ux, uy) then'
+
+        self.assertIn("local name = unitTypeName(unit);", their_units)
+        self.assertIn(gate, their_units)
+        self.assertLess(
+            their_units.index(gate),
+            their_units.index("theirUnits[#theirUnits + 1]"),
+        )
+
     def test_state_export_keeps_completed_strategic_projects_out_of_city_queues(self) -> None:
         """A fresh mirror needs player history, not just the current queue.
 
