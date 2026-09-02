@@ -4460,6 +4460,23 @@ pub struct AdvancedAi {
     ///
     /// **Off by default.** Screenable.
     pub conversion_majority_alarm: bool,
+    /// Whether the smooth religious-victory clock reads the least-converted
+    /// remaining civilization, rather than pooling every rival's city counts.
+    ///
+    /// Version one fixes the staircase, but its pooled denominator gives a
+    /// wide empire more votes than a small one. Fully converting one enormous
+    /// neighbour can therefore cross the denial bar while several untouched
+    /// civilizations still remain. The victory rule does not weight them by
+    /// size: every living civilization must hold a majority. Version two
+    /// measures progress to each majority separately and reads the weakest
+    /// one. That is the actual conjunctive clock: the religious leader is only
+    /// as close as its furthest remaining holdout.
+    ///
+    /// Folded in with the exact completed-civilization reading below, so it
+    /// cannot hide a majority the host has already confirmed.
+    ///
+    /// **Off by default.** Screenable.
+    pub conversion_majority_alarm_2: bool,
     /// Whether the Culture lane is scored by WHERE THE TWO CURVES ARE WHEN
     /// THE CLOCK STOPS rather than by the ratio they stand at today.
     ///
@@ -7396,6 +7413,7 @@ impl AdvancedAi {
             rival_suzerainty_alarm: false,
             science_chain_alarm: false,
             conversion_majority_alarm: false,
+            conversion_majority_alarm_2: false,
             culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
             diplomatic_lane_forecast_2: false,
@@ -9892,13 +9910,12 @@ impl AdvancedAi {
     /// `pid`'s progress toward a Religious Victory measured in the cities the
     /// victory actually asks for, as a percentage.
     ///
-    /// See [`Self::conversion_majority_alarm`]. The rule is a majority of the
-    /// cities in every other living major, so the denominator is the sum of
-    /// those majorities and the numerator is how much of it is already held.
-    /// Nothing here is a model: it is the victory condition, counted instead
-    /// of rounded.
+    /// See [`Self::conversion_majority_alarm`] and
+    /// [`Self::conversion_majority_alarm_2`]. Version one pools the required
+    /// cities. Version two measures each civilization separately, then reads
+    /// the least-converted holdout the victory rule still requires.
     fn conversion_majority_pressure(&self, g: &Game, pid: usize) -> i32 {
-        if !self.conversion_majority_alarm {
+        if !self.conversion_majority_alarm && !self.conversion_majority_alarm_2 {
             return 0;
         }
         let Some(faith) = g.players[pid].religion.as_deref() else {
@@ -9906,6 +9923,7 @@ impl AdvancedAi {
         };
         let mut required = 0_usize;
         let mut held = 0_usize;
+        let mut bottleneck_progress = None;
         for other in g.players.iter().filter(|other| {
             other.id != pid && other.alive && !other.is_minor && !other.is_barbarian
         }) {
@@ -9934,11 +9952,18 @@ impl AdvancedAi {
                 });
             required += majority;
             held += following.min(majority);
+            let progress = 100 * following.min(majority) / majority;
+            bottleneck_progress =
+                Some(bottleneck_progress.map_or(progress, |current: usize| current.min(progress)));
         }
         if required == 0 {
             return 0;
         }
-        (100 * held / required) as i32
+        if self.conversion_majority_alarm_2 {
+            bottleneck_progress.unwrap_or(0) as i32
+        } else {
+            (100 * held / required) as i32
+        }
     }
 
     fn religious_conversion_tally(&self, g: &Game, pid: usize) -> (usize, usize) {
