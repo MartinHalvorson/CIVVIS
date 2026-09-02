@@ -1766,9 +1766,10 @@ fn append_border_buy_order(
 // holds none of, the host sells a copy as an ordinary deal, and in the nine
 // recorded sales the AI asked 2–14 Gold a turn per copy; one copy is +1
 // Amenity in four cities. `Game::quick_deals` does quote a luxury PURCHASE,
-// but the mirror carries no rival's tradeable stock and `border_buy_ceiling`
-// rightly refuses the shape, so — like the favor sale and the passage
-// purchase — the order is composed here from the export's own facts: the
+// but its result is not enough to choose a seller; the mirror now carries the
+// host's met-gated tradeable luxury catalogue and `border_buy_ceiling` rightly
+// refuses the shape, so — like the favor sale and the passage purchase — the
+// order is composed here from the export's own facts: the
 // amenity ledger the host reports per city, the net income, the treasury,
 // the rivals' war state and gold. The Lua arm reads the RIVAL's own
 // tradeable list, takes the first luxury the host says the seat holds none
@@ -1776,8 +1777,9 @@ fn append_border_buy_order(
 // the ceiling carried in `x`.
 //
 // Cadence-gated like its neighbours (phase 4, the last free slot of the
-// six-turn deal week), aimed at the richest met major at peace with no deal
-// already heading its way this turn; the mod's own cooldowns
+// six-turn deal week), aimed at the richest met major at peace that the host
+// says has at least one tradeable luxury, with no deal already heading its
+// way this turn; the mod's own cooldowns
 // (`TradeRetryTurns`) meter re-asks after a `buy_no_luxury`. The ceiling is
 // what a copy is worth to the empire — a base and a share per city, since
 // the four cities it reaches each recover the 10% — bounded by what the
@@ -1843,6 +1845,12 @@ fn append_luxury_buy_order(
         .iter()
         .filter(|rival| !rival.at_war)
         .filter(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        })
+        .filter(|rival| {
             !orders.iter().any(|order| {
                 (order.kind == "sell" || order.kind == "buy")
                     && order.subject == Some(rival.player as i64)
@@ -1862,7 +1870,23 @@ fn append_luxury_buy_order(
                 .then_with(|| right.player.cmp(&left.player))
         });
     let Some(seller) = seller else {
-        return Some("luxury_buy_hold:no_seller");
+        let mut peaceful_rivals = state.rivals.iter().filter(|rival| !rival.at_war);
+        let has_peaceful_rival = peaceful_rivals.clone().next().is_some();
+        let all_catalogues_known = has_peaceful_rival
+            && peaceful_rivals
+                .clone()
+                .all(|rival| rival.tradeable_luxuries.is_some());
+        let known_stock = peaceful_rivals.any(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        });
+        return Some(if all_catalogues_known && !known_stock {
+            "luxury_buy_hold:no_stock"
+        } else {
+            "luxury_buy_hold:no_seller"
+        });
     };
     orders.push(Order {
         kind: "buy",
@@ -3704,6 +3728,7 @@ fn decide(
             // a copy, or with nobody at peace to buy one from.
             if why == "luxury_buy_hold:income"
                 || why == "luxury_buy_hold:treasury"
+                || why == "luxury_buy_hold:no_stock"
                 || why == "luxury_buy_hold:no_seller"
             {
                 note_bits.push(why.to_string());
@@ -13120,11 +13145,13 @@ mod tests {
                 StateRival {
                     player: 2,
                     gold: 300.0,
+                    tradeable_luxuries: Some(vec!["RESOURCE_SILK".to_string()]),
                     ..StateRival::default()
                 },
                 StateRival {
                     player: 4,
                     gold: 500.0,
+                    tradeable_luxuries: Some(vec!["RESOURCE_AMBER".to_string()]),
                     ..StateRival::default()
                 },
                 StateRival {
@@ -13135,6 +13162,7 @@ mod tests {
                 },
                 StateRival {
                     player: 6,
+                    tradeable_luxuries: Some(Vec::new()),
                     ..StateRival::default()
                 },
             ],
@@ -13153,6 +13181,38 @@ mod tests {
         // 135 + 10·3 = 165, under what 12 a turn carries (25·(12−4) = 200)
         // and the cap.
         assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // A richer rival with no catalogue entry must not consume the only
+        // purchase window: the host would answer `buy_no_luxury`.
+        let mut no_stock = state.clone();
+        no_stock.rivals[1].tradeable_luxuries = Some(Vec::new());
+        let mut stock_orders = Vec::new();
+        assert_eq!(append_luxury_buy_order(&no_stock, &mut stock_orders), None);
+        assert_eq!(stock_orders[0].subject, Some(2));
+
+        // A host export that explicitly reports no stock is different from
+        // an older export with no field at all; do not send a blind deal in
+        // either case.
+        let mut no_known_stock = state.clone();
+        for rival in &mut no_known_stock.rivals {
+            rival.tradeable_luxuries = Some(Vec::new());
+        }
+        let mut no_stock_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&no_known_stock, &mut no_stock_orders),
+            Some("luxury_buy_hold:no_stock")
+        );
+        assert!(no_stock_orders.is_empty());
+        let mut old_export = state.clone();
+        for rival in &mut old_export.rivals {
+            rival.tradeable_luxuries = None;
+        }
+        let mut old_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&old_export, &mut old_orders),
+            Some("luxury_buy_hold:no_seller")
+        );
+        assert!(old_orders.is_empty());
 
         // The income binds: 8 a turn carries 100 at the 25× book with 4 kept
         // clear; the cap binds a wide empire on a fat income.

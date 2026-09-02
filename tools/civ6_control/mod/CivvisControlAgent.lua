@@ -195,6 +195,45 @@ local function try(fn, fallback)
 	return fallback;
 end
 
+-- The resource types the shipped diplomacy screen currently puts on a
+-- rival's side of a working deal, narrowed to luxuries this seat actually
+-- lacks. Kept as a bare global because the control agent is already at the
+-- Lua 5.1 main-chunk local ceiling; the exporter and its offline regression
+-- both call the same predicate instead of maintaining two trade catalogues.
+CivvisTradeableLuxuries = function(player, pid, otherId)
+	local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, otherId);
+	if deal == nil then return nil; end
+	local possible = DealManager.GetPossibleDealItems(
+		otherId, pid, DealItemTypes.RESOURCES, deal) or {};
+	local resources = player:GetResources();
+	if resources == nil then return nil; end
+	local out = {};
+	for _, entry in ipairs(possible) do
+		if entry.IsValid ~= false and (entry.MaxAmount or 0) > 0 then
+			local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+			local owned = try(function()
+				return resources:GetResourceAmount(entry.ForType);
+			end, nil);
+			if row ~= nil and row.ResourceClassType == "RESOURCECLASS_LUXURY"
+				and owned == 0 then
+				local key = "RESOURCES:" .. tostring(entry.ForType);
+				local selling = false;
+				local trade = CivvisTrade;
+				if trade ~= nil and trade.pending ~= nil then
+					for _, pending in pairs(trade.pending) do
+						if pending.gave ~= nil and pending.gave[key] ~= nil then
+							selling = true;
+						end
+					end
+				end
+				if not selling then out[#out + 1] = row.ResourceType; end
+			end
+		end
+	end
+	table.sort(out);
+	return out;
+end;
+
 
 -- --------------------------------------------------------------- action ids
 --
@@ -7452,6 +7491,17 @@ local function exportState(player, pid, turn, frame)
 						end
 					end
 					return routes;
+				end, nil),
+				-- The same resource catalogue the shipped diplomacy deal screen
+				-- shows on the rival's side, narrowed to luxury TYPES the seat
+				-- actually lacks. This is deliberately not a hidden map location
+				-- or total stock: a met player can inspect this offer column, while
+				-- the mirror only needs to avoid asking a rich rival whose available
+				-- items contain no useful luxury.
+				-- `Some([])` is a real no-stock answer; the outer `try` leaves the
+				-- field nil when this build cannot query a working deal.
+				tradeable_luxuries = try(function()
+					return CivvisTradeableLuxuries(player, pid, otherId);
 				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
