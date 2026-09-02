@@ -2941,6 +2941,20 @@ class PollCadenceKeepsItsWallClock(unittest.TestCase):
         # The every-publish query deadlocked run civvis-20260730T110209Z.
         self.assertGreaterEqual(civ6_play.ORDERS_POLL_TICKS, 2)
 
+    def test_the_poll_is_still_many_publish_batches_apart(self) -> None:
+        '''★ THE SAFETY QUANTITY IS PUBLISH BATCHES, NOT TICKS.
+
+        An agent tick is `TickEvery` (16) game-core publish batches, and what
+        deadlocked run civvis-20260730T110209Z was querying SQLite on every
+        publish. Two ticks is 32 batches apart; the tick count alone does not
+        say that, so assert the product the deadlock was actually about.
+        '''
+        lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text()
+        self.assertIn("cfg.TickEvery or 16)", lua,
+                      "the batches-per-tick figure this arithmetic rests on moved")
+        self.assertGreaterEqual(civ6_play.ORDERS_POLL_TICKS * 16, 32)
+
     def test_the_lua_fallbacks_match_the_harness_defaults(self) -> None:
         lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
                / "CivvisControlAgent.lua").read_text()

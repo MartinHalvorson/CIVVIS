@@ -14870,8 +14870,25 @@ CivvisQueue.drain = function(player, pid, turn)
 				local moved_from_origin = #entry.rows == 0
 					and entry.origin ~= nil
 					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
-				local ready = entry.ready or arrived or spent or moved_from_origin
-					or entry.wait >= grace;
+				-- Arrival is not the same as settlement on the live host. Civ VI can
+				-- place a unit on the requested plot while its MOVE_TO operation is
+				-- still active; a follow-up RequestOperation then returns successfully
+				-- but is ignored by the in-flight path. This was visible in the live
+				-- trace as MOVE_TO -> FORTIFY: the warrior reached its plot, FORTIFY
+				-- was counted as applied, and the next turn's stale-operation cleanup
+				-- cancelled the still-active move with the unit unfortified.
+				--
+				-- Keep the opening rows-less watch's early release: it has no dependent
+				-- order to protect and the next board can re-plan from the landed unit.
+				-- A real queued follow-up must wait for the host operation to deactivate,
+				-- even when the unit has arrived, spent its movement, or raised an event.
+				local active_operation = #entry.rows > 0 and try(function()
+					return ActivityTypes ~= nil
+						and ActivityTypes.ACTIVITY_OPERATION ~= nil
+						and UnitManager.GetActivityType(unit) == ActivityTypes.ACTIVITY_OPERATION;
+				end, false) == true;
+				local ready = (entry.ready or arrived or spent or moved_from_origin
+					or entry.wait >= grace) and not active_operation;
 				-- See `CivvisBoard.moveNoop`: a leg the host accepted, whose unit
 				-- is still on the plot it was sent from with its movement intact
 				-- once the watch runs out, is a no-op. It is named and answered
@@ -17581,7 +17598,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- batches per poll — still an order of magnitude short of the every-publish
 	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
 	-- scaled by the same factor so every wall-clock allowance is unchanged.
-	local every = cfg.OrdersPollTicks or 4;
+	local every = cfg.OrdersPollTicks or 2;
 	if awaiting.ticks % every ~= 0 then return false; end
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
@@ -17645,7 +17662,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- opening board's stale-answer and built-in ladders below never apply
 	-- to a frame — a stale answer is the very board this frame replaces.
 	if frame > 0 then
-		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 150) then
+		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 300) then
 			awaiting.done = true;
 			awaiting.source = "civvis";
 			-- Every trigger, and the cap: a brain that could not answer this
@@ -17661,7 +17678,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	end
 
 	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
-	if awaiting.polls >= (cfg.OrdersWaitPolls or 300) then
+	if awaiting.polls >= (cfg.OrdersWaitPolls or 600) then
 		local stale = newestAnsweredTurn(turn);
 		local maxStale = cfg.OrdersMaxStale or 4;
 		if stale ~= nil and stale > 0 and (turn - stale) <= maxStale then
@@ -17682,7 +17699,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- a mechanism given authority with no floor for being wrong. Past the budget the
 	-- built-in heuristics run and the turn is recorded as `fallback`, which is a
 	-- number to watch — a run that is mostly fallback is not a measurement of CIVVIS.
-	if awaiting.polls >= (cfg.OrdersFallbackPolls or 900) then
+	if awaiting.polls >= (cfg.OrdersFallbackPolls or 1800) then
 		-- ⚠ SET THE SOURCE *BEFORE* RUNNING THE FALLBACK. `playFallback` emits the
 		-- turn record, which reads `awaiting.source` — assigning after the call made
 		-- every fallback turn report `orders_source: pending`, so the one field that
