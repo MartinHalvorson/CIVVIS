@@ -4755,13 +4755,17 @@ pub struct AdvancedAi {
     /// `district-planning-2`: the plan's own tile buy competes out of the
     /// treasury reserve (never spending below half of it) instead of
     /// waiting for 200 Gold of surplus headroom, and the purchase bars
-    /// drop to adjacency 2 with an edge of 1 over owned ground. Measured
-    /// motive: no recorded live game has ever bought a plot — replaying
-    /// Emperor game 20260901T132005Z at t40/t44, the plan priced the
-    /// adjacency-4 Campus plot at score 905 against a floor of 120 and the
-    /// headroom rule alone refused it, while three cities then placed
-    /// campuses at adjacency 1 or lower beside that ground. Version 2 of
-    /// `district-planning`; shared behaviour reads `district_planning_on`.
+    /// drop to adjacency 2 with an edge of 1 over owned ground. A workable
+    /// tile carrying at least 5 Science in a Science lane — or the one
+    /// connector that immediately opens it — also competes as a strategic
+    /// asset; that exceptional route may draw through the general reserve,
+    /// but preserves the funded war and immediate-defender floors. Measured
+    /// motive: no recorded live game has ever bought a
+    /// plot — replaying Emperor game 20260901T132005Z at t40/t44, the plan
+    /// priced the adjacency-4 Campus plot at score 905 against a floor of
+    /// 120 and the headroom rule alone refused it, while three cities then
+    /// placed campuses at adjacency 1 or lower beside that ground. Version
+    /// 2 of `district-planning`; shared behaviour reads `district_planning_on`.
     district_planning_2: bool,
     /// `cheapest-wonder-first`: a wonder this city can finish within
     /// `CHEAPEST_WONDER_TURNS` turns, in one of the empire's strongest
@@ -18283,6 +18287,17 @@ impl AdvancedAi {
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
                 if let Action::BuyPlot { city, pos, cost } = &action {
+                    // A highly productive Science tile — or its one cheap
+                    // connector — is a durable science asset, not ordinary
+                    // surplus ground. Its scorer keeps the actual
+                    // war/defence floor, but lets it compete with the unit
+                    // and building candidates below instead of hiding it
+                    // behind the broad working reserve.
+                    if let Some(score) = self.exceptional_science_plot_score(g, pid, plan, &action)
+                    {
+                        candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
+                        continue;
+                    }
                     // See `district_planning`: the plan may have named this
                     // very plot for a very valuable district site. That buy
                     // competes as a strategic purchase, not a surplus one —
@@ -18546,10 +18561,20 @@ impl AdvancedAi {
                     .and_then(|id| g.cities.get(&id))
                     .map(|city| city.name.clone())
                     .unwrap_or_else(|| "the empire".to_string());
+                let reserve_report = if g.players[pid].gold + f64::EPSILON >= reserve {
+                    format!(
+                        "{:.0} left above a reserve of {reserve:.0}",
+                        g.players[pid].gold
+                    )
+                } else {
+                    format!(
+                        "{:.0} left after drawing on a reserve of {reserve:.0}",
+                        g.players[pid].gold
+                    )
+                };
                 think!(self.journal(), Economy, Decision, "Buying {what} for {where_}";
-                       "{spent:.0} Gold, worth {score:.0} to the {} plan; {:.0} left \
-                        above a reserve of {reserve:.0}",
-                       plan.strategy.as_str(), g.players[pid].gold);
+                       "{spent:.0} Gold, worth {score:.0} to the {} plan; {reserve_report}",
+                       plan.strategy.as_str());
             }
             purchased = true;
             purchased_units += is_unit as usize;
