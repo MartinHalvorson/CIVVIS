@@ -2015,6 +2015,10 @@ pub const GENES: &[Gene] = &[
     // Version 3 of `border-parity`: one local garrison against an actually
     // visible two-body staging group; buy it without touching production.
     Gene { tag: "border-parity-3", field: "border_parity_3", kind: Kind::OptIn, enable: AdvancedAi::enable_border_parity_3, disable: AdvancedAi::disable_border_parity_3 },
+    // Version 2 smooths each civilization's majority separately, then reads
+    // the least-converted holdout. One enormous converted empire can no longer
+    // outweigh several untouched civilizations the victory still requires.
+    Gene { tag: "conversion-majority-alarm-2", field: "conversion_majority_alarm_2", kind: Kind::OptIn, enable: AdvancedAi::enable_conversion_majority_alarm_2, disable: AdvancedAi::disable_conversion_majority_alarm_2 },
     // Version 2 enters only after the existing religious-opening rank proves
     // the seat has two cities, a real Holy Site path, and one of the remaining
     // Prophet slots. The four-part commitment still moves as one package.

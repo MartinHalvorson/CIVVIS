@@ -4469,6 +4469,23 @@ pub struct AdvancedAi {
     ///
     /// **Off by default.** Screenable.
     pub conversion_majority_alarm: bool,
+    /// Whether the smooth religious-victory clock reads the least-converted
+    /// remaining civilization, rather than pooling every rival's city counts.
+    ///
+    /// Version one fixes the staircase, but its pooled denominator gives a
+    /// wide empire more votes than a small one. Fully converting one enormous
+    /// neighbour can therefore cross the denial bar while several untouched
+    /// civilizations still remain. The victory rule does not weight them by
+    /// size: every living civilization must hold a majority. Version two
+    /// measures progress to each majority separately and reads the weakest
+    /// one. That is the actual conjunctive clock: the religious leader is only
+    /// as close as its furthest remaining holdout.
+    ///
+    /// Folded in with the exact completed-civilization reading below, so it
+    /// cannot hide a majority the host has already confirmed.
+    ///
+    /// **Off by default.** Screenable.
+    pub conversion_majority_alarm_2: bool,
     /// Whether the Culture lane is scored by WHERE THE TWO CURVES ARE WHEN
     /// THE CLOCK STOPS rather than by the ratio they stand at today.
     ///
@@ -7420,6 +7437,7 @@ impl AdvancedAi {
             rival_suzerainty_alarm: false,
             science_chain_alarm: false,
             conversion_majority_alarm: false,
+            conversion_majority_alarm_2: false,
             culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
             diplomatic_lane_forecast_2: false,
@@ -9918,13 +9936,12 @@ impl AdvancedAi {
     /// `pid`'s progress toward a Religious Victory measured in the cities the
     /// victory actually asks for, as a percentage.
     ///
-    /// See [`Self::conversion_majority_alarm`]. The rule is a majority of the
-    /// cities in every other living major, so the denominator is the sum of
-    /// those majorities and the numerator is how much of it is already held.
-    /// Nothing here is a model: it is the victory condition, counted instead
-    /// of rounded.
+    /// See [`Self::conversion_majority_alarm`] and
+    /// [`Self::conversion_majority_alarm_2`]. Version one pools the required
+    /// cities. Version two measures each civilization separately, then reads
+    /// the least-converted holdout the victory rule still requires.
     fn conversion_majority_pressure(&self, g: &Game, pid: usize) -> i32 {
-        if !self.conversion_majority_alarm {
+        if !self.conversion_majority_alarm && !self.conversion_majority_alarm_2 {
             return 0;
         }
         let Some(faith) = g.players[pid].religion.as_deref() else {
@@ -9932,6 +9949,7 @@ impl AdvancedAi {
         };
         let mut required = 0_usize;
         let mut held = 0_usize;
+        let mut bottleneck_progress = None;
         for other in g.players.iter().filter(|other| {
             other.id != pid && other.alive && !other.is_minor && !other.is_barbarian
         }) {
@@ -9960,11 +9978,18 @@ impl AdvancedAi {
                 });
             required += majority;
             held += following.min(majority);
+            let progress = 100 * following.min(majority) / majority;
+            bottleneck_progress =
+                Some(bottleneck_progress.map_or(progress, |current: usize| current.min(progress)));
         }
         if required == 0 {
             return 0;
         }
-        (100 * held / required) as i32
+        if self.conversion_majority_alarm_2 {
+            bottleneck_progress.unwrap_or(0) as i32
+        } else {
+            (100 * held / required) as i32
+        }
     }
 
     fn religious_conversion_tally(&self, g: &Game, pid: usize) -> (usize, usize) {
@@ -29893,8 +29918,16 @@ impl AdvancedAi {
             }
         }
         // On water, a naval military unit occupies a second legal stack with
-        // the embarked land guard and Settler. The sea guard is best effort:
-        // a shortage must not make the expedition stop before it can found.
+        // the embarked land guard and Settler. The live water floor below
+        // refuses an unguarded water leg, so search the whole routeable sea
+        // rather than only the local eight-tile escort radius. A hull can be
+        // several turns away after the army has built it for another job;
+        // binding it now lets `stacked_guard_step` bring it over instead of
+        // leaving the Settler in a permanent hold. Disconnected lakes and
+        // trapped coastal hulls are excluded by the same long-range router
+        // the guard will use. The sea guard is still best effort: if no hull
+        // can reach this water body, the safety floor keeps the expedition
+        // stopped rather than exposing it.
         if afloat && !self.settler_sea_guards.contains_key(&uid) {
             let taken = self.all_bound_settler_guards();
             let sea_guard = g
@@ -29904,7 +29937,6 @@ impl AdvancedAi {
                     let unit = &g.units[candidate];
                     unit.linked_to.is_none()
                         && !taken.contains(candidate)
-                        && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
                         && Self::guard_matches_escort_layer(g, unit, true)
                         && (!self.settler_guard_holds_on()
                             || (unit.hp >= STACKED_GUARD_MIN_HP
@@ -29916,21 +29948,27 @@ impl AdvancedAi {
                                     visible.as_ref().expect("computed under the flag"),
                                 )))
                 })
-                .min_by_key(|candidate| {
+                .filter_map(|candidate| {
+                    let route_distance = g.route_distance(candidate, current, 0)?;
+                    Some((candidate, route_distance))
+                })
+                .min_by_key(|(candidate, route_distance)| {
                     let unit = &g.units[candidate];
                     let spec = &g.rules.units[unit.kind];
                     (
-                        g.wdist(unit.pos, current),
+                        *route_distance,
                         spec.has_ranged_attack(),
                         std::cmp::Reverse(g.unit_strength(unit, true) as i64),
                         *candidate,
                     )
-                });
+                })
+                .map(|(candidate, _)| candidate);
             if let Some(guard) = sea_guard {
                 self.bind_settler_guard(g, uid, guard);
                 think!(self.journal(), Expansion, Detail, "A naval guard joins the settler";
                        "the sea layer shares the water leg while the land guard remains \
-                        responsible for the landing");
+                        responsible for the landing; the hull can route to the embarked \
+                        Settler and will close the gap on its military turn");
             }
         }
         if !self.settler_guards.contains_key(&uid) {

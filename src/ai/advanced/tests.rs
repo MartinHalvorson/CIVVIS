@@ -22221,6 +22221,79 @@ fn a_long_overseas_journey_adds_a_naval_guard_after_embarkation() {
     );
 }
 
+/// A long expedition can outrun the only available naval hull. The live
+/// bridge must bind a routeable ship beyond the local escort radius so the
+/// military turn can close the gap; otherwise the water safety floor holds the
+/// Settler forever even though naval cover exists on the same connected sea.
+#[test]
+fn a_live_embarked_settler_summons_a_distant_routeable_naval_guard() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&first_water]));
+    game.remove_unit(probe);
+
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let next_water = game
+        .route_step(settler, target, 0)
+        .expect("the overseas route has a second water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&next_water]));
+    let sea_guard_pos = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| {
+            game.rules.is_water(&game.map.tiles[position])
+                && game.wdist(*position, first_water) > SETTLER_ESCORT_SEARCH_RADIUS
+        })
+        .expect("the connected sea has a distant water tile");
+    let sea_guard = game.spawn_test_unit("galley", 0, sea_guard_pos);
+    let route_distance = game
+        .route_distance(sea_guard, first_water, 0)
+        .expect("the distant hull can reach the Settler's connected sea");
+    assert!(route_distance > SETTLER_ESCORT_SEARCH_RADIUS as usize);
+
+    let mut live = AdvancedAi::new();
+    live.enable_live_formationless_settler_shadow();
+    live.enable_live_settler_capture_lessons();
+    live.settler_targets.insert(settler, target);
+    live.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    live.settler_guards.insert(settler, land_guard);
+
+    for uid in [settler, land_guard, sea_guard] {
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.moves_left = 2.0;
+        unit.acted = false;
+        unit.fortified = false;
+    }
+
+    assert!(
+        !live.advanced_settler_step(&mut game, 0, settler),
+        "the live floor waits for the distant hull to close before taking another water step"
+    );
+    assert_eq!(live.settler_sea_guards.get(&settler), Some(&sea_guard));
+
+    let before = game.units[&sea_guard].pos;
+    assert_eq!(live.stacked_guard_step(&mut game, 0, sea_guard), Some(true));
+    assert_ne!(game.units[&sea_guard].pos, before);
+}
+
 /// An embarked land escort cannot protect a Settler from a naval unit hidden
 /// in the fog. The live water floor holds the committed expedition before its
 /// next water-to-water step until a naval guard is bound; native behavior is
@@ -37867,19 +37940,41 @@ fn conversion_majority_alarm_is_a_registered_reversible_opt_in() {
         "the ledger must be able to price it"
     );
     assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "conversion_majority_alarm_2"
+            && gene.tag == "conversion-majority-alarm-2"),
+        "conversion-majority-alarm-2 must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("conversion-majority-alarm-2"),
+        "the ledger must be able to price v2 independently"
+    );
+    assert!(
         crate::ai::advanced::gene_ledger::ledger_default_on("conversion-majority-alarm").is_some(),
         "the batch rule decides its default from its batch columns"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.conversion_majority_alarm, "off in the stock agent");
+    assert!(!ai.conversion_majority_alarm_2, "v2 is opt-in too");
     assert!(
-        !AdvancedAi::legacy().conversion_majority_alarm,
-        "off in the legacy agent"
+        !AdvancedAi::legacy().conversion_majority_alarm
+            && !AdvancedAi::legacy().conversion_majority_alarm_2,
+        "both versions are off in the legacy agent"
     );
     ai.enable_conversion_majority_alarm();
     assert!(ai.conversion_majority_alarm);
+    assert!(!ai.conversion_majority_alarm_2);
+    ai.enable_conversion_majority_alarm_2();
+    assert!(!ai.conversion_majority_alarm);
+    assert!(ai.conversion_majority_alarm_2);
+    ai.enable_conversion_majority_alarm();
+    assert!(ai.conversion_majority_alarm);
+    assert!(!ai.conversion_majority_alarm_2, "last family version wins");
     ai.disable_conversion_majority_alarm();
     assert!(!ai.conversion_majority_alarm, "reversible");
+    ai.enable_conversion_majority_alarm_2();
+    ai.disable_conversion_majority_alarm_2();
+    assert!(!ai.conversion_majority_alarm_2, "v2 is reversible");
 }
 
 /// A four-city board where each rival is one city short of a majority: the
@@ -37910,6 +38005,8 @@ fn a_rival_one_city_short_everywhere_reads_zero_on_the_staircase() {
 
     let mut ai = AdvancedAi::new();
     ai.enable_conversion_majority_alarm();
+    let mut bottleneck = AdvancedAi::new();
+    bottleneck.enable_conversion_majority_alarm_2();
     let shipped = AdvancedAi::new();
 
     let (converted, _) = shipped.religious_conversion_tally(&game, 0);
@@ -37925,10 +38022,69 @@ fn a_rival_one_city_short_everywhere_reads_zero_on_the_staircase() {
         50,
         "half the cities the victory asks for are already converted"
     );
+    assert_eq!(
+        bottleneck.conversion_majority_pressure(&game, 0),
+        50,
+        "equal-sized civilizations preserve version one's smooth reading"
+    );
     assert!(
         ai.rival_victory_pressure(&game, 0).progress
             > shipped.rival_victory_pressure(&game, 0).progress,
         "and the alarm reads it while the staircase still reads nothing"
+    );
+}
+
+/// Version one pools every required city. That lets one enormous converted
+/// empire outweigh four untouched holdouts even though Religion must take all
+/// five civilizations. Version two reads the furthest remaining holdout.
+#[test]
+fn conversion_majority_alarm_2_does_not_let_one_wide_empire_outvote_four_holdouts() {
+    let mut game = Game::new(6, 96, 52, 8_403, 250, 0);
+    let faith = "Wide Faith".to_string();
+    game.players[0].religion = Some(faith.clone());
+
+    // Seventeen cities make rival 1's majority nine. The other four rivals
+    // own one city each, so version one's pooled clock reads 9 / 13 = 69%.
+    for index in 0..17 {
+        game.found_city_for(1, (4 + 4 * (index % 9), 4 + 5 * (index / 9)), None);
+    }
+    for rival in 2..6 {
+        game.found_city_for(rival, (8 + 12 * (rival as i32 - 2), 30), None);
+    }
+    for city in game.player_city_ids(1).into_iter().take(9) {
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .pressure
+            .insert(faith.clone(), 500.0);
+    }
+
+    let mut pooled = AdvancedAi::new();
+    pooled.enable_conversion_majority_alarm();
+    let mut bottleneck = AdvancedAi::new();
+    bottleneck.enable_conversion_majority_alarm_2();
+
+    assert_eq!(pooled.conversion_majority_pressure(&game, 0), 69);
+    assert_eq!(
+        bottleneck.conversion_majority_pressure(&game, 0),
+        0,
+        "an untouched civilization is still the bottleneck"
+    );
+    let pooled_pressure = pooled.rival_victory_pressure(&game, 0);
+    let bottleneck_pressure = bottleneck.rival_victory_pressure(&game, 0);
+    assert_eq!(pooled_pressure.strategy, GrandStrategy::Religion);
+    assert_eq!(pooled_pressure.progress, 69);
+    assert_eq!(bottleneck_pressure.strategy, GrandStrategy::Religion);
+    assert_eq!(bottleneck_pressure.progress, 16);
+    assert_eq!(
+        pooled.denial_response_for_pressure(&game, 2, 0, 0, pooled_pressure),
+        Some(GrandStrategy::Conquest),
+        "the pooled clock starts a war against one converted empire"
+    );
+    assert_eq!(
+        bottleneck.denial_response_for_pressure(&game, 2, 0, 0, bottleneck_pressure),
+        None,
+        "four untouched civilizations keep the bottleneck clock below the war bar"
     );
 }
 
