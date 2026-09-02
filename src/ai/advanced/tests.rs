@@ -23983,18 +23983,21 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
     assert!(live.settlement_safety);
-    assert!(live.settler_routing_recovery_on());
-    assert!(
-        !live.settler_target_hysteresis_2,
-        "the average-based deployment selection keeps the hysteresis arm off"
-    );
+    // The deployment ledger may select either native hysteresis version. This
+    // fixture instead proves that the live capture bridge supplies its own
+    // bounded recovery when both screened variants are withheld.
+    live.disable_settler_target_hysteresis();
     live.disable_settler_target_hysteresis_2();
+    assert!(!live.settler_target_hysteresis);
     assert!(!live.settler_target_hysteresis_2);
+    assert!(live.settler_routing_recovery_on());
+    assert!(live.settler_target_hysteresis_on());
     assert!(live.settler_threat_detour_on());
 
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge();
     withheld.disable_live_settler_capture_lessons();
+    withheld.disable_settler_target_hysteresis();
     withheld.disable_settler_target_hysteresis_2();
     withheld.disable_settler_threat_detour();
     assert!(!withheld.settler_routing_recovery_on());
