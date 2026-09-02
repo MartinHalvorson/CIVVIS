@@ -4,6 +4,8 @@
 //! Warrior acts before the Settler, then all first-city targets are refreshed.
 //! A candidate is eligible only once its whole radius-two city footprint has
 //! been observed, so native full-map state cannot silently decide the opening.
+//! `opening-warrior-recon-2` keeps normal candidate filtering and buys that
+//! extra turn only from a Warrior directly escorting the initial Settler.
 //!
 //! `settler-second-look` is broader. A Settler's first real movement leg drops
 //! its disposable destination cache when movement remains; its next serial
@@ -14,12 +16,14 @@ use super::AdvancedAi;
 use crate::game::Game;
 use crate::Pos;
 
+const OPENING_RECON_V2_ESCORT_DISTANCE: i32 = 1;
+
 impl AdvancedAi {
     /// The narrow opening phase where a Warrior can earn information for a
     /// live Settler. If the Warrior has died, ordinary settlement logic stays
     /// available instead of waiting forever for information that cannot come.
     pub(super) fn opening_settlement_recon_active(&self, g: &Game, pid: usize) -> bool {
-        self.opening_warrior_recon
+        (self.opening_warrior_recon || self.opening_warrior_recon_2)
             && g.player_city_ids(pid).is_empty()
             && g.player_unit_ids(pid)
                 .into_iter()
@@ -29,9 +33,17 @@ impl AdvancedAi {
                 .any(|uid| g.units[&uid].kind == "warrior")
     }
 
+    /// The historical v1-only behavior. V2 shares the narrow turn-order pass,
+    /// but must not inherit v1's settlement-candidate restrictions.
+    pub(super) fn opening_warrior_recon_v1_active(&self, g: &Game, pid: usize) -> bool {
+        self.opening_warrior_recon && self.opening_settlement_recon_active(g, pid)
+    }
+
     /// The Warrior nearest to any current first-city Settler, with unit ID as
     /// a deterministic tie-break. Only one gets priority: the gene buys a
-    /// specific scout-before-settle decision, not a free army turn.
+    /// specific scout-before-settle decision, not a free army turn. V2 limits
+    /// that privilege to a direct Settler escort; historical v1 remains
+    /// intentionally unchanged for its controls.
     pub(super) fn opening_recon_warrior(&self, g: &Game, pid: usize) -> Option<u32> {
         if !self.opening_settlement_recon_active(g, pid) {
             return None;
@@ -42,11 +54,19 @@ impl AdvancedAi {
             .filter(|uid| g.units[uid].kind == "settler")
             .map(|uid| g.units[&uid].pos)
             .collect::<Vec<_>>();
+        let escort_limit = (!self.opening_warrior_recon && self.opening_warrior_recon_2)
+            .then_some(OPENING_RECON_V2_ESCORT_DISTANCE);
         g.player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
                 let unit = &g.units[uid];
-                unit.kind == "warrior" && unit.moves_left > 0.0
+                unit.kind == "warrior"
+                    && unit.moves_left > 0.0
+                    && escort_limit.is_none_or(|limit| {
+                        settlers
+                            .iter()
+                            .any(|settler| g.wdist(unit.pos, *settler) <= limit)
+                    })
             })
             .min_by_key(|uid| {
                 let pos = g.units[uid].pos;
@@ -60,16 +80,16 @@ impl AdvancedAi {
     }
 
     /// A first-city score reads the center and its workable radius-two disk.
-    /// While the recon gene is active, require that exact disk to be in the
-    /// player's explored memory. Once the city is founded, this is an exact
-    /// no-op and ordinary settlement scoring is restored.
+    /// Historical v1 requires that exact disk to be in the player's explored
+    /// memory. V2 deliberately keeps the shipped candidate filter, so it can
+    /// react to an escort's fresh sight without suppressing all normal sites.
     pub(super) fn opening_settlement_footprint_known(
         &self,
         g: &Game,
         pid: usize,
         pos: Pos,
     ) -> bool {
-        !self.opening_settlement_recon_active(g, pid)
+        !self.opening_warrior_recon_v1_active(g, pid)
             || g.wdisk(pos, 2)
                 .into_iter()
                 .all(|tile| g.players[pid].explored.contains(&tile))
@@ -169,22 +189,30 @@ mod tests {
     }
 
     #[test]
-    fn both_information_genes_are_opt_ins_with_independent_toggles() {
+    fn opening_information_genes_are_opt_ins_and_versions_are_exclusive() {
         let mut ai = AdvancedAi::new();
         assert!(!ai.opening_warrior_recon);
+        assert!(!ai.opening_warrior_recon_2);
         assert!(!ai.settler_second_look);
         assert!(!AdvancedAi::legacy().opening_warrior_recon);
+        assert!(!AdvancedAi::legacy().opening_warrior_recon_2);
         assert!(!AdvancedAi::legacy().settler_second_look);
         assert_eq!(gene("opening-warrior-recon").unwrap().kind, Kind::OptIn);
+        assert_eq!(gene("opening-warrior-recon-2").unwrap().kind, Kind::OptIn);
         assert_eq!(gene("settler-second-look").unwrap().kind, Kind::OptIn);
 
         ai.enable_opening_warrior_recon();
         assert!(ai.opening_warrior_recon);
+        assert!(!ai.opening_warrior_recon_2);
+        ai.enable_opening_warrior_recon_2();
+        assert!(!ai.opening_warrior_recon);
+        assert!(ai.opening_warrior_recon_2);
         assert!(!ai.settler_second_look);
         ai.enable_settler_second_look();
         assert!(ai.settler_second_look);
-        ai.disable_opening_warrior_recon();
+        ai.disable_opening_warrior_recon_2();
         assert!(!ai.opening_warrior_recon);
+        assert!(!ai.opening_warrior_recon_2);
         assert!(ai.settler_second_look);
         ai.disable_settler_second_look();
         assert!(!ai.settler_second_look);
@@ -206,13 +234,13 @@ mod tests {
     }
 
     #[test]
-    fn opening_recon_moves_the_warrior_before_the_settler_turn() {
+    fn opening_recon_v2_moves_the_escort_before_the_settler_turn() {
         let (mut game, pid, settler, warrior) = opening_board();
         game.current = pid;
         let plan = opening_plan(&game);
         let log_start = game.log.len();
         let mut ai = AdvancedAi::new();
-        ai.enable_opening_warrior_recon();
+        ai.enable_opening_warrior_recon_2();
 
         ai.advanced_units(&mut game, pid, &plan);
 
@@ -274,6 +302,30 @@ mod tests {
     }
 
     #[test]
+    fn opening_recon_v2_only_prioritizes_a_real_settler_escort() {
+        let (mut game, pid, settler, warrior) = opening_board();
+        let settler_pos = game.units[&settler].pos;
+        let mut ai = AdvancedAi::new();
+        ai.enable_opening_warrior_recon_2();
+        assert_eq!(ai.opening_recon_warrior(&game, pid), Some(warrior));
+
+        let far = game
+            .wdisk(settler_pos, 3)
+            .into_iter()
+            .find(|pos| game.wdist(settler_pos, *pos) == 3)
+            .expect("a standard opening has a third ring");
+        game.units.get_mut(&warrior).unwrap().pos = far;
+        assert_eq!(ai.opening_recon_warrior(&game, pid), None);
+
+        ai.enable_opening_warrior_recon();
+        assert_eq!(
+            ai.opening_recon_warrior(&game, pid),
+            Some(warrior),
+            "v1's historical any-distance selection remains available for its control"
+        );
+    }
+
+    #[test]
     fn opening_site_scoring_requires_an_observed_radius_two_footprint() {
         let (mut game, pid, settler, _) = opening_board();
         let start = game.units[&settler].pos;
@@ -293,6 +345,33 @@ mod tests {
         assert!(
             !ai.opening_settlement_footprint_known(&game, pid, unknown),
             "the fourth-ring site still has unseen workable ground"
+        );
+    }
+
+    #[test]
+    fn opening_recon_v2_keeps_the_shipped_candidate_filter() {
+        let (mut game, pid, settler, _) = opening_board();
+        let start = game.units[&settler].pos;
+        let unknown = game
+            .wdisk(start, 4)
+            .into_iter()
+            .find(|pos| game.wdist(start, *pos) == 4)
+            .expect("a 24-by-16 map has a fourth ring");
+        game.players[pid].explored.clear();
+        for pos in game.wdisk(start, 2) {
+            game.players[pid].explored.insert(pos);
+        }
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_opening_warrior_recon_2();
+        assert!(
+            ai.opening_settlement_footprint_known(&game, pid, unknown),
+            "v2 must leave the ordinary candidate filter unchanged"
+        );
+        ai.enable_opening_warrior_recon();
+        assert!(
+            !ai.opening_settlement_footprint_known(&game, pid, unknown),
+            "v1 retains its historical observed-footprint control"
         );
     }
 
