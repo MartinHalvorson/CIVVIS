@@ -4174,8 +4174,8 @@ fn reconcile_incoming_route_deltas(game: &mut crate::game::Game, cities: &[State
 }
 
 /// The engine id and target vocabulary of one host World Congress resolution,
-/// or `None` when the model has no such resolution (Arms Control, Sovereignty,
-/// the Diplomatic Victory resolution) or the target does not translate. The
+/// or `None` when the model has no such resolution (Arms Control, the
+/// Diplomatic Victory resolution) or the target does not translate. The
 /// Diplomatic Victory row is intentionally filtered from the unmapped report
 /// by [`is_known_congress_noop`], because its standing is imported separately
 /// through `congress_dvp`.
@@ -4187,6 +4187,19 @@ fn reconcile_incoming_route_deltas(game: &mut crate::game::Game, cities: &[State
 /// suffix in lower case, which is what the engine keys them by. The popup
 /// exports localized display keys (`LOC_*_NAME` / `LOC_*_DESCRIPTION`) for many non-player
 /// targets, so those wrappers are removed before the rule-node translation.
+fn civvis_city_state_type(target: &str) -> Option<String> {
+    let target = target.strip_prefix("MINOR_CIV_")?;
+    let target = target.strip_prefix("BONUS_").unwrap_or(target);
+    let target = target.strip_suffix("_TRAIT").unwrap_or(target);
+    let target = target.strip_suffix("_BONUS").unwrap_or(target);
+    match target {
+        "SCIENTIFIC" | "RELIGIOUS" | "TRADE" | "CULTURAL" | "MILITARISTIC" | "INDUSTRIAL" => {
+            Some(target.to_ascii_lowercase())
+        }
+        _ => None,
+    }
+}
+
 fn civvis_congress_effect(
     rules: &crate::rules::Rules,
     resolution: &StateResolution,
@@ -4231,6 +4244,7 @@ fn civvis_congress_effect(
         "WC_RES_BORDER_CONTROL" => ("border_control_treaty", seat()?),
         "WC_RES_MIGRATION_TREATY" => ("migration_treaty", seat()?),
         "WC_RES_PUBLIC_RELATIONS" => ("public_relations", seat()?),
+        "WC_RES_SOVEREIGNTY" => ("sovereignty", civvis_city_state_type(target)?),
         "WC_RES_LUXURY" => (
             "luxury_policy",
             civvis_node_name(&rules.resources, target, "RESOURCE_")?,

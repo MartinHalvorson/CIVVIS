@@ -13435,6 +13435,10 @@ impl Game {
         let domestic = city.owner == owner;
         let mut yields = self.route_yields(dest, domestic);
         if !domestic {
+            // Gathering Storm ships city-state `SEND_TRADE_ROUTE_BONUS` rows,
+            // but the host does not apply those rows to origin route yields.
+            // Keep this absent for host parity; Sovereignty A consequently has
+            // no route-yield change in the installed game either.
             yields.gold += city.great_person_foreign_route_gold;
             // A Feitoria belongs to the foreign destination rather than the
             // route's origin. Every Portuguese international route arriving
@@ -16883,6 +16887,9 @@ impl Game {
                 minor.alive && minor.is_minor && !minor.is_barbarian && minor.civ == city_state
             })
             .any(|minor| {
+                if self.congress_effect_active("sovereignty", "B", self.cs_type(&minor.civ)) {
+                    return false;
+                }
                 let suzerain = self.suzerain_of(minor.id);
                 suzerain == Some(pid)
                     || economic_partner.is_some_and(|partner| suzerain == Some(partner))
