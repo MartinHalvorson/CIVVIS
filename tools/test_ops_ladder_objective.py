@@ -122,7 +122,7 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
         self.assertIn('${VICTORY:+--victory} ${VICTORY:+"$VICTORY"}', source)
-        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.60}",
+        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.50}",
                       source)
 
     def test_an_unreachable_github_does_not_stop_the_ladder_outright(self):
@@ -249,7 +249,7 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         argparse rejects as unrecognized. The victory form had never been
         exercised; the abandon floor was, 2026-08-19 17:00Z, and four starts
         in a row played nothing. The leader-score line is different: it is
-        the one early stop left, a deployment policy at 0.60
+        the one early stop left, a deployment policy at 0.50
         even when a GUI host did not inherit a login-shell environment. Run the script's OWN knob lines
         and the flag lines of its climb invocation under zsh, with and without
         operator overrides, and read the words that come out."""
@@ -270,9 +270,9 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         script = "\n".join(knob_lines) + (
             "\nfor w in " + " ".join(flag_lines) + "; do print -r -- \"$w\"; done\n")
         for knobs, expected in (
-            ({}, ["--restart-below-leader-ratio", "0.60"]),
+            ({}, ["--restart-below-leader-ratio", "0.50"]),
             ({"CIVVIS_VICTORY": "science"},
-             ["--victory", "science", "--restart-below-leader-ratio", "0.60"]),
+             ["--victory", "science", "--restart-below-leader-ratio", "0.50"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
              ["--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0"},

@@ -1727,7 +1727,7 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     if why != "frozen" or resumes_so_far >= args.max_resumes:
         return None
     # ⚠ An abandoned game must STAY abandoned. The operator rule retires a run
-    # that is under 60% of the leader at turn 150+, and a retirement leaves the
+    # below half of the leader after turn 50, and a retirement leaves the
     # turn stale while the end screens settle — which now reads as "frozen".
     # Reloading it would restart the very game the rule just ended.
     if record.get("retire_requested"):
@@ -1960,14 +1960,14 @@ def main() -> int:
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     # Forwarded to civ6_play.py untouched; absent, the harness's own default
-    # holds — 0.60, the operator's one early stop. See
+    # holds — 0.50 after turn 50, the operator's one early stop. See
     # `civ6_play.below_leader_score_reading`.
     ap.add_argument("--restart-below-leader-ratio", type=float, default=None,
                     help="immediately abandon on a readable turn at or after "
-                         "turn 150 when our score is under this share of the "
+                         "turn 51 (after turn 50) when our score is under this share of the "
                          "leader's; 0 plays every game out (forwarded to "
-                         "civ6_play.py; current operator policy: 0.60, which "
-                         "means less than 60%% of the leader's score)")
+                         "civ6_play.py; current operator policy: 0.50, which "
+                         "means strictly below half of the leader's score)")
     # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
     #
     # `civ6_play.py` has taken `--leader` (and verifies the pick off the rendered
