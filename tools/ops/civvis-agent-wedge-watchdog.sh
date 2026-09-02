@@ -57,6 +57,35 @@ HANDOFF_GRACE=${CIVVIS_WEDGE_HANDOFF_GRACE:-12}
 # still deliberately patient about legitimate late-game animations.
 PROGRESS_CONFIRM=${CIVVIS_WEDGE_PROGRESS_CONFIRM:-5}
 PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
+# ★★★★★ A PARKED GAME IS SILENT. A SLOW ONE IS NOT.
+#
+# The rule above asks whether the TURN NUMBER moved, and a late-game turn can
+# legitimately take minutes, so it has to wait five of them. But a run that is
+# merely slow keeps talking the whole time — `host_move`, `combat`, `await`,
+# `ui_heartbeat` — and a run whose Game Core has parked says nothing at all.
+# `events.jsonl` is flushed after every line, so its mtime is that distinction
+# for free.
+#
+# Measured over 50,405 consecutive event gaps in seven live runs on 2026-09-02
+# (095330Z, 040909Z, 075737Z, 162829Z and its three continuations):
+#
+#     >=  60s :  35  (0.069%)      MAX observed: 81.2s
+#     >=  90s :   0  (0.000%)
+#     >= 120s :   0  (0.000%)
+#
+# Not one healthy gap reached ninety seconds, and every gap over sixty was the
+# desktop-rescue capture stall that #3089 removes — after it, the longest
+# silence in these runs is 25s. So two minutes of total silence is a wedge,
+# with a 40s margin over the worst thing any of these games did while alive.
+#
+# ⚠ IT LOWERS THE BAR; IT DOES NOT SKIP THE PROOF. A silent run still has to
+# fail the same forced end turn as any other: `nudge_end_turn`, wait
+# `NUDGE_SETTLE_S`, ask again, and restart only if nothing moved. This buys
+# about three minutes of the roughly seven a handoff costs — measured on run
+# civvis-20260902T162829Z-cont3, whose last event was 17:35:51Z and whose
+# fifth strike did not land until 17:41:23Z.
+SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-120}
+SILENCE_CONFIRM=${CIVVIS_WEDGE_SILENCE_CONFIRM:-2}
 SELF_DIR=${0:A:h}
 
 # ⚠⚠⚠ THIS PROCESS OUTLIVES ITS OWN SOURCE, AND THAT HAS COST REAL FIXES.
@@ -290,7 +319,7 @@ print -r -- "$$" > "$LOCK/pid"
 trap 'rm -rf -- "$LOCK"' EXIT
 trap 'exit 0' HUP INT TERM
 
-say "watchdog up (pid $$, gap>${GAP} confirmed ${CONFIRM}x, no progress ${PROGRESS_CONFIRM}x, poll ${POLL_S}s)"
+say "watchdog up (pid $$, gap>${GAP} confirmed ${CONFIRM}x, no progress ${PROGRESS_CONFIRM}x, silent>${SILENCE_S}s ${SILENCE_CONFIRM}x, poll ${POLL_S}s)"
 strikes=0
 progress_strikes=0
 last_progress=""
@@ -419,11 +448,30 @@ PY
       | python3 "$STATE_READER" --progress "$RUNS/$tag/events.jsonl" \
           --max-turn-skew "$PROGRESS_TURN_SKEW" 2>/dev/null || true)
   fi
+  # How long since this run last wrote ANY event. `civ6_play.record` flushes
+  # after every line, so the mtime is the run's own liveness, independent of
+  # the mirror and of whether a turn happened to end.
+  silence=-1
+  events_path="$RUNS/$tag/events.jsonl"
+  if [[ -r "$events_path" ]]; then
+    events_mtime=$(/usr/bin/stat -f '%m' "$events_path" 2>/dev/null || print -r -- "")
+    if [[ "$events_mtime" =~ '^[0-9]+$' ]]; then
+      silence=$(( $(date -u +%s) - events_mtime ))
+      (( silence < 0 )) && silence=0
+    fi
+  fi
+  progress_needed=$PROGRESS_CONFIRM
+  progress_rule="no synchronized progress"
+  if (( silence >= SILENCE_S )) && (( SILENCE_CONFIRM < PROGRESS_CONFIRM )); then
+    progress_needed=$SILENCE_CONFIRM
+    progress_rule="silent for ${silence}s"
+  fi
+
   if [[ "$progress_signal" =~ '^[0-9]+ [0-9]+ [0-9]+ [0-9]+$' ]]; then
     if [[ "$progress_signal" == "$last_progress" ]]; then
       progress_strikes=$(( progress_strikes + 1 ))
-      say "$tag no synchronized progress (${progress_signal}) strike ${progress_strikes}/${PROGRESS_CONFIRM}"
-      if (( progress_strikes >= PROGRESS_CONFIRM )); then
+      say "$tag ${progress_rule} (${progress_signal}) strike ${progress_strikes}/${progress_needed}"
+      if (( progress_strikes >= progress_needed )); then
         # ⚠⚠ THE NUDGE NEEDS TIME, OR IT IS A GESTURE.
         #
         # `restart_attempt` sends SHIFT+RETURN and then kills, and the first
@@ -453,7 +501,7 @@ PY
           fi
           say "$tag the forced end turn changed nothing; restarting"
         fi
-        restart_attempt "$tag NO GAME PROGRESS confirmed at t${mirror_turn}" \
+        restart_attempt "$tag NO GAME PROGRESS confirmed at t${mirror_turn} (${progress_rule})" \
           "$climb_pid" "$play_pid" "$tag" "$mirror_turn"
         strikes=0
         reset_progress

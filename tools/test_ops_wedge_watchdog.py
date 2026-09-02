@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -266,3 +267,110 @@ class TheLiveRunIsPickedByItsEvents(unittest.TestCase):
                  f'tag=$(ls -t {root}/civvis-*/events.jsonl 2>/dev/null | head -1); print "${{tag:h:t}}"'],
                 capture_output=True, text=True, check=True).stdout.strip()
         self.assertEqual(picked, "civvis-live")
+
+
+class SilenceIsAFasterWedgeSignal(unittest.TestCase):
+    """★★★★★ A PARKED GAME IS SILENT; A SLOW ONE IS NOT.
+
+    The turn-progress rule waits five one-minute samples because a late-game
+    turn can legitimately take minutes. But a run that is only slow keeps
+    writing events the whole time, and one whose Game Core has parked writes
+    nothing.
+
+    Measured over 50,405 consecutive event gaps in seven live runs on
+    2026-09-02: 35 gaps reached 60 s, the longest was 81.2 s, and NOT ONE
+    reached 90 s. Every gap over a minute was the desktop-rescue capture stall
+    that #3089 removes; without it the longest silence in those runs is 25 s.
+
+    Run civvis-20260902T162829Z-cont3 wrote its last event at 17:35:51Z and did
+    not reach its fifth strike until 17:41:23Z -- 332 s of a roughly seven
+    minute handoff spent waiting to be sure.
+    """
+
+    def _source(self) -> str:
+        return WATCHDOG.read_text(encoding="utf-8")
+
+    def test_the_silence_limit_and_its_confirmations_are_named_knobs(self):
+        source = self._source()
+        self.assertIn("SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-120}", source)
+        self.assertIn("SILENCE_CONFIRM=${CIVVIS_WEDGE_SILENCE_CONFIRM:-2}", source)
+
+    def test_the_limit_clears_the_longest_healthy_silence_ever_measured(self):
+        """81.2 s was the worst, and that cause is being removed. 120 s keeps a
+        margin without spending five minutes on a dead game."""
+        source = self._source()
+        limit = int(re.search(r"SILENCE_S=\$\{CIVVIS_WEDGE_SILENCE_S:-(\d+)\}",
+                              source).group(1))
+        self.assertGreaterEqual(limit, 100, "must clear the 81.2 s worst case")
+        self.assertLessEqual(limit, 240, "or it saves nothing over the turn rule")
+
+    def test_silence_only_ever_lowers_the_bar(self):
+        """It must not make a talkative but stalled game harder to catch."""
+        self.assertIn("(( SILENCE_CONFIRM < PROGRESS_CONFIRM ))", self._source())
+
+    def test_a_silent_run_still_has_to_fail_the_forced_end_turn(self):
+        """The nudge is the proof; silence only decides when to ask for it."""
+        source = self._source()
+        threshold = source.index("if (( progress_strikes >= progress_needed ))")
+        nudge = source.index("if nudge_end_turn; then")
+        restart = source.index("restart_attempt \"$tag NO GAME PROGRESS")
+        self.assertLess(threshold, nudge, "the nudge must follow the threshold")
+        self.assertLess(nudge, restart, "nothing may restart before the nudge")
+
+    def test_the_rule_that_fired_is_written_down(self):
+        """Two rules reach one recovery; the log has to say which one did."""
+        source = self._source()
+        self.assertIn('progress_rule="silent for ${silence}s"', source)
+        self.assertIn('progress_rule="no synchronized progress"', source)
+        self.assertIn('${progress_rule} (${progress_signal}) strike', source)
+        self.assertIn('at t${mirror_turn} (${progress_rule})', source)
+
+    def test_silence_is_measured_from_the_events_file_this_run_flushes(self):
+        source = self._source()
+        self.assertIn('events_path="$RUNS/$tag/events.jsonl"', source)
+        self.assertIn("/usr/bin/stat -f '%m' \"$events_path\"", source)
+
+    def test_an_unreadable_events_file_never_accelerates_a_restart(self):
+        """A missing or unreadable file must read as 'no evidence', not
+        'silent forever' -- the watchdog's own bug class."""
+        source = self._source()
+        block = source[source.index("silence=-1"):
+                       source.index("progress_needed=$PROGRESS_CONFIRM")]
+        self.assertIn("silence=-1", block)
+        self.assertIn('if [[ -r "$events_path" ]]', block)
+
+    def test_the_silence_arithmetic_runs_in_the_watchdogs_own_zsh(self):
+        """The behaviour, not the text: a fresh file is not silent and an old
+        one is, through the same expression the script uses."""
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            events = Path(tmp) / "events.jsonl"
+            events.write_text("{}\n")
+            script = (
+                'events_path=$1; silence=-1\n'
+                'if [[ -r "$events_path" ]]; then\n'
+                "  events_mtime=$(/usr/bin/stat -f '%m' \"$events_path\" 2>/dev/null || print -r -- \"\")\n"
+                '  if [[ "$events_mtime" =~ \'^[0-9]+$\' ]]; then\n'
+                '    silence=$(( $(date -u +%s) - events_mtime ))\n'
+                '    (( silence < 0 )) && silence=0\n'
+                '  fi\n'
+                'fi\n'
+                'print -r -- "$silence"\n'
+            )
+
+            def silence_of(path: Path) -> int:
+                out = subprocess.run(["zsh", "-c", script, "zsh", str(path)],
+                                     capture_output=True, text=True, check=True)
+                return int(out.stdout.strip())
+
+            self.assertLess(silence_of(events), 5, "a just-written file is live")
+            old = time.time() - 600
+            os.utime(events, (old, old))
+            self.assertGreaterEqual(silence_of(events), 590)
+            self.assertEqual(silence_of(Path(tmp) / "absent.jsonl"), -1,
+                             "no file means no evidence, not a wedge")
+
+
+if __name__ == "__main__":
+    unittest.main()
