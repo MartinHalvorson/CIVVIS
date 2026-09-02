@@ -19791,10 +19791,10 @@ function drawEmpireDetailsPlanet(cells) {
 // heatmap. Keep that guide on the hex edge: the woods, hills, and deposits
 // inside the hex are themselves the information a settling decision needs.
 const SETTLER_LENS_STYLES = {
-  fresh:   {stroke:"#56d989", alpha:.92, label:"Fresh water", housing:3},
-  coast:   {stroke:"#b6e873", alpha:.88, label:"Coastal water", housing:1},
-  dry:     {stroke:"#d4d9d3", alpha:.76, label:"No water access", housing:0},
-  blocked: {stroke:"#f07069", alpha:.84, label:"Settlement unavailable", housing:0, dashed:true},
+  fresh:   {stroke:"#176a3a", alpha:.92, label:"Fresh water", housing:3},
+  coast:   {stroke:"#65ad5a", alpha:.88, label:"Coastal water", housing:1},
+  dry:     {stroke:"#8b8f8a", alpha:.76, label:"No water access", housing:0},
+  blocked: {stroke:"#b73535", alpha:.84, label:"Settlement unavailable", housing:0, dashed:true},
 };
 const SETTLER_LENS_UNIT_ALPHA = .32;
 function settleLensStyle(water) {
