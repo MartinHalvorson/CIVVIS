@@ -5822,6 +5822,15 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Version two of `recovery_reads_the_war`: compare our army with the
+    /// combined military power of every current hostile whose cities are
+    /// within the campaign planner's existing reach. This keeps a remote war
+    /// from imposing an empire-wide defensive posture before it reaches home,
+    /// but counts a local coalition and its city-state armies as the one
+    /// hostile side they form. An immediate city threat still triggers
+    /// Recovery independently. One family version plays at a time. Opt-in
+    /// gene `recovery-reads-the-war-2`.
+    recovery_reads_the_war_2: bool,
     /// The Objective Board's shortfall reaches production and the treasury:
     /// an idle city starts the unit a short row asks for (the best worth per
     /// hammer of its kind, not the strongest), Gold buys the top one above
@@ -7686,6 +7695,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            recovery_reads_the_war_2: false,
             requisitions: false,
             requisitions_served: RefCell::new(requisitions::Served::default()),
             reserved_units: BTreeSet::new(),
@@ -10871,11 +10881,20 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
-        // ⚠ `recovery_reads_the_war`: the strongest empire we are ACTUALLY
-        // FIGHTING, for the power-gap Recovery arm alone. Off, this is the
-        // same board-wide maximum as above, which is what that arm has always
-        // compared itself against. See the flag.
-        let strongest_wartime_rival = if self.recovery_reads_the_war {
+        // ⚠ `recovery_reads_the_war`: version one reads the strongest major
+        // we are fighting. Version two reads the whole hostile side that is
+        // close enough for the campaign planner to reach: current majors and
+        // city-states are additive because their units can arrive together,
+        // while a remote war does not seize the empire-wide Recovery plan
+        // before it reaches home. Off, preserve the historical board-wide
+        // maximum. The separate `threatened_city` arm below remains immediate.
+        let recovery_opponent_power = if self.recovery_reads_the_war_2 {
+            wartime_rivals
+                .iter()
+                .filter(|rival| self.rival_is_in_campaign_reach(g, pid, **rival))
+                .map(|rival| g.military_power(*rival))
+                .sum()
+        } else if self.recovery_reads_the_war {
             wartime_majors
                 .iter()
                 .map(|o| g.military_power(*o))
@@ -11164,7 +11183,7 @@ impl AdvancedAi {
         // only a city-level threat should interrupt its research lane.
         let (strategy, because) = if at_war
             && (threatened_city.is_some()
-                || (my_power * 1.25 < strongest_wartime_rival
+                || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
                     && !raid_only_war
                     && !science_targeted))

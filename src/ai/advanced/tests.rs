@@ -6650,6 +6650,131 @@ fn outgunned_at_war_fixture() -> (Game, AdvancedAi) {
     (game, AdvancedAi::new())
 }
 
+fn recovery_hostile_side_fixture() -> Game {
+    use crate::ai::advanced::city_campaign::CAMPAIGN_REACH;
+
+    let mut game = Game::new(4, 80, 40, 5_151, 250, 0);
+    game.turn = 80;
+    game.found_city_for(0, (10, 20), None);
+    game.found_city_for(1, (18, 20), None);
+    game.found_city_for(2, (10 + CAMPAIGN_REACH - 3, 20), None);
+    game.found_city_for(3, (10 + CAMPAIGN_REACH * 3, 20), None);
+    game.players[2].is_minor = true;
+    game.record_contact(0, 3);
+    std::sync::Arc::make_mut(&mut game.observed_military_power).extend([
+        (0, 100.0),
+        (1, 70.0),
+        (2, 70.0),
+        (3, 500.0),
+    ]);
+    for rival in [1, 2] {
+        game.at_war.insert((0, rival));
+        game.at_war.insert((rival, 0));
+    }
+    game
+}
+
+#[test]
+fn recovery_reads_the_war_v2_is_a_reversible_exclusive_opt_in() {
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "recovery-reads-the-war-2")
+        .expect("version two is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+    assert!(!AdvancedAi::new().recovery_reads_the_war_2);
+    assert!(!AdvancedAi::legacy().recovery_reads_the_war_2);
+
+    let mut family = AdvancedAi::new();
+    family.enable_recovery_reads_the_war();
+    assert!(family.recovery_reads_the_war && !family.recovery_reads_the_war_2);
+    family.enable_recovery_reads_the_war_2();
+    assert!(!family.recovery_reads_the_war && family.recovery_reads_the_war_2);
+    family.enable_recovery_reads_the_war();
+    assert!(family.recovery_reads_the_war && !family.recovery_reads_the_war_2);
+    family.enable_recovery_reads_the_war_2();
+    family.disable_recovery_reads_the_war_2();
+    assert!(!family.recovery_reads_the_war && !family.recovery_reads_the_war_2);
+}
+
+#[test]
+fn recovery_v2_reads_the_reachable_hostile_side_not_one_major() {
+    let game = recovery_hostile_side_fixture();
+    let home = game.player_city_ids(0)[0];
+    assert!(
+        AdvancedAi::new().threatened_city(&game, 0).is_none(),
+        "the power comparison must be the only Recovery trigger"
+    );
+
+    let stock = AdvancedAi::new();
+    assert_eq!(
+        stock.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "the historical rule reads the peaceful 500-power third party"
+    );
+
+    let mut v1 = AdvancedAi::new();
+    v1.enable_recovery_reads_the_war();
+    assert_ne!(
+        v1.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "version one sees only the 70-power major and drops the local city-state"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_recovery_reads_the_war_2();
+    assert!(v2.rival_is_in_campaign_reach(&game, 0, 1));
+    assert!(v2.rival_is_in_campaign_reach(&game, 0, 2));
+    assert_eq!(game.military_power(0), 100.0);
+    assert_eq!(game.military_power(1) + game.military_power(2), 140.0);
+    let recovery = v2.assess(&game, 0);
+    assert_eq!(recovery.strategy, GrandStrategy::Recovery);
+    assert_eq!(recovery.threatened_city, None);
+    assert_eq!(game.cities[&home].owner, 0);
+}
+
+#[test]
+fn recovery_v2_waits_for_a_remote_war_to_reach_home() {
+    let mut game = recovery_hostile_side_fixture();
+    game.at_war.clear();
+    game.at_war.insert((0, 3));
+    game.at_war.insert((3, 0));
+
+    let mut v1 = AdvancedAi::new();
+    v1.enable_recovery_reads_the_war();
+    assert_eq!(
+        v1.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "version one reacts to a remote wartime major's whole army"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_recovery_reads_the_war_2();
+    assert!(!v2.rival_is_in_campaign_reach(&game, 0, 3));
+    assert_ne!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "a paper war outside campaign reach must not seize the whole economy"
+    );
+
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    let attacker = game
+        .nbrs(home)
+        .into_iter()
+        .find(|position| game.unit_ids_at(*position).is_empty())
+        .expect("the capital has an open attack ring");
+    game.spawn_test_unit("modern_armor", 3, attacker);
+    assert_eq!(
+        v2.threatened_city(&game, 0),
+        game.player_city_ids(0).first().copied(),
+        "the remote rival has now reached the city"
+    );
+    assert_eq!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "immediate city danger remains an unconditional Recovery trigger"
+    );
+}
+
 #[test]
 fn a_defensive_posture_that_cannot_win_is_not_held_for_ever() {
     let (mut game, ai) = outgunned_at_war_fixture();

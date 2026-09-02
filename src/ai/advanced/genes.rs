@@ -2093,6 +2093,11 @@ pub const GENES: &[Gene] = &[
     // longer reads as progress, and repeated hits cannot postpone peace
     // indefinitely. One family version plays at a time.
     Gene { tag: "siege-is-progress-3", field: "siege_is_progress_3", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_is_progress_3, disable: AdvancedAi::disable_siege_is_progress_3 },
+    // Version two measures the whole current hostile side inside the campaign
+    // planner's reach: multiple majors and their city-states add together,
+    // while an overseas paper war waits until it can threaten home. Immediate
+    // city danger still takes Recovery independently. One family version plays.
+    Gene { tag: "recovery-reads-the-war-2", field: "recovery_reads_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_reads_the_war_2, disable: AdvancedAi::disable_recovery_reads_the_war_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
