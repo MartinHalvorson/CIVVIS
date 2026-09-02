@@ -1,4 +1,5 @@
 """The desktop rescue's capture budget: cheap declines, scheduled attempts."""
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -112,6 +113,43 @@ class CaptureBudgetTest(unittest.TestCase):
         real attempts before that."""
         self.assertLessEqual(RESCUE_INTERVAL_SECONDS * 3, 300.0)
         self.assertGreaterEqual(RESCUE_INTERVAL_SECONDS, 30.0)
+
+
+class OnlyThePixelPathIsRationed(unittest.TestCase):
+    """⚠ A BUDGET ON CAPTURES MUST NOT DELAY A DISMISSAL THAT NEEDS NONE.
+
+    `WorldCongressBetweenTurns` is closed by clicking its shipped control at a
+    computed rectangle, and the remaining blocking screens by Escape. Neither
+    reads a frame. Holding a blocking Congress screen for a minute because an
+    unrelated capture service is busy would be a new outage, not a saving.
+    """
+
+    def _source(self) -> str:
+        return (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+
+    def test_the_early_return_is_guarded_by_needs_pixels(self):
+        source = self._source()
+        self.assertIn('needs_pixels = screen in ("DiplomacyActionView", "LeaderView",',
+                      source)
+        self.assertIn("if needs_pixels and not allowed:", source)
+
+    def test_the_pixel_screens_match_the_dispatch_below_them(self):
+        """The two lists have to name the same screens or one of them is a lie."""
+        source = self._source()
+        guard = source.index("needs_pixels = screen in (")
+        dispatch = source.index(
+            'if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):')
+        self.assertLess(guard, dispatch)
+        named = set(re.findall(r'"([A-Za-z]+)"', source[guard:source.index(")", guard)]))
+        self.assertEqual(named, {"DiplomacyActionView", "LeaderView", "DiplomacyDealView"})
+
+    def test_the_photograph_is_skipped_rather_than_taken_blind(self):
+        """A capture the host cannot take is 11 s either way; do not spend it
+        just because the screen has a capture-free dismissal."""
+        source = self._source()
+        self.assertIn("if allowed:\n                screenshot(shot)", source)
+        self.assertIn("not photographed ({budget_note})", source)
 
 
 if __name__ == "__main__":

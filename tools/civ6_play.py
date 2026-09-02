@@ -3472,9 +3472,18 @@ def _play(args: argparse.Namespace) -> int:
             # The budget still spends one real attempt per screen per minute so
             # a genuinely stuck leader screen is rescued (see the module for why
             # that path may never be removed); the asks in between cost 0.02 s.
+            #
+            # ⚠ ONLY THE PIXEL PATH IS RATIONED. `WorldCongressBetweenTurns`
+            # is dismissed by clicking its shipped close control at a computed
+            # rectangle and the rest by Escape; neither reads a frame, so
+            # neither may be delayed by a capture the host cannot take. Holding
+            # a blocking Congress screen for a minute over an unrelated capture
+            # service would be a new outage, not a saving.
+            needs_pixels = screen in ("DiplomacyActionView", "LeaderView",
+                                      "DiplomacyDealView")
             allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend(
                 screen, popup_clear.capture_pause_reason())
-            if not allowed:
+            if needs_pixels and not allowed:
                 # The event is already in events.jsonl -- `record` writes it
                 # before this chain runs -- so returning here loses no history,
                 # only the two captures.
@@ -3482,10 +3491,12 @@ def _play(args: argparse.Namespace) -> int:
                       f"attempts; {budget_note}")
                 return
             shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
-            screenshot(shot)
+            if allowed:
+                screenshot(shot)
             print(f"[{kind}] {screen} {reason} "
-                  f"{event.get('attempts')} attempts; photographed to {shot} "
-                  f"({budget_note})")
+                  f"{event.get('attempts')} attempts; "
+                  + (f"photographed to {shot} ({budget_note})" if allowed
+                     else f"not photographed ({budget_note})"))
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
             # turn 69, three healthy cities at loyalty 100): Civilization VI showing
