@@ -1304,6 +1304,9 @@ struct TacticalAttackCandidate {
 struct ExactAttackResult {
     value: f64,
     eliminates_enemy_unit: bool,
+    /// The attacker is still on the board after the exchange. A kill premium
+    /// (`chase-every-boost`) is paid only on a kill the attacker survives.
+    attacker_survives: bool,
 }
 
 /// What happened to the board an exact attack was measured on.
@@ -4715,6 +4718,11 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Hunt every Eureka and Inspiration: the union of the boost-aware
+    /// research, builder and production habits, over every trigger the engine
+    /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
+    /// `chase-every-boost`; see `advanced/chase_every_boost.rs`.
+    chase_every_boost: bool,
     /// `campus-through-expansion`: a Science seat prices the Campus and its
     /// buildings in the Science lane while its plan still reads Expansion,
     /// and no city's first specialty district may be an Entertainment
@@ -6300,6 +6308,7 @@ mod deity_habits;
 /// eureka a short node would outrun, and buy the permission the other
 /// triggers need. Three opt-in genes; see `advanced/boost_research.rs`.
 mod boost_research;
+mod chase_every_boost;
 
 mod site_lookahead;
 
@@ -7205,6 +7214,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            chase_every_boost: false,
             campus_through_expansion: false,
             district_planning_2: false,
             cheapest_wonder_first: false,
@@ -12975,10 +12985,13 @@ impl AdvancedAi {
                 available
                     .iter()
                     .filter(|tech| self.tech_leads_to(g, tech, goal))
+                    // The cheapest step by what it will actually cost: the
+                    // printed price with `chase-every-boost` off, the price
+                    // less the boost in hand with it on. See
+                    // `advanced/chase_every_boost.rs`.
                     .min_by(|a, b| {
-                        g.rules.techs[*a]
-                            .cost
-                            .partial_cmp(&g.rules.techs[*b].cost)
+                        self.beeline_step_cost(g, pid, a.as_str(), true)
+                            .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), true))
                             .unwrap()
                             .then(a.cmp(b))
                     })
@@ -13120,10 +13133,11 @@ impl AdvancedAi {
                 available
                     .iter()
                     .filter(|civic| self.civic_leads_to(g, civic, goal))
+                    // The civic half of the same step cost; see
+                    // `advanced/chase_every_boost.rs`.
                     .min_by(|a, b| {
-                        g.rules.civics[*a]
-                            .cost
-                            .partial_cmp(&g.rules.civics[*b].cost)
+                        self.beeline_step_cost(g, pid, a.as_str(), false)
+                            .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), false))
                             .unwrap()
                             .then(a.cmp(b))
                     })
@@ -26426,7 +26440,7 @@ impl AdvancedAi {
         // as the line above, and independent of it. See
         // `advanced/city_state_quests.rs`.
         let raw = if raw > 0.0 {
-            raw + self.eureka_production_premium(g, pid, item)
+            raw + self.production_boost_premium(g, pid, cid, item, raw)
                 + self.quest_production_premium(g, pid, item, plan.strategy)
                 + self.quest_boost_premium(g, pid, item, plan.strategy)
         } else {
@@ -30700,7 +30714,7 @@ impl AdvancedAi {
         // line above prices, and independent of it. See
         // `advanced/city_state_quests.rs`.
         value
-            + self.eureka_builder_premium(g, pos, improvement)
+            + self.builder_boost_premium(g, pos, improvement, value)
             + self.quest_boost_builder_premium(g, pos, improvement, strategy)
     }
 
@@ -33503,6 +33517,7 @@ impl AdvancedAi {
                     ExactAttackResult {
                         value: f64::NEG_INFINITY,
                         eliminates_enemy_unit: false,
+                        attacker_survives: false,
                     },
                     AppliedAttack::NotScored,
                 )
@@ -33569,6 +33584,7 @@ impl AdvancedAi {
                 ExactAttackResult {
                     value: f64::NEG_INFINITY,
                     eliminates_enemy_unit: false,
+                    attacker_survives: false,
                 },
                 AppliedAttack::Refused(why),
             );
@@ -33612,6 +33628,7 @@ impl AdvancedAi {
                         ExactAttackResult {
                             value: f64::NEG_INFINITY,
                             eliminates_enemy_unit: false,
+                            attacker_survives: false,
                         },
                         AppliedAttack::Applied,
                     );
@@ -33651,6 +33668,7 @@ impl AdvancedAi {
             ExactAttackResult {
                 value,
                 eliminates_enemy_unit,
+                attacker_survives: after.units.contains_key(&uid),
             },
             AppliedAttack::Applied,
         )
@@ -33747,8 +33765,20 @@ impl AdvancedAi {
         }
         let value = match action {
             Action::Attack { .. } | Action::Ranged { .. } | Action::PriorityTarget { .. } => {
-                Self::tactical_attack_result_owned(g.speculative_clone(), pid, uid, action, plan)
-                    .value
+                let exact = Self::tactical_attack_result_owned(
+                    g.speculative_clone(),
+                    pid,
+                    uid,
+                    action,
+                    plan,
+                );
+                // `chase-every-boost`: the kill premium, on a kill the attacker
+                // survives. See `advanced/chase_every_boost.rs`.
+                if exact.attacker_survives && exact.value.is_finite() {
+                    exact.value + self.chase_kill_premium(g, pid, uid, target)
+                } else {
+                    exact.value
+                }
             }
             Action::AirStrike { .. } => self.air_strike_value(g, pid, uid, target, plan),
             _ => return None,
@@ -35605,6 +35635,7 @@ impl AdvancedAi {
                     (
                         attack.value,
                         attack.eliminates_enemy_unit,
+                        attack.attacker_survives,
                         Self::forcing_reply_penalty_applied(
                             Some(Arc::clone(&nested_pool)),
                             &mut board,
@@ -35625,6 +35656,7 @@ impl AdvancedAi {
                     (
                         attack.value,
                         attack.eliminates_enemy_unit,
+                        attack.attacker_survives,
                         Self::forcing_reply_penalty_applied(
                             self.work_pool.clone(),
                             &mut board,
@@ -35639,12 +35671,24 @@ impl AdvancedAi {
         };
 
         let mut scored = Vec::with_capacity(candidates.len());
-        for (order, ((pos, action), (attack_value, eliminates_enemy_unit, reply_penalty))) in
-            candidates.into_iter().zip(evaluations).enumerate()
+        for (
+            order,
+            (
+                (pos, action),
+                (attack_value, eliminates_enemy_unit, attacker_survives, reply_penalty),
+            ),
+        ) in candidates.into_iter().zip(evaluations).enumerate()
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
             let mut score = attack_value - threshold;
+            // `chase-every-boost`: a kill this unit survives that fires an open
+            // Eureka or Inspiration (`kill_with:` its own kind, a barbarian for
+            // Bronze Working, a camp) is worth the research it earns. Zero with
+            // the gene off. See `advanced/chase_every_boost.rs`.
+            if eliminates_enemy_unit && attacker_survives {
+                score += self.chase_kill_premium(g, pid, uid, pos);
+            }
             score += self.base.harmless_naval_xp_bonus(g, pid, uid, pos, ranged);
             if plan
                 .target_city

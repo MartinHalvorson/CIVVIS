@@ -825,6 +825,21 @@ struct Row {
     /// best rival's domestic total and there is no fixed threshold to quote.
     #[serde(default)]
     domestic: i64,
+    /// How much of the tree this seat researched with a boost in hand: the
+    /// engine only inserts a node into `boosted_*` while it is unresearched,
+    /// so the intersection with the researched set is exactly the nodes whose
+    /// boost landed before completion. The live ladder's `summary.boosts`
+    /// reads the same two ratios off the host's frames, so a screen and a
+    /// live run can be compared on one instrument. Written by
+    /// `chase-every-boost`'s probe first (2026-09-01); zero on older files.
+    #[serde(default)]
+    techs_researched: i64,
+    #[serde(default)]
+    techs_boosted: i64,
+    #[serde(default)]
+    civics_adopted: i64,
+    #[serde(default)]
+    civics_inspired: i64,
     /// ⭐ The victory lanes the rotating mask CLOSED in this seat's game,
     /// sorted by name (`--victory-mask rotate:N`). Every seat of one game
     /// carries the same list. Empty in an unmasked game and in every file
@@ -1986,6 +2001,18 @@ fn row_for_seat(
         tourists: game.foreign_tourists(seat),
         rival_tourists: rival(&|pid| game.foreign_tourists(pid)),
         domestic: game.domestic_tourists(seat),
+        techs_researched: game.players[seat].techs.len() as i64,
+        techs_boosted: game.players[seat]
+            .techs
+            .iter()
+            .filter(|node| game.players[seat].boosted_techs.contains(node))
+            .count() as i64,
+        civics_adopted: game.players[seat].civics.len() as i64,
+        civics_inspired: game.players[seat]
+            .civics
+            .iter()
+            .filter(|node| game.players[seat].boosted_civics.contains(node))
+            .count() as i64,
         // Filled in by `play_game`, which knows the game's mask and rung, and
         // took the mid-game science-pace read.
         techs_150: None,
@@ -6137,6 +6164,10 @@ mod tests {
             tourists: 0,
             rival_tourists: 0,
             domestic: 0,
+            techs_researched: 0,
+            techs_boosted: 0,
+            civics_adopted: 0,
+            civics_inspired: 0,
             victories_off: Vec::new(),
             difficulty: String::new(),
             rival_mix: String::new(),

@@ -4023,6 +4023,12 @@ def _play(args: argparse.Namespace) -> int:
         combat = civ6_ladder.combat_totals(run_dir / "events.jsonl")
         if combat:
             summary["combat"] = combat
+        # How much of the tree was researched with a boost in hand: the
+        # Eureka and Inspiration share, from the state frames. Absent when
+        # the run exported no state, so an old run reads as silence.
+        boosts = civ6_ladder.boost_totals(run_dir / "events.jsonl")
+        if boosts:
+            summary["boosts"] = boosts
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log
