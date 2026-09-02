@@ -1953,6 +1953,7 @@ pub const GENES: &[Gene] = &[
     // Priced on the arena first. See `advanced/battle_planner.rs`.
     Gene { tag: "battle-planner", field: "battle_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_planner, disable: AdvancedAi::disable_battle_planner },
 
+    Gene { tag: "chase-every-boost", field: "chase_every_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_chase_every_boost, disable: AdvancedAi::disable_chase_every_boost },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing
