@@ -566,6 +566,19 @@ impl AdvancedAi {
         pool
     }
 
+    /// Whether a unit is in the turn-start frame — the shipped layer's own
+    /// test, which is every unit when the controller does not observe.
+    fn observed(
+        &self,
+        g: &Game,
+        pid: usize,
+        visible: &crate::world::TileBits,
+        unit: &crate::game::Unit,
+    ) -> bool {
+        !self.battlefront_observation
+            || (g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
+    }
+
     /// Hostile military strength within `radius` of `at`, visible in the
     /// turn-start frame, with the remembered term the belief arm adds.
     fn hostile_strength_near(
@@ -582,9 +595,7 @@ impl AdvancedAi {
             .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .filter(|unit| g.wdist(unit.pos, at) <= radius)
-            .filter(|unit| {
-                g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id)
-            })
+            .filter(|unit| self.observed(g, pid, visible, unit))
             .map(|unit| effective_strength(g.unit_strength(unit, false), unit.hp))
             .sum();
         let remembered = if self.belief_pressure {
@@ -620,9 +631,7 @@ impl AdvancedAi {
                 let spec = &g.rules.units[unit.kind];
                 spec.class == "military" && spec.domain.as_deref() != Some("air")
             })
-            .filter(|unit| {
-                g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id)
-            })
+            .filter(|unit| self.observed(g, pid, visible, unit))
             .filter(|unit| {
                 if arena {
                     return true;
@@ -820,7 +829,7 @@ impl AdvancedAi {
                         .values()
                         .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
                         .filter(|unit| g.rules.units[unit.kind].class == "military")
-                        .filter(|unit| g.sees(visible, unit.pos))
+                        .filter(|unit| self.observed(g, pid, visible, unit))
                         .map(|unit| g.wdist(unit.pos, *pos))
                         .filter(|distance| *distance <= THREAT_RELIEF_RADIUS)
                         .min();
@@ -892,6 +901,21 @@ impl AdvancedAi {
                 }
             }
         }
+        if arena {
+            // An arena poses at most a city or two, and the fight is over it.
+            let mut theirs: Vec<u32> = g
+                .cities
+                .values()
+                .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+                .map(|city| city.id)
+                .collect();
+            theirs.sort_unstable();
+            for cid in theirs {
+                if !siege_cities.contains(&cid) {
+                    siege_cities.push(cid);
+                }
+            }
+        }
         let mut previous_siege: Option<ObjectiveKey> = None;
         for cid in siege_cities {
             let Some(city) = g.cities.get(&cid) else {
@@ -955,7 +979,14 @@ impl AdvancedAi {
             }
         }
 
-        // Destroy: hostile forces in the field not covered by a Defend.
+        // Destroy: hostile forces in the field not covered by a Defend, and
+        // not the defenders of a city under Siege — the campaign bill already
+        // counts those.
+        let siege_at: Vec<Pos> = rows
+            .iter()
+            .filter(|row| row.kind == ObjectiveKind::Siege)
+            .map(|row| row.at)
+            .collect();
         for force in self.hostile_forces(g, pid, visible, &our_cities) {
             let tiles: Vec<Pos> = force.iter().map(|uid| g.units[uid].pos).collect();
             let Some(at) = medoid(g, &tiles) else {
@@ -963,7 +994,9 @@ impl AdvancedAi {
             };
             let covered = our_cities.iter().any(|(cid, pos)| {
                 defended.contains(cid) && g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS
-            });
+            }) || siege_at
+                .iter()
+                .any(|pos| g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS);
             if covered {
                 continue;
             }
@@ -1372,11 +1405,9 @@ impl AdvancedAi {
             have
         };
         let mut next_id = self.objective_board_state.next_force_id.max(1);
-        let mut served: BTreeSet<ObjectiveKey> = BTreeSet::new();
         for rank in 0..rows.len() {
             let row = rows[rank].clone();
             if row.kind == ObjectiveKind::Deter || row.requirement.is_zero() {
-                served.insert(row.key);
                 continue;
             }
             for domain in [ForceDomain::Land, ForceDomain::Sea] {
@@ -1508,7 +1539,6 @@ impl AdvancedAi {
                     have.add(&facts[&uid]);
                 }
             }
-            served.insert(row.key);
         }
         // Every force re-aimed at its row.
         for force in &mut forces {
@@ -1749,9 +1779,7 @@ impl AdvancedAi {
             .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .filter(|unit| g.wdist(unit.pos, objective) <= THREAT_RELIEF_RADIUS + 2)
-            .filter(|unit| {
-                g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id)
-            })
+            .filter(|unit| self.observed(g, pid, visible, unit))
             .map(|unit| unit.pos)
             .collect();
         let Some(enemy) = medoid(g, &hostile) else {
@@ -1807,7 +1835,22 @@ impl AdvancedAi {
             let row = rows.iter().find(|row| row.key == force.objective_key);
             let tiles: Vec<Pos> = units.iter().map(|uid| g.units[uid].pos).collect();
             let force_medoid = medoid(g, &tiles).unwrap_or(force.aimed_at);
-            let objective = row.map_or(force.aimed_at, |row| row.at);
+            let objective = match row {
+                Some(row) => row.at,
+                // The reserve on an arena has one thing to do: the nearest
+                // enemy, as the shipped objective falls back to it.
+                None if arena => g
+                    .units
+                    .values()
+                    .filter(|unit| {
+                        hostile_seats.contains(&unit.owner)
+                            && g.rules.units[unit.kind].class == "military"
+                            && self.observed(g, pid, &visible, unit)
+                    })
+                    .min_by_key(|unit| (g.wdist(force_medoid, unit.pos), unit.id))
+                    .map_or(force.aimed_at, |unit| unit.pos),
+                None => force.aimed_at,
+            };
             let kind = row.map(|row| row.kind);
             let focus_target = self.force_focus_target(g, pid, &units, &objective_enemies, plan);
             let local_strength_ratio =
@@ -1818,21 +1861,19 @@ impl AdvancedAi {
                 g.units.values().any(|enemy| {
                     hostile_seats.contains(&enemy.owner)
                         && g.rules.units[enemy.kind].class == "military"
-                        && g.sees(&visible, enemy.pos)
-                        && self.battlefront_unit_visible(g, pid, enemy.id)
+                        && self.observed(g, pid, &visible, enemy)
                         && g.wdist(g.units[uid].pos, enemy.pos) <= 2
                 })
             });
             let forcing_focus = focus_target.is_some_and(|target| {
                 let low_hp_unit = g.unit_ids_at(target).iter().any(|unit| {
                     hostile_seats.contains(&g.units[unit].owner)
-                        && g.sees(&visible, target)
-                        && self.battlefront_unit_visible(g, pid, *unit)
+                        && self.observed(g, pid, &visible, &g.units[unit])
                         && g.units[unit].hp <= 35
                 });
                 let capturable_city = g.city_at(target).is_some_and(|city| {
                     enemies.contains(&g.cities[&city].owner)
-                        && g.sees(&visible, target)
+                        && (!self.battlefront_observation || g.sees(&visible, target))
                         && g.cities[&city].hp <= 40
                         && g.cities[&city].wall_hp <= 0
                         && units.iter().any(|unit| {
