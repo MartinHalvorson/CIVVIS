@@ -642,6 +642,53 @@ as unit verb `SWAP` with `pos` = the partner's tile; the mod resolves
 decline `cannot_swap`. The verdict is either half of the exchange on the next
 frame — the unit on the partner's former tile or the partner on ours — else
 `not_swapped`. What §18's `swap-rotation` decides can now reach the live seat.
+
+**Update (2026-09-02): the air verbs are translated.** `Action::AirStrike`,
+`Action::AirRebase` and `Action::AirPatrol` — legal in the engine since
+`do_air_strike` / `do_air_rebase` / `do_air_patrol` and dropped by the bridge
+as `unit_action_untranslated`, so no aircraft the live seat built ever flew —
+cross as unit verbs `AIR_ATTACK` (`pos` = the target plot), `REBASE` (`pos` =
+the new base plot) and `PATROL` (`pos` = the plot to fly to and intercept
+from). The mod resolves `UNITOPERATION_AIR_ATTACK`, `UNITOPERATION_REBASE` and
+`UNITOPERATION_DEPLOY` — there is no `AIR_PATROL` row in the shipped
+`UnitOperations.xml`; a fighter's patrol is the shipped "Deploy" — and requests
+each exactly as `WorldInput.lua:2077-2078` / `:2418-2419` / `:2486-2487` do
+(`CanStartOperation(unit, OP, nil, {PARAM_X, PARAM_Y})`, then
+`RequestOperation` with the same table), naming a decline `cannot_air_attack`
+/ `cannot_rebase` / `cannot_patrol`. `AIR_ATTACK` passes `refuseWarStarter`
+and `CivvisLedger.strike` like `RANGE_ATTACK`, so the preview and the combat
+frame count follow it, and a refused one files `range_attack_refused` for the
+decider's `blocked_strikes`. Verdicts: `AIR_ATTACK` like `RANGE_ATTACK`
+(target harmed or a combat on the ledger, else `target_unharmed` / the host's
+own reason); `REBASE` is the aircraft standing on the base plot next frame,
+else `not_rebased`; `PATROL` is declared unverifiable — the frame carries no
+patrol state. The own-unit export now carries `range` (`Unit:GetRange()`,
+`UnitPanel.lua:2250`), the aircraft's operational reach from the plot it
+stands on, which is its base; the mirror parses it (`StateUnit::range`) and
+does not yet read it onto the board.
+
+**Update (2026-09-02): the captured city's disposition is translated.**
+`Action::KeepCity`, `Action::RazeCity` and `Action::LiberateCity` — mandatory
+and exclusive on the board (`pending_city_capture_actions`: nothing else is
+legal while a capture is unresolved) — were untranslated, and the mirror never
+set `City::captured_from`, so the decision never even arose on the live board:
+the mod lists `ENDTURN_BLOCKING_CONSIDER_RAZE_CITY` as a soft blocker, ends the
+turn over it, and the host's default (keep) took every city. The export now
+names the city the host is waiting on (`GetNextCapturedCity()`,
+`Popups/RazeCity.lua:71`) with `captured_from` (`GetJustConqueredFrom`, `:86`)
+and every own city's `original_owner` (`GetOriginalOwner`, `:85`); the mirror
+maps both onto seats (`apply_city_capture`, both import paths), so the board
+offers exactly the Keep / Raze / Liberate the shipped popup offers. The
+decision crosses as order kind `city`, verb `KEEP` / `RAZE` / `LIBERATE`,
+subject = the host city id, `pos` = the city plot; the mod requests the one
+shipped command for all three, `CityCommandTypes.DESTROY` with the matching
+`CityDestroyDirectives` flag in `PARAM_FLAGS` (`RazeCity.lua:15-55`;
+`LIBERATE_FOUNDER`, since the engine liberates to the founder), gated by
+`CanStartCommand` with the same table — a decline is `cannot_keep` /
+`cannot_raze` / `cannot_liberate`. Verdicts: KEEP = still ours with the flag
+clear next frame (`not_kept`); RAZE = gone or a citizen smaller next turn, or
+the decision consumed on a same-turn frame (`not_razed`); LIBERATE = the
+founder holds the plot (`liberated_to_another` / `not_liberated`).
 ## 17. Price it like the engine — and the null it measured (2026-08-26)
 
 Two opt-in genes (`src/ai/advanced/engine_pricing.rs`) replace the

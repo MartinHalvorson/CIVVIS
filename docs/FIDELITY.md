@@ -3284,6 +3284,79 @@ verb. The `combat_damage` scoreboard row will move on the next
 `tools/live_divergence.py` run — the historical figure (MAE 11.8 hp on
 `civvis-20260826T184456Z`) was measured against the bare formula.
 
+### Shipped: the air verbs cross (2026-09-02)
+
+`Action::AirStrike`, `Action::AirRebase` and `Action::AirPatrol` fell through
+`translate`'s `_ => None` and were counted `unit_action_untranslated`, so an
+aircraft on the live seat could be built and never flown. They now cross as
+unit verbs `AIR_ATTACK` (`pos` = target plot), `REBASE` (`pos` = base plot)
+and `PATROL` (`pos` = patrol plot). Read off the installed game: the three
+shipped operations are `UNITOPERATION_AIR_ATTACK`, `UNITOPERATION_REBASE` and
+`UNITOPERATION_DEPLOY` (`Base/Assets/Gameplay/Data/UnitOperations.xml:66`,
+`:93`, `:72`); there is **no `AIR_PATROL` row** — a fighter's patrol is the
+shipped "Deploy", flying to a plot within range and intercepting from there —
+so `PATROL` resolves to DEPLOY. Each is requested as the shipped
+`WorldInput.lua:2077-2078` / `:2418-2419` / `:2486-2487` requests it, with
+the plot as `PARAM_X`/`PARAM_Y` after the four-argument
+`CanStartOperation(unit, OP, nil, tParameters)`; a decline is
+`cannot_air_attack` / `cannot_rebase` / `cannot_patrol`. `AIR_ATTACK` goes
+through `refuseWarStarter` (the shipped `WorldInput.lua:2067` asks
+`IsAttackChangeWarState` before the same request) and `CivvisLedger.strike`,
+so the host's preview and the combat frame follow it; the preview passes a
+nil combat type, as `UnitPanel.lua:3905-3916` does outside RANGE_ATTACK
+mode. Verdicts: `AIR_ATTACK` as `RANGE_ATTACK`; `REBASE` = the aircraft on
+the base plot next frame, else `not_rebased`; `PATROL` unverifiable (no
+patrol state in the frame). The own-unit export gains `range`
+(`Unit:GetRange()`, `Panels/UnitPanel.lua:2250`): an aircraft stands on its
+base between sorties, so `x`/`y` already name the base and `range` names its
+operational reach. `StateUnit::range` parses it; nothing on the board reads
+it yet — the catalogue's range still decides.
+
+### Shipped: the captured city's disposition crosses (2026-09-02)
+
+Two halves were missing, and each hid the other. `Action::KeepCity` /
+`RazeCity` / `LiberateCity` fell through `translate`'s `_ => None`, so even a
+decided disposition never reached the host; and the mirror never set
+`City::captured_from`, so no capture was ever pending on the live board and
+the decision was never made at all. What decided every capture was the host's
+own default: the mod lists `ENDTURN_BLOCKING_CONSIDER_RAZE_CITY`
+(`ActionPanel.lua:106`) as a soft blocker and ends the turn over it, which
+keeps the city.
+
+**The export** names the one city the host is waiting on the way the shipped
+popup finds it — `player:GetCities():GetNextCapturedCity()`
+(`Base/Assets/UI/Popups/RazeCity.lua:71`) — and that city's record carries
+`captured_from = GetJustConqueredFrom()` (`:86`, the loser's Firaxis player
+id); every own city carries `original_owner = GetOriginalOwner()` (`:85`, the
+founder). **The mirror** (`StateCity::captured_from` / `::original_owner`,
+`apply_city_capture` beside `apply_city_religion` on both import paths) maps
+both onto seats by the rule the war bond and `apply_territory` use, assigns
+`captured_from` from every export so a taken directive clears it, and sets it
+only when the loser has a seat (the engine pays capture rewards to
+`players[defeated]`). With it set, `legal_city_disposition_actions` offers
+what the popup offers — Keep always, Raze unless a capital or the founder's
+own city, Liberate when the founder is neither us nor the loser.
+
+**The order** is kind `city`, verb `KEEP` / `RAZE` / `LIBERATE`, subject =
+the host city id, `pos` = the city plot. Civilization VI has one command for
+all three, `CityCommandTypes.DESTROY`, told apart by a `CityDestroyDirectives`
+value in `UnitOperationTypes.PARAM_FLAGS` — `RazeCity.lua:39` (`KEEP`), `:48`
+(`RAZE`), `:17` (`LIBERATE_FOUNDER`; the engine's `do_liberate_city` returns
+the city to `original_owner`, so the owner-before-occupation button at `:28`
+has no board action) — requested after `CanStartCommand` with the same table
+(`:18-20`). A directive the host will not take is the named refusal
+`cannot_<verb>`; a `city_disposition` ledger event records each request.
+Liberation is reachable from the InGame UI context: `RazeCity.lua` is itself
+an InGame popup context using the same `CityManager.RequestCommand`.
+
+**Verdicts** read who holds the city next frame. KEEP: still ours and the
+flag clear (`not_kept`, `city_gone`). RAZE: the game burns a razed city down
+one citizen a turn and it stays ours while it burns, so the next turn shows
+it gone or smaller; on a same-turn replan frame the only trace is the
+decision consumed, accepted there and only there (`not_razed`). LIBERATE: not
+ours and the founder the decision frame named holds the plot
+(`liberated_to_another`, `not_liberated`).
+
 ### How to re-measure
 
 The border table is one join: `orders.sqlite` (`kind='unit' and

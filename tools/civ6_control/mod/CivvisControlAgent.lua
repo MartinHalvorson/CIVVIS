@@ -271,6 +271,15 @@ local function resolveActions()
 		-- (`Base/Assets/UI/Civ6Common.lua:160-161`) whenever the destination
 		-- plot holds a friendly unit. `applyOrder` takes verb `SWAP`.
 		"UNITOPERATION_SWAP_UNITS",
+		-- The air verbs. `Base/Assets/Gameplay/Data/UnitOperations.xml:66`
+		-- (`UNITOPERATION_AIR_ATTACK`, `InterfaceMode="INTERFACEMODE_AIR_ATTACK"`),
+		-- `:93` (`UNITOPERATION_REBASE`) and `:72` (`UNITOPERATION_DEPLOY`).
+		-- There is no `AIR_PATROL` row on this build: a fighter's patrol IS the
+		-- shipped "Deploy" — it flies to a plot within range and intercepts from
+		-- there — so `applyOrder`'s verb `PATROL` resolves to DEPLOY. All three
+		-- take `{PARAM_X, PARAM_Y}`, the way `WorldInput.lua:2077`, `:2418` and
+		-- `:2486` request them.
+		"UNITOPERATION_AIR_ATTACK", "UNITOPERATION_REBASE", "UNITOPERATION_DEPLOY",
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
@@ -6084,6 +6093,21 @@ local function exportState(player, pid, turn, frame)
 			end
 		end
 	end);
+	-- ★★★ THE CAPTURED CITY THE HOST IS WAITING ON. Civilization VI blocks the
+	-- turn with ENDTURN_BLOCKING_CONSIDER_RAZE_CITY until the conqueror keeps,
+	-- razes or liberates a city taken this turn; this controller lists that
+	-- blocker as soft and ends the turn over it, so the host's default — keep
+	-- — decided every capture and the board never saw a decision to make. The
+	-- shipped popup finds the city with `GetNextCapturedCity()`
+	-- (`Base/Assets/UI/Popups/RazeCity.lua:71`) and the loser with
+	-- `GetJustConqueredFrom()` (`:86`); the city record below carries both, on
+	-- that one city, so the mirror can set `captured_from` and the board
+	-- offers the same three choices the popup does. The `city` order kind in
+	-- `applyOrder` carries the answer back.
+	local pendingCaptureId = try(function()
+		local pending = player:GetCities():GetNextCapturedCity();
+		return pending and pending:GetID() or nil;
+	end, nil);
 	eachCity(player, function(city)
 		local outgoing = try(function()
 			return city:GetTrade():GetOutgoingRoutes();
@@ -6551,6 +6575,14 @@ local function exportState(player, pid, turn, frame)
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
 			capital = try(function() return city:IsCapital(); end, false),
+			-- See `pendingCaptureId`: the Firaxis player this city was just taken
+			-- from, present exactly while the host waits on its disposition; and
+			-- its founder (`GetOriginalOwner`, `RazeCity.lua:85`), whom LIBERATE
+			-- hands it to.
+			captured_from = (pendingCaptureId ~= nil
+				and pendingCaptureId == try(function() return city:GetID(); end, nil))
+				and try(function() return city:GetJustConqueredFrom(); end, nil) or nil,
+			original_owner = try(function() return city:GetOriginalOwner(); end, nil),
 			-- The NAME, not the hash. See `productionName`: shipping the raw hash
 			-- meant the mirror never knew what any city was already building, so
 			-- CIVVIS re-decided production every turn blind to work in progress.
@@ -6998,6 +7030,13 @@ local function exportState(player, pid, turn, frame)
 			-- SelectedUnit read). The mirror plans a frame's second strike only
 			-- for units that still have one.
 			attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
+			-- The unit's live range (`Unit:GetRange()`, the shipped
+			-- `UnitPanel.lua:2250` read). For an aircraft this is its
+			-- operational range from the plot it stands on — which IS its base:
+			-- a Civilization VI aircraft sits on its airfield, city or carrier
+			-- between sorties, so `x`/`y` name the base and this names how far
+			-- an AIR_ATTACK, REBASE or PATROL may reach from it.
+			range = try(function() return unit:GetRange(); end, nil),
 			-- The host's upgrade verdict: see the block above `units[#units + 1]`.
 			-- `upgrade_to` is the successor's UnitType, `upgrade_cost` the Gold
 			-- the host would charge, `upgrade_blocked_reason` present exactly
@@ -10451,6 +10490,10 @@ end;
 CivvisLedger.preview = function(unit, verb, x, y)
 	if try(function() return UI.IsGameCoreBusy(); end, false) == true then return nil; end
 	local combatType = nil;
+	-- The shipped UnitPanel.lua:3905-3916 names a combat type ONLY in the
+	-- RANGE_ATTACK interface mode; in AIR_ATTACK mode (and every other) it
+	-- hands `SimulateAttackInto` nil and lets the engine pick, so an
+	-- `AIR_ATTACK` preview deliberately leaves `combatType` nil here.
 	if verb == "RANGE_ATTACK" then
 		combatType = try(function()
 			local ranged = unit:GetRangedCombat() or 0;
@@ -11238,6 +11281,56 @@ local function applyOrder(player, pid, row, turn)
 			end
 		end
 		return false, "gp_class_not_offered";
+	end
+
+	-- ★★★ THE CAPTURED CITY'S DISPOSITION. `subject` is the Firaxis city id;
+	-- `verb` is KEEP, RAZE or LIBERATE. Civilization VI has ONE command for all
+	-- three, `CityCommandTypes.DESTROY`, told apart by a directive in
+	-- `PARAM_FLAGS` — the shipped `Base/Assets/UI/Popups/RazeCity.lua` buttons:
+	--
+	--   :39  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.KEEP;
+	--   :48  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.RAZE;
+	--   :17  tParameters[UnitOperationTypes.PARAM_FLAGS] = CityDestroyDirectives.LIBERATE_FOUNDER;
+	--   :18  if (CityManager.CanStartCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters)) then
+	--   :20      CityManager.RequestCommand( g_pSelectedCity, CityCommandTypes.DESTROY, tParameters);
+	--
+	-- LIBERATE is the FOUNDER button (`:17`; the host shows it only when
+	-- `CanLiberateCityTo(GetOriginalOwner())` and the founder is not the
+	-- loser, `:90`), because the engine's `do_liberate_city` returns the city
+	-- to `original_owner`; the owner-before-occupation button (`:28`) has no
+	-- board action. `CanStartCommand` with the SAME table gates the request,
+	-- so a directive the host will not take (RAZE on a capital or on the
+	-- founder's own city, LIBERATE with nobody to hand it to) is the named
+	-- refusal `cannot_<verb>`, never a silent no-op. Until this branch every
+	-- one of these decisions was untranslated and the host's default — keep
+	-- — took every city.
+	if kind == "city" then
+		local city = try(function() return CityManager.GetCity(pid, subject); end);
+		if city == nil then return false, "city_missing:" .. tostring(subject); end
+		local directiveName = ({
+			KEEP = "KEEP", RAZE = "RAZE", LIBERATE = "LIBERATE_FOUNDER",
+		})[verb];
+		if directiveName == nil then return false, "unknown_city_verb_" .. verb; end
+		local directive = try(function() return CityDestroyDirectives[directiveName]; end, nil);
+		if directive == nil then return false, "no_destroy_directive_" .. directiveName; end
+		local params = {};
+		params[UnitOperationTypes.PARAM_FLAGS] = directive;
+		if not try(function()
+			return CityManager.CanStartCommand(city, CityCommandTypes.DESTROY, params);
+		end, false) then
+			return false, "cannot_" .. string.lower(verb);
+		end
+		local ok = pcall(function()
+			CityManager.RequestCommand(city, CityCommandTypes.DESTROY, params);
+		end);
+		emit("city_disposition", {
+			turn = turn, city = subject, verb = verb, requested = ok,
+			name = try(function() return Locale.Lookup(city:GetName()); end, nil),
+			conquered_from = try(function() return city:GetJustConqueredFrom(); end, nil),
+			original_owner = try(function() return city:GetOriginalOwner(); end, nil),
+			pop = try(function() return city:GetPopulation(); end, nil),
+		});
+		return ok, ok and verb or ("city_" .. string.lower(verb) .. "_throw");
 	end
 
 	-- A city's ranged strike. `subject` is the Firaxis city id, x/y the target
@@ -13571,6 +13664,66 @@ local function applyOrder(player, pid, row, turn)
 			end
 			return accepted, verb;
 		end
+		-- ★★★ THE AIR VERBS. `AIR_ATTACK` (x/y = the target plot), `REBASE`
+		-- (x/y = the new base plot) and `PATROL` (x/y = the plot to fly to and
+		-- intercept from) — until this branch every one fell through Rust's
+		-- `translate` as `unit_action_untranslated`, so no aircraft the seat
+		-- built ever flew. Each is one shipped operation requested with the
+		-- plot as the positional pair, exactly as `WorldInput.lua` does:
+		--
+		--   :2077  if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, nil, tParameters)) then
+		--   :2078      UnitManager.RequestOperation( pSelectedUnit, UnitOperationTypes.AIR_ATTACK, tParameters);
+		--   :2418  if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.DEPLOY, nil, tParameters)) then
+		--   :2486  if (UnitManager.CanStartOperation( pSelectedUnit, UnitOperationTypes.REBASE, nil, tParameters)) then
+		--
+		-- with `tParameters[PARAM_X]`/`[PARAM_Y]` = `plot:GetX()`/`GetY()`.
+		-- `canOperate` is that four-argument `CanStartOperation(unit, hash,
+		-- nil, params)`, asked with the SAME table the request then carries; a
+		-- host that declines (out of range, no base slot there, no target,
+		-- attack spent) is the NAMED refusal `cannot_<verb>`, never a silent
+		-- no-op. `AIR_ATTACK` is a strike: `refuseWarStarter` holds it back
+		-- when the engine would answer with an undeclared war (the shipped
+		-- `WorldInput.lua:2067` asks `IsAttackChangeWarState` before the same
+		-- request), and `CivvisLedger.strike` records it so the preview and
+		-- the combat frame count follow, as they do for RANGE_ATTACK.
+		-- `REBASE` and `PATROL` move an aircraft between friendly plots and
+		-- start no war. Never reach-capped: an air operation is one hop.
+		if verb == "AIR_ATTACK" or verb == "REBASE" or verb == "PATROL" then
+			if x == nil or y == nil then return false, "no_dest"; end
+			local opName = "UNITOPERATION_AIR_ATTACK";
+			if verb == "REBASE" then opName = "UNITOPERATION_REBASE"; end
+			if verb == "PATROL" then opName = "UNITOPERATION_DEPLOY"; end
+			local hash = OP[opName];
+			if hash == nil then return false, "unknown_op_" .. verb; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			if verb == "AIR_ATTACK" then
+				local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, verb, x, y, turn);
+				if warRefusal ~= nil then return false, warRefusal; end
+			end
+			if not canOperate(unit, hash, params) then
+				if verb == "AIR_ATTACK" then
+					-- The same event RANGE_ATTACK files, so the decider's
+					-- `blocked_strikes` keeps the refused pair off the next frame.
+					emit("range_attack_refused", {
+						turn = turn, unit = subject, unit_kind = unitTypeName(unit),
+						verb = verb,
+						unit_x = try(function() return unit:GetX(); end, -1),
+						unit_y = try(function() return unit:GetY(); end, -1),
+						x = x, y = y,
+						moves = try(function() return unit:GetMovesRemaining(); end, -1),
+						attacks = try(function() return unit:GetAttacksRemaining(); end, -1),
+						why = refusalReason(unit, hash, params),
+					});
+				end
+				return false, "cannot_" .. string.lower(verb);
+			end
+			if verb == "AIR_ATTACK" then
+				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+			end
+			return operate(unit, hash, params), verb;
+		end
 		-- ★★★★★ IMPROVE — the order whose absence made CIVVIS build builders forever.
 		--
 		-- CIVVIS tells a builder to improve the tile it stands on; that order was not
@@ -14553,8 +14706,9 @@ CivvisQueue.expectFor = function(row)
 	local verb = tostring(row.verb or "");
 	local x, y = tonumber(row.x), tonumber(row.y);
 	-- A SWAP lands the unit on the partner's plot, the same expectation a
-	-- MOVE_TO carries for its destination.
-	if (verb == "MOVE_TO" or verb == "SWAP") and x ~= nil and y ~= nil then
+	-- MOVE_TO carries for its destination; a REBASE lands the aircraft on
+	-- its new base plot.
+	if (verb == "MOVE_TO" or verb == "SWAP" or verb == "REBASE") and x ~= nil and y ~= nil then
 		return { x = x, y = y };
 	end
 	return nil;
@@ -14562,7 +14716,7 @@ end;
 
 CivvisQueue.isStrike = function(row)
 	local verb = tostring(row.verb or "");
-	return verb == "ATTACK" or verb == "RANGE_ATTACK";
+	return verb == "ATTACK" or verb == "RANGE_ATTACK" or verb == "AIR_ATTACK";
 end;
 
 CivvisQueue.push = function(subject, row, expect)
@@ -14709,6 +14863,7 @@ CivvisQueue.drain = function(player, pid, turn)
 						local row = entry.rows[entry.next];
 						local verb = tostring(row.verb or "");
 						if spent and (verb == "MOVE_TO" or verb == "CAPTURE" or verb == "SWAP"
+								or verb == "REBASE" or verb == "PATROL"
 								or CivvisQueue.isStrike(row)) then
 							-- Nothing that needs movement can run; say why, don't ask.
 							CivvisQueue.refuseRest(subject, entry, "queue_no_moves");

@@ -494,6 +494,15 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// smallest force that can occupy most of a city ring while preserving a
 /// healthy melee finisher for the capture.
 const TIMED_WAR_BODIES: usize = 4;
+/// `modernize-before-spending`: a successor at least this much stronger is a
+/// breakthrough worth spending on at peace (Warrior 20 -> Swordsman 35).
+pub(crate) const MODERNIZATION_GAP: f64 = 10.0;
+/// `modernize-before-spending`: the treasury kept while a war, a threatened
+/// city or a barbarian gap makes every upgrade urgent — `BasicAi::upgrade_units`'s
+/// own wartime floor.
+pub(crate) const WARTIME_UPGRADE_FLOOR: f64 = 30.0;
+/// `modernize-before-spending`: extra upgrade value per promotion carried.
+pub(crate) const VETERAN_UPGRADE_WEIGHT: f64 = 0.25;
 const SELECTIVE_TIMED_WAR_PREBUILT_BODIES: usize = 3;
 const SELECTIVE_TIMED_WAR_STRENGTH_FLOOR: f64 = 1.25;
 const RAPID_TIMED_WAR_LAUNCH_WINDOW: u32 = 30;
@@ -5450,6 +5459,27 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// `modernize-before-spending` (default on): upgrade the standing army
+    /// BEFORE the discretionary purchase pass, at the moments that matter.
+    ///
+    /// The generic pass (`BasicAi::upgrade_units`) runs LAST in the turn,
+    /// after `advanced_gold_spending` has bought down to its reserve, so
+    /// only the cheapest upgrades ever clear its floor: about three
+    /// `UPGRADE` orders per live game, and the commonest unit at t150 was
+    /// the ancient-era Heavy Chariot (see `upgrade_the_garrison`). An
+    /// upgrade costs `10 + 2 x` the production difference against four
+    /// times the production for a fresh purchase, so Gold spent here buys
+    /// several times the strength — and it buys it onto the promoted units
+    /// already standing, which keep their promotions.
+    ///
+    /// A strategic moment is any of: a war with a major, a threatened city
+    /// or a barbarian quality gap (floor `WARTIME_UPGRADE_FLOOR`), or a
+    /// breakthrough — some unit is offered a successor at least
+    /// `MODERNIZATION_GAP` strength stronger, roughly one era — where the
+    /// pass keeps `100 + 25 x cities` Gold for the purchase pass. Veterans
+    /// go first (`VETERAN_UPGRADE_WEIGHT` per promotion). An appointed war
+    /// package runs its own exact pass and this stands down for it.
+    modernize_before_spending: bool,
     /// The host refuses ~14% of MOVE_TO orders as `did_not_move`, the refusal
     /// event carries no destination, and the verdicts are ledger-only — so
     /// the same refused move was re-issued for up to eleven straight turns
@@ -6873,6 +6903,11 @@ impl AdvancedAi {
         // different piece of work.
         // Recorded in docs/eval/2026-08-18-the-wonders-the-chosen-victory-actually-needs.md.
         ai.enable_strategic_wonders();
+        // The army modernizes before the treasury is spent, and promoted
+        // units keep hit points in hand. Default-on genes
+        // `modernize-before-spending` and `veterans-withdraw-early`.
+        ai.enable_modernize_before_spending();
+        ai.enable_veteran_retreat_margin();
         // The reconnaissance quartet the live bridge has carried since its
         // repair era: rebuild a lost scout (`recon_is_the_missing_arm` was
         // dead code natively without `recon_replacement`), slip a threatened
@@ -7447,6 +7482,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            modernize_before_spending: false,
             live_move_refusal_break: false,
             live_barbarian_scouts_capture: false,
             live_settler_capture_lessons: false,
@@ -8976,6 +9012,63 @@ impl AdvancedAi {
             .as_ref()
             .map(|plan| ordinary + self.war_upgrade_bill(g, pid, plan))
             .unwrap_or(0.0)
+    }
+
+    /// `modernize-before-spending`: see the field. Returns the upgrades taken.
+    pub(crate) fn modernize_before_the_purchase_pass(&mut self, g: &mut Game, pid: usize) -> usize {
+        if !self.modernize_before_spending || self.war_plan.is_some() || g.players[pid].is_barbarian
+        {
+            return 0;
+        }
+        let at_major_war = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        });
+        let threatened = at_major_war
+            || self.threatened_city(g, pid).is_some()
+            || BasicAi::barbarian_military_gap(g, pid);
+        let gap = Self::modernization_gap(g, pid);
+        if !threatened && gap < MODERNIZATION_GAP {
+            return 0;
+        }
+        let floor = if threatened {
+            WARTIME_UPGRADE_FLOOR
+        } else {
+            100.0 + 25.0 * g.player_city_ids(pid).len() as f64
+        };
+        let taken = BasicAi::modernize_army(g, pid, floor, VETERAN_UPGRADE_WEIGHT);
+        if taken > 0 {
+            think!(self.journal(), Military, Decision,
+                   "Modernizing the army before the treasury is spent";
+                   "{taken} upgrade(s) taken {}; the best offer gained {gap:.0} strength",
+                   if threatened { "under threat" } else { "on a breakthrough" });
+        }
+        taken
+    }
+
+    /// The largest combat-strength step any standing military unit is
+    /// offered right now (0 when nothing can upgrade). Successors are read
+    /// through the same offer the pass takes, so territory, material and
+    /// the host's own verdict are already honoured.
+    fn modernization_gap(g: &Game, pid: usize) -> f64 {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let (target, _, _) = g.unit_gold_upgrade_offer(pid, uid)?;
+                let from = &g.rules.units[g.units[&uid].kind];
+                if from.class != "military" {
+                    return None;
+                }
+                let to = &g.rules.units[target];
+                Some(
+                    to.strength.max(to.ranged_attack_strength())
+                        - from.strength.max(from.ranged_attack_strength()),
+                )
+            })
+            .fold(0.0, f64::max)
     }
 
     /// Execute the package modernization before any discretionary spending or
@@ -38376,6 +38469,12 @@ impl AdvancedAi {
         // purchase pass; otherwise the adaptive agents are limited to the
         // baseline building/unit buyer and can carry thousands of Gold past
         // an immediately affordable plan-critical district.
+        // `modernize-before-spending`: the standing army is upgraded before
+        // the purchase pass can spend the treasury on the queue. A
+        // city-saving or surprise-defense purchase already owns the turn.
+        if !emergency_city_defense && !surprise_defense_purchase {
+            self.modernize_before_the_purchase_pass(g, pid);
+        }
         if self.victory_planning && !emergency_city_defense && !surprise_defense_purchase {
             self.advanced_gold_spending(g, pid, &plan);
         }
