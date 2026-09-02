@@ -175,41 +175,36 @@ def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
               f"always play Rome / Trajan ({ROMAN_LEADER})", flush=True)
     return ROMAN_LEADER
 
-# ★★★ THE VERIFICATION SCORE CALL. The operator's current standing rule is
-# deliberately simple and applies to every live lane: after turn 50, retire a
-# game when its readable score is strictly below half of the best met rival's
-# score. "After turn 50" starts on turn 51; exactly half is not more than 50 %
-# behind and remains in play. Science is intentionally not exempt: this is an
-# operator loss certificate for verification capacity, not a prediction of the
-# eventual victory type.
+# ★★★ FULL-GAME VERIFICATION POLICY. A score gap is evidence to preserve, not
+# a loss certificate. Every verification game is played through its in-game
+# outcome so late recoveries, rival victory paths, and the causes of losses
+# remain available to the next iteration of the agent.
 #
-# This is a harness default rather than a launcher-only setting so direct
-# civ6_play invocations and supervisor-driven games use the same rule. A caller
-# can still deliberately pass 0 to disable the configurable score rule, but
-# production verification games forward the 0.50 default.
+# `below_leader_score_reading` remains below as a precise, retrospective
+# predicate for auditing older runs and asking what the former score rule would
+# have discarded. It must never end a live game. The legacy command-line flag
+# is still accepted so stale launchers keep working, but
+# `leader_score_stop_allowed` is the live policy boundary and deliberately
+# refuses it in every lane.
 #
 # "The leader" is the best-scoring rival the seat has met — `rival_best` in
 # the mod's turn record (`rivalBest` in CivvisControlAgent.lua walks the alive
 # majors the seat's diplomacy has met). A rival still unmet at turn 51 is
-# invisible to the rule, which errs toward playing on.
-#
-# A missing standing is not evidence either way, so it does not end a game.
-# An abandoned game is filed as its own ending (`reason: "abandoned"` with the
-# verdict), never as a stall, a wedge or a defeat.
+# invisible to the retrospective reading, which errs toward playing on.
 LEADER_SCORE_MIN_TURN = 51
-DEFAULT_LEADER_SCORE_RATIO = 0.50
+DEFAULT_LEADER_SCORE_RATIO = 0.0
 
 
 def leader_score_stop_allowed(*, civvis_decides: bool,
                               victory_target: str | None) -> bool:
-    """Whether the standing operator score call may end this live run.
+    """Automatic score retirement is disabled for every live verification run.
 
-    The answer is deliberately independent of the decision-worker mode and
-    victory target.  Keeping this small policy boundary lets the live loop and
-    recorded-run census prove they apply the same no-exceptions rule.
+    Keep this narrow policy seam, rather than relying only on a zero default:
+    old hosts can still forward a former positive ratio, and that must not cut
+    a game short.  An operator's explicit native ``retire`` remains separate.
     """
     del civvis_decides, victory_target
-    return True
+    return False
 
 
 def _nonnegative_metric(value: object) -> float | int | None:
@@ -271,13 +266,12 @@ def partial_summary(tag: str, config: dict, state: dict) -> dict:
 def below_leader_score_reading(
     _state: dict, event: dict, score_ratio_ceiling: float
 ) -> dict | None:
-    """Return the immediate post-turn-50 under-the-leader termination verdict.
+    """Return a retrospective post-turn-50 under-the-leader reading.
 
-    `score_ratio_ceiling` outside (0, 1] — 0 from the command line — disables
-    the rule, and every game is played to its end. Only an agent `turn` event
-    at or after LEADER_SCORE_MIN_TURN with a readable score and rival score is
-    a reading.  A reading strictly below the line terminates immediately;
-    equality remains in the game.
+    This function powers historical/counterfactual analysis only.  The live
+    harness gates it through :func:`leader_score_stop_allowed`, which is false
+    for every verification lane.  A positive ceiling can therefore identify
+    where the former rule *would* have fired without changing a live game.
     """
     if (not isinstance(score_ratio_ceiling, (int, float))
             or isinstance(score_ratio_ceiling, bool)
@@ -3012,6 +3006,11 @@ def apply_verification_options() -> dict[str, dict[str, tuple]]:
 
 
 def play(args: argparse.Namespace) -> int:
+    legacy_score_ratio = getattr(args, "restart_below_leader_ratio", 0.0)
+    if legacy_score_ratio not in (0, 0.0):
+        print("[policy] ignoring --restart-below-leader-ratio="
+              f"{legacy_score_ratio}: verification games always play to an "
+              "in-game outcome", flush=True)
     # One run at a time against this installation. Two harnesses share one mod
     # directory, one log and one process; the second one's install lands in the
     # middle of the first one's game and neither notices.
@@ -3542,10 +3541,10 @@ def _play(args: argparse.Namespace) -> int:
             # This is the exact control-mod acknowledgement for the durable
             # host request, not an inferred game exit or a generic stop.
             return True
-        # And OUR decision that the game is lost — the operator's one rule:
-        # under the configured share of the leader's score on a readable turn
-        # after turn 50. Every victory lane, including Science, uses it; see
-        # `leader_score_stop_allowed`.
+        # Score gaps are retained in the turn record for post-game learning,
+        # but never end a live verification game.  The guarded legacy branch
+        # remains so the exact former predicate can be audited against old
+        # runs; `leader_score_stop_allowed` is false for every live lane.
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         ) if leader_score_stop_allowed(
@@ -3851,19 +3850,14 @@ def _play(args: argparse.Namespace) -> int:
         # run with the wrong modes is: it never played the game being measured.
         # An UNREADABLE ruleset is neither -- see `summary_reason`.
         "reason": summary_reason(state, reason),
-        # The verdict that ended an abandoned run: the turn, the standing, the
-        # estimate and the floor it fell under. None for every other ending.
+        # Historical rows can carry a former score-cutoff verdict. New
+        # verification runs never set this: a score gap is telemetry, not an
+        # automatic retirement reason.
         "abandoned": state.get("abandoned"),
-        # Whether the abandon actually asked Civilization VI to Retire, so a
-        # game filed as a loss can be told from one that merely stopped. The
-        # request is best effort — an unwritable channel does not keep a game
-        # the rule has already called — and the run record should say which
-        # happened rather than leave it to be inferred.
+        # Preserve these historical diagnostics for old rows. New automatic
+        # score retirements are disabled; operator-requested native retirement
+        # is recorded separately as `operator_retire` below.
         "retire_requested": state.get("retire_requested"),
-        # And whether the mod actually issued it. These differ: the abandon
-        # tears the game down right after asking, so the watcher is gone before
-        # the answer could reach `events.jsonl` — a working retire looked
-        # broken for four abandons until the raw log was read instead.
         "retire_confirmed": state.get("retire_confirmed"),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
@@ -4150,12 +4144,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--restart-below-leader-ratio", type=float,
                     default=DEFAULT_LEADER_SCORE_RATIO,
-                    help="immediately abandon on a readable turn at or after "
-                        "LEADER_SCORE_MIN_TURN (turn 51) when our score is under this "
-                        "share of the leader's (best met rival); 0 plays every "
-                        "game out. Current operator policy: after turn 50, "
-                        "0.50 (strictly below half of the leader's score), "
-                        "with no victory-lane exemption")
+                    help="deprecated compatibility option; automatic score-based "
+                        "retirement is disabled and every verification game plays "
+                        "to an in-game outcome (the supplied value is ignored)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="accepted for compatibility; live games always select "

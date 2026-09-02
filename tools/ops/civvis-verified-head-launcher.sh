@@ -41,9 +41,12 @@
 #                                     (operator, 2026-08-21: "use the latest
 #                                     version of github civvis code for each
 #                                     game"). 3 pins one revision per batch.
-#   CIVVIS_RESTART_BELOW_LEADER_RATIO the turn-150 abandon line. Absent: the
-#                                     harness's own default (0.60 — operator,
-#                                     2026-08-27). 0 plays every game out.
+#   CIVVIS_RESTART_BELOW_LEADER_RATIO legacy compatibility key. It is accepted
+#                                     so existing host policy files keep
+#                                     launching, but the supervisor ignores it:
+#                                     verification games always play to their
+#                                     in-game outcome and retain score gaps as
+#                                     post-game evidence.
 #   CIVVIS_PLAY_TIMEOUT               seconds per game. Default 10800: a
 #                                     250-turn game needs the room (a Warlord
 #                                     win reached t247 and hit the old 8100 s).

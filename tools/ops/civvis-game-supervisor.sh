@@ -221,14 +221,13 @@ VICTORY=${CIVVIS_VICTORY:-}
 # at 17:00Z, and four starts in a row played nothing. So the flag and its
 # value are two expansions, `${VAR:+--flag} ${VAR:+"$VAR"}`, each one word or
 # none; `tools/test_ops_ladder_objective.py` runs these lines under zsh.
-# The one early stop the ladder keeps: after turn 50, a readable score strictly
-# below half of the best met rival's immediately retires the game.  Exactly
-# half stays in play.  The production default mirrors civ6_play.py so a GUI
-# host that does not inherit a login-shell environment runs the same policy; a
-# named environment value is reserved for a deliberately configured batch (0
-# plays every game out).  The opening restarts and the measured win-rate floor
-# that used to sit beside this knob are gone (#2505, #2319, #2174).
-RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.50}
+# ★★★ Score is telemetry, not an automatic loss call.  This supervisor pins
+# the legacy argument to zero even if an old host policy still exports a former
+# threshold.  `civ6_play.py` independently enforces the same rule, so a direct
+# or stale launcher cannot cut a verification game off early either.  Native
+# operator `retire` remains the way to deliberately end a game.
+REQUESTED_LEGACY_SCORE_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}
+RESTART_BELOW_LEADER_RATIO=0
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host
 # whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was
@@ -248,6 +247,10 @@ MIRROR_PORT=${CIVVIS_MIRROR_PORT:-8610}
 FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
+
+if [[ -n "$REQUESTED_LEGACY_SCORE_RATIO" && "$REQUESTED_LEGACY_SCORE_RATIO" != 0 ]]; then
+  say "ignoring legacy CIVVIS_RESTART_BELOW_LEADER_RATIO=$REQUESTED_LEGACY_SCORE_RATIO; verification games play to their in-game outcome"
+fi
 
 verification_intent_running() {
   [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]

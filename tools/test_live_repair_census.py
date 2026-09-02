@@ -130,11 +130,10 @@ class TheTradeLedgerSeparatesOneRefusalFromTwo(unittest.TestCase):
         self.assertEqual(reading["final_traders_alive"], 2)
 
 
-class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
-    """⚠ Not a transcription. `below_leader_score_reading` — the one remaining
-    early stop — is imported from `tools/civ6_play.py` and fed the
-    recorded stream in file order, which is what `_play`'s `finished()` does
-    with the live one."""
+class TheRestartSectionAuditsTheFormerScoreCutoff(unittest.TestCase):
+    """⚠ Not a live policy. `below_leader_score_reading` is imported from
+    `tools/civ6_play.py` and fed the recorded stream in file order to show
+    what the former score cutoff would have hidden."""
 
     def _behind(self, turn: int) -> list[dict]:
         return [
@@ -144,10 +143,12 @@ class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
              "score": 100, "rival_best": 1000},
         ]
 
-    def test_it_fires_on_the_first_qualifying_reading(self):
+    def test_it_marks_the_first_qualifying_historical_reading(self):
         floor = census.civ6_play.LEADER_SCORE_MIN_TURN
         self.assertEqual(census.RESTART_RATIO,
-                         census.civ6_play.DEFAULT_LEADER_SCORE_RATIO)
+                         census.HISTORICAL_SCORE_GAP_RATIO)
+        self.assertNotEqual(census.RESTART_RATIO,
+                            census.civ6_play.DEFAULT_LEADER_SCORE_RATIO)
         self.assertFalse(census.restart_reading(
             self._behind(floor - 1), census.RESTART_RATIO, {})["fired"])
         verdict = census.restart_reading(self._behind(floor),
@@ -159,13 +160,13 @@ class TheRestartSectionRunsTheHarnessOwnFunction(unittest.TestCase):
         records = [r for t in range(100, 130) for r in self._behind(t)]
         self.assertFalse(census.restart_reading(records, 0.0, {})["fired"])
 
-    def test_an_explicit_science_summary_is_stopped_for_a_score_gap(self):
+    def test_an_explicit_science_summary_is_a_counterfactual_not_a_live_stop(self):
         floor = census.civ6_play.LEADER_SCORE_MIN_TURN
         reading = census.restart_reading(
             self._behind(floor), census.RESTART_RATIO,
             {"victory_target": "science"},
         )
-        self.assertTrue(reading["score_stop_allowed"])
+        self.assertFalse(reading["score_stop_allowed"])
         self.assertTrue(reading["fired"])
 
     def test_the_outcome_comes_from_the_summary_not_the_stream(self):
