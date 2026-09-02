@@ -928,6 +928,12 @@ struct HostMoveRefusals {
     /// pending or cooling down across same-turn frames. An identical
     /// `sell`/`buy` in a later frame therefore cannot be a new deal request.
     same_turn_deal_orders: std::collections::BTreeSet<HostDealOrderKey>,
+    /// The first city production request emitted during the current turn,
+    /// keyed by Civilization VI city id. Production is a replacement operation:
+    /// a later same-turn request competes with the queue already sent to the
+    /// host, even when it asks for a different item. Keep the first request and
+    /// drop the rest until the next authoritative turn.
+    same_turn_production_orders: std::collections::BTreeMap<i64, String>,
     same_turn: Option<u32>,
 }
 
@@ -950,8 +956,7 @@ struct HostFrontierProbe {
 }
 
 impl HostMoveRefusals {
-    /// Drop exact, non-tactical unit and deal replays from later frames of one
-    /// turn.
+    /// Drop stale unit, deal, and city-production replays from one turn.
     ///
     /// The host may apply a queued move before the next exported frame catches
     /// up. CIVVIS then plans from the old tile and emits the same `MOVE_TO`
@@ -961,21 +966,57 @@ impl HostMoveRefusals {
     /// the same stale-state failure mode (a swap re-derived from the old frame
     /// is aimed at the tile the unit has already taken). The diplomacy arm has the same shape:
     /// its pending/cooldown guards mean a repeated deal order can only be
-    /// refused again. Attack orders are deliberately excluded: a fresh combat
-    /// frame may legitimately finish the same target.
+    /// refused again. City production is also a single host queue: once the
+    /// first `produce` request has left, a later same-turn request can only
+    /// replace or be refused against that queue. Attack orders are deliberately
+    /// excluded: a fresh combat frame may legitimately finish the same target.
+    ///
+    /// `ours` is repaired when a later production choice is dropped. The map is
+    /// consulted before the next frame's speculative board is built; leaving the
+    /// discarded choice there would make the host's still-running queue look
+    /// foreign and cause another unnecessary replan.
     fn suppress_same_turn_replays(
         &mut self,
         orders: &mut Vec<Order>,
         state: &civvis::mirror::StateSnapshot,
+        ours: &mut std::collections::BTreeMap<i64, String>,
     ) -> usize {
         if self.same_turn != Some(state.turn) {
             self.same_turn = Some(state.turn);
             self.same_turn_orders.clear();
             self.same_turn_deal_orders.clear();
+            self.same_turn_production_orders.clear();
         }
         let frame = state.frame;
         let mut dropped = 0;
         orders.retain(|order| {
+            if order.kind == "produce" {
+                if let (Some(city), Some(verb)) = (order.subject, order.verb.as_deref()) {
+                    let first = match self.same_turn_production_orders.entry(city) {
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            let selected = verb.to_string();
+                            entry.insert(selected.clone());
+                            // Keep the helper self-contained as well as safe
+                            // for the normal translation path, which records
+                            // this before reaching the filter.
+                            ours.insert(city, selected);
+                            None
+                        }
+                        std::collections::btree_map::Entry::Occupied(entry) => {
+                            Some(entry.get().clone())
+                        }
+                    };
+                    if let Some(first) = first {
+                        // A production order replaces the city's queue. The
+                        // first request remains authoritative for this host
+                        // turn, including when the replan is still frame 0.
+                        ours.insert(city, first);
+                        dropped += 1;
+                        return false;
+                    }
+                }
+            }
+
             let Some(unit) = order.subject else {
                 return true;
             };
@@ -4186,9 +4227,10 @@ fn decide(
 
     // A same-turn replan can still be based on the previous frame's unit tile.
     // Do this after frontier capping so a newly requested exact probe remains a
-    // real change, while an identical stale MOVE_TO/CAPTURE/FORTIFY is not sent
-    // twice to the host. Strike retries stay enabled; see the method comment.
-    let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state);
+    // real change, while stale unit/deal replays and conflicting city production
+    // requests are not sent twice to the host. Strike retries stay enabled; see
+    // the method comment.
+    let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state, ours);
     if same_turn_replays > 0 {
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));
     }
@@ -9998,13 +10040,14 @@ mod tests {
         state.turn = 42;
         state.frame = 0;
         let mut refusals = HostMoveRefusals::default();
+        let mut ours = std::collections::BTreeMap::new();
         let mut first = vec![
             unit_order(7, "MOVE_TO", Some((3, 3))),
             unit_order(7, "FORTIFY", None),
             unit_order(8, "CAPTURE", Some((4, 4))),
         ];
         assert_eq!(
-            refusals.suppress_same_turn_replays(&mut first, &state),
+            refusals.suppress_same_turn_replays(&mut first, &state, &mut ours),
             0,
             "the first frame is allowed to issue its complete plan"
         );
@@ -10022,7 +10065,7 @@ mod tests {
             unit_order(7, "MOVE_TO", Some((3, 4))),
         ];
         assert_eq!(
-            refusals.suppress_same_turn_replays(&mut replan, &state),
+            refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
             3,
             "only exact stale MOVE_TO/CAPTURE/FORTIFY replays are removed"
         );
@@ -10044,10 +10087,60 @@ mod tests {
         state.frame = 0;
         let mut next_turn = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
         assert_eq!(
-            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            refusals.suppress_same_turn_replays(&mut next_turn, &state, &mut ours),
             0
         );
         assert_eq!(next_turn.len(), 1);
+    }
+
+    #[test]
+    fn a_same_turn_replan_keeps_the_first_city_queue_and_ownership() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 43;
+        state.frame = 0;
+        let mut refusals = HostMoveRefusals::default();
+        let mut ours = std::collections::BTreeMap::new();
+        let mut first = vec![
+            production_order(7, "UNIT_SETTLER"),
+            production_order(8, "UNIT_BUILDER"),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut first, &state, &mut ours),
+            0,
+            "the first frame may choose production for every city"
+        );
+        assert_eq!(first.len(), 2);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_SETTLER"));
+        assert_eq!(ours.get(&8).map(String::as_str), Some("UNIT_BUILDER"));
+
+        state.frame = 1;
+        let mut replan = vec![
+            production_order(7, "UNIT_WARRIOR"),
+            // Even an identical request is stale once the first queue was sent.
+            production_order(8, "UNIT_BUILDER"),
+            production_order(8, "UNIT_WARRIOR"),
+            production_order(9, "UNIT_ARCHER"),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
+            3,
+            "later frames cannot replace a city queue already sent this turn"
+        );
+        assert_eq!(replan.len(), 1);
+        assert_eq!(replan[0].subject, Some(9));
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_SETTLER"));
+        assert_eq!(ours.get(&8).map(String::as_str), Some("UNIT_BUILDER"));
+
+        // The next authoritative turn is a new production decision.
+        state.turn = 44;
+        state.frame = 0;
+        let mut next_turn = vec![production_order(7, "UNIT_WARRIOR")];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut next_turn, &state, &mut ours),
+            0
+        );
+        assert_eq!(next_turn.len(), 1);
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_WARRIOR"));
     }
 
     #[test]
@@ -10056,6 +10149,7 @@ mod tests {
         state.turn = 44;
         state.frame = 0;
         let mut refusals = HostMoveRefusals::default();
+        let mut ours = std::collections::BTreeMap::new();
         let mut first = vec![
             Order {
                 kind: "sell",
@@ -10071,7 +10165,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            refusals.suppress_same_turn_replays(&mut first, &state),
+            refusals.suppress_same_turn_replays(&mut first, &state, &mut ours),
             0,
             "the first frame is allowed to issue its complete deal plan"
         );
@@ -10105,7 +10199,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            refusals.suppress_same_turn_replays(&mut replan, &state),
+            refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
             2,
             "only exact sell/buy replays are removed"
         );
@@ -10126,7 +10220,7 @@ mod tests {
             pos: Some((200, 0)),
         }];
         assert_eq!(
-            refusals.suppress_same_turn_replays(&mut next_turn, &state),
+            refusals.suppress_same_turn_replays(&mut next_turn, &state, &mut ours),
             0,
             "a fresh turn may retry the old offer after the host's cooldown"
         );
@@ -12596,6 +12690,15 @@ mod tests {
             subject: Some(subject),
             verb: Some(verb.to_string()),
             pos,
+        }
+    }
+
+    fn production_order(subject: i64, verb: &str) -> Order {
+        Order {
+            kind: "produce",
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: None,
         }
     }
 
