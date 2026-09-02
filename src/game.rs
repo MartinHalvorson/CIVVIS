@@ -3023,6 +3023,12 @@ pub struct HostUnitUpgrade {
 /// and every reader falls back to the board's own rule when its key is absent.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug, Default)]
 pub struct HostUnitFacts {
+    /// Stable Civilization VI unit id, when these facts came from the live
+    /// mirror. The board id is reassigned when the live bridge rebuilds its
+    /// planning board, so bounded host observations must key themselves by
+    /// this identity instead of by the transient CIVVIS id.
+    #[serde(default)]
+    pub civ6_id: Option<i64>,
     #[serde(default)]
     pub upgrade: Option<HostUnitUpgrade>,
     /// `UnitManager.GetUnitMaintenance` (or the Corps/Army accessor) for the
