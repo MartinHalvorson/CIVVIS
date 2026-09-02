@@ -29759,8 +29759,16 @@ impl AdvancedAi {
             }
         }
         // On water, a naval military unit occupies a second legal stack with
-        // the embarked land guard and Settler. The sea guard is best effort:
-        // a shortage must not make the expedition stop before it can found.
+        // the embarked land guard and Settler. The live water floor below
+        // refuses an unguarded water leg, so search the whole routeable sea
+        // rather than only the local eight-tile escort radius. A hull can be
+        // several turns away after the army has built it for another job;
+        // binding it now lets `stacked_guard_step` bring it over instead of
+        // leaving the Settler in a permanent hold. Disconnected lakes and
+        // trapped coastal hulls are excluded by the same long-range router
+        // the guard will use. The sea guard is still best effort: if no hull
+        // can reach this water body, the safety floor keeps the expedition
+        // stopped rather than exposing it.
         if afloat && !self.settler_sea_guards.contains_key(&uid) {
             let taken = self.all_bound_settler_guards();
             let sea_guard = g
@@ -29770,7 +29778,6 @@ impl AdvancedAi {
                     let unit = &g.units[candidate];
                     unit.linked_to.is_none()
                         && !taken.contains(candidate)
-                        && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
                         && Self::guard_matches_escort_layer(g, unit, true)
                         && (!self.settler_guard_holds_on()
                             || (unit.hp >= STACKED_GUARD_MIN_HP
@@ -29782,21 +29789,27 @@ impl AdvancedAi {
                                     visible.as_ref().expect("computed under the flag"),
                                 )))
                 })
-                .min_by_key(|candidate| {
+                .filter_map(|candidate| {
+                    let route_distance = g.route_distance(candidate, current, 0)?;
+                    Some((candidate, route_distance))
+                })
+                .min_by_key(|(candidate, route_distance)| {
                     let unit = &g.units[candidate];
                     let spec = &g.rules.units[unit.kind];
                     (
-                        g.wdist(unit.pos, current),
+                        *route_distance,
                         spec.has_ranged_attack(),
                         std::cmp::Reverse(g.unit_strength(unit, true) as i64),
                         *candidate,
                     )
-                });
+                })
+                .map(|(candidate, _)| candidate);
             if let Some(guard) = sea_guard {
                 self.bind_settler_guard(g, uid, guard);
                 think!(self.journal(), Expansion, Detail, "A naval guard joins the settler";
                        "the sea layer shares the water leg while the land guard remains \
-                        responsible for the landing");
+                        responsible for the landing; the hull can route to the embarked \
+                        Settler and will close the gap on its military turn");
             }
         }
         if !self.settler_guards.contains_key(&uid) {
