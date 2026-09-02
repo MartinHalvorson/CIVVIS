@@ -107,7 +107,7 @@ const UNIT_RETREAT_TURNS: u32 = 2;
 /// this controller prices with, so the average is not the number a survival
 /// question wants: a unit that lives through the mean still dies on the good
 /// rolls. `one_shot_recovery` reads the top of the roll instead.
-const COMBAT_ROLL_MAX: f64 = 1.2;
+pub(crate) const COMBAT_ROLL_MAX: f64 = 1.2;
 
 /// The engine's own ceiling on one blow (`game::damage` clamps to it), so a
 /// roll scaled to its top cannot claim more damage than the game can deal.
@@ -533,6 +533,18 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 /// this condition is tested again. A score-disabled world is recorded as a
 /// draw when the bounded loop reaches its cap, matching the server stepper.
 pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
+    run_game_observed(g, ais, |_| {});
+}
+
+/// [`run_game`] with an observer called once at the start of every turn the
+/// loop plays, before any seat acts on it — the whole world, read-only.
+///
+/// The gene screen prices science genes by research pace and needs one
+/// mid-game read (techs known at the Standard-turn-150 mark) that a finished
+/// world no longer holds; rather than teach every caller a second loop, the
+/// loop takes a visitor. `run_game` is this with a visitor that does nothing,
+/// so headless play is byte for byte what it was.
+pub fn run_game_observed<A: Ai>(g: &mut Game, ais: &mut [A], mut observe: impl FnMut(&Game)) {
     // A headless rollout never serializes a player observation between
     // actions. Explored ground, contacts and Natural-Wonder discovery remain
     // gameplay state and are still maintained; only the large last-seen tile
@@ -545,7 +557,12 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
     // Declarations, peaces, and turn boundaries still sync it, so the ledger
     // in reports and saved games is unchanged.
     g.set_war_ledger(false);
+    let mut observed_turn = None;
     while g.winner.is_none() && g.turn <= g.max_turns {
+        if observed_turn != Some(g.turn) {
+            observed_turn = Some(g.turn);
+            observe(g);
+        }
         let pid = g.current;
         ais[pid].take_turn(g, pid);
         if g.winner.is_none() && g.current == pid {
@@ -1883,11 +1900,11 @@ pub struct UnitDangerMemory {
 /// same as three Archers that between them merely wound. Route safety wants
 /// `total`; whether a unit is one blow from death wants `worst`.
 #[derive(Clone, Copy, Default)]
-struct IncomingDamage {
+pub(crate) struct IncomingDamage {
     /// Every covering source's expected damage, added up.
-    total: f64,
+    pub(crate) total: f64,
     /// The largest single one of them.
-    worst: f64,
+    pub(crate) worst: f64,
 }
 
 impl IncomingDamage {
@@ -2389,6 +2406,11 @@ pub struct BasicAi {
     /// exactly as before. Implies version 1; its enable turns version 1 off.
     /// Opt-in gene `naval-recon-2`.
     pub(crate) naval_recon_2: bool,
+    /// Version 3 of `naval_recon`: retain one peacetime eye, but yield its
+    /// idle production reservation to a simultaneously missing land scout.
+    /// The wartime second-eye exception is unchanged. Opt-in gene
+    /// `naval-recon-3`.
+    pub(crate) naval_recon_3: bool,
     /// When the capital's landmass is nearly full, chart water toward known
     /// foreign landfalls rather than treating every coast as interchangeable.
     /// Opt-in gene `island-exploration`.
@@ -2861,6 +2883,12 @@ pub struct BasicAi {
     /// Entrant `live_without_barbarian_ranged_answer`; treatment
     /// `barbarian-ranged-answer`.
     pub(crate) barbarian_ranged_answer: bool,
+    /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
+    /// with a body before anything else is built, bought when no defender
+    /// exists, and a recon unit is not a defender. Read by
+    /// `barbarian_local_defenders_for_controller` here and by
+    /// `AdvancedAi::siege_preemption_item` (`advanced/siege_response.rs`).
+    pub(crate) siege_preempts_the_queue: bool,
     pub(crate) adjacent_camp_clear: bool,
     /// Leave a barbarian camp standing when it is a neighbour's problem
     /// more than ours: a living major we are not allied with has a city
@@ -3022,6 +3050,13 @@ pub struct BasicAi {
     /// handoff; this flag keeps the governor that actually queues Settlers in
     /// step with it.
     pub(crate) rapid_city_expansion: bool,
+    /// The baseline-governor half of `rapid-city-expansion-2`.
+    ///
+    /// Unlike version one, this never rewrites the opening book, pantheon, or
+    /// site ranking. It reserves the capital's next empty production choice,
+    /// uses the measured opening-band pipeline, and keeps the legal
+    /// population and payback gates in step with the strategic controller.
+    pub(crate) rapid_city_expansion_2: bool,
     /// `capital-settler-after-completion`: once the capital is population two
     /// and has no queued work, start a legal Settler instead of letting the
     /// ordinary force or infrastructure ranking fill that opening. The city
@@ -4054,7 +4089,7 @@ impl BasicAi {
         g.barb_scout_homes.contains_key(&uid)
     }
 
-    fn is_barbarian_raider(g: &Game, unit: &crate::game::Unit) -> bool {
+    pub(crate) fn is_barbarian_raider(g: &Game, unit: &crate::game::Unit) -> bool {
         Some(unit.owner) == g.barb_pid
             && g.rules.units[unit.kind].class == "military"
             && !g.barb_camp_guards.values().any(|guard| *guard == unit.id)
@@ -4747,6 +4782,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            naval_recon_3: false,
             island_exploration: false,
             camp_party: false,
             come_ashore: false,
@@ -4796,6 +4832,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
@@ -4814,6 +4851,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
@@ -4852,12 +4890,24 @@ impl BasicAi {
 
     /// Enable the baseline half of the native rapid-city-expansion gene.
     pub(crate) fn enable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion_2 = false;
         self.rapid_city_expansion = true;
     }
 
     /// Disable the baseline half of the native rapid-city-expansion gene.
     pub(crate) fn disable_rapid_city_expansion(&mut self) {
         self.rapid_city_expansion = false;
+    }
+
+    /// Enable the baseline half of the selective rapid-expansion rewrite.
+    pub(crate) fn enable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion = false;
+        self.rapid_city_expansion_2 = true;
+    }
+
+    /// Disable the baseline half of `rapid-city-expansion-2`.
+    pub(crate) fn disable_rapid_city_expansion_2(&mut self) {
+        self.rapid_city_expansion_2 = false;
     }
 
     /// Enable the baseline half of the capital-settler-after-completion gene.
@@ -4937,6 +4987,17 @@ impl BasicAi {
 
     pub fn disable_barbarian_ranged_answer(&mut self) {
         self.barbarian_ranged_answer = false;
+    }
+
+    /// A raider on the doorstep is answered before anything else is built,
+    /// bought when no defender exists, and a Scout is not a defender. See
+    /// `siege_preempts_the_queue` and `advanced/siege_response.rs`.
+    pub fn enable_siege_preempts_the_queue(&mut self) {
+        self.siege_preempts_the_queue = true;
+    }
+
+    pub fn disable_siege_preempts_the_queue(&mut self) {
+        self.siege_preempts_the_queue = false;
     }
 
     /// Price a raider's life below a major's. See `barbarian_bargain`.
@@ -5182,6 +5243,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             naval_recon_2: false,
+            naval_recon_3: false,
             island_exploration: false,
             camp_party: false,
             come_ashore: false,
@@ -5231,6 +5293,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
@@ -5249,6 +5312,7 @@ impl BasicAi {
             host_settler_pop: false,
             land_grab: false,
             rapid_city_expansion: false,
+            rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
@@ -5993,7 +6057,7 @@ impl BasicAi {
     /// the three source sets [`Self::incoming_damage`] folds over, so "no" is
     /// precisely the case where all three folds are empty and the answer is
     /// `IncomingDamage::default()`.
-    fn anything_can_reach(
+    pub(crate) fn anything_can_reach(
         g: &Game,
         pid: usize,
         position: Pos,
@@ -6026,7 +6090,7 @@ impl BasicAi {
     /// changing an answer: the empty folds this replaces returned exactly
     /// `IncomingDamage::default()`, and `default().merge(default())` is
     /// `default()`.
-    fn incoming_damage(
+    pub(crate) fn incoming_damage(
         g: &Game,
         pid: usize,
         uid: u32,
@@ -6330,7 +6394,13 @@ impl BasicAi {
     /// recovery ground. `Game::reachable` and `Game::path_to` decide the same
     /// movement, so this can take a wounded unit all the way into a nearby
     /// city rather than stopping one tile short for no tactical reason.
-    fn move_to_evacuation_tile(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
+    pub(crate) fn move_to_evacuation_tile(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
         let Some(path) = g.path_to(uid, target) else {
             return false;
         };
@@ -8934,7 +9004,7 @@ impl BasicAi {
             // picker remains the authority on whether a Settler is presently
             // safe and useful, and the untouched book resumes after this
             // one production decision.
-            if self.capital_settler_after_completion
+            if (self.capital_settler_after_completion || self.rapid_city_expansion_2)
                 && !self.minor
                 && !self.barb
                 && g.cities[cid].is_capital
@@ -9714,9 +9784,31 @@ impl BasicAi {
     /// major naval war, retain a second eye so the fighting ship cannot make
     /// the unexplored world disappear from production's priorities.
     /// See `naval_recon`.
-    /// Either version of the naval eye. See `naval_recon_2`.
+    /// Any version of the naval eye. See `naval_recon_2` and `naval_recon_3`.
     pub(crate) fn naval_recon_on(&self) -> bool {
-        self.naval_recon || self.naval_recon_2
+        self.naval_recon || self.naval_recon_2 || self.naval_recon_3
+    }
+
+    /// Whether the sea arm needs its wartime redundancy. Keep this separate
+    /// from the arm count so version 3 can yield an idle peacetime queue to a
+    /// land scout without weakening the existing second-eye exception.
+    fn naval_recon_major_war(&self, g: &Game, pid: usize) -> bool {
+        g.players.iter().any(|enemy| {
+            enemy.id != pid
+                && enemy.alive
+                && !enemy.is_minor
+                && (!enemy.is_barbarian || self.sea_answers)
+                && g.is_at_war(pid, enemy.id)
+                && (g.units.values().any(|unit| {
+                    unit.owner == enemy.id
+                        && g.map
+                            .get(unit.pos)
+                            .is_some_and(|tile| g.rules.is_water(tile))
+                }) || (!enemy.is_barbarian
+                    && g.player_city_ids(enemy.id)
+                        .into_iter()
+                        .any(|cid| Self::city_is_coastal(g, cid))))
+        })
     }
 
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
@@ -9761,22 +9853,7 @@ impl BasicAi {
         // own `naval_war` test has always included barbarians, but this arm
         // excluded them — so the second wartime eye never arrived during
         // exactly the sea raid that sinks a lone explorer. See `sea_answers`.
-        let major_naval_war = g.players.iter().any(|enemy| {
-            enemy.id != pid
-                && enemy.alive
-                && !enemy.is_minor
-                && (!enemy.is_barbarian || self.sea_answers)
-                && g.is_at_war(pid, enemy.id)
-                && (g.units.values().any(|unit| {
-                    unit.owner == enemy.id
-                        && g.map
-                            .get(unit.pos)
-                            .is_some_and(|tile| g.rules.is_water(tile))
-                }) || (!enemy.is_barbarian
-                    && g.player_city_ids(enemy.id)
-                        .into_iter()
-                        .any(|cid| Self::city_is_coastal(g, cid))))
-        });
+        let major_naval_war = self.naval_recon_major_war(g, pid);
         let arm_target = if major_naval_war {
             NAVAL_RECON_WARTIME_ARM_MAX
         } else if self.naval_recon_2 {
@@ -9791,6 +9868,18 @@ impl BasicAi {
         g.player_city_ids(pid)
             .into_iter()
             .any(|cid| Self::city_has_naval_recon_launch(g, pid, cid))
+    }
+
+    /// V3's sea scout is an information complement, not a way to crowd out
+    /// the scout that can reveal the empire's own continent. The basic
+    /// picker already ranks `recon_pick` ahead of `naval_recon_pick`; the
+    /// advanced idle-queue reserver uses this explicit gate to preserve that
+    /// same ordering. A naval war remains a production exception because its
+    /// second eye may be the only hull still free to chart.
+    pub(crate) fn naval_recon_yields_to_land_recon(&self, g: &Game, pid: usize) -> bool {
+        self.naval_recon_3
+            && !self.naval_recon_major_war(g, pid)
+            && self.recon_is_the_missing_arm(g, pid)
     }
 
     /// The cheapest ship this city can lay down. Exploration wants a hull
@@ -10632,7 +10721,41 @@ impl BasicAi {
             .filter(|unit| self.barbarian_raider_counts_as_threat(g, pid, unit))
             .count();
         let wanted: usize = if raiders >= 2 { 2 } else { 1 };
-        wanted.saturating_sub(Self::barbarian_local_defenders(g, pid, city))
+        wanted.saturating_sub(self.barbarian_local_defenders_for_controller(g, pid, cid))
+    }
+
+    /// The local defenders `barbarian_defense_gap` credits. Under
+    /// `siege-preempts-the-queue` a recon unit is not one of them: a Scout
+    /// is class `military` and was counted, so on live run
+    /// civvis-20260901T193130Z t36 a Scout bought two turns earlier made the
+    /// gap read zero with a barbarian Slinger adjacent to the capital, and
+    /// the city started a Government Plaza.
+    pub(crate) fn barbarian_local_defenders_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> usize {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return 0;
+        };
+        let defenders = Self::barbarian_local_defenders(g, pid, city);
+        if !self.siege_preempts_the_queue {
+            return defenders;
+        }
+        let recon = g
+            .units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && spec.promotion_class == "recon"
+                    && matches!(spec.domain.as_deref(), None | Some("land"))
+                    && g.wdist(unit.pos, city.pos) <= BARBARIAN_LOCAL_DEFENDER_RADIUS
+            })
+            .count();
+        defenders.saturating_sub(recon)
     }
 
     /// Production answer for an active barbarian ring. The city first gets a
@@ -11014,7 +11137,7 @@ impl BasicAi {
         // observed to lose to an Archer despite a legal second settlement
         // slot; this gene only changes that queue choice after the previous
         // item has completed.
-        if self.capital_settler_after_completion
+        if (self.capital_settler_after_completion || self.rapid_city_expansion_2)
             && !self.minor
             && !self.barb
             && !at_major_war
@@ -11253,6 +11376,14 @@ impl BasicAi {
             let pipeline = if self.rapid_city_expansion && seats_short > 0 {
                 (RAPID_EXPANSION_PIPELINE_BASE + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
                     .min(seats_short)
+            } else if self.rapid_city_expansion_2 && seats_short > 0 {
+                advanced::rapid_city_expansion::pipeline_width(
+                    g,
+                    n_cities + seats_short,
+                    n_cities,
+                    settlers,
+                )
+                .unwrap_or(1)
             } else if self.land_grab && seats_short > 0 {
                 (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
             } else if self.parallel_settlers
@@ -11275,7 +11406,10 @@ impl BasicAi {
             // Civilization VI starts a Settler at population 2, and the live
             // genome's 2.456 held a food-poor capital at one city for forty
             // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion {
+            let settler_min_pop = if self.host_settler_pop
+                || self.rapid_city_expansion
+                || self.rapid_city_expansion_2
+            {
                 self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
             } else {
                 self.w.settler_min_pop
@@ -11284,7 +11418,7 @@ impl BasicAi {
             // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
             // REPAY, not until the genome's turn. See `land_grab`.
             let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || ((self.land_grab || self.rapid_city_expansion)
+                || ((self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
                     && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
@@ -16064,7 +16198,7 @@ impl BasicAi {
     /// spent one refused order per re-entry, up to eight a turn. Asking the
     /// engine's own predicate first changes no game state: the order it
     /// replaces was rejected before it could change any.
-    fn fortify_or_stop(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    pub(crate) fn fortify_or_stop(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         if !g.units[&uid].fortified && g.unit_can_fortify(&g.units[&uid]) {
             let _ = g.apply(pid, &Action::Fortify { unit: uid });
         }
@@ -17394,6 +17528,28 @@ mod tests {
             "a Scout with a whole world left to look at goes and looks at it"
         );
         assert!(!g.units[&scout].fortified);
+    }
+
+    /// The observer sees the start of every turn exactly once, in order,
+    /// and the game it watched is the game `run_game` plays.
+    #[test]
+    fn the_observed_loop_visits_every_turn_once_and_plays_the_same_game() {
+        let mut g = Game::new_full(2, 20, 14, 90_210, 12, 0, false);
+        let first = g.turn;
+        let mut ais = AdvancedAi::fleet(&g);
+        let mut seen = Vec::new();
+        run_game_observed(&mut g, &mut ais, |world| seen.push(world.turn));
+        let last = *seen.last().expect("at least one turn was observed");
+        assert_eq!(
+            seen,
+            (first..=last).collect::<Vec<_>>(),
+            "one visit per turn, in order, with no turn skipped or repeated"
+        );
+        assert!(g.winner.is_some() || g.turn > g.max_turns);
+        let mut plain = Game::new_full(2, 20, 14, 90_210, 12, 0, false);
+        let mut plain_ais = AdvancedAi::fleet(&plain);
+        run_game(&mut plain, &mut plain_ais);
+        assert_eq!((plain.turn, plain.winner), (g.turn, g.winner));
     }
 
     #[test]
@@ -21996,6 +22152,17 @@ mod tests {
             ai.naval_recon_is_the_missing_arm(&game, 0),
             "the sole Galley can fight the major naval war or chart, but not reliably do both"
         );
+        let mut delayed_v3 = BasicAi::new();
+        delayed_v3.naval_recon_3 = true;
+        delayed_v3.recon_replacement = true;
+        assert!(
+            delayed_v3.naval_recon_is_the_missing_arm(&game, 0),
+            "v3 delays only peacetime production; a one-city naval war still keeps its second eye"
+        );
+        assert!(
+            !delayed_v3.naval_recon_yields_to_land_recon(&game, 0),
+            "v3's land-first queue rule never weakens the wartime second-eye exception"
+        );
 
         // A viable sea unit already queued is the second eye being built, not
         // permission for every other city to queue another copy.
@@ -22021,6 +22188,49 @@ mod tests {
         assert!(
             !ai.naval_recon_is_the_missing_arm(&city_state_war, 0),
             "a city-state war keeps the normal one-ship exploration arm"
+        );
+    }
+
+    /// `naval-recon-3` gives a simultaneously missing land eye the next idle
+    /// production queue, so the sea scout cannot crowd out the broader
+    /// continental information gap. It still keeps the normal one-hull
+    /// peacetime arm and the existing two-eye wartime exception.
+    #[test]
+    fn a_v3_naval_recon_yields_to_a_missing_land_eye() {
+        let (mut game, mut ai) = blind_empire(4_433);
+        ai.naval_recon = false;
+        ai.naval_recon_3 = true;
+        let capital = game.player_city_ids(0)[0];
+        let capital_pos = game.cities[&capital].pos;
+        dry_map(&mut game);
+        coastal_waterway(&mut game, capital_pos, NAVAL_RECON_MIN_WATERWAY_TILES + 3);
+        game.players[0].techs.insert(crate::name!("sailing"));
+
+        assert!(
+            ai.naval_recon_is_the_missing_arm(&game, 0),
+            "the v3 sea arm remains a normal one-hull peacetime need"
+        );
+        assert!(
+            ai.recon_is_the_missing_arm(&game, 0),
+            "the fixture also leaves the empire without a land eye"
+        );
+        assert!(
+            ai.naval_recon_yields_to_land_recon(&game, 0),
+            "v3 makes the sea arm yield to the broader land frontier"
+        );
+
+        let mut v1 = ai.clone();
+        v1.naval_recon_3 = false;
+        v1.naval_recon = true;
+        assert!(
+            !v1.naval_recon_yields_to_land_recon(&game, 0),
+            "the existing one-eye version retains its independent sea reservation"
+        );
+
+        game.spawn_test_unit("scout", 0, capital_pos);
+        assert!(
+            !ai.naval_recon_yields_to_land_recon(&game, 0),
+            "once the land eye exists, v3 may reserve its one sea scout"
         );
     }
 

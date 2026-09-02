@@ -418,6 +418,153 @@ def known_tags() -> set[str]:
 
 
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
+
+
+# ─── The live arm a gene can form ────────────────────────────────────────────
+#
+# A Python reading of the predicates `src/ai/advanced/gene_ledger.rs` applies
+# on the live seat, so a screen can be assigned an arm without a cargo build
+# and a bad tag refuses the SCREEN before it can refuse a whole batch
+# (`civvis_orders` exits 2 on a `--with` it cannot seat, after the supervisor
+# has fetched, built and launched — see `docs/LIVE_SCREEN.md`).
+#
+# The rules, each named after the Rust function it mirrors:
+#
+# - `ledger_default_on(tag)`: `None` for a tag no screen can price (every
+#   `Kind::HostOnly` row), else whether the tag is in the ledger's
+#   `deployment_genome`. `gene_ledger.rs::ledger_default_on`.
+# - `ledger_held_live_treatment(tag)`: a live gene the ledger holds OFF.
+#   `--with` restores it. `gene_ledger.rs::ledger_held_live_treatment`.
+# - `ledger_held_opt_in(tag)`: an opt-in the ledger does not turn on. `--with`
+#   seats it. `gene_ledger.rs::ledger_held_opt_in`.
+# - `deployment_treatments()`: what the live seat actually plays — every live
+#   gene the ledger does not hold off (a host-only row is therefore ON: its
+#   `ledger_default_on` is `None`, never `Some(false)`) plus every opt-in the
+#   ledger turns on. `gene_ledger.rs::deployment_treatments_with_forced_live`.
+# - `--without` (`civvis_orders.rs::withholdable`) accepts every live gene and
+#   every opt-in the ledger turns on; `--with` (`forced_live_treatments`)
+#   accepts a held live treatment or a held opt-in. Nothing moves a production
+#   gene on the seat.
+#
+# ⚠ `genes.py list` prints `off` for a host-only row because it prints
+# membership in `deployment_genome`, which host-only rows never join. That is
+# not the live default; `live_arm` is.
+
+
+def _ledger_rules(ledger: dict | None = None) -> dict:
+    if ledger is None:
+        ledger = json.loads(LEDGER_JSON.read_text()) if LEDGER_JSON.exists() else {}
+    return ledger.get("rules", {}) or {}
+
+
+def deployment_genome(ledger: dict | None = None) -> set[str]:
+    """The tags the ledger's rule selects on; `table::DEPLOYMENT_GENOME`."""
+    return set(_ledger_rules(ledger).get("deployment_genome", ()) or ())
+
+
+def ledger_default_on(tag: str, ledger: dict | None = None,
+                      registry: list[Gene] | None = None) -> bool | None:
+    row = _registry_row(tag, registry)
+    if row is None or not row.screenable:
+        return None
+    return tag in deployment_genome(ledger)
+
+
+def _registry_row(tag: str, registry: list[Gene] | None) -> Gene | None:
+    rows = genes() if registry is None else registry
+    return next((row for row in rows if row.tag == tag), None)
+
+
+def ledger_held_live_treatment(tag: str, ledger: dict | None = None,
+                               registry: list[Gene] | None = None) -> bool:
+    row = _registry_row(tag, registry)
+    return (row is not None and row.live
+            and ledger_default_on(tag, ledger, registry) is False)
+
+
+def ledger_held_opt_in(tag: str, ledger: dict | None = None,
+                       registry: list[Gene] | None = None) -> bool:
+    row = _registry_row(tag, registry)
+    return (row is not None and row.opt_in
+            and ledger_default_on(tag, ledger, registry) is not True)
+
+
+def deployment_treatments(ledger: dict | None = None,
+                          registry: list[Gene] | None = None) -> list[str]:
+    """What the live seat plays, in registry order, with no arm forced."""
+    rows = genes() if registry is None else registry
+    played = [row.tag for row in rows if row.live
+              and ledger_default_on(row.tag, ledger, registry) is not False]
+    for row in rows:
+        if row.opt_in and ledger_default_on(row.tag, ledger, registry) is True \
+                and row.tag not in played:
+            played.append(row.tag)
+    return played
+
+
+#: The `civ6_play.py` flag that forms each arm; `civ6_civvis_climb.py` passes
+#: it through, `civ6_brain.py` re-forwards it as `civvis_orders --with/--without`.
+WITH_FLAG = "--civvis-with"
+WITHOUT_FLAG = "--civvis-without"
+
+
+def live_arm(tag: str, ledger: dict | None = None,
+             registry: list[Gene] | None = None) -> dict:
+    """What a live screen of `tag` can do: its default on the seat and the one
+    flag that forms the other arm.
+
+    Returns ``{"tag", "kind", "live_default": "on"|"off"|None, "arm_flag":
+    WITH_FLAG|WITHOUT_FLAG|None, "reason"}``. ``live_default`` is `None` and
+    ``arm_flag`` is `None` for an unknown tag. A production gene has a default
+    but no arm: `civvis_orders` withholds only `live()` genes and forces only a
+    held live treatment or a held opt-in, so nothing can move it on the seat.
+    """
+    row = _registry_row(tag, registry)
+    if row is None:
+        return {"tag": tag, "kind": None, "live_default": None, "arm_flag": None,
+                "reason": "unknown tag: not a row of the gene registry"}
+    default = ledger_default_on(tag, ledger, registry)
+    if row.live:
+        on = default is not False
+        if on:
+            return {"tag": tag, "kind": row.kind, "live_default": "on",
+                    "arm_flag": WITHOUT_FLAG,
+                    "reason": ("host-only rows ship on: no screen prices them, "
+                               "so the ledger never holds them off"
+                               if row.host_only else
+                               "a live repair the ledger leaves on")}
+        return {"tag": tag, "kind": row.kind, "live_default": "off",
+                "arm_flag": WITH_FLAG,
+                "reason": "a live repair the ledger holds off; --with restores it"}
+    if row.opt_in:
+        if default is True:
+            return {"tag": tag, "kind": row.kind, "live_default": "on",
+                    "arm_flag": WITHOUT_FLAG,
+                    "reason": "an opt-in the ledger turns on; --without holds it off"}
+        return {"tag": tag, "kind": row.kind, "live_default": "off",
+                "arm_flag": WITH_FLAG,
+                "reason": "an opt-in the ledger does not turn on; --with seats it"}
+    return {"tag": tag, "kind": row.kind,
+            "live_default": "off" if default is False else "on",
+            "arm_flag": None,
+            "reason": ("a production gene: not live(), so --without refuses it, "
+                       "and neither a held live treatment nor an opt-in, so "
+                       "--with refuses it too")}
+
+
+def screen_arm_flag(tag: str, arm: str, ledger: dict | None = None,
+                    registry: list[Gene] | None = None) -> list[str]:
+    """The `civ6_play.py` words that realise `arm` ("on" or "off") for `tag`:
+    the arm that equals the live default is unarmed (an empty list), the other
+    is the gene's one flag. Raises `ValueError` when the tag has no arm."""
+    if arm not in ("on", "off"):
+        raise ValueError(f"arm must be 'on' or 'off', not {arm!r}")
+    info = live_arm(tag, ledger, registry)
+    if info["arm_flag"] is None:
+        raise ValueError(f"{tag!r} cannot be screened live: {info['reason']}")
+    if arm == info["live_default"]:
+        return []
+    return [info["arm_flag"], tag]
 #: The generated verdict block lives INSIDE the registry file (`REGISTRY_PATH`),
 #: after `GENERATED_BEGIN`; `render_rust` renders it and `write` rewrites it.
 #: ⭐ THE SCREEN, leg by leg — the profile a `gene_screen` header must carry to
@@ -1034,6 +1181,10 @@ RANKING_HEADING = [
     "- Estimated probability that this gene is beneficial to our performance",
     "- (3 cols) win rate from the last tournament / prior tournament / tournament "
     "prior to that, scaled to n=10k total seats (n=actual number of seats listed too)",
+    "- Δ techs@150: research pace from the last tournament — techs known by the "
+    "Standard-turn-150 mark (turn 99 on the screen's Online clock), seats with the gene "
+    "on minus seats with it off, with its clustered z; blank when that tournament was "
+    "played before the screen recorded it. Evidence beside the sort key, not part of it",
     "- Total recorded win rate when gene is on",
     "- Total recorded win rate when gene is off",
     "- [Sort key] Difference between the previous 2 cols",
@@ -2569,6 +2720,7 @@ def measurements_from_source(data: dict, name: str, shape: str) -> dict[str, dic
             "compute_cost_se_pct": gene.get("compute_cost_se_pct"),
             "time_cost_pct": gene.get("time_cost_pct"),
             "time_cost_se_pct": gene.get("time_cost_se_pct"),
+            "science_pace": science_pace_of(gene),
         }
     return rows
 
@@ -2653,6 +2805,46 @@ def reporting_batch_cell(batch: dict | None, tag: str) -> str:
     if batch is None or tag not in batch["rows"]:
         return EN_DASH
     return f"{total_seat_batch_wins(batch['rows'][tag]):+d}"
+
+
+#: ⭐ THE SCIENCE-PACE COLUMN (2026-09-01), one column immediately after the
+#: three batch columns: the LAST batch's on−off Δ of techs known at the
+#: Standard-turn-150 mark (`gene_screen`'s `SCIENCE_PACE_STANDARD_TURN`, turn
+#: 99 on the screen's Online clock), with its clustered z. The screen prices
+#: every gene by win share in a game that 52% of the time ends on score at the
+#: clock, where research speed is invisible; this is the research-speed read
+#: beside it. It is evidence beside the sort key and the batch rule, never an
+#: input to either. Blank for a batch played before the screen recorded it.
+SCIENCE_PACE_COLUMN = "Δ techs@150 (last batch)"
+
+
+def science_pace_of(gene: dict) -> dict | None:
+    """One source's `science_pace` block for a gene, or None when absent.
+
+    `--analyze` writes `null` for a file whose rows predate the field (never a
+    Δ of zero), and a source older than the field has no key at all; both read
+    as None here, so the column stays blank rather than printing a zero.
+    """
+    pace = gene.get("science_pace")
+    if not isinstance(pace, dict) or pace.get("diff") is None:
+        return None
+    return {
+        "diff": float(pace["diff"]),
+        "se": None if pace.get("se") is None else float(pace["se"]),
+        "z": float(pace.get("z") or 0.0),
+        "n_on": int(pace.get("n_on") or 0),
+        "n_off": int(pace.get("n_off") or 0),
+    }
+
+
+def science_pace_cell(batch: dict | None, tag: str) -> str:
+    """`+1.23 (z +2.47)`, or an en dash when the batch cannot say."""
+    if batch is None or tag not in batch["rows"]:
+        return EN_DASH
+    pace = batch["rows"][tag].get("science_pace")
+    if not pace:
+        return EN_DASH
+    return f"{pace['diff']:+.2f} (z {pace['z']:+.2f})"
 
 
 def reporting_batch_header(label: str, batch: dict | None) -> str:
@@ -3263,7 +3455,12 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's "
         "excess over that chance rate, scaled from actual completed seats; they do not invent "
         "games or seats. The independent latest batch can have unequal on/off arms, which is "
-        "why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row.",
+        "why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row. "
+        "*Δ techs@150 (last batch)* is the newest batch's research-pace contrast — techs known "
+        "by the Standard-turn-150 mark (turn 99 on the screen's Online clock), seats-on minus "
+        "seats-off with its clustered z — printed as evidence beside the sort key; it enters "
+        "neither the sort nor the batch rule, and stays blank until a batch played by a screen "
+        "that records `techs_150` enters.",
         "",
         batch_provenance,
         "",
@@ -3335,9 +3532,10 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             reporting_batch_header(label, batch)
             for label, batch in zip(REPORTING_BATCH_LABELS, reporting_slots)
         )
+        + f" | {SCIENCE_PACE_COLUMN}"
         + " | Total (on) Win rate | Total (off) Win rate | Diff | "
         "cost (compute) | cost (time) |",
-        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (_diff, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
@@ -3361,6 +3559,7 @@ def render_parts(ledger: dict) -> tuple[str, str]:
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | "
             f"{best_version_cell(tag, tags, verdict, measured)} | {default} | "
             f"{probability_cell(posterior)} | {last} | {prior} | {third} | "
+            f"{science_pace_cell(reporting_slots[0], tag)} | "
             f"{on_cell} | "
             f"{off_cell} | "
             f"{diff_cell(history)} | "
@@ -3378,7 +3577,12 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "2026-08-25). Everything the ranking used to print under its table is here: the "
         "posterior evidence, the two shapes, the boundary set, the lane genes, the genes "
         "awaiting measurement, the genes removed from the code, the reference and the "
-        "follow-ups. `tools/genes.py check` holds every line to the ledger's sources.",
+        "follow-ups. `tools/genes.py check` holds every line to the ledger's sources. "
+        "`Kind::HostOnly` genes appear in none of these tables: no native screen can "
+        "price one, and each is on in every live seat (`enable_live_bridge_universe` "
+        "turns on every `live()` gene and the ledger never withholds an unscreened "
+        "row), so `python3 tools/genes.py list` prints them `on(live)` and only "
+        "`civvis_orders --without <tag>` withholds one.",
     ]
     # Evidence analysis stays tied to authoritative ledger sources; the
     # display batches are what decide the default, and are read separately.
@@ -3572,6 +3776,24 @@ def _add_source_args(ap: argparse.ArgumentParser) -> None:
                     help="record a source whose build cannot be verified, with the reason")
 
 
+def list_state(gene: Gene, selected: set[str]) -> str:
+    """The deployment state `genes.py list` prints beside one registry row.
+
+    A screenable row is on exactly when the deployment genome selects it. A
+    `Kind::HostOnly` row is never in that genome — no native screen can price
+    one — but it is on in every live seat: `enable_live_bridge_universe` turns
+    on every `live()` gene and `apply_gene_ledger` withholds only a tag the
+    ledger reads as off, which an unscreened row never is. Printing the
+    genome's answer for such a row read as `off`, and that reading put
+    host-only tags into `~/.civvis-live-force-on` twice (2026-08-30, 09-01);
+    `on(live)` is the truthful state, and `civvis_orders --without <tag>` is
+    what withholds one.
+    """
+    if gene.host_only:
+        return "on(live)"
+    return "on " if gene.tag in selected else "off"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     sub = ap.add_subparsers(dest="command", required=True)
@@ -3585,6 +3807,11 @@ def main(argv=None) -> int:
     boundary.add_argument("--arm-pairs", type=int, default=ARM_PAIRS)
     boundary.add_argument("--max-arm-pairs", type=int, default=FEASIBLE_ARM_PAIRS)
     sub.add_parser("table", help="print the ledger as a table")
+    arm = sub.add_parser("arm", help="the live default and the one flag that forms "
+                                     "the other arm of a live screen")
+    arm.add_argument("tags", nargs="*", metavar="TAG",
+                     help="registry tags; every gene when none is given")
+    arm.add_argument("--json", action="store_true", help="one JSON object per tag")
     versions = sub.add_parser(
         "versions", help="every versioned family ranked by tracked wins; the head, the pin, "
                          "and which version leaves before a fourth is added")
@@ -3602,12 +3829,27 @@ def main(argv=None) -> int:
         selected = set(ledger.get("rules", {}).get("deployment_genome", ()))
         for row in genes():
             verdict = ledger_rows.get(row.tag, {})
-            print(f"{row.tag:<32} {row.kind:<26} {'on ' if row.tag in selected else 'off'}  "
+            print(f"{row.tag:<32} {row.kind:<26} {list_state(row, selected)}  "
                   f"{verdict.get('verdict', 'unmeasured')}")
         return 0
     if args.command == "table":
         print_table(json.loads(LEDGER_JSON.read_text()))
         return 0
+    if args.command == "arm":
+        ledger = json.loads(LEDGER_JSON.read_text()) if LEDGER_JSON.exists() else {}
+        tags = args.tags or [row.tag for row in genes()]
+        status = 0
+        for tag in tags:
+            info = live_arm(tag, ledger)
+            if info["live_default"] is None:
+                status = 1
+            if args.json:
+                print(json.dumps(info, sort_keys=True))
+            else:
+                print(f"{tag:<40} {str(info['kind']):<26} "
+                      f"default={str(info['live_default']):<4} "
+                      f"arm={str(info['arm_flag']):<16} {info['reason']}")
+        return status
     if args.command == "boundary":
         ledger = json.loads(LEDGER_JSON.read_text())
         print_boundary(ledger, args.arm_pairs, args.max_arm_pairs)

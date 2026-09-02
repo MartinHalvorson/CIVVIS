@@ -425,12 +425,29 @@ def combat_totals(events_path: Path) -> dict | None:
             kind = event.get("kind")
             if kind == "seat" and isinstance(event.get("local_player"), int):
                 local_player = event["local_player"]
-            if kind in ("combat", "unit_lost", "city_occupation"):
+            if kind in ("combat", "unit_lost", "city_occupation", "order_verified",
+                        "order_failed", "host_move", "move_noop", "move_fallback"):
                 events.append(event)
+            elif kind == "state":
+                # The first frame of each turn is the board a death turn began
+                # on (`civ6_tactics_ledger._states`); only our units' hit
+                # points are read from it, so the frame is kept slim.
+                units = event.get("units")
+                events.append({
+                    "kind": "state",
+                    "turn": event.get("turn"),
+                    "frame": event.get("frame"),
+                    "units": [
+                        {key: unit.get(key) for key in ("id", "kind", "x", "y", "hp", "combat", "ranged")}
+                        for unit in (units if isinstance(units, list) else [])
+                        if isinstance(unit, dict)
+                    ],
+                })
     combat = civ6_tactics_ledger.combat_section(events, local_player)
     if combat is None:
         return None
     roster = civ6_tactics_ledger.roster_section(events)
+    evacuation = civ6_tactics_ledger.evacuation_section(events, local_player) or {}
     return {
         "kills": combat["kills"],
         "losses": combat["losses"],
@@ -443,6 +460,12 @@ def combat_totals(events_path: Path) -> dict | None:
         # How many of those the seat saw coming; see
         # `civ6_tactics_ledger.SALVAGEABLE_HP`.
         "lost_when_salvageable": roster["lost_when_salvageable"],
+        # Whether the evacuation happened; see
+        # `civ6_tactics_ledger.evacuation_section`.
+        "deaths_wounded_at_turn_start": evacuation.get("deaths_wounded_at_turn_start"),
+        "deaths_after_unexecuted_move": evacuation.get("deaths_after_unexecuted_move"),
+        "move_noop": evacuation.get("move_noop"),
+        "move_fallback": evacuation.get("move_fallback"),
     }
 
 
@@ -873,6 +896,14 @@ def decider_genome(why_log: Path) -> dict | None:
                     "lane": record.get("lane"),
                     "civ": record.get("civ"),
                     "strength_bound": record.get("strength_bound"),
+                    # The played treatment lists (`civvis_orders.rs`, the
+                    # `genome` line): what the ledger left on plus any forced
+                    # row, what it held off, and what `--with` restored. None
+                    # on a decider that predates the lists. `civ6_play` lifts
+                    # these three onto `summary["genome_treatments"]`.
+                    "treatments": record.get("treatments"),
+                    "ledger_withheld": record.get("ledger_withheld"),
+                    "forced": record.get("forced"),
                 }
     except OSError:
         return None

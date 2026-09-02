@@ -345,6 +345,28 @@ class HowTheArmyFought(LedgerCase):
         self.assertEqual(totals["cities_taken"], 1)
         self.assertEqual(totals["cities_lost"], 0)
 
+    def test_the_row_says_whether_the_evacuation_happened(self):
+        events = self._events([
+            {"kind": "seat", "local_player": 0},
+            {"kind": "state", "turn": 6, "frame": 0, "units": [
+                {"id": 1, "kind": "UNIT_WARRIOR", "x": 2, "y": 2, "hp": 30, "combat": 20, "ranged": 0,
+                 "promotions": [], "moves": 2}]},
+            {"kind": "order_failed", "turn": 5, "order_kind": "unit", "subject": 1,
+             "verb": "MOVE_TO", "reason": "did_not_move", "checked_on": 6},
+            {"kind": "move_noop", "turn": 5, "unit": 1, "from": [2, 2], "want": [3, 2], "why": "no_path"},
+            {"kind": "combat", "turn": 6,
+             "attacker": {"player": 63, "id": 901, "kind": "UNIT_ARCHER", "type": "unit"},
+             "defender": {"player": 0, "id": 1, "kind": "UNIT_WARRIOR", "type": "unit"},
+             "damage_to_defender": 30, "damage_to_attacker": 0,
+             "defender_killed": True, "attacker_killed": False},
+        ])
+        totals = civ6_ladder.combat_totals(events)
+        self.assertEqual(totals["losses"], 1)
+        self.assertEqual(totals["deaths_wounded_at_turn_start"], 1)
+        self.assertEqual(totals["deaths_after_unexecuted_move"], 1)
+        self.assertEqual(totals["move_noop"], 1)
+        self.assertEqual(totals["move_fallback"], 0)
+
     def test_a_mod_that_never_wrote_a_combat_event_reads_as_silence(self):
         events = self._events([
             {"kind": "turn", "ctx": "agent", "turn": 1,
@@ -1455,7 +1477,9 @@ class LatestCodeGuarantee(LedgerCase):
         self.assertEqual(
             civ6_ladder.decider_genome(why),
             {"strategy": "stock", "source": "AdvancedAi::new", "lane": None,
-             "civ": None, "strength_bound": None})
+             "civ": None, "strength_bound": None,
+             # The played lists ride along; this old record carries only one.
+             "treatments": ["a", "b"], "ledger_withheld": None, "forced": None})
         resolved = self.runs / "why2.log"
         resolved.write_text(
             '{"civ":"Rome","kind":"genome","lane":null,"source":"data/league",'

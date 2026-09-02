@@ -1228,6 +1228,10 @@ pub const GENES: &[Gene] = &[
     // 1,560 by that same argmax; live King seat, Builders were 3% of early city
     // production and only 40% of Campus cities held a Library at turn 100.
     Gene { tag: "first-builder-reserve", field: "first_builder_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_builder_reserve, disable: AdvancedAi::disable_first_builder_reserve },
+    // V2 reserves one Builder only for an owned, immediately connectable
+    // first-copy luxury while Amenities are short and expansion is covered;
+    // after the first Builder appears, it retains a lifetime receipt.
+    Gene { tag: "first-builder-reserve-2", field: "first_builder_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_builder_reserve_2, disable: AdvancedAi::disable_first_builder_reserve_2 },
     // The same sentence for the cheap rung of the research chain, in a city
     // that has already paid for the Campus. 91% of standard Emperor games end
     // on a science victory, so this is the win condition itself.
@@ -1846,9 +1850,80 @@ pub const GENES: &[Gene] = &[
     // improves the live universe. Appended at the END to preserve any
     // running screen's positional genome.
     Gene { tag: "early-project-restraint", field: "early_project_restraint", kind: Kind::OptIn, enable: AdvancedAi::enable_early_project_restraint, disable: AdvancedAi::disable_early_project_restraint },
+    // `settler-site-gate` (live autopsy, 2026-09-01): a city starts a Settler
+    // only while an acceptable, unclaimed site worth founding exists for it.
+    // Run 182050Z held 5–6 cities from t45 to t105 with 2–4 Settlers alive:
+    // one walked 37 orders to 31 targets worth 14–24 and never founded, two
+    // were lost on the road, and three cities were building more at once —
+    // the arm paid `920 + 4 × site` for ANY site within eleven tiles. The gate
+    // drops the sites the walker would refuse, counts seats at settlement
+    // spacing net of the targets live Settlers hold, and vetoes a Settler
+    // unless a free seat worth the floor remains. See
+    // `advanced/settler_site_gate.rs`.
+    Gene { tag: "settler-site-gate", field: "settler_site_gate", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_site_gate, disable: AdvancedAi::disable_settler_site_gate },
+    // `settler-target-floor` (live autopsy, 2026-09-01): a Settler is never
+    // sent to a site not worth the walk. Run 182050Z changed settler targets
+    // on 61 of 100 marching turns; once the four-tile ring was empty,
+    // `rapid-city-expansion` took the global best with no premium and no
+    // floor and marched Settlers 14–18 tiles to sites worth −35.0, −4.1 and
+    // 17.7 (founded sites: 96–140); two were lost on those roads. Candidates
+    // are charged the walk beyond eight tiles at the extra-travel price and
+    // must clear a floor of 10 to be a target, in the ranked and the
+    // exhaustion search alike. See `advanced/settler_target_floor.rs`.
+    Gene { tag: "settler-target-floor", field: "settler_target_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_target_floor, disable: AdvancedAi::disable_settler_target_floor },
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
     Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
     Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
+    // Appended at the END, above the markers, so a running screen keeps its
+    // positional genome. The 2026-09-01 Emperor foundations: the Campus
+    // through the Expansion plan, the trade network, the Industrial chain.
+    Gene { tag: "campus-through-expansion", field: "campus_through_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_through_expansion, disable: AdvancedAi::disable_campus_through_expansion },
+    Gene { tag: "trade-route-network", field: "trade_route_network", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_route_network, disable: AdvancedAi::disable_trade_route_network },
+    Gene { tag: "industrial-chain-debt", field: "industrial_chain_debt", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_chain_debt, disable: AdvancedAi::disable_industrial_chain_debt },
+    // Version 2 replaces v1's unconditional withdrawal with an observed,
+    // last-call forecast: every remaining religion slot must have an active
+    // rival projected to claim the current Prophet soon. Appended so the
+    // published positional genome is unchanged.
+    Gene { tag: "skip-the-prophet-race-2", field: "skip_the_prophet_race_2", kind: Kind::OptIn, enable: AdvancedAi::enable_skip_the_prophet_race_2, disable: AdvancedAi::disable_skip_the_prophet_race_2 },
+    // `siege-preempts-the-queue` (2026-09-01): a raider within three tiles of a
+    // city is answered before anything else is built — a queue holding a
+    // Settler switches to the ring's unit answer, a city with no defender at
+    // all buys it, and a Scout is not a defender. Live run
+    // civvis-20260901T193130Z: one city at t49, two Settlers pinned on the
+    // capital tile for 14 and 7 turns by a Slinger adjacent to it, no military
+    // unit at all t29–t35, 155–198 Gold banked. OptIn like `settler-site-gate`:
+    // the operator arms it as a labelled live arm; the native screen prices
+    // it. See `advanced/siege_response.rs`.
+    Gene { tag: "siege-preempts-the-queue", field: "siege_preempts_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_preempts_the_queue, disable: AdvancedAi::disable_siege_preempts_the_queue },
+    // `guard-breaks-the-pin` (2026-09-01): the guard standing on its Settler's
+    // tile strikes the raider whose zone of control pins the pair when the
+    // trade is worth it, instead of fortifying beside it turn after turn (the
+    // same run: "Guard stands with its settler" t38–t45 while the Settler
+    // refused every step). HostOnly like `escort-patience-runs-out`: the path
+    // is gated by `live_formationless_settler_shadow`, so a native board never
+    // reaches it. See `advanced/siege_response.rs`.
+    Gene { tag: "guard-breaks-the-pin", field: "guard_breaks_the_pin", kind: Kind::HostOnly, enable: AdvancedAi::enable_guard_breaks_the_pin, disable: AdvancedAi::disable_guard_breaks_the_pin },
+    // Reach the measured five-city opening band with a bounded pipeline and
+    // empty-capital reservation, refuse unworthy or already-claimed sites,
+    // and leave ordinary queues, pantheons, site ranking and peace intact.
+    Gene { tag: "rapid-city-expansion-2", field: "rapid_city_expansion_2", kind: Kind::OptIn, enable: AdvancedAi::enable_rapid_city_expansion_2, disable: AdvancedAi::disable_rapid_city_expansion_2 },
+    // Version 3 of `naval-recon`: yield an idle queue to a simultaneously
+    // missing land scout before reserving its one peacetime sea hull.
+    Gene { tag: "naval-recon-3", field: "naval_recon_3", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_recon_3, disable: AdvancedAi::disable_naval_recon_3 },
+    // Repair only a persistent two-turn stall, accept only civilian work above
+    // the hard veto, and ignore repeated observations of the same host turn.
+    Gene { tag: "never-an-empty-queue-3", field: "never_an_empty_queue_3", kind: Kind::OptIn, enable: AdvancedAi::enable_never_an_empty_queue_3, disable: AdvancedAi::disable_never_an_empty_queue_3 },
+    // V2 waits for a Eureka only when its final trigger is already queued and
+    // the node is within two turns. The broad v1 remains measurable.
+    Gene { tag: "boost-wait-research-2", field: "boost_wait_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research_2, disable: AdvancedAi::disable_boost_wait_research_2 },
+    // Appended at the END so a running screen keeps its positional genome.
+    // 461 of our units died in combat across the 32 live runs of 2026-08-30..09-01,
+    // 408 to barbarians; 352 were at or below 50 HP at the killing blow, 334 had been
+    // hit on an earlier turn and left in reach, 135 were shooters a melee unit walked
+    // onto. The recovery withdraws on the mean blow from visible units; this withdraws
+    // on the top of the roll, remembers raiders in the fog, and screens shooters.
+    // See `advanced/wounded_out_of_reach.rs`.
+    Gene { tag: "wounded-out-of-reach", field: "wounded_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach, disable: AdvancedAi::disable_wounded_out_of_reach },
 
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //

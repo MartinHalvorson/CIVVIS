@@ -1713,6 +1713,21 @@ class TheSummaryNamesTheObjective(unittest.TestCase):
         self.assertIn('"victory_target": args.civvis_victory if args.civvis_decides',
                       source)
 
+    def test_the_summary_records_the_dealt_arm_of_a_live_screen(self):
+        """`withheld`/`forced` say which words reached the decider; they cannot
+        say that an unarmed run was the default arm of a screened gene. The
+        climb passes `--screen-gene`/`--screen-arm` beside the arm's word and
+        the summary keeps both, plus the PLAYED treatment lists lifted from the
+        decider's genome line (docs/LIVE_SCREEN.md)."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('"screen_gene": args.screen_gene if args.civvis_decides else None', source)
+        self.assertIn('"screen_arm": args.screen_arm if args.civvis_decides else None', source)
+        self.assertIn('ap.add_argument("--screen-arm", default=None, choices=("on", "off")', source)
+        self.assertIn('summary["genome_treatments"] = {', source)
+        for key in ("treatments", "ledger_withheld", "forced"):
+            self.assertIn(f'"{key}"', source[source.index('summary["genome_treatments"]'):
+                                             source.index('summary["genome"] = genome')])
+
     def test_a_run_that_is_not_civvis_deciding_claims_no_lane(self):
         """The flag names what the CIVVIS worker plays for. A run the worker did
         not decide has no lane to report, and reporting one would file a Firaxis
@@ -2881,3 +2896,31 @@ class TheBottomStripRunsWhenTheHeadingHidesTheButton(unittest.TestCase):
 
         self.assertEqual(points, [(1088, 491)])
         crop.assert_not_called()
+
+
+class PollCadenceKeepsItsWallClock(unittest.TestCase):
+    """The mod polls for CIVVIS's answer 7.5× as often; nothing else moved.
+
+    Every poll budget the mod reads (`OrdersWaitPolls`, `OrdersFallbackPolls`,
+    `CombatFramePolls`) is a count of polls, so shortening the poll interval
+    without scaling them would have cut the stale-answer, fallback and combat
+    frame allowances to a fraction of their measured wall clock. The products
+    below are the pre-2026-09-01 values (40×30, 120×30, 20×30) in ticks.
+    """
+
+    def test_poll_budgets_keep_their_wall_clock(self) -> None:
+        self.assertEqual(civ6_play.ORDERS_POLL_TICKS * civ6_play.ORDERS_WAIT_POLLS, 1200)
+        self.assertEqual(civ6_play.ORDERS_POLL_TICKS * civ6_play.ORDERS_FALLBACK_POLLS, 3600)
+        self.assertEqual(civ6_play.ORDERS_POLL_TICKS * civ6_play.COMBAT_FRAME_POLLS, 600)
+
+    def test_the_mod_never_polls_on_every_tick(self) -> None:
+        # The every-publish query deadlocked run civvis-20260730T110209Z.
+        self.assertGreaterEqual(civ6_play.ORDERS_POLL_TICKS, 2)
+
+    def test_the_lua_fallbacks_match_the_harness_defaults(self) -> None:
+        lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text()
+        self.assertIn(f"cfg.OrdersPollTicks or {civ6_play.ORDERS_POLL_TICKS};", lua)
+        self.assertIn(f"cfg.OrdersWaitPolls or {civ6_play.ORDERS_WAIT_POLLS})", lua)
+        self.assertIn(f"cfg.OrdersFallbackPolls or {civ6_play.ORDERS_FALLBACK_POLLS})", lua)
+        self.assertIn(f"tonumber(cfg.CombatFramePolls) or {civ6_play.COMBAT_FRAME_POLLS})", lua)

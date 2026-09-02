@@ -669,26 +669,62 @@ def civilian_losses(events: list[dict]) -> dict:
             captured_by_unit.setdefault(str(event["unit"]), event)
 
     terminal = _terminal_turn(events)
-    # A Builder with one charge remaining disappears after a verified improvement;
+    # A Builder with one charge remaining disappears after an improvement;
     # this is normal Civ6 behavior, not a hostile loss.  Keep the last exported
     # charge count per unit/turn so the classification does not depend on event
     # ordering between the state frame and the asynchronous order verification.
     builder_charges: dict[str, list[tuple[int, int, int]]] = defaultdict(list)
+    builder_positions: dict[str, list[tuple[int, int, tuple[int, int]]]] = defaultdict(list)
     for index, event in enumerate(events):
-        if event.get("kind") != "state":
+        if event.get("kind") not in {"state", "host_move"}:
             continue
         turn = _event_turn(event)
         if turn is None:
             continue
-        for unit in event.get("units") or []:
-            if (unit.get("kind") == "UNIT_BUILDER"
-                    and unit.get("id") is not None
-                    and unit.get("build_charges") is not None):
+        if event.get("kind") == "host_move":
+            units = [(str(event.get("unit")), event)]
+        else:
+            units = [
+                (str(unit.get("id")), unit)
+                for unit in event.get("units") or []
+            ]
+        for unit_key, unit in units:
+            if (unit.get("unit_kind") or unit.get("kind")) != "UNIT_BUILDER":
+                continue
+            if unit_key == "None":
+                continue
+            try:
+                position = (int(unit["x"]), int(unit["y"]))
+            except (KeyError, TypeError, ValueError):
+                position = None
+            if position is not None:
+                builder_positions[unit_key].append((turn, index, position))
+            if event.get("kind") == "state" and unit.get("build_charges") is not None:
                 try:
                     charges = int(unit["build_charges"])
                 except (TypeError, ValueError):
                     continue
-                builder_charges[str(unit["id"])].append((turn, index, charges))
+                builder_charges[unit_key].append((turn, index, charges))
+
+    # `improved` is emitted when the host accepts a named improvement request,
+    # before the asynchronous order-verification callback.  It intentionally
+    # has no Builder id in the historical event shape, so join it to the Builder
+    # that was last exported/moved onto the same Civ 6 OFFSET tile that turn.
+    # This is the fallback needed for a run retired between acceptance and the
+    # next verification poll (the t49 live false positive that motivated this
+    # witness).  A position match keeps the fallback conservative when several
+    # Builders are alive.
+    improved_positions: dict[int, set[tuple[int, int]]] = defaultdict(set)
+    for event in events:
+        if event.get("kind") != "improved":
+            continue
+        turn = _event_turn(event)
+        try:
+            position = (int(event["x"]), int(event["y"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if turn is not None:
+            improved_positions[turn].add(position)
 
     verified_improvements = {
         (str(event.get("subject")), _event_turn(event))
@@ -698,19 +734,32 @@ def civilian_losses(events: list[dict]) -> dict:
         and event.get("subject") is not None
     }
 
-    def builder_was_consumed(unit_key: str, turn: int | None) -> bool:
-        if turn is None or (unit_key, turn) not in verified_improvements:
+    def builder_was_consumed(
+        unit_key: str, turn: int | None, loss_index: int
+    ) -> bool:
+        if turn is None:
             return False
         samples = [sample for sample in builder_charges.get(unit_key, [])
                    if sample[0] <= turn]
-        return bool(samples) and max(samples, key=lambda sample: (sample[0], sample[1]))[2] == 1
+        if not samples or max(samples, key=lambda sample: (sample[0], sample[1]))[2] != 1:
+            return False
+        if (unit_key, turn) in verified_improvements:
+            return True
+        # Limit the position join to observations before this removal witness;
+        # a later turn/frame cannot explain why the Builder disappeared now.
+        positions = {
+            position
+            for observed_turn, index, position in builder_positions.get(unit_key, [])
+            if observed_turn == turn and index <= loss_index
+        }
+        return bool(positions & improved_positions.get(turn, set()))
 
     losses = []
     founding_losses = 0
     expected_builder_consumptions = []
     terminal_disposals = 0
     unit_lost_events = 0
-    for event in events:
+    for loss_index, event in enumerate(events):
         if event.get("kind") != "unit_lost":
             continue
         kind = event.get("unit_kind")
@@ -729,7 +778,7 @@ def civilian_losses(events: list[dict]) -> dict:
             reason = "unit_captured"
         elif kind == "UNIT_SETTLER":
             reason = "settler_loss_without_found"
-        elif builder_was_consumed(unit_key, turn):
+        elif builder_was_consumed(unit_key, turn, loss_index):
             expected_builder_consumptions.append({
                 "turn": turn,
                 "unit": event.get("unit"),

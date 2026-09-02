@@ -35,6 +35,8 @@
 --  17. A Builder cannot enter visible barbarian capture reach without a
 --      proven escort; an exposed travelling Builder gets the same bounded
 --      escape treatment, and a safe escort preserves the move.
+--  18. A civilian cannot enter an active forest/jungle fire tile, while a
+--      burnt tile remains legal and combat units keep ordinary movement.
 --
 -- Run: lua5.1 tools/civ6_control/mod/host_board_test.lua
 
@@ -61,9 +63,14 @@ DirectionTypes = {
 }
 -- Plot index = y * 100 + x on this fake map.
 local function plotIndex(x, y) return y * 100 + x end
+local featurePlots = {}
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2) return math.max(math.abs(x1 - x2), math.abs(y1 - y2)) end,
-	GetPlot = function() return nil end,
+	GetPlot = function(x, y)
+		local feature = featurePlots[plotIndex(x, y)]
+		if feature == nil then return nil end
+		return { GetFeatureType = function() return feature end }
+	end,
 	GetAdjacentPlot = function(x, y, direction)
 		local dx, dy = 0, 0
 		if direction == DirectionTypes.DIRECTION_WEST then dx = -1
@@ -85,8 +92,18 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	end
 	if k == "Units" then
 		return setmetatable({}, { __index = function(_, name)
-			if name == "UNIT_SETTLER" then return { UnitType = name, Combat = 0, RangedCombat = 0 } end
+			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER" or name == "UNIT_TRADER" then
+				return { UnitType = name, Combat = 0, RangedCombat = 0 }
+			end
 			return { UnitType = name, Combat = 20, RangedCombat = 0 }
+		end })
+	end
+	if k == "Features" then
+		return setmetatable({}, { __index = function(_, index)
+			if index == 1 then return { FeatureType = "FEATURE_BURNING_FOREST" } end
+			if index == 2 then return { FeatureType = "FEATURE_BURNING_JUNGLE" } end
+			if index == 3 then return { FeatureType = "FEATURE_BURNT_FOREST" } end
+			return nil
 		end })
 	end
 	return stub()
@@ -234,6 +251,7 @@ local function row(subject, verb, x, y) return { kind = "unit", subject = subjec
 local function reset()
 	host.units, host.cities, host.barbarians, host.hidden, host.ops, host.cmds, host.paths,
 		host.queued, host.blocked, LOG = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+	featurePlots = {}
 	config.SettlerEscortCapSync = nil
 	queue.reset(7); board.reset()
 end
@@ -826,6 +844,38 @@ applyOrders(player, PID, 7, { row(62, "MOVE_TO", 1, 2), row(63, "MOVE_TO", 1, 2)
 check("proven builder escort: builder still moves", ops(62), "UNITOPERATION_MOVE_TO@1,2")
 check("proven builder escort: guard still moves", ops(63), "UNITOPERATION_MOVE_TO@1,2")
 check("proven builder escort: no hold", lastEvent("builder_barbarian_capture_hold"), nil)
+
+-- Gathering Storm's forest-fire table kills civilians during the active
+-- FEATURE_BURNING_* phase, even when a combat escort is present.  A burnt
+-- feature is the safe post-fire state, and combat units are not covered by
+-- this civilian floor.
+reset()
+host.units[68] = { id = 68, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.units[69] = { id = 69, kind = "UNIT_SETTLER", x = 3, y = 1, moves = 2 }
+host.units[70] = { id = 70, kind = "UNIT_WARRIOR", x = 5, y = 1, moves = 2 }
+host.units[71] = { id = 71, kind = "UNIT_BUILDER", x = 7, y = 1, moves = 2 }
+for _, item in ipairs({
+	{ id = 68, fromX = 1, x = 1, y = 2, feature = 1 },
+	{ id = 69, fromX = 3, x = 3, y = 2, feature = 2 },
+	{ id = 70, fromX = 5, x = 5, y = 2, feature = 1 },
+	{ id = 71, fromX = 7, x = 7, y = 2, feature = 3 },
+}) do
+	host.paths[item.id .. ":" .. plotIndex(item.x, item.y)] = {
+		plots = { plotIndex(item.fromX, 1),
+			plotIndex(item.x, item.y) }, turns = { 0, 1 } }
+	featurePlots[plotIndex(item.x, item.y)] = item.feature
+end
+applyOrders(player, PID, 7, {
+	row(68, "MOVE_TO", 1, 2), row(69, "MOVE_TO", 3, 2),
+	row(70, "MOVE_TO", 5, 2), row(71, "MOVE_TO", 7, 2),
+})
+check("active fire: builder stays off burning forest", ops(68), "")
+check("active fire: settler stays off burning jungle", ops(69), "")
+check("active fire: combat unit still moves", ops(70), "UNITOPERATION_MOVE_TO@5,2")
+check("active fire: burnt forest remains legal", ops(71), "UNITOPERATION_MOVE_TO@7,2")
+check("active fire: both civilians are counted", board.stats.active_fire_civilian_held, 2)
+check("active fire: refusal is named", has(lastEvent("orders"), '"active_fire_civilian_hold":2'), true)
+check("active fire: event names feature", has(lastEvent("active_fire_civilian_hold"), '"feature":"FEATURE_'), true)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))

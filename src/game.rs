@@ -13246,7 +13246,9 @@ impl Game {
     // -------------------------------------------------- trade routes
 
     /// Trading capacity: 1 with Foreign Trade, plus capacity granted by
-    /// buildings/districts and +2 under Merchant Republic.
+    /// capacity-bearing buildings and explicit modifiers. Commercial Hubs and
+    /// Harbors unlock their respective trade building, but do not themselves
+    /// add a route slot in the shipped Civ VI rules.
     pub fn trade_capacity(&self, pid: usize) -> i64 {
         if let Some(capacity) = self.observed_trade_capacity.get(&pid) {
             return *capacity;
@@ -13258,23 +13260,10 @@ impl Game {
         }
         let mut cap = tree_capacity;
         for city in self.cities.values().filter(|city| city.owner == pid) {
-            // A city earns up to two routes from its own infrastructure, and
-            // each is an either/or. The Commercial Hub grants one; a Harbor
-            // grants it only where there is no Commercial Hub, except that
-            // England's Royal Navy Dockyard carries its own unconditionally.
-            let dockyard = city.districts.iter().any(|(district, position)| {
-                district == "royal_navy_dockyard"
-                    && self.district_is_active(city, district, *position)
-            });
-            if self.city_has_active_district_family(city, crate::name!("commercial_hub")) {
-                cap += 1;
-                if dockyard {
-                    cap += 1;
-                }
-            } else if self.city_has_active_district_family(city, crate::name!("harbor")) {
-                cap += 1;
-            }
-            // Market and Lighthouse are the same either/or one tier down.
+            // Market and Lighthouse are the same either/or capacity tier.
+            // This follows the installed rules database: both attach
+            // MODIFIER_PLAYER_ADJUST_TRADE_ROUTE_CAPACITY, while the base
+            // Commercial Hub and Harbor district rows attach no such modifier.
             if self.city_has_active_building_family(city, crate::name!("market"))
                 || self.city_has_active_building_family(city, crate::name!("lighthouse"))
             {

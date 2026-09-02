@@ -390,6 +390,22 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+#: How often the control mod polls SQLite for CIVVIS's answer, in agent ticks —
+#: each tick is `TickEvery` (16) game-core publish batches. Thirty ticks was
+#: measured at 3.8 s between the board going out and the first poll on the live
+#: Emperor lane (run civvis-20260901T195234Z, receipt-stamped events), paid on the
+#: opening board and again on every replan frame, while the brain answered 50 ms
+#: after the board reached it. Four ticks polls ~7.5× as often and is still
+#: 64 publish batches apart — an order of magnitude short of the every-publish
+#: query that deadlocked run 20260730T110209Z.
+ORDERS_POLL_TICKS = 4
+#: The three poll budgets, scaled by the same 30/4 so every wall-clock allowance
+#: is exactly what it was (`test_poll_budgets_keep_their_wall_clock`).
+ORDERS_WAIT_POLLS = 300
+ORDERS_FALLBACK_POLLS = 900
+COMBAT_FRAME_POLLS = 150
+
+
 def startup_event_proves_game_started(event: dict) -> bool:
     """Return whether an event proves the in-game agent has loaded.
 
@@ -764,6 +780,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # without it if the call ever proves unsafe, and so the ledger can say
         # whether it ran.
         "StrikePreview": args.strike_preview,
+        # See `CivvisBoard.moveNoop` in the mod: a MOVE_TO the host accepts and
+        # never walks is named and answered with a legal neighbour step in the
+        # same pass. Off, the queue drops the watch in silence.
+        "MoveFallback": args.move_fallback,
         # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
         # host path outran the turn was queued, and the host walked the unit
         # along it at the start of the next turn before the brain could act. Now
@@ -3338,6 +3358,14 @@ def _play(args: argparse.Namespace) -> int:
     atexit.register(_partial_summary_if_stopped)
 
     def record(event: dict) -> None:
+        # ★ RECEIPT TIME — the run's only wall-clock. `Automation.log` carries no
+        # clock, so events.jsonl could say an opening board waited 20 polls but
+        # never whether the 90 s between two screens went to the game, the log
+        # tail or the brain. Stamped once, the moment the line reaches this
+        # process; `civ6_brain` measures its answer against it (`brain.log`) and
+        # `tools/live_turn_clock.py` reads the per-turn profile from it.
+        event.setdefault("utc", datetime.now(timezone.utc)
+                         .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
@@ -3913,6 +3941,14 @@ def _play(args: argparse.Namespace) -> int:
         # Keep the exact named arm with the summary even if no binary event was
         # retained, so a force-on run never resembles deployment afterwards.
         "forced": sorted(args.civvis_with) if args.civvis_decides else None,
+        # ★★★ THE DEALT ARM OF A LIVE SCREEN. `withheld`/`forced` above say
+        # what words reached the decider; they cannot say that an unarmed run
+        # was the default arm of a screened gene rather than an ordinary
+        # deployment row. `screen_gene` names the gene and `screen_arm` the
+        # arm the tag dealt (`civ6_civvis_climb.screen_arm`), so the ledger
+        # can split a screen's games without a rota to consult.
+        "screen_gene": args.screen_gene if args.civvis_decides else None,
+        "screen_arm": args.screen_arm if args.civvis_decides else None,
         # And the MOD side of the same question. The fallback ladder decides a
         # real share of production, so an arm is only fully described when both
         # halves are recorded. Add a switch here when it becomes A/B-able —
@@ -3936,6 +3972,7 @@ def _play(args: argparse.Namespace) -> int:
             "CancelQueuedPaths": args.cancel_queued_paths,
             "CombatFrames": args.combat_frames,
             "StrikePreview": args.strike_preview,
+            "MoveFallback": args.move_fallback,
             "ReplanFrames": args.replan_frames,
             "TileDelta": args.tile_delta,
         },
@@ -4012,6 +4049,15 @@ def _play(args: argparse.Namespace) -> int:
         # be compared on the ledger instead of in a log excavation.
         genome = civ6_ladder.decider_genome(run_dir / "why.log")
         if genome is not None:
+            # The played genome: `treatments` is what the ledger left on plus
+            # any forced row, `ledger_withheld` what it held off. `why.log`
+            # never reaches the ledger branch, so without this the pulled
+            # cache can only say what was ASKED (`withheld`/`forced`), never
+            # what PLAYED — and a stale binary plays a shorter list.
+            summary["genome_treatments"] = {
+                key: genome.pop(key, None)
+                for key in ("treatments", "ledger_withheld", "forced")
+            }
             summary["genome"] = genome
             requested = (args.civvis_strategy or "").strip()
             summary["strategy_requested"] = requested or None
@@ -4297,6 +4343,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="restore one ledger-held live treatment for a labeled "
                          "verification arm, repeatable; the decision worker "
                          "validates the name and keeps deployment unchanged by default")
+    ap.add_argument("--screen-gene", default=None, metavar="TAG",
+                    help="the gene a live screen deals this run an arm of; "
+                         "recorded beside --screen-arm so the ledger can split "
+                         "the screen's games (docs/LIVE_SCREEN.md)")
+    ap.add_argument("--screen-arm", default=None, choices=("on", "off"),
+                    help="the dealt arm of --screen-gene: `on` or `off`, as "
+                         "realised by the --civvis-with/--civvis-without word "
+                         "the climb passed beside it, or by no word when the "
+                         "arm is the gene's live default")
     ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
                     help="forwarded to the decision worker as "
                          "--github-refresh-seconds; 0 freezes the decider on its "
@@ -4306,11 +4361,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,
                     help="post governors to cities (untested since the crash)")
-    ap.add_argument("--orders-poll-ticks", type=int, default=30,
+    ap.add_argument("--orders-poll-ticks", type=int, default=ORDERS_POLL_TICKS,
                     help="game ticks between SQL polls for orders")
-    ap.add_argument("--orders-wait-polls", type=int, default=40,
+    ap.add_argument("--orders-wait-polls", type=int, default=ORDERS_WAIT_POLLS,
                     help="polls to wait for THIS turn before accepting a stale answer")
-    ap.add_argument("--orders-fallback-polls", type=int, default=120,
+    ap.add_argument("--orders-fallback-polls", type=int, default=ORDERS_FALLBACK_POLLS,
                     help="polls before giving up on CIVVIS and running the built-ins")
     ap.add_argument("--orders-max-stale", type=int, default=4,
                     help="how many turns behind a reusable CIVVIS answer may be")
@@ -4325,6 +4380,12 @@ def main(argv: list[str] | None = None) -> int:
                     action="store_false", default=True,
                     help="do not ask the host for its combat preview before a strike "
                          "(the ledger's `strike` events then carry no prediction)")
+    ap.add_argument("--no-move-fallback", dest="move_fallback",
+                    action="store_false", default=True,
+                    help="do not answer a MOVE_TO the host accepts and never walks: "
+                         "the mod then drops the watch in silence as it always did, "
+                         "instead of naming the no-op (`move_noop`) and sending the "
+                         "nearest legal neighbour step (`move_fallback`)")
     ap.add_argument("--no-cap-moves-to-reach", dest="cap_moves_to_reach",
                     action="store_false", default=True,
                     help="send a MOVE_TO's whole destination even when the host's path "
@@ -4345,7 +4406,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="mid-turn combat frames per turn: after the opening orders "
                          "settle on a turn that issued a strike, re-export the board "
                          "and let CIVVIS re-plan the same turn (0 = off)")
-    ap.add_argument("--combat-frame-polls", type=int, default=20,
+    ap.add_argument("--combat-frame-polls", type=int, default=COMBAT_FRAME_POLLS,
                     help="polls to wait for a combat frame's answer before the frame "
                          "is abandoned by name and the turn ends")
     ap.add_argument("--replan-frames", type=int, default=2,

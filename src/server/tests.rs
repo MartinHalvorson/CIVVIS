@@ -179,6 +179,26 @@ fn browser_traces_each_units_walked_route_for_n_turns() {
     }
 }
 
+/// Units identify their owner through the command token itself. Painting the
+/// owner's jersey over the occupied hex duplicates that signal, muddies the
+/// terrain, and makes an unowned tile look partially claimed. Keep unit state
+/// out of the ground-painting pass while retaining the separate territory wash.
+#[test]
+fn browser_does_not_shade_tiles_based_on_unit_presence() {
+    let ground = EMBEDDED_INDEX
+        .split_once("function drawScene() {")
+        .expect("flat strategic renderer")
+        .1
+        .split_once("// --- territory borders:")
+        .expect("end of flat-map ground layers")
+        .0;
+    assert!(ground.contains("// --- territory wash:"));
+    assert!(
+        !ground.contains("state.units"),
+        "flat-map ground paint must not derive a tile tint from its unit"
+    );
+}
+
 /// A route is drawn in its owner's jersey — the primary down the middle,
 /// the secondary as the hairline that outlines it — and not in the dark
 /// casing that used to carry both layers. With several empires walking at
