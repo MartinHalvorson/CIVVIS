@@ -197,6 +197,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `early-project-restraint-2` | off (unmeasured) | Restrain an off-lane repeatable Great-Person project only while its district owes a first building this city can start now. | 1 \| 2 |
 | `first-builder-reserve-2` | off (unmeasured) | Reserve one Builder for an immediately connectable first-copy luxury when Amenities are short and expansion is covered, retaining a lifetime receipt. | 1 \| 2 |
 | `industrial-chain-debt` | off (unmeasured) | `industrial-chain-debt` (OptIn): an Industrial Zone owes its Workshop, Factory and plant the same flat debt a Campus owes its Library, a regional building is worth the production it reaches, and the Factory and plants join the buildings a repeatable project waits behind. | 1 \| 1 |
+| `modernize-before-spending` | off (unmeasured) | Upgrade the standing army before the purchase pass, at strategic moments. | 1 \| 1 |
 | `naval-recon-3` | off (unmeasured) | Version 3 of `naval-recon`: let a simultaneously missing land scout take the idle queue before the one peacetime sea scout. | 1 \| 3 |
 | `never-an-empty-queue-3` | off (unmeasured) | Version three of `never-an-empty-queue`: tolerate one transient empty turn, then recover a persistent stall with a civilian candidate above the hard veto. | 1 \| 3 |
 | `rapid-city-expansion-2` | off (unmeasured) | Version two of `rapid-city-expansion`: aim at the measured five-city opening band without version one's immediate fifteen-city order, non-empty queue preemption, closest-site override, founding-pantheon override, or automatic conquest pivot. | 1 \| 2 |
@@ -206,6 +207,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-preempts-the-queue` | off (unmeasured) | `siege-preempts-the-queue`: a raider on a city's doorstep is answered with a body before anything else is built, bought when no defender exists, and a recon unit is not a defender. | 1 \| 1 |
 | `skip-the-prophet-race-2` | off (unmeasured) | Version 2 of `skip-the-prophet-race`: retain version 1's published behavior, but screen the narrower last-call decision independently. | 1 \| 2 |
 | `trade-route-network` | off (unmeasured) | `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no Hub stands) beside a standing Campus escapes the Science contract and is priced as trade capacity; a Market or Lighthouse is worth the route it adds. | 1 \| 1 |
+| `veterans-withdraw-early` | off (unmeasured) | A promoted unit keeps hit points in hand before it withdraws. | 1 \| 1 |
 | `wounded-out-of-reach` | off (unmeasured) | A unit the next blow could remove leaves the reach of whatever can strike it — the roll-top total of visible attackers, or a raider remembered in the fog — and a shooter or scout does not end the turn inside a raider's reach without a melee unit beside it. | 1 \| 1 |
 
 ## Removed from the code
