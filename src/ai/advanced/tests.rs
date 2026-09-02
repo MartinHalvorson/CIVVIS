@@ -16039,6 +16039,11 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     live.disable_settler_never_idles();
+    // This arm is about the deployed rate forecast. The separately selected
+    // exhaustion guard is covered by its own fixture and would reject this
+    // site before that forecast gets to speak.
+    live.disable_exhaustion_loyalty_guard();
+    assert!(!live.exhaustion_loyalty_guard);
     // The deployed rate forecast remains independently covered after the
     // withheld frontier-floor control above.
     live.frontier_loyalty = false;
@@ -24139,18 +24144,24 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     live.enable_live_bridge();
     assert!(live.live_settler_capture_lessons);
     assert!(live.settlement_safety);
+    // The deployment ledger may select either native hysteresis version. This
+    // fixture instead proves that the live capture bridge supplies its own
+    // bounded recovery when both screened variants are withheld.
+    live.disable_settler_target_hysteresis();
+    live.disable_settler_target_hysteresis_2();
+    assert!(!live.settler_target_hysteresis);
+    assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_routing_recovery_on());
     assert!(
-        !live.settler_target_hysteresis_2,
-        "the average-based deployment selection keeps the hysteresis arm off"
+        !live.settler_target_hysteresis_on(),
+        "route recovery does not implicitly restore a withheld hysteresis arm"
     );
-    live.disable_settler_target_hysteresis_2();
-    assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_threat_detour_on());
 
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge();
     withheld.disable_live_settler_capture_lessons();
+    withheld.disable_settler_target_hysteresis();
     withheld.disable_settler_target_hysteresis_2();
     withheld.disable_settler_threat_detour();
     assert!(!withheld.settler_routing_recovery_on());
@@ -39287,9 +39298,10 @@ fn builder_tries_the_next_tile_follows_the_ledger() {
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
-    assert!(
-        !deployment.base.builder_tries_the_next_tile,
-        "not selected by the current three-batch deployment policy"
+    assert_eq!(
+        Some(deployment.base.builder_tries_the_next_tile),
+        crate::ai::advanced::gene_ledger::ledger_default_on("builder-tries-the-next-tile"),
+        "the deployment controller must follow the ledger"
     );
 }
 
@@ -43095,6 +43107,9 @@ fn the_science_lane_widens_while_a_city_can_still_mature() {
 
     let mut off = AdvancedAi::new();
     off.enable_live_bridge();
+    // Deployment defaults may select this independent arm; withhold it so
+    // this half continues to test the Science expansion phase itself.
+    off.disable_science_expansion_phase();
     off.victory_target = Some(VictoryTarget::Science);
     assert_eq!(
         off.assess(&game, 0).desired_cities,
