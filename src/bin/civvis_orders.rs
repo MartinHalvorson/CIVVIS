@@ -8593,15 +8593,20 @@ mod tests {
             "{refused}"
         );
 
+        let deployed_opt_in = civvis::ai::GENES
+            .iter()
+            .find(|gene| gene.opt_in() && civvis::ai::ledger_default_on(gene.tag) == Some(true))
+            .map(|gene| gene.tag)
+            .expect("the deployment genome selects an opt-in alongside the held treatment");
         let mixed = super::forced_live_treatments(&[
-            "science-victory-drive".to_string(),
+            deployed_opt_in.to_string(),
             held_live.to_string(),
-            "science-victory-drive".to_string(),
+            deployed_opt_in.to_string(),
         ])
         .expect("a wider profile may repeat a gene deployment already supplies");
         assert_eq!(mixed, vec![held_live]);
         assert!(
-            civvis::ai::gene_ledger::deployment_treatments().contains(&"science-victory-drive"),
+            civvis::ai::gene_ledger::deployment_treatments().contains(&deployed_opt_in),
             "the regression needs a deployment-provided member alongside the held treatment"
         );
 
