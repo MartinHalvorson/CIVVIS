@@ -837,3 +837,105 @@ follows, and §7 and §17 record how little a tactical swing of this size has
 moved a win rate before. Movement of the units that are not striking is
 still `coordinated_tactical_step`'s; a `positions_plan` is the follow-up the
 module is shaped for, and pricing the city assault jointly is the other.
+
+## 22. The siege train and the anvil: a force whose objective is a city (2026-09-02, opt-in genes `siege-train`, `anvil`)
+
+§19 ended on the gene the siege board could price and did not have: one that
+paced a siege train — held the melee until the guns were in range and the
+wall was going down. The only ring seal in the tree, `rush_siege_step`, is
+gated on `plan.rush`; the group mover's role spacing puts shooters at their
+range and melee at one; nothing decided *when* the train closed, *which*
+tiles sealed the ring, *what* each arm shot, or *who* walked in. The live
+record has the same shape at two hundred turns: eleven wars, four sieges to
+180–190 of 200, no capture. `siege-train` and `anvil`
+(`src/ai/advanced/siege_train.rs`, both opt-in, off, byte-identical when
+off) are the two doctrines of a force whose objective is a city.
+
+**`siege-train`** is a state machine per objective city — keyed by the city,
+because force groups are rebuilt every turn and a group's id is its lowest
+unit — with five stages and one "Military/Decision" line a turn:
+
+- *Stage.* The train gathers on the 3–5 ring, never inside the City Center's
+  own strike reach, until the strength standing there meets the bill: the
+  defenders within six, the city's strength and its walls at ten a hundred
+  points, times 1.25. A unit inside the reach steps back out; one far off
+  marches to the ring; relievers that come out are fought on the exact
+  forward model. On an arena the gate is arrival alone, for the reason the
+  posture ladder gives (no reinforcement is coming).
+- *Invest.* Every unit gets a post for the turn, drawn once at assessment:
+  melee take ring tiles in `rush_siege_step`'s spread-first order (a zone of
+  control covers a ring tile and both its ring neighbours, so two units
+  three apart seal what two side by side do not), the taker first; guns and
+  shooters keep a tile they can already shoot the city from, else take one
+  at their range behind a ring post and away from hostiles. The ring is
+  sealed when every passable neighbour is held or covered — the test
+  `Game::city_under_siege` applies, and the condition under which the city
+  stops healing twenty a turn. The test fixture proves it the engine's way:
+  the city at 150 does not heal at its owner's end of turn with two
+  warriors three apart on the ring, and heals to 170 when one is removed.
+- *Reduce.* Guns shoot the city — walls first by `city_take_damage`'s own
+  routing, then the garrison — unless a reliever within three of the city
+  can be killed with a 1.15 margin. Shooters kill a reliever if they can,
+  shoot units while the wall stands, and turn on the city once it is down.
+  Melee on the ring hold it and fortify: a swing at a wall above a fifth of
+  its pool lands fifteen percent on the wall and one point on the city and
+  costs a return blow, so it is refused unless a ram or tower stands by.
+- *Take.* One melee-capable unit — adjacent, or one move from the ring, with
+  the most movement — is the taker and is reserved: excluded from every
+  other blow and move, published through `reserved_units` for a joint
+  planner to read. When the city's hit points are within its expected blow
+  (the engine's melee arithmetic against `city_strength`, routed through the
+  wall pool as the engine routes it) it attacks, and the attack that reduces
+  the city is the capture.
+- *Hold.* The ladder's own `occupation_garrison_target` seats one unit; the
+  rest release to a group whose objective has moved on.
+
+Two engine facts fell out of writing it. A unit's route to a ring tile runs
+through the ring when that is shortest, and a unit entering the city's zone
+of control there is stopped on the wrong tile — the three-warrior fixture
+clumped on three adjacent tiles and left one side open — so the approach is
+by explicit steps that never cross a ring tile other than the goal, with one
+sideways step allowed before the unit has moved. And a goal that re-ranks as
+the unit walks makes it walk out and back within the turn: posts are drawn
+once a turn, for the whole train.
+
+**`anvil`**, for `plan.threatened_city`: the land group nearest it holds the
+city as a formation in place of the relief hold point — a shooter on the
+City Center (the garrison bonus and the city strike), melee on the two or
+three adjacent tiles that face the enemy with the best `tile_defense_bonus`,
+everyone else within two so the city strike joins their fight, never an
+empty ring while a hostile stands within six. A unit under 50 hp rotates
+into the city to heal by `Action::Swap` with the fresh unit standing there,
+which takes its tile — executed the moment the posts are drawn, before any
+unit has spent its movement fortifying, which is the order the first fixture
+got wrong. The formation engages relievers only when the exchange favours it:
+a shot has no return; a melee blow is taken when the engine's pair says it
+deals more than it takes and leaves the unit standing.
+
+**The gate (§13), read in order.** `doctrine_arena` control, 12 seeds:
+`+0.0`, 0/12 diverging on all thirteen boards. `the_storming`,
+`advanced+siege-train` against `advanced`, 40 seeds × 2 roles: **+474.2 ±
+67.1 (t 7.07, sign p < 0.0001, 33/5, fires 40/40)**, **1.57 kills per loss
+against 0.64**, and **cities +29/−1 against +1/−29** — the city taken in
+twenty-nine of forty assaults. Besieger arrival 8.86 → 6.08, `screen` 38 %
+→ 51 %, the besieger's swing per seed −291 → −54. On top of the kill plan
+(`advanced+battle-planner+siege-train` against `advanced+battle-planner`):
+**+284.5 ± 94.7 (t 3.00, sign p 0.0135, 24/9)**, 1.38 against 0.72, **cities
++10/−2 against +2/−10**, arrival 7.80 → 3.74. `the_relief` (the new board,
+`docs/DOCTRINE_ARENA.md`), `advanced+anvil` against `advanced`: **+64.8 ±
+33.0 (t 1.96, sign p 0.26, 23/15)** — the right sign, not a reading yet.
+`the_storming`'s garrison with the anvil: **+175.8 ± 57.1 (t 3.08, sign p
+0.0106, 18/5)**, 1.13 against 0.88, `ground` 16 % against 11 %, `screen`
+28 % against 10 %; the garrison lost the city twice in forty against once,
+one event at this n. `battle_bench` no-harm, `advanced+siege-train+anvil`
+against `advanced`, 100 seeds × 2: **+132.5 ± 33.3 (t 3.98, p 0.0001;
+62/37/1)**, exchange 1.21 against 0.83.
+
+**What this does not say.** The fires probes (six games each; the gene on in
+11 and 9 of 36 seats) read `~`, and the whole-game screen at scale is the
+no-harm check, for the reason §7 and §17 give. `battle-planner` does not yet
+read `reserved_units`, so on a board where both are on the plan can spend
+the taker's attack before the taker's turn; the hook is published for that
+change. The bill is read from visible defenders only, and a coastal city's
+water side cannot be sealed by land units — both are the engine's facts,
+not the doctrine's choices.
