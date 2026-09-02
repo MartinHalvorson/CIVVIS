@@ -10406,7 +10406,11 @@ mod tests {
         assert_eq!(swap.kind, "unit");
         assert_eq!(swap.subject, Some(101));
         assert_eq!(swap.verb.as_deref(), Some("SWAP"));
-        assert_eq!(swap.pos, Some((4, 5)), "the partner's plot, in host offsets");
+        assert_eq!(
+            swap.pos,
+            Some((4, 5)),
+            "the partner's plot, in host offsets"
+        );
 
         // A partner the mirror cannot see has no plot to name.
         assert!(translate(
@@ -10434,7 +10438,15 @@ mod tests {
             pos: Some((4, 5)),
         };
         let verdict = |after: &StateSnapshot| {
-            verify_unit_order(&order, 30, &before, after, &tiles, &[], LaterFrames::default())
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                after,
+                &tiles,
+                &[],
+                LaterFrames::default(),
+            )
         };
 
         let mut swapped = before.clone();
