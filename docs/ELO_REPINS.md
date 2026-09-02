@@ -1971,3 +1971,30 @@ units, so the behavior guard caught a real change. The anchor moves from v32's
 **18,508 decisions and `0xb880_bcae_d9b0_9877`** to **18,922 decisions and
 `0xf78c_7e99_7434_1c40`**. The audited rules fingerprint moves from
 `fnv1a64:7c1bacacca3d4120` to `fnv1a64:e69039571d195263`.
+
+## v34 (2026-09-02) — settler food stops at the post-drop growth cost
+
+The citizen governor gave a city producing a Settler an extra 0.55 Food
+weight and continued asking for ordinary growth surplus throughout the build.
+Any requested surplus also put every food-bearing plot in the preferred
+employment tier. Together those rules kept bidding citizens onto Food even
+after the city had banked all it could use when the Settler consumed one
+Citizen, trading away Production and other yields for surplus Food with no
+near-term purpose.
+
+A population-consuming Settler now turns Food into a bounded constraint. The
+governor computes the game-speed-scaled growth cost at the post-completion
+population, subtracts the Food already banked, and requests no more than that
+remainder. Food carries zero marginal weight during the build, so the citizen
+planner ranks jobs by their other yields and uses its nutrition swaps to buy
+only the outstanding Food budget. Once the smaller city's next growth is
+funded, the target falls to current consumption. Magnus's Provision promotion
+is explicitly exempt because its Settlers do not consume population and there
+is no post-build drop to recover.
+
+This is shared citizen-planning behavior rather than a controller treatment,
+so every simulated seat — including `advanced_v1` — uses it. On the combined
+tree, the anchor moves from v33's 18,922 decisions and
+`0xf78c_7e99_7434_1c40` to **19,113 decisions and
+`0x7646_cfed_dde2_cf37`** across the five profiles. The shipped ruleset
+fingerprint remains at v33's `fnv1a64:e69039571d195263`.
