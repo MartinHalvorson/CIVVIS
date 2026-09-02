@@ -6651,14 +6651,12 @@ fn outgunned_at_war_fixture() -> (Game, AdvancedAi) {
 }
 
 fn recovery_hostile_side_fixture() -> Game {
-    use crate::ai::advanced::city_campaign::CAMPAIGN_REACH;
-
     let mut game = Game::new(4, 80, 40, 5_151, 250, 0);
     game.turn = 80;
     game.found_city_for(0, (10, 20), None);
     game.found_city_for(1, (18, 20), None);
-    game.found_city_for(2, (10 + CAMPAIGN_REACH - 3, 20), None);
-    game.found_city_for(3, (10 + CAMPAIGN_REACH * 3, 20), None);
+    game.found_city_for(2, (25, 20), None);
+    game.found_city_for(3, (64, 20), None);
     game.players[2].is_minor = true;
     game.record_contact(0, 3);
     std::sync::Arc::make_mut(&mut game.observed_military_power).extend([
@@ -6721,8 +6719,6 @@ fn recovery_v2_does_not_sum_weak_fronts_into_extra_recovery() {
 
     let mut v2 = AdvancedAi::new();
     v2.enable_recovery_reads_the_war_2();
-    assert!(v2.rival_is_in_campaign_reach(&game, 0, 1));
-    assert!(v2.rival_is_in_campaign_reach(&game, 0, 2));
     assert_ne!(
         v2.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
@@ -6738,50 +6734,53 @@ fn recovery_v2_does_not_sum_weak_fronts_into_extra_recovery() {
     assert_eq!(
         v2.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "version two preserves v1 for a reachable major opponent"
+        "version two preserves v1's strongest-current-major trigger"
     );
 }
 
 #[test]
-fn recovery_v2_waits_for_a_remote_war_to_reach_home() {
-    let mut game = recovery_hostile_side_fixture();
-    game.at_war.clear();
-    game.at_war.insert((0, 3));
-    game.at_war.insert((3, 0));
+fn recovery_v2_releases_a_stale_power_gap_but_not_a_threatened_city() {
+    let (mut game, _) = outgunned_at_war_fixture();
+    game.turn = 100;
 
     let mut v1 = AdvancedAi::new();
     v1.enable_recovery_reads_the_war();
+    v1.major_war_since = Some(0);
     assert_eq!(
         v1.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "version one reacts to a remote wartime major's whole army"
+        "version one can remain in power-gap Recovery for the whole war"
     );
 
     let mut v2 = AdvancedAi::new();
     v2.enable_recovery_reads_the_war_2();
-    assert!(!v2.rival_is_in_campaign_reach(&game, 0, 3));
+    v2.major_war_since = Some(0);
     assert_ne!(
         v2.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "a paper war outside campaign reach must not seize the whole economy"
+        "v2 releases a power-gap posture after its bounded window"
     );
 
+    v2.major_war_since = Some(game.turn.saturating_sub(1));
+    assert_eq!(
+        v2.assess(&game, 0).strategy,
+        GrandStrategy::Recovery,
+        "v2 preserves v1's trigger during a fresh major war"
+    );
+
+    v2.major_war_since = Some(0);
     let home = game.cities[&game.player_city_ids(0)[0]].pos;
     let attacker = game
         .nbrs(home)
         .into_iter()
         .find(|position| game.unit_ids_at(*position).is_empty())
         .expect("the capital has an open attack ring");
-    game.spawn_test_unit("modern_armor", 3, attacker);
-    assert_eq!(
-        v2.threatened_city(&game, 0),
-        game.player_city_ids(0).first().copied(),
-        "the remote rival has now reached the city"
-    );
+    game.spawn_test_unit("modern_armor", 1, attacker);
+    assert!(v2.threatened_city(&game, 0).is_some());
     assert_eq!(
         v2.assess(&game, 0).strategy,
         GrandStrategy::Recovery,
-        "immediate city danger remains an unconditional Recovery trigger"
+        "immediate city danger overrides the stale-war bound"
     );
 }
 

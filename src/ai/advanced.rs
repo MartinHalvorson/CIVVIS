@@ -5822,14 +5822,13 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
-    /// Version two of `recovery_reads_the_war`: compare our army with the
-    /// strongest current major opponent whose cities are within the campaign
-    /// planner's existing reach. This keeps a remote war from imposing an
-    /// empire-wide defensive posture before it reaches home, without summing
-    /// several individually weaker armies into extra Recovery. An immediate
-    /// city threat still triggers Recovery independently, including city-state
-    /// and multi-front pressure. One family version plays at a time. Opt-in
-    /// gene `recovery-reads-the-war-2`.
+    /// Version two of `recovery_reads_the_war`: keep version one's successful
+    /// comparison against the strongest current major opponent, but make the
+    /// power-gap posture temporary. After `RECOVERY_POSTURE_LIMIT` standard
+    /// turns in the same major war, a power gap alone can no longer keep the
+    /// whole economy in Recovery. An immediate city threat remains an
+    /// unconditional Recovery trigger, however old the war. One family
+    /// version plays at a time. Opt-in gene `recovery-reads-the-war-2`.
     recovery_reads_the_war_2: bool,
     /// The Objective Board's shortfall reaches production and the treasury:
     /// an idle city starts the unit a short row asks for (the best worth per
@@ -10881,29 +10880,23 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
-        // ⚠ `recovery_reads_the_war`: version one reads the strongest major
-        // we are fighting. Version two keeps that successful comparison but
-        // requires the opponent's cities to be inside the campaign planner's
-        // existing reach. It deliberately does not sum several weaker armies:
-        // the first screened attempt did, and across 48 games it cost 2.93 end
-        // techs and 36 science/turn versus off while trailing v1 by a full
-        // score-share point. Off, preserve the historical board-wide maximum.
-        // The separate `threatened_city` arm below remains immediate and reads
-        // any local major, city-state, or multi-front pressure.
-        let recovery_opponent_power = if self.recovery_reads_the_war_2 {
-            wartime_majors
-                .iter()
-                .filter(|rival| self.rival_is_in_campaign_reach(g, pid, **rival))
-                .map(|rival| g.military_power(*rival))
-                .fold(0.0_f64, f64::max)
-        } else if self.recovery_reads_the_war {
-            wartime_majors
-                .iter()
-                .map(|o| g.military_power(*o))
-                .fold(0.0_f64, f64::max)
-        } else {
-            strongest_rival
-        };
+        // ⚠ `recovery_reads_the_war`: both family versions read the strongest
+        // major we are fighting. Do not sum armies or discard a remote current
+        // opponent: dedicated screens rejected both alternatives. Summing
+        // cost 2.93 end techs and 36 science/turn versus off across 48 games;
+        // filtering by campaign reach trailed v1 by 8.2 win points and 1.60
+        // score-share points in its 24-game directional block. Off, preserve
+        // the historical board-wide maximum. The versions differ below in how
+        // long the power-gap posture may hold, not in whom the war reading sees.
+        let recovery_opponent_power =
+            if self.recovery_reads_the_war || self.recovery_reads_the_war_2 {
+                wartime_majors
+                    .iter()
+                    .map(|o| g.military_power(*o))
+                    .fold(0.0_f64, f64::max)
+            } else {
+                strongest_rival
+            };
         // ⚠ `elective_war_in_reach`: the weakest rival WE CAN REACH, by the
         // reach the campaign planner already requires. Off, this is the
         // weakest empire anywhere on the board, which is what the branch
@@ -11162,7 +11155,7 @@ impl AdvancedAi {
         // t219, each ~25 turns apart. `major_war_since` is monotone for as long
         // as the war lasts, so a posture that has already been given its turns
         // stays released until the war ends.
-        let recovery_is_stale = self.bounded_recovery
+        let recovery_is_stale = (self.bounded_recovery || self.recovery_reads_the_war_2)
             && self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1)
             });
