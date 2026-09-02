@@ -508,15 +508,12 @@ fn inside_borders(g: &Game, pid: usize, pos: Pos) -> bool {
 
 /// The medoid of a set of tiles.
 fn medoid(g: &Game, tiles: &[Pos]) -> Option<Pos> {
-    tiles
-        .iter()
-        .copied()
-        .min_by_key(|pos| {
-            (
-                tiles.iter().map(|other| g.wdist(*pos, *other)).sum::<i32>(),
-                *pos,
-            )
-        })
+    tiles.iter().copied().min_by_key(|pos| {
+        (
+            tiles.iter().map(|other| g.wdist(*pos, *other)).sum::<i32>(),
+            *pos,
+        )
+    })
 }
 
 impl AdvancedAi {
@@ -585,7 +582,9 @@ impl AdvancedAi {
             .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .filter(|unit| g.wdist(unit.pos, at) <= radius)
-            .filter(|unit| g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
+            .filter(|unit| {
+                g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id)
+            })
             .map(|unit| effective_strength(g.unit_strength(unit, false), unit.hp))
             .sum();
         let remembered = if self.belief_pressure {
@@ -621,7 +620,9 @@ impl AdvancedAi {
                 let spec = &g.rules.units[unit.kind];
                 spec.class == "military" && spec.domain.as_deref() != Some("air")
             })
-            .filter(|unit| g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
+            .filter(|unit| {
+                g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id)
+            })
             .filter(|unit| {
                 if arena {
                     return true;
@@ -664,7 +665,12 @@ impl AdvancedAi {
 
     /// The strongest bordering major we are not at war with, while our power
     /// is under [`DETER_POWER_RATIO`] of theirs: `(rival, our contact city)`.
-    fn deter_target(&self, g: &Game, pid: usize, our_cities: &[(u32, Pos)]) -> Option<(usize, u32)> {
+    fn deter_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        our_cities: &[(u32, Pos)],
+    ) -> Option<(usize, u32)> {
         if our_cities.is_empty() {
             return None;
         }
@@ -729,7 +735,9 @@ impl AdvancedAi {
                 rival: owner,
                 power_ratio: g.military_power(pid) / g.military_power(owner).max(1.0),
                 tech_lead: g.players[pid].techs.len() as i64
-                    - g.players.get(owner).map_or(0, |player| player.techs.len() as i64),
+                    - g.players
+                        .get(owner)
+                        .map_or(0, |player| player.techs.len() as i64),
                 distance,
             }
         });
@@ -817,7 +825,9 @@ impl AdvancedAi {
                         .filter(|distance| *distance <= THREAT_RELIEF_RADIUS)
                         .min();
                     nearest
-                        .map(|distance| ((f64::from(distance) / 2.0).ceil() as u32).max(DEFEND_DEADLINE_FLOOR))
+                        .map(|distance| {
+                            ((f64::from(distance) / 2.0).ceil() as u32).max(DEFEND_DEADLINE_FLOOR)
+                        })
                         .unwrap_or(THREAT_RELIEF_RADIUS as u32)
                 }
             };
@@ -920,9 +930,7 @@ impl AdvancedAi {
             previous_siege = Some(key);
         }
         if arena {
-            let from = pool
-                .first()
-                .map_or((0, 0), |uid| g.units[uid].pos);
+            let from = pool.first().map_or((0, 0), |uid| g.units[uid].pos);
             if let Some(flag) = g.arena_enemy_flag(pid, from) {
                 rows.push(Objective {
                     kind: ObjectiveKind::Siege,
@@ -953,15 +961,17 @@ impl AdvancedAi {
             let Some(at) = medoid(g, &tiles) else {
                 continue;
             };
-            let covered = our_cities
-                .iter()
-                .any(|(cid, pos)| defended.contains(cid) && g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS);
+            let covered = our_cities.iter().any(|(cid, pos)| {
+                defended.contains(cid) && g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS
+            });
             if covered {
                 continue;
             }
             let strength: f64 = force
                 .iter()
-                .map(|uid| effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp))
+                .map(|uid| {
+                    effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp)
+                })
                 .sum();
             let value: f64 = force.iter().map(|uid| unit_value(g, *uid)).sum();
             let naval = force.iter().any(|uid| BasicAi::waterborne(g, *uid));
@@ -1008,7 +1018,10 @@ impl AdvancedAi {
                     })
                     .max_by(|a, b| {
                         let power = |uid: &u32| {
-                            effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp)
+                            effective_strength(
+                                g.unit_strength(&g.units[uid], true),
+                                g.units[uid].hp,
+                            )
                         };
                         power(a).total_cmp(&power(b)).then_with(|| b.cmp(a))
                     })
@@ -1050,13 +1063,17 @@ impl AdvancedAi {
                 continue;
             }
             let cost = g.rules.units[unit.kind].cost;
-            let value = if settler { cost + SETTLER_PREMIUM } else { cost };
-            let remembered = self
-                .hostile_strength_near(g, pid, unit.pos, THREAT_RELIEF_RADIUS, visible)
-                > 0.0;
+            let value = if settler {
+                cost + SETTLER_PREMIUM
+            } else {
+                cost
+            };
+            let remembered =
+                self.hostile_strength_near(g, pid, unit.pos, THREAT_RELIEF_RADIUS, visible) > 0.0;
             let reach = self.barbarian_reach(g, pid, unit.pos, THREAT_RELIEF_RADIUS + 2);
             let nearest = reach.nearest(g, unit.pos);
-            let deadline = (nearest < i32::MAX).then(|| ((f64::from(nearest) / 2.0).ceil() as u32).max(1));
+            let deadline =
+                (nearest < i32::MAX).then(|| ((f64::from(nearest) / 2.0).ceil() as u32).max(1));
             // A guard already bound to the settler serves the row.
             let guarded = g.player_unit_ids(pid).into_iter().any(|guard| {
                 g.units[&guard].linked_to == Some(uid)
@@ -1195,7 +1212,12 @@ impl AdvancedAi {
 
     /// Rank the rows: value over deadline, an urgent Defend above every
     /// offensive row, and no row above one it depends on.
-    fn rank_rows(g: &Game, rows: &mut Vec<Objective>, pool: &[u32], facts: &BTreeMap<u32, UnitFacts>) {
+    fn rank_rows(
+        g: &Game,
+        rows: &mut Vec<Objective>,
+        pool: &[u32],
+        facts: &BTreeMap<u32, UnitFacts>,
+    ) {
         // A Defend is urgent when its deadline is inside the relief time of
         // the nearest body that is not already within reach of the city.
         for row in rows.iter_mut() {
@@ -1277,7 +1299,12 @@ impl AdvancedAi {
         let mut forces = std::mem::take(&mut self.objective_board_state.forces);
         let previous_key: BTreeMap<u32, ObjectiveKey> = forces
             .iter()
-            .flat_map(|force| force.units.iter().map(move |uid| (*uid, force.objective_key)))
+            .flat_map(|force| {
+                force
+                    .units
+                    .iter()
+                    .map(move |uid| (*uid, force.objective_key))
+            })
             .collect();
         for force in &mut forces {
             force.units.retain(|uid| pool_set.contains(uid));
@@ -1299,7 +1326,9 @@ impl AdvancedAi {
                 let rekey = rows
                     .iter()
                     .filter(|row| matches!(row.key, ObjectiveKey::Destroy(_)))
-                    .filter(|row| !taken_rows.contains(&(row.key, force.domain == ForceDomain::Sea)))
+                    .filter(|row| {
+                        !taken_rows.contains(&(row.key, force.domain == ForceDomain::Sea))
+                    })
                     .filter(|row| g.wdist(row.at, force.aimed_at) <= DESTROY_REKEY_RADIUS)
                     .min_by_key(|row| (g.wdist(row.at, force.aimed_at), row.key))
                     .map(|row| row.key);
@@ -1312,7 +1341,9 @@ impl AdvancedAi {
             // The row is gone: the force dissolves.
             force.units.clear();
         }
-        forces.retain(|force| !force.units.is_empty() || force.objective_key == ObjectiveKey::Reserve);
+        forces.retain(|force| {
+            !force.units.is_empty() || force.objective_key == ObjectiveKey::Reserve
+        });
 
         // Allocation.
         let mut assignment: BTreeMap<u32, usize> = BTreeMap::new();
@@ -1321,8 +1352,11 @@ impl AdvancedAi {
                 assignment.insert(*uid, index);
             }
         }
-        let row_rank: BTreeMap<ObjectiveKey, usize> =
-            rows.iter().enumerate().map(|(rank, row)| (row.key, rank)).collect();
+        let row_rank: BTreeMap<ObjectiveKey, usize> = rows
+            .iter()
+            .enumerate()
+            .map(|(rank, row)| (row.key, rank))
+            .collect();
         let need_of = |key: ObjectiveKey, rows: &[Objective]| -> ForceNeed {
             rows.iter()
                 .find(|row| row.key == key)
@@ -1356,7 +1390,9 @@ impl AdvancedAi {
                 let mut force_index = forces
                     .iter()
                     .position(|force| force.objective_key == row.key && force.domain == domain);
-                let mut have = force_index.map_or(ForceNeed::default(), |index| have_of(&forces[index], &facts));
+                let mut have = force_index.map_or(ForceNeed::default(), |index| {
+                    have_of(&forces[index], &facts)
+                });
                 loop {
                     let unmet = row.requirement.unmet(&have);
                     if unmet.is_zero() {
@@ -1376,13 +1412,21 @@ impl AdvancedAi {
                         if row.kind == ObjectiveKind::Recon && !unit.recon {
                             continue;
                         }
-                        if unit.recon && row.kind != ObjectiveKind::Recon && row.requirement.strength > 0.0 && unit.strength < 15.0 {
+                        if unit.recon
+                            && row.kind != ObjectiveKind::Recon
+                            && row.requirement.strength > 0.0
+                            && unit.strength < 15.0
+                        {
                             // A scout is not a body for a fight.
                             continue;
                         }
                         let distance = g.wdist(unit.pos, row.at);
                         match row.kind {
-                            ObjectiveKind::Defend if !row.urgent && distance > THREAT_RELIEF_RADIUS => continue,
+                            ObjectiveKind::Defend
+                                if !row.urgent && distance > THREAT_RELIEF_RADIUS =>
+                            {
+                                continue
+                            }
                             ObjectiveKind::Relieve if distance <= THREAT_RELIEF_RADIUS => continue,
                             _ => {}
                         }
@@ -1391,7 +1435,9 @@ impl AdvancedAi {
                             continue;
                         }
                         let travel = unit.travel_turns(g, row.at, stop);
-                        let late = row.deadline.map_or(0, |deadline| travel.saturating_sub(deadline));
+                        let late = row
+                            .deadline
+                            .map_or(0, |deadline| travel.saturating_sub(deadline));
                         let arrival = LATE_FACTOR.powi(late as i32);
                         let score_here = here * arrival / (1.0 + f64::from(travel));
                         if let Some(current) = assignment.get(uid).copied() {
@@ -1409,7 +1455,8 @@ impl AdvancedAi {
                                 let unmet_there = need_there.unmet(&have_there);
                                 let contribution_there = unit.contribution(&unmet_there);
                                 let travel_there = unit.travel_turns(g, there.aimed_at, 1);
-                                let score_there = contribution_there / (1.0 + f64::from(travel_there));
+                                let score_there =
+                                    contribution_there / (1.0 + f64::from(travel_there));
                                 let higher = row_rank
                                     .get(&there.objective_key)
                                     .is_some_and(|other| *other < rank);
@@ -1424,7 +1471,9 @@ impl AdvancedAi {
                                 }
                             }
                         }
-                        if best.is_none_or(|(score, id)| score_here > score || (score_here == score && *uid < id)) {
+                        if best.is_none_or(|(score, id)| {
+                            score_here > score || (score_here == score && *uid < id)
+                        }) {
                             best = Some((score_here, *uid));
                         }
                     }
@@ -1475,9 +1524,9 @@ impl AdvancedAi {
                 .copied()
                 .filter(|uid| facts[uid].domain == domain && !assignment.contains_key(uid))
                 .collect();
-            let existing = forces
-                .iter()
-                .position(|force| force.objective_key == ObjectiveKey::Reserve && force.domain == domain);
+            let existing = forces.iter().position(|force| {
+                force.objective_key == ObjectiveKey::Reserve && force.domain == domain
+            });
             match (existing, leftovers.is_empty()) {
                 (Some(index), _) => {
                     forces[index].units = leftovers;
@@ -1509,13 +1558,22 @@ impl AdvancedAi {
         // Reassignments: a unit whose force changed row.
         let reassignments = forces
             .iter()
-            .flat_map(|force| force.units.iter().map(move |uid| (*uid, force.objective_key)))
+            .flat_map(|force| {
+                force
+                    .units
+                    .iter()
+                    .map(move |uid| (*uid, force.objective_key))
+            })
             .filter(|(uid, key)| previous_key.get(uid).is_some_and(|before| before != key))
             .count() as u32;
 
         // Requisitions: what every row still lacks.
         let average_body = {
-            let strengths: Vec<f64> = facts.values().map(|unit| unit.strength).filter(|s| *s > 0.0).collect();
+            let strengths: Vec<f64> = facts
+                .values()
+                .map(|unit| unit.strength)
+                .filter(|s| *s > 0.0)
+                .collect();
             if strengths.is_empty() {
                 DEFAULT_BODY_STRENGTH
             } else {
@@ -1642,7 +1700,11 @@ impl AdvancedAi {
             })
             .map(|player| player.id);
         if let Some(rival) = strongest {
-            let theirs: Vec<Pos> = g.player_city_ids(rival).into_iter().map(|cid| g.cities[&cid].pos).collect();
+            let theirs: Vec<Pos> = g
+                .player_city_ids(rival)
+                .into_iter()
+                .map(|cid| g.cities[&cid].pos)
+                .collect();
             if let Some(frontier) = ours
                 .iter()
                 .filter_map(|cid| {
@@ -1687,7 +1749,9 @@ impl AdvancedAi {
             .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .filter(|unit| g.wdist(unit.pos, objective) <= THREAT_RELIEF_RADIUS + 2)
-            .filter(|unit| g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
+            .filter(|unit| {
+                g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id)
+            })
             .map(|unit| unit.pos)
             .collect();
         let Some(enemy) = medoid(g, &hostile) else {
@@ -1714,7 +1778,10 @@ impl AdvancedAi {
             .players
             .iter()
             .filter(|player| {
-                player.id != pid && player.alive && !player.is_barbarian && g.is_at_war(pid, player.id)
+                player.id != pid
+                    && player.alive
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, player.id)
             })
             .map(|player| player.id)
             .collect();
@@ -1743,7 +1810,8 @@ impl AdvancedAi {
             let objective = row.map_or(force.aimed_at, |row| row.at);
             let kind = row.map(|row| row.kind);
             let focus_target = self.force_focus_target(g, pid, &units, &objective_enemies, plan);
-            let local_strength_ratio = self.local_strength_ratio(g, pid, &units, &hostile_seats, objective);
+            let local_strength_ratio =
+                self.local_strength_ratio(g, pid, &units, &hostile_seats, objective);
             let average_hp = units.iter().map(|uid| g.units[uid].hp).sum::<i32>() as f64
                 / units.len().max(1) as f64;
             let contact = units.iter().any(|uid| {
@@ -1776,7 +1844,9 @@ impl AdvancedAi {
             });
             let force_strength: f64 = units
                 .iter()
-                .map(|uid| effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp))
+                .map(|uid| {
+                    effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp)
+                })
                 .sum();
             let rally = match kind {
                 Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
@@ -1835,7 +1905,8 @@ impl AdvancedAi {
                         }
                     }
                     Some(ObjectiveKind::Destroy) => {
-                        let hostile = self.hostile_strength_near(g, pid, objective, FORCE_LINK, &visible);
+                        let hostile =
+                            self.hostile_strength_near(g, pid, objective, FORCE_LINK, &visible);
                         let exchange = if hostile <= 0.0 {
                             f64::INFINITY
                         } else {
@@ -2007,7 +2078,7 @@ mod tests {
             .expect("a city of ours")
     }
 
-    fn row<'a>(ai: &'a AdvancedAi, key: ObjectiveKey) -> Option<&'a Objective> {
+    fn row(ai: &AdvancedAi, key: ObjectiveKey) -> Option<&Objective> {
         ai.objective_board().rows.iter().find(|row| row.key == key)
     }
 
@@ -2018,14 +2089,13 @@ mod tests {
             .find(|force| force.objective_key == key)
     }
 
-
     #[test]
     fn the_gene_ships_off_and_is_registered() {
         let ai = AdvancedAi::new();
         assert!(!ai.objective_board, "an opt-in ships off");
-        assert!(super::super::GENES
-            .iter()
-            .any(|gene| gene.opt_in() && gene.tag == "objective-board" && gene.field == "objective_board"));
+        assert!(super::super::GENES.iter().any(|gene| gene.opt_in()
+            && gene.tag == "objective-board"
+            && gene.field == "objective_board"));
         let mut on = AdvancedAi::new();
         on.enable_objective_board();
         assert!(on.objective_board);
@@ -2080,20 +2150,30 @@ mod tests {
         assert!(AdvancedAi::city_pressure(&g, 0, first) >= BASTION_PRESSURE);
         assert!(AdvancedAi::city_pressure(&g, 0, second) >= BASTION_PRESSURE);
         ai.rebuild_force_groups(&g, 0, &plan);
-        let defend_first = row(&ai, ObjectiveKey::Defend(first)).expect("a Defend row for the first city");
-        let defend_second = row(&ai, ObjectiveKey::Defend(second)).expect("a Defend row for the second city");
+        let defend_first =
+            row(&ai, ObjectiveKey::Defend(first)).expect("a Defend row for the first city");
+        let defend_second =
+            row(&ai, ObjectiveKey::Defend(second)).expect("a Defend row for the second city");
         assert!(defend_first.deadline.is_some() && defend_second.deadline.is_some());
         let force_first = force_for(&ai, ObjectiveKey::Defend(first)).expect("served");
         let force_second = force_for(&ai, ObjectiveKey::Defend(second)).expect("served");
         assert!(force_first.units.iter().all(|uid| ours_first.contains(uid)));
-        assert!(force_second.units.iter().all(|uid| ours_second.contains(uid)));
+        assert!(force_second
+            .units
+            .iter()
+            .all(|uid| ours_second.contains(uid)));
         assert!(!force_first.units.is_empty() && !force_second.units.is_empty());
         // And the projection: one group per force, holding or engaging at
         // its own city.
         assert_eq!(ai.force_groups.len(), 2);
         for group in &ai.force_groups {
-            assert!(matches!(group.posture, ForcePosture::Hold | ForcePosture::Engage));
-            assert!(group.objective == g.cities[&first].pos || group.objective == g.cities[&second].pos);
+            assert!(matches!(
+                group.posture,
+                ForcePosture::Hold | ForcePosture::Engage
+            ));
+            assert!(
+                group.objective == g.cities[&first].pos || group.objective == g.cities[&second].pos
+            );
         }
     }
 
@@ -2132,9 +2212,15 @@ mod tests {
         assert!(defend < destroy, "the Defend ranks above the Destroy");
         let force = force_for(&ai, ObjectiveKey::Defend(home)).expect("served");
         assert_eq!(force.units, ours, "every warrior holds the city");
-        assert!(force_for(&ai, ObjectiveKey::Destroy(stray)).is_none(), "nothing left to strip");
+        assert!(
+            force_for(&ai, ObjectiveKey::Destroy(stray)).is_none(),
+            "nothing left to strip"
+        );
         assert!(!force.units.contains(&scout));
-        assert!(ai.requisitions().iter().any(|req| req.kind == ObjectiveKind::Destroy));
+        assert!(ai
+            .requisitions()
+            .iter()
+            .any(|req| req.kind == ObjectiveKind::Destroy));
     }
 
     /// A task force keeps its id across turns and across the death of its
@@ -2154,10 +2240,13 @@ mod tests {
         let mut ai = on();
         let plan = conquest(&g, None);
         ai.rebuild_force_groups(&g, 0, &plan);
-        let before = force_for(&ai, ObjectiveKey::Defend(home)).expect("served").clone();
+        let before = force_for(&ai, ObjectiveKey::Defend(home))
+            .expect("served")
+            .clone();
         // Two warriors meet the need; the third is the reserve.
         assert_eq!(before.units, ours[..2].to_vec());
-        assert!(force_for(&ai, ObjectiveKey::Reserve).is_some_and(|reserve| reserve.units == vec![ours[2]]));
+        assert!(force_for(&ai, ObjectiveKey::Reserve)
+            .is_some_and(|reserve| reserve.units == vec![ours[2]]));
         let lowest = *before.units.iter().min().unwrap();
         g.remove_unit(lowest);
         g.turn += 1;
@@ -2204,7 +2293,10 @@ mod tests {
         assert!(siege.value > 0.0);
         let force = force_for(&ai, ObjectiveKey::Siege(target)).expect("a siege force");
         assert!(!force.units.is_empty());
-        assert!(ai.force_groups.iter().any(|group| group.objective == g.cities[&target].pos));
+        assert!(ai
+            .force_groups
+            .iter()
+            .any(|group| group.objective == g.cities[&target].pos));
     }
 
     /// A Defend whose deadline is inside the relief time outranks a Siege of
@@ -2240,15 +2332,34 @@ mod tests {
         g.turn += 1;
         ai.rebuild_force_groups(&g, 0, &plan);
         let board = ai.objective_board();
-        let defend = board.rows.iter().position(|row| row.key == ObjectiveKey::Defend(home)).expect("Defend");
-        let siege = board.rows.iter().position(|row| row.key == ObjectiveKey::Siege(target)).expect("Siege");
-        assert!(board.rows[siege].value > board.rows[defend].value, "the siege is worth more");
-        assert!(board.rows[defend].urgent, "the deadline is inside the relief time");
+        let defend = board
+            .rows
+            .iter()
+            .position(|row| row.key == ObjectiveKey::Defend(home))
+            .expect("Defend");
+        let siege = board
+            .rows
+            .iter()
+            .position(|row| row.key == ObjectiveKey::Siege(target))
+            .expect("Siege");
+        assert!(
+            board.rows[siege].value > board.rows[defend].value,
+            "the siege is worth more"
+        );
+        assert!(
+            board.rows[defend].urgent,
+            "the deadline is inside the relief time"
+        );
         assert!(defend < siege, "and the Defend ranks first");
-        assert!(board.rows[defend].deadline.is_some_and(|deadline| deadline >= DEFEND_DEADLINE_FLOOR));
+        assert!(board.rows[defend]
+            .deadline
+            .is_some_and(|deadline| deadline >= DEFEND_DEADLINE_FLOOR));
         // The far warrior is pulled home by the urgent Defend.
         let force = force_for(&ai, ObjectiveKey::Defend(home)).expect("served");
-        assert!(force.units.contains(&ours[2]), "an urgent Defend pulls anyone");
+        assert!(
+            force.units.contains(&ours[2]),
+            "an urgent Defend pulls anyone"
+        );
     }
 
     /// A camp within nine of a city is a row before turn 100 and not after.
@@ -2265,14 +2376,24 @@ mod tests {
         ai.rebuild_force_groups(&g, 0, &plan);
         let camp_row = row(&ai, ObjectiveKey::Camp(camp)).expect("a ClearCamp row before turn 100");
         assert_eq!(camp_row.kind, ObjectiveKind::ClearCamp);
-        assert!((camp_row.value - CAMP_VALUE).abs() < 1e-9, "an unguarded camp is worth the base");
+        assert!(
+            (camp_row.value - CAMP_VALUE).abs() < 1e-9,
+            "an unguarded camp is worth the base"
+        );
         assert_eq!(camp_row.requirement.melee, 1);
         let force = force_for(&ai, ObjectiveKey::Camp(camp)).expect("a force walks to it");
         assert_eq!(force.doctrine_state, ForcePosture::Advance);
         g.turn = g.standard_duration(CAMP_TURN_LIMIT);
         ai.rebuild_force_groups(&g, 0, &plan);
-        assert!(row(&ai, ObjectiveKey::Camp(camp)).is_none(), "no row after turn 100");
-        assert!(ai.objective_board().forces.iter().all(|force| force.objective_key == ObjectiveKey::Reserve));
+        assert!(
+            row(&ai, ObjectiveKey::Camp(camp)).is_none(),
+            "no row after turn 100"
+        );
+        assert!(ai
+            .objective_board()
+            .forces
+            .iter()
+            .all(|force| force.objective_key == ObjectiveKey::Reserve));
     }
 
     /// A settler outside our borders is an Escort row; its shortfall is a
@@ -2290,6 +2411,8 @@ mod tests {
         assert!((escort.value - (cost + SETTLER_PREMIUM)).abs() < 1e-9);
         assert_eq!(escort.requirement.melee, 1);
         let requisitions = ai.requisitions();
-        assert!(requisitions.iter().any(|req| req.kind == ObjectiveKind::Escort && req.count == 1));
+        assert!(requisitions
+            .iter()
+            .any(|req| req.kind == ObjectiveKind::Escort && req.count == 1));
     }
 }
