@@ -68,7 +68,11 @@
 //!    takes a heal slot — a tile the field reads as zero, a district or
 //!    friendly ground preferred — and enters the recovery. Units go to slots
 //!    by the Hungarian method on route turns plus danger past the unit's
-//!    spare hit points; a lethal slot is never taken. Every assigned tile is
+//!    spare hit points; a lethal slot is never taken. A unit with a blow to
+//!    offer — the kill plan's shooters, spent or declined, and any unit with
+//!    an enemy city in its attack reach — is not placed: it stays the
+//!    ladder's, which prices the blow on its own clone exactly as version
+//!    one does. Every assigned tile is
 //!    reserved, each unit's end tile this turn is chosen against the
 //!    reservations, and the moves are issued front to rear so a rear unit
 //!    can enter the tile a front unit vacates. On the approach — no enemy
@@ -697,7 +701,7 @@ impl AdvancedAi {
                 .is_some_and(|unit| unit.owner == pid && unit.hp < RETURN_HP)
         });
         let mut field = DangerField::new(g, pid);
-        let blows = self.kill_sequence_in(g, pid, &mut field);
+        let (blows, armed) = self.kill_sequence_in(g, pid, &mut field);
         let mut struck = false;
         let mut strikers = BTreeSet::new();
         if !blows.is_empty() {
@@ -723,7 +727,7 @@ impl AdvancedAi {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
-            self.plan_positions(g, pid, &mut field);
+            self.plan_positions(g, pid, &mut field, &armed);
         }
         struck
     }
@@ -733,17 +737,23 @@ impl AdvancedAi {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn kill_sequence(&self, g: &Game, pid: usize) -> Vec<Blow> {
         let mut field = DangerField::new(g, pid);
-        self.kill_sequence_in(g, pid, &mut field)
+        self.kill_sequence_in(g, pid, &mut field).0
     }
 
-    fn kill_sequence_in(&self, g: &Game, pid: usize, field: &mut DangerField) -> Vec<Blow> {
-        let (shooters, targets, candidates) = self.strike_candidates(g, pid, field);
+    /// The ordered blows, and every unit that had a legal blow to offer.
+    fn kill_sequence_in(
+        &self,
+        g: &Game,
+        pid: usize,
+        field: &mut DangerField,
+    ) -> (Vec<Blow>, BTreeSet<u32>) {
+        let (shooters, targets, candidates, armed) = self.strike_candidates(g, pid, field);
         if candidates.is_empty() {
-            return Vec::new();
+            return (Vec::new(), armed);
         }
         let (sequence, score) = search_kill_sequence(&shooters, &targets, &candidates, field);
         if score <= 0.0 || sequence.is_empty() {
-            return Vec::new();
+            return (Vec::new(), armed);
         }
         let mut dealt = vec![0.0; targets.len()];
         let mut blows = Vec::with_capacity(sequence.len());
@@ -764,17 +774,23 @@ impl AdvancedAi {
                 finishes: dealt[candidate.target] >= f64::from(target.hp) * KILL_MARGIN,
             });
         }
-        blows
+        (blows, armed)
     }
 
     /// Every legal blow each eligible unit could make this turn, from its
     /// own tile or after a move, priced with the engine's pair on the probe.
+    ///
+    /// The fourth element is every unit that has a legal blow this turn —
+    /// the shooters, whether or not the search spends them, and a siege
+    /// unit left to the ladder for a city shot. `battle-planner-2` leaves
+    /// these to the ladder rather than placing them: a declined shot is
+    /// still the ladder's to price on its own clone, as it always was.
     fn strike_candidates(
         &self,
         g: &Game,
         pid: usize,
         field: &mut DangerField,
-    ) -> (Vec<Shooter>, Vec<Target>, Vec<Candidate>) {
+    ) -> (Vec<Shooter>, Vec<Target>, Vec<Candidate>, BTreeSet<u32>) {
         // Targets: the strongest hostile military unit on each visible tile
         // that is not a City Center or an Encampment — the defender the
         // engine will resolve against, as `fire_plan` reads it.
@@ -825,8 +841,9 @@ impl AdvancedAi {
                 }
             })
             .collect();
+        let mut armed: BTreeSet<u32> = BTreeSet::new();
         if targets.is_empty() {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new(), armed);
         }
         let enemy_city_near = |pos: Pos, range: i32| {
             g.cities.values().any(|city| {
@@ -862,6 +879,7 @@ impl AdvancedAi {
             // its shot is the wall, not a unit.
             if spec.siege && enemy_city_near(unit.pos, range + g.unit_max_moves(uid).ceil() as i32)
             {
+                armed.insert(uid);
                 continue;
             }
             let shooter_index = shooters.len();
@@ -938,6 +956,7 @@ impl AdvancedAi {
             if own.is_empty() {
                 continue;
             }
+            armed.insert(uid);
             // Per target keep the unit's own tile and the safest stands
             // after it, so the search is not spent choosing among tiles
             // that differ only in exposure.
@@ -996,7 +1015,7 @@ impl AdvancedAi {
             candidates.extend(kept);
         }
         if candidates.is_empty() {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new(), armed);
         }
         // The most finishable targets, and the shooters with the heaviest
         // blow, within the search's bounds.
@@ -1063,7 +1082,7 @@ impl AdvancedAi {
             })
             .collect();
         targets = kept_targets;
-        (kept_shooters, targets, kept)
+        (kept_shooters, targets, kept, armed)
     }
 
     /// Replay the plan on one speculative clone, through the same exact
@@ -1503,9 +1522,50 @@ impl AdvancedAi {
 
     /// The members of a force the positions plan may place: not already
     /// ordered or recovering, a field unit with movement left, not a garrison,
-    /// not a bound guard, not a scout. The `MAX_PLANNED_UNITS` nearest the
-    /// target, ascending by id.
-    fn planned_members(&self, g: &Game, pid: usize, group: &ForceGroup, target: Pos) -> Vec<u32> {
+    /// not a bound guard, not a scout — and not a unit with a blow to offer.
+    /// `armed` is the kill plan's set: every unit that had a legal blow on a
+    /// hostile unit this turn, spent or declined; a unit with an enemy city
+    /// inside its attack reach joins it here. Both are the ladder's, which
+    /// prices the blow on its own clone as it always has and moves the unit
+    /// as before when it declines. Measured before this rule: placing the
+    /// declined shooters read −129 ± 30 a seed on four archers and two
+    /// warriors, less material destroyed, not more lost — the shots the
+    /// ladder would have taken. The `MAX_PLANNED_UNITS` nearest the target,
+    /// ascending by id.
+    fn planned_members(
+        &self,
+        g: &Game,
+        pid: usize,
+        group: &ForceGroup,
+        target: Pos,
+        armed: &BTreeSet<u32>,
+    ) -> Vec<u32> {
+        let enemy_cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+            .map(|city| city.pos)
+            .collect();
+        let city_in_reach = |uid: u32| -> bool {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            if enemy_cities.is_empty()
+                || unit.attacks_left <= 0
+                || !(spec.is_melee_capable() || spec.has_ranged_attack())
+            {
+                return false;
+            }
+            let range = if spec.has_ranged_attack() {
+                g.unit_attack_range(uid).max(1)
+            } else {
+                1
+            };
+            let mut stands = vec![unit.pos];
+            stands.extend(g.reachable(uid));
+            enemy_cities
+                .iter()
+                .any(|city| stands.iter().any(|stand| g.wdist(*stand, *city) <= range))
+        };
         let mut members: Vec<u32> = group
             .units
             .iter()
@@ -1518,6 +1578,7 @@ impl AdvancedAi {
                 unit.owner == pid
                     && !self.battle_planner_ordered.contains(uid)
                     && !self.battle_planner_recovering.contains(uid)
+                    && !armed.contains(uid)
                     && matches!(spec.class.as_str(), "military" | "support")
                     && spec.domain.as_deref() != Some("air")
                     && unit.linked_to.is_none()
@@ -1530,6 +1591,7 @@ impl AdvancedAi {
                         Self::force_role(g, *uid),
                         ForceRole::Recon | ForceRole::AirStrike
                     )
+                    && !city_in_reach(*uid)
             })
             .collect();
         members.sort_by_key(|uid| (g.wdist(g.units[uid].pos, target), *uid));
@@ -1567,8 +1629,8 @@ impl AdvancedAi {
 
     /// The positions plan for one force, before anything moves: the slots,
     /// the assignment and the pace floor. `None` when the force is not one
-    /// the plan places — not advancing or engaging, or under two members
-    /// left to place. Pure but for the field's cache; for tests and
+    /// the plan places — not advancing or engaging, a force of one, or no
+    /// member left to place. Pure but for the field's cache; for tests and
     /// explainers as much as for `plan_positions`.
     pub(super) fn position_plan(
         &self,
@@ -1576,6 +1638,7 @@ impl AdvancedAi {
         pid: usize,
         group: &ForceGroup,
         field: &mut DangerField,
+        armed: &BTreeSet<u32>,
     ) -> Option<PositionPlan> {
         if !matches!(group.posture, ForcePosture::Advance | ForcePosture::Engage) {
             return None;
@@ -1584,8 +1647,11 @@ impl AdvancedAi {
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             _ => group.objective,
         };
-        let members = self.planned_members(g, pid, group, target);
-        if members.len() < 2 {
+        // A force of one is not a formation and keeps today's step; a force
+        // of several is planned even when the armed and the ordered leave a
+        // single member to place.
+        let members = self.planned_members(g, pid, group, target, armed);
+        if group.units.len() < 2 || members.is_empty() {
             return None;
         }
         let heals = !g.is_arena() || g.tactics.heal;
@@ -1966,9 +2032,10 @@ impl AdvancedAi {
         uid: u32,
         slot: Pos,
         reserved: &BTreeSet<Pos>,
-        target: Pos,
-        pace_floor: Option<i32>,
+        plan: &PositionPlan,
     ) -> (Pos, bool) {
+        let target = plan.target;
+        let pace_floor = plan.pace_floor.map(|(floor, _)| floor);
         let unit = &g.units[&uid];
         let hp = f64::from(unit.hp);
         let mut options = vec![unit.pos];
@@ -1995,13 +2062,19 @@ impl AdvancedAi {
 
     /// Lay out and play every advancing or engaging force's positions.
     /// Nothing is read with version two off.
-    fn plan_positions(&mut self, g: &mut Game, pid: usize, field: &mut DangerField) {
+    fn plan_positions(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        field: &mut DangerField,
+        armed: &BTreeSet<u32>,
+    ) {
         if !self.battle_planner_2 {
             return;
         }
         let groups = self.force_groups.clone();
         for group in &groups {
-            let Some(plan) = self.position_plan(g, pid, group, field) else {
+            let Some(plan) = self.position_plan(g, pid, group, field, armed) else {
                 continue;
             };
             let (placed, paced) = self.apply_position_plan(g, pid, field, &plan);
@@ -2075,15 +2148,8 @@ impl AdvancedAi {
                     continue;
                 }
             }
-            let (end, held) = self.position_end_tile(
-                g,
-                field,
-                uid,
-                placement.tile,
-                &reserved,
-                plan.target,
-                floor,
-            );
+            let (end, held) =
+                self.position_end_tile(g, field, uid, placement.tile, &reserved, plan);
             if end == unit.pos {
                 // Nothing nearer the slot is open this turn: hold here.
                 self.base.fortify_or_stop(g, pid, uid);
@@ -2260,15 +2326,12 @@ mod tests {
     /// A fortified enemy warrior two tiles off, a hill on the tile between:
     /// the warrior takes the front slot on the hill and the archer ends two
     /// tiles from the enemy beside the warrior and behind it. The slots are
-    /// laid against the enemy, not the anchor. The archer stands at 45 hit
-    /// points on a board that does not heal: under `WOUNDED_STRIKER_HP` the
-    /// kill plan will not spend it on a shot that finishes nothing, the
-    /// rotation reads no danger where it stands, and no heal slot exists
-    /// where nothing heals — so the positions plan is what moves it.
+    /// laid against the enemy, not the anchor. Planned with no unit armed
+    /// and played by `apply_position_plan`: through `plan_battle` this
+    /// archer has a shot to offer and is the ladder's — the next test.
     #[test]
     fn the_warrior_takes_the_hill_in_front_and_the_archer_stands_two_behind_it() {
         let mut g = open_field();
-        assert!(!g.tactics.heal, "the arena does not heal");
         let enemy_tile = at(12, 6);
         let hill = at(11, 6);
         g.map.tiles.get_mut(&hill).expect("a tile").hills = true;
@@ -2276,14 +2339,11 @@ mod tests {
         let archer = g.spawn_unit("archer", 0, at(9, 6));
         let enemy = g.spawn_unit("warrior", 1, enemy_tile);
         fortify(&mut g, enemy);
-        // One under the bar: a warrior's blow on a 45-hit-point archer is
-        // lethal and the field would refuse it every slot at range two.
-        wound(&mut g, archer, WOUNDED_STRIKER_HP - 1);
         let mut ai = version_two();
         let group = force(&g, enemy_tile, ForcePosture::Advance);
         let mut field = DangerField::new(&g, 0);
         let plan = ai
-            .position_plan(&g, 0, &group, &mut field)
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
             .expect("an advancing force of two is planned");
         assert_eq!(plan.contacts, 1);
         let front: Vec<&Slot> = plan
@@ -2315,9 +2375,8 @@ mod tests {
         );
         assert!(plan.pace_floor.is_none(), "in contact, nothing is paced");
 
-        ai.force_groups = vec![group];
-        let strategic = conquest(&g);
-        assert!(!ai.plan_battle(&mut g, 0, &strategic), "no blow lands");
+        let (placed, paced) = ai.apply_position_plan(&mut g, 0, &mut field, &plan);
+        assert_eq!((placed, paced), (2, 0));
         let (w, a) = (g.units[&warrior].pos, g.units[&archer].pos);
         assert_eq!(w, hill, "the warrior stands on the hill");
         assert_eq!(
@@ -2331,9 +2390,57 @@ mod tests {
             "and behind it"
         );
         assert!(ai.battle_planner_claims(warrior) && ai.battle_planner_claims(archer));
-        assert_eq!(ai.census.battle_plan_slots, 2);
-        assert_eq!(ai.census.battle_plan_positioned, 2);
-        assert_eq!(ai.census.battle_plan_paced, 0);
+        assert!(g.units.contains_key(&enemy));
+    }
+
+    /// Through `plan_battle`: an archer already standing beside the warrior
+    /// on a tile two from the enemy with line of sight has a blow to offer —
+    /// whether the kill plan spends it or declines it, the positions plan
+    /// leaves it to the ladder, as version one would. The warrior, which
+    /// cannot close and strike in one turn, is placed on the hill in front.
+    #[test]
+    fn a_unit_with_a_blow_to_offer_is_left_to_the_ladder() {
+        let mut g = open_field();
+        let enemy_tile = at(12, 6);
+        let hill = at(11, 6);
+        g.map.tiles.get_mut(&hill).expect("a tile").hills = true;
+        let warrior = g.spawn_unit("warrior", 0, at(10, 6));
+        let stand = g
+            .wdisk(enemy_tile, 2)
+            .into_iter()
+            .filter(|tile| {
+                g.wdist(*tile, enemy_tile) == 2
+                    && g.wdist(*tile, at(10, 6)) == 1
+                    && g.line_of_sight_from(*tile, enemy_tile)
+            })
+            .min()
+            .expect("a firing tile beside the warrior");
+        let archer = g.spawn_unit("archer", 0, stand);
+        let enemy = g.spawn_unit("warrior", 1, enemy_tile);
+        fortify(&mut g, enemy);
+        let mut ai = version_two();
+        let mut field = DangerField::new(&g, 0);
+        let (blows, armed) = ai.kill_sequence_in(&g, 0, &mut field);
+        assert!(armed.contains(&archer), "the archer has a shot to offer");
+        assert!(
+            !armed.contains(&warrior),
+            "the warrior cannot close and strike"
+        );
+        ai.force_groups = vec![force(&g, enemy_tile, ForcePosture::Advance)];
+        let strategic = conquest(&g);
+        let struck = ai.plan_battle(&mut g, 0, &strategic);
+        assert_eq!(struck, !blows.is_empty());
+        assert_eq!(g.units[&warrior].pos, hill, "the warrior is placed");
+        assert!(ai.battle_planner_claims(warrior));
+        if blows.is_empty() {
+            assert!(
+                !ai.battle_planner_claims(archer),
+                "a declined shooter is the ladder's, not the plan's"
+            );
+            assert_eq!(g.units[&archer].pos, stand, "and has not been moved");
+        }
+        assert_eq!(ai.census.battle_plan_slots, 1, "one slot: the front's");
+        assert_eq!(ai.census.battle_plan_positioned, 1);
     }
 
     /// Three warriors and two archers against a pair of enemy warriors: every
@@ -2358,7 +2465,7 @@ mod tests {
         let group = force(&g, at(11, 6), ForcePosture::Engage);
         let mut field = DangerField::new(&g, 0);
         let plan = ai
-            .position_plan(&g, 0, &group, &mut field)
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
             .expect("planned");
         let slot_tiles: BTreeSet<Pos> = plan.slots.iter().map(|slot| slot.tile).collect();
         assert_eq!(slot_tiles.len(), plan.slots.len(), "{:?}", plan.slots);
@@ -2409,7 +2516,7 @@ mod tests {
         let group = force(&g, enemy, ForcePosture::Advance);
         let mut field = DangerField::new(&g, 0);
         let plan = ai
-            .position_plan(&g, 0, &group, &mut field)
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
             .expect("planned");
         assert_eq!(plan.contacts, 0, "no enemy within the band");
         let spear_start = g.wdist(at(4, 6), enemy);
@@ -2464,7 +2571,7 @@ mod tests {
         let group = force(&g, enemy_tile, ForcePosture::Advance);
         let mut field = DangerField::new(&g, 0);
         let plan = ai
-            .position_plan(&g, 0, &group, &mut field)
+            .position_plan(&g, 0, &group, &mut field, &BTreeSet::new())
             .expect("planned");
         let heal: Vec<&Placement> = plan
             .placements
