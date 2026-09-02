@@ -5101,6 +5101,11 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Version two of `eureka-chasing-builder`: only the final Builder action
+    /// for the technology or civic being researched right now earns a capped
+    /// tiebreak premium. V1's global future-boost bidding remains measurable
+    /// as its own control. Opt-in gene `eureka-chasing-builder-2`.
+    eureka_chasing_builder_2: bool,
     /// Version 2 of `enter-the-prophet-race`: pay the secondary race's entry
     /// fee only when the board-aware religious-opening rank admits this seat.
     /// That requires two cities and an actual or placeable Holy Site, limits
@@ -7449,6 +7454,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            eureka_chasing_builder_2: false,
             enter_the_prophet_race_2: false,
             early_project_restraint_2: false,
             first_district_first: false,

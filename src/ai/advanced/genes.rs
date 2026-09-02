@@ -2000,6 +2000,11 @@ pub const GENES: &[Gene] = &[
     // engages relievers only on a favourable exchange. See
     // `advanced/siege_train.rs`.
     Gene { tag: "anvil", field: "anvil", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil, disable: AdvancedAi::disable_anvil },
+    // Version 2 only pays a Builder for a boost it can cash immediately: the
+    // final matching improvement for the technology or civic the empire is
+    // researching now, capped below the improvement's own value. V1 remains
+    // the separately measurable broad future-boost control.
+    Gene { tag: "eureka-chasing-builder-2", field: "eureka_chasing_builder_2", kind: Kind::OptIn, enable: AdvancedAi::enable_eureka_chasing_builder_2, disable: AdvancedAi::disable_eureka_chasing_builder_2 },
     // ★★★ APPEND POINTS, SO THAT TWO GENE PRS DO NOT APPEND TO ONE LINE.
     //
     // The registry order is positional, so these all stay after the existing
