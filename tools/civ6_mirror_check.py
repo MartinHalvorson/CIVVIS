@@ -86,9 +86,9 @@ Each of these is a real bug I nearly reported, caught only by looking again:
 10. It compared a board published from state frame 0 with state frames 1 and 2
     that the host had appended for the same turn. Units that moved during the
     replan then appeared to be missing, even though the next completed-turn
-    publication was clean. A live checker now defers this narrow handoff until
-    the `turn` completion marker exists, rather than turning an in-flight frame
-    into a parity alarm.
+    publication was clean. A live checker now defers this narrow handoff while
+    the current board turn still has multiple same-turn frames, rather than
+    turning an in-flight frame into a parity alarm.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -1052,6 +1052,8 @@ def expected_tile_fields(plot, state=None):
         improvement = IDENTIFIER_ALIASES.get(improvement, improvement)
         if improvement not in MIRRORED_IMPROVEMENTS:
             improvement = f"<unmapped:{improvement_name}>"
+    if plot.get("np"):
+        improvement = "national_park"
     return {
         "terrain": terrain.get("terrain") if terrain else f"<unmapped:{plot.get('t')}>",
         "hills": bool(terrain.get("hills")) if terrain else None,
@@ -1767,14 +1769,14 @@ def live_same_turn_frame_handoff(board_turn, state_turn, completed_turn,
     therefore serve state frame 0 while the event stream already contains
     frames 1 and 2. There is no source-frame id in the served board, so the
     only safe signal available to this checker is multiple same-turn states
-    before the host's playable `turn` marker. Archives keep their stricter
-    boundary behavior and never use this live deferral.
+    while the board still represents the current exported turn. Archives keep
+    their stricter boundary behavior and never use this live deferral.
     """
     return (
         not archive
         and state_turn == board_turn
-        and completed_turn < board_turn
         and state_frame_count > 1
+        and completed_turn <= board_turn
     )
 
 

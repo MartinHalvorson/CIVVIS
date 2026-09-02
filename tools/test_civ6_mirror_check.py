@@ -52,8 +52,11 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertTrue(
             civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 85, 3)
         )
-        self.assertFalse(
+        self.assertTrue(
             civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 86, 3)
+        )
+        self.assertFalse(
+            civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 87, 3)
         )
         self.assertFalse(
             civ6_mirror_check.live_same_turn_frame_handoff(86, 86, 85, 1)
@@ -762,6 +765,15 @@ class MirrorCheckTest(unittest.TestCase):
             civ6_mirror_check.leaked_hidden_resources([(board, plot)], state),
             ["niter@4,5"],
         )
+
+    def test_national_park_flag_is_the_boards_improvement(self) -> None:
+        plot = {"x": 7, "y": 6, "t": "TERRAIN_PLAINS", "np": True}
+        board = {"terrain": "plains", "hills": False, "feature": None,
+                 "resource": None, "improvement": "national_park",
+                 "river": False, "coastal_lowland": 0}
+        counts, examples = civ6_mirror_check.exact_tile_mismatches([(board, plot)])
+        self.assertEqual(counts, Counter())
+        self.assertEqual(examples, [])
 
 
 def test_a_rig_binary_older_than_the_decider_is_reported():
