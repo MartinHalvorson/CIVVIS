@@ -13667,7 +13667,7 @@ impl AdvancedAi {
             .map(VictoryTarget::strategy)
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
-            let available = BasicAi::era_completion_techs(g, pid);
+            let available = BasicAi::era_window_techs(g, pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
@@ -35134,15 +35134,15 @@ impl AdvancedAi {
     /// The tactical scan starts from an enemy tile, not `Game::legal_actions`,
     /// so it must retain the engine's melee preflight before it clones and
     /// scores a proposed strike.  In particular, entering a forest across a
-    /// river can cost more movement than a unit has left.
-    fn tactical_melee_candidate_is_legal(g: &Game, uid: u32, target: Pos) -> bool {
-        let unit = &g.units[&uid];
-        unit.moves_left > 0.0
-            && unit.attacks_left > 0
-            && g.rules.units[unit.kind].is_melee_capable()
-            && g.wdist(unit.pos, target) == 1
-            && g.unit_can_melee_target_domain(uid, target)
-            && g.can_pay_melee_entry(uid, target)
+    /// river can cost more movement than a unit has left, and a plot shared by
+    /// an enemy and a peaceful foreign unit is not a legal plot-addressed
+    /// strike because Civilization VI chooses the defender from that plot.
+    fn tactical_melee_candidate_is_legal(g: &Game, pid: usize, uid: u32, target: Pos) -> bool {
+        // Keep this call on the authoritative engine predicate.  Repeating
+        // only the movement/domain half here let a peaceful bystander through
+        // and paid for a speculative clone that `Game::apply` immediately
+        // refused.
+        g.melee_order_is_legal(pid, uid, target)
     }
 
     /// Price the enemy's forcing reply on a board an exact attack has already
@@ -36876,7 +36876,7 @@ impl AdvancedAi {
                     target: pos,
                 });
             }
-            if Self::tactical_melee_candidate_is_legal(g, uid, pos) {
+            if Self::tactical_melee_candidate_is_legal(g, pid, uid, pos) {
                 actions.push(Action::Attack {
                     unit: uid,
                     target: pos,
