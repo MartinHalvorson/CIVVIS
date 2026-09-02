@@ -1228,6 +1228,10 @@ pub const GENES: &[Gene] = &[
     // 1,560 by that same argmax; live King seat, Builders were 3% of early city
     // production and only 40% of Campus cities held a Library at turn 100.
     Gene { tag: "first-builder-reserve", field: "first_builder_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_builder_reserve, disable: AdvancedAi::disable_first_builder_reserve },
+    // V2 reserves one Builder only for an owned, immediately connectable
+    // first-copy luxury while Amenities are short and expansion is covered;
+    // after the first Builder appears, it retains a lifetime receipt.
+    Gene { tag: "first-builder-reserve-2", field: "first_builder_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_builder_reserve_2, disable: AdvancedAi::disable_first_builder_reserve_2 },
     // The same sentence for the cheap rung of the research chain, in a city
     // that has already paid for the Campus. 91% of standard Emperor games end
     // on a science victory, so this is the win condition itself.

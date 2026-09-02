@@ -2631,11 +2631,25 @@ impl AdvancedAi {
     /// method line's first identifier.
     pub fn enable_first_builder_reserve(&mut self) {
         self.first_builder_reserve = true;
+        self.first_builder_reserve_2 = false;
     }
 
     /// The twin of `enable_first_builder_reserve`.
     pub fn disable_first_builder_reserve(&mut self) {
         self.first_builder_reserve = false;
+    }
+
+    /// Reserve one Builder for an immediately connectable first-copy luxury
+    /// when Amenities are short and expansion is covered, retaining a
+    /// lifetime receipt. Opt-in gene `first-builder-reserve-2`.
+    pub fn enable_first_builder_reserve_2(&mut self) {
+        self.first_builder_reserve_2 = true;
+        self.first_builder_reserve = false;
+    }
+
+    /// The twin of `enable_first_builder_reserve_2`.
+    pub fn disable_first_builder_reserve_2(&mut self) {
+        self.first_builder_reserve_2 = false;
     }
     /// Reserve the cheapest Campus building a city owes ahead of ordinary
     /// production. See `AdvancedAi::first_research_building_reserve`; opt-in
