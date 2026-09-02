@@ -2872,7 +2872,7 @@ fn rapid_city_expansion_opens_the_milestone_pipeline() {
     assert!(ai.rapid_city_expansion);
     assert!(ai.base.rapid_city_expansion);
 
-    for (turn, milestone) in [(25, 3), (50, 7), (80, 12)] {
+    for (turn, milestone) in [(25, 3), (50, 8), (100, 12)] {
         game.turn = turn;
         let target = ai.assess(&game, 0).desired_cities;
         assert!(
@@ -2903,6 +2903,69 @@ fn rapid_city_expansion_opens_the_milestone_pipeline() {
         ai.settler_in_flight_allowed(&game, 15, 14, 0),
         1,
         "the hard city target still caps the final Settler"
+    );
+}
+
+/// The turn-fifty expansion wave cannot afford to leave a Settler standing on
+/// a legal city tile until its next turn. Founding after the final movement
+/// point must reuse the normal arrival checks and finish in this same step.
+#[test]
+fn rapid_city_expansion_founds_when_a_settler_reaches_its_target() {
+    let (mut game, _capital, home) = empire_with_a_capital(11_195);
+    game.at_war.clear();
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+
+    let sites: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| game.wdist(*position, home) == 5)
+        .collect();
+    let target = sites
+        .into_iter()
+        .find(|position| {
+            let probe = game.spawn_test_unit("settler", 0, *position);
+            let legal = game.can_found_city(probe);
+            game.remove_unit(probe);
+            legal
+        })
+        .expect("fixture needs a legal target five tiles from the capital");
+    let source = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+                && game.city_at(*position).is_none()
+                && game.unit_ids_at(*position).is_empty()
+        })
+        .expect("fixture needs an open doorstep beside the target");
+    let settler = game.spawn_test_unit("settler", 0, source);
+    assert_eq!(
+        game.route_step(settler, target, 0),
+        Some(target),
+        "the doorstep has a direct legal route to the city tile"
+    );
+    assert!(game.can_move(settler, target));
+
+    let cities_before = game.player_city_ids(0).len();
+    let mut ai = AdvancedAi::new();
+    ai.enable_rapid_city_expansion();
+    ai.settler_targets.insert(settler, target);
+
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    assert_eq!(game.player_city_ids(0).len(), cities_before + 1);
+    assert!(
+        game.city_at(target).is_some(),
+        "the doorstep becomes a city"
+    );
+    assert!(
+        !game.units.contains_key(&settler),
+        "the Settler is consumed on the movement turn"
     );
 }
 
@@ -3054,17 +3117,18 @@ fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
 
 /// End-to-end tempo regression for the rapid-city-expansion gene. Geography,
 /// rival contact, and early war legitimately vary individual seats, so this
-/// fixed four-map check asserts the requested aggregate bands: at least three
-/// cities at t25, 7--9 at t50, and 12--15 at t80.
+/// fixed four-map check asserts the requested per-map bands after the treated
+/// seat has completed each named turn: at least three cities at t25, at least
+/// eight at t50, and 12--15 at t100.
 ///
 /// Run with `cargo test --release --lib rapid_city_expansion_tempo_census -- --ignored --nocapture`.
 #[test]
 #[ignore = "whole-game tempo census; run explicitly with --nocapture"]
 fn rapid_city_expansion_tempo_census() {
-    const CHECKPOINTS: [u32; 3] = [25, 50, 80];
+    const CHECKPOINTS: [u32; 3] = [25, 50, 100];
     const MAPS: u64 = 4;
-    const MINIMUMS: [usize; 3] = [3, 7, 12];
-    const MAXIMUMS: [usize; 3] = [usize::MAX, 9, 15];
+    const MINIMUMS: [usize; 3] = [3, 8, 12];
+    const MAXIMUMS: [usize; 3] = [usize::MAX, 15, 15];
     let mut totals = [0usize; CHECKPOINTS.len()];
     let mut observed = [0usize; CHECKPOINTS.len()];
 
@@ -3089,12 +3153,22 @@ fn rapid_city_expansion_tempo_census() {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
             for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
-                if game.turn >= *checkpoint && !seen[slot] {
+                // A world-turn boundary is reached after the previous seat
+                // ends its turn, before player 0 has acted on the new one.
+                // The requested "by turn N" milestone is player 0's state
+                // after it has had its Nth opportunity to found a city.
+                if pid == 0 && game.turn >= *checkpoint && !seen[slot] {
                     let cities = game.player_city_ids(0).len();
                     totals[slot] += cities;
                     observed[slot] += 1;
                     seen[slot] = true;
                     println!("  seed {seed} t{checkpoint}: {cities} cities");
+                    assert!(
+                        cities >= MINIMUMS[slot] && cities <= MAXIMUMS[slot],
+                        "seed {seed} t{checkpoint}: {cities} cities must stay in the requested {}..={} band",
+                        MINIMUMS[slot],
+                        MAXIMUMS[slot]
+                    );
                 }
             }
         }
