@@ -5463,6 +5463,19 @@ fn host_resolutions_translate_into_the_models_congress_vocabulary() {
         ))
     );
     assert_eq!(
+        map(
+            "WC_RES_GLOBAL_ENERGY_TREATY",
+            2,
+            "LOC_BUILDING_POWER_PLANT_EXPANSION2_NAME"
+        ),
+        Some((
+            "global_energy_treaty".into(),
+            "B".into(),
+            "nuclear_power_plant".into()
+        )),
+        "Expansion2 reports the nuclear plant through its localized display key"
+    );
+    assert_eq!(
         map("WC_RES_WORLD_IDEOLOGY", 1, "GOVERNMENT_DEMOCRACY"),
         Some(("world_ideology".into(), "A".into(), "democracy".into()))
     );
