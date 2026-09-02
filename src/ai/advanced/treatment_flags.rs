@@ -3828,6 +3828,21 @@ impl AdvancedAi {
         self.battle_planner_2 = false;
     }
 
+    /// `battle-planner-3`: version three of `battle_planner` — the siege's
+    /// taker left to the siege, the host's strike preview over the closed
+    /// form, and the previews asked for. One version of a family plays, so
+    /// this turns versions one and two off. See `battle_planner`.
+    pub fn enable_battle_planner_3(&mut self) {
+        self.battle_planner = false;
+        self.battle_planner_2 = false;
+        self.battle_planner_3 = true;
+    }
+
+    /// The twin of `enable_battle_planner_3`.
+    pub fn disable_battle_planner_3(&mut self) {
+        self.battle_planner_3 = false;
+    }
+
     /// A force whose objective is an enemy city plays the siege as a state
     /// machine — stage on the ring out of the city's reach until the bill is
     /// met, seal the ring spread-first, reduce walls before the garrison,

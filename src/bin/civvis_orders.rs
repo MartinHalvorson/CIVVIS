@@ -3689,6 +3689,22 @@ fn decide(
         .iter()
         .filter_map(|action| translate(action, mirror_state, state))
         .collect();
+    // `battle-planner-3`: the pairs the kill plan wants the host to price,
+    // ahead of the frame's strikes. A `preview` order is a question — the
+    // mod answers it with a `preview` event at issue time and nothing moves
+    // — and the answers reach `Game::host_previews` on the turn's next
+    // frame, where the plan reads them in place of its closed form. Empty
+    // with the version off.
+    for (unit, target, ranged) in ai.wanted_previews() {
+        if let Some(civ6) = mirror_state.civ6_of.get(&unit) {
+            orders.push(Order {
+                kind: "preview",
+                subject: Some(*civ6),
+                verb: Some(if ranged { "RANGE_ATTACK" } else { "ATTACK" }.to_string()),
+                pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+            });
+        }
+    }
     let mut skipped: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();

@@ -4773,6 +4773,18 @@ pub struct AdvancedAi {
     /// family plays; `enable_battle_planner_2` turns version one off. See
     /// `advanced/battle_planner.rs`.
     battle_planner_2: bool,
+    /// `battle-planner-3`: version three of `battle_planner` — version two
+    /// plus the siege's reserved taker left alone by the kill plan, the
+    /// rotation and the positions plan, the host's own strike preview in
+    /// place of the closed form for a pair it has priced (a blow the host
+    /// says kills the attacker is vetoed), and the pairs the plan wants
+    /// priced published for `civvis_orders` to ask as `preview` orders. One
+    /// version of the family plays; `enable_battle_planner_3` turns one and
+    /// two off. See `advanced/battle_planner.rs`.
+    battle_planner_3: bool,
+    /// The pairs `(unit, target tile, ranged)` the last kill plan wanted
+    /// the host to price. See `battle_planner_3`.
+    battle_planner_wanted_previews: Vec<battle_planner::WantedPreview>,
     /// `air-surge-2`: version two of `air_surge` — the science–domination
     /// loop. The original one-appointment surge remains a separately
     /// measurable family member; this continuation lets the Formal-War clock
@@ -7501,6 +7513,8 @@ impl AdvancedAi {
             battle_planner_ordered: BTreeSet::new(),
             battle_planner_recovering: BTreeSet::new(),
             battle_planner_2: false,
+            battle_planner_3: false,
+            battle_planner_wanted_previews: Vec::new(),
             air_surge_2: false,
             border_parity_2: false,
             border_parity_3: false,
