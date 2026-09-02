@@ -44,9 +44,10 @@
 //! 3. **Summon the guard.** A threatened Settler that cannot stay out of the
 //!    reach calls a healthy military unit that can reach its tile this turn,
 //!    binds it, and the pair walks together: a land guard covers land and can
-//!    embark with a long expedition, while a naval guard covers its water
-//!    leg. The settler pulls a stacked guard along with every step, and the
-//!    guard's own turn (`stacked_guard_step`) keeps it on the settler's tile.
+//!    embark with a long expedition, while a naval guard covers every
+//!    water-to-water leg. The settler pulls a stacked guard along with every
+//!    step, and the guard's own turn (`stacked_guard_step`) keeps it on the
+//!    settler's tile.
 //!    The bond is released when no raider is within
 //!    `SETTLER_ESCORT_THREAT_RADIUS`, unless the Settler is on a committed
 //!    long expedition, or when the settler is gone.
@@ -743,6 +744,44 @@ impl AdvancedAi {
             })
     }
 
+    /// The live bridge must not let a long expedition advance through open
+    /// water with only its embarked land guard. A land body cannot intercept
+    /// a naval capture: the Caravel that took settler 2162704 on
+    /// civvis-20260901T230916Z was hidden on the previous frame, crossed the
+    /// fog in the hostile phase, killed the embarked Archer, and captured the
+    /// Settler on the same water tile. Requiring the already-bound naval
+    /// layer on water-to-water steps preserves the ordinary first embark and
+    /// landfall behavior, while making the middle of a committed live
+    /// crossing survivable against a threat the fog cannot reveal in time.
+    fn live_water_step_needs_naval_guard(
+        &self,
+        g: &Game,
+        pid: usize,
+        settler: u32,
+        current: Pos,
+        next: Pos,
+        target: Pos,
+    ) -> bool {
+        if !self.live_settler_capture_lessons
+            || !self.long_settler_escort_active(settler, target)
+            || !g
+                .map
+                .get(current)
+                .is_some_and(|tile| g.rules.is_water(tile))
+            || !g.map.get(next).is_some_and(|tile| g.rules.is_water(tile))
+        {
+            return false;
+        }
+        let visible = self
+            .settler_guard_holds_on()
+            .then(|| self.battlefront_visibility(g, pid));
+        let Some(guard) = self.settler_sea_guards.get(&settler).copied() else {
+            return true;
+        };
+        !self.escort_guard_can_hold(g, pid, guard, current, true, visible.as_ref())
+            || !g.reachable(guard).contains(&next)
+    }
+
     /// The ordinary safe-step scorer remains authoritative for route choice.
     /// This wrapper makes its successful move atomic with every currently
     /// stackable guard's follow order, including the quiet portion of a long
@@ -788,6 +827,12 @@ impl AdvancedAi {
         else {
             return self.settler_step_toward_safe_with_guards(g, pid, uid, target);
         };
+        if self.live_water_step_needs_naval_guard(g, pid, uid, current, next, target) {
+            think!(self.journal(), Expansion, Detail, "Settler holds for a naval escort";
+                   "an embarked long expedition cannot advance from {current:?} to {next:?} \
+                    without a bound naval guard that can follow the water leg"; current);
+            return false;
+        }
         // See `live_settler_capture_lessons`: the ground that took a settler
         // is entered only stacked, whether or not a raider is visible on it
         // today — the raiders that took the last one walked out of the fog.

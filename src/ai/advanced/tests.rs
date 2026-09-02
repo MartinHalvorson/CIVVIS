@@ -21528,6 +21528,115 @@ fn a_long_overseas_journey_adds_a_naval_guard_after_embarkation() {
     );
 }
 
+/// An embarked land escort cannot protect a Settler from a naval unit hidden
+/// in the fog. The live water floor holds the committed expedition before its
+/// next water-to-water step until a naval guard is bound; native behavior is
+/// unchanged when the HostOnly capture lessons are off.
+#[test]
+fn a_live_embarked_settler_holds_without_a_naval_guard() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&first_water]));
+    game.remove_unit(probe);
+
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let next_water = game
+        .route_step(settler, target, 0)
+        .expect("the overseas route has a second water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&next_water]));
+    let mut live = AdvancedAi::new();
+    live.enable_live_formationless_settler_shadow();
+    live.enable_live_settler_capture_lessons();
+    live.settler_targets.insert(settler, target);
+    live.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    live.settler_guards.insert(settler, land_guard);
+
+    assert!(
+        !live.settler_step_out_of_reach(&mut game, 0, settler, target),
+        "the live bridge must hold the water leg without naval cover"
+    );
+    assert_eq!(game.units[&settler].pos, first_water);
+    assert_eq!(game.units[&land_guard].pos, first_water);
+
+    let mut native_game = game.clone();
+    let mut native = AdvancedAi::new();
+    native.settler_targets.insert(settler, target);
+    native.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    assert!(
+        native.settler_step_out_of_reach(&mut native_game, 0, settler, target),
+        "the HostOnly floor must not alter native water movement"
+    );
+    assert_ne!(native_game.units[&settler].pos, first_water);
+}
+
+/// Once a naval unit occupies the water layer and can mirror the next step,
+/// the live floor permits the embarked expedition to advance.
+#[test]
+fn a_live_embarked_settler_advances_with_a_naval_guard() {
+    let (mut game, source, target) = island_colony_game();
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    let probe = game.spawn_test_unit("settler", 0, source);
+    let first_water = game
+        .route_step(probe, target, 0)
+        .expect("the overseas route has a first water tile");
+    game.remove_unit(probe);
+    let settler = game.spawn_test_unit("settler", 0, first_water);
+    let land_guard = game.spawn_test_unit("warrior", 0, first_water);
+    let next_water = game
+        .route_step(settler, target, 0)
+        .expect("the overseas route has a second water tile");
+    assert!(game.rules.is_water(&game.map.tiles[&next_water]));
+    let sea_guard = game.spawn_test_unit("galley", 0, first_water);
+    let mut live = AdvancedAi::new();
+    live.enable_live_formationless_settler_shadow();
+    live.enable_live_settler_capture_lessons();
+    live.settler_targets.insert(settler, target);
+    live.settler_escort_journeys.insert(
+        settler,
+        SettlerEscortJourney {
+            home: source,
+            target,
+        },
+    );
+    live.settler_guards.insert(settler, land_guard);
+    live.settler_sea_guards.insert(settler, sea_guard);
+    let before = game.units[&settler].pos;
+
+    assert!(live.settler_step_out_of_reach(&mut game, 0, settler, target));
+    assert_ne!(game.units[&settler].pos, before);
+    assert_eq!(
+        game.units[&settler].pos, game.units[&sea_guard].pos,
+        "the naval layer mirrors the water movement"
+    );
+}
+
 #[test]
 fn expedition_guard_memory_remaps_and_releases_both_layers() {
     let (_game, home, target) = stacked_escort_fixture();
