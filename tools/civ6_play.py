@@ -35,9 +35,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import (gamelock, launcher, macos_capture, macos_input,
-                          macos_ocr, macos_window, operator_retire,
-                          popup_clear, vision, watch)  # noqa: E402
+from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
+                          macos_input, macos_ocr, macos_window,
+                          operator_retire, popup_clear, vision,
+                          watch)  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
                                  reset_orders_db)
 # The mod's sentinel for a readback it could not resolve, imported rather than
@@ -104,6 +105,11 @@ def prune_old_run_screenshots(root: Path = RUN_ROOT, *, days: int | None = None,
     return (runs, freed)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GAME_PROCESS = popup_clear.GAME_PROCESS
+#: Which screens may spend a native capture on the desktop rescue right now.
+#: One per process: the schedule it keeps is about this host's capture service,
+#: which every screen shares. See `civ6_control/capture_budget.py` for the
+#: measurement that made it necessary.
+DESKTOP_RESCUE_BUDGET = capture_budget.CaptureBudget()
 # ★★★★★ THE LADDER'S OBJECTIVE, AND THE ONE PLACE IT IS STATED. Three
 # launchers forward `--victory` down one chain and each of them used to declare
 # its own default; `civ6_civvis_climb.py` and `civ6_brain.py` now import this
@@ -3455,14 +3461,62 @@ def _play(args: argparse.Namespace) -> int:
             # conversation case and does nothing at all on it — verified by hand
             # against a live stuck screen — so the two get different treatment.
             screen = event.get("screen")
-            shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
-            screenshot(shot)
             reason = (
                 "requested desktop help after"
                 if kind == "autoclose_desktop" else "gave up after"
             )
+            # ★★★★★ ASK THE 0.02 s QUESTION BEFORE SPENDING THE 23.5 s ANSWER.
+            #
+            # This branch is two native captures -- the diagnostic photograph
+            # and the classifier's own frame -- on the same thread that reads
+            # the mod's event log, so the game waits for both. While
+            # `systemstatusd` spins, each one runs its guard out and fails:
+            # measured 11.02 s apiece on this host on 2026-09-02, and the
+            # `autoclose_desktop -> next event` gap was 23.5 s to within a
+            # tenth of a second, 23 times, in one 31-minute game -- 30 % of it.
+            # Run civvis-20260902T095330Z paid 25.8 min of its 68.6.
+            #
+            # The budget still spends one real attempt per screen per minute so
+            # a genuinely stuck leader screen is rescued (see the module for why
+            # that path may never be removed); the asks in between cost 0.02 s.
+            #
+            # ⚠ ONLY THE PIXEL PATH IS RATIONED. `WorldCongressBetweenTurns`
+            # is dismissed by clicking its shipped close control at a computed
+            # rectangle and the rest by Escape; neither reads a frame, so
+            # neither may be delayed by a capture the host cannot take. Holding
+            # a blocking Congress screen for a minute over an unrelated capture
+            # service would be a new outage, not a saving.
+            needs_pixels = screen in ("DiplomacyActionView", "LeaderView",
+                                      "DiplomacyDealView")
+            try:
+                capture_state = popup_clear.capture_pause_reason()
+            except Exception as error:  # noqa: BLE001 - see below
+                # ⚠ THIS RUNS INSIDE `record`, WHICH DRIVES THE WHOLE GAME. An
+                # exception here would end the run over a question that is only
+                # an optimisation. `capture_pause_reason` catches
+                # `CaptureUnavailable`, but `_native_binary()` beneath it can
+                # still raise `TimeoutExpired` if the Swift helper has to be
+                # recompiled. Unknown means "try it and find out", which is
+                # exactly the old behaviour.
+                capture_state = None
+                print(f"[{kind}] could not read capture availability ({error}); "
+                      "treating it as available", file=sys.stderr)
+            allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend(screen, capture_state)
+            if needs_pixels and not allowed:
+                # The event is already in events.jsonl -- `record` writes it
+                # before this chain runs -- so returning here loses no history,
+                # only the two captures.
+                print(f"[{kind}] {screen} {reason} {event.get('attempts')} "
+                      f"attempts; {budget_note}")
+                return
+            shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
+            attempt_started = time.monotonic()
+            if allowed:
+                screenshot(shot)
             print(f"[{kind}] {screen} {reason} "
-                  f"{event.get('attempts')} attempts; photographed to {shot}")
+                  f"{event.get('attempts')} attempts; "
+                  + (f"photographed to {shot} ({budget_note})" if allowed
+                     else f"not photographed ({budget_note})"))
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
             # turn 69, three healthy cities at loyalty 100): Civilization VI showing
@@ -3483,6 +3537,16 @@ def _play(args: argparse.Namespace) -> int:
                         "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
                 ok, how = dismiss_visually_confirmed_popup()
+                # ★ THE PREFLIGHT IS A PREDICTION; THIS IS THE ANSWER.
+                # `capture_pause_reason()` says "systemstatusd is spinning"
+                # whenever that daemon is busy, and measured on this host the
+                # spin can be true while captures return in 0.07 s. Rationing a
+                # rescue that costs 70 ms saves nothing and delays the only
+                # thing that can dismiss a stuck leader screen, so an attempt
+                # that came back cheap -- or one whose click landed -- clears
+                # the schedule.
+                DESKTOP_RESCUE_BUDGET.record_attempt(
+                    screen, time.monotonic() - attempt_started, dismissed=ok)
             elif screen == "WorldCongressBetweenTurns":
                 ok = dismiss_world_congress_between_turns()
                 how = "World Congress close control"
