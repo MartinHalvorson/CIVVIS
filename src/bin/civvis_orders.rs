@@ -5202,6 +5202,11 @@ const EVIDENCE_KINDS: &[&str] = &[
     // on the ledger is a named refusal, not a position diff.
     "move_noop",
     "move_fallback",
+    // A policy change can be accepted by the host's queue but deferred when
+    // another policy transaction is still in flight on the same turn. This
+    // is the host's attribution for an otherwise indistinguishable missing
+    // deck postcondition.
+    "policy_deck_deferred",
     // ⭐ THE SAME FOR A STRIKE. `range_attack_refused` is the host declining a
     // shot the simulator previewed (line of sight, range, a spent attack — its
     // `why` is the host's own reason), and `war_refused` is `refuseWarStarter`
@@ -5276,6 +5281,8 @@ fn later_fortified_units(
 }
 
 /// Subjects the decider gave a MOVE_TO in a LATER frame of the same turn.
+/// This identifies both a FORTIFY that the decider later cleared and a MOVE_TO
+/// whose final position is ambiguous because the decider replanned it again.
 ///
 /// ⚠⚠⚠ A FORTIFY THE DECIDER ITSELF OVERRODE IS NOT A BRIDGE FAILURE.
 /// `not_fortified` is the second-largest failure reason on the ledger — 3124 of
@@ -5305,6 +5312,49 @@ fn later_moved_units(
         .filter(|order| order.verb.as_deref() == Some("MOVE_TO"))
         .filter_map(|order| order.subject)
         .collect()
+}
+
+/// The host deferred this exact policy deck on the requested turn because a
+/// same-turn policy transaction was still in flight. The event has no frame
+/// number, so callers use later-policy supersession first when an earlier
+/// frame has a matching replacement that did land.
+fn policy_deck_deferred_reason(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    order: &IssuedOrder,
+) -> Option<String> {
+    if order.kind != "policy_deck" {
+        return None;
+    }
+    let requested: Vec<&str> = order
+        .verb
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter(|policy| !policy.is_empty())
+        .collect();
+    evidence.iter().find_map(|event| {
+        if event.get("kind").and_then(|kind| kind.as_str()) != Some("policy_deck_deferred")
+            || event.get("turn").and_then(|value| value.as_u64()) != Some(u64::from(turn))
+        {
+            return None;
+        }
+        let desired = event.get("desired").and_then(|value| value.as_array())?;
+        let exact_deck = desired.len() == requested.len()
+            && requested
+                .iter()
+                .zip(desired)
+                .all(|(want, got)| got.as_str() == Some(*want));
+        exact_deck.then(|| {
+            format!(
+                "deferred_{}",
+                event
+                    .get("why")
+                    .and_then(|why| why.as_str())
+                    .unwrap_or("same_turn")
+            )
+        })
+    })
 }
 
 /// Whether a policy-deck order's requested cards are present in the state.
@@ -5705,6 +5755,11 @@ fn verify_unit_order(
                     let end = offset_distance(reached, want);
                     if safety_rewrite || start == 0 || end < start {
                         Verdict::Verified
+                    } else if end == start && later.moved {
+                        // A later same-turn MOVE_TO superseded this request;
+                        // the final position alone cannot distinguish that
+                        // replan from a host no-op.
+                        Verdict::Failed("superseded_by_move".to_string())
                     } else if end == start {
                         // The host's own reason when it gave one; see
                         // `move_refusal_reason`.
@@ -6124,6 +6179,8 @@ fn verify_order_with_context(
                 Verdict::Verified
             } else if context.later_policy_deck {
                 failed("superseded_by_policy_deck".to_string())
+            } else if let Some(reason) = policy_deck_deferred_reason(evidence, turn, order) {
+                failed(reason)
             } else {
                 failed(format!("missing={}", missing.join("+")))
             }
@@ -15120,6 +15177,34 @@ mod order_postcondition_tests {
     }
 
     #[test]
+    fn a_move_superseded_by_a_later_same_turn_replan_is_not_a_host_noop() {
+        let mut before = frame(42);
+        before.units = vec![unit(7, "UNIT_WARRIOR", 13, 11)];
+        let walk = order("unit", Some(7), Some("MOVE_TO"), Some((17, 11)));
+        let mut after = frame(43);
+        // The later frame replanned this unit, but the next-turn snapshot
+        // leaves it at the same distance from the earlier target. A position
+        // diff alone cannot tell that from a host-side no-op.
+        after.units = vec![unit(7, "UNIT_WARRIOR", 13, 11)];
+
+        assert_eq!(
+            verify_unit_order(
+                &walk,
+                before.turn,
+                &before,
+                &after,
+                &no_tiles(),
+                &[],
+                LaterFrames {
+                    moved: true,
+                    ..LaterFrames::default()
+                },
+            ),
+            failed("superseded_by_move")
+        );
+    }
+
+    #[test]
     fn a_settler_safety_rewrite_verifies_the_host_sent_leg() {
         let mut before = frame(50);
         before.units = vec![unit(7, "UNIT_SETTLER", 21, 21)];
@@ -15460,6 +15545,20 @@ mod order_postcondition_tests {
             pending.frame,
             &unchanged
         ));
+
+        let deferred = event(
+            r#"{"kind":"policy_deck_deferred","turn":64,"desired":["POLICY_CHARISMATIC_LEADER","POLICY_COLONIZATION","POLICY_GOD_KING","POLICY_URBAN_PLANNING"],"why":"same_turn_transaction_in_flight"}"#,
+        );
+        assert!(EVIDENCE_KINDS.contains(&"policy_deck_deferred"));
+        assert_eq!(
+            policy_deck_deferred_reason(&[deferred.clone()], 64, &earlier).as_deref(),
+            Some("deferred_same_turn_transaction_in_flight")
+        );
+        assert_eq!(
+            check(&earlier, &pending.before, &after, &[deferred]),
+            failed("deferred_same_turn_transaction_in_flight"),
+            "the host's deferred transaction reason is more precise than a missing-card diff"
+        );
     }
 
     #[test]
