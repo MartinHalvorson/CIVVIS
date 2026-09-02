@@ -16,9 +16,21 @@
     "withholdable_live_count": 40
   },
   "genome_coverage": {
+<<<<<<< HEAD
     "capability_toggles": 257,
+||||||| c2d59da3
+    "capability_toggles": 256,
+=======
+    "capability_toggles": 259,
+>>>>>>> origin/main
     "measured_by_a_screen": 73,
+<<<<<<< HEAD
     "reachable_as_a_gene": 217,
+||||||| c2d59da3
+    "reachable_as_a_gene": 216,
+=======
+    "reachable_as_a_gene": 219,
+>>>>>>> origin/main
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 40,
     "unreachable_toggles": [
