@@ -438,6 +438,26 @@ impl AdvancedAi {
                 applied.forced.push(gene.tag);
             }
         }
+        // A forced arm is an explicit request to seat the named gene, not just
+        // to add its row to the deployment list. Some opt-ins are mutually
+        // exclusive versions of one behavior: `border-parity` and
+        // `border-parity-2` both clear the deployed `border-parity-3` when
+        // enabled. The registry loop above is in canonical order, so a later
+        // deployed version used to silently clear an earlier forced version;
+        // the arm was labeled on while the flag that drove decisions was off.
+        // Re-apply the explicit names after the deployment genome is complete,
+        // with caller order deciding if an arm deliberately names more than
+        // one member of such a family. Keep the same validation boundary as
+        // the loops above so a direct library caller cannot force a host-only
+        // or unknown tag around the ledger.
+        for &tag in forced_on {
+            if !(ledger_held_live_treatment(tag) || ledger_held_opt_in(tag)) {
+                continue;
+            }
+            if let Some(gene) = super::GENES.iter().find(|gene| gene.tag == tag) {
+                (gene.enable)(self);
+            }
+        }
         applied
     }
 }
@@ -1035,6 +1055,30 @@ mod tests {
             !applied.withheld.contains(&held_live),
             "an explicit arm cannot report its restored gene as withheld"
         );
+    }
+
+    #[test]
+    fn a_forced_parity_arm_wins_over_the_deployed_mutually_exclusive_version() {
+        for forced in ["border-parity", "border-parity-2"] {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge_universe();
+            ai.apply_gene_ledger_with_forced_live(&[forced]);
+
+            assert_eq!(
+                ai.border_parity,
+                forced == "border-parity",
+                "the requested parity version must be active: {forced}"
+            );
+            assert_eq!(
+                ai.border_parity_2,
+                forced == "border-parity-2",
+                "the requested parity version must be active: {forced}"
+            );
+            assert!(
+                !ai.border_parity_3,
+                "a forced parity version must clear the deployed sibling: {forced}"
+            );
+        }
     }
 
     /// ★ EVERY HOST-ONLY GENE SHIPS ON. `enable_live_bridge_universe` turns on
