@@ -2507,7 +2507,7 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
     game.found_city_for(0, game.units[&settler].pos, None);
     game.remove_unit(settler);
 
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.enable_live_bridge_universe();
 
     game.turn = 1;
@@ -11689,7 +11689,7 @@ fn targeted_science_takes_an_unlocked_milestone_outside_the_backlog_window() {
         "the Ancient backlog should still exclude Rocketry from ordinary choices"
     );
 
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
     let plan = StrategicPlan {
         strategy: GrandStrategy::Science,
         target_player: None,
