@@ -192,6 +192,24 @@ impl Game {
         pid: usize,
         cid: u32,
     ) -> (Vec<Action>, Vec<Action>) {
+        self.legal_purchase_actions_for_city_with_price_memo(pid, cid, true)
+    }
+
+    /// The inner purchase-menu sweep, optionally sharing price quotes with an
+    /// enclosing read-only query.
+    ///
+    /// One menu asks each ordinary `(city, unit, formation, currency)` quote
+    /// once. A top-level menu therefore gains nothing by constructing and
+    /// populating [`QueryCache::purchase_price`] for every one of those
+    /// unique keys; callers that already hold a [`QueryMemo`] retain the
+    /// cache, because a second menu in that surrounding read-only pass can
+    /// reuse the quotes exactly.
+    fn legal_purchase_actions_for_city_with_price_memo(
+        &self,
+        pid: usize,
+        cid: u32,
+        cache_unit_prices: bool,
+    ) -> (Vec<Action>, Vec<Action>) {
         let p = &self.players[pid];
         let mut purchases = Vec::new();
         let mut plots = self
@@ -278,10 +296,14 @@ impl Game {
         for unit in self.rules.units.keys() {
             for formation in 0..=2 {
                 for (currency, bank) in [("gold", p.gold), ("faith", p.faith)] {
-                    if self
-                        .unit_purchase_cost_for_formation(pid, cid, unit, formation, currency)
-                        .is_some_and(|cost| bank + f64::EPSILON >= cost)
-                    {
+                    let cost = if cache_unit_prices {
+                        self.unit_purchase_cost_for_formation(pid, cid, unit, formation, currency)
+                    } else {
+                        self.unit_purchase_cost_for_formation_uncached(
+                            pid, cid, unit, formation, currency,
+                        )
+                    };
+                    if cost.is_some_and(|cost| bank + f64::EPSILON >= cost) {
                         purchases.push(Action::Buy {
                             city: cid,
                             unit: Name::new(unit),
@@ -296,10 +318,12 @@ impl Game {
         let mut empire = Vec::new();
         if !p.is_minor {
             for unit in ["missionary", "apostle", "guru", "inquisitor"] {
-                if self
-                    .unit_purchase_cost(pid, cid, unit, "faith")
-                    .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
-                {
+                let cost = if cache_unit_prices {
+                    self.unit_purchase_cost(pid, cid, unit, "faith")
+                } else {
+                    self.unit_purchase_cost_for_formation_uncached(pid, cid, unit, 0, "faith")
+                };
+                if cost.is_some_and(|cost| p.faith + f64::EPSILON >= cost) {
                     empire.push(Action::Buy {
                         city: cid,
                         unit: Name::new(unit),
@@ -331,10 +355,17 @@ impl Game {
     /// order and under one query-memo scope.
     pub(crate) fn legal_purchase_actions(&self, pid: usize) -> Vec<Action> {
         let city_ids = self.purchase_action_city_ids(pid);
-        let _memo = self.query_memo();
+        let memo = self.query_memo();
+        // A price memo has useful hits only when a caller already holds the
+        // read-only scope around this menu. Otherwise each ordinary quote is
+        // unique to this one enumeration, and the BTreeMap key plus insertion
+        // is pure overhead.
+        let cache_unit_prices = !memo.outermost;
         let per_city = city_ids
             .into_iter()
-            .map(|cid| self.legal_purchase_actions_for_city(pid, cid))
+            .map(|cid| {
+                self.legal_purchase_actions_for_city_with_price_memo(pid, cid, cache_unit_prices)
+            })
             .collect::<Vec<_>>();
         let mut actions = Vec::new();
         actions.extend(
