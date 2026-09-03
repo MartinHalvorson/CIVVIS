@@ -488,6 +488,15 @@ const TIMED_WAR_CAPTURE_WINDOW: u32 = 10;
 /// as a threat.
 const BASTION_PRESSURE: f64 = 0.45;
 
+/// A legal attack is only an emergency when the attacker is materially
+/// stronger than the City Center it can strike. The aggregate pressure still
+/// screens out a lone contact, but this lower floor catches an empty,
+/// under-defended city one turn before a fast attacker is joined by its army.
+const IMMINENT_ATTACK_PRESSURE: f64 = 0.30;
+/// The City Center must be at least this much weaker than the legal attacker
+/// before a single-unit attack is enough evidence for an empire-wide recall.
+const IMMINENT_ATTACK_STRENGTH_RATIO: f64 = 1.25;
+
 /// A last-seen enemy can move, heal, or die while hidden. Four turns retains a
 /// recent withdrawal long enough to finish a defensive response without
 /// treating a stale frontier report as a current siege.
@@ -8782,10 +8791,11 @@ impl AdvancedAi {
                 // resolves that movement before the next defensive turn, so
                 // waiting for a second attacker is one turn too late. Keep
                 // the existing 0.45 floor to avoid promoting a weak outer
-                // contact to an empire-wide recall, but let the simulator's
-                // exact attack envelope supply the missing urgency signal.
+                // contact to an empire-wide recall. A materially overmatching
+                // attacker gets a lower aggregate floor because the
+                // City-Center defense is independently weak evidence.
                 let imminent_attack = self.battlefront_observation
-                    && danger >= BASTION_PRESSURE
+                    && danger >= IMMINENT_ATTACK_PRESSURE
                     && Self::imminent_city_attack(g, pid, cid, &visible);
                 let critical = danger >= 0.90
                     || (danger >= BASTION_PRESSURE

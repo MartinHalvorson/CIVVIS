@@ -8934,7 +8934,21 @@ fn imminent_city_attack_triggers_before_the_aggregate_ratio_is_critical() {
     assert_eq!(
         AdvancedAi::new().threatened_city(&game, 0),
         Some(city),
-        "an imminent legal city attack must not wait for a second hostile"
+        "an imminent legal city attack must not wait for a second hostile; pressure={pressure:.3}, defense={:.3}, attack={:.3}",
+        game.city_strength(city),
+        crate::game::effective_strength(game.unit_strength(&game.units[&horseman], false), game.units[&horseman].hp),
+    );
+
+    game.remove_unit(horseman);
+    let warrior = game.spawn_test_unit("warrior", 1, attack_tile);
+    assert!(
+        game.attack_reach(warrior).contains(&city_pos),
+        "the weak hostile must still be able to attack the City Center"
+    );
+    let visible = game.player_vision_frame(0);
+    assert!(
+        !AdvancedAi::imminent_city_attack(&game, 0, city, &visible),
+        "a legal but underpowered attack must not raise the imminent alarm"
     );
 }
 
