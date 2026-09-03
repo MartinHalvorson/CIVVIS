@@ -2154,10 +2154,20 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
         return save
     finder = recent if recent is not None else _recent_autosaves
     saves = finder(newer_than=started_at)
-    # ⚠⚠ NEVER RELOAD THE SAVE OF THE TURN THAT JUST PARKED. `saves` is newest
-    # first, so `saves[0]` is the autosave written AT `turn` — the very board
-    # that deadlocked. Reloading it replays the same turn from the same start
-    # and parks again, which is measured, twice:
+    # ⚠⚠ NEVER RELOAD THE NEWEST SAVE AFTER THE TURN THAT JUST PARKED. `saves`
+    # is newest first, so `saves[0]` is the autosave written at the end of the
+    # stalled board — the very state that deadlocked. Reloading it replays the
+    # same turn from the same start and parks again, which is measured, twice.
+    #
+    # The numeric suffix is a Civ VI save counter, not the game's turn number.
+    # On the live run at game t52 the newest file was AutoSave_0066, and the
+    # t184 freeze successively exposed AutoSave_0175, _0176, and _0177 while
+    # every loaded game still restored t184. Filtering by `_autosave_turn(save)`
+    # therefore failed open and reloaded the parked board on every continuation.
+    # Use the mtime order returned by `recent_autosaves`, which is the only
+    # host-side fact that identifies the just-written save.
+    #
+    # The observed repeated parks:
     #
     #   2026-08-24: "reloading the exact same t181 save twice reproduced the
     #               same engine-side PLEASE WAIT spin twice" — the observation
@@ -2172,7 +2182,12 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     # started one step too late, so the FIRST attempt was always spent on the
     # board known to fail. That is half of a two-resume budget: the same game
     # then parked again at t112 and had nothing left to recover with.
-    saves = [save for save in saves if _autosave_turn(save) != turn]
+    # With one candidate there is no second board to prove is older. Preserve
+    # the long-standing single-save fallback; the live rolling list has several
+    # files, so the ambiguous case cannot make it spend a continuation on the
+    # parked board there.
+    if len(saves) > 1:
+        saves = saves[1:]
     step = RESUME_STEPS[min(resumes_so_far, len(RESUME_STEPS) - 1)]
     index = min(step, len(saves) - 1)
     if not 0 <= index < len(saves):
