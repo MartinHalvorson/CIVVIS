@@ -424,6 +424,14 @@ class Civ6BrainTest(unittest.TestCase):
             self.assertEqual(civ6_brain.completed_turns(conn, "missing"), set())
             conn.close()
 
+    def test_an_explicit_autosave_replay_reopens_only_that_turn(self) -> None:
+        served = {42, 43, 44}
+
+        reopened = civ6_brain.reopen_saved_turns(served, [43, -1, 99, 43])
+
+        self.assertEqual(reopened, [43, 99])
+        self.assertEqual(served, {42, 44})
+
     def test_a_combat_frame_is_written_beside_the_opening_board_not_over_it(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             conn = civ6_brain.connect(Path(temporary) / "orders.sqlite")

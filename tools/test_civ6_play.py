@@ -48,6 +48,42 @@ def args(**changes):
     return SimpleNamespace(**values)
 
 
+class AttachRunningTests(unittest.TestCase):
+    """A loaded save has an ownership path that never touches its process."""
+
+    def test_attach_mode_bypasses_vision_and_launcher_teardown(self) -> None:
+        attached = SimpleNamespace(
+            tag="saved-game", lock_wait=0.0, attach_running=True,
+            restart_below_leader_ratio=0.0,
+        )
+        with patch.object(civ6_play, "hold_macos_awake") as awake, \
+             patch.object(civ6_play.gamelock, "acquire", return_value=True), \
+             patch.object(civ6_play.gamelock, "release") as release, \
+             patch.object(civ6_play, "_attach_running_game", return_value=0) as attach, \
+             patch.object(civ6_play.vision, "available") as vision, \
+             patch.object(civ6_play.launcher, "stop") as stop:
+            self.assertEqual(civ6_play.play(attached), 0)
+
+        awake.assert_called_once_with()
+        attach.assert_called_once_with(attached)
+        release.assert_called_once_with()
+        vision.assert_not_called()
+        stop.assert_not_called()
+
+    def test_cli_exposes_the_autosave_turn_to_the_attach_owner(self) -> None:
+        with patch.object(civ6_play, "play", return_value=0) as play, \
+             patch.object(civ6_play, "enforce_roman_leader",
+                          return_value="LEADER_TRAJAN"):
+            self.assertEqual(civ6_play.main([
+                "--tag", "saved-game", "--attach-running",
+                "--attach-replay-turn", "47",
+            ]), 0)
+
+        received = play.call_args.args[0]
+        self.assertTrue(received.attach_running)
+        self.assertEqual(received.attach_replay_turn, 47)
+
+
 class TermTakesTheBrainWithIt(unittest.TestCase):
     """A TERMed harness must not leak the brain that blocks the next game.
 
@@ -1380,7 +1416,7 @@ class DialogueCloseConfigTests(unittest.TestCase):
 
 
 class DealSessionConfigTests(unittest.TestCase):
-    """Civvis needs sessions; ordinary play keeps the non-modal default."""
+    """Unattended play uses non-modal deals unless a run opts in explicitly."""
 
     @staticmethod
     def _config(**changes):
@@ -1397,8 +1433,8 @@ class DealSessionConfigTests(unittest.TestCase):
     def test_ordinary_play_keeps_direct_deals_by_default(self):
         self.assertIs(self._config()["DealSessions"], False)
 
-    def test_civvis_decider_uses_working_sessions_by_default(self):
-        self.assertIs(self._config(civvis_decides=True)["DealSessions"], True)
+    def test_civvis_decider_keeps_non_modal_deals_by_default(self):
+        self.assertIs(self._config(civvis_decides=True)["DealSessions"], False)
 
     def test_interactive_deal_sessions_can_be_explicitly_enabled(self):
         self.assertIs(self._config(deal_sessions=True)["DealSessions"], True)
