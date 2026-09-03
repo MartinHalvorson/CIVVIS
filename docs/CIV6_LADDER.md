@@ -20,15 +20,15 @@ before that export carries the index alone and reads `—` here.
 | 2 | Chieftain | 2026-08-18T18:46:46Z | 3 | VICTORY_CULTURE | 250 | `civvis-20260818T175125Z` |
 | 3 | Warlord | 2026-08-22T04:33:08Z | 0 | VICTORY_SCORE | 250 | `civvis-20260822T020434Z-cont-timeout1` |
 | 4 | Prince | 2026-08-23T18:12:42Z | 0 | VICTORY_SCORE | 250 | `civvis-20260823T163705Z` |
-| 5 | King | — | | | | |
+| 5 | King | 2026-09-01T03:38:08Z | 5 | VICTORY_TECHNOLOGY | 234 | `civvis-20260901T033000Z-cont8` |
 | 6 | Emperor | — | | | | |
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 650.
+Attempts recorded: 873.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 364 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 457 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
 
 ## Which victories have been won, per difficulty
 
@@ -48,7 +48,7 @@ install offers and nobody has won still appears, empty.
 | 2 | VICTORY_CONQUEST | — | — | — | — | — | — | — | — |
 | 3 | VICTORY_CULTURE | — | 2026-08-18T18:46:46Z | — | — | — | — | — | — |
 | 4 | VICTORY_RELIGIOUS | — | — | — | — | — | — | — | — |
-| 5 | VICTORY_TECHNOLOGY | — | — | — | — | — | — | — | — |
+| 5 | VICTORY_TECHNOLOGY | — | — | — | — | 2026-09-01T03:38:08Z | — | — | — |
 | 6 | VICTORY_DIPLOMATIC | — | — | — | — | — | — | — | — |
 
 ## How these games ended
@@ -61,14 +61,14 @@ absent from this table have never been completed by anyone here.
 
 | victory | type | games | of ended |
 |---|---|---|---|
-| 0 | VICTORY_SCORE | 202 | 62% |
-| 6 | VICTORY_DIPLOMATIC | 60 | 18% |
-| 3 | VICTORY_CULTURE | 47 | 14% |
-| 5 | VICTORY_TECHNOLOGY | 11 | 3% |
-| 4 | — | 5 | 2% |
+| 0 | VICTORY_SCORE | 202 | 58% |
+| 6 | VICTORY_DIPLOMATIC | 62 | 18% |
+| 3 | VICTORY_CULTURE | 54 | 16% |
+| 5 | VICTORY_TECHNOLOGY | 24 | 7% |
+| 4 | — | 5 | 1% |
 | 2 | — | 1 | 0% |
 
-326 of 650 attempts reached a terminal victory event, and 1 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
+348 of 873 attempts reached a terminal victory event, and 5 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
 
 ## Every attempt
 
@@ -86,43 +86,43 @@ same row.
 
 | run | difficulty | playing for | configured | outcome | turns | score | ended |
 |---|---|---|---|---|---|---|---|
-| `civvis-20260825T193604Z` | King | diplomatic | yes | abandoned | 24 | 38 | 2026-08-25T19:42:40Z |
-| `civvis-20260825T210439Z` | King | diplomatic | yes | abandoned | 14 | 25 | 2026-08-25T21:09:09Z |
-| `civvis-20260825T215023Z` | King | diplomatic | yes | abandoned | 32 | 50 | 2026-08-25T21:58:23Z |
-| `civvis-20260825T232343Z` | King | diplomatic | yes | abandoned | 20 | 33 | 2026-08-25T23:32:52Z |
-| `civvis-20260825T233318Z` | King | diplomatic | yes | abandoned | 32 | 57 | 2026-08-25T23:45:08Z |
-| `civvis-20260825T235538Z` | King | diplomatic | yes | abandoned | 108 | 372 | 2026-08-26T00:32:27Z |
-| `civvis-20260826T004241Z` | King | diplomatic | yes | abandoned | 32 | 55 | 2026-08-26T00:56:16Z |
-| `civvis-20260826T005655Z` | King | diplomatic | yes | abandoned | 104 | 163 | 2026-08-26T01:31:01Z |
-| `civvis-20260826T013508Z` | King | diplomatic | yes | abandoned | 22 | 30 | 2026-08-26T01:43:20Z |
-| `civvis-20260826T023729Z` | King | diplomatic | yes | abandoned | 32 | 40 | 2026-08-26T02:48:30Z |
-| `civvis-20260826T024903Z` | King | diplomatic | yes | abandoned | 32 | 66 | 2026-08-26T03:00:13Z |
-| `civvis-20260826T032942Z` | King | diplomatic | yes | abandoned | 32 | 56 | 2026-08-26T03:40:25Z |
-| `civvis-20260826T034358Z` | King | diplomatic | yes | abandoned | 32 | 57 | 2026-08-26T03:53:45Z |
-| `civvis-20260826T035419Z` | King | diplomatic | yes | abandoned | 104 | 252 | 2026-08-26T04:26:48Z |
-| `civvis-20260826T043035Z` | King | diplomatic | yes | game exited | 47 | 91 | 2026-08-26T04:45:38Z |
-| `civvis-20260826T044915Z` | King | diplomatic | yes | abandoned | 105 | 353 | 2026-08-26T05:22:28Z |
-| `civvis-20260826T052615Z` | King | diplomatic | yes | abandoned | 32 | 57 | 2026-08-26T05:36:15Z |
-| `civvis-20260826T054001Z` | King | diplomatic | yes | abandoned | 14 | 26 | 2026-08-26T05:45:40Z |
-| `civvis-20260826T054922Z` | King | diplomatic | yes | abandoned | 104 | 274 | 2026-08-26T06:21:36Z |
-| `civvis-20260826T063228Z` | King | diplomatic | yes | abandoned | 104 | 271 | 2026-08-26T07:03:57Z |
-| `civvis-20260826T070748Z` | King | diplomatic | yes | abandoned | 32 | 59 | 2026-08-26T07:16:38Z |
-| `civvis-20260826T072016Z` | King | diplomatic | yes | abandoned | 16 | 29 | 2026-08-26T07:26:17Z |
-| `civvis-20260826T073607Z` | King | diplomatic | yes | abandoned | 32 | 57 | 2026-08-26T07:46:44Z |
-| `civvis-20260826T074724Z` | King | diplomatic | yes | abandoned | 32 | 56 | 2026-08-26T07:57:21Z |
-| `civvis-20260826T080103Z` | King | diplomatic | yes | abandoned | 14 | 23 | 2026-08-26T08:05:45Z |
-| `civvis-20260826T080627Z` | King | diplomatic | yes | abandoned | 32 | 65 | 2026-08-26T08:16:20Z |
-| `civvis-20260826T082005Z` | King | diplomatic | yes | abandoned | 32 | 50 | 2026-08-26T08:29:44Z |
-| `civvis-20260829T040648Z` | King | diplomatic | yes | abandoned | 150 | 407 | 2026-08-29T05:00:50Z |
-| `civvis-20260829T050452Z` | King | diplomatic | yes | abandoned | 220 | 706 | 2026-08-29T06:33:47Z |
-| `civvis-20260829T063758Z` | King | diplomatic | yes | abandoned | 150 | 155 | 2026-08-29T07:21:57Z |
-| `civvis-20260829T084031Z` | King | diplomatic | yes | abandoned | 150 | 368 | 2026-08-29T09:31:58Z |
-| `civvis-20260829T105755Z` | King | diplomatic | yes | abandoned | 150 | 386 | 2026-08-29T11:56:14Z |
-| `civvis-20260829T150139Z` | King | diplomatic | yes | abandoned | 150 | 346 | 2026-08-29T15:55:03Z |
-| `civvis-20260829T194002Z` | King | diplomatic | yes | abandoned | 154 | 448 | 2026-08-29T20:30:09Z |
-| `civvis-20260829T203407Z` | King | diplomatic | yes | abandoned | 150 | 406 | 2026-08-29T21:24:49Z |
-| `civvis-20260830T021417Z` | King | diplomatic | yes | game exited | 167 | 516 | 2026-08-30T03:11:28Z |
-| `civvis-20260830T055337Z` | King | diplomatic | yes | abandoned | 150 | 393 | 2026-08-30T06:47:37Z |
-| `civvis-20260830T083406Z` | King | diplomatic | yes | abandoned | 150 | 246 | 2026-08-30T09:21:56Z |
-| `civvis-20260830T095742Z` | King | diplomatic | yes | abandoned | 150 | 107 | 2026-08-30T10:36:24Z |
-| `civvis-20260830T104408Z` | King | — | NO | killed | 88 | 130 | 2026-08-30T11:23:20Z |
+| `civvis-20260902T200323Z` | Emperor | science | yes | operator_retired | 8 | 14 | 2026-09-02T20:07:23Z |
+| `civvis-20260902T201212Z` | Emperor | science | yes | operator_retired | 191 | 428 | 2026-09-02T20:50:28Z |
+| `civvis-20260902T205532Z` | Emperor | science | yes | operator_retired | 186 | 606 | 2026-09-02T21:33:01Z |
+| `civvis-20260902T214942Z` | Emperor | — | NO | killed | 20 | 39 | 2026-09-02T22:00:49Z |
+| `civvis-20260902T214942Z-cont1` | Emperor | science | yes | operator_retired | 92 | 186 | 2026-09-02T22:23:20Z |
+| `civvis-20260902T222804Z` | Emperor | — | NO | killed | 88 | 215 | 2026-09-02T22:47:38Z |
+| `civvis-20260902T222804Z-cont1` | Emperor | — | NO | killed | 88 | 217 | 2026-09-02T22:55:09Z |
+| `civvis-20260902T222804Z-cont2` | Emperor | — | NO | killed | 153 | 353 | 2026-09-02T23:21:52Z |
+| `civvis-20260902T222804Z-cont3` | Emperor | — | NO | killed | 174 | 381 | 2026-09-02T23:36:32Z |
+| `civvis-20260902T222804Z-cont4` | Emperor | science | yes | stopped | 224 | 305 | 2026-09-02T23:49:24Z |
+| `civvis-20260902T235828Z` | Emperor | — | NO | killed | 99 | 150 | 2026-09-03T00:24:20Z |
+| `civvis-20260902T235828Z-cont1` | Emperor | — | NO | killed | 113 | 134 | 2026-09-03T00:33:53Z |
+| `civvis-20260902T235828Z-cont2` | Emperor | — | NO | killed | -1 | -1 | 2026-09-03T00:35:59Z |
+| `civvis-20260903T004232Z` | Emperor | science | yes | stopped | 211 | 341 | 2026-09-03T01:15:44Z |
+| `civvis-20260903T012007Z` | Emperor | — | NO | killed | 64 | 163 | 2026-09-03T01:35:53Z |
+| `civvis-20260903T012007Z-cont1` | Emperor | — | NO | killed | 64 | 170 | 2026-09-03T01:43:25Z |
+| `civvis-20260903T012007Z-cont2` | Emperor | science | yes | stopped | 182 | 552 | 2026-09-03T02:10:31Z |
+| `civvis-20260903T021106Z` | Emperor | science | yes | stopped | 207 | 381 | 2026-09-03T02:56:28Z |
+| `civvis-20260903T030102Z` | Emperor | science | yes | stopped | 190 | 458 | 2026-09-03T03:33:37Z |
+| `civvis-20260903T033809Z` | Emperor | — | NO | killed | 136 | 461 | 2026-09-03T04:05:17Z |
+| `civvis-20260903T033809Z-cont1` | Emperor | — | NO | killed | 136 | 461 | 2026-09-03T04:12:48Z |
+| `civvis-20260903T033809Z-cont2` | Emperor | — | NO | killed | -1 | -1 | 2026-09-03T04:14:53Z |
+| `civvis-20260903T043245Z` | Emperor | science | yes | stopped | 209 | 563 | 2026-09-03T05:11:42Z |
+| `civvis-20260903T051741Z` | Emperor | science | yes | game exited | 45 | 104 | 2026-09-03T05:29:12Z |
+| `civvis-20260903T052942Z` | Emperor | science | yes | game exited | 88 | 300 | 2026-09-03T05:45:55Z |
+| `civvis-20260903T052942Z-cont1` | Emperor | — | NO | killed | -1 | -1 | 2026-09-03T05:48:21Z |
+| `civvis-20260903T060917Z` | Emperor | — | NO | killed | 40 | 88 | 2026-09-03T06:22:15Z |
+| `civvis-20260903T060917Z-cont1` | Emperor | — | NO | killed | 40 | 88 | 2026-09-03T06:29:49Z |
+| `civvis-20260903T060917Z-cont2` | Emperor | — | NO | killed | -1 | -1 | 2026-09-03T06:39:44Z |
+| `civvis-20260903T071230Z` | Emperor | science | yes | operator_retired | 132 | 259 | 2026-09-03T07:42:11Z |
+| `civvis-20260903T074311Z` | Emperor | — | NO | killed | 40 | 103 | 2026-09-03T07:54:37Z |
+| `civvis-20260903T074311Z-cont1` | Emperor | — | NO | killed | 40 | 103 | 2026-09-03T08:03:10Z |
+| `civvis-20260903T074311Z-cont2` | Emperor | — | NO | killed | 40 | 103 | 2026-09-03T08:11:43Z |
+| `civvis-20260903T074311Z-cont3` | Emperor | — | NO | killed | 184 | 431 | 2026-09-03T08:38:30Z |
+| `civvis-20260903T074311Z-cont4` | Emperor | — | NO | killed | 184 | 432 | 2026-09-03T08:47:04Z |
+| `civvis-20260903T074311Z-cont5` | Emperor | — | NO | killed | 184 | 432 | 2026-09-03T08:55:37Z |
+| `civvis-20260903T074311Z-cont6` | Emperor | — | NO | killed | 184 | 432 | 2026-09-03T09:05:10Z |
+| `civvis-20260903T090934Z` | Emperor | — | NO | killed | 88 | 183 | 2026-09-03T09:26:52Z |
+| `civvis-20260903T090934Z-cont1` | Emperor | science | yes | operator_retired | 107 | 221 | 2026-09-03T09:30:30Z |
+| `civvis-20260903T093105Z` | Emperor | science | yes | operator_retired | 56 | 89 | 2026-09-03T09:39:12Z |
