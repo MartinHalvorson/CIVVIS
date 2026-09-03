@@ -16265,6 +16265,154 @@ fn targeted_science_keeps_the_production_builder_floor_while_work_remains() {
     );
 }
 
+/// The Builder floor puts charges into a growing empire; this companion
+/// contract sends those charges to the new city whose output cannot yet carry
+/// the buildings, units, or projects every victory lane needs. The two job
+/// tiles are deliberately the only unreserved work, so this proves the
+/// production bonus is present in the actual cross-city Builder ranking, not
+/// merely in an isolated helper.
+#[test]
+fn named_victory_builders_raise_a_lagging_citys_production_foundation() {
+    let (mut game, capital, home) = empire_with_a_capital(79_124);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    let weak = found_nearby_test_city(&mut game, 0, home);
+    game.players[0]
+        .techs
+        .extend([crate::name!("mining"), crate::name!("construction")]);
+
+    let strong_target = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != home)
+        .expect("the capital owns an improvement tile");
+    let weak_home = game.cities[&weak].pos;
+    let weak_target = game.cities[&weak]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != weak_home)
+        .expect("the new city owns an improvement tile");
+
+    // A mature core: its completed Mines put it over the foundation floor,
+    // while the remaining Forest can legally become a two-production Lumber
+    // Mill. The ordinary ranking should prefer this better local tile.
+    for position in game.cities[&capital].owned_tiles.clone() {
+        if position == home {
+            continue;
+        }
+        let tile = game.map.tiles.get_mut(&position).expect("capital tile");
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = true;
+        tile.resource = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+        tile.improvement = if position == strong_target {
+            None
+        } else {
+            Some(crate::name!("mine"))
+        };
+    }
+    {
+        let tile = game
+            .map
+            .tiles
+            .get_mut(&strong_target)
+            .expect("strong target");
+        tile.feature = Some(crate::name!("forest"));
+        tile.hills = false;
+    }
+
+    // A just-founded city: leave it below the same floor, with one legal Mine
+    // to lift its local output. The other bare plots are reserved below, so
+    // they cannot obscure which cross-city job wins.
+    for position in game.cities[&weak].owned_tiles.clone() {
+        if position == weak_home {
+            continue;
+        }
+        let tile = game.map.tiles.get_mut(&position).expect("weak-city tile");
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    {
+        let tile = game.map.tiles.get_mut(&weak_target).expect("weak target");
+        tile.terrain = crate::name!("plains");
+        tile.hills = true;
+    }
+    game.cities.get_mut(&capital).unwrap().pop = 10;
+    game.cities.get_mut(&weak).unwrap().pop = 1;
+
+    assert!(
+        game.city_yields(capital).production >= PRODUCTION_CITY_FOUNDATION_FLOOR,
+        "fixture: the mature city is already productive"
+    );
+    assert!(
+        game.city_yields(weak).production < PRODUCTION_CITY_FOUNDATION_FLOOR,
+        "fixture: the new city still needs its production foundation"
+    );
+    assert!(
+        game.valid_improvements(0, strong_target)
+            .contains(&crate::name!("lumber_mill")),
+        "fixture: the core has a legal Lumber Mill"
+    );
+    assert!(
+        game.valid_improvements(0, weak_target)
+            .contains(&crate::name!("mine")),
+        "fixture: the weak city has a legal Mine"
+    );
+
+    let builder = game.spawn_test_unit("builder", 0, home);
+    let reserved: HashSet<Pos> = game
+        .player_city_ids(0)
+        .into_iter()
+        .flat_map(|cid| game.cities[&cid].owned_tiles.iter().copied())
+        .filter(|position| *position != strong_target && *position != weak_target)
+        .collect();
+    let adaptive = AdvancedAi::new();
+    let named = AdvancedAi::targeting(VictoryTarget::Science);
+    let weak_shortfall = named.city_production_foundation_shortfall(&game, 0, weak);
+    assert!(weak_shortfall > 0.0, "the target sees the city deficit");
+    assert_eq!(
+        adaptive.city_production_foundation_shortfall(&game, 0, weak),
+        0.0,
+        "the evaluated adaptive controller keeps its existing rank"
+    );
+    assert!(
+        named.production_foundation_improvement_value(
+            &game,
+            0,
+            weak_target,
+            "mine",
+            GrandStrategy::Expansion,
+            weak_shortfall,
+        ) > named.improvement_value_for(&game, 0, weak_target, "mine", GrandStrategy::Expansion,),
+        "the weak city's Mine receives a real production-foundation premium"
+    );
+    assert_eq!(
+        adaptive
+            .builder_jobs_ranked(&game, 0, builder, GrandStrategy::Expansion, &reserved)
+            .first(),
+        Some(&strong_target),
+        "without a named target, the core Lumber Mill keeps the ordinary lead"
+    );
+    assert_eq!(
+        named
+            .builder_jobs_ranked(&game, 0, builder, GrandStrategy::Expansion, &reserved)
+            .first(),
+        Some(&weak_target),
+        "the named lane sends the next charge to the lagging city's Mine"
+    );
+}
+
 #[test]
 fn targeted_science_recovers_a_persistent_idle_city_with_a_civilian() {
     let (mut game, city, _) = empire_with_a_capital(79_123);
@@ -36016,6 +36164,97 @@ fn district_planning_lane(turn: u32) -> StrategicPlan {
     }
 }
 
+/// Give a deterministic planning fixture the whole ring-three district board.
+/// Real games acquire this land over time; a layout test needs all of the
+/// relevant legal sites visible at once, without making a Gold purchase the
+/// variable it is trying to measure.
+fn planning_claim_disk(game: &mut Game, city: u32, radius: i32) {
+    let center = game.cities[&city].pos;
+    let positions = game.wdisk(center, radius);
+    for pos in &positions {
+        game.map.tiles.get_mut(pos).unwrap().owner_city = Some(city);
+    }
+    let owned = &mut game.cities.get_mut(&city).unwrap().owned_tiles;
+    for pos in positions {
+        if !owned.contains(&pos) {
+            owned.push(pos);
+        }
+    }
+}
+
+/// A bare Science city with a deliberately legal Aqueduct and Dam sharing a
+/// single Industrial Zone tile. A separate mountain nest keeps the Campus
+/// choice unambiguous, while the cluster is the only source of meaningful
+/// productive district adjacency on the board.
+fn industrial_cluster_capital() -> (Game, u32, Pos, Pos, Pos) {
+    let (mut game, city, center) = planning_capital();
+    planning_claim_disk(&mut game, city, 3);
+    game.cities.get_mut(&city).unwrap().pop = 10;
+    game.players[0].techs.extend([
+        crate::name!("writing"),
+        crate::name!("apprenticeship"),
+        crate::name!("engineering"),
+        crate::name!("buttress"),
+        crate::name!("currency"),
+    ]);
+
+    let aqueduct = game.nbrs(center)[0];
+    let industrial = game
+        .nbrs(aqueduct)
+        .into_iter()
+        .find(|pos| *pos != center && game.wdist(*pos, center) == 2)
+        .expect("an Aqueduct neighbour in the second ring");
+    let dam = game
+        .nbrs(industrial)
+        .into_iter()
+        .find(|pos| {
+            *pos != center
+                && *pos != aqueduct
+                && game.wdist(*pos, center) >= 2
+                && game.wdist(*pos, center) <= 3
+        })
+        .expect("a Dam neighbour sharing the Industrial Zone tile");
+    let aqueduct_source = game
+        .nbrs(aqueduct)
+        .into_iter()
+        .find(|pos| *pos != center && *pos != industrial)
+        .expect("a non-city Aqueduct river edge");
+    assert!(game.map.set_river_edge(aqueduct, aqueduct_source, true));
+    let dam_neighbors = game.nbrs(dam);
+    assert!(game.map.set_river_edge(dam, dam_neighbors[0], true));
+    assert!(game.map.set_river_edge(dam, dam_neighbors[1], true));
+    game.map.tiles.get_mut(&dam).unwrap().feature = Some(crate::name!("floodplains"));
+
+    let campus_nest = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.wdist(*pos, aqueduct) > 1
+                && game.wdist(*pos, industrial) > 1
+                && game.wdist(*pos, dam) > 1
+        })
+        .expect("a separate Campus nest");
+    assert_eq!(
+        raise_mountains_beside(&mut game, campus_nest, 3, |_, pos| {
+            pos != center && pos != aqueduct && pos != industrial && pos != dam
+        }),
+        3,
+        "the Campus needs an independent three-mountain nest"
+    );
+    assert!(
+        game.district_sites(city, crate::name!("aqueduct"))
+            .contains(&aqueduct),
+        "the fixture Aqueduct is actually legal"
+    );
+    assert!(
+        game.district_sites(city, crate::name!("dam"))
+            .contains(&dam),
+        "the fixture Dam is actually legal"
+    );
+    (game, city, industrial, aqueduct, dam)
+}
+
 /// Raise mountains on `count` neighbours of `around`, skipping the city
 /// center and any tile a predicate refuses.
 fn raise_mountains_beside(
@@ -36062,9 +36301,9 @@ fn the_plan_reserves_the_nest_for_the_campus() {
             .all(|row| row.family.as_str() == "campus" || row.pos != nest),
         "the nest is reserved: no other family sits on it"
     );
-    assert!(
-        rows.iter().all(|row| row.value <= campus.value),
-        "the nested campus is the plan's most valuable pick"
+    assert_eq!(
+        campus.order, 0,
+        "the Science plan claims its Campus before the Industrial cluster or another core"
     );
 }
 
@@ -36095,7 +36334,7 @@ fn the_menu_gains_the_plans_site_and_the_squatter_yields() {
             pos: other,
         },
     ];
-    ai.district_plan_shape_menu(&game, 0, &plan, city, &mut items);
+    let _ = ai.district_plan_shape_menu(&game, 0, &plan, city, &mut items);
     assert!(
         items
             .iter()
@@ -36116,6 +36355,228 @@ fn the_menu_gains_the_plans_site_and_the_squatter_yields() {
             .any(|item| matches!(item, Item::District { district, .. }
             if district.as_str() == "commercial_hub")),
         "the hub keeps a candidate of its own"
+    );
+}
+
+/// A reservation only matters if the production picker observes it. With two
+/// available specialty slots, the Science plan reserves Campus plus its next
+/// core district; a flashy but off-plan Entertainment Complex cannot win by
+/// receiving an arbitrary high ordinary score. The Campus itself receives the
+/// plan floor and remains selectable.
+#[test]
+fn the_production_menu_preserves_specialty_slots_for_the_campus_first_plan() {
+    let (mut game, city, _) = planning_capital();
+    game.cities.get_mut(&city).unwrap().pop = 4;
+    let mut ai = AdvancedAi::new();
+    ai.enable_district_planning();
+    let plan = district_planning_lane(game.turn);
+    let rows = ai.city_district_plan(&game, 0, &plan, city);
+    let campus = rows
+        .iter()
+        .find(|row| row.family.as_str() == "campus")
+        .expect("the Science plan reserves its Campus");
+    let campus_site = campus.owned_fallback.unwrap_or(campus.pos);
+    let entertainment_site = game
+        .district_sites(city, crate::name!("entertainment_complex"))
+        .into_iter()
+        .find(|pos| {
+            *pos != campus_site
+                && !rows.iter().any(|row| {
+                    row.pos == *pos || row.owned_fallback.is_some_and(|fallback| fallback == *pos)
+                })
+        })
+        .expect("an unreserved Entertainment Complex site");
+    let items = vec![
+        Item::District {
+            district: campus.district,
+            pos: campus_site,
+        },
+        Item::District {
+            district: crate::name!("entertainment_complex"),
+            pos: entertainment_site,
+        },
+    ];
+    let mut scores = vec![0.0, 9_999.0];
+    ai.district_plan_adjust_menu_scores(&game, &plan, city, &rows, &items, &mut scores);
+    assert!(
+        scores[0] >= 90.0,
+        "the planned Campus receives its start floor"
+    );
+    assert!(
+        scores[1] <= -9_999.0,
+        "an off-plan specialty district cannot spend the last planned slot: {}",
+        scores[1]
+    );
+}
+
+/// The plan evaluates the cluster as a build sequence rather than treating
+/// every district's current yield as isolated. Campus takes its dedicated
+/// nest first; then the Aqueduct and Dam reserve their shared Industrial Zone
+/// neighbour, which receives their projected production adjacency.
+#[test]
+fn the_plan_stages_aqueduct_and_dam_before_the_industrial_zone_they_power() {
+    let (mut game, city, industrial, aqueduct, dam) = industrial_cluster_capital();
+    assert_eq!(game.wdist(aqueduct, industrial), 1);
+    assert_eq!(game.wdist(dam, industrial), 1);
+    // A standing Zone is the cleanest proof that support districts are not
+    // generic filler: its one actual tile is the only productive destination
+    // an Aqueduct or Dam may justify here.
+    game.map.tiles.get_mut(&industrial).unwrap().district = Some(crate::name!("industrial_zone"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("industrial_zone"), industrial);
+    let mut after_aqueduct = game.speculative_clone();
+    after_aqueduct
+        .map
+        .tiles
+        .get_mut(&aqueduct)
+        .unwrap()
+        .district_foundation = Some(crate::world::DistrictFoundation {
+        district: crate::name!("aqueduct"),
+        cost: 0.0,
+    });
+    assert!(
+        after_aqueduct
+            .district_sites(city, crate::name!("dam"))
+            .contains(&dam),
+        "the Dam remains legal after its Aqueduct support is reserved"
+    );
+    let assume = crate::game::adjacency::PlanAssumption {
+        city_center: None,
+        foundations: true,
+    };
+    let before_dam = after_aqueduct
+        .district_adjacency_assuming(
+            crate::name!("industrial_zone"),
+            industrial,
+            Some(&assume),
+            None,
+        )
+        .production;
+    let mut after_both = after_aqueduct.speculative_clone();
+    after_both
+        .map
+        .tiles
+        .get_mut(&dam)
+        .unwrap()
+        .district_foundation = Some(crate::world::DistrictFoundation {
+        district: crate::name!("dam"),
+        cost: 0.0,
+    });
+    assert!(
+        after_both
+            .district_adjacency_assuming(
+                crate::name!("industrial_zone"),
+                industrial,
+                Some(&assume),
+                None
+            )
+            .production
+            > before_dam + f64::EPSILON,
+        "the fixture Dam really improves the shared Industrial site"
+    );
+    let ai = AdvancedAi::new();
+    let plan = district_planning_lane(game.turn);
+    let rows = ai.city_district_plan(&game, 0, &plan, city);
+    let campus = rows
+        .iter()
+        .find(|row| row.family.as_str() == "campus")
+        .expect("the Science city plans a Campus");
+    let planned_aqueduct = rows
+        .iter()
+        .find(|row| row.family.as_str() == "aqueduct")
+        .expect("the linked Aqueduct is part of the plan");
+    let planned_dam = rows
+        .iter()
+        .find(|row| row.family.as_str() == "dam")
+        .expect("the linked Dam is part of the plan");
+
+    assert_eq!(
+        campus.order, 0,
+        "Campus remains the Science plan's first claim"
+    );
+    assert_eq!(planned_aqueduct.pos, aqueduct);
+    assert_eq!(planned_dam.pos, dam);
+    assert!(planned_aqueduct.support && planned_dam.support);
+    assert!(campus.order < planned_aqueduct.order && campus.order < planned_dam.order);
+    assert_eq!(game.wdist(planned_aqueduct.pos, industrial), 1);
+    assert_eq!(game.wdist(planned_dam.pos, industrial), 1);
+
+    let assume = crate::game::adjacency::PlanAssumption {
+        city_center: None,
+        foundations: true,
+    };
+    let without_support = game
+        .district_adjacency_assuming(
+            crate::name!("industrial_zone"),
+            industrial,
+            Some(&assume),
+            None,
+        )
+        .production;
+    let mut staged = game.speculative_clone();
+    for row in [planned_aqueduct, planned_dam] {
+        staged
+            .map
+            .tiles
+            .get_mut(&row.pos)
+            .unwrap()
+            .district_foundation = Some(crate::world::DistrictFoundation {
+            district: row.district,
+            cost: 0.0,
+        });
+    }
+    let with_support = staged
+        .district_adjacency_assuming(
+            crate::name!("industrial_zone"),
+            industrial,
+            Some(&assume),
+            None,
+        )
+        .production;
+    assert!(
+        with_support > without_support + f64::EPSILON,
+        "the staged supports must create real Industrial production: {without_support} -> {with_support}"
+    );
+}
+
+/// The cluster layer reads the civilization's actual Industrial variant. A
+/// German Hansa therefore pulls in a Commercial Hub even on Recovery, whose
+/// normal standing-city wishlist asks only for production and a Campus.
+#[test]
+fn hansa_planning_adds_the_commercial_hub_that_its_adjacency_uses() {
+    let (mut game, city, _) = planning_capital();
+    planning_claim_disk(&mut game, city, 3);
+    game.players[0].civ = "Germany".to_string();
+    game.cities.get_mut(&city).unwrap().pop = 10;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let rows = AdvancedAi::new().city_district_plan(&game, 0, &plan, city);
+    let hansa = rows
+        .iter()
+        .find(|row| row.family.as_str() == "industrial_zone")
+        .expect("Recovery plans its production district");
+    assert_eq!(hansa.district.as_str(), "hansa");
+    let hub = rows
+        .iter()
+        .find(|row| row.family.as_str() == "commercial_hub")
+        .expect("the Hansa's +2 Commercial Hub adjacency is a planned pair");
+    assert!(
+        hub.support,
+        "the Hub is an Industrial partner, not generic Gold"
+    );
+    assert!(
+        hub.order < hansa.order && game.wdist(hub.pos, hansa.pos) == 1,
+        "the Commercial Hub is staged beside and before its Hansa"
     );
 }
 
@@ -45626,10 +46087,11 @@ fn a_hub_beside_a_campus_joins_the_science_lanes_trade_network() {
 
 /// See `industrial_chain_debt`. Nine Industrial Zones stood with one
 /// Factory in the best Emperor game because the production chain, unlike
-/// the research chain, was owed nothing. Treated, a Workshop in a city that
-/// holds an Industrial Zone is owed the flat debt, a Factory is additionally
-/// worth the own cities within its range, and a city without the district
-/// prices both exactly as before.
+/// the research chain, was owed nothing. This keeps the independently
+/// screenable adaptive arm honest: treated, a Workshop in a city that holds
+/// an Industrial Zone is owed the flat debt, a Factory is additionally worth
+/// the own cities within its range, and a city without the district prices
+/// both exactly as before.
 #[test]
 fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
     let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
@@ -45668,12 +46130,10 @@ fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
     let mut treated = AdvancedAi::new();
     treated.enable_live_bridge_universe();
     treated.enable_industrial_chain_debt();
-    treated.victory_target = Some(VictoryTarget::Science);
     treated.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge_universe();
     withheld.disable_industrial_chain_debt();
-    withheld.victory_target = Some(VictoryTarget::Science);
     withheld.refresh_research_weight(&game);
     let counts = treated.counts(&game, 0);
 
@@ -45751,6 +46211,105 @@ fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
     // Defaults: off for the stock and frozen controllers.
     assert!(!AdvancedAi::new().industrial_chain_debt);
     assert!(!AdvancedAi::legacy().industrial_chain_debt);
+}
+
+/// Production is the common prerequisite of every named victory lane. The
+/// deployment ledger can keep the adaptive industrial-chain gene off while a
+/// live named lane still pays the Workshop/Factory/power chain before a
+/// repeatable project. This is intentionally a Culture fixture: Science's
+/// existing research-project contract would otherwise hide the industrial
+/// gate we need to prove.
+#[test]
+fn named_victory_targets_make_industrial_production_foundational() {
+    let mut game = Game::new(2, 32, 24, 5_416, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.players[0]
+        .techs
+        .insert(crate::name!("industrialization"));
+    game.players[0].techs.insert(crate::name!("currency"));
+    game.players[0].gpp.insert("merchant".to_string(), 30.0);
+    game.cities.get_mut(&city).unwrap().pop = 6;
+    game.turn = 120;
+
+    install_ai_test_district(&mut game, city, "industrial_zone");
+    install_ai_test_district(&mut game, city, "commercial_hub");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .extend([crate::name!("workshop"), crate::name!("market")]);
+
+    let factory = Item::Building {
+        building: crate::name!("factory"),
+    };
+    let project = Item::Project {
+        project: crate::name!("commercial_hub_investment"),
+    };
+    assert!(game.can_produce(0, city, &factory), "the Factory is owed");
+    assert!(
+        game.can_produce(0, city, &project),
+        "the repeatable project is legal"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    let mut named = AdvancedAi::targeting(VictoryTarget::Culture);
+    named.enable_live_bridge();
+    named.refresh_research_weight(&game);
+    let mut adaptive = named.clone();
+    adaptive.victory_target = None;
+    assert!(
+        named.industrial_production_foundation(&game),
+        "an active named lane must carry the production contract"
+    );
+    assert!(
+        !adaptive.industrial_production_foundation(&game),
+        "the ledger-held adaptive controller remains unchanged"
+    );
+    for target in VictoryTarget::ALL {
+        let mut lane = AdvancedAi::targeting(target);
+        lane.enable_live_bridge();
+        assert!(
+            lane.industrial_production_foundation(&game),
+            "{} must value the production foundation",
+            target.as_str()
+        );
+    }
+
+    let counts = named.counts(&game, 0);
+    let factory_uplift = named.production_value(&game, 0, city, &factory, &plan, &counts)
+        - adaptive.production_value(&game, 0, city, &factory, &plan, &counts);
+    assert!(
+        factory_uplift > 0.0,
+        "the named Culture lane must owe its Factory: {factory_uplift}"
+    );
+
+    let named_project =
+        named.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+    let adaptive_project =
+        adaptive.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+    assert!(
+        named_project <= PROJECT_BEHIND_BUILDINGS_CAP,
+        "the Factory must precede the repeatable project: {named_project}"
+    );
+    assert!(
+        adaptive_project > named_project,
+        "only the named lane holds the project for the Factory: {adaptive_project}"
+    );
 }
 
 #[test]
