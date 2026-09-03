@@ -340,6 +340,67 @@ check("an expired owned hold enters the force-close path",
 	closerSrc:find("dealForceClose = true;", 1, true) ~= nil, true)
 check("the owned hold can bypass an unfinished fade",
 	closerSrc:find("if civvisDealView and not dealForceClose", 1, true) ~= nil, true)
+check("a host-closed owned session keeps force-close latched",
+	closerSrc:find("else\n\t\t\t\t\tdealHold = 0;\n\t\t\t\t\t-- CivvisTrade emits this event", 1, true) ~= nil, true)
+
+-- ── A host close before the hold expires must still close the UI ──
+-- The live t40 wedge happened in this ordering: the host closed the
+-- Civvis-owned session before its four-second hold elapsed, the listener
+-- cleared the hold, and `BlackFadeAnim:IsStopped()` stayed false forever.
+-- Exercise the actual listener and update callback so a source-only check
+-- cannot regress to the old `dealForceClose = false` behavior.
+local oldGlobalMetatable = getmetatable(_G)
+setmetatable(_G, nil)
+local autoCloseConfig = CivvisControlConfig
+autoCloseConfig.AnnouncementSeconds = 0.05
+autoCloseConfig.DialogueSeconds = 0.05
+autoCloseConfig.RunTag = "deal-session-autoclose-test"
+
+local hidden = false
+local update = nil
+local sessionListener = nil
+local closeCalls = 0
+ContextPtr = {
+	GetID = function() return "DiplomacyActionView" end,
+	IsHidden = function() return hidden end,
+	SetHide = function(_, value) hidden = value end,
+	SetUpdate = function(_, callback) update = callback end,
+}
+Controls = {
+	BlackFadeAnim = { IsStopped = function() return false end },
+}
+CloseFocusedState = function()
+	closeCalls = closeCalls + 1
+	hidden = true
+end
+LuaEvents = {
+	CivvisDealSession = {
+		Add = function(callback) sessionListener = callback end,
+	},
+}
+Automation = { Log = function() end }
+include = function() end
+
+local autoCloseChunk, autoCloseErr = loadfile(here .. "/CivvisControlAutoClose.lua")
+assert(autoCloseChunk, "could not load the autoclose shim: " .. tostring(autoCloseErr))
+local autoCloseRan, autoCloseRuntimeErr = pcall(autoCloseChunk)
+assert(autoCloseRan, "CivvisControlAutoClose.lua raised in deal-session test: " .. tostring(autoCloseRuntimeErr))
+assert(type(sessionListener) == "function", "the autoclose shim did not register the deal listener")
+assert(type(update) == "function", "the autoclose shim did not register an update callback")
+
+-- The opening hold is still honored while the session is live.
+sessionListener(4, true, 4)
+update(0.05)
+check("a live deal session does not close during its hold", closeCalls, 0)
+
+-- The host closes it early. With the old listener this next update waits on
+-- the never-stopping fade and leaves `closeCalls` at zero.
+sessionListener(4, false, 0)
+update(0.05)
+check("an early host close enters the native close ladder", closeCalls, 1)
+check("the early host close hides the action view", hidden, true)
+
+setmetatable(_G, oldGlobalMetatable)
 
 if failures > 0 then
 	realPrint(string.format("%d failure(s)", failures))

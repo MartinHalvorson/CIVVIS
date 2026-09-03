@@ -695,14 +695,20 @@ else
 	local dealForceClose = false;
 	pcall(function()
 		LuaEvents.CivvisDealSession.Add(function(subject, open, seconds)
-			if open then
-				dealHold = tonumber(seconds) or 4;
-				holdReported = false;
-				dealForceClose = false;
-			else
-				dealHold = 0;
-				dealForceClose = false;
-			end
+				if open then
+					dealHold = tonumber(seconds) or 4;
+					holdReported = false;
+					dealForceClose = false;
+				else
+					dealHold = 0;
+					-- CivvisTrade emits this event after the host has already
+					-- closed the owned session. That can happen before the
+					-- configured opening hold expires. The ordinary dialogue
+					-- readiness gate is no longer safe in that state: its fade
+					-- may be waiting on the session that just disappeared. Keep
+					-- the force-close latch set until the view is proven gone.
+					dealForceClose = true;
+				end
 		end);
 	end);
 
