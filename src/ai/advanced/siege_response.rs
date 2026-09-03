@@ -200,6 +200,94 @@ impl AdvancedAi {
         Some(Item::Unit { unit })
     }
 
+    /// Move one available land defender onto a named major-war city that has
+    /// no garrison.  A force group holding a defensive ring is not a city
+    /// garrison: the City Center gets only the strongest unit standing on its
+    /// tile, so a ring can still leave the city at its bare baseline while a
+    /// mounted attacker walks in.  The live run `civvis-20260903T122231Z`
+    /// showed exactly that shape at Arpinum: six visible hostile tiles within
+    /// reach, one friendly unit on the ring, and nobody in the city.
+    ///
+    /// This is deliberately a single-body handoff. It uses the already
+    /// operator-armed `siege-preempts-the-queue` and live battlefront gates,
+    /// requires an active major war, and chooses only a visible-route,
+    /// unlinked, healthy land military unit. Once one body reaches the City
+    /// Center the method becomes a no-op, leaving the rest of the army's
+    /// force-group posture unchanged.
+    pub(super) fn threatened_city_garrison_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        threatened_city: Option<u32>,
+    ) -> Option<bool> {
+        if !self.base.siege_preempts_the_queue || !self.battlefront_observation {
+            return None;
+        }
+        let cid = threatened_city?;
+        let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
+        let (city_name, city_pos) = (city.name.clone(), city.pos);
+        let active_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if !active_major_war {
+            return None;
+        }
+        let already_garrisoned = g.unit_ids_at(city_pos).iter().any(|candidate| {
+            let unit = &g.units[candidate];
+            unit.owner == pid
+                && g.rules.units[unit.kind].class == "military"
+                && !matches!(
+                    g.rules.units[unit.kind].domain.as_deref(),
+                    Some("sea" | "air")
+                )
+        });
+        if already_garrisoned {
+            return None;
+        }
+
+        let selected = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|candidate| {
+                let unit = &g.units[candidate];
+                let spec = &g.rules.units[unit.kind];
+                unit.linked_to.is_none()
+                    && unit.moves_left > 0.0
+                    && f64::from(unit.hp) > self.base.w.withdraw_hp
+                    && spec.class == "military"
+                    && spec.promotion_class != "recon"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && g.route_step(*candidate, city_pos, 0)
+                        .is_some_and(|next| g.can_move(*candidate, next))
+            })
+            .min_by_key(|candidate| {
+                let unit = &g.units[candidate];
+                (
+                    g.wdist(unit.pos, city_pos),
+                    g.rules.units[unit.kind].siege,
+                    std::cmp::Reverse(g.unit_strength(unit, true) as i64),
+                    *candidate,
+                )
+            });
+        if selected != Some(uid) {
+            return None;
+        }
+        let from = g.units[&uid].pos;
+        if !self.base.step_toward(g, pid, uid, city_pos) {
+            return None;
+        }
+        think!(self.journal(), Military, Decision,
+               "Moving {} into {} as its threatened-city garrison",
+               plain(&g.units[&uid].kind), city_name;
+               "the City Center had no land defender and the visible major-war threat owns the defensive handoff; {from:?} -> {city_pos:?}");
+        Some(true)
+    }
+
     /// Buy an immediate local defender for a named major-war city whose
     /// battlefront can already execute an attack on its City Center.
     ///
