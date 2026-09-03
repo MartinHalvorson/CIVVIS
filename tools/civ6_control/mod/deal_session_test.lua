@@ -122,7 +122,8 @@ end
 -- rival's answer.
 local function fixture(opts)
 	opts = opts or {}
-	local state = { sends = {}, items = {} }
+	local state = { sends = {}, items = {}, atWar = opts.atWar or false,
+		dealsEqual = opts.dealsEqual ~= false }
 	local nextId = 100
 	local function newItem(kind)
 		local item = { kind = kind, id = nextId }
@@ -179,7 +180,7 @@ local function fixture(opts)
 			return {}
 		end,
 		CopyIncomingToOutgoingWorkingDeal = function() state.copied = true end,
-		AreWorkingDealsEqual = function() return true end,
+		AreWorkingDealsEqual = function() return state.dealsEqual end,
 		SendWorkingDeal = function(action, pid, subject)
 			state.sends[#state.sends + 1] = { action, pid, subject }
 		end,
@@ -188,13 +189,15 @@ local function fixture(opts)
 		GetDiplomacy = function()
 			return {
 				HasMet = function() return true end,
-				IsAtWarWith = function() return opts.atWar or false end,
+				IsAtWarWith = function() return state.atWar end,
 				HasOpenBordersFrom = function() return false end,
 			}
 		end,
 		GetTreasury = function() return { GetGoldBalance = function() return 400 end } end,
 	}
-	Players = setmetatable({}, { __index = function() return { IsMajor = function() return true end } end })
+	Players = setmetatable({ [7] = player }, {
+		__index = function() return { IsMajor = function() return true end } end,
+	})
 	return state, player
 end
 
@@ -244,7 +247,8 @@ check("a lowball is not accepted", #low.sends, 1)
 check("a lowball is in the ledger", eventField(lastEvent("deal_declined"), "worth"), "20")
 check("a declined session is closed too", sessions.closed[2], 902)
 
--- ── Peace rides the same lane: PROPOSED on our statement, ACCEPTED enacts ──
+-- ── Peace rides the same lane: PROPOSED on our statement, then waits for the
+-- host frame that proves ACCEPTED actually ended the war. ──
 TURN = 70
 local peace, peacePlayer = fixture({ atWar = true })
 ok, why = applyOrder(peacePlayer, 7, { kind = "peace", subject = "5" }, TURN)
@@ -257,7 +261,43 @@ check("the peace offer is PROPOSED once the session is live", peace.sends[1] and
 onStatement(5, 7, { SessionID = 903, DealAction = DealProposalAction.ACCEPTED })
 check("an accepted peace is enacted by our ACCEPTED", peace.sends[2] and peace.sends[2][1], "accepted")
 check("the peace answer is in the ledger", eventField(lastEvent("peace_response"), "accepted"), "true")
+check("the answer is not called enacted before a host frame",
+	eventField(lastEvent("peace_response"), "enacted"), "false")
+check("the accepted session waits for the host frame", trade.sessions[5] ~= nil, true)
+peace.atWar = false
+trade.pollPeace()
+check("the host frame proves peace", eventField(lastEvent("peace_result"), "enacted"), "true")
 check("the peace session is closed", sessions.closed[#sessions.closed], 903)
+
+-- Match the shipped `OnProposeOrAcceptDeal` path when the returned working
+-- deal is not equal: send ADJUSTED and keep the session alive instead of
+-- claiming that an ACCEPTED call enacted an invalid package.
+TURN = 75
+local adjusted, adjustedPlayer = fixture({ atWar = true, dealsEqual = false })
+applyOrder(adjustedPlayer, 7, { kind = "peace", subject = "12" }, TURN)
+onStatement(7, 12, { SessionID = 905 })
+onStatement(12, 7, { SessionID = 905, DealAction = DealProposalAction.ACCEPTED })
+check("an unequal accepted deal is adjusted", adjusted.sends[2] and adjusted.sends[2][1], "adjusted")
+check("an unequal accepted deal is not enacted", eventField(lastEvent("peace_response"), "enacted"), "false")
+check("an adjusted peace session stays open", trade.sessions[12] ~= nil, true)
+adjusted.dealsEqual = true
+onStatement(12, 7, { SessionID = 905, DealAction = DealProposalAction.ACCEPTED })
+check("a reconciled deal is accepted", adjusted.sends[3] and adjusted.sends[3][1], "accepted")
+adjusted.atWar = false
+trade.pollPeace()
+check("a reconciled deal proves peace", eventField(lastEvent("peace_result"), "enacted"), "true")
+
+-- An adjusted answer is not an accepted treaty. If the closer later ends the
+-- still-open session, it must be closed without manufacturing a peace result.
+TURN = 78
+local adjustedClosed, adjustedClosedPlayer = fixture({ atWar = true, dealsEqual = false })
+applyOrder(adjustedClosedPlayer, 7, { kind = "peace", subject = "13" }, TURN)
+onStatement(7, 13, { SessionID = 906 })
+onStatement(13, 7, { SessionID = 906, DealAction = DealProposalAction.ACCEPTED })
+onClosed(906)
+check("an adjusted session closes", trade.sessions[13], nil)
+check("an adjusted close has no synthetic peace result",
+	eventField(lastEvent("peace_result"), "target"), "12")
 
 TURN = 80
 local refused, refusedPlayer = fixture({ atWar = true })

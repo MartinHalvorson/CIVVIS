@@ -10185,11 +10185,11 @@ CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	return "session";
 end;
 
-CivvisTrade.close = function(pid, subject, why)
+CivvisTrade.close = function(pid, subject, why, already_closed)
 	local trade = CivvisTrade;
 	local session = trade.sessions[subject];
 	trade.sessions[subject] = nil;
-	if session ~= nil and session.sessionID ~= nil then
+	if not already_closed and session ~= nil and session.sessionID ~= nil then
 		pcall(function() DiplomacyManager.CloseSession(session.sessionID); end);
 	end
 	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
@@ -10198,6 +10198,64 @@ CivvisTrade.close = function(pid, subject, why)
 		target = subject, phase = "closed", why = why,
 		kind = session and session.kind or nil,
 	});
+end;
+
+-- `SendWorkingDeal(ACCEPTED)` is an asynchronous request.  A successful Lua
+-- call is not proof that the treaty landed: on run
+-- `civvis-20260903T021106Z`, the rival answered ACCEPTED and this call returned
+-- successfully, but the next host frame still reported `at_war = true`.  The
+-- shipped deal screen likewise sends ACCEPTED and waits for the engine's next
+-- statement/frame before treating the deal as finished.
+CivvisTrade.peaceAtWar = function(pid, subject)
+	return try(function()
+		return Players[pid]:GetDiplomacy():IsAtWarWith(subject);
+	end, nil);
+end;
+
+-- Record the only authoritative peace outcome available to this context: the
+-- host diplomacy flag.  `peace_response` remains the rival's answer and the
+-- submission attempt; this follow-up says whether Civilization VI actually
+-- ended the war.  Keeping the two records separate prevents a pcall success
+-- from masquerading as an enacted treaty.
+CivvisTrade.settlePeace = function(pid, subject, why, already_closed)
+	local atWar = CivvisTrade.peaceAtWar(pid, subject);
+	local enacted = atWar == false;
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	emit("peace_result", {
+		turn = turn, target = subject, accepted = true, enacted = enacted,
+		at_war = atWar, reason = why,
+	});
+	CivvisTrade.close(pid, subject, why, already_closed);
+	return enacted;
+end;
+
+-- The deal engine may apply ACCEPTED after the statement callback returns.
+-- Poll only while one accepted peace is outstanding; the ordinary game-core
+-- tick and turn-begin hooks call this, so the hot path pays no diplomacy query.
+CivvisTrade.pollPeace = function()
+	local trade = CivvisTrade;
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local pending = {};
+	for subject, session in pairs(trade.sessions) do
+		if session.peace_pending ~= nil then
+			pending[#pending + 1] = { subject = subject, session = session };
+		end
+	end
+	for _, entry in ipairs(pending) do
+		local subject = entry.subject;
+		local session = entry.session;
+		local atWar = trade.peaceAtWar(pid, subject);
+		if atWar == false then
+			trade.settlePeace(pid, subject, "enacted");
+		elseif atWar == true and turn > (session.peace_pending.turn or turn) then
+			-- Give the host the rest of the submission turn to apply the deal;
+			-- if the next turn still says war, leave it to the normal five-turn
+			-- retry gate rather than holding the diplomacy session indefinitely.
+			trade.settlePeace(pid, subject, "still_at_war");
+		end
+	end
 end;
 
 -- A session the rival never answered: the ask is dead, and a third such
@@ -10252,17 +10310,54 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
 		session = session.sessionID or -1, deal_action = tostring(dealAction) });
 	if session.kind == "peace" then
-		-- The rival's ACCEPTED is its verdict; the send back is what enacts
-		-- the peace, exactly as the shipped screen's accept button does.
+		-- The rival's ACCEPTED is its verdict.  Match the shipped
+		-- `DiplomacyDealView.OnProposeOrAcceptDeal` guard: it sends ACCEPTED
+		-- only when both working deals are equal, otherwise it sends ADJUSTED
+		-- and waits for the rival to reconcile the package.
 		local accepted = dealAction == DealProposalAction.ACCEPTED;
-		local enacted = false;
+		local dealEqual = nil;
+		local equalityChecked = false;
+		local submitted = false;
+		local submittedAction = nil;
 		if accepted then
-			enacted = pcall(function()
-				DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, other);
-			end);
+			equalityChecked = pcall(function()
+				dealEqual = DealManager.AreWorkingDealsEqual(pid, other);
+			end) and type(dealEqual) == "boolean";
+			if equalityChecked then
+				submittedAction = dealEqual and "ACCEPTED" or "ADJUSTED";
+				submitted = pcall(function()
+					DealManager.SendWorkingDeal(DealProposalAction[submittedAction], pid, other);
+				end);
+			end
 		end
 		emit("peace_response", { turn = turn, target = other, accepted = accepted,
-			enacted = enacted and true or false, deal_action = tostring(dealAction) });
+			deal_equal = dealEqual, equality_checked = equalityChecked,
+			submitted = submitted, submitted_action = submittedAction,
+			-- This is deliberately false until `pollPeace` observes the host
+			-- diplomacy state; a pcall only proves that Lua accepted the request.
+			enacted = false, deal_action = tostring(dealAction) });
+		if accepted and equalityChecked and dealEqual and submitted then
+			session.peace_pending = { turn = turn };
+			pcall(function()
+				LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4);
+			end);
+			CivvisTrade.pollPeace();
+			return;
+		elseif accepted and equalityChecked and not dealEqual and submitted then
+			-- Keep the session alive just as the shipped deal view does after
+			-- ADJUSTED; the next rival statement can be accepted after the
+			-- working deals converge.
+			session.peace_adjusted = true;
+			emit("deal_session", { turn = turn, target = other, kind = session.kind,
+				phase = "adjusted", action = submittedAction, deal_equal = false });
+			pcall(function()
+				LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4);
+			end);
+			return;
+		elseif accepted and not equalityChecked then
+			CivvisTrade.close(pid, other, "deal_equality_unreadable");
+			return;
+		end
 	else
 		CivvisOnIncomingDeal(other, pid, dealAction);
 	end
@@ -10272,7 +10367,17 @@ end;
 CivvisOnDealSessionClosed = function(sessionID)
 	for subject, session in pairs(CivvisTrade.sessions) do
 		if session.sessionID == sessionID or (session.sessionID == nil and sessionID == nil) then
-			CivvisTrade.abandon(subject, "session_closed");
+			local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+			if session.peace_pending ~= nil then
+				CivvisTrade.settlePeace(pid, subject, "session_closed", true);
+			elseif session.peace_adjusted then
+				-- ADJUSTED means the rival answered, but no equal package was
+				-- accepted. Closing that screen is not evidence of a treaty and
+				-- must not produce a synthetic accepted peace result.
+				CivvisTrade.close(pid, subject, "session_closed", true);
+			else
+				CivvisTrade.abandon(subject, "session_closed");
+			end
 			return;
 		end
 	end
@@ -19144,6 +19249,7 @@ end
 -- on asking whether there is anything to spend it on.
 local function onGameCoreTick()
 	ensureStarted();
+	CivvisTrade.pollPeace();
 	ticksSeen = ticksSeen + 1;
 	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then return; end
 	ticksTaken = ticksTaken + 1;
@@ -19152,6 +19258,7 @@ end
 
 local function onLocalPlayerTurnBegin()
 	ensureStarted();
+	CivvisTrade.pollPeace();
 	tick();
 end
 
