@@ -50,6 +50,7 @@ set -u
 GIT=${CIVVIS_GIT:-/usr/bin/git}
 GREP=${CIVVIS_GREP:-/usr/bin/grep}
 DATE=${CIVVIS_DATE:-/bin/date}
+PGREP=${CIVVIS_PGREP:-/usr/bin/pgrep}
 
 REPO=${CIVVIS_OPS_TREE:-/private/tmp/civvis-main-management}
 REF=${CIVVIS_OPS_FRESHNESS_REF:-origin/main}
@@ -66,15 +67,41 @@ say() { print -r -- "[ops-freshness] $($DATE -u +%FT%TZ) $*" >> "$LOG" }
 behind=$($GIT -C "$REPO" rev-list --count HEAD.."$REF" 2>/dev/null || print -r -- "")
 [[ -z "$behind" ]] && { say "cannot compare $REPO against $REF"; exit 0 }
 
+# ★ NOTHING IS RUNNING IT => NOTHING CAN BE CORRUPTED.
+#
+# The hazard in the banner is entirely about a process reading a file it is
+# already executing. A one-shot script -- `civvis-verified-head-launcher.sh`
+# runs to completion at each launch, this tool runs to completion on a timer --
+# has no such process between invocations, so writing it is exactly as safe as
+# writing any other file, and holding it back leaves a merged fix stranded for
+# no reason. The first version of this tool reported both as PENDING forever.
+#
+# ⚠ IT MUST NOT MATCH ITSELF. Run from a schedule, `pgrep -f` for this script's
+# own name finds THIS process, so the tool would declare itself permanently
+# ineligible. Its own pid and its parent are excluded.
+running_elsewhere() {
+  local name="$1" pid=""
+  for pid in ${(f)"$($PGREP -f "$name" 2>/dev/null)"}; do
+    [[ "$pid" == "$$" || "$pid" == "$PPID" ]] && continue
+    return 0
+  done
+  return 1
+}
+
 refreshed=0
 pending=0
 for path in $($GIT -C "$REPO" diff --name-only "$REF" -- tools/ops 2>/dev/null); do
   file="$REPO/$path"
   # ⚠ The marker is read from the file ON DISK -- the one the running process
   # started from -- for the reason in the banner above.
-  if [[ -r "$file" ]] && $GREP -qF -- "$RELOAD_MARKER" "$file"; then
+  if ! running_elsewhere "${path:t}" \
+      || { [[ -r "$file" ]] && $GREP -qF -- "$RELOAD_MARKER" "$file" }; then
     if $GIT -C "$REPO" checkout "$REF" -- "$path" 2>/dev/null; then
-      say "refreshed $path (its process re-execs on change)"
+      if running_elsewhere "${path:t}"; then
+        say "refreshed $path (its process re-execs on change)"
+      else
+        say "refreshed $path (nothing is running it)"
+      fi
       refreshed=$(( refreshed + 1 ))
     else
       say "could not refresh $path"
