@@ -22124,10 +22124,16 @@ impl AdvancedAi {
             return 0;
         }
         let completed = &g.players[pid].science_projects;
+        let earth_satellite_started = !completed.contains("launch_earth_satellite")
+            && Self::science_project_is_queued(g, pid, "launch_earth_satellite");
         let desired = if self.science_drive_active() {
             // The drive starts its second pad as soon as the Earth Satellite
-            // is up, so it is ready for the later parallel laser phase.
-            Self::science_drive_desired_pads(completed)
+            // is underway, so it is ready for the later parallel laser phase.
+            Self::science_drive_desired_pads(completed).max(if earth_satellite_started {
+                2
+            } else {
+                1
+            })
         } else if self.space_race_lane(g, pid)
             || self.raced_target() == Some(VictoryTarget::Science)
         {
@@ -22176,6 +22182,19 @@ impl AdvancedAi {
         g.cities[&cid].queue.iter().any(|item| {
             matches!(item, Item::District { district, .. }
                 if g.district_family(*district) == pad)
+        })
+    }
+
+    /// An uncompleted launch project is a real race commitment as soon as it
+    /// is in a city queue. It can sit behind another item while the first pad
+    /// is still finishing that item, but the next Spaceport can already be
+    /// built in parallel in another city.
+    fn science_project_is_queued(g: &Game, pid: usize, project: &str) -> bool {
+        g.player_city_ids(pid).into_iter().any(|cid| {
+            g.cities[&cid]
+                .queue
+                .iter()
+                .any(|item| matches!(item, Item::Project { project: queued } if queued == project))
         })
     }
 

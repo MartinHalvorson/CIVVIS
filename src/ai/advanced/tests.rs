@@ -13065,6 +13065,48 @@ fn science_spaceport_queues_follow_the_project_milestones() {
         1,
         "one queued opening pad holds the empire-wide budget"
     );
+
+    // The first pad is occupied by Earth Satellite for several turns. The
+    // v2 drive should use that known queue commitment to build the next pad
+    // in parallel rather than waiting for the project to complete.
+    let mut staged = game.clone();
+    staged.cities.get_mut(&opening).unwrap().queue.clear();
+    install_ai_test_district(&mut staged, opening, "spaceport");
+    staged.cities.get_mut(&opening).unwrap().queue = vec![Item::Project {
+        project: crate::name!("launch_earth_satellite"),
+    }];
+    let mut drive = AdvancedAi::targeting(VictoryTarget::Science);
+    drive.enable_science_victory_drive_2();
+    drive.maintain_science_drive(&staged, 0);
+    assert!(
+        drive.science_drive_active(),
+        "the assigned v2 lane is active"
+    );
+    assert_eq!(
+        drive.science_spaceport_target(&staged, 0),
+        2,
+        "an active Earth Satellite queue unlocks the second pad"
+    );
+    drive.science_production(&mut staged, 0);
+    assert_eq!(
+        AdvancedAi::science_spaceport_commitments(&staged, 0),
+        2,
+        "the second pad starts while Earth Satellite is still queued"
+    );
+    assert!(
+        cities
+            .iter()
+            .copied()
+            .filter(|city| *city != opening)
+            .any(|city| {
+                staged.cities[&city].queue.iter().any(|item| {
+                    matches!(item, Item::District { district, .. }
+                        if staged.district_family(*district) == "spaceport")
+                })
+            }),
+        "a different city receives the parallel Spaceport"
+    );
+
     let counts = ai.counts(&game, 0);
     for city in cities.iter().copied().filter(|city| *city != opening) {
         let item = spaceport_item(&game, city);
