@@ -13870,19 +13870,47 @@ impl AdvancedAi {
             .map(VictoryTarget::strategy)
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
-            let available = BasicAi::era_window_techs(g, pid);
+            let mut available = BasicAi::era_window_techs(g, pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
-            let science_lane_active =
-                self.phase_specialization_active(g) || self.science_drive_active();
+            let science_lane_active = self.victory_target == Some(VictoryTarget::Science)
+                || self.phase_specialization_active(g)
+                || self.science_drive_active();
             let science_victory_goal = if science_lane_active {
                 Self::science_victory_tech_goal(g, pid, objective)
             } else {
                 None
             };
-            let science_harbor_goal = self.science_harbor_research_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
+            // The rolling window protects unattended research from leaving
+            // an old branch behind. An explicit Science target (or an
+            // adaptive seat that is already driving) is a different contract:
+            // when the next victory milestone is already legal, do not make
+            // it wait for unrelated backlog just because its era is outside
+            // that floor. Prerequisites still come through the normal window;
+            // this only admits the exact, already-unlocked milestone.
+            let science_milestone = science_victory_goal
+                .filter(|_| {
+                    great_person_goal.is_none()
+                        && (self.victory_target == Some(VictoryTarget::Science)
+                            || self.science_drive_active())
+                })
+                .and_then(|goal| {
+                    (!available.iter().any(|tech| tech.as_str() == goal))
+                        .then(|| {
+                            g.available_techs(pid)
+                                .into_iter()
+                                .find(|tech| tech.as_str() == goal)
+                        })
+                        .flatten()
+                });
+            if let Some(milestone) = science_milestone {
+                if !available.contains(&milestone) {
+                    available.push(milestone);
+                }
+            }
+            let science_harbor_goal = self.science_harbor_research_goal(g, pid, objective);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid, &available);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
@@ -14017,21 +14045,33 @@ impl AdvancedAi {
             // science chain wanted, it takes one the argmax would have spent on
             // whatever happened to be cheapest.
             let forced_goal = forced_goal.or_else(|| self.unreachable_housing_tech(g, pid));
-            let goal_pick = forced_goal.and_then(|goal| {
-                available
-                    .iter()
-                    .filter(|tech| self.tech_leads_to(g, tech, goal))
-                    // The cheapest step by what it will actually cost: the
-                    // printed price with `chase-every-boost` off, the price
-                    // less the boost in hand with it on. See
-                    // `advanced/chase_every_boost.rs`.
-                    .min_by(|a, b| {
-                        self.beeline_step_cost(g, pid, a.as_str(), true)
-                            .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), true))
-                            .unwrap()
-                            .then(a.cmp(b))
-                    })
-                    .cloned()
+            // An already-legal Science milestone outside the rolling window
+            // is the one deliberate exception to the cheapest-prerequisite
+            // picker. Keep live Great Person backfill on the original picker:
+            // those seats intentionally clear the old branch before resuming
+            // their long Science beeline.
+            let science_milestone_pick = science_milestone.filter(|_| {
+                great_person_goal.is_none()
+                    && science_victory_goal.is_some()
+                    && forced_goal == science_victory_goal
+            });
+            let goal_pick = science_milestone_pick.or_else(|| {
+                forced_goal.and_then(|goal| {
+                    available
+                        .iter()
+                        .filter(|tech| self.tech_leads_to(g, tech, goal))
+                        // The cheapest step by what it will actually cost: the
+                        // printed price with `chase-every-boost` off, the price
+                        // less the boost in hand with it on. See
+                        // `advanced/chase_every_boost.rs`.
+                        .min_by(|a, b| {
+                            self.beeline_step_cost(g, pid, a.as_str(), true)
+                                .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), true))
+                                .unwrap()
+                                .then(a.cmp(b))
+                        })
+                        .cloned()
+                })
             });
             let fallback_pick = available
                 .iter()
