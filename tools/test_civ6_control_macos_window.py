@@ -133,6 +133,16 @@ class WindowPlacementTests(unittest.TestCase):
 
 
 class ScreenCaptureTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # These model the transient-miss retry ladder, which is HEALTHY-host
+        # behaviour. Without this they would ask the real host whether capture
+        # looks available and fail on a machine whose `systemstatusd` is
+        # spinning -- an environment-dependent test, not a contract.
+        healthy = patch.object(macos_window, "capture_looks_unavailable",
+                               return_value=False)
+        healthy.start()
+        self.addCleanup(healthy.stop)
+
     SIZE = (1512, 982)
 
     def _shot(self, path: Path, **kwargs) -> bool:
@@ -432,6 +442,54 @@ class LauncherCompatibilityTests(unittest.TestCase):
         self.assertEqual(shot.call_args.args, (path,))
         self.assertEqual(shot.call_args.kwargs["attempts"], 1)
         self.assertIs(shot.call_args.kwargs["get_desktop_size"], desktop)
+
+
+class UnavailableHostShotBudgetTests(unittest.TestCase):
+    """A host that says capture cannot work must not be asked five times.
+
+    The retry ladder is priced for a transient miss.  While `systemstatusd`
+    spins, every attempt runs the native 3.5 s guard out and returns nothing,
+    so the full ladder costs 5 x 3.5 + 9.0 = 26.5 s per unreadable poll.
+    """
+
+    def _run_shot(self, *, unavailable: bool):
+        attempts = []
+        sleeps = []
+
+        def capture(_region, path):
+            attempts.append(path)
+            path.write_bytes(b"")  # an empty frame: the failure this rides out
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "frame.png"
+            with patch.object(macos_window.macos_capture, "capture_region", capture), \
+                 patch.object(macos_window, "capture_looks_unavailable",
+                              return_value=unavailable), \
+                 patch.object(macos_window.time, "sleep", sleeps.append):
+                ok = macos_window.screenshot(target, get_desktop_size=lambda: (100, 100))
+        return ok, attempts, sleeps
+
+    def test_a_healthy_host_still_spends_the_whole_ladder(self) -> None:
+        ok, attempts, sleeps = self._run_shot(unavailable=False)
+        self.assertFalse(ok)
+        self.assertEqual(len(attempts), len(macos_window.SHOT_BACKOFF_SECONDS) + 1)
+        self.assertEqual(sum(sleeps), sum(macos_window.SHOT_BACKOFF_SECONDS))
+
+    def test_an_unavailable_host_is_capped_but_still_retried_once(self) -> None:
+        ok, attempts, sleeps = self._run_shot(unavailable=True)
+        self.assertFalse(ok)
+        # Capped -- and the cap is not a veto: the shot was still taken twice.
+        self.assertEqual(len(attempts), macos_window.UNAVAILABLE_SHOT_ATTEMPTS)
+        self.assertGreater(macos_window.UNAVAILABLE_SHOT_ATTEMPTS, 1)
+        self.assertEqual(sum(sleeps), macos_window.SHOT_BACKOFF_SECONDS[0])
+
+    def test_the_prediction_never_ends_a_run(self) -> None:
+        """`capture_looks_unavailable` answers "no" rather than raising."""
+        from civ6_control import popup_clear
+
+        with patch.object(popup_clear, "capture_pause_reason",
+                          side_effect=RuntimeError("host probe exploded")):
+            self.assertFalse(macos_window.capture_looks_unavailable())
 
 
 if __name__ == "__main__":
