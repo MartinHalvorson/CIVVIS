@@ -13889,17 +13889,21 @@ impl AdvancedAi {
             // it wait for unrelated backlog just because its era is outside
             // that floor. Prerequisites still come through the normal window;
             // this only admits the exact, already-unlocked milestone.
-            if let Some(milestone) = science_victory_goal
+            let science_milestone = science_victory_goal
                 .filter(|_| {
                     self.victory_target == Some(VictoryTarget::Science)
                         || self.science_drive_active()
                 })
                 .and_then(|goal| {
-                    g.available_techs(pid)
-                        .into_iter()
-                        .find(|tech| tech.as_str() == goal)
-                })
-            {
+                    (!available.iter().any(|tech| tech.as_str() == goal))
+                        .then(|| {
+                            g.available_techs(pid)
+                                .into_iter()
+                                .find(|tech| tech.as_str() == goal)
+                        })
+                        .flatten()
+                });
+            if let Some(milestone) = science_milestone {
                 if !available.contains(&milestone) {
                     available.push(milestone);
                 }
@@ -14040,27 +14044,33 @@ impl AdvancedAi {
             // science chain wanted, it takes one the argmax would have spent on
             // whatever happened to be cheapest.
             let forced_goal = forced_goal.or_else(|| self.unreachable_housing_tech(g, pid));
-            let goal_pick = forced_goal.and_then(|goal| {
-                available
-                    .iter()
-                    .find(|tech| tech.as_str() == goal)
-                    .cloned()
-                    .or_else(|| {
-                        available
-                            .iter()
-                            .filter(|tech| self.tech_leads_to(g, tech, goal))
-                            // The cheapest step by what it will actually cost: the
-                            // printed price with `chase-every-boost` off, the price
-                            // less the boost in hand with it on. See
-                            // `advanced/chase_every_boost.rs`.
-                            .min_by(|a, b| {
-                                self.beeline_step_cost(g, pid, a.as_str(), true)
-                                    .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), true))
-                                    .unwrap()
-                                    .then(a.cmp(b))
-                            })
-                            .cloned()
-                    })
+            // An already-legal Science milestone outside the rolling window
+            // is the one deliberate exception to the cheapest-prerequisite
+            // picker. Keep live Great Person backfill on the original picker:
+            // those seats intentionally clear the old branch before resuming
+            // their long Science beeline.
+            let science_milestone_pick = science_milestone.filter(|_| {
+                great_person_goal.is_none()
+                    && science_victory_goal.is_some()
+                    && forced_goal == science_victory_goal
+            });
+            let goal_pick = science_milestone_pick.or_else(|| {
+                forced_goal.and_then(|goal| {
+                    available
+                        .iter()
+                        .filter(|tech| self.tech_leads_to(g, tech, goal))
+                        // The cheapest step by what it will actually cost: the
+                        // printed price with `chase-every-boost` off, the price
+                        // less the boost in hand with it on. See
+                        // `advanced/chase_every_boost.rs`.
+                        .min_by(|a, b| {
+                            self.beeline_step_cost(g, pid, a.as_str(), true)
+                                .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), true))
+                                .unwrap()
+                                .then(a.cmp(b))
+                        })
+                        .cloned()
+                })
             });
             let fallback_pick = available
                 .iter()
