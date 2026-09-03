@@ -24700,10 +24700,22 @@ impl AdvancedAi {
                 // See `district_planning`: the plan's sites join the menu
                 // and a reserved plot is withdrawn from a rival district —
                 // the argmax below is untouched, it only sees better.
+                let district_plan = if self.district_planning_on() {
+                    self.district_plan_shape_menu(g, pid, plan, cid, &mut items)
+                } else {
+                    Vec::new()
+                };
+                let mut scores = self.production_values(g, pid, cid, &items, plan, counts);
                 if self.district_planning_on() {
-                    self.district_plan_shape_menu(g, pid, plan, cid, &mut items);
+                    self.district_plan_adjust_menu_scores(
+                        g,
+                        plan,
+                        cid,
+                        &district_plan,
+                        &items,
+                        &mut scores,
+                    );
                 }
-                let scores = self.production_values(g, pid, cid, &items, plan, counts);
                 let menu = items
                     .into_iter()
                     .zip(scores)

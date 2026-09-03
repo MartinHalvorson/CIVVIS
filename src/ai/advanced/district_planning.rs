@@ -39,8 +39,11 @@
 //! Off, every touched path is unchanged.
 
 use super::{AdvancedAi, EmpireCounts, GrandStrategy, StrategicPlan, VictoryTarget};
+use crate::game::adjacency::PlanAssumption;
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
+use crate::rules::Yields;
+use crate::world::DistrictFoundation;
 use crate::Pos;
 use std::collections::BTreeMap;
 
@@ -74,6 +77,55 @@ pub(super) const EXCEPTIONAL_SCIENCE_TILE_MINIMUM: f64 = 5.0;
 /// wins a near-tie, small enough that a real adjacency edge survives.
 pub(super) const PLAN_PURCHASE_WEIGHT: f64 = 0.04;
 
+/// A standing Industrial Zone is not enough: its productive adjacency is
+/// often deliberately created by an Aqueduct, Dam, or Canal.  This is the
+/// lane-priced marginal yield at a Zone site after a support district is
+/// reserved. It keeps a zero-yield Aqueduct from being treated as a filler
+/// when it is actually the first half of a +2/+4 cluster.
+const PLAN_INDUSTRIAL_SUPPORT_MULTIPLIER: f64 = 1.0;
+/// The standing-city planner must carry an Industrial Zone even on lanes
+/// whose settlement wishlist is dominated by another district.  Production
+/// is the common input to every lane; this small foundation value breaks a
+/// tie against an otherwise equivalent generic district without displacing a
+/// strong Campus site.
+const PLAN_INDUSTRIAL_FOUNDATION_VALUE: f64 = 0.75;
+
+/// Final (turn-normalized) score floors applied after the ordinary production
+/// evaluator.  They order a safe, idle city through its coordinated plan:
+/// Campus first, the Industrial Zone's legal support before the Zone, then
+/// the remaining core.  Emergency production remains much larger than these
+/// floors and is never displaced by this helper.
+const PLAN_CAMPUS_SCORE_FLOOR: f64 = 90.0;
+const PLAN_INDUSTRIAL_SUPPORT_SCORE_FLOOR: f64 = 84.0;
+const PLAN_INDUSTRIAL_ZONE_SCORE_FLOOR: f64 = 78.0;
+const PLAN_CORE_SCORE_FLOOR: f64 = 66.0;
+/// A low-priority specialty district must not consume the last slot that the
+/// coordinated core has already reserved.  This is a refusal sentinel in the
+/// same scale as the production picker, not merely a small preference.
+const PLAN_RESERVED_SPECIALTY_VETO: f64 = -10_000.0;
+/// A serious Amenity collapse is a real exception to a development layout.
+/// A city one or two Amenities short keeps its Campus/Industrial slots; a
+/// city at this deficit may still take an Entertainment Complex to recover.
+const PLAN_SEVERE_AMENITY_DEFICIT: i64 = -3;
+
+/// Core districts score their direct lane output. Industrial support scores
+/// the Zone adjacency it creates; the Hansa's Commercial Hub is a partner of
+/// the latter kind even though it still consumes a specialty slot. Capacity
+/// always comes from the district rule rather than this planning label.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PlannedDistrictRole {
+    Core,
+    IndustrialSupport,
+    IndustrialPartner,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PlannedFamily {
+    family: Name,
+    weight: f64,
+    role: PlannedDistrictRole,
+}
+
 /// One planned district for one city.
 #[derive(Clone, Debug)]
 pub(super) struct PlannedDistrict {
@@ -83,9 +135,14 @@ pub(super) struct PlannedDistrict {
     pub family: Name,
     /// The plot the plan reserved for it.
     pub pos: Pos,
-    /// Weight × (lane-priced yields − the worked tile the site destroys),
-    /// net of the amortized price where the plot must be bought.
-    pub value: f64,
+    /// `true` for an Aqueduct, Dam, Canal, or Hansa Commercial Hub whose
+    /// purpose is to lift the linked Industrial Zone's eventual adjacency.
+    /// The capacity check still reads the district's own specialty flag.
+    pub support: bool,
+    /// The coordinated construction order. An Aqueduct can have lower direct
+    /// yield than the Zone it enables, yet has to stand first for the Zone to
+    /// receive its adjacency.
+    pub order: usize,
     /// `Some(cost)` when `pos` is unowned and the engine quotes a price.
     pub purchase: Option<f64>,
     /// The best owned site left to this district after every reservation,
@@ -102,36 +159,254 @@ pub(super) struct DistrictPlanCache {
 
 impl AdvancedAi {
     /// The families this city still wants, at the lane's weights: the
-    /// wishlist (`new_city_district_wishlist`, the same table the settler
-    /// scores a site by) minus everything built, queued or already founded.
-    fn city_missing_families(g: &Game, plan: &StrategicPlan, cid: u32) -> Vec<(Name, f64)> {
+    /// settlement wishlist minus everything built, queued or already
+    /// founded.  A city plan additionally carries an Industrial Zone as a
+    /// production foundation on every lane, then adds only the districts that
+    /// the civilization's actual Zone can turn into adjacency.
+    ///
+    /// That last distinction matters.  An Aqueduct does not appear on a
+    /// normal lane wishlist because it has no raw yield, but it is not a
+    /// generic filler when it makes a neighboring Industrial Zone +2
+    /// Production.  Conversely, an unrelated Aqueduct stays out of the plan.
+    fn city_missing_families(
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        cid: u32,
+    ) -> Vec<PlannedFamily> {
         let city = &g.cities[&cid];
-        Self::new_city_district_wishlist(plan.strategy)
+        let missing = |family: Name| {
+            !city
+                .districts
+                .keys()
+                .any(|built| g.district_family(*built) == family)
+                && !city.queue.iter().any(|item| {
+                    matches!(item, Item::District { district, .. }
+                        if g.district_family(*district) == family)
+                })
+                && !city.owned_tiles.iter().any(|pos| {
+                    g.map.tiles[pos]
+                        .district_foundation
+                        .as_ref()
+                        .is_some_and(|foundation| g.district_family(foundation.district) == family)
+                })
+        };
+        let mut families: Vec<PlannedFamily> = Self::new_city_district_wishlist(plan.strategy)
             .into_iter()
-            .filter(|(family, _)| {
-                !city
-                    .districts
-                    .keys()
-                    .any(|built| g.district_family(*built) == *family)
-                    && !city.queue.iter().any(|item| {
-                        matches!(item, Item::District { district, .. }
-                            if g.district_family(*district) == *family)
-                    })
-                    && !city.owned_tiles.iter().any(|pos| {
-                        g.map.tiles[pos]
-                            .district_foundation
-                            .as_ref()
-                            .is_some_and(|f| g.district_family(f.district) == *family)
-                    })
+            .filter(|(family, _)| missing(*family))
+            .map(|(family, weight)| PlannedFamily {
+                family,
+                weight,
+                role: PlannedDistrictRole::Core,
             })
-            .collect()
+            .collect();
+
+        let industrial_zone = crate::name!("industrial_zone");
+        // The lane table has an Industrial Zone in only some rows.  The
+        // standing city must develop a production base on every route, so
+        // insert a modest core request when the table did not.
+        if missing(industrial_zone)
+            && !families
+                .iter()
+                .any(|planned| planned.family == industrial_zone)
+        {
+            families.push(PlannedFamily {
+                family: industrial_zone,
+                weight: 0.65,
+                role: PlannedDistrictRole::Core,
+            });
+        }
+
+        let industrial_variant = g.civ_district_variant(pid, "industrial_zone");
+        let industrial_present = !missing(industrial_zone);
+        let industrial_planned = families
+            .iter()
+            .any(|planned| planned.family == industrial_zone);
+        if !industrial_present && !industrial_planned {
+            return families;
+        }
+
+        let industrial_spec = &g.rules.districts[industrial_variant];
+        // Germany's Hansa pays +2 for its Commercial Hub. The Hub becomes an
+        // adjacency partner even if the normal lane had already requested it:
+        // it must be able to stand before the Hansa, not trail it as a plain
+        // low-weight Gold district.
+        if industrial_spec.adjacency.contains_key("commercial_hub")
+            && missing(crate::name!("commercial_hub"))
+        {
+            if let Some(planned) = families
+                .iter_mut()
+                .find(|planned| planned.family == crate::name!("commercial_hub"))
+            {
+                planned.weight = planned.weight.max(0.60);
+                planned.role = PlannedDistrictRole::IndustrialPartner;
+            } else {
+                families.push(PlannedFamily {
+                    family: crate::name!("commercial_hub"),
+                    weight: 0.60,
+                    role: PlannedDistrictRole::IndustrialPartner,
+                });
+            }
+        }
+
+        for support in ["aqueduct", "dam", "canal"] {
+            let family = Name::new(support);
+            if industrial_spec.adjacency.contains_key(family.as_str()) && missing(family) {
+                families.push(PlannedFamily {
+                    family,
+                    weight: 1.0,
+                    role: PlannedDistrictRole::IndustrialSupport,
+                });
+            }
+        }
+        families
     }
 
-    /// The plan: every wanted family × every sited plot — the city's owned
-    /// legal sites plus the purchasable ground of rings 1–3 — scored at the
-    /// lane's weights net of the worked tile a site destroys, then one
-    /// greedy joint assignment: each plot given away at most once, each
-    /// family placed at most once, best first.
+    /// District yields with every foundation in the temporary city plan
+    /// treated as its completed family.  Live yield calculations intentionally
+    /// ignore unfinished districts; this is a planning-only counterfactual so
+    /// the Aqueduct placed first can pay the Industrial Zone it unlocks.
+    fn projected_district_yields(g: &Game, district: Name, pos: Pos) -> Yields {
+        let mut yields = g.rules.districts[district].yields;
+        yields.add(g.district_adjacency_assuming(
+            district,
+            pos,
+            Some(&PlanAssumption {
+                city_center: None,
+                foundations: true,
+            }),
+            None,
+        ));
+        yields
+    }
+
+    /// Reserve a foundation on the planner's private clone.  This follows the
+    /// production placement path closely enough for every later adjacency
+    /// calculation: a district displaces its improvement and, except for
+    /// Vietnam's specialty districts, clears its removable feature.
+    fn reserve_plan_foundation(g: &mut Game, pid: usize, cid: u32, pos: Pos, district: Name) {
+        let preserve_feature =
+            g.players[pid].civ == "Vietnam" && g.rules.districts[district].specialty;
+        // A purchased candidate is still unowned on the live board.  The
+        // private board needs to treat it as owned, both so the city's
+        // specialty-capacity accounting sees its foundation and so a later
+        // district can receive adjacency from it.  This clone never escapes
+        // the planner; no live ownership is changed here.
+        let city = &mut g.cities.get_mut(&cid).expect("a planned city exists");
+        if !city.owned_tiles.contains(&pos) {
+            city.owned_tiles.push(pos);
+        }
+        let tile = g
+            .map
+            .tiles
+            .get_mut(&pos)
+            .expect("a planned district site is on the map");
+        tile.owner_city = Some(cid);
+        tile.district_foundation = Some(DistrictFoundation {
+            district,
+            cost: 0.0,
+        });
+        tile.improvement = None;
+        tile.pillaged = false;
+        if !preserve_feature {
+            tile.feature = None;
+        }
+    }
+
+    /// Every Industrial Zone position that can still benefit from a support
+    /// district or Hansa Commercial Hub partner: a standing/started Zone plus
+    /// the fresh legal candidates.
+    fn industrial_zone_positions(g: &Game, pid: usize, cid: u32) -> Vec<Pos> {
+        let city = &g.cities[&cid];
+        let industrial_zone = crate::name!("industrial_zone");
+        let variant = g.civ_district_variant(pid, "industrial_zone");
+        let mut positions: Vec<Pos> = city
+            .districts
+            .iter()
+            .filter_map(|(district, pos)| {
+                (g.district_family(*district) == industrial_zone).then_some(*pos)
+            })
+            .chain(city.owned_tiles.iter().copied().filter(|pos| {
+                g.map.tiles[pos]
+                    .district_foundation
+                    .as_ref()
+                    .is_some_and(|foundation| {
+                        g.district_family(foundation.district) == industrial_zone
+                    })
+            }))
+            .collect();
+        if g.city_accepts_new_district_site(city, variant) {
+            positions.extend(
+                g.district_sites(cid, variant)
+                    .into_iter()
+                    .filter(|pos| g.map.tiles[pos].district_foundation.is_none()),
+            );
+            // A purchased Industrial Zone is a real future destination for
+            // an owned support or Hansa partner. Include only plots the engine
+            // would sell and whose physical placement rule accepts, so a
+            // support never chases fog or somebody else's land.
+            positions.extend(g.wdisk(city.pos, 3).into_iter().filter(|pos| {
+                g.plot_purchase_cost(pid, cid, *pos).is_some()
+                    && g.plot_fits_placement(pid, variant, *pos, city.pos)
+            }));
+        }
+        positions.sort();
+        positions.dedup();
+        positions
+    }
+
+    /// What this support site adds to the *same* Industrial Zone position
+    /// before and after it is reserved.  Comparing an individual position is
+    /// intentional: a city's already-best Zone can otherwise hide a real +2
+    /// Dam beside its second-best site, even though that Dam and the Zone form
+    /// the cluster the plan needs to construct. A support with no positive
+    /// marginal effect is not admitted at all, which prevents random
+    /// zero-yield Aqueducts and Dams from becoming fake development goals.
+    fn industrial_support_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        support: Name,
+        pos: Pos,
+    ) -> f64 {
+        let variant = g.civ_district_variant(pid, "industrial_zone");
+        let positions = Self::industrial_zone_positions(g, pid, cid);
+        let mut after = g.speculative_clone();
+        Self::reserve_plan_foundation(&mut after, pid, cid, pos, support);
+        positions
+            .into_iter()
+            // The support itself may also have been an otherwise legal IZ
+            // tile. Once it becomes an Aqueduct/Dam/Canal/Commercial Hub it
+            // is no longer a candidate for the Zone it supports.
+            .filter(|zone| *zone != pos)
+            .map(|zone| {
+                let before = self.yield_value(
+                    Self::projected_district_yields(g, variant, zone),
+                    plan.strategy,
+                );
+                let after = self.yield_value(
+                    Self::projected_district_yields(&after, variant, zone),
+                    plan.strategy,
+                );
+                (after - before).max(0.0)
+            })
+            .max_by(f64::total_cmp)
+            .unwrap_or(0.0)
+            * PLAN_INDUSTRIAL_SUPPORT_MULTIPLIER
+    }
+
+    /// The plan is a small, private construction board.  It places one
+    /// district at a time, marks that foundation on a speculative clone, and
+    /// scores every next choice with the foundations already reserved.  That
+    /// makes build order part of the answer: an Aqueduct or Dam can win before
+    /// its Industrial Zone because the latter's projected adjacency sees it.
+    ///
+    /// A Science lane claims its Campus before the general greedy pass.  The
+    /// remaining core districts and the Industrial support pieces then compete
+    /// on their actual marginal city value, with one plot and one family used
+    /// at most once.
     pub(super) fn city_district_plan(
         &self,
         g: &Game,
@@ -140,7 +415,7 @@ impl AdvancedAi {
         cid: u32,
     ) -> Vec<PlannedDistrict> {
         let city = &g.cities[&cid];
-        let families = Self::city_missing_families(g, plan, cid);
+        let mut families = Self::city_missing_families(g, pid, plan, cid);
         if families.is_empty() {
             return Vec::new();
         }
@@ -164,93 +439,177 @@ impl AdvancedAi {
             .map(|pos| self.yield_value(g.modeled_tile_yields(pos), plan.strategy))
             .max_by(f64::total_cmp);
 
-        // Every candidate, scored. (family index, plot, score, quoted price)
-        let mut candidates: Vec<(usize, Pos, f64, Option<f64>)> = Vec::new();
-        let mut variants: Vec<Name> = Vec::with_capacity(families.len());
-        for (index, (family, weight)) in families.iter().enumerate() {
-            let variant = g.civ_district_variant(pid, family.as_str());
-            variants.push(variant);
-            let mut plots: Vec<(Pos, Option<f64>)> = g
-                .district_sites(cid, variant)
-                .into_iter()
-                .filter(|pos| g.map.tiles[pos].district_foundation.is_none())
-                .map(|pos| (pos, None))
-                .collect();
-            // Purchasable ground, only where owning one more plot could
-            // open a site at all (the city-level caps `district_sites`
-            // itself applies).
-            if g.city_accepts_new_district_site(city, variant) {
-                for pos in g.wdisk(city.pos, 3) {
-                    if let Some(cost) = g.plot_purchase_cost(pid, cid, pos) {
-                        if g.plot_fits_placement(pid, variant, pos, city.pos) {
-                            plots.push((pos, Some(cost)));
+        let science_campus_first = (plan.strategy == GrandStrategy::Science
+            || self.active_victory_target(g) == Some(VictoryTarget::Science))
+            && families
+                .iter()
+                .any(|planned| planned.family == crate::name!("campus"));
+        let campus = crate::name!("campus");
+        let industrial_zone = crate::name!("industrial_zone");
+        let mut planned_game = g.speculative_clone();
+        let mut plan_rows: Vec<PlannedDistrict> = Vec::with_capacity(families.len());
+
+        while !families.is_empty() {
+            // Until the Campus has a site, no smaller science-lane request
+            // may take either its premium ground or its specialty slot.
+            let campus_due =
+                science_campus_first && families.iter().any(|planned| planned.family == campus);
+            // (family index, variant, position, score, quoted price)
+            let mut best: Option<(usize, Name, Pos, f64, Option<f64>)> = None;
+            for (index, requested) in families.iter().enumerate() {
+                if campus_due && requested.family != campus {
+                    continue;
+                }
+                let variant = planned_game.civ_district_variant(pid, requested.family.as_str());
+                let planning_city = &planned_game.cities[&cid];
+                if !planned_game.city_accepts_new_district_site(planning_city, variant) {
+                    continue;
+                }
+                let mut plots: Vec<(Pos, Option<f64>)> = planned_game
+                    .district_sites(cid, variant)
+                    .into_iter()
+                    .filter(|pos| planned_game.map.tiles[pos].district_foundation.is_none())
+                    .map(|pos| (pos, None))
+                    .collect();
+                // Core districts and a Hansa Commercial Hub partner can name
+                // an unowned site that a city will buy. Aqueduct/Dam/Canal
+                // support stays owned-only: its value is the IZ cluster it
+                // unlocks, not an excuse to buy filler ground.
+                if requested.role != PlannedDistrictRole::IndustrialSupport {
+                    for pos in planned_game.wdisk(planning_city.pos, 3) {
+                        if let Some(cost) = planned_game.plot_purchase_cost(pid, cid, pos) {
+                            if planned_game.plot_fits_placement(
+                                pid,
+                                variant,
+                                pos,
+                                planning_city.pos,
+                            ) {
+                                plots.push((pos, Some(cost)));
+                            }
                         }
                     }
                 }
+                for (pos, price) in plots {
+                    let lane = self.yield_value(
+                        Self::projected_district_yields(&planned_game, variant, pos),
+                        plan.strategy,
+                    );
+                    let lost = if citizens.worked_tiles.contains(&pos) {
+                        let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
+                        best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
+                    } else {
+                        0.0
+                    };
+                    let supports_industrial = matches!(
+                        requested.role,
+                        PlannedDistrictRole::IndustrialSupport
+                            | PlannedDistrictRole::IndustrialPartner
+                    );
+                    let support_value = if supports_industrial {
+                        self.industrial_support_value(
+                            &planned_game,
+                            pid,
+                            cid,
+                            plan,
+                            requested.family,
+                            pos,
+                        )
+                    } else {
+                        0.0
+                    };
+                    // A support district must create real Industrial value;
+                    // without that proof it is not a plan candidate at all.
+                    if supports_industrial && support_value <= f64::EPSILON {
+                        continue;
+                    }
+                    let industrial_foundation = if requested.family == industrial_zone {
+                        PLAN_INDUSTRIAL_FOUNDATION_VALUE
+                    } else {
+                        0.0
+                    };
+                    let score =
+                        requested.weight * (lane - lost) + support_value + industrial_foundation
+                            - price.unwrap_or(0.0) * PLAN_PURCHASE_WEIGHT;
+                    let replace =
+                        best.as_ref()
+                            .is_none_or(|(old_index, _, old_pos, old_score, _)| {
+                                score > *old_score + f64::EPSILON
+                                    || ((score - *old_score).abs() <= f64::EPSILON
+                                        && (index, pos) < (*old_index, *old_pos))
+                            });
+                    if replace {
+                        best = Some((index, variant, pos, score, price));
+                    }
+                }
             }
-            for (pos, price) in plots {
-                let lane = self.yield_value(g.district_yields(variant, pos), plan.strategy);
-                let lost = if citizens.worked_tiles.contains(&pos) {
-                    let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
-                    best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
+            let Some((index, district, pos, _value, purchase)) = best else {
+                // An illegal Campus does not strand the city's whole plan;
+                // discard just that currently impossible request and let the
+                // next legal core proceed deterministically.
+                let unavailable = if campus_due {
+                    families
+                        .iter()
+                        .position(|planned| planned.family == campus)
+                        .expect("the due Campus is still requested")
                 } else {
-                    0.0
+                    0
                 };
-                let score = weight * (lane - lost) - price.unwrap_or(0.0) * PLAN_PURCHASE_WEIGHT;
-                candidates.push((index, pos, score, price));
-            }
-        }
-
-        // The assignment: best first, deterministic ties (family order,
-        // then plot order), one plot per family, one family per plot.
-        candidates.sort_by(|a, b| {
-            b.2.total_cmp(&a.2)
-                .then_with(|| a.0.cmp(&b.0))
-                .then_with(|| a.1.cmp(&b.1))
-        });
-        let mut placed = vec![false; families.len()];
-        let mut reserved: Vec<Pos> = Vec::with_capacity(families.len());
-        let mut plan_rows: Vec<PlannedDistrict> = Vec::new();
-        for (index, pos, score, price) in &candidates {
-            if placed[*index] || reserved.contains(pos) {
+                families.remove(unavailable);
                 continue;
-            }
-            placed[*index] = true;
-            reserved.push(*pos);
+            };
+            let requested = families.remove(index);
+            let order = plan_rows.len();
             plan_rows.push(PlannedDistrict {
-                district: variants[*index],
-                family: families[*index].0,
-                pos: *pos,
-                value: *score,
-                purchase: *price,
+                district,
+                family: requested.family,
+                pos,
+                support: matches!(
+                    requested.role,
+                    PlannedDistrictRole::IndustrialSupport | PlannedDistrictRole::IndustrialPartner
+                ),
+                order,
+                purchase,
                 owned_fallback: None,
             });
+            Self::reserve_plan_foundation(&mut planned_game, pid, cid, pos, district);
         }
+
         // A head on unowned ground still leaves the menu a real candidate:
         // the family's best owned plot no reservation holds.
+        let mut reserved: Vec<Pos> = plan_rows.iter().map(|row| row.pos).collect();
         for row in &mut plan_rows {
             if row.purchase.is_none() {
                 continue;
             }
-            let index = families
-                .iter()
-                .position(|(family, _)| *family == row.family)
-                .expect("a plan row names a wishlist family");
-            row.owned_fallback = candidates
-                .iter()
-                .filter(|(fi, pos, _, price)| {
-                    *fi == index && price.is_none() && !reserved.contains(pos)
+            row.owned_fallback = g
+                .district_sites(cid, row.district)
+                .into_iter()
+                .filter(|pos| {
+                    g.map.tiles[pos].district_foundation.is_none() && !reserved.contains(pos)
                 })
-                .map(|(_, pos, _, _)| *pos)
-                .next();
+                .map(|pos| {
+                    let lane = self.yield_value(
+                        Self::projected_district_yields(g, row.district, pos),
+                        plan.strategy,
+                    );
+                    let lost = if citizens.worked_tiles.contains(&pos) {
+                        let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
+                        best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
+                    } else {
+                        0.0
+                    };
+                    (pos, lane - lost)
+                })
+                .max_by(|left, right| {
+                    left.1
+                        .total_cmp(&right.1)
+                        .then_with(|| right.0.cmp(&left.0))
+                })
+                .map(|(pos, _)| pos);
             if let Some(pos) = row.owned_fallback {
                 reserved.push(pos);
             }
         }
-        // Assignment order is score order already; sorting on the stored
-        // value makes head-is-best a contract rather than a coincidence of
-        // the loop above, for every consumer that reads only the head.
-        plan_rows.sort_by(|a, b| b.value.total_cmp(&a.value).then_with(|| a.pos.cmp(&b.pos)));
         plan_rows
     }
 
@@ -266,10 +625,10 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         cid: u32,
         items: &mut Vec<Item>,
-    ) {
+    ) -> Vec<PlannedDistrict> {
         let planned = self.city_district_plan(g, pid, plan, cid);
         if planned.is_empty() {
-            return;
+            return planned;
         }
         let mut reserved: BTreeMap<Pos, Name> = BTreeMap::new();
         for row in &planned {
@@ -314,6 +673,100 @@ impl AdvancedAi {
             }
             true
         });
+        planned
+    }
+
+    /// Let a coordinated plan influence the ordinary production ranking once
+    /// the menu has been scored.  Site shaping alone stops a rival district
+    /// from stealing a reserved hex, but it still leaves a cheap Entertainment
+    /// Complex free to consume the last specialty slot ahead of the Campus or
+    /// Industrial Zone.  These modest floors make an idle, safe city start the
+    /// plan in construction order; its normal emergency, military, wonder and
+    /// project scores remain authoritative whenever they are higher.
+    pub(super) fn district_plan_adjust_menu_scores(
+        &self,
+        g: &Game,
+        plan: &StrategicPlan,
+        cid: u32,
+        planned: &[PlannedDistrict],
+        items: &[Item],
+        scores: &mut [f64],
+    ) {
+        debug_assert_eq!(items.len(), scores.len());
+        // A city under immediate pressure must retain every defensive option;
+        // layout development resumes on the next peaceful production pass.
+        if plan.threatened_city == Some(cid) {
+            return;
+        }
+        if planned.is_empty() {
+            return;
+        }
+        let city = &g.cities[&cid];
+        let specialty_capacity = 1 + (city.pop.max(1) - 1) as usize / 3;
+        let used_specialty = city
+            .districts
+            .keys()
+            .filter(|district| g.rules.districts[district].specialty)
+            .count()
+            + city
+                .owned_tiles
+                .iter()
+                .filter_map(|pos| g.map.tiles[pos].district_foundation.as_ref())
+                .filter(|foundation| g.rules.districts[foundation.district].specialty)
+                .count();
+        let planned_specialty = planned
+            .iter()
+            .filter(|row| {
+                g.rules.districts[row.district].specialty
+                    && (row.purchase.is_none() || row.owned_fallback.is_some())
+            })
+            .count();
+        let reserve_specialty_slots =
+            planned_specialty >= specialty_capacity.saturating_sub(used_specialty);
+
+        for (item, score) in items.iter().zip(scores.iter_mut()) {
+            let Item::District { district, pos } = item else {
+                continue;
+            };
+            let family = g.district_family(*district);
+            let row = planned.iter().find(|row| {
+                row.district == *district
+                    && match row.purchase {
+                        None => row.pos == *pos,
+                        Some(_) => row.owned_fallback == Some(*pos),
+                    }
+            });
+            if let Some(row) = row {
+                let floor = if family == crate::name!("campus") {
+                    PLAN_CAMPUS_SCORE_FLOOR
+                } else if row.support {
+                    PLAN_INDUSTRIAL_SUPPORT_SCORE_FLOOR
+                } else if family == crate::name!("industrial_zone") {
+                    PLAN_INDUSTRIAL_ZONE_SCORE_FLOOR
+                } else {
+                    PLAN_CORE_SCORE_FLOOR
+                };
+                // The family floor protects the type of infrastructure; this
+                // tiny offset protects the sequence among equal types. It is
+                // deliberately much smaller than the gap between Campus,
+                // support, Zone, and other core floors.
+                let order_offset = (row.order as f64 * 0.25).min(3.0);
+                *score = score.max(floor - order_offset);
+                continue;
+            }
+            // Encampments, Aerodromes, and Spaceports have tactical or
+            // end-game duties outside this economic layout, so this narrow
+            // specialty reservation deliberately leaves them available.
+            let tactical_family =
+                matches!(family.as_str(), "encampment" | "aerodrome" | "spaceport");
+            if reserve_specialty_slots
+                && g.rules.districts[*district].specialty
+                && !tactical_family
+                && g.city_amenity_surplus(city) > PLAN_SEVERE_AMENITY_DEFICIT
+            {
+                *score = PLAN_RESERVED_SPECIALTY_VETO;
+            }
+        }
     }
 
     /// The purchase: `Some(score)` when `pos` is the plot the plan wants
