@@ -1477,7 +1477,12 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
             && !AdvancedAi::legacy().boosted_bargain_first_2
     );
     game.players[0].boosted_techs.insert(crate::name!("mining"));
-    assert_eq!(ai.boosted_bargain_tech(&game, 0), None, "off, nothing");
+    let available = BasicAi::era_window_techs(&game, 0);
+    assert_eq!(
+        ai.boosted_bargain_tech(&game, 0, &available),
+        None,
+        "off, nothing"
+    );
     ai.enable_boosted_bargain_first();
     assert!(ai.boosted_bargain_first);
     assert!(!ai.boosted_bargain_first_2);
@@ -1492,7 +1497,7 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
         "fixture: boosted Mining ({remaining:.1}) is within two turns of {science:.1} science"
     );
     assert_eq!(
-        ai.boosted_bargain_tech(&game, 0),
+        ai.boosted_bargain_tech(&game, 0, &available),
         Some("mining"),
         "the boosted bargain is Mining"
     );
@@ -1506,7 +1511,7 @@ fn a_boosted_tech_two_turns_from_done_is_researched_first() {
         .boosted_techs
         .remove(&crate::name!("mining"));
     assert_eq!(
-        ai.boosted_bargain_tech(&game, 0),
+        ai.boosted_bargain_tech(&game, 0, &available),
         None,
         "without the Eureka there is no bargain"
     );
@@ -1615,8 +1620,15 @@ fn boosted_bargain_v2_breaks_only_a_close_unforced_fallback() {
 
     let mut v2 = AdvancedAi::new();
     v2.enable_boosted_bargain_first_2();
+    let available = BasicAi::era_window_techs(&game, 0);
     assert_eq!(
-        v2.boosted_bargain_tech_2(&game, 0, plan.strategy, &crate::name!("sailing")),
+        v2.boosted_bargain_tech_2(
+            &game,
+            0,
+            plan.strategy,
+            &available,
+            &crate::name!("sailing")
+        ),
         Some(crate::name!("animal_husbandry"))
     );
     v2.advanced_research(&mut game, 0, &plan);
@@ -2860,7 +2872,7 @@ fn rapid_city_expansion_opens_the_milestone_pipeline() {
     assert!(ai.rapid_city_expansion);
     assert!(ai.base.rapid_city_expansion);
 
-    for (turn, milestone) in [(25, 3), (50, 7), (80, 12)] {
+    for (turn, milestone) in [(25, 3), (50, 8), (100, 12)] {
         game.turn = turn;
         let target = ai.assess(&game, 0).desired_cities;
         assert!(
@@ -2891,6 +2903,69 @@ fn rapid_city_expansion_opens_the_milestone_pipeline() {
         ai.settler_in_flight_allowed(&game, 15, 14, 0),
         1,
         "the hard city target still caps the final Settler"
+    );
+}
+
+/// The turn-fifty expansion wave cannot afford to leave a Settler standing on
+/// a legal city tile until its next turn. Founding after the final movement
+/// point must reuse the normal arrival checks and finish in this same step.
+#[test]
+fn rapid_city_expansion_founds_when_a_settler_reaches_its_target() {
+    let (mut game, _capital, home) = empire_with_a_capital(11_195);
+    game.at_war.clear();
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+
+    let sites: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| game.wdist(*position, home) == 5)
+        .collect();
+    let target = sites
+        .into_iter()
+        .find(|position| {
+            let probe = game.spawn_test_unit("settler", 0, *position);
+            let legal = game.can_found_city(probe);
+            game.remove_unit(probe);
+            legal
+        })
+        .expect("fixture needs a legal target five tiles from the capital");
+    let source = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+                && game.city_at(*position).is_none()
+                && game.unit_ids_at(*position).is_empty()
+        })
+        .expect("fixture needs an open doorstep beside the target");
+    let settler = game.spawn_test_unit("settler", 0, source);
+    assert_eq!(
+        game.route_step(settler, target, 0),
+        Some(target),
+        "the doorstep has a direct legal route to the city tile"
+    );
+    assert!(game.can_move(settler, target));
+
+    let cities_before = game.player_city_ids(0).len();
+    let mut ai = AdvancedAi::new();
+    ai.enable_rapid_city_expansion();
+    ai.settler_targets.insert(settler, target);
+
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    assert_eq!(game.player_city_ids(0).len(), cities_before + 1);
+    assert!(
+        game.city_at(target).is_some(),
+        "the doorstep becomes a city"
+    );
+    assert!(
+        !game.units.contains_key(&settler),
+        "the Settler is consumed on the movement turn"
     );
 }
 
@@ -3042,17 +3117,18 @@ fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
 
 /// End-to-end tempo regression for the rapid-city-expansion gene. Geography,
 /// rival contact, and early war legitimately vary individual seats, so this
-/// fixed four-map check asserts the requested aggregate bands: at least three
-/// cities at t25, 7--9 at t50, and 12--15 at t80.
+/// fixed four-map check asserts the requested per-map bands after the treated
+/// seat has completed each named turn: at least three cities at t25, at least
+/// eight at t50, and 12--15 at t100.
 ///
 /// Run with `cargo test --release --lib rapid_city_expansion_tempo_census -- --ignored --nocapture`.
 #[test]
 #[ignore = "whole-game tempo census; run explicitly with --nocapture"]
 fn rapid_city_expansion_tempo_census() {
-    const CHECKPOINTS: [u32; 3] = [25, 50, 80];
+    const CHECKPOINTS: [u32; 3] = [25, 50, 100];
     const MAPS: u64 = 4;
-    const MINIMUMS: [usize; 3] = [3, 7, 12];
-    const MAXIMUMS: [usize; 3] = [usize::MAX, 9, 15];
+    const MINIMUMS: [usize; 3] = [3, 8, 12];
+    const MAXIMUMS: [usize; 3] = [usize::MAX, 15, 15];
     let mut totals = [0usize; CHECKPOINTS.len()];
     let mut observed = [0usize; CHECKPOINTS.len()];
 
@@ -3077,12 +3153,22 @@ fn rapid_city_expansion_tempo_census() {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
             for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
-                if game.turn >= *checkpoint && !seen[slot] {
+                // A world-turn boundary is reached after the previous seat
+                // ends its turn, before player 0 has acted on the new one.
+                // The requested "by turn N" milestone is player 0's state
+                // after it has had its Nth opportunity to found a city.
+                if pid == 0 && game.turn >= *checkpoint && !seen[slot] {
                     let cities = game.player_city_ids(0).len();
                     totals[slot] += cities;
                     observed[slot] += 1;
                     seen[slot] = true;
                     println!("  seed {seed} t{checkpoint}: {cities} cities");
+                    assert!(
+                        cities >= MINIMUMS[slot] && cities <= MAXIMUMS[slot],
+                        "seed {seed} t{checkpoint}: {cities} cities must stay in the requested {}..={} band",
+                        MINIMUMS[slot],
+                        MAXIMUMS[slot]
+                    );
                 }
             }
         }
@@ -7338,6 +7424,15 @@ fn nuclear_program_beelines_only_for_a_reachable_goal_and_stops_at_its_arsenal()
     game.players[0]
         .techs
         .extend(ancestors.into_iter().map(|tech| Name::new(&tech)));
+    let fission_era = game.rules.techs[&crate::name!("nuclear_fission")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < fission_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     ai.advanced_research(&mut game, 0, &plan);
     assert_eq!(
         game.players[0].research.as_deref(),
@@ -11173,6 +11268,15 @@ fn adaptive_science_readiness_commits_to_the_rocketry_path() {
     {
         game.players[0].techs.insert(*tech);
     }
+    let rocketry_era = game.rules.techs[&crate::name!("rocketry")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < rocketry_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     game.players[0].dvp = 10;
 
     let focus = ai.victory_focus(&game, 0);
@@ -11229,6 +11333,15 @@ fn mature_diplomatic_plan_prepares_one_science_backup() {
     {
         game.players[0].techs.insert(*tech);
     }
+    let rocketry_era = game.rules.techs[&crate::name!("rocketry")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < rocketry_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     game.turn = game.standard_duration(220);
     let plan = StrategicPlan {
         strategy: GrandStrategy::Diplomacy,
@@ -11317,6 +11430,127 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     assert!(
         ai.civic_leads_to(&diplomacy, civic, "global_warming_mitigation"),
         "diplomatic culture must advance toward Global Warming Mitigation's victory point"
+    );
+}
+
+/// A late beeline used to make the live seat reach Advanced Flight before it
+/// ever researched Bronze Working. Controllers may now work across three
+/// consecutive eras, but no candidate may be farther than that rolling window
+/// from the oldest unfinished era.
+#[test]
+fn research_keeps_a_three_era_window_before_a_later_beeline() {
+    let setup = || {
+        let mut game = Game::new_full(1, 20, 14, 76_004, 300, 0, false);
+        let known_ancient: Vec<Name> = game
+            .rules
+            .techs
+            .iter()
+            .filter(|(tech, spec)| spec.era == 0 && tech.as_str() != "bronze_working")
+            .map(|(tech, _)| *tech)
+            .collect();
+        game.players[0].techs.extend(known_ancient);
+        // These two known prerequisites make the late Science milestone legal
+        // without making Bronze Working an ancestor of it, matching the
+        // beeline shape that left the Ancient side branch behind in the live
+        // run.
+        game.players[0].techs.extend([
+            crate::name!("currency"),
+            crate::name!("horseback_riding"),
+            crate::name!("machinery"),
+            crate::name!("radio"),
+            crate::name!("chemistry"),
+        ]);
+        assert!(
+            game.available_techs(0)
+                .contains(&crate::name!("bronze_working")),
+            "fixture: Bronze Working is a legal Ancient choice"
+        );
+        assert!(
+            game.available_techs(0).contains(&crate::name!("rocketry")),
+            "fixture: the late Science beeline is also legal"
+        );
+        assert!(
+            game.available_techs(0)
+                .contains(&crate::name!("apprenticeship")),
+            "fixture: the third-era technology is legal"
+        );
+        assert!(
+            game.available_techs(0).contains(&crate::name!("printing")),
+            "fixture: the fourth-era technology is legal"
+        );
+        game
+    };
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 1,
+        rush: false,
+    };
+
+    let mut basic = setup();
+    let initial_window = BasicAi::era_window_techs(&basic, 0);
+    assert!(
+        initial_window.contains(&crate::name!("bronze_working"))
+            && initial_window.contains(&crate::name!("apprenticeship")),
+        "the Ancient and third-era choices share the three-era window: {initial_window:?}"
+    );
+    assert!(
+        initial_window
+            .iter()
+            .all(|tech| basic.rules.techs[tech].era <= 2),
+        "an unfinished Ancient era permits only Ancient through Medieval choices: {initial_window:?}"
+    );
+    assert!(
+        !initial_window.contains(&crate::name!("printing"))
+            && !initial_window.contains(&crate::name!("rocketry")),
+        "a fourth or later era must stay outside the three-era window: {initial_window:?}"
+    );
+    BasicAi::new().research(&mut basic, 0);
+    let basic_pick = Name::new(
+        basic.players[0]
+            .research
+            .as_deref()
+            .expect("a legal research pick"),
+    );
+    assert!(
+        initial_window.contains(&basic_pick),
+        "Basic AI must select only from the rolling window"
+    );
+
+    let mut advanced = setup();
+    let advanced_window = BasicAi::era_window_techs(&advanced, 0);
+    AdvancedAi::new().advanced_research(&mut advanced, 0, &plan);
+    let advanced_pick = Name::new(
+        advanced.players[0]
+            .research
+            .as_deref()
+            .expect("a legal research pick"),
+    );
+    assert!(
+        advanced_window.contains(&advanced_pick)
+            && advanced.rules.techs[&advanced_pick].era <= 2,
+        "a Science beeline must stay within the Ancient-to-Medieval window rather than leap to Rocketry"
+    );
+
+    advanced.players[0].research = None;
+    advanced.players[0]
+        .techs
+        .insert(crate::name!("bronze_working"));
+    let next_era = BasicAi::era_window_techs(&advanced, 0);
+    assert!(
+        !next_era.is_empty()
+            && next_era
+                .iter()
+                .all(|tech| advanced.rules.techs[tech].era <= 3),
+        "after Ancient is complete, the Classical-to-Renaissance window may open: {next_era:?}"
+    );
+    assert!(
+        next_era.contains(&crate::name!("printing"))
+            && !next_era.contains(&crate::name!("rocketry")),
+        "clearing Ancient rolls the cap forward by one era but still excludes Rocketry"
     );
 }
 
@@ -14757,6 +14991,9 @@ fn on_the_tally_seat_a_point_of_culture_is_worth_a_point_of_science() {
     let frozen = AdvancedAi::legacy();
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    let mut without_tally = AdvancedAi::new();
+    without_tally.enable_live_bridge();
+    without_tally.disable_tally_culture();
     assert!(live.tally_culture, "the live seat carries the treatment");
 
     assert!(
@@ -14786,8 +15023,8 @@ fn on_the_tally_seat_a_point_of_culture_is_worth_a_point_of_science() {
             "under {lane:?} culture is worth no less than science on the tally seat"
         );
         assert!(
-            live.yield_value(science_only, lane) == stock.yield_value(science_only, lane),
-            "and the beaker itself is priced as before under {lane:?}"
+            live.yield_value(science_only, lane) == without_tally.yield_value(science_only, lane),
+            "the tally treatment itself does not alter a beaker under {lane:?}"
         );
     }
     assert_eq!(
@@ -14844,11 +15081,8 @@ fn on_the_tally_seat_a_point_of_culture_is_worth_a_point_of_science() {
         "the tally seat closes the Campus-over-Theater gap ({live_gap} vs {stock_gap})"
     );
 
-    let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
-    withheld.disable_tally_culture();
     assert_eq!(
-        withheld.yield_value(culture_only, GrandStrategy::Science),
+        without_tally.yield_value(culture_only, GrandStrategy::Science),
         stock.yield_value(culture_only, GrandStrategy::Science)
     );
     assert!(!stock.tally_culture);
@@ -16028,6 +16262,154 @@ fn targeted_science_keeps_the_production_builder_floor_while_work_remains() {
     assert!(
         with_floor > without_floor,
         "a targeted Science game must carry its 0.75-per-city Builder floor into strategic production"
+    );
+}
+
+/// The Builder floor puts charges into a growing empire; this companion
+/// contract sends those charges to the new city whose output cannot yet carry
+/// the buildings, units, or projects every victory lane needs. The two job
+/// tiles are deliberately the only unreserved work, so this proves the
+/// production bonus is present in the actual cross-city Builder ranking, not
+/// merely in an isolated helper.
+#[test]
+fn named_victory_builders_raise_a_lagging_citys_production_foundation() {
+    let (mut game, capital, home) = empire_with_a_capital(79_124);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    let weak = found_nearby_test_city(&mut game, 0, home);
+    game.players[0]
+        .techs
+        .extend([crate::name!("mining"), crate::name!("construction")]);
+
+    let strong_target = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != home)
+        .expect("the capital owns an improvement tile");
+    let weak_home = game.cities[&weak].pos;
+    let weak_target = game.cities[&weak]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != weak_home)
+        .expect("the new city owns an improvement tile");
+
+    // A mature core: its completed Mines put it over the foundation floor,
+    // while the remaining Forest can legally become a two-production Lumber
+    // Mill. The ordinary ranking should prefer this better local tile.
+    for position in game.cities[&capital].owned_tiles.clone() {
+        if position == home {
+            continue;
+        }
+        let tile = game.map.tiles.get_mut(&position).expect("capital tile");
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = true;
+        tile.resource = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.pillaged = false;
+        tile.improvement = if position == strong_target {
+            None
+        } else {
+            Some(crate::name!("mine"))
+        };
+    }
+    {
+        let tile = game
+            .map
+            .tiles
+            .get_mut(&strong_target)
+            .expect("strong target");
+        tile.feature = Some(crate::name!("forest"));
+        tile.hills = false;
+    }
+
+    // A just-founded city: leave it below the same floor, with one legal Mine
+    // to lift its local output. The other bare plots are reserved below, so
+    // they cannot obscure which cross-city job wins.
+    for position in game.cities[&weak].owned_tiles.clone() {
+        if position == weak_home {
+            continue;
+        }
+        let tile = game.map.tiles.get_mut(&position).expect("weak-city tile");
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.improvement = None;
+        tile.pillaged = false;
+    }
+    {
+        let tile = game.map.tiles.get_mut(&weak_target).expect("weak target");
+        tile.terrain = crate::name!("plains");
+        tile.hills = true;
+    }
+    game.cities.get_mut(&capital).unwrap().pop = 10;
+    game.cities.get_mut(&weak).unwrap().pop = 1;
+
+    assert!(
+        game.city_yields(capital).production >= PRODUCTION_CITY_FOUNDATION_FLOOR,
+        "fixture: the mature city is already productive"
+    );
+    assert!(
+        game.city_yields(weak).production < PRODUCTION_CITY_FOUNDATION_FLOOR,
+        "fixture: the new city still needs its production foundation"
+    );
+    assert!(
+        game.valid_improvements(0, strong_target)
+            .contains(&crate::name!("lumber_mill")),
+        "fixture: the core has a legal Lumber Mill"
+    );
+    assert!(
+        game.valid_improvements(0, weak_target)
+            .contains(&crate::name!("mine")),
+        "fixture: the weak city has a legal Mine"
+    );
+
+    let builder = game.spawn_test_unit("builder", 0, home);
+    let reserved: HashSet<Pos> = game
+        .player_city_ids(0)
+        .into_iter()
+        .flat_map(|cid| game.cities[&cid].owned_tiles.iter().copied())
+        .filter(|position| *position != strong_target && *position != weak_target)
+        .collect();
+    let adaptive = AdvancedAi::new();
+    let named = AdvancedAi::targeting(VictoryTarget::Science);
+    let weak_shortfall = named.city_production_foundation_shortfall(&game, 0, weak);
+    assert!(weak_shortfall > 0.0, "the target sees the city deficit");
+    assert_eq!(
+        adaptive.city_production_foundation_shortfall(&game, 0, weak),
+        0.0,
+        "the evaluated adaptive controller keeps its existing rank"
+    );
+    assert!(
+        named.production_foundation_improvement_value(
+            &game,
+            0,
+            weak_target,
+            "mine",
+            GrandStrategy::Expansion,
+            weak_shortfall,
+        ) > named.improvement_value_for(&game, 0, weak_target, "mine", GrandStrategy::Expansion,),
+        "the weak city's Mine receives a real production-foundation premium"
+    );
+    assert_eq!(
+        adaptive
+            .builder_jobs_ranked(&game, 0, builder, GrandStrategy::Expansion, &reserved)
+            .first(),
+        Some(&strong_target),
+        "without a named target, the core Lumber Mill keeps the ordinary lead"
+    );
+    assert_eq!(
+        named
+            .builder_jobs_ranked(&game, 0, builder, GrandStrategy::Expansion, &reserved)
+            .first(),
+        Some(&weak_target),
+        "the named lane sends the next charge to the lagging city's Mine"
     );
 }
 
@@ -24618,6 +25000,7 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
     // bounded recovery when both screened variants are withheld.
     live.disable_settler_target_hysteresis();
     live.disable_settler_target_hysteresis_2();
+    live.disable_settler_never_idles();
     assert!(!live.settler_target_hysteresis);
     assert!(!live.settler_target_hysteresis_2);
     assert!(live.settler_routing_recovery_on());
@@ -24662,18 +25045,20 @@ fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!ai.base.one_shot_recovery);
 }
 
-/// `settle_sooner` is a native opt-in: off in both bare controllers, enabled
+/// `settle_sooner` is a native opt-in: off in both bare controllers, governed
 /// by the current deployment genome, and still flippable by name through
 /// `PRODUCTION_OPT_INS`.
 #[test]
-fn settle_sooner_is_a_native_opt_in_enabled_by_the_ledger() {
+fn settle_sooner_is_a_native_opt_in_governed_by_the_ledger() {
     assert!(!AdvancedAi::new().settle_sooner);
     assert!(!AdvancedAi::legacy().settle_sooner);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
-    assert!(
-        deployed.settle_sooner,
-        "the explicit three-batch selection enables this qualifying arm"
+    let selected = crate::ai::ledger_default_on("settle-sooner")
+        .expect("a registered native opt-in has a deployment selection");
+    assert_eq!(
+        deployed.settle_sooner, selected,
+        "the deployment must follow the recorded selection"
     );
     let enable = GENES
         .iter()
@@ -26061,15 +26446,58 @@ fn tactical_melee_preflight_matches_the_engine_entry_cost_rule() {
     game.units.get_mut(&attacker).unwrap().moves_left = 1.0;
     assert!(!engine_offers_attack(&game));
     assert!(
-        !AdvancedAi::tactical_melee_candidate_is_legal(&game, attacker, target),
+        !AdvancedAi::tactical_melee_candidate_is_legal(&game, 0, attacker, target),
         "the tactical scan must not score an attack that cannot pay its entry cost"
     );
 
     game.units.get_mut(&attacker).unwrap().moves_left = 2.0;
     assert!(engine_offers_attack(&game));
     assert!(
-        AdvancedAi::tactical_melee_candidate_is_legal(&game, attacker, target),
+        AdvancedAi::tactical_melee_candidate_is_legal(&game, 0, attacker, target),
         "the preflight must retain the full-movement attack the engine allows"
+    );
+}
+
+#[test]
+fn tactical_melee_preflight_rejects_a_peaceful_bystander_plot() {
+    let mut game = Game::new_full(3, 24, 16, 81_702, 80, 0, false);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    game.current = 0;
+    game.at_war.insert((0, 1));
+    let target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.nbrs(*position).len() == 6)
+        .expect("fixture needs an interior tile");
+    let origin = game.nbrs(target)[0];
+    let attacker = game.spawn_test_unit("warrior", 0, origin);
+    game.spawn_test_unit("warrior", 1, target);
+    game.spawn_test_unit("builder", 2, target);
+
+    let attack = Action::Attack {
+        unit: attacker,
+        target,
+    };
+    assert!(game.peaceful_foreign_unit_at(0, target));
+    assert!(
+        !game
+            .legal_actions(0)
+            .into_iter()
+            .any(|action| action == attack),
+        "the engine must not offer a plot-addressed strike through a peaceful bystander"
+    );
+    assert!(
+        !AdvancedAi::tactical_melee_candidate_is_legal(&game, 0, attacker, target),
+        "the tactical scorer must use the same peaceful-bystander veto"
     );
 }
 
@@ -34357,6 +34785,19 @@ fn the_capture_body_is_cavalry_when_the_empire_can_field_one() {
 #[test]
 fn the_beeline_forces_research_along_the_chain() {
     let (mut game, _, _) = air_surge_fixture(941_104);
+    // This unit test isolates the air-surge chain itself. The ordinary
+    // controller now clears an older era before it opens the next one, so set
+    // up the same mature research position rather than letting an unrelated
+    // Ancient branch preempt Flight.
+    let flight_era = game.rules.techs[&crate::name!("flight")].era;
+    let completed_eras: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < flight_era)
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(completed_eras);
     let mut ai = air_surge_ai();
     ai.maintain_air_surge(&game, 0);
     assert_eq!(
@@ -35723,6 +36164,97 @@ fn district_planning_lane(turn: u32) -> StrategicPlan {
     }
 }
 
+/// Give a deterministic planning fixture the whole ring-three district board.
+/// Real games acquire this land over time; a layout test needs all of the
+/// relevant legal sites visible at once, without making a Gold purchase the
+/// variable it is trying to measure.
+fn planning_claim_disk(game: &mut Game, city: u32, radius: i32) {
+    let center = game.cities[&city].pos;
+    let positions = game.wdisk(center, radius);
+    for pos in &positions {
+        game.map.tiles.get_mut(pos).unwrap().owner_city = Some(city);
+    }
+    let owned = &mut game.cities.get_mut(&city).unwrap().owned_tiles;
+    for pos in positions {
+        if !owned.contains(&pos) {
+            owned.push(pos);
+        }
+    }
+}
+
+/// A bare Science city with a deliberately legal Aqueduct and Dam sharing a
+/// single Industrial Zone tile. A separate mountain nest keeps the Campus
+/// choice unambiguous, while the cluster is the only source of meaningful
+/// productive district adjacency on the board.
+fn industrial_cluster_capital() -> (Game, u32, Pos, Pos, Pos) {
+    let (mut game, city, center) = planning_capital();
+    planning_claim_disk(&mut game, city, 3);
+    game.cities.get_mut(&city).unwrap().pop = 10;
+    game.players[0].techs.extend([
+        crate::name!("writing"),
+        crate::name!("apprenticeship"),
+        crate::name!("engineering"),
+        crate::name!("buttress"),
+        crate::name!("currency"),
+    ]);
+
+    let aqueduct = game.nbrs(center)[0];
+    let industrial = game
+        .nbrs(aqueduct)
+        .into_iter()
+        .find(|pos| *pos != center && game.wdist(*pos, center) == 2)
+        .expect("an Aqueduct neighbour in the second ring");
+    let dam = game
+        .nbrs(industrial)
+        .into_iter()
+        .find(|pos| {
+            *pos != center
+                && *pos != aqueduct
+                && game.wdist(*pos, center) >= 2
+                && game.wdist(*pos, center) <= 3
+        })
+        .expect("a Dam neighbour sharing the Industrial Zone tile");
+    let aqueduct_source = game
+        .nbrs(aqueduct)
+        .into_iter()
+        .find(|pos| *pos != center && *pos != industrial)
+        .expect("a non-city Aqueduct river edge");
+    assert!(game.map.set_river_edge(aqueduct, aqueduct_source, true));
+    let dam_neighbors = game.nbrs(dam);
+    assert!(game.map.set_river_edge(dam, dam_neighbors[0], true));
+    assert!(game.map.set_river_edge(dam, dam_neighbors[1], true));
+    game.map.tiles.get_mut(&dam).unwrap().feature = Some(crate::name!("floodplains"));
+
+    let campus_nest = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.wdist(*pos, aqueduct) > 1
+                && game.wdist(*pos, industrial) > 1
+                && game.wdist(*pos, dam) > 1
+        })
+        .expect("a separate Campus nest");
+    assert_eq!(
+        raise_mountains_beside(&mut game, campus_nest, 3, |_, pos| {
+            pos != center && pos != aqueduct && pos != industrial && pos != dam
+        }),
+        3,
+        "the Campus needs an independent three-mountain nest"
+    );
+    assert!(
+        game.district_sites(city, crate::name!("aqueduct"))
+            .contains(&aqueduct),
+        "the fixture Aqueduct is actually legal"
+    );
+    assert!(
+        game.district_sites(city, crate::name!("dam"))
+            .contains(&dam),
+        "the fixture Dam is actually legal"
+    );
+    (game, city, industrial, aqueduct, dam)
+}
+
 /// Raise mountains on `count` neighbours of `around`, skipping the city
 /// center and any tile a predicate refuses.
 fn raise_mountains_beside(
@@ -35769,9 +36301,9 @@ fn the_plan_reserves_the_nest_for_the_campus() {
             .all(|row| row.family.as_str() == "campus" || row.pos != nest),
         "the nest is reserved: no other family sits on it"
     );
-    assert!(
-        rows.iter().all(|row| row.value <= campus.value),
-        "the nested campus is the plan's most valuable pick"
+    assert_eq!(
+        campus.order, 0,
+        "the Science plan claims its Campus before the Industrial cluster or another core"
     );
 }
 
@@ -35802,7 +36334,7 @@ fn the_menu_gains_the_plans_site_and_the_squatter_yields() {
             pos: other,
         },
     ];
-    ai.district_plan_shape_menu(&game, 0, &plan, city, &mut items);
+    let _ = ai.district_plan_shape_menu(&game, 0, &plan, city, &mut items);
     assert!(
         items
             .iter()
@@ -35823,6 +36355,228 @@ fn the_menu_gains_the_plans_site_and_the_squatter_yields() {
             .any(|item| matches!(item, Item::District { district, .. }
             if district.as_str() == "commercial_hub")),
         "the hub keeps a candidate of its own"
+    );
+}
+
+/// A reservation only matters if the production picker observes it. With two
+/// available specialty slots, the Science plan reserves Campus plus its next
+/// core district; a flashy but off-plan Entertainment Complex cannot win by
+/// receiving an arbitrary high ordinary score. The Campus itself receives the
+/// plan floor and remains selectable.
+#[test]
+fn the_production_menu_preserves_specialty_slots_for_the_campus_first_plan() {
+    let (mut game, city, _) = planning_capital();
+    game.cities.get_mut(&city).unwrap().pop = 4;
+    let mut ai = AdvancedAi::new();
+    ai.enable_district_planning();
+    let plan = district_planning_lane(game.turn);
+    let rows = ai.city_district_plan(&game, 0, &plan, city);
+    let campus = rows
+        .iter()
+        .find(|row| row.family.as_str() == "campus")
+        .expect("the Science plan reserves its Campus");
+    let campus_site = campus.owned_fallback.unwrap_or(campus.pos);
+    let entertainment_site = game
+        .district_sites(city, crate::name!("entertainment_complex"))
+        .into_iter()
+        .find(|pos| {
+            *pos != campus_site
+                && !rows.iter().any(|row| {
+                    row.pos == *pos || row.owned_fallback.is_some_and(|fallback| fallback == *pos)
+                })
+        })
+        .expect("an unreserved Entertainment Complex site");
+    let items = vec![
+        Item::District {
+            district: campus.district,
+            pos: campus_site,
+        },
+        Item::District {
+            district: crate::name!("entertainment_complex"),
+            pos: entertainment_site,
+        },
+    ];
+    let mut scores = vec![0.0, 9_999.0];
+    ai.district_plan_adjust_menu_scores(&game, &plan, city, &rows, &items, &mut scores);
+    assert!(
+        scores[0] >= 90.0,
+        "the planned Campus receives its start floor"
+    );
+    assert!(
+        scores[1] <= -9_999.0,
+        "an off-plan specialty district cannot spend the last planned slot: {}",
+        scores[1]
+    );
+}
+
+/// The plan evaluates the cluster as a build sequence rather than treating
+/// every district's current yield as isolated. Campus takes its dedicated
+/// nest first; then the Aqueduct and Dam reserve their shared Industrial Zone
+/// neighbour, which receives their projected production adjacency.
+#[test]
+fn the_plan_stages_aqueduct_and_dam_before_the_industrial_zone_they_power() {
+    let (mut game, city, industrial, aqueduct, dam) = industrial_cluster_capital();
+    assert_eq!(game.wdist(aqueduct, industrial), 1);
+    assert_eq!(game.wdist(dam, industrial), 1);
+    // A standing Zone is the cleanest proof that support districts are not
+    // generic filler: its one actual tile is the only productive destination
+    // an Aqueduct or Dam may justify here.
+    game.map.tiles.get_mut(&industrial).unwrap().district = Some(crate::name!("industrial_zone"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("industrial_zone"), industrial);
+    let mut after_aqueduct = game.speculative_clone();
+    after_aqueduct
+        .map
+        .tiles
+        .get_mut(&aqueduct)
+        .unwrap()
+        .district_foundation = Some(crate::world::DistrictFoundation {
+        district: crate::name!("aqueduct"),
+        cost: 0.0,
+    });
+    assert!(
+        after_aqueduct
+            .district_sites(city, crate::name!("dam"))
+            .contains(&dam),
+        "the Dam remains legal after its Aqueduct support is reserved"
+    );
+    let assume = crate::game::adjacency::PlanAssumption {
+        city_center: None,
+        foundations: true,
+    };
+    let before_dam = after_aqueduct
+        .district_adjacency_assuming(
+            crate::name!("industrial_zone"),
+            industrial,
+            Some(&assume),
+            None,
+        )
+        .production;
+    let mut after_both = after_aqueduct.speculative_clone();
+    after_both
+        .map
+        .tiles
+        .get_mut(&dam)
+        .unwrap()
+        .district_foundation = Some(crate::world::DistrictFoundation {
+        district: crate::name!("dam"),
+        cost: 0.0,
+    });
+    assert!(
+        after_both
+            .district_adjacency_assuming(
+                crate::name!("industrial_zone"),
+                industrial,
+                Some(&assume),
+                None
+            )
+            .production
+            > before_dam + f64::EPSILON,
+        "the fixture Dam really improves the shared Industrial site"
+    );
+    let ai = AdvancedAi::new();
+    let plan = district_planning_lane(game.turn);
+    let rows = ai.city_district_plan(&game, 0, &plan, city);
+    let campus = rows
+        .iter()
+        .find(|row| row.family.as_str() == "campus")
+        .expect("the Science city plans a Campus");
+    let planned_aqueduct = rows
+        .iter()
+        .find(|row| row.family.as_str() == "aqueduct")
+        .expect("the linked Aqueduct is part of the plan");
+    let planned_dam = rows
+        .iter()
+        .find(|row| row.family.as_str() == "dam")
+        .expect("the linked Dam is part of the plan");
+
+    assert_eq!(
+        campus.order, 0,
+        "Campus remains the Science plan's first claim"
+    );
+    assert_eq!(planned_aqueduct.pos, aqueduct);
+    assert_eq!(planned_dam.pos, dam);
+    assert!(planned_aqueduct.support && planned_dam.support);
+    assert!(campus.order < planned_aqueduct.order && campus.order < planned_dam.order);
+    assert_eq!(game.wdist(planned_aqueduct.pos, industrial), 1);
+    assert_eq!(game.wdist(planned_dam.pos, industrial), 1);
+
+    let assume = crate::game::adjacency::PlanAssumption {
+        city_center: None,
+        foundations: true,
+    };
+    let without_support = game
+        .district_adjacency_assuming(
+            crate::name!("industrial_zone"),
+            industrial,
+            Some(&assume),
+            None,
+        )
+        .production;
+    let mut staged = game.speculative_clone();
+    for row in [planned_aqueduct, planned_dam] {
+        staged
+            .map
+            .tiles
+            .get_mut(&row.pos)
+            .unwrap()
+            .district_foundation = Some(crate::world::DistrictFoundation {
+            district: row.district,
+            cost: 0.0,
+        });
+    }
+    let with_support = staged
+        .district_adjacency_assuming(
+            crate::name!("industrial_zone"),
+            industrial,
+            Some(&assume),
+            None,
+        )
+        .production;
+    assert!(
+        with_support > without_support + f64::EPSILON,
+        "the staged supports must create real Industrial production: {without_support} -> {with_support}"
+    );
+}
+
+/// The cluster layer reads the civilization's actual Industrial variant. A
+/// German Hansa therefore pulls in a Commercial Hub even on Recovery, whose
+/// normal standing-city wishlist asks only for production and a Campus.
+#[test]
+fn hansa_planning_adds_the_commercial_hub_that_its_adjacency_uses() {
+    let (mut game, city, _) = planning_capital();
+    planning_claim_disk(&mut game, city, 3);
+    game.players[0].civ = "Germany".to_string();
+    game.cities.get_mut(&city).unwrap().pop = 10;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let rows = AdvancedAi::new().city_district_plan(&game, 0, &plan, city);
+    let hansa = rows
+        .iter()
+        .find(|row| row.family.as_str() == "industrial_zone")
+        .expect("Recovery plans its production district");
+    assert_eq!(hansa.district.as_str(), "hansa");
+    let hub = rows
+        .iter()
+        .find(|row| row.family.as_str() == "commercial_hub")
+        .expect("the Hansa's +2 Commercial Hub adjacency is a planned pair");
+    assert!(
+        hub.support,
+        "the Hub is an Industrial partner, not generic Gold"
+    );
+    assert!(
+        hub.order < hansa.order && game.wdist(hub.pos, hansa.pos) == 1,
+        "the Commercial Hub is staged beside and before its Hansa"
     );
 }
 
@@ -36729,6 +37483,10 @@ fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
             "missionary_last_charge_explores",
             "missionary-last-charge-explores",
         ),
+        (
+            "missionary_last_charge_explores_2",
+            "missionary-last-charge-explores-2",
+        ),
         ("missionary_evades_raiders", "missionary-evades-raiders"),
     ] {
         assert!(
@@ -36747,16 +37505,31 @@ fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
         );
     }
     let mut ai = AdvancedAi::new();
-    assert!(!ai.missionary_last_charge_explores && !ai.missionary_evades_raiders);
+    assert!(
+        !ai.missionary_last_charge_explores
+            && !ai.missionary_last_charge_explores_2
+            && !ai.missionary_evades_raiders
+    );
     ai.enable_missionary_last_charge_explores();
+    assert!(ai.missionary_last_charge_explores);
+    assert!(!ai.missionary_last_charge_explores_2);
+    ai.enable_missionary_last_charge_explores_2();
+    assert!(!ai.missionary_last_charge_explores);
+    assert!(ai.missionary_last_charge_explores_2);
     ai.enable_missionary_evades_raiders();
-    assert!(ai.missionary_last_charge_explores && ai.missionary_evades_raiders);
-    ai.disable_missionary_last_charge_explores();
+    assert!(ai.missionary_last_charge_explores_2 && ai.missionary_evades_raiders);
+    ai.disable_missionary_last_charge_explores_2();
     ai.disable_missionary_evades_raiders();
-    assert!(!ai.missionary_last_charge_explores && !ai.missionary_evades_raiders);
+    assert!(
+        !ai.missionary_last_charge_explores
+            && !ai.missionary_last_charge_explores_2
+            && !ai.missionary_evades_raiders
+    );
     let legacy = AdvancedAi::legacy();
     assert!(
-        !legacy.missionary_last_charge_explores && !legacy.missionary_evades_raiders,
+        !legacy.missionary_last_charge_explores
+            && !legacy.missionary_last_charge_explores_2
+            && !legacy.missionary_evades_raiders,
         "the frozen anchor plays the game it always did"
     );
 }
@@ -36897,6 +37670,122 @@ fn a_last_charge_missionary_explores_only_with_the_gene() {
         !untouched.units.contains_key(&missionary),
         "a city our faith has never touched takes the charge"
     );
+}
+
+/// Version two sends a last-charge Missionary along a route a Scout cannot
+/// use: its embarked path crosses a known foreign water border. The destination
+/// remains fog, so this proves the expedition comes from movement and
+/// exploration facts rather than from knowing a city beyond the ocean.
+#[test]
+fn a_last_charge_missionary_expedition_v2_crosses_an_ocean_and_closed_borders() {
+    use super::missionary_field::{MISSIONARY_EXPEDITION_RADIUS, MISSIONARY_EXPLORE_RADIUS};
+
+    let mut game = Game::new_full(2, 74, 46, 4_403, 120, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("the expedition owner opens with a Settler");
+    let source = game.units[&settler].pos;
+    let target = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| {
+            let distance = game.wdist(source, *position);
+            distance > MISSIONARY_EXPLORE_RADIUS && distance <= MISSIONARY_EXPEDITION_RADIUS
+        })
+        .max_by_key(|position| (game.wdist(source, *position), *position))
+        .expect("the standard map has a distant but explorable shore");
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.owner_city = None;
+        tile.cliff_edges = [false; 6];
+    }
+    game.map.tiles.get_mut(&source).unwrap().terrain = crate::name!("plains");
+    game.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("grassland");
+    game.current = 0;
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("the source shore founds our capital");
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+    let foreign_shore = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| *position != source)
+        .expect("the remote shore has a neighbouring tile");
+    game.map.tiles.get_mut(&foreign_shore).unwrap().terrain = crate::name!("plains");
+    let foreign_city = game.found_city_for(1, foreign_shore, Some("Border Port".to_string()));
+    for tile in game.map.tiles.values_mut() {
+        if tile.terrain == "coast" {
+            tile.owner_city = Some(foreign_city);
+        }
+    }
+    game.players[1].borders_enforced = Some(true);
+    game.record_contact(0, 1);
+    game.players[0]
+        .techs
+        .extend([crate::name!("sailing"), crate::name!("shipbuilding")]);
+    game.players[0].religion = Some("Our Faith".to_string());
+    let home = game.player_city_ids(0)[0];
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 1_000.0);
+    game.players[0].explored.clear();
+    let home_sight = game.wdisk(source, 2);
+    game.players[0].explored.extend(home_sight);
+    game.players[0].explored.insert(foreign_shore);
+    assert!(
+        !game.players[0].explored.contains(&target),
+        "the remote shore must be fogged"
+    );
+
+    let scout = game.spawn_test_unit("scout", 0, source);
+    let missionary = game.spawn_test_unit("missionary", 0, source);
+    let unit = game.units.get_mut(&missionary).unwrap();
+    unit.religion = Some("Our Faith".to_string());
+    unit.charges = 1;
+    assert!(
+        game.route_step(missionary, target, 0).is_some(),
+        "religious units retain their closed-border route"
+    );
+    assert!(
+        game.route_step(scout, target, 0).is_none(),
+        "the same foreign water border shuts a Scout out"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_missionary_last_charge_explores_2();
+    assert!(ai.advanced_missionary_step(&mut game, 0, missionary, false));
+    let (goal, turns) = ai
+        .missionary_explore_memory(missionary)
+        .expect("the expedition keeps a destination");
+    assert_eq!(goal, Some(target), "the only reachable remote shore wins");
+    assert!(
+        game.wdist(source, target) > MISSIONARY_EXPLORE_RADIUS,
+        "the expedition reaches beyond version one's local horizon"
+    );
+    assert_eq!(
+        turns, 1,
+        "the whole multi-step turn costs one expedition turn"
+    );
+    assert!(
+        game.map
+            .get(game.units[&missionary].pos)
+            .is_some_and(|tile| game.rules.is_water(tile)),
+        "the first move embarks across the ocean instead of spending the charge"
+    );
+    assert_eq!(game.units[&missionary].charges, 1);
 }
 
 #[test]
@@ -45198,10 +46087,11 @@ fn a_hub_beside_a_campus_joins_the_science_lanes_trade_network() {
 
 /// See `industrial_chain_debt`. Nine Industrial Zones stood with one
 /// Factory in the best Emperor game because the production chain, unlike
-/// the research chain, was owed nothing. Treated, a Workshop in a city that
-/// holds an Industrial Zone is owed the flat debt, a Factory is additionally
-/// worth the own cities within its range, and a city without the district
-/// prices both exactly as before.
+/// the research chain, was owed nothing. This keeps the independently
+/// screenable adaptive arm honest: treated, a Workshop in a city that holds
+/// an Industrial Zone is owed the flat debt, a Factory is additionally worth
+/// the own cities within its range, and a city without the district prices
+/// both exactly as before.
 #[test]
 fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
     let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
@@ -45240,12 +46130,10 @@ fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
     let mut treated = AdvancedAi::new();
     treated.enable_live_bridge_universe();
     treated.enable_industrial_chain_debt();
-    treated.victory_target = Some(VictoryTarget::Science);
     treated.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::new();
     withheld.enable_live_bridge_universe();
     withheld.disable_industrial_chain_debt();
-    withheld.victory_target = Some(VictoryTarget::Science);
     withheld.refresh_research_weight(&game);
     let counts = treated.counts(&game, 0);
 
@@ -45323,6 +46211,105 @@ fn an_industrial_zone_owes_its_workshop_and_a_factory_reaches_its_neighbours() {
     // Defaults: off for the stock and frozen controllers.
     assert!(!AdvancedAi::new().industrial_chain_debt);
     assert!(!AdvancedAi::legacy().industrial_chain_debt);
+}
+
+/// Production is the common prerequisite of every named victory lane. The
+/// deployment ledger can keep the adaptive industrial-chain gene off while a
+/// live named lane still pays the Workshop/Factory/power chain before a
+/// repeatable project. This is intentionally a Culture fixture: Science's
+/// existing research-project contract would otherwise hide the industrial
+/// gate we need to prove.
+#[test]
+fn named_victory_targets_make_industrial_production_foundational() {
+    let mut game = Game::new(2, 32, 24, 5_416, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.players[0]
+        .techs
+        .insert(crate::name!("industrialization"));
+    game.players[0].techs.insert(crate::name!("currency"));
+    game.players[0].gpp.insert("merchant".to_string(), 30.0);
+    game.cities.get_mut(&city).unwrap().pop = 6;
+    game.turn = 120;
+
+    install_ai_test_district(&mut game, city, "industrial_zone");
+    install_ai_test_district(&mut game, city, "commercial_hub");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .extend([crate::name!("workshop"), crate::name!("market")]);
+
+    let factory = Item::Building {
+        building: crate::name!("factory"),
+    };
+    let project = Item::Project {
+        project: crate::name!("commercial_hub_investment"),
+    };
+    assert!(game.can_produce(0, city, &factory), "the Factory is owed");
+    assert!(
+        game.can_produce(0, city, &project),
+        "the repeatable project is legal"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    let mut named = AdvancedAi::targeting(VictoryTarget::Culture);
+    named.enable_live_bridge();
+    named.refresh_research_weight(&game);
+    let mut adaptive = named.clone();
+    adaptive.victory_target = None;
+    assert!(
+        named.industrial_production_foundation(&game),
+        "an active named lane must carry the production contract"
+    );
+    assert!(
+        !adaptive.industrial_production_foundation(&game),
+        "the ledger-held adaptive controller remains unchanged"
+    );
+    for target in VictoryTarget::ALL {
+        let mut lane = AdvancedAi::targeting(target);
+        lane.enable_live_bridge();
+        assert!(
+            lane.industrial_production_foundation(&game),
+            "{} must value the production foundation",
+            target.as_str()
+        );
+    }
+
+    let counts = named.counts(&game, 0);
+    let factory_uplift = named.production_value(&game, 0, city, &factory, &plan, &counts)
+        - adaptive.production_value(&game, 0, city, &factory, &plan, &counts);
+    assert!(
+        factory_uplift > 0.0,
+        "the named Culture lane must owe its Factory: {factory_uplift}"
+    );
+
+    let named_project =
+        named.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+    let adaptive_project =
+        adaptive.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+    assert!(
+        named_project <= PROJECT_BEHIND_BUILDINGS_CAP,
+        "the Factory must precede the repeatable project: {named_project}"
+    );
+    assert!(
+        adaptive_project > named_project,
+        "only the named lane holds the project for the Factory: {adaptive_project}"
+    );
 }
 
 #[test]
@@ -45683,5 +46670,379 @@ fn the_walk_deadline_off_leaves_the_clock_and_the_step_alone() {
             .iter()
             .any(|thought| thought.headline.contains("walk deadline")),
         "the deadline never speaks while the gene is off"
+    );
+}
+
+/// `standing-still-is-a-risk`: the safe-step guard's last resort demands a
+/// neighbour a full 5.0 risk points safer than the route step it rejected,
+/// and when none is, it leaves the unit where it stands — a tile whose own
+/// risk it never measured. Over 39 live Civ VI runs that is **527** distinct
+/// settler-turns standing still ("the safe-step guard rejected every
+/// neighbour"), 13.5 a game and the largest single cause.
+///
+/// The fixture rings a settler with visible hostiles and searches for the
+/// exact standstill: a route step over the limit, no neighbour the shipped
+/// rule will take, and a neighbour strictly safer than staying put. Off, the
+/// settler does not move. On, it retreats to the safer tile — the direction
+/// it is refused for being backwards is the one that lowers its risk.
+#[test]
+fn a_settler_that_will_not_move_still_stands_somewhere() {
+    let mut game = Game::new_full(2, 44, 28, 4_242, 120, 0, false);
+    let home = game.units[&game.player_unit_ids(0)[0]].pos;
+    let land = |game: &Game, p: Pos| {
+        game.map
+            .get(p)
+            .is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+    };
+    let origin = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|p| {
+            game.wdist(home, *p) > 8
+                && game.wdisk(*p, 1).into_iter().all(|n| land(&game, n))
+                && game.units.values().all(|u| game.wdist(u.pos, *p) > 4)
+        })
+        .expect("a quiet land neighbourhood");
+    let ring: Vec<Pos> = game
+        .wdisk(origin, 2)
+        .into_iter()
+        .filter(|p| game.wdist(origin, *p) == 2 && land(&game, *p))
+        .collect();
+    for p in ring {
+        game.spawn_test_unit("warrior", 1, p);
+    }
+    game.at_war.insert((0, 1));
+    let settler = game.spawn_test_unit("settler", 0, origin);
+
+    // Find a stand/target pair the shipped rule answers by not moving, while
+    // a strictly safer neighbour is reachable.
+    let ai = AdvancedAi::new();
+    let visible = ai.battlefront_visibility(&game, 0);
+    let risk = |game: &Game, p: Pos| {
+        ai.settlement_tile_risk_with_support(game, 0, Some(settler), p, &visible, true)
+    };
+    let mut standstill = None;
+    let mut safe_standstill: Option<(Pos, Pos)> = None;
+    'search: for stand in game.wdisk(origin, 3) {
+        if !land(&game, stand) || !game.unit_ids_at(stand).is_empty() {
+            continue;
+        }
+        game.units.get_mut(&settler).unwrap().pos = stand;
+        for target in game.wdisk(origin, 5) {
+            if !land(&game, target) || game.wdist(stand, target) < 2 {
+                continue;
+            }
+            let Some(next) = game
+                .route_step(settler, target, 0)
+                .filter(|next| game.can_move(settler, *next))
+            else {
+                continue;
+            };
+            let planned = risk(&game, next);
+            if planned <= SETTLER_STEP_RISK_LIMIT {
+                continue;
+            }
+            let staying = risk(&game, stand);
+            let current_distance = game.wdist(stand, target);
+            let mut shipped_rule_moves = false;
+            let mut safer_than_staying = false;
+            for n in game.nbrs(stand) {
+                if n == next || game.map.get(n).is_none() || !game.can_move(settler, n) {
+                    continue;
+                }
+                let neighbour = risk(&game, n);
+                let progress = current_distance - game.wdist(n, target);
+                if neighbour + 5.0 < planned && !(progress < 0 && neighbour > planned * 0.5) {
+                    shipped_rule_moves = true;
+                }
+                if neighbour < staying {
+                    safer_than_staying = true;
+                }
+            }
+            if !shipped_rule_moves && safer_than_staying {
+                if staying > SETTLER_STEP_RISK_LIMIT {
+                    standstill = Some((stand, target, staying));
+                    break 'search;
+                }
+                // A standstill on ground that is itself safe: the guard is
+                // working, and the gene must leave it alone.
+                safe_standstill.get_or_insert((stand, target));
+            }
+        }
+    }
+    let (stand, target, staying) =
+        standstill.expect("the ringed settler has a standstill the shipped rule will not break");
+
+    // Off: the guard rejects every neighbour and the settler stays put on a
+    // tile more dangerous than one it could reach.
+    game.units.get_mut(&settler).unwrap().pos = stand;
+    let off = AdvancedAi::new();
+    assert!(!off.standing_still_is_a_risk);
+    let moved = off.settler_step_toward_safe(&mut game, 0, settler, target);
+    assert!(!moved, "off: the guard reports no move");
+    assert_eq!(
+        game.units[&settler].pos, stand,
+        "off: the settler stands on its exposed tile"
+    );
+
+    // On: it retreats to a tile strictly safer than the one it was standing on.
+    game.units.get_mut(&settler).unwrap().pos = stand;
+    game.units.get_mut(&settler).unwrap().acted = false;
+    game.units.get_mut(&settler).unwrap().moves_left =
+        game.rules.units[game.units[&settler].kind].moves;
+    let mut on = AdvancedAi::new();
+    on.enable_standing_still_is_a_risk();
+    let moved = on.settler_step_toward_safe(&mut game, 0, settler, target);
+    let landed = game.units[&settler].pos;
+    assert!(moved, "on: a standstill on dangerous ground is answered");
+    assert_ne!(landed, stand, "on: the settler left the exposed tile");
+    assert!(
+        risk(&game, landed) < staying,
+        "on: it moved to STRICTLY safer ground — landed {landed:?} at {:.1} against {staying:.1}",
+        risk(&game, landed)
+    );
+
+    // The danger bar: a standstill on ground that is itself under the limit
+    // is the guard waiting out a dangerous route, and the gene leaves it be.
+    if let Some((safe_stand, safe_target)) = safe_standstill {
+        game.units.get_mut(&settler).unwrap().pos = safe_stand;
+        game.units.get_mut(&settler).unwrap().acted = false;
+        game.units.get_mut(&settler).unwrap().moves_left =
+            game.rules.units[game.units[&settler].kind].moves;
+        assert!(
+            risk(&game, safe_stand) <= SETTLER_STEP_RISK_LIMIT,
+            "the fixture's safe standstill is under the limit"
+        );
+        let moved = on.settler_step_toward_safe(&mut game, 0, settler, safe_target);
+        assert!(!moved, "a standstill on safe ground is still a standstill");
+        assert_eq!(game.units[&settler].pos, safe_stand);
+    }
+}
+
+/// ★★★★ See `contested_suzerainty_brake`: `bank_envoys` brakes only the
+/// UNCONTESTED overstack, and its own comment exempts "a city-state within one
+/// envoy of a rival" on the grounds that defending a narrow suzerainty beats
+/// the cap. Live run `civvis-20260902T205532Z` defended exactly that at
+/// Bologna seven times, spent 27 envoys, and lost it on t164 to Arabia — at
+/// war with the seat since t139 — which then levied Bologna and suspended
+/// every yield those envoys had bought.
+#[test]
+fn the_brake_stops_bidding_a_race_against_a_rival_already_at_war_with_us() {
+    let contested_stack = |braked: bool| {
+        let mut spent_on_contested = 0i64;
+        for seed in 1..30u64 {
+            let mut g = Game::new(2, 24, 16, seed, 80, 4);
+            let minors: Vec<usize> = g
+                .players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .map(|player| player.id)
+                .collect();
+            if minors.len() < 2 {
+                continue;
+            }
+            for minor in &minors {
+                g.record_contact(0, *minor);
+            }
+            g.record_contact(0, 1);
+            // The Bologna shape: a deep stack on one city-state that the
+            // rival we are ALREADY AT WAR WITH is level with, and an
+            // untouched city-state beside it.
+            let contested = minors[0];
+            // `envoys` is a Vec of (city-state, count) and `envoys_at` reads
+            // the FIRST match, so set an existing row rather than pushing a
+            // shadowed duplicate.
+            let mut seat = |player: usize, count: i64| match g.players[player]
+                .envoys
+                .iter_mut()
+                .find(|(state, _)| *state == contested)
+            {
+                Some((_, held)) => *held = count,
+                None => g.players[player].envoys.push((contested, count)),
+            };
+            seat(0, 8);
+            seat(1, 8);
+            g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+            g.players[0].envoys_free = 1;
+            let mut ai = AdvancedAi::new();
+            ai.enable_bank_envoys();
+            if braked {
+                ai.enable_contested_suzerainty_brake();
+            }
+            ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+            spent_on_contested += g.envoys_at(0, contested) - 8;
+        }
+        spent_on_contested
+    };
+
+    let stock = contested_stack(false);
+    let braked = contested_stack(true);
+    println!("contested reinforcement over 29 boards: stock {stock}, braked {braked}");
+    assert!(
+        braked < stock,
+        "the brake must divert envoys off a race the seat is losing to a \
+         belligerent: stock reinforced the contested city-state {stock} times, \
+         braked {braked} over 29 boards"
+    );
+}
+
+/// The brake is opt-in and must be off in both shipped controllers.
+#[test]
+fn the_contested_suzerainty_brake_is_off_by_default() {
+    assert!(!AdvancedAi::new().contested_suzerainty_brake);
+    assert!(!AdvancedAi::legacy().contested_suzerainty_brake);
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_suzerainty_brake();
+    assert!(ai.contested_suzerainty_brake);
+    ai.disable_contested_suzerainty_brake();
+    assert!(!ai.contested_suzerainty_brake);
+}
+
+/// `detour-keeps-the-site-worth`: the threat detour takes the best site whose
+/// approach is SAFE, which is not the same as a site worth the walk. Measured
+/// over 53 live Civ VI runs on the 41 detours whose journal prices both ends:
+/// the median detour is +21% better than the site it leaves — so the detour
+/// earns its place and the gene must not disturb it — but 24% give up more
+/// than 40% of that value, the worst -83%.
+///
+/// The fixture threatens the approach to a good site, then retires the
+/// alternates one at a time the way a mid-game map does (a rival takes the
+/// plot, our own city claims its ring, the host blocks it) until the best
+/// safe site left is below the floor. Off, the settler walks to it. On, the
+/// detour is refused and the original target kept, with the deferral rolled
+/// back so the site stays in the ranking.
+#[test]
+fn a_threat_detour_will_not_trade_a_site_for_half_of_one() {
+    let mut game = Game::new_full(2, 44, 28, 8_115, 200, 0, false);
+    let start = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|u| game.units[u].kind == "settler")
+        .expect("a starting settler");
+    let home = game.units[&start].pos;
+    game.apply(0, &crate::game::Action::FoundCity { unit: start })
+        .unwrap();
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let forever = game.turn + 999;
+
+    let mut probe = AdvancedAi::new();
+    probe.settler_threat_detour = true;
+    let (seed_target, _) = probe
+        .best_settler_target(&game, 0, settler, 8, None)
+        .expect("a first settle target");
+    let next = game
+        .route_step(settler, seed_target, 0)
+        .expect("a first route step");
+    // A visible band beside that step, clear of the settler's own tile so the
+    // other directions stay open — one blocked corridor, not a siege.
+    let band: Vec<Pos> = game
+        .wdisk(next, 1)
+        .into_iter()
+        .filter(|p| {
+            game.wdist(home, *p) >= 2
+                && game.unit_ids_at(*p).is_empty()
+                && game
+                    .map
+                    .get(*p)
+                    .is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+        })
+        .collect();
+    assert!(!band.is_empty(), "the corridor has room for a threat band");
+    for p in band {
+        game.spawn_test_unit("warrior", 1, p);
+    }
+    game.at_war.insert((0, 1));
+
+    // The most valuable site behind that corridor is the one worth keeping.
+    let (target, kept) = game
+        .wdisk(home, 9)
+        .into_iter()
+        .filter(|pos| {
+            game.route_step(settler, *pos, 0) == Some(next)
+                && probe.settler_target_has_visible_route_threat(&game, 0, settler, *pos)
+        })
+        .map(|pos| (pos, probe.settle_value(&game, 0, pos)))
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .expect("a threatened site behind the corridor");
+
+    // Retire alternates until the best safe one left is below the floor.
+    let mut retired: Vec<Pos> = Vec::new();
+    let mut poor = None;
+    for _ in 0..30 {
+        let mut walker = AdvancedAi::new();
+        walker.settler_threat_detour = true;
+        walker
+            .settler_dead_sites
+            .entry(settler)
+            .or_default()
+            .extend(retired.iter().map(|pos| (*pos, forever)));
+        let Some(fallback) = walker.detour_settler_around_visible_threat(&game, 0, settler, target)
+        else {
+            break;
+        };
+        if walker.settle_value(&game, 0, fallback) < kept * SETTLER_DETOUR_VALUE_FLOOR {
+            poor = Some(fallback);
+            break;
+        }
+        retired.push(fallback);
+    }
+    let poor = poor.expect("retiring the good alternates leaves a below-floor fallback");
+
+    let seed_ai = |gene: bool| {
+        let mut ai = AdvancedAi::new();
+        ai.settler_threat_detour = true;
+        ai.detour_keeps_the_site_worth = gene;
+        ai.settler_dead_sites
+            .entry(settler)
+            .or_default()
+            .extend(retired.iter().map(|pos| (*pos, forever)));
+        ai
+    };
+
+    // Off: the settler walks to a site worth a fraction of the one it leaves.
+    let mut off = seed_ai(false);
+    assert_eq!(
+        off.detour_settler_around_visible_threat(&game, 0, settler, target),
+        Some(poor),
+        "off: the detour takes the nearest SAFE site, whatever it is worth"
+    );
+    assert!(
+        off.settle_value(&game, 0, poor) < kept * SETTLER_DETOUR_VALUE_FLOOR,
+        "the fixture's fallback really is below the floor"
+    );
+
+    // On: the detour is refused, and the deferral is rolled back so the
+    // original site stays in the ranking for the next turn.
+    let mut on = seed_ai(true);
+    assert_eq!(
+        on.detour_settler_around_visible_threat(&game, 0, settler, target),
+        None,
+        "on: a detour that gives up most of the site's worth is refused"
+    );
+    assert!(
+        !on.settler_threat_deferrals.contains_key(&target),
+        "on: the kept site is not left deferred"
+    );
+
+    // The gene must not disturb a detour that keeps the site's worth: with no
+    // alternate retired, the first fallback is a good one and both agree.
+    let mut plain_off = AdvancedAi::new();
+    plain_off.settler_threat_detour = true;
+    let good = plain_off
+        .detour_settler_around_visible_threat(&game, 0, settler, target)
+        .expect("an unretired detour finds a good alternate");
+    assert!(
+        plain_off.settle_value(&game, 0, good) >= kept * SETTLER_DETOUR_VALUE_FLOOR,
+        "the unretired alternate clears the floor"
+    );
+    let mut plain_on = AdvancedAi::new();
+    plain_on.settler_threat_detour = true;
+    plain_on.detour_keeps_the_site_worth = true;
+    assert_eq!(
+        plain_on.detour_settler_around_visible_threat(&game, 0, settler, target),
+        Some(good),
+        "a detour that keeps the site's worth is untouched"
     );
 }

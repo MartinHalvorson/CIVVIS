@@ -153,5 +153,25 @@ class AStuckProcessListingMustNotLookLikeAnExitedGame(unittest.TestCase):
             self.assertEqual(civ6_env.game_pids(), [])
 
 
+class AGameThatWillNotExitReportsTheSafeStopFailure(unittest.TestCase):
+    """The supervisor must get a diagnostic instead of a second exception."""
+
+    def test_quit_game_writes_the_remaining_pids_to_stderr(self):
+        with mock.patch.object(civ6_env, "game_pids",
+                               side_effect=[[4242], [4242], [4242]]), \
+             mock.patch.object(civ6_env.os, "kill") as kill, \
+             mock.patch("time.time", side_effect=[0.0, 21.0]), \
+             mock.patch("time.sleep"), \
+             mock.patch("builtins.print") as printed:
+            self.assertFalse(civ6_env.quit_game(timeout_s=20.0))
+
+        kill.assert_called_once_with(4242, civ6_env.signal.SIGTERM)
+        printed.assert_called_once_with(
+            "[env] Civilization VI did not exit after SIGTERM: [4242]",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7182,12 +7182,14 @@ local function exportState(player, pid, turn, frame)
 					pcall(function()
 						local ux = unit:GetX();
 						local uy = unit:GetY();
+						local name = unitTypeName(unit);
 						-- `IsVisible`, not `IsRevealed`: a remembered tile does not show
 						-- who stands on it now. Confirmed on a player-indexed
 						-- `PlayersVisibility` handle, which is the only form that
-						-- answers in a gameplay context.
-						if PlayersVisibility[pid]:IsVisible(ux, uy) then
-							local name = unitTypeName(unit);
+						-- answers in a gameplay context. A visible tile is not a
+						-- detection result, though: `other:GetUnits()` still contains
+						-- a foreign Spy while its operation remains secret.
+						if name ~= "UNIT_SPY" and PlayersVisibility[pid]:IsVisible(ux, uy) then
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
@@ -10110,7 +10112,7 @@ end
 
 local function onGovernorAppointed(playerID, governorID)
 	local pending = pendingGovernorAssignments[playerID];
-	if pending == nil or pending.governor ~= governorID then return; end
+	if pending == nil or pending.kind ~= "appoint" or pending.governor ~= governorID then return; end
 	pendingGovernorAssignments[playerID] = nil;
 	local ok = requestGovernorAssignment(
 		playerID, governorID, pending.city_player, pending.city);
@@ -10183,11 +10185,11 @@ CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	return "session";
 end;
 
-CivvisTrade.close = function(pid, subject, why)
+CivvisTrade.close = function(pid, subject, why, already_closed)
 	local trade = CivvisTrade;
 	local session = trade.sessions[subject];
 	trade.sessions[subject] = nil;
-	if session ~= nil and session.sessionID ~= nil then
+	if not already_closed and session ~= nil and session.sessionID ~= nil then
 		pcall(function() DiplomacyManager.CloseSession(session.sessionID); end);
 	end
 	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
@@ -10196,6 +10198,64 @@ CivvisTrade.close = function(pid, subject, why)
 		target = subject, phase = "closed", why = why,
 		kind = session and session.kind or nil,
 	});
+end;
+
+-- `SendWorkingDeal(ACCEPTED)` is an asynchronous request.  A successful Lua
+-- call is not proof that the treaty landed: on run
+-- `civvis-20260903T021106Z`, the rival answered ACCEPTED and this call returned
+-- successfully, but the next host frame still reported `at_war = true`.  The
+-- shipped deal screen likewise sends ACCEPTED and waits for the engine's next
+-- statement/frame before treating the deal as finished.
+CivvisTrade.peaceAtWar = function(pid, subject)
+	return try(function()
+		return Players[pid]:GetDiplomacy():IsAtWarWith(subject);
+	end, nil);
+end;
+
+-- Record the only authoritative peace outcome available to this context: the
+-- host diplomacy flag.  `peace_response` remains the rival's answer and the
+-- submission attempt; this follow-up says whether Civilization VI actually
+-- ended the war.  Keeping the two records separate prevents a pcall success
+-- from masquerading as an enacted treaty.
+CivvisTrade.settlePeace = function(pid, subject, why, already_closed)
+	local atWar = CivvisTrade.peaceAtWar(pid, subject);
+	local enacted = atWar == false;
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	emit("peace_result", {
+		turn = turn, target = subject, accepted = true, enacted = enacted,
+		at_war = atWar, reason = why,
+	});
+	CivvisTrade.close(pid, subject, why, already_closed);
+	return enacted;
+end;
+
+-- The deal engine may apply ACCEPTED after the statement callback returns.
+-- Poll only while one accepted peace is outstanding; the ordinary game-core
+-- tick and turn-begin hooks call this, so the hot path pays no diplomacy query.
+CivvisTrade.pollPeace = function()
+	local trade = CivvisTrade;
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local pending = {};
+	for subject, session in pairs(trade.sessions) do
+		if session.peace_pending ~= nil then
+			pending[#pending + 1] = { subject = subject, session = session };
+		end
+	end
+	for _, entry in ipairs(pending) do
+		local subject = entry.subject;
+		local session = entry.session;
+		local atWar = trade.peaceAtWar(pid, subject);
+		if atWar == false then
+			trade.settlePeace(pid, subject, "enacted");
+		elseif atWar == true and turn > (session.peace_pending.turn or turn) then
+			-- Give the host the rest of the submission turn to apply the deal;
+			-- if the next turn still says war, leave it to the normal five-turn
+			-- retry gate rather than holding the diplomacy session indefinitely.
+			trade.settlePeace(pid, subject, "still_at_war");
+		end
+	end
 end;
 
 -- A session the rival never answered: the ask is dead, and a third such
@@ -10250,17 +10310,54 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
 		session = session.sessionID or -1, deal_action = tostring(dealAction) });
 	if session.kind == "peace" then
-		-- The rival's ACCEPTED is its verdict; the send back is what enacts
-		-- the peace, exactly as the shipped screen's accept button does.
+		-- The rival's ACCEPTED is its verdict.  Match the shipped
+		-- `DiplomacyDealView.OnProposeOrAcceptDeal` guard: it sends ACCEPTED
+		-- only when both working deals are equal, otherwise it sends ADJUSTED
+		-- and waits for the rival to reconcile the package.
 		local accepted = dealAction == DealProposalAction.ACCEPTED;
-		local enacted = false;
+		local dealEqual = nil;
+		local equalityChecked = false;
+		local submitted = false;
+		local submittedAction = nil;
 		if accepted then
-			enacted = pcall(function()
-				DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, other);
-			end);
+			equalityChecked = pcall(function()
+				dealEqual = DealManager.AreWorkingDealsEqual(pid, other);
+			end) and type(dealEqual) == "boolean";
+			if equalityChecked then
+				submittedAction = dealEqual and "ACCEPTED" or "ADJUSTED";
+				submitted = pcall(function()
+					DealManager.SendWorkingDeal(DealProposalAction[submittedAction], pid, other);
+				end);
+			end
 		end
 		emit("peace_response", { turn = turn, target = other, accepted = accepted,
-			enacted = enacted and true or false, deal_action = tostring(dealAction) });
+			deal_equal = dealEqual, equality_checked = equalityChecked,
+			submitted = submitted, submitted_action = submittedAction,
+			-- This is deliberately false until `pollPeace` observes the host
+			-- diplomacy state; a pcall only proves that Lua accepted the request.
+			enacted = false, deal_action = tostring(dealAction) });
+		if accepted and equalityChecked and dealEqual and submitted then
+			session.peace_pending = { turn = turn };
+			pcall(function()
+				LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4);
+			end);
+			CivvisTrade.pollPeace();
+			return;
+		elseif accepted and equalityChecked and not dealEqual and submitted then
+			-- Keep the session alive just as the shipped deal view does after
+			-- ADJUSTED; the next rival statement can be accepted after the
+			-- working deals converge.
+			session.peace_adjusted = true;
+			emit("deal_session", { turn = turn, target = other, kind = session.kind,
+				phase = "adjusted", action = submittedAction, deal_equal = false });
+			pcall(function()
+				LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4);
+			end);
+			return;
+		elseif accepted and not equalityChecked then
+			CivvisTrade.close(pid, other, "deal_equality_unreadable");
+			return;
+		end
 	else
 		CivvisOnIncomingDeal(other, pid, dealAction);
 	end
@@ -10270,7 +10367,17 @@ end;
 CivvisOnDealSessionClosed = function(sessionID)
 	for subject, session in pairs(CivvisTrade.sessions) do
 		if session.sessionID == sessionID or (session.sessionID == nil and sessionID == nil) then
-			CivvisTrade.abandon(subject, "session_closed");
+			local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+			if session.peace_pending ~= nil then
+				CivvisTrade.settlePeace(pid, subject, "session_closed", true);
+			elseif session.peace_adjusted then
+				-- ADJUSTED means the rival answered, but no equal package was
+				-- accepted. Closing that screen is not evidence of a treaty and
+				-- must not produce a synthetic accepted peace result.
+				CivvisTrade.close(pid, subject, "session_closed", true);
+			else
+				CivvisTrade.abandon(subject, "session_closed");
+			end
 			return;
 		end
 	end
@@ -11207,8 +11314,31 @@ local function applyOrder(player, pid, row, turn)
 			end, 0) > 0 then
 				return false, "governor_neutralized";
 			end
+			-- Firaxis accepts an assignment request before the Governor roster
+			-- export reflects it.  Replan frames can therefore replay the same
+			-- semantic order several times in one turn.  A second request is not
+			-- a useful retry: it only produces `not_assigned` verdicts while the
+			-- first request is still in flight.  Keep the request for this turn;
+			-- if the next authoritative export is still unassigned, the next turn
+			-- is a real retry window.
+			local pending = pendingGovernorAssignments[pid];
+			if kind == "governor_assign"
+					and pending ~= nil
+					and pending.kind == "assign"
+					and pending.governor == governor.Index
+					and pending.city_player == cityOwner
+					and pending.city == subject
+					and pending.turn == turn then
+				return false, "governor_assign_pending";
+			end
 			local ok = requestGovernorAssignment(
 				pid, governor.Index, cityOwner, subject);
+			if ok and kind == "governor_assign" then
+				pendingGovernorAssignments[pid] = {
+					kind = "assign", governor = governor.Index,
+					city_player = cityOwner, city = subject, turn = turn,
+				};
+			end
 			return ok, ok and resolved or "governor_assign_throw";
 		end
 		if not try(function() return governors:CanAppoint(); end, false) then
@@ -11220,7 +11350,8 @@ local function applyOrder(player, pid, row, turn)
 			return false, "governor_not_appointable";
 		end
 		pendingGovernorAssignments[pid] = {
-			governor = governor.Index, city_player = cityOwner, city = subject,
+			kind = "appoint", governor = governor.Index,
+			city_player = cityOwner, city = subject,
 		};
 		local params = {};
 		-- The shipped GovernorPanel sends row INDEXES in operation parameters.
@@ -14868,8 +14999,55 @@ CivvisQueue.drain = function(player, pid, turn)
 				local moved_from_origin = #entry.rows == 0
 					and entry.origin ~= nil
 					and (ux ~= entry.origin.x or uy ~= entry.origin.y);
-				local ready = entry.ready or arrived or spent or moved_from_origin
-					or entry.wait >= grace;
+				-- Arrival is not the same as settlement on the live host. Civ VI can
+				-- place a unit on the requested plot while its MOVE_TO operation is
+				-- still active; a follow-up RequestOperation then returns successfully
+				-- but is ignored by the in-flight path. This was visible in the live
+				-- trace as MOVE_TO -> FORTIFY: the warrior reached its plot, FORTIFY
+				-- was counted as applied, and the next turn's stale-operation cleanup
+				-- cancelled the still-active move with the unit unfortified.
+				--
+				-- Keep the opening rows-less watch's early release: it has no dependent
+				-- order to protect and the next board can re-plan from the landed unit.
+				-- A real queued follow-up must wait for the host operation to deactivate,
+				-- even when the unit has arrived, spent its movement, or raised an event.
+				local active_operation = #entry.rows > 0 and try(function()
+					return ActivityTypes ~= nil
+						and ActivityTypes.ACTIVITY_OPERATION ~= nil
+						and UnitManager.GetActivityType(unit) == ActivityTypes.ACTIVITY_OPERATION;
+				end, false) == true;
+				-- A MOVE_TO can leave the unit on its exact destination while Civ VI
+				-- keeps the path operation active until the next turn.  Waiting for the
+				-- deactivation event is normally correct, but turn-start ownership
+				-- cleanup can cancel that operation first and discard the dependent row.
+				-- Once the expected plot is reached, cancel only that landed operation
+				-- through the same shipped command used by start-of-turn cleanup.  A
+				-- unit still short of its destination remains protected by the active
+				-- operation guard above.
+				if active_operation and entry.expect ~= nil and arrived then
+					local cancel = CMD["UNITCOMMAND_CANCEL"];
+					local can_cancel = cancel ~= nil and try(function()
+						return UnitManager.CanStartCommand(unit, cancel, false, true) == true;
+					end, false) == true;
+					if can_cancel and pcall(function() UnitManager.RequestCommand(unit, cancel); end) then
+						-- RequestCommand can itself be asynchronous. Re-read the host
+						-- activity instead of assuming the cancel returned after the
+						-- operation deactivated; otherwise the dependent operation can
+						-- lose the same race this guard is meant to prevent.
+						local deactivated = try(function()
+							return ActivityTypes ~= nil
+								and ActivityTypes.ACTIVITY_OPERATION ~= nil
+								and UnitManager.GetActivityType(unit) ~= ActivityTypes.ACTIVITY_OPERATION;
+						end, false) == true;
+						active_operation = not deactivated;
+						emit("queue_operation_cancelled", {
+							turn = turn, unit = subject, x = ux, y = uy,
+							reason = "landed_before_deactivation",
+						});
+					end
+				end
+				local ready = (entry.ready or arrived or spent or moved_from_origin
+					or entry.wait >= grace) and not active_operation;
 				-- See `CivvisBoard.moveNoop`: a leg the host accepted, whose unit
 				-- is still on the plot it was sent from with its movement intact
 				-- once the watch runs out, is a no-op. It is named and answered
@@ -17579,7 +17757,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- batches per poll — still an order of magnitude short of the every-publish
 	-- query that deadlocked 20260730T110209Z — and the poll budgets below are
 	-- scaled by the same factor so every wall-clock allowance is unchanged.
-	local every = cfg.OrdersPollTicks or 4;
+	local every = cfg.OrdersPollTicks or 2;
 	if awaiting.ticks % every ~= 0 then return false; end
 	awaiting.polls = (awaiting.polls or 0) + 1;
 
@@ -17643,7 +17821,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- opening board's stale-answer and built-in ladders below never apply
 	-- to a frame — a stale answer is the very board this frame replaces.
 	if frame > 0 then
-		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 150) then
+		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 300) then
 			awaiting.done = true;
 			awaiting.source = "civvis";
 			-- Every trigger, and the cap: a brain that could not answer this
@@ -17659,7 +17837,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	end
 
 	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
-	if awaiting.polls >= (cfg.OrdersWaitPolls or 300) then
+	if awaiting.polls >= (cfg.OrdersWaitPolls or 600) then
 		local stale = newestAnsweredTurn(turn);
 		local maxStale = cfg.OrdersMaxStale or 4;
 		if stale ~= nil and stale > 0 and (turn - stale) <= maxStale then
@@ -17680,7 +17858,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- a mechanism given authority with no floor for being wrong. Past the budget the
 	-- built-in heuristics run and the turn is recorded as `fallback`, which is a
 	-- number to watch — a run that is mostly fallback is not a measurement of CIVVIS.
-	if awaiting.polls >= (cfg.OrdersFallbackPolls or 900) then
+	if awaiting.polls >= (cfg.OrdersFallbackPolls or 1800) then
 		-- ⚠ SET THE SOURCE *BEFORE* RUNNING THE FALLBACK. `playFallback` emits the
 		-- turn record, which reads `awaiting.source` — assigning after the call made
 		-- every fallback turn report `orders_source: pending`, so the one field that
@@ -19071,6 +19249,7 @@ end
 -- on asking whether there is anything to spend it on.
 local function onGameCoreTick()
 	ensureStarted();
+	CivvisTrade.pollPeace();
 	ticksSeen = ticksSeen + 1;
 	if ticksSeen % (cfg.TickEvery or 16) ~= 0 then return; end
 	ticksTaken = ticksTaken + 1;
@@ -19079,6 +19258,7 @@ end
 
 local function onLocalPlayerTurnBegin()
 	ensureStarted();
+	CivvisTrade.pollPeace();
 	tick();
 end
 

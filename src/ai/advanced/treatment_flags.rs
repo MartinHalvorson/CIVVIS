@@ -1854,12 +1854,32 @@ impl AdvancedAi {
     /// `missionary-last-charge-explores`. (Filed here rather than under a
     /// marker: the append-point check reads a line's first identifier.)
     pub fn enable_missionary_last_charge_explores(&mut self) {
+        self.missionary_last_charge_explores_2 = false;
         self.missionary_last_charge_explores = true;
+        self.missionary_explore.borrow_mut().clear();
     }
 
     /// The twin of `enable_missionary_last_charge_explores`.
     pub fn disable_missionary_last_charge_explores(&mut self) {
         self.missionary_last_charge_explores = false;
+    }
+
+    /// Send a last-charge Missionary on a long, routeable expedition before it
+    /// spends the charge: up to thirty-six tiles, through borders religious
+    /// units may cross, while still yielding to an endangered own city or an
+    /// untouched city beside it. This is version two of the local ten-tile
+    /// policy, so it is mutually exclusive with it. Opt-in gene
+    /// `missionary-last-charge-explores-2`; see
+    /// [`AdvancedAi::missionary_last_charge_explores_2`].
+    pub fn enable_missionary_last_charge_explores_2(&mut self) {
+        self.missionary_last_charge_explores = false;
+        self.missionary_last_charge_explores_2 = true;
+        self.missionary_explore.borrow_mut().clear();
+    }
+
+    /// The twin of `enable_missionary_last_charge_explores_2`.
+    pub fn disable_missionary_last_charge_explores_2(&mut self) {
+        self.missionary_last_charge_explores_2 = false;
     }
 
     /// Keep religious units out of every tile a visible barbarian raider can
@@ -4125,6 +4145,55 @@ impl AdvancedAi {
     /// The twin of `enable_doomed_blow_veto`.
     pub fn disable_doomed_blow_veto(&mut self) {
         self.doomed_blow_veto = false;
+    }
+
+    /// A route step that is not legal this turn holds the decision instead
+    /// of releasing it, bounded by `COMMITMENT_PATIENCE` consecutive
+    /// forgotten turns. See the field doc on `AdvancedAi`.
+    pub fn enable_route_block_is_a_wait(&mut self) {
+        self.route_block_is_a_wait = true;
+    }
+
+    /// The twin of `enable_route_block_is_a_wait`.
+    pub fn disable_route_block_is_a_wait(&mut self) {
+        self.route_block_is_a_wait = false;
+    }
+
+    /// A safe-step guard that would not move at all steps to the safest
+    /// reachable neighbour that is strictly safer than standing still. See
+    /// the field doc on `AdvancedAi`.
+    pub fn enable_standing_still_is_a_risk(&mut self) {
+        self.standing_still_is_a_risk = true;
+    }
+
+    /// The twin of `enable_standing_still_is_a_risk`.
+    pub fn disable_standing_still_is_a_risk(&mut self) {
+        self.standing_still_is_a_risk = false;
+    }
+
+    /// Stop paying for a city-state race this seat cannot hold: the leading
+    /// rival is a major we are at war with and is level or ahead, or the seat
+    /// has already sunk `CONTESTED_ENVOY_STACK_CAP` envoys and a rival is
+    /// within one. See [`Self::contested_suzerainty_brake`].
+    pub fn enable_contested_suzerainty_brake(&mut self) {
+        self.contested_suzerainty_brake = true;
+    }
+
+    /// The twin of `enable_contested_suzerainty_brake`.
+    pub fn disable_contested_suzerainty_brake(&mut self) {
+        self.contested_suzerainty_brake = false;
+    }
+
+    /// A threat detour refuses a fallback worth less than
+    /// `SETTLER_DETOUR_VALUE_FLOOR` of the site it defers. See the field doc
+    /// on `AdvancedAi`.
+    pub fn enable_detour_keeps_the_site_worth(&mut self) {
+        self.detour_keeps_the_site_worth = true;
+    }
+
+    /// The twin of `enable_detour_keeps_the_site_worth`.
+    pub fn disable_detour_keeps_the_site_worth(&mut self) {
+        self.detour_keeps_the_site_worth = false;
     }
 
     // ---- append: a-b ------------------------------------------------

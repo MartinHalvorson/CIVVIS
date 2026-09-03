@@ -347,6 +347,108 @@ pub fn forceable_treatments() -> Vec<&'static str> {
     tags
 }
 
+/// Runtime families whose enable functions leave one member active at a time.
+/// Most are formal ledger families, but `siege-is-progress` is deliberately
+/// kept here as an orphaned v2/v3 pair: its retired v1 no longer participates
+/// in the screen's family accounting while the two live flags remain
+/// mutually exclusive. A new numbered member of one of these families is
+/// covered automatically by its base name.
+const MUTUALLY_EXCLUSIVE_TREATMENT_FAMILY_BASES: &[&str] = &[
+    "naval-recon",
+    "settler-guard-holds",
+    "amenity-project-preemption",
+    "district-coverage",
+    "settler-target-hysteresis",
+    "holy-site-where-the-threat-is",
+    "recovery-reads-the-war",
+    "conversion-majority-alarm",
+    "diplomatic-lane-forecast",
+    "air-surge",
+    "power-the-laboratory",
+    "campus-adjacency-threshold",
+    "district-planning",
+    "missionary-last-charge-explores",
+    "city-campaign",
+    "science-victory-drive",
+    "opening-warrior-recon",
+    "eureka-chasing-builder",
+    "coalition-before-war",
+    "siege-is-progress",
+    "never-an-empty-queue",
+    "first-builder-reserve",
+    "wonder-adjacent-sites",
+    "rapid-city-expansion",
+    "native-emergency-purchase",
+    "skip-the-prophet-race",
+    "boost-wait-research",
+    "swap-rotation",
+    "coastal-city-sites",
+    "capture-go-or-stand-down",
+    "enter-the-prophet-race",
+    "settler-backlog-brake",
+    "border-parity",
+    "boosted-bargain-first",
+    "early-project-restraint",
+    "battle-planner",
+    "chase-every-boost",
+];
+
+fn mutually_exclusive_family(tag: &str) -> Option<&'static str> {
+    let candidate = match tag.rsplit_once('-') {
+        Some((base, version)) if version.parse::<u32>().is_ok_and(|n| n >= 2) => base,
+        _ => tag,
+    };
+    MUTUALLY_EXCLUSIVE_TREATMENT_FAMILY_BASES
+        .iter()
+        .copied()
+        .find(|family| *family == candidate)
+}
+
+/// Keep the startup identity in lockstep with the final flag state. The
+/// registry rows are applied in registry order, and explicit `--with` names
+/// are reapplied in caller order; the last member seen in either sequence is
+/// therefore the member whose enable function can still be active.
+fn collapse_mutually_exclusive_treatments(
+    tags: Vec<&'static str>,
+    forced_on: &[&str],
+) -> Vec<&'static str> {
+    let mut winners: Vec<(&'static str, &'static str)> = Vec::new();
+    for tag in tags.iter().copied() {
+        let Some(family) = mutually_exclusive_family(tag) else {
+            continue;
+        };
+        if let Some((_, winner)) = winners.iter_mut().find(|(key, _)| *key == family) {
+            *winner = tag;
+        } else {
+            winners.push((family, tag));
+        }
+    }
+    for forced in forced_on {
+        if !(ledger_held_live_treatment(forced) || ledger_held_opt_in(forced)) {
+            continue;
+        }
+        let Some(tag) = tags.iter().copied().find(|candidate| *candidate == *forced) else {
+            continue;
+        };
+        let Some(family) = mutually_exclusive_family(tag) else {
+            continue;
+        };
+        if let Some((_, winner)) = winners.iter_mut().find(|(key, _)| *key == family) {
+            *winner = tag;
+        }
+    }
+    tags.into_iter()
+        .filter(|tag| {
+            let Some(family) = mutually_exclusive_family(tag) else {
+                return true;
+            };
+            winners
+                .iter()
+                .any(|(key, winner)| *key == family && *winner == *tag)
+        })
+        .collect()
+}
+
 pub fn ledger_held_live_treatments() -> Vec<&'static str> {
     super::GENES
         .iter()
@@ -378,7 +480,7 @@ pub fn deployment_treatments_with_forced_live(forced_on: &[&str]) -> Vec<&'stati
             tags.push(gene.tag);
         }
     }
-    tags
+    collapse_mutually_exclusive_treatments(tags, forced_on)
 }
 
 /// The unmodified deployment genome. Kept as a wrapper so every ordinary
@@ -438,6 +540,26 @@ impl AdvancedAi {
                 applied.forced.push(gene.tag);
             }
         }
+        // A forced arm is an explicit request to seat the named gene, not just
+        // to add its row to the deployment list. Some opt-ins are mutually
+        // exclusive versions of one behavior: `border-parity` and
+        // `border-parity-2` both clear the deployed `border-parity-3` when
+        // enabled. The registry loop above is in canonical order, so a later
+        // deployed version used to silently clear an earlier forced version;
+        // the arm was labeled on while the flag that drove decisions was off.
+        // Re-apply the explicit names after the deployment genome is complete,
+        // with caller order deciding if an arm deliberately names more than
+        // one member of such a family. Keep the same validation boundary as
+        // the loops above so a direct library caller cannot force a host-only
+        // or unknown tag around the ledger.
+        for &tag in forced_on {
+            if !(ledger_held_live_treatment(tag) || ledger_held_opt_in(tag)) {
+                continue;
+            }
+            if let Some(gene) = super::GENES.iter().find(|gene| gene.tag == tag) {
+                (gene.enable)(self);
+            }
+        }
         applied
     }
 }
@@ -445,6 +567,18 @@ impl AdvancedAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn deployment_lists_tag_or_its_family_member(deployed: &[&str], tag: &str) -> bool {
+        if deployed.contains(&tag) {
+            return true;
+        }
+        let Some(family) = mutually_exclusive_family(tag) else {
+            return false;
+        };
+        deployed
+            .iter()
+            .any(|candidate| mutually_exclusive_family(candidate) == Some(family))
+    }
 
     /// The generated table and `docs/gene_ledger.json` are two writings of
     /// one measurement; `tools/genes.py write` produces both.
@@ -956,8 +1090,8 @@ mod tests {
         }
         for tag in &applied.enabled {
             assert!(
-                deployed.contains(tag),
-                "{tag} is enabled yet not listed as deployed"
+                deployment_lists_tag_or_its_family_member(&deployed, tag),
+                "{tag} is enabled yet neither it nor its active family member is listed as deployed"
             );
         }
         for tag in super::super::genes::live_tags() {
@@ -1037,6 +1171,90 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_forced_parity_arm_wins_over_the_deployed_mutually_exclusive_version() {
+        for forced in ["border-parity", "border-parity-2"] {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge_universe();
+            ai.apply_gene_ledger_with_forced_live(&[forced]);
+
+            assert_eq!(
+                ai.border_parity,
+                forced == "border-parity",
+                "the requested parity version must be active: {forced}"
+            );
+            assert_eq!(
+                ai.border_parity_2,
+                forced == "border-parity-2",
+                "the requested parity version must be active: {forced}"
+            );
+            assert!(
+                !ai.border_parity_3,
+                "a forced parity version must clear the deployed sibling: {forced}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_forced_parity_arm_reports_the_same_winner_as_its_flags() {
+        let baseline = deployment_treatments_with_forced_live(&[]);
+        assert!(baseline.contains(&"border-parity-3"));
+
+        let version_one = deployment_treatments_with_forced_live(&["border-parity"]);
+        assert!(version_one.contains(&"border-parity"));
+        assert!(!version_one.contains(&"border-parity-2"));
+        assert!(!version_one.contains(&"border-parity-3"));
+
+        let version_two = deployment_treatments_with_forced_live(&["border-parity-2"]);
+        assert!(!version_two.contains(&"border-parity"));
+        assert!(version_two.contains(&"border-parity-2"));
+        assert!(!version_two.contains(&"border-parity-3"));
+
+        let stacked = deployment_treatments_with_forced_live(&["border-parity-2", "border-parity"]);
+        assert!(stacked.contains(&"border-parity"));
+        assert!(!stacked.contains(&"border-parity-2"));
+        assert!(!stacked.contains(&"border-parity-3"));
+    }
+
+    #[test]
+    fn deployment_identity_reports_one_member_for_each_exclusive_family() {
+        let deployed = deployment_treatments();
+        for family in super::MUTUALLY_EXCLUSIVE_TREATMENT_FAMILY_BASES {
+            let listed: Vec<&str> = deployed
+                .iter()
+                .copied()
+                .filter(|tag| super::mutually_exclusive_family(tag) == Some(*family))
+                .collect();
+            assert!(
+                listed.len() <= 1,
+                "{family}: deployment identity lists inactive siblings: {listed:?}"
+            );
+        }
+
+        assert!(deployed.contains(&"siege-is-progress-3"));
+        assert!(!deployed.contains(&"siege-is-progress-2"));
+
+        for (forced, winner, loser) in [
+            ("air-surge-2", "air-surge-2", "air-surge"),
+            (
+                "district-planning-2",
+                "district-planning-2",
+                "district-planning",
+            ),
+            ("battle-planner-2", "battle-planner-2", "battle-planner"),
+        ] {
+            let armed = deployment_treatments_with_forced_live(&[forced]);
+            assert!(
+                armed.contains(&winner),
+                "{forced}: active member is missing"
+            );
+            assert!(
+                !armed.contains(&loser),
+                "{forced}: inactive sibling is listed"
+            );
+        }
+    }
+
     /// ★ EVERY HOST-ONLY GENE SHIPS ON. `enable_live_bridge_universe` turns on
     /// every `live()` gene and `apply_gene_ledger` holds off only a tag whose
     /// `ledger_default_on` is `Some(false)`, which a host-only row never
@@ -1072,9 +1290,11 @@ mod tests {
                     "{tag}: a live gene is on unless the ledger holds it off"
                 );
             } else if gene.opt_in() {
+                let expected_on = ledger_default_on(tag) == Some(true);
+                let listed = deployed.contains(&tag)
+                    || (expected_on && deployment_lists_tag_or_its_family_member(&deployed, tag));
                 assert_eq!(
-                    deployed.contains(&tag),
-                    ledger_default_on(tag) == Some(true),
+                    listed, expected_on,
                     "{tag}: an opt-in is on only when the ledger turns it on"
                 );
                 assert_eq!(

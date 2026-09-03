@@ -35,9 +35,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import (gamelock, launcher, macos_capture, macos_input,
-                          macos_ocr, macos_window, operator_retire,
-                          popup_clear, vision, watch)  # noqa: E402
+from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
+                          macos_input, macos_ocr, macos_window,
+                          operator_retire, popup_clear, vision,
+                          watch)  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
                                  reset_orders_db)
 # The mod's sentinel for a readback it could not resolve, imported rather than
@@ -104,6 +105,11 @@ def prune_old_run_screenshots(root: Path = RUN_ROOT, *, days: int | None = None,
     return (runs, freed)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GAME_PROCESS = popup_clear.GAME_PROCESS
+#: Which screens may spend a native capture on the desktop rescue right now.
+#: One per process: the schedule it keeps is about this host's capture service,
+#: which every screen shares. See `civ6_control/capture_budget.py` for the
+#: measurement that made it necessary.
+DESKTOP_RESCUE_BUDGET = capture_budget.CaptureBudget()
 # ★★★★★ THE LADDER'S OBJECTIVE, AND THE ONE PLACE IT IS STATED. Three
 # launchers forward `--victory` down one chain and each of them used to declare
 # its own default; `civ6_civvis_climb.py` and `civ6_brain.py` now import this
@@ -370,15 +376,32 @@ def utc_stamp() -> str:
 #: measured at 3.8 s between the board going out and the first poll on the live
 #: Emperor lane (run civvis-20260901T195234Z, receipt-stamped events), paid on the
 #: opening board and again on every replan frame, while the brain answered 50 ms
-#: after the board reached it. Four ticks polls ~7.5× as often and is still
-#: 64 publish batches apart — an order of magnitude short of the every-publish
-#: query that deadlocked run 20260730T110209Z.
-ORDERS_POLL_TICKS = 4
-#: The three poll budgets, scaled by the same 30/4 so every wall-clock allowance
-#: is exactly what it was (`test_poll_budgets_keep_their_wall_clock`).
-ORDERS_WAIT_POLLS = 300
-ORDERS_FALLBACK_POLLS = 900
-COMBAT_FRAME_POLLS = 150
+#: after the board reached it. Four ticks polled ~7.5× as often and cut early
+#: turns about fourfold.
+#:
+#: ★★★★★ AND THE REMAINDER IS STILL A FIFTH OF EVERY GAME. Measured 2026-09-02
+#: over every `state` → its `orders` on the live Emperor lane, which is the mod's
+#: poll interval plus the brain's 50 ms:
+#:
+#:     civvis-20260902T095330Z  534 waits  median 0.94s  12.27 min  17.9 % of the run
+#:     civvis-20260902T040909Z  480 waits  median 0.98s  12.91 min  23.0 %
+#:     civvis-20260902T181200Z  335 waits  median 0.63s   6.01 min  18.2 %
+#:
+#: A board arrives at a uniformly random point inside the interval, so the mean
+#: wait is half of it and halving the interval halves the wait: 3-6.5 min back
+#: per game. Two ticks is still 32 publish batches apart — thirty-two times the
+#: every-publish query that deadlocked run 20260730T110209Z, and the floor
+#: `test_the_mod_never_polls_on_every_tick` has always allowed.
+#:
+#: ⚠ Do not go to 1. That IS the every-publish query, and it deadlocked a run.
+ORDERS_POLL_TICKS = 2
+#: The three poll budgets, scaled by the same 30/2 so every wall-clock allowance
+#: is exactly what it was (`test_poll_budgets_keep_their_wall_clock` pins the
+#: products at 1200, 3600 and 600 ticks; change one of these four and that test
+#: fails until the other three follow).
+ORDERS_WAIT_POLLS = 600
+ORDERS_FALLBACK_POLLS = 1800
+COMBAT_FRAME_POLLS = 300
 
 
 def startup_event_proves_game_started(event: dict) -> bool:
@@ -556,6 +579,15 @@ def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
         dialogue_seconds = 0.25
+    # A direct `SendWorkingDeal` has no session for the rival to evaluate.
+    # CIVVIS-driven games therefore need the session path for their buy/sell
+    # orders to produce an answer; ordinary/manual games keep the non-modal
+    # direct path unless the caller opts in explicitly.  `None` is the parser's
+    # intentional "choose from the mode" value, while False remains a real
+    # escape hatch for hosts whose UI cannot carry deal sessions.
+    deal_sessions = getattr(args, "deal_sessions", None)
+    if deal_sessions is None:
+        deal_sessions = bool(getattr(args, "civvis_decides", False))
     config = {
         "RunTag": args.tag,
         "AutoStart": True,
@@ -801,6 +833,7 @@ def build_config(args: argparse.Namespace) -> dict:
         # A diplomacy screen is a blocker. Keep its in-game timer explicit and
         # bounded so old launchers cannot silently restore a multi-second close.
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
+        "DealSessions": bool(deal_sessions),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -3208,6 +3241,7 @@ def _play(args: argparse.Namespace) -> int:
               f"victory={args.civvis_victory} "
               f"war_from_plan={args.civvis_war_from_plan} "
               f"refresh_seconds={refresh} "
+              f"deal_sessions={config['DealSessions']} "
               f"forced={args.civvis_with or 'none'} "
               f"withheld={args.civvis_without or 'none'} bin={binary}")
 
@@ -3448,14 +3482,62 @@ def _play(args: argparse.Namespace) -> int:
             # conversation case and does nothing at all on it — verified by hand
             # against a live stuck screen — so the two get different treatment.
             screen = event.get("screen")
-            shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
-            screenshot(shot)
             reason = (
                 "requested desktop help after"
                 if kind == "autoclose_desktop" else "gave up after"
             )
+            # ★★★★★ ASK THE 0.02 s QUESTION BEFORE SPENDING THE 23.5 s ANSWER.
+            #
+            # This branch is two native captures -- the diagnostic photograph
+            # and the classifier's own frame -- on the same thread that reads
+            # the mod's event log, so the game waits for both. While
+            # `systemstatusd` spins, each one runs its guard out and fails:
+            # measured 11.02 s apiece on this host on 2026-09-02, and the
+            # `autoclose_desktop -> next event` gap was 23.5 s to within a
+            # tenth of a second, 23 times, in one 31-minute game -- 30 % of it.
+            # Run civvis-20260902T095330Z paid 25.8 min of its 68.6.
+            #
+            # The budget still spends one real attempt per screen per minute so
+            # a genuinely stuck leader screen is rescued (see the module for why
+            # that path may never be removed); the asks in between cost 0.02 s.
+            #
+            # ⚠ ONLY THE PIXEL PATH IS RATIONED. `WorldCongressBetweenTurns`
+            # is dismissed by clicking its shipped close control at a computed
+            # rectangle and the rest by Escape; neither reads a frame, so
+            # neither may be delayed by a capture the host cannot take. Holding
+            # a blocking Congress screen for a minute over an unrelated capture
+            # service would be a new outage, not a saving.
+            needs_pixels = screen in ("DiplomacyActionView", "LeaderView",
+                                      "DiplomacyDealView")
+            try:
+                capture_state = popup_clear.capture_pause_reason()
+            except Exception as error:  # noqa: BLE001 - see below
+                # ⚠ THIS RUNS INSIDE `record`, WHICH DRIVES THE WHOLE GAME. An
+                # exception here would end the run over a question that is only
+                # an optimisation. `capture_pause_reason` catches
+                # `CaptureUnavailable`, but `_native_binary()` beneath it can
+                # still raise `TimeoutExpired` if the Swift helper has to be
+                # recompiled. Unknown means "try it and find out", which is
+                # exactly the old behaviour.
+                capture_state = None
+                print(f"[{kind}] could not read capture availability ({error}); "
+                      "treating it as available", file=sys.stderr)
+            allowed, budget_note = DESKTOP_RESCUE_BUDGET.spend(screen, capture_state)
+            if needs_pixels and not allowed:
+                # The event is already in events.jsonl -- `record` writes it
+                # before this chain runs -- so returning here loses no history,
+                # only the two captures.
+                print(f"[{kind}] {screen} {reason} {event.get('attempts')} "
+                      f"attempts; {budget_note}")
+                return
+            shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
+            attempt_started = time.monotonic()
+            if allowed:
+                screenshot(shot)
             print(f"[{kind}] {screen} {reason} "
-                  f"{event.get('attempts')} attempts; photographed to {shot}")
+                  f"{event.get('attempts')} attempts; "
+                  + (f"photographed to {shot} ({budget_note})" if allowed
+                     else f"not photographed ({budget_note})"))
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
             # turn 69, three healthy cities at loyalty 100): Civilization VI showing
@@ -3476,6 +3558,16 @@ def _play(args: argparse.Namespace) -> int:
                         "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
                 ok, how = dismiss_visually_confirmed_popup()
+                # ★ THE PREFLIGHT IS A PREDICTION; THIS IS THE ANSWER.
+                # `capture_pause_reason()` says "systemstatusd is spinning"
+                # whenever that daemon is busy, and measured on this host the
+                # spin can be true while captures return in 0.07 s. Rationing a
+                # rescue that costs 70 ms saves nothing and delays the only
+                # thing that can dismiss a stuck leader screen, so an attempt
+                # that came back cheap -- or one whose click landed -- clears
+                # the schedule.
+                DESKTOP_RESCUE_BUDGET.record_attempt(
+                    screen, time.monotonic() - attempt_started, dismissed=ok)
             elif screen == "WorldCongressBetweenTurns":
                 ok = dismiss_world_congress_between_turns()
                 how = "World Congress close control"
@@ -4397,6 +4489,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
     ap.add_argument("--dialogue-seconds", type=float, default=0.25,
                     help="maximum in-game diplomacy close delay (capped at 2s)")
+    ap.add_argument("--deal-sessions", dest="deal_sessions", action="store_true",
+                    default=None,
+                    help="use interactive diplomacy deal sessions; Civvis-driven "
+                         "games enable this by default")
+    ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
+                    help="keep direct diplomacy sends even for a Civvis-driven game")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
     # fast because something is waiting behind it; nothing is waiting behind this
     # one, because the game is over. The operator's standing brief asks for ten

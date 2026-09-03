@@ -890,11 +890,13 @@ impl HostCityStrikes {
 /// varied while the coalesced first step through (9,11) did not, so nothing
 /// fired. The host receives a coalesced destination, but CIVVIS still knows
 /// each local step that led there. A unit that never starts a long route first
-/// retries that exact speculative step; only if Firaxis refuses the one-step
-/// probe too does it become unwalkable. The mirror then stops assuming it is
-/// traversable, and every path — exploration, settlers, the army — routes
-/// around it. Revealed terrain is never overridden: once the plot is seen, its
-/// real terrain governs.
+/// retries that exact speculative step; only if Firaxis names that probe an
+/// impossible path (or an older host supplies no reason) does it become
+/// unwalkable. `cannot_start`, a zone of control, a friendly stack, and an
+/// exhausted move allowance are all facts about the moment, not the terrain.
+/// The mirror then stops assuming only proved-dead ground is traversable, and
+/// every path — exploration, settlers, the army — routes around it. Revealed
+/// terrain is never overridden: once the plot is seen, its real terrain governs.
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 struct HostUnitOrderKey {
     verb: String,
@@ -1059,8 +1061,41 @@ impl HostMoveRefusals {
         dropped
     }
 
+    /// Whether the postcondition verifier established that a failed exact
+    /// frontier probe is terrain rather than a transient operation failure.
+    ///
+    /// `settle_pending_orders` reads the host's `move_noop` record before this
+    /// method runs. The resulting verdict row is a compact, attributed answer
+    /// for the same unit and turn: use it instead of treating every unchanged
+    /// position as a mountain. Older hosts did not emit that evidence, so they
+    /// keep the existing positional fallback that prevents an explorer from
+    /// retrying an unseen impasse forever.
+    fn exact_probe_proves_dead(verdicts: &[Order], turn: u32, unit: i64) -> bool {
+        let reason = verdicts.iter().find_map(|row| {
+            (row.kind == "order_failed"
+                && row.subject == Some(unit)
+                && row.pos == Some((turn as i32, -1)))
+            .then_some(row.verb.as_deref())
+            .flatten()
+            .and_then(|verb| verb.strip_prefix("unit:MOVE_TO "))
+        });
+        match reason {
+            // `GetMoveToPathEx` had no route after the host accepted an exact
+            // probe, or the host itself named the destination impassable.
+            Some("host_noop_no_path" | "host_refused_impassable") => true,
+            // A live run contained 80 `cannot_start` no-ops by turn 207. None
+            // proves that the requested fog tile is terrain nobody can enter;
+            // the same is true of a temporary ZoC, stack, hostile, or movement
+            // allowance failure. Keep those tiles available to the next board.
+            Some(_) => false,
+            // The original mod had no move-noop evidence. Preserve the
+            // position-only fallback for that compatibility path.
+            None => true,
+        }
+    }
+
     /// Compare this turn's positions with last turn's orders.
-    fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
+    fn observe(&mut self, state: &civvis::mirror::StateSnapshot, verdicts: &[Order]) {
         let sent = std::mem::take(&mut self.sent);
         for (unit, attempt) in sent {
             // The ladder asks several times per turn; a same-turn frame cannot
@@ -1081,9 +1116,12 @@ impl HostMoveRefusals {
                 self.pending_probes.remove(&unit);
             } else if attempt.destination == attempt.frontier_step {
                 // This was already the exact local step, rather than a long
-                // route containing it. Now the host's non-movement is proof.
+                // route containing it. A named no-op distinguishes an
+                // impassable route from a temporarily unavailable operation.
                 self.pending_probes.remove(&unit);
-                self.dead.insert(attempt.frontier_step);
+                if Self::exact_probe_proves_dead(verdicts, attempt.turn, unit) {
+                    self.dead.insert(attempt.frontier_step);
+                }
             } else {
                 self.pending_probes.insert(
                     unit,
@@ -6020,7 +6058,12 @@ fn settler_capture_escape_reached(
     })
 }
 
-fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
+fn combat_evidence(
+    evidence: &[serde_json::Value],
+    turn: u32,
+    attacker: i64,
+    target: Option<(i32, i32)>,
+) -> bool {
     evidence.iter().any(|event| {
         event.get("kind").and_then(|k| k.as_str()) == Some("combat")
             && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
@@ -6029,6 +6072,18 @@ fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> 
                 .and_then(|a| a.get("id"))
                 .and_then(|id| id.as_i64())
                 == Some(attacker)
+            && target.is_none_or(|(x, y)| {
+                event
+                    .get("defender")
+                    .and_then(|defender| defender.get("x"))
+                    .and_then(|value| value.as_i64())
+                    == Some(i64::from(x))
+                    && event
+                        .get("defender")
+                        .and_then(|defender| defender.get("y"))
+                        .and_then(|value| value.as_i64())
+                        == Some(i64::from(y))
+            })
     })
 }
 
@@ -6233,19 +6288,32 @@ fn verify_unit_order(
                 Verdict::Failed("no_city".to_string())
             }
         }
-        // An air strike is a ranged strike flown from the base: the target
-        // plot harmed on the next frame, or a combat on the ledger, proves it.
+        // An ordinary strike must be attributed to this attacker and this
+        // target. A foreign unit can harm the same plot between frames, which
+        // is not proof that this request landed. AIR_ATTACK retains the target
+        // harm fallback because aircraft can resolve through a host/UI path
+        // that does not emit the same combat record; an exact host refusal
+        // still wins over collateral damage.
         "ATTACK" | "RANGE_ATTACK" | "AIR_ATTACK" => {
-            let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
-            if harmed || combat_evidence(evidence, turn, id) {
+            let exact_combat = combat_evidence(evidence, turn, id, order.pos);
+            let refusal = strike_refusal_reason(evidence, turn, id, order.pos);
+            let target_damage_observed = order.pos.is_some_and(|p| target_harmed(before, after, p));
+            let air_target_harmed = verb == "AIR_ATTACK" && target_damage_observed;
+            if exact_combat || (air_target_harmed && refusal.is_none()) {
                 Verdict::Verified
             } else {
                 // The host's own reason when it gave one; see
                 // `strike_refusal_reason`.
-                Verdict::Failed(
-                    strike_refusal_reason(evidence, turn, id, order.pos)
-                        .unwrap_or_else(|| "target_unharmed".to_string()),
-                )
+                Verdict::Failed(refusal.unwrap_or_else(|| {
+                    if air_target_harmed {
+                        "target_unharmed".to_string()
+                    } else if target_damage_observed && (verb == "ATTACK" || verb == "RANGE_ATTACK")
+                    {
+                        "attacker_unproven".to_string()
+                    } else {
+                        "target_unharmed".to_string()
+                    }
+                }))
             }
         }
         // A rebase lands the aircraft on the new base plot at once (the
@@ -6656,7 +6724,7 @@ fn verify_order_with_context(
             if harmed
                 || order
                     .subject
-                    .is_some_and(|id| combat_evidence(evidence, turn, id))
+                    .is_some_and(|id| combat_evidence(evidence, turn, id, order.pos))
             {
                 Verdict::Verified
             } else {
@@ -8367,12 +8435,15 @@ fn main() {
             Some((snapshot, state)) => {
                 let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
                 host_city_attack_cooldowns.observe(&state);
-                host_move_refusals.observe(&state);
                 // The verdicts on the previous turn's orders ride at the end of
                 // this turn's reply; the checks read the frame the decision is
                 // about to read, before anything is decided on it.
                 let verdicts =
                     settle_pending_orders(&mut pending_orders, &events, &state, &snapshot);
+                // The verdicts include Firaxis's named answer for an exact
+                // frontier probe. Read it before rebuilding the mirror so a
+                // transient failure cannot be mistaken for dead terrain.
+                host_move_refusals.observe(&state, &verdicts);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -9856,13 +9927,13 @@ mod tests {
 
         // A second frame on the SAME turn cannot judge the move yet and must not
         // forget it.
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert_eq!(refusals.sent.len(), 1, "a same-turn frame keeps the memory");
         assert!(refusals.dead.is_empty());
 
         // Next turn, still on the tile it was ordered from: the destination is dead.
         state.turn = 14;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert!(refusals.sent.is_empty(), "a judged move is consumed");
         assert_eq!(
             refusals.dead.iter().copied().collect::<Vec<_>>(),
@@ -9903,7 +9974,7 @@ mod tests {
         );
         state.turn = 15;
         state.units[0].x = 5;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert_eq!(
             refusals.dead.len(),
             1,
@@ -9924,6 +9995,83 @@ mod tests {
             .game
             .rules
             .is_passable(&mirror.game.map.tiles[&seen_pos]));
+    }
+
+    /// A current host tells us when an accepted move could not start. That is
+    /// not a terrain observation: moving allowances, a temporary ZoC, and
+    /// stacked units can all produce the same answer. The live run ending at
+    /// turn 207 had 80 of these, so turning each one into a dead fog tile made
+    /// later routes less accurate rather than more accurate.
+    #[test]
+    fn a_named_transient_move_noop_does_not_retire_frontier_ground() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 13;
+        state.units = vec![StateUnit {
+            id: 900,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 4,
+            y: 5,
+            hp: 100.0,
+            moves: 3.0,
+            ..StateUnit::default()
+        }];
+        let destination = (8, 5);
+        let mut refusals = HostMoveRefusals::default();
+        let move_to = || Order {
+            kind: "unit",
+            subject: Some(900),
+            verb: Some("MOVE_TO".to_string()),
+            pos: Some(destination),
+        };
+
+        refusals.record(&[move_to()], &state, &std::collections::BTreeMap::new());
+        state.turn = 14;
+        refusals.observe(
+            &state,
+            &[Order {
+                kind: "order_failed",
+                subject: Some(900),
+                verb: Some("unit:MOVE_TO host_noop_cannot_start".to_string()),
+                pos: Some((13, -1)),
+            }],
+        );
+        assert!(
+            refusals.dead.is_empty(),
+            "a temporary host operation failure must not invent impassable terrain"
+        );
+        assert!(
+            refusals.pending_probes.is_empty(),
+            "the exact probe was answered; it is not a stale long-route probe"
+        );
+
+        // A real path failure remains useful map evidence on a subsequent
+        // exact probe, and a direct host impassability answer does too.
+        refusals.record(&[move_to()], &state, &std::collections::BTreeMap::new());
+        state.turn = 15;
+        refusals.observe(
+            &state,
+            &[Order {
+                kind: "order_failed",
+                subject: Some(900),
+                verb: Some("unit:MOVE_TO host_noop_no_path".to_string()),
+                pos: Some((14, -1)),
+            }],
+        );
+        assert_eq!(
+            refusals.dead.iter().copied().collect::<Vec<_>>(),
+            vec![destination],
+            "a named no-path answer still retires the exact frontier step"
+        );
+        assert!(HostMoveRefusals::exact_probe_proves_dead(
+            &[Order {
+                kind: "order_failed",
+                subject: Some(900),
+                verb: Some("unit:MOVE_TO host_refused_impassable".to_string()),
+                pos: Some((15, -1)),
+            }],
+            15,
+            900,
+        ));
     }
 
     /// A coalesced `MOVE_TO` keeps the host fast, but the failure feedback must
@@ -9965,7 +10113,7 @@ mod tests {
         let mut refusals = HostMoveRefusals::default();
         refusals.record(&orders, &state, &probes);
         state.turn = 14;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert!(
             refusals.dead.is_empty(),
             "a long route has not proved which unknown hop blocked it"
@@ -9989,7 +10137,7 @@ mod tests {
         assert_eq!(retry[0].pos, Some((8, 5)));
         refusals.record(&retry, &state, &std::collections::BTreeMap::new());
         state.turn = 15;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert_eq!(
             refusals.dead.iter().copied().collect::<Vec<_>>(),
             vec![(8, 5)],
@@ -11029,6 +11177,44 @@ mod tests {
             verdict("RANGE_ATTACK", std::slice::from_ref(&wordless)),
             Verdict::Failed(reason) if reason == "host_refused_strike"
         ));
+        // Damage at the requested plot is not enough: another unit may have
+        // caused it while this attack was refused. The refusal remains the
+        // authoritative outcome for the requested attacker/target pair.
+        let mut collateral = before.clone();
+        collateral.hostiles[0].hp = 40.0;
+        let collateral_combat = event(
+            r#"{"kind":"combat","turn":30,"attacker":{"id":202},"defender":{"id":0,"x":5,"y":4}}"#,
+        );
+        let collateral_order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("RANGE_ATTACK".to_string()),
+            pos: Some((5, 4)),
+        };
+        assert!(matches!(
+            verify_unit_order(
+                &collateral_order,
+                30,
+                &before,
+                &collateral,
+                &tiles,
+                std::slice::from_ref(&collateral_combat),
+                LaterFrames::default(),
+            ),
+            Verdict::Failed(reason) if reason == "attacker_unproven"
+        ));
+        assert!(matches!(
+            verify_unit_order(
+                &collateral_order,
+                30,
+                &before,
+                &collateral,
+                &tiles,
+                &[wordless.clone(), collateral_combat],
+                LaterFrames::default(),
+            ),
+            Verdict::Failed(reason) if reason == "host_refused_strike"
+        ));
         // Another plot's, another turn's or another unit's refusal is not ours.
         let elsewhere = event(
             r#"{"kind":"range_attack_refused","turn":30,"unit":101,"x":6,"y":4,"why":"Target is out of range [p4r]"}"#,
@@ -11045,7 +11231,9 @@ mod tests {
         ));
         // A refusal beside a combat on the ledger: the refusal was an earlier
         // frame's and the combat is the proof the strike landed.
-        let fought = event(r#"{"kind":"combat","turn":30,"attacker":{"id":101}}"#);
+        let fought = event(
+            r#"{"kind":"combat","turn":30,"attacker":{"id":101},"defender":{"id":0,"x":5,"y":4}}"#,
+        );
         assert!(matches!(
             verdict("ATTACK", &[war, fought]),
             Verdict::Verified
@@ -16068,7 +16256,7 @@ mod order_postcondition_tests {
     }
 
     #[test]
-    fn an_attack_is_verified_by_the_target_or_the_combat_record() {
+    fn an_attack_requires_its_own_targeted_combat_record() {
         let mut before = frame(50);
         before.units = vec![unit(7, "UNIT_ARCHER", 10, 10)];
         let mut enemy = unit(900, "UNIT_WARRIOR", 11, 10);
@@ -16081,11 +16269,17 @@ mod order_postcondition_tests {
         let mut hurt = enemy.clone();
         hurt.hp = 70.0;
         wounded.hostiles = vec![hurt];
-        assert_eq!(check(&strike, &before, &wounded, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&strike, &before, &wounded, &[]),
+            failed("attacker_unproven")
+        );
 
         let mut killed = frame(51);
         killed.units = before.units.clone();
-        assert_eq!(check(&strike, &before, &killed, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&strike, &before, &killed, &[]),
+            failed("attacker_unproven")
+        );
 
         let mut untouched = frame(51);
         untouched.units = before.units.clone();
@@ -16094,7 +16288,9 @@ mod order_postcondition_tests {
             check(&strike, &before, &untouched, &[]),
             failed("target_unharmed")
         );
-        let combat = event(r#"{"kind":"combat","turn":50,"attacker":{"id":7,"player":0}}"#);
+        let combat = event(
+            r#"{"kind":"combat","turn":50,"attacker":{"id":7,"player":0},"defender":{"id":900,"x":11,"y":10}}"#,
+        );
         assert_eq!(
             check(&strike, &before, &untouched, &[combat]),
             Verdict::Verified

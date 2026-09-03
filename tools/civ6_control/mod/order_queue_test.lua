@@ -18,6 +18,8 @@
 --      location. A held unit with no order at all blocks the end of the turn;
 --   8b. an unmentioned civilian is told to skip for the same reason:
 --      exclusion is not a disposition.
+--   9. an asynchronous Governor assignment is submitted once per turn, not
+--      once per replan frame, while still retrying on the next turn.
 --
 -- Run: lua5.1 tools/civ6_control/mod/order_queue_test.lua
 
@@ -39,6 +41,7 @@ local EXPORTS = {
 local LOG = {}
 Automation = { Log = function(line) LOG[#LOG + 1] = line end }
 UnitOperationTypes = { PARAM_X = "x", PARAM_Y = "y" }
+ActivityTypes = { ACTIVITY_OPERATION = "operation" }
 UnitCommandTypes = {}
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2)
@@ -66,7 +69,9 @@ setmetatable(_G, { __index = function(_, k)
 end })
 
 -- ---------------------------------------------------------------- fake host
-local host = { units = {}, ops = {}, refuse = {}, contacts = {} }
+local host = { units = {}, ops = {}, commands = {}, allow_cancel = false,
+	defer_cancel = false,
+	refuse = {}, contacts = {}, governor_requests = {}, cities = {} }
 local PID = 0
 local function unitObject(u)
 	return {
@@ -81,6 +86,7 @@ local function unitObject(u)
 		GetFortifyTurns = function() return 0 end,
 		GetFormationUnitCount = function() return 1 end,
 		GetAttacksRemaining = function() return u.attacks or 1 end,
+		GetActivityType = function() return u.activity end,
 	}
 end
 UnitManager = {
@@ -88,6 +94,9 @@ UnitManager = {
 		local u = host.units[id]
 		if u == nil or u.gone then return nil end
 		return unitObject(u)
+	end,
+	GetActivityType = function(unit)
+		return host.units[unit.GetID()].activity
 	end,
 	CanStartOperation = function(unit, hash, _, params)
 		local id = unit.GetID()
@@ -102,10 +111,41 @@ UnitManager = {
 			-- Asynchronous, like the host: the unit arrives only when the
 			-- test says so (`host.arrive`), unless the walk was priced dead.
 			u.pendingX, u.pendingY = params.x, params.y
+			if u.active_operation then u.activity = "operation" end
 		end
 	end,
-	CanStartCommand = function() return false end,
-	RequestCommand = function() end,
+	CanStartCommand = function(_, hash)
+		return hash == "UNITCOMMAND_CANCEL" and host.allow_cancel
+	end,
+	RequestCommand = function(unit, hash)
+		host.commands[#host.commands + 1] = { id = unit.GetID(), command = hash }
+		if hash == "UNITCOMMAND_CANCEL" and not host.defer_cancel then
+			host.units[unit.GetID()].activity = nil
+		end
+	end,
+}
+PlayerOperations = {
+	PARAM_GOVERNOR_TYPE = "governor_type",
+	PARAM_PLAYER_ONE = "player_one",
+	PARAM_CITY_DEST = "city_dest",
+	ASSIGN_GOVERNOR = "assign_governor",
+}
+GameInfo.Governors = {
+	GOVERNOR_THE_MERCHANT = {
+		Hash = "GOVERNOR_THE_MERCHANT", Index = 17,
+	},
+}
+CityManager = {
+	GetCity = function(owner, id)
+		return host.cities[id] and { owner = owner, id = id } or nil
+	end,
+}
+UI = {
+	RequestPlayerOperation = function(pid, operation, params)
+		host.governor_requests[#host.governor_requests + 1] = {
+			pid = pid, operation = operation, params = params,
+		}
+	end,
 }
 function host.arrive(id)
 	local u = host.units[id]
@@ -114,6 +154,9 @@ function host.arrive(id)
 		u.pendingX, u.pendingY = nil, nil
 		u.moves = math.max(0, (u.moves or 0) - 1)
 	end
+end
+function host.deactivate(id)
+	host.units[id].activity = nil
 end
 local function members(list)
 	return function()
@@ -126,6 +169,12 @@ local function members(list)
 	end
 end
 local player = setmetatable({
+	GetGovernors = function()
+		return {
+			HasGovernor = function(_, hash) return hash == "GOVERNOR_THE_MERCHANT" end,
+			GetGovernor = function() return nil end,
+		}
+	end,
 	GetUnits = function()
 		local objs = {}
 		for _, u in pairs(host.units) do
@@ -204,7 +253,9 @@ local function row(subject, verb, x, y)
 	return { kind = "unit", subject = subject, verb = verb, x = x, y = y }
 end
 local function reset()
-	host.units, host.ops, host.refuse, host.contacts = {}, {}, {}, {}
+	host.units, host.ops, host.commands, host.refuse, host.contacts = {}, {}, {}, {}, {}
+	host.governor_requests, host.cities = {}, {}
+	host.allow_cancel, host.defer_cancel = false, false
 	queue.reset(7)
 end
 
@@ -222,6 +273,53 @@ queue.drain(player, PID, 7)
 check("strike fires once the walk arrived", ops(10), "UNITOPERATION_MOVE_TO,UNITOPERATION_RANGE_ATTACK")
 check("queue drained", queue.pendingCount(), 0)
 check("orders_queue reports the landed strike", field(lastEvent("orders_queue"), "strikes_landed"), 1)
+
+-- 2b. Reaching the requested plot while the host's operation is still active
+-- is not settled. Civilization VI can expose the unit at its destination and
+-- still ignore a follow-up operation until the path deactivates. Once the
+-- destination is reached, the bridge may cancel that landed path through the
+-- host's own cancel command and run the dependent order in the same turn.
+reset()
+host.units[142] = {
+	id = 142, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2,
+	active_operation = true,
+}
+applyOrders(player, PID, 7, { row(142, "MOVE_TO", 2, 1), row(142, "FORTIFY") })
+queue.drain(player, PID, 7)
+check("active operation protects an en-route follow-up", ops(142), "UNITOPERATION_MOVE_TO")
+host.arrive(142)
+host.allow_cancel = false
+queue.drain(player, PID, 7)
+check("landed operation waits when cancellation is unavailable", ops(142),
+	"UNITOPERATION_MOVE_TO")
+check("uncancellable landed operation keeps the queue pending", queue.pendingCount(), 1)
+host.allow_cancel = true
+queue.drain(player, PID, 7)
+check("landed operation is cancelled before the follow-up", host.commands[1]
+	and host.commands[1].command, "UNITCOMMAND_CANCEL")
+check("follow-up runs after landed operation cancellation", ops(142),
+	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
+check("landed-operation queue drains", queue.pendingCount(), 0)
+
+-- A cancel request may be asynchronous too.  Do not turn its successful
+-- return into permission to race the still-active operation.
+reset()
+host.units[143] = {
+	id = 143, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2,
+	active_operation = true,
+}
+applyOrders(player, PID, 7, { row(143, "MOVE_TO", 2, 1), row(143, "FORTIFY") })
+host.arrive(143)
+host.allow_cancel, host.defer_cancel = true, true
+queue.drain(player, PID, 7)
+check("asynchronous cancellation keeps the follow-up pending", ops(143),
+	"UNITOPERATION_MOVE_TO")
+check("asynchronous cancellation does not race the follow-up", queue.pendingCount(), 1)
+host.deactivate(143)
+queue.drain(player, PID, 7)
+check("follow-up runs after cancellation settles", ops(143),
+	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
+check("asynchronous cancellation queue drains", queue.pendingCount(), 0)
 
 -- 3. A refused first order takes its follow-ups with it, by name.
 reset()
@@ -332,6 +430,25 @@ applyOrders(player, PID, 7, {})
 check("idle settler is told to skip", ops(18), "UNITOPERATION_SKIP_TURN")
 check("idle builder is told to skip", ops(19), "UNITOPERATION_SKIP_TURN")
 check("the orders event counts both", field(lastEvent("orders"), "civilians_skipped"), 2)
+
+-- 9. Governor assignment is a player operation, not a synchronous mutation.
+-- Replan frames see the old roster until the host exports the next turn; the
+-- bridge must avoid stacking identical requests while preserving that retry.
+reset()
+host.cities[42] = true
+local applyOrder = rawget(_G, "CivvisApplyOrder")
+local governorRow = { kind = "governor_assign", subject = 42,
+	verb = "GOVERNOR_THE_MERCHANT", x = PID }
+local assigned, assignedWhy = applyOrder(player, PID, governorRow, 7)
+check("first governor assignment is submitted", assigned, true)
+check("first governor assignment has no refusal", assignedWhy, "GOVERNOR_THE_MERCHANT")
+local duplicate, duplicateWhy = applyOrder(player, PID, governorRow, 7)
+check("same-turn governor assignment is held", duplicate, false)
+check("same-turn governor refusal is named", duplicateWhy, "governor_assign_pending")
+check("same-turn governor request is submitted once", #host.governor_requests, 1)
+local retried = applyOrder(player, PID, governorRow, 8)
+check("unassigned governor retries next turn", retried, true)
+check("next-turn governor request is submitted", #host.governor_requests, 2)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))

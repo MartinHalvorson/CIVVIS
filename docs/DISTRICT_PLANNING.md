@@ -8,7 +8,8 @@ independent greedy answers with one plan per city:
   happens to have a good free plot outbids the district the lane actually
   wants. With this on, the city consults its plan: the lane's wishlist
   (`new_city_district_wishlist`, the same table the settler scores a site by)
-  joined with what the whole ring-3 ground can pay each family.
+  joined with a standing production foundation and the district combinations
+  the city's terrain can actually support.
 - **Where it goes.** The shipped placement ranks fresh sites per district by
   raw adjacency, independently — two districts can both be priced on the same
   river-mountain hex, and the Commercial Hub that orders first takes the
@@ -32,19 +33,35 @@ default question is asked (`docs/GENE_SCREEN.md`).
 ## What the plan is
 
 For one city: every plannable district family the city still lacks (wishlist
-families first, at their weights; coverage families after), every legal site
-(`district_sites` — the engine's own placement legality, rings 1–3 of owned
-ground) plus every *purchasable* candidate (unowned, adjacent to the border,
-physically legal for the family), each site priced as
+families first, at their weights) plus an Industrial Zone foundation. The
+planner then looks at the civilization's *actual* Zone variant: Aqueduct,
+Dam, and Canal enter only when that variant receives adjacency from them, and
+a German Hansa treats its Commercial Hub as the same kind of adjacency
+partner. A support district is dropped unless placing it raises the projected
+output of a legal or standing Zone; there are no generic zero-yield Aqueducts
+in the queue.
+
+Every legal site (`district_sites` — the engine's own placement legality,
+rings 1–3 of owned ground) plus every *purchasable* core candidate (unowned,
+adjacent to the border, physically legal for the family) is priced as
 
     adjacency value at the lane's weights
     − the worked-tile value the district would destroy
     − (for unowned plots) an amortized charge on the purchase price
 
-then one greedy assignment, best (family × site) first, each plot given away
-at most once, each family placed at most once. The head of the plan — the
-best still-buildable family, its reserved plot, and whether that plot must be
-bought first — is what the three consumers above read.
+The assignment is sequential rather than static. Each selected district is
+laid as a foundation on a private planning board before the next candidate is
+evaluated, so an Aqueduct or Dam placed first is visible to the Industrial
+Zone it enables. Each plot and family is still used at most once. On a
+Science lane (or an explicit Science target), a Campus claims its premium
+ground and specialty slot before the cluster pass.
+
+The production menu receives the resulting sites and a modest construction
+order floor: Campus, then Industrial support, then the Zone, then other core
+districts. If the immediate plan already needs all remaining specialty slots,
+an off-plan economic specialty district cannot take one first. Threatened
+cities, Encampment/Aerodrome/Spaceport choices, and a severe amenity collapse
+remain exceptions to that reservation.
 
 Early cities fall out of the arithmetic rather than a special case: a young
 city owns little beyond rings 1–2, so its legal sites are rings 1–2, and a
@@ -58,6 +75,9 @@ ring-3 mountain nest enters the plan only when the buy actually clears.
   adds only the district-site buy its plan names, through the same `BuyPlot`
   action, and stands down where that gene already bought the plot.
 - Off, every touched path is byte-identical to before the gene existed.
+- It does not fabricate a support district merely because the map has a
+  river: the support must have a positive marginal Industrial adjacency on
+  the city's current planning board.
 
 ## Version 2: `district-planning-2` — buys that actually fire
 

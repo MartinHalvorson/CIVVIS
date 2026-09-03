@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn science_target_keeps_rocketry_ahead_of_an_unrelated_live_great_person_detour() {
+    fn science_target_backfills_an_unfinished_ancient_tech_before_rocketry() {
         let mut game = Game::new_full(1, 24, 16, 91_001, 300, 0, false);
         found_capitals(&mut game);
         game.turn = 140;
@@ -362,7 +362,11 @@ mod tests {
         let plan = science_plan(game.turn);
         ai.advanced_research(&mut game, 0, &plan);
 
-        assert_eq!(game.players[0].research.as_deref(), Some("rocketry"));
+        assert_eq!(
+            game.players[0].research.as_deref(),
+            Some("bronze_working"),
+            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline"
+        );
     }
 
     #[test]
