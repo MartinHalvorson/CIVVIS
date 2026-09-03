@@ -16833,6 +16833,78 @@ fn targeted_science_recovers_a_persistent_idle_city_with_a_civilian() {
 }
 
 #[test]
+fn never_an_empty_queue_2_uses_a_legal_civilian_below_hard_veto() {
+    let (mut game, city, _) = empire_with_a_capital(79_125);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_never_an_empty_queue_2();
+    // Make every category-valued candidate unattractive enough to cross the
+    // ordinary hard-veto floor. The fixture still has legal civilian menu
+    // entries, which is the host state that used to wedge the live turn.
+    ai.base.w.p_builder = -20_000.0;
+    ai.base.w.p_trader = -20_000.0;
+    ai.base.w.p_military = -20_000.0;
+    ai.base.w.p_building = -20_000.0;
+    ai.base.w.p_district = -20_000.0;
+    ai.base.w.p_wonder = -20_000.0;
+    ai.base.w.p_project = -20_000.0;
+
+    let counts = ai.counts(&game, 0);
+    let items = game.producible_items(0, city);
+    let scores = ai.production_values(&game, 0, city, &items, &plan, counts);
+    let civilian = |game: &Game, item: &Item| match item {
+        Item::Unit { unit } => game
+            .rules
+            .units
+            .get(unit)
+            .is_none_or(|spec| spec.class != "military"),
+        Item::Formation { .. } | Item::Wonder { .. } => false,
+        _ => true,
+    };
+    assert!(
+        items.iter().any(|item| civilian(&game, item)),
+        "fixture: Civ VI exposes at least one legal civilian production item"
+    );
+    assert!(
+        items
+            .iter()
+            .zip(&scores)
+            .filter(|(item, _)| civilian(&game, item))
+            .all(|(_, score)| *score <= PRODUCTION_VETO_FLOOR),
+        "fixture: every civilian candidate must be below the ordinary floor; {items:?} / {scores:?}"
+    );
+
+    ai.advanced_production(&mut game, 0, &plan, false);
+    let started = game.cities[&city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the armed v2 gene must answer a legal empty queue");
+    assert!(
+        game.can_produce(0, city, &started),
+        "the emergency answer must be legal in the same Civvis menu"
+    );
+    assert!(
+        civilian(&game, &started),
+        "the v2 escape hatch must stay civilian"
+    );
+    assert!(
+        !matches!(started, Item::Wonder { .. } | Item::Formation { .. }),
+        "the emergency answer must not be a wonder or formation"
+    );
+}
+
+#[test]
 fn never_an_empty_queue_3_waits_for_a_persistent_non_science_stall() {
     let (mut game, city, _) = empire_with_a_capital(79_124);
     clear_barbarian_fixture(&mut game);
@@ -27926,6 +27998,11 @@ fn science_strategy_uses_an_established_spy_to_steal_a_rival_technology() {
         .unwrap()
         .districts
         .insert(crate::name!("campus"), campus);
+    install_ai_test_district(&mut game, target, "spaceport");
+    game.players[1].science_projects.extend([
+        "launch_earth_satellite".to_string(),
+        "launch_moon_landing".to_string(),
+    ]);
     game.players[1].techs.insert(crate::name!("writing"));
     let spy = game.next_id;
     game.next_id += 1;
@@ -27963,6 +28040,66 @@ fn science_strategy_uses_an_established_spy_to_steal_a_rival_technology() {
             .as_ref()
             .map(|mission| mission.kind.as_str()),
         Some("steal_tech_boost")
+    );
+}
+
+#[test]
+fn science_strategy_disrupts_a_rival_spaceport_after_mars_launch() {
+    let mut game = Game::new_full(2, 24, 16, 109, 120, 0, false);
+    let cities: Vec<u32> = (0..2)
+        .map(|pid| {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None)
+        })
+        .collect();
+    let target = cities[1];
+    install_ai_test_district(&mut game, target, "campus");
+    install_ai_test_district(&mut game, target, "spaceport");
+    game.players[1]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    game.players[1].techs.insert(crate::name!("writing"));
+
+    let spy = game.next_id;
+    game.next_id += 1;
+    game.spies.insert(
+        spy,
+        crate::game::Spy {
+            id: spy,
+            owner: 0,
+            level: 2,
+            promotions: ["technologist".to_string(), "disguise".to_string()]
+                .into_iter()
+                .collect(),
+            city: Some(target),
+            ready_turn: game.turn,
+            mission: None,
+            sources_city: Some(target),
+            sources_until: game.turn + 24,
+            captured_by: None,
+        },
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: Some(1),
+        target_city: Some(target),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    AdvancedAi::targeting(VictoryTarget::Science).advanced_spies(&mut game, 0, &plan);
+    assert_eq!(
+        game.spies[&spy]
+            .mission
+            .as_ref()
+            .map(|mission| mission.kind.as_str()),
+        Some("disrupt_rocketry")
     );
 }
 

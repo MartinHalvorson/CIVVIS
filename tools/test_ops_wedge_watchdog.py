@@ -412,5 +412,84 @@ class SilenceIsAFasterWedgeSignal(unittest.TestCase):
                              "no file means no evidence, not a wedge")
 
 
+class AnUnownedRunIsStillReported(unittest.TestCase):
+    """★★★★★ STANDING DOWN IS NOT THE SAME AS LOOKING AWAY.
+
+    Refusing to SIGNAL an unowned `civ6_play` is right -- a protected autosave
+    continuation and an operator's own session both look like one. But the
+    branch also reset its strikes and continued, so an unowned run got no
+    DETECTION either.
+
+    Run `civvis-20260903T135954Z-cont2`, 2026-09-03: logged once as unowned,
+    then silent for hours while it turned at a 485.7 s median against 3.8-6.5 s
+    in healthy runs, and finally parked at t72 on `ENDTURN_BLOCKING_UNITS` --
+    brain answering in 0.11 s, Civ VI at 98 % CPU, sixteen minutes with no
+    event. Nothing said so.
+    """
+
+    def _source(self) -> str:
+        return WATCHDOG.read_text(encoding="utf-8")
+
+    def test_the_unowned_report_knobs_are_named(self):
+        source = self._source()
+        self.assertIn("UNOWNED_SILENCE_S=${CIVVIS_WEDGE_UNOWNED_SILENCE_S:-$SILENCE_S}",
+                      source)
+        self.assertIn(
+            "UNOWNED_REPORT_EVERY_S=${CIVVIS_WEDGE_UNOWNED_REPORT_EVERY_S:-300}",
+            source)
+
+    def test_the_signal_is_still_withheld(self):
+        """The diagnosis is added; the refusal to signal must be untouched."""
+        source = self._source()
+        self.assertIn("watchdog will not signal it", source)
+        # ⚠ Anchor on the executable line, not the phrase: the rationale
+        # comment above quotes it, and `index` would slice from there --
+        # swallowing `restart_attempt` and its kills into "the branch".
+        start = source.index('      say "$tag has an unowned direct civ6_play')
+        branch = source[start:source.index('    if [[ -n "$handoff_tag" ]]; then',
+                                           start)]
+        for verb in ("kill ", "kill -", "nudge_end_turn", "osascript"):
+            self.assertNotIn(verb, branch,
+                             "the unowned branch must never signal the game")
+
+    def _run_branch(self, *, age_s: int, reported_at: int = 0) -> str:
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is needed here")
+        source = self._source()
+        start = source.index("    unowned_silence=-1")
+        end = source.index("    if [[ -n \"$handoff_tag\" ]]; then")
+        branch = source[start:end].replace("say ", "print -r -- ")
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp)
+            (runs / "civvis-test").mkdir()
+            events = runs / "civvis-test" / "events.jsonl"
+            events.write_text('{"kind":"state"}\n')
+            stamp = time.time() - age_s
+            os.utime(events, (stamp, stamp))
+            script = (f'RUNS={runs}\ntag=civvis-test\n'
+                      f'UNOWNED_SILENCE_S=120\n'
+                      f'UNOWNED_REPORT_EVERY_S=300\n'
+                      f'unowned_reported_at={reported_at}\n' + branch)
+            done = subprocess.run(["zsh", "-c", script], capture_output=True,
+                                  text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    def test_a_silent_unowned_run_is_named_in_the_log(self):
+        out = self._run_branch(age_s=900)
+        self.assertIn("WEDGE UNATTENDED", out)
+        self.assertIn("civvis-test", out)
+
+    def test_a_live_unowned_run_says_nothing(self):
+        """A run that is merely unowned is not news; only a silent one is."""
+        self.assertEqual(self._run_branch(age_s=5).strip(), "")
+
+    def test_the_report_is_rate_limited(self):
+        """It must reach a human once, not fill the log every poll."""
+        recent = int(time.time())
+        self.assertEqual(self._run_branch(age_s=900, reported_at=recent).strip(),
+                         "")
+
+
 if __name__ == "__main__":
     unittest.main()

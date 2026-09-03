@@ -193,6 +193,26 @@ def _has_recorded_turn(events: Path) -> bool:
     return False
 
 
+def _summary_is_current_completion(run_dir: Path) -> bool:
+    """Whether the run's summary is newer than its event journal.
+
+    A capture-free attach can continue a save under its original tag after an
+    earlier player wrote a partial summary.  The continuation appends fresh
+    control-mod events, so a journal newer than that summary proves the summary
+    cannot describe the game served by the live harness.  Do not require
+    operators to delete an auditable partial result just to issue a native
+    retirement request for the continuation.
+    """
+    summary = run_dir / "summary.json"
+    events = run_dir / "events.jsonl"
+    try:
+        return events.stat().st_mtime_ns <= summary.stat().st_mtime_ns
+    except OSError:
+        # A present summary with no readable journal is still a completed or
+        # ambiguous run, never evidence that a continuation is live.
+        return True
+
+
 def request_active_run(root: Path, reason: str, *, ps_output: str | None = None,
                        now: str | None = None) -> dict[str, Any]:
     """Write one operator-retire request for exactly one proven live game."""
@@ -208,7 +228,7 @@ def request_active_run(root: Path, reason: str, *, ps_output: str | None = None,
     run_dir = Path(root) / tag
     if not run_dir.is_dir():
         raise RetireRequestError(f"live harness {tag!r} has no run directory at {run_dir}")
-    if (run_dir / "summary.json").is_file():
+    if (run_dir / "summary.json").is_file() and _summary_is_current_completion(run_dir):
         raise RetireRequestError(f"run {tag!r} is already complete")
     if result_path(run_dir).is_file():
         raise RetireRequestError(f"run {tag!r} already has a recorded retirement")

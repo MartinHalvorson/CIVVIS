@@ -70,6 +70,9 @@ unsetopt BG_NICE
 
 OPS=${0:A:h}
 LOG=${CIVVIS_LADDER_LOG:-$HOME/Library/Logs/civvis-ladder.log}
+# Keep an identity that survives Terminal replacing this document with a
+# login shell.  The launcher below repeats this for direct launcher starts.
+MANAGED_WINDOW_MARKER='CIVVIS managed ladder'
 PIN=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 POLICY=${CIVVIS_VERIFICATION_POLICY:-$HOME/.civvis-verification-policy}
 INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
@@ -92,14 +95,23 @@ schedule_idle_window_reap() {
   local own_tty=${TTY:-}
   [[ "$own_tty" == /dev/tty* ]] || return 0
   (
-    /usr/bin/nohup /usr/bin/osascript >>"$LOG" 2>&1 <<'APPLESCRIPT'
+    /usr/bin/nohup /usr/bin/osascript - "$MANAGED_WINDOW_MARKER" >>"$LOG" 2>&1 <<'APPLESCRIPT'
+on run argv
+set windowMarker to item 1 of argv
 delay 1
 set reaped to 0
 tell application "Terminal"
   repeat with i from (count of windows) to 1 by -1
     try
       set w to item i of windows
-      if (busy of w) is false and (((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher")) then
+      set marked to false
+      repeat with t in tabs of w
+        try
+          if (custom title of t) is windowMarker then set marked to true
+        end try
+      end repeat
+      -- The title checks are only for legacy windows that predate the marker.
+      if (busy of w) is false and (marked or ((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher")) then
         close w
         set reaped to reaped + 1
       end if
@@ -107,11 +119,44 @@ tell application "Terminal"
   end repeat
 end tell
 return "window cleanup: reaped " & reaped & " idle managed window(s)"
+end run
 APPLESCRIPT
   ) &
   say "window cleanup: scheduled idle managed-window reaper"
 }
 trap 'schedule_idle_window_reap || true' EXIT
+
+# A policy refusal can happen before the launcher takes over. Mark and
+# minimise this outer document too, so even that short-lived recovery never
+# jumps in front of the application being recorded.
+if [[ -z ${CIVVIS_LADDER_KEEP_WINDOW:-} ]]; then
+  window_report=$(/usr/bin/osascript - "$TTY" "$MANAGED_WINDOW_MARKER" 2>&1 <<'APPLESCRIPT'
+on run argv
+  set myTty to item 1 of argv
+  set windowMarker to item 2 of argv
+  set mineSeen to 0
+  tell application "Terminal"
+    repeat with w in windows
+      try
+        repeat with t in tabs of w
+          try
+            if (tty of t) is myTty and (busy of w) is true then
+              set custom title of t to windowMarker
+              set title displays custom title of t to true
+              set miniaturized of w to true
+              set mineSeen to mineSeen + 1
+            end if
+          end try
+        end repeat
+      end try
+    end repeat
+  end tell
+  return "minimised " & mineSeen & " marked managed window(s), tty " & myTty
+end run
+APPLESCRIPT
+) || window_report="osascript failed"
+  say "window: ${window_report}; follow the run with: tail -f ${LOG}"
+fi
 
 # ⚠ A refusal is LOGGED, not merely printed. The window this runs in is
 # minimised by the launcher and gone once the shell exits — that is the whole

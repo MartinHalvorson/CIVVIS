@@ -1242,33 +1242,50 @@ fn vision_key(parts: &[u64]) -> u64 {
     key
 }
 
+/// The immutable entries of a [`VisionCache`].
+///
+/// A speculative branch normally changes one actor and then asks what the
+/// whole seat can see.  The other units' rays remain valid, so keeping their
+/// dense bitsets behind an `Arc` turns cloning the cache into a refcount bump;
+/// the first miss in a branch clones only these small index vectors, not every
+/// ray's bitset.  Entries themselves are immutable after installation.
+#[derive(Clone, Default)]
+struct VisionCacheEntries {
+    units: Vec<u32>,
+    keys: Vec<u64>,
+    seen: Vec<Arc<TileBits>>,
+}
+
 /// What each unit could see, the last time anybody asked.
 ///
-/// The whole cache is thrown away when the world moves under it, which is
-/// what `stamp` records; within one state of the world an entry stands until
-/// its unit moves. Entries are kept in unit order in flat vectors so that the
-/// authoritative world can merge worker answers without walking a tree;
-/// cloned search branches start with this cache empty.
+/// The cache key validates both the world's geometry (`stamp`) and the
+/// individual sight source (`key`).  A copied cache is therefore safe in a
+/// search branch: a moved source misses its own entry, while every unchanged
+/// source reuses the ray it would derive again.  Entries stay in unit order so
+/// the authoritative world can merge worker answers without walking a tree.
 #[derive(Default)]
 pub struct VisionCache {
     stamp: u64,
-    units: Vec<u32>,
-    keys: Vec<u64>,
-    seen: Vec<TileBits>,
+    entries: Arc<VisionCacheEntries>,
     /// Which wonders exist anywhere in the world. Deciding whether a city may
     /// start one asks this of every wonder in the ruleset, and answering it
-    /// from scratch meant walking every city and every tile each time.
+    /// from scratch meant walking every city and every tile each time. This is
+    /// deliberately branch-local: it is production state, not a unit ray.
     built_wonders: Option<BTreeSet<Name>>,
 }
 
 impl Clone for VisionCache {
-    /// A visibility answer belongs to the exact position that asked for it.
-    /// Game clones are search branches and may move a unit or change a tile
-    /// before their first read, so copying the flat bitsets would only carry
-    /// disposable work into a branch that must validate its own stamp. Start
-    /// empty; the authoritative world repopulates its cache on demand.
+    /// A visibility answer is immutable and lookup validates its exact map
+    /// stamp plus the source's position, sight and elevation key.  A branch
+    /// can therefore share the parent table until its first newly-derived ray
+    /// needs copy-on-write storage; clearing it here made tactical clones
+    /// re-cast every stationary unit's sight ray after one actor moved.
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            stamp: self.stamp,
+            entries: Arc::clone(&self.entries),
+            built_wonders: None,
+        }
     }
 }
 
@@ -1624,9 +1641,7 @@ impl Drop for QueryMemo<'_> {
 impl VisionCache {
     fn reset(&mut self, stamp: u64) {
         self.stamp = stamp;
-        self.units.clear();
-        self.keys.clear();
-        self.seen.clear();
+        self.entries = Arc::new(VisionCacheEntries::default());
         self.built_wonders = None;
     }
 
@@ -1642,23 +1657,29 @@ impl VisionCache {
             self.reset(stamp);
             return None;
         }
-        let slot = self.units.binary_search(&uid).ok()?;
-        (self.keys[slot] == key).then(|| &self.seen[slot])
+        let entries = self.entries.as_ref();
+        let slot = entries.units.binary_search(&uid).ok()?;
+        (entries.keys[slot] == key).then(|| entries.seen[slot].as_ref())
     }
 
     fn put(&mut self, stamp: u64, uid: u32, key: u64, seen: TileBits) {
+        self.put_shared(stamp, uid, key, Arc::new(seen));
+    }
+
+    fn put_shared(&mut self, stamp: u64, uid: u32, key: u64, seen: Arc<TileBits>) {
         if self.stamp != stamp {
             self.reset(stamp);
         }
-        match self.units.binary_search(&uid) {
+        let entries = Arc::make_mut(&mut self.entries);
+        match entries.units.binary_search(&uid) {
             Ok(slot) => {
-                self.keys[slot] = key;
-                self.seen[slot] = seen;
+                entries.keys[slot] = key;
+                entries.seen[slot] = seen;
             }
             Err(slot) => {
-                self.units.insert(slot, uid);
-                self.keys.insert(slot, key);
-                self.seen.insert(slot, seen);
+                entries.units.insert(slot, uid);
+                entries.keys.insert(slot, key);
+                entries.seen.insert(slot, seen);
             }
         }
     }
@@ -1667,8 +1688,10 @@ impl VisionCache {
     ///
     /// Every worker starts from a clone of the same final position. Ignore a
     /// cache that never advanced to that position's stamp (a seat with no
-    /// sight sources can legitimately leave it untouched), then merge the
-    /// flat unit vectors in stable ID order through `put`.
+    /// sight sources can legitimately leave it untouched). An unchanged worker
+    /// still points at the authoritative table, so it needs no merge at all;
+    /// a worker that derived a missing ray has its own copy-on-write table,
+    /// which is folded in stable ID order through `put`.
     fn merge_current(&mut self, other: VisionCache, stamp: u64) {
         if other.stamp != stamp {
             return;
@@ -1676,8 +1699,16 @@ impl VisionCache {
         if self.stamp != stamp {
             self.reset(stamp);
         }
-        for ((unit, key), seen) in other.units.into_iter().zip(other.keys).zip(other.seen) {
-            self.put(stamp, unit, key, seen);
+        if !Arc::ptr_eq(&self.entries, &other.entries) {
+            for ((unit, key), seen) in other
+                .entries
+                .units
+                .iter()
+                .zip(&other.entries.keys)
+                .zip(&other.entries.seen)
+            {
+                self.put_shared(stamp, *unit, *key, Arc::clone(seen));
+            }
         }
         if let Some(wonders) = other.built_wonders {
             self.built_wonders = Some(wonders);
@@ -25433,8 +25464,9 @@ impl Game {
     }
 
     /// Compute current sight from one immutable final position, then publish
-    /// each result serially. Worker game clones start with disposable vision
-    /// caches, and the newly filled entries are merged back before returning.
+    /// each result serially. Worker game clones inherit immutable unit rays;
+    /// any missing entries use copy-on-write storage and are merged back before
+    /// returning.
     fn refresh_visibility_parallel(
         &mut self,
         players: Vec<usize>,
