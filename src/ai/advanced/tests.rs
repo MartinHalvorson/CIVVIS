@@ -954,6 +954,71 @@ fn armed_siege_buys_an_immediate_defender_before_a_wall_can_finish() {
 }
 
 #[test]
+fn armed_siege_moves_a_nearby_defender_onto_an_empty_threatened_city() {
+    // A force ring does not contribute the City Center's garrison strength.
+    // When the city has no local body, the nearest healthy land unit must move
+    // onto it before the coordinated force planner holds that ring in place.
+    let (mut game, city, _) = empire_with_a_capital(71_148);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.turn = 90;
+    game.at_war.insert((0, 1));
+    let city_pos = game.cities[&city].pos;
+    let open = |position: Pos| {
+        game.map.get(position).is_some_and(|tile| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.city_at(position).is_none()
+                && game.unit_ids_at(position).is_empty()
+        })
+    };
+    let enemy_at = game
+        .nbrs(city_pos)
+        .into_iter()
+        .find(|position| open(*position))
+        .expect("the fixture needs an accessible hostile doorstep");
+    let defender_at = game
+        .wdisk(city_pos, 1)
+        .into_iter()
+        .find(|position| *position != enemy_at && open(*position))
+        .expect("the fixture needs a nearby defender");
+    game.spawn_test_unit("warrior", 1, enemy_at);
+    let defender = game.spawn_test_unit("warrior", 0, defender_at);
+    assert!(game.player_can_see(0, enemy_at));
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: Some(city),
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut live = AdvancedAi::new();
+    live.enable_siege_preempts_the_queue();
+    live.battlefront_observation = true;
+    live.capture_battlefront_frame(&game, 0);
+    assert!(
+        live.advanced_military_step(&mut game, 0, defender, &plan),
+        "the available defender should spend its turn reaching the threatened city"
+    );
+    assert_eq!(
+        game.units[&defender].pos, city_pos,
+        "the City Center must receive the defender rather than leave it on the ring"
+    );
+    assert_eq!(
+        game.unit_ids_at(city_pos)
+            .iter()
+            .filter(|unit| game.units[unit].owner == 0)
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy

@@ -37219,6 +37219,13 @@ impl AdvancedAi {
                 return self.base.fortify_or_stop(g, pid, uid);
             }
         }
+        // A named major-war city needs a body on its City Center, not merely
+        // a force group holding the surrounding ring. The live siege response
+        // assigns the nearest eligible unit before this step falls through to
+        // the ring's ordinary tactical posture.
+        if let Some(acted) = self.threatened_city_garrison_step(g, pid, uid, plan.threatened_city) {
+            return acted;
+        }
         let mut enemies: Vec<usize> = g
             .players
             .iter()
