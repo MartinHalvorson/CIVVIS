@@ -190,6 +190,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `missionary-last-charge-explores-2` | off (unmeasured) | Send a last-charge Missionary on a long, routeable expedition before it spends the charge: up to thirty-six tiles, through borders religious units may cross, while still yielding to an endangered own city or an untouched city beside it. | 1 \| 2 |
 | `route-block-is-a-wait` | off (unmeasured) | A route step that is not legal this turn holds the decision instead of releasing it, bounded by `COMMITMENT_PATIENCE` consecutive forgotten turns. | 1 \| 1 |
 | `standing-still-is-a-risk` | off (unmeasured) | A safe-step guard that would not move at all steps to the safest reachable neighbour that is strictly safer than standing still. | 1 \| 1 |
+| `wonder-ring-recon-2` | off (unmeasured) | Preserve every nearby natural-wonder pocket V1 scouts, but spend at most one extra tile of travel to expose more of its footprint. | 1 \| 2 |
 
 ## Removed from the code
 
