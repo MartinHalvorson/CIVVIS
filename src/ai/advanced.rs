@@ -13882,6 +13882,7 @@ impl AdvancedAi {
             } else {
                 None
             };
+            let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             // The rolling window protects unattended research from leaving
             // an old branch behind. An explicit Science target (or an
             // adaptive seat that is already driving) is a different contract:
@@ -13891,8 +13892,9 @@ impl AdvancedAi {
             // this only admits the exact, already-unlocked milestone.
             let science_milestone = science_victory_goal
                 .filter(|_| {
-                    self.victory_target == Some(VictoryTarget::Science)
-                        || self.science_drive_active()
+                    great_person_goal.is_none()
+                        && (self.victory_target == Some(VictoryTarget::Science)
+                            || self.science_drive_active())
                 })
                 .and_then(|goal| {
                     (!available.iter().any(|tech| tech.as_str() == goal))
@@ -13909,7 +13911,6 @@ impl AdvancedAi {
                 }
             }
             let science_harbor_goal = self.science_harbor_research_goal(g, pid, objective);
-            let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid, &available);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
