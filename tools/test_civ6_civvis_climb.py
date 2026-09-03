@@ -1882,13 +1882,13 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual([r["from_turn"] for r in row["resumes"]],
                          [102, 140, 151, 158, 159, 160])
         # One, four, nine, sixteen, twenty-five and thirty-six back —
-        # RESUME_STEPS = (0, 3, 8, 15, 24, 35) against the list with the parked
-        # turn's own save removed. Every attempt reaches a board the last one
-        # did not, and the sixth, whose stride runs past the thirty saves on
-        # disk, clamps to the oldest (t131) rather than replaying the fifth's.
+        # RESUME_STEPS = (0, 3, 8, 15, 24, 35) against the list with the newest
+        # parked save removed. Every attempt reaches a board the last one did
+        # not, and the sixth, whose stride runs past the thirty saves on disk,
+        # clamps to the oldest (t131) rather than replaying the fifth's.
         self.assertEqual([r["save"] for r in row["resumes"]],
-                         ["AutoSave_0160.Civ6Save", "AutoSave_0157.Civ6Save",
-                          "AutoSave_0152.Civ6Save", "AutoSave_0144.Civ6Save",
+                         ["AutoSave_0159.Civ6Save", "AutoSave_0156.Civ6Save",
+                          "AutoSave_0151.Civ6Save", "AutoSave_0144.Civ6Save",
                           "AutoSave_0135.Civ6Save", "AutoSave_0131.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont6"))
 
@@ -2563,8 +2563,9 @@ class ARivalsDefeatIsNotOurEnding(unittest.TestCase):
 class TheParkedTurnsSaveIsNeverReloaded(unittest.TestCase):
     """⚠⚠ RELOADING THE TURN THAT JUST PARKED REPRODUCES THE PARK.
 
-    `saves` is newest first, so `saves[0]` is the autosave written AT the parked
-    turn — the very board that deadlocked. Measured twice:
+    `saves` is newest first, so `saves[0]` is the autosave written at the end of
+    the parked board — the very state that deadlocked. The numeric suffix is a
+    Civ VI save counter, not a game-turn witness. Measured twice:
 
     - 2026-08-24: "reloading the exact same t181 save twice reproduced the same
       engine-side PLEASE WAIT spin twice" — the observation this rotation exists
@@ -2596,6 +2597,22 @@ class TheParkedTurnsSaveIsNeverReloaded(unittest.TestCase):
         self.assertEqual(got, Path("AutoSave_0043.Civ6Save"),
                          "reloading t44 after parking at t44 is a spent resume")
 
+    def test_the_civ6_save_counter_is_not_treated_as_the_game_turn(self):
+        """The filename counter and the mirrored game turn are different axes.
+
+        The live t52 game had AutoSave_0066 as its newest file, and a t184
+        freeze reloaded AutoSave_0175 through _0177 while each continuation
+        still restored t184. The newest mtime-ordered save must be skipped even
+        when its numeric suffix does not equal the mirrored turn.
+        """
+        saves = [Path("AutoSave_0066.Civ6Save"),
+                 Path("AutoSave_0065.Civ6Save"),
+                 Path("AutoSave_0064.Civ6Save")]
+        got = climb.resume_from_autosave(
+            {"last_turn": 52}, "frozen", 0, self._args(), 0.0,
+            recent=lambda newer_than=None: list(saves))
+        self.assertEqual(got, saves[1])
+
     def test_the_second_resume_reaches_well_past_the_first(self):
         """⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK, so the second
         attempt must not sample the board next door to the first.
@@ -2620,9 +2637,10 @@ class TheParkedTurnsSaveIsNeverReloaded(unittest.TestCase):
         self.assertEqual(got, Path("AutoSave_0042.Civ6Save"))
 
     def test_an_unparsable_name_is_kept_rather_than_dropped(self):
-        """A name this cannot read is still a candidate; dropping every save
-        would be a worse failure than reloading one."""
-        saves = [Path("civvis-resume.Civ6Save"), Path("AutoSave_0043.Civ6Save")]
+        """A name this cannot read is still a candidate after the parked one."""
+        saves = [Path("AutoSave_0066.Civ6Save"),
+                 Path("civvis-resume.Civ6Save"),
+                 Path("AutoSave_0043.Civ6Save")]
         got = climb.resume_from_autosave(
             {"last_turn": 44}, "frozen", 0, self._args(), 0.0,
             recent=lambda newer_than=None: list(saves))
