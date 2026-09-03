@@ -2507,7 +2507,7 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
     game.found_city_for(0, game.units[&settler].pos, None);
     game.remove_unit(settler);
 
-    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.enable_live_bridge_universe();
 
     game.turn = 1;
