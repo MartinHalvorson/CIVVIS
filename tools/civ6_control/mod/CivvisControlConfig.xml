@@ -35,10 +35,48 @@
      multiplayer row (which is already Pangaea) if the flags are ever edited. -->
 <GameInfo>
 	<Parameters>
+		<!-- These defaults are rendered per run by install.py.  The FrontEnd Lua
+		     setup hook is unavailable on this macOS build, but UpdateDatabase is
+		     loaded before Create Game builds its controls.  Making the direct
+		     Create Game route exact avoids an in-game rehost: that recovery path
+		     can apply the values but cannot reliably transfer the already-running
+		     session into the newly hosted game. -->
+		<Update>
+			<Where ParameterId="GameDifficulty" DefaultValue="DIFFICULTY_PRINCE"/>
+			<Set>
+				<DefaultValue>CIVVIS_DEFAULT_DIFFICULTY</DefaultValue>
+			</Set>
+		</Update>
+		<Update>
+			<!-- This is the single-player row; the multiplayer row is already
+			     Online and must remain independent. -->
+			<Where ParameterId="GameSpeeds" DefaultValue="GAMESPEED_STANDARD"/>
+			<Set>
+				<DefaultValue>CIVVIS_DEFAULT_SPEED</DefaultValue>
+			</Set>
+		</Update>
 		<Update>
 			<Where ParameterId="Map" DefaultValue="Continents.lua"/>
 			<Set>
-				<DefaultValue>Pangaea.lua</DefaultValue>
+				<DefaultValue>CIVVIS_DEFAULT_MAP</DefaultValue>
+			</Set>
+		</Update>
+		<Update>
+			<Where ParameterId="MapSize" DefaultValue="MAPSIZE_SMALL"/>
+			<Set>
+				<DefaultValue>CIVVIS_DEFAULT_MAP_SIZE</DefaultValue>
+			</Set>
+		</Update>
+		<Update>
+			<Where ParameterId="TurnLimit" DefaultValue="TURNLIMIT_GAMESPEED"/>
+			<Set>
+				<DefaultValue>TURNLIMIT_CUSTOM</DefaultValue>
+			</Set>
+		</Update>
+		<Update>
+			<Where ParameterId="MaxTurns" DefaultValue="500"/>
+			<Set>
+				<DefaultValue>CIVVIS_DEFAULT_MAX_TURNS</DefaultValue>
 			</Set>
 		</Update>
 		<!-- Seed probe only. Both rows are Domain="int" and ship with no
@@ -65,4 +103,24 @@
 			</Set>
 		</Update>
 	</Parameters>
+	<!-- `GameConfiguration.SetToDefaults()` hard-codes Prince and Standard before
+	     the setup parameters UI is built.  Updating the Parameters table above
+	     alone therefore cannot replace those already-present values.  Static
+	     configuration updates run after that UI synchronization, once Gathering
+	     Storm has selected the ruleset, and make the requested values authoritative
+	     for the direct Create Game path. -->
+	<ConfigurationUpdates>
+		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
+			 TargetGroup="Game" TargetId="GAME_HANDICAP" TargetValue="CIVVIS_DEFAULT_DIFFICULTY"
+			 Hash="1" Static="1"/>
+		<Row SourceGroup="Game" SourceId="RULESET" SourceValue="CIVVIS_DEFAULT_RULESET"
+			 TargetGroup="Game" TargetId="GAME_SPEED_TYPE" TargetValue="CIVVIS_DEFAULT_SPEED"
+			 Hash="1" Static="1"/>
+	</ConfigurationUpdates>
+	<!-- install.py retains this one-row whitelist only when a leader was
+	     requested.  The normal Random selection is then forced to the requested
+	     leader for player zero while all AI slots retain their full roster. -->
+	<RulesetSupportedValues>
+		<Row Ruleset="CIVVIS_DEFAULT_RULESET" PlayerId="0" Domain="CIVVIS_DEFAULT_LEADER_DOMAIN" Value="CIVVIS_DEFAULT_LEADER"/>
+	</RulesetSupportedValues>
 </GameInfo>
