@@ -890,11 +890,13 @@ impl HostCityStrikes {
 /// varied while the coalesced first step through (9,11) did not, so nothing
 /// fired. The host receives a coalesced destination, but CIVVIS still knows
 /// each local step that led there. A unit that never starts a long route first
-/// retries that exact speculative step; only if Firaxis refuses the one-step
-/// probe too does it become unwalkable. The mirror then stops assuming it is
-/// traversable, and every path — exploration, settlers, the army — routes
-/// around it. Revealed terrain is never overridden: once the plot is seen, its
-/// real terrain governs.
+/// retries that exact speculative step; only if Firaxis names that probe an
+/// impossible path (or an older host supplies no reason) does it become
+/// unwalkable. `cannot_start`, a zone of control, a friendly stack, and an
+/// exhausted move allowance are all facts about the moment, not the terrain.
+/// The mirror then stops assuming only proved-dead ground is traversable, and
+/// every path — exploration, settlers, the army — routes around it. Revealed
+/// terrain is never overridden: once the plot is seen, its real terrain governs.
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 struct HostUnitOrderKey {
     verb: String,
@@ -1059,8 +1061,41 @@ impl HostMoveRefusals {
         dropped
     }
 
+    /// Whether the postcondition verifier established that a failed exact
+    /// frontier probe is terrain rather than a transient operation failure.
+    ///
+    /// `settle_pending_orders` reads the host's `move_noop` record before this
+    /// method runs. The resulting verdict row is a compact, attributed answer
+    /// for the same unit and turn: use it instead of treating every unchanged
+    /// position as a mountain. Older hosts did not emit that evidence, so they
+    /// keep the existing positional fallback that prevents an explorer from
+    /// retrying an unseen impasse forever.
+    fn exact_probe_proves_dead(verdicts: &[Order], turn: u32, unit: i64) -> bool {
+        let reason = verdicts.iter().find_map(|row| {
+            (row.kind == "order_failed"
+                && row.subject == Some(unit)
+                && row.pos == Some((turn as i32, -1)))
+            .then_some(row.verb.as_deref())
+            .flatten()
+            .and_then(|verb| verb.strip_prefix("unit:MOVE_TO "))
+        });
+        match reason {
+            // `GetMoveToPathEx` had no route after the host accepted an exact
+            // probe, or the host itself named the destination impassable.
+            Some("host_noop_no_path" | "host_refused_impassable") => true,
+            // A live run contained 80 `cannot_start` no-ops by turn 207. None
+            // proves that the requested fog tile is terrain nobody can enter;
+            // the same is true of a temporary ZoC, stack, hostile, or movement
+            // allowance failure. Keep those tiles available to the next board.
+            Some(_) => false,
+            // The original mod had no move-noop evidence. Preserve the
+            // position-only fallback for that compatibility path.
+            None => true,
+        }
+    }
+
     /// Compare this turn's positions with last turn's orders.
-    fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
+    fn observe(&mut self, state: &civvis::mirror::StateSnapshot, verdicts: &[Order]) {
         let sent = std::mem::take(&mut self.sent);
         for (unit, attempt) in sent {
             // The ladder asks several times per turn; a same-turn frame cannot
@@ -1081,9 +1116,12 @@ impl HostMoveRefusals {
                 self.pending_probes.remove(&unit);
             } else if attempt.destination == attempt.frontier_step {
                 // This was already the exact local step, rather than a long
-                // route containing it. Now the host's non-movement is proof.
+                // route containing it. A named no-op distinguishes an
+                // impassable route from a temporarily unavailable operation.
                 self.pending_probes.remove(&unit);
-                self.dead.insert(attempt.frontier_step);
+                if Self::exact_probe_proves_dead(verdicts, attempt.turn, unit) {
+                    self.dead.insert(attempt.frontier_step);
+                }
             } else {
                 self.pending_probes.insert(
                     unit,
@@ -8397,12 +8435,15 @@ fn main() {
             Some((snapshot, state)) => {
                 let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
                 host_city_attack_cooldowns.observe(&state);
-                host_move_refusals.observe(&state);
                 // The verdicts on the previous turn's orders ride at the end of
                 // this turn's reply; the checks read the frame the decision is
                 // about to read, before anything is decided on it.
                 let verdicts =
                     settle_pending_orders(&mut pending_orders, &events, &state, &snapshot);
+                // The verdicts include Firaxis's named answer for an exact
+                // frontier probe. Read it before rebuilding the mirror so a
+                // transient failure cannot be mistaken for dead terrain.
+                host_move_refusals.observe(&state, &verdicts);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -9886,13 +9927,13 @@ mod tests {
 
         // A second frame on the SAME turn cannot judge the move yet and must not
         // forget it.
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert_eq!(refusals.sent.len(), 1, "a same-turn frame keeps the memory");
         assert!(refusals.dead.is_empty());
 
         // Next turn, still on the tile it was ordered from: the destination is dead.
         state.turn = 14;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert!(refusals.sent.is_empty(), "a judged move is consumed");
         assert_eq!(
             refusals.dead.iter().copied().collect::<Vec<_>>(),
@@ -9933,7 +9974,7 @@ mod tests {
         );
         state.turn = 15;
         state.units[0].x = 5;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert_eq!(
             refusals.dead.len(),
             1,
@@ -9954,6 +9995,83 @@ mod tests {
             .game
             .rules
             .is_passable(&mirror.game.map.tiles[&seen_pos]));
+    }
+
+    /// A current host tells us when an accepted move could not start. That is
+    /// not a terrain observation: moving allowances, a temporary ZoC, and
+    /// stacked units can all produce the same answer. The live run ending at
+    /// turn 207 had 80 of these, so turning each one into a dead fog tile made
+    /// later routes less accurate rather than more accurate.
+    #[test]
+    fn a_named_transient_move_noop_does_not_retire_frontier_ground() {
+        let (_snapshot, mut state) = production_board();
+        state.turn = 13;
+        state.units = vec![StateUnit {
+            id: 900,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 4,
+            y: 5,
+            hp: 100.0,
+            moves: 3.0,
+            ..StateUnit::default()
+        }];
+        let destination = (8, 5);
+        let mut refusals = HostMoveRefusals::default();
+        let move_to = || Order {
+            kind: "unit",
+            subject: Some(900),
+            verb: Some("MOVE_TO".to_string()),
+            pos: Some(destination),
+        };
+
+        refusals.record(&[move_to()], &state, &std::collections::BTreeMap::new());
+        state.turn = 14;
+        refusals.observe(
+            &state,
+            &[Order {
+                kind: "order_failed",
+                subject: Some(900),
+                verb: Some("unit:MOVE_TO host_noop_cannot_start".to_string()),
+                pos: Some((13, -1)),
+            }],
+        );
+        assert!(
+            refusals.dead.is_empty(),
+            "a temporary host operation failure must not invent impassable terrain"
+        );
+        assert!(
+            refusals.pending_probes.is_empty(),
+            "the exact probe was answered; it is not a stale long-route probe"
+        );
+
+        // A real path failure remains useful map evidence on a subsequent
+        // exact probe, and a direct host impassability answer does too.
+        refusals.record(&[move_to()], &state, &std::collections::BTreeMap::new());
+        state.turn = 15;
+        refusals.observe(
+            &state,
+            &[Order {
+                kind: "order_failed",
+                subject: Some(900),
+                verb: Some("unit:MOVE_TO host_noop_no_path".to_string()),
+                pos: Some((14, -1)),
+            }],
+        );
+        assert_eq!(
+            refusals.dead.iter().copied().collect::<Vec<_>>(),
+            vec![destination],
+            "a named no-path answer still retires the exact frontier step"
+        );
+        assert!(HostMoveRefusals::exact_probe_proves_dead(
+            &[Order {
+                kind: "order_failed",
+                subject: Some(900),
+                verb: Some("unit:MOVE_TO host_refused_impassable".to_string()),
+                pos: Some((15, -1)),
+            }],
+            15,
+            900,
+        ));
     }
 
     /// A coalesced `MOVE_TO` keeps the host fast, but the failure feedback must
@@ -9995,7 +10113,7 @@ mod tests {
         let mut refusals = HostMoveRefusals::default();
         refusals.record(&orders, &state, &probes);
         state.turn = 14;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert!(
             refusals.dead.is_empty(),
             "a long route has not proved which unknown hop blocked it"
@@ -10019,7 +10137,7 @@ mod tests {
         assert_eq!(retry[0].pos, Some((8, 5)));
         refusals.record(&retry, &state, &std::collections::BTreeMap::new());
         state.turn = 15;
-        refusals.observe(&state);
+        refusals.observe(&state, &[]);
         assert_eq!(
             refusals.dead.iter().copied().collect::<Vec<_>>(),
             vec![(8, 5)],
