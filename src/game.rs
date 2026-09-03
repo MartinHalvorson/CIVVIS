@@ -1948,9 +1948,11 @@ struct ZocTest {
     peer: Option<u32>,
 }
 
+type AStarEntry = Reverse<(i32, Reverse<i32>, Pos, usize)>;
+
 #[derive(Default)]
 struct RouteScratch {
-    astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos, usize)>>,
+    astar_frontier: BinaryHeap<AStarEntry>,
     bfs_frontier: VecDeque<(Pos, usize)>,
     path: Vec<Pos>,
     parent: Vec<u32>,

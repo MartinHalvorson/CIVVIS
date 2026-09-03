@@ -702,7 +702,7 @@ impl WorldMap {
                 } else {
                     hex::neighbors(tile.pos)
                         .into_iter()
-                        .map(|neighbor| {
+                        .filter_map(|neighbor| {
                             let neighbor = if topology.wraps_east_west() {
                                 hex::canon(neighbor, tiles.width)
                             } else {
@@ -710,7 +710,6 @@ impl WorldMap {
                             };
                             tiles.contains_key(&neighbor).then_some(neighbor)
                         })
-                        .flatten()
                         .collect()
                 }
             };
