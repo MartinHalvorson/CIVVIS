@@ -60,14 +60,24 @@ class TheOpsTreeIsRefreshedOnlyWhereItIsSafe(unittest.TestCase):
         self._git("add", "-A")
         self._git("commit", "-q", "-m", message)
 
-    def _run(self) -> str:
+    def _run(self, *, running: bool = True) -> str:
+        """`running` says whether a live process is executing the script.
+
+        It decides which hazard applies, so every test states it: a file no
+        process is executing can always be rewritten safely.
+        """
         log = Path(self.tmp.name) / "freshness.log"
+        fake_pgrep = Path(self.tmp.name) / "pgrep"
+        fake_pgrep.write_text("#!/bin/sh\n"
+                              + ("echo 999999\n" if running else "exit 1\n"))
+        fake_pgrep.chmod(0o755)
         done = subprocess.run(
             ["zsh", str(FRESHNESS)],
             capture_output=True, text=True, timeout=60,
             env={"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": self.tmp.name,
                  "CIVVIS_OPS_TREE": str(self.repo),
                  "CIVVIS_OPS_FRESHNESS_REF": "target",
+                 "CIVVIS_PGREP": str(fake_pgrep),
                  "CIVVIS_OPS_FRESHNESS_LOG": str(log)})
         self.assertEqual(done.returncode, 0, done.stderr)
         return log.read_text() if log.exists() else ""
@@ -139,6 +149,37 @@ class TheOpsTreeIsRefreshedOnlyWhereItIsSafe(unittest.TestCase):
         done = subprocess.run(["zsh", "-n", str(FRESHNESS)],
                               capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_script_nothing_is_running_is_always_refreshed(self) -> None:
+        """The hazard is a process reading a file it is executing. A one-shot
+        (`civvis-verified-head-launcher.sh`, this tool) has no such process
+        between invocations, so holding it back strands a merged fix."""
+        running = "#!/bin/zsh\n# old one-shot\nprint hello\n"
+        merged = "#!/bin/zsh\n# NEW AND MERGED\nprint hello\n"
+        self._stage_an_update(running, merged)
+        log = self._run(running=False)
+        self.assertIn("refreshed tools/ops/civvis-thing.sh", log)
+        self.assertIn("nothing is running it", log)
+        self.assertIn("NEW AND MERGED",
+                      (self.repo / "tools/ops/civvis-thing.sh").read_text())
+
+    def test_it_does_not_match_its_own_process(self) -> None:
+        """Run from a schedule, `pgrep -f` for this script's own name finds THIS
+        process. Excluding own pid and parent is what keeps it eligible."""
+        source = FRESHNESS.read_text(encoding="utf-8")
+        self.assertIn('[[ "$pid" == "$$" || "$pid" == "$PPID" ]] && continue',
+                      source)
+
+    def test_a_running_script_without_self_reload_is_still_held(self) -> None:
+        """The relaxation must not reach the case the tool exists for."""
+        running = "#!/bin/zsh\n# old daemon\nwhile true; do sleep 1; done\n"
+        merged = "#!/bin/zsh\n# NEW AND MERGED\nwhile true; do sleep 1; done\n"
+        self._stage_an_update(running, merged)
+        log = self._run(running=True)
+        self.assertIn("PENDING", log)
+        self.assertNotIn("NEW AND MERGED",
+                         (self.repo / "tools/ops/civvis-thing.sh").read_text())
+
 
 
 if __name__ == "__main__":

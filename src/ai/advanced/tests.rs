@@ -27998,6 +27998,11 @@ fn science_strategy_uses_an_established_spy_to_steal_a_rival_technology() {
         .unwrap()
         .districts
         .insert(crate::name!("campus"), campus);
+    install_ai_test_district(&mut game, target, "spaceport");
+    game.players[1].science_projects.extend([
+        "launch_earth_satellite".to_string(),
+        "launch_moon_landing".to_string(),
+    ]);
     game.players[1].techs.insert(crate::name!("writing"));
     let spy = game.next_id;
     game.next_id += 1;
@@ -28035,6 +28040,66 @@ fn science_strategy_uses_an_established_spy_to_steal_a_rival_technology() {
             .as_ref()
             .map(|mission| mission.kind.as_str()),
         Some("steal_tech_boost")
+    );
+}
+
+#[test]
+fn science_strategy_disrupts_a_rival_spaceport_after_mars_launch() {
+    let mut game = Game::new_full(2, 24, 16, 109, 120, 0, false);
+    let cities: Vec<u32> = (0..2)
+        .map(|pid| {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None)
+        })
+        .collect();
+    let target = cities[1];
+    install_ai_test_district(&mut game, target, "campus");
+    install_ai_test_district(&mut game, target, "spaceport");
+    game.players[1]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    game.players[1].techs.insert(crate::name!("writing"));
+
+    let spy = game.next_id;
+    game.next_id += 1;
+    game.spies.insert(
+        spy,
+        crate::game::Spy {
+            id: spy,
+            owner: 0,
+            level: 2,
+            promotions: ["technologist".to_string(), "disguise".to_string()]
+                .into_iter()
+                .collect(),
+            city: Some(target),
+            ready_turn: game.turn,
+            mission: None,
+            sources_city: Some(target),
+            sources_until: game.turn + 24,
+            captured_by: None,
+        },
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: Some(1),
+        target_city: Some(target),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    AdvancedAi::targeting(VictoryTarget::Science).advanced_spies(&mut game, 0, &plan);
+    assert_eq!(
+        game.spies[&spy]
+            .mission
+            .as_ref()
+            .map(|mission| mission.kind.as_str()),
+        Some("disrupt_rocketry")
     );
 }
 

@@ -778,6 +778,17 @@ def completed_game_turns(events: Path, run: str) -> set[int]:
     return done
 
 
+def reopen_saved_turns(served: set[int], requested: list[int]) -> list[int]:
+    """Remove explicitly reloaded opening turns from a resume checkpoint.
+
+    Civ VI's AutoSave is made before its numbered turn is decided. Its older
+    incarnation can therefore be recorded as completed while the newly loaded
+    game is legitimately waiting for that same opening board again.
+    """
+    turns = sorted({turn for turn in requested if turn >= 0})
+    served.difference_update(turns)
+    return turns
+
 
 def record_note(run_dir: Path, turn: int, note: str) -> None:
     """Append CIVVIS's per-turn diagnostic to a durable file beside the events.
@@ -1027,6 +1038,12 @@ def main() -> int:
     ap.add_argument("--no-server", dest="server", action="store_false",
                     help="spawn civvis-orders per turn; loses plan continuity")
     ap.add_argument("--seconds", type=float, default=7200.0)
+    ap.add_argument(
+        "--replay-turn", action="append", type=int, default=[], metavar="TURN",
+        help="serve this opening turn again even if the append-only game journal "
+             "records an earlier incarnation as completed; for an in-game save "
+             "reload that resumes before its old turn record (repeatable)",
+    )
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir).expanduser()
@@ -1107,6 +1124,16 @@ def main() -> int:
     journaled = completed_game_turns(events, run_tag)
     recovered = journaled - served
     served.update(journaled)
+    replay_turns = reopen_saved_turns(served, args.replay_turn)
+    if replay_turns:
+        # An AutoSave is made at the opening of its numbered turn.  Its prior
+        # incarnation may already have emitted a terminal `turn` journal row,
+        # but the reloaded game is nevertheless waiting for the opening board
+        # again.  Preserve every other completed checkpoint and deliberately
+        # reopen only the operator-specified live turn.
+        print(f"[brain] reopening saved-game turn(s): "
+              f"{', '.join(str(turn) for turn in replay_turns)}",
+              flush=True)
     seat_civ: str | None = None
     if recovered:
         print(f"[brain] recovered {len(recovered)} completed turn(s) from the "
