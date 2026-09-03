@@ -41,6 +41,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,8 +59,16 @@ POPUP_CLEAR_INTERVAL = "0.25"
 LEDGER = Path.home() / "civvis-civ6-runs" / "civvis_ladder.jsonl"
 DEFAULT_STRATEGY = ""
 
+# A player process uninstalls the control mod during a signal-driven shutdown.
+# Keep the climb's proof of which game it launched outside the game bundle so a
+# surviving child can still be cleaned up after that uninstall has erased
+# ``config.json`` and its RunTag.
+CLEANUP_OWNERSHIP_FILE = "cleanup-ownership.json"
+
 sys.path.insert(0, str(HERE))
-from civ6_control import gamelock, install, launcher  # noqa: E402
+from civ6_control import (gamelock, install, launcher, macos_input,
+                          macos_window, popup_clear)  # noqa: E402
+import civ6_env as env  # noqa: E402
 # The objective list is not restated here. This launcher's `--victory` is
 # forwarded verbatim to `civ6_play.py --civvis-victory`, which forwards it
 # verbatim to `civvis_orders --victory`; a second copy of the names is a second
@@ -225,6 +234,361 @@ def dismiss_crash_dialogs() -> None:
     run(["osascript", "-e", script], timeout=25.0)
 
 
+def _cleanup_ownership_path(tag: str) -> Path:
+    return RUN_ROOT / tag / CLEANUP_OWNERSHIP_FILE
+
+
+def _process_start_stamp(pid: int) -> str | None:
+    """Return macOS's stable start stamp for ``pid``, or unknown.
+
+    A PID alone is not an ownership proof: a later manually started game can
+    reuse it. ``lstart`` changes with the process, so the cleanup receipt can
+    reject that reuse and fail closed.
+    """
+    output = run(["ps", "-p", str(pid), "-o", "lstart="], timeout=10.0)
+    if output.startswith("error:"):
+        return None
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return lines[0] if len(lines) == 1 else None
+
+
+def _game_process_identities(pids=None) -> list[dict]:
+    """Return currently visible Civ VI identities with a usable start stamp."""
+    if pids is None:
+        pids = env.game_pids()
+    identities = []
+    for pid in sorted({int(pid) for pid in pids}):
+        started = _process_start_stamp(pid)
+        if started is not None:
+            identities.append({"pid": pid, "started": started})
+    return identities
+
+
+def _write_cleanup_ownership(tag: str, data: dict) -> bool:
+    """Atomically write one attempt's cleanup receipt, best effort."""
+    path = _cleanup_ownership_path(tag)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+        os.replace(temporary, path)
+    except OSError as error:
+        print(f"[cleanup] could not write ownership receipt for {tag}: {error}",
+              flush=True)
+        temporary.unlink(missing_ok=True)
+        return False
+    return True
+
+
+def _read_cleanup_ownership(tag: str) -> dict | None:
+    """Read a receipt only when its embedded tag matches its path."""
+    try:
+        data = json.loads(_cleanup_ownership_path(tag).read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or data.get("tag") != tag:
+        return None
+    if not isinstance(data.get("player_pid"), int):
+        return None
+    return data
+
+
+def prepare_cleanup_ownership(tag: str, baseline_pids=()) -> None:
+    """Begin a receipt before spawning the player process."""
+    data = {
+        "tag": tag,
+        "player_pid": None,
+        "baseline_game_processes": _game_process_identities(baseline_pids),
+        "game_processes": [],
+        "launch_epoch": time.time(),
+        "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    _write_cleanup_ownership(tag, data)
+
+
+def complete_cleanup_ownership(tag: str, player_pid: int) -> None:
+    """Attach the spawned player's PID to its pre-launch receipt."""
+    path = _cleanup_ownership_path(tag)
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        data = {"tag": tag, "baseline_game_processes": [],
+                "game_processes": [], "launch_epoch": time.time()}
+    if not isinstance(data, dict) or data.get("tag") != tag:
+        data = {"tag": tag, "baseline_game_processes": [],
+                "game_processes": [], "launch_epoch": time.time()}
+    data["player_pid"] = int(player_pid)
+    _write_cleanup_ownership(tag, data)
+
+
+def _process_start_epoch(started: str) -> float | None:
+    """Parse the local-time format emitted by ``ps ... lstart``."""
+    try:
+        value = datetime.strptime(started, "%a %b %d %H:%M:%S %Y")
+    except ValueError:
+        return None
+    local_zone = datetime.now().astimezone().tzinfo
+    return value.replace(tzinfo=local_zone).timestamp()
+
+
+def remember_cleanup_game_processes(tag: str) -> list[dict]:
+    """Add newly observed game processes to the attempt's cleanup receipt."""
+    data = _read_cleanup_ownership(tag)
+    if data is None:
+        return []
+    baseline_items = data.get("baseline_game_processes", [])
+    known_items = data.get("game_processes", [])
+    if not isinstance(baseline_items, list) or not isinstance(known_items, list):
+        return []
+    baseline = {
+        int(item["pid"]): item.get("started")
+        for item in baseline_items
+        if isinstance(item, dict) and isinstance(item.get("pid"), int)
+    }
+    known = {
+        int(item["pid"]): item.get("started")
+        for item in known_items
+        if isinstance(item, dict) and isinstance(item.get("pid"), int)
+    }
+    launch_epoch = data.get("launch_epoch")
+    if not isinstance(launch_epoch, (int, float)):
+        return data.get("game_processes", [])
+    changed = False
+    for identity in _game_process_identities():
+        pid, started = identity["pid"], identity["started"]
+        # A process present before this attempt is never ours. If its PID was
+        # reused, a different start stamp is safe to admit as a new child.
+        if pid in baseline and (baseline[pid] is None or baseline[pid] == started):
+            continue
+        # The receipt is prepared before the game launch. Strictly reject a
+        # process whose second-resolution ``lstart`` does not prove it began
+        # after that preparation; losing a recovery is safer than adopting an
+        # orphan that was already on the desktop.
+        started_epoch = _process_start_epoch(started)
+        if started_epoch is None or started_epoch <= launch_epoch:
+            continue
+        if known.get(pid) != started:
+            known[pid] = started
+            changed = True
+    if changed:
+        data["game_processes"] = [
+            {"pid": pid, "started": started}
+            for pid, started in sorted(known.items())
+        ]
+        _write_cleanup_ownership(tag, data)
+    return data.get("game_processes", [])
+
+
+def owned_cleanup_game_processes(tag: str) -> list[int]:
+    """Return currently running game PIDs proven by the attempt receipt."""
+    data = _read_cleanup_ownership(tag)
+    if data is None:
+        return []
+    current = {
+        identity["pid"]: identity["started"]
+        for identity in _game_process_identities()
+    }
+    game_processes = data.get("game_processes", [])
+    if not isinstance(game_processes, list):
+        return []
+    owned = []
+    for item in game_processes:
+        if not isinstance(item, dict):
+            continue
+        pid, started = item.get("pid"), item.get("started")
+        if (isinstance(pid, int) and isinstance(started, str)
+                and current.get(pid) == started):
+            owned.append(pid)
+    return sorted(set(owned))
+
+
+def _merge_screen_components(components: list[tuple], gap: int = 8) -> list[tuple]:
+    """Merge antialiased pieces of one horizontal button."""
+    merged = list(components)
+    changed = True
+    while changed:
+        changed = False
+        for first in range(len(merged)):
+            _, left, top, right, bottom = merged[first]
+            for second in range(first + 1, len(merged)):
+                _, other_left, other_top, other_right, other_bottom = merged[second]
+                x_overlap = min(right, other_right) - max(left, other_left)
+                vertical_gap = max(0, max(top, other_top) - min(bottom, other_bottom))
+                first_width = right - left
+                other_width = other_right - other_left
+                similar_width = (max(first_width, other_width)
+                                 <= min(first_width, other_width) * 2.0)
+                close_vertically = (
+                    similar_width and x_overlap >= min(first_width, other_width) * 0.5
+                    and vertical_gap <= gap
+                )
+                if not close_vertically:
+                    continue
+                merged[first] = (
+                    merged[first][0] + merged[second][0],
+                    min(left, other_left), min(top, other_top),
+                    max(right, other_right), max(bottom, other_bottom),
+                )
+                del merged[second]
+                changed = True
+                break
+            if changed:
+                break
+    return merged
+
+
+def _screen_color_components(image, color: str) -> list[tuple]:
+    """Find strong red or blue pixel components without OCR or fixed coords."""
+    width, height = image.size
+    pixels = image.load()
+    step = 2
+    selected = set()
+    for y in range(0, height, step):
+        for x in range(0, width, step):
+            red, green, blue = pixels[x, y]
+            if color == "red":
+                wanted = (red >= 120 and red - green >= 45
+                          and red >= green * 1.55 and red >= blue * 1.55)
+            else:
+                wanted = (blue >= 105 and blue - red >= 30
+                          and blue >= red * 1.25 and blue >= green * 1.05)
+            if wanted:
+                selected.add((x, y))
+
+    components = []
+    while selected:
+        start = selected.pop()
+        frontier = [start]
+        points = [start]
+        while frontier:
+            x, y = frontier.pop()
+            for dx in (-step, 0, step):
+                for dy in (-step, 0, step):
+                    neighbour = (x + dx, y + dy)
+                    if neighbour in selected:
+                        selected.remove(neighbour)
+                        frontier.append(neighbour)
+                        points.append(neighbour)
+        if len(points) >= 15:
+            xs = [point[0] for point in points]
+            ys = [point[1] for point in points]
+            components.append((len(points), min(xs), min(ys),
+                               max(xs) + step, max(ys) + step))
+    return _merge_screen_components(components)
+
+
+def exit_confirmation_ok_pixel(shot: Path) -> tuple[int, int] | None:
+    """Find the red OK center only when paired with the blue Cancel button.
+
+    Civ VI renders this confirmation in its own canvas, so System Events sees
+    no accessible buttons. A red horizontal control beside a blue horizontal
+    control is a stronger identity check than a hard-coded window coordinate;
+    anything less is refused because a mistaken click can exit a different app.
+    """
+    try:
+        from PIL import Image
+        with Image.open(shot) as opened:
+            image = opened.convert("RGB")
+            red = _screen_color_components(image, "red")
+            blue = _screen_color_components(image, "blue")
+            _, height = image.size
+    except (OSError, ValueError, ImportError):
+        return None
+
+    def button_like(component):
+        area, left, top, right, bottom = component
+        component_width = right - left
+        component_height = bottom - top
+        return (
+            area >= 30 and component_width >= 60
+            and 6 <= component_height <= 100
+            and component_width / component_height >= 3.0
+            and height * 0.08 < (top + bottom) / 2 < height * 0.90
+        )
+
+    red_buttons = [component for component in red if button_like(component)]
+    blue_buttons = [component for component in blue if button_like(component)]
+    matches = []
+    for red_button in red_buttons:
+        _, red_left, red_top, red_right, red_bottom = red_button
+        red_width = red_right - red_left
+        red_height = red_bottom - red_top
+        red_center_y = (red_top + red_bottom) / 2
+        for blue_button in blue_buttons:
+            _, blue_left, blue_top, blue_right, blue_bottom = blue_button
+            if blue_left <= red_right:
+                continue
+            blue_width = blue_right - blue_left
+            blue_center_y = (blue_top + blue_bottom) / 2
+            if not 0.45 <= blue_width / red_width <= 3.5:
+                continue
+            if abs(blue_center_y - red_center_y) > max(red_height, 24):
+                continue
+            if blue_left - red_right > max(120, red_width * 1.5):
+                continue
+            matches.append((blue_left - red_right, red_button))
+    if not matches:
+        return None
+    _, component = min(matches, key=lambda match: match[0])
+    _, left, top, right, bottom = component
+    return (round((left + right) / 2), round((top + bottom) / 2))
+
+
+def _exit_confirmation_ok_point(shot: Path, screen_size: tuple[int, int]):
+    """Convert a verified screenshot-pixel center into Quartz screen points."""
+    pixel = exit_confirmation_ok_pixel(shot)
+    if pixel is None:
+        return None
+    try:
+        from PIL import Image
+        with Image.open(shot) as image:
+            pixel_width, pixel_height = image.size
+    except (OSError, ValueError, ImportError):
+        return None
+    screen_width, screen_height = screen_size
+    if not all(value > 0 for value in (pixel_width, pixel_height,
+                                       screen_width, screen_height)):
+        return None
+    return (round(pixel[0] * screen_width / pixel_width),
+            round(pixel[1] * screen_height / pixel_height))
+
+
+def recover_owned_exit_confirmation(tag: str) -> bool:
+    """Click Civ VI's custom OK only after ownership and screen checks pass."""
+    if not owned_cleanup_game_processes(tag):
+        return False
+    try:
+        frontmost = popup_clear.frontmost()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    frontmost = str(frontmost or "")
+    if not (frontmost.startswith("Civ6") or frontmost.startswith("Civilization")):
+        print(f"[teardown] owned game is not frontmost ({frontmost!r}); "
+              "leaving its screen untouched", flush=True)
+        return False
+    screen_size = macos_window.desktop_size()
+    if screen_size is None:
+        return False
+    safe_tag = re.sub(r"[^A-Za-z0-9_-]", "_", tag)
+    shot = Path(tempfile.gettempdir()) / f"civvis-exit-confirm-{safe_tag}.png"
+    try:
+        if not macos_window.screenshot(
+                shot, attempts=1, get_desktop_size=lambda: screen_size):
+            return False
+        point = _exit_confirmation_ok_point(shot, screen_size)
+        if point is None:
+            return False
+        macos_input.click(point[0], point[1], hold_s=0.12, check=True)
+        print(f"[teardown] clicked the verified Civ VI exit confirmation at "
+              f"Quartz {point[0]},{point[1]}", flush=True)
+        return True
+    except (OSError, ValueError, subprocess.SubprocessError,
+            macos_input.InputUnavailable):
+        return False
+    finally:
+        shot.unlink(missing_ok=True)
+
+
 def installed_run_tag() -> str | None:
     """Read the installed control mod's tag without changing the installation.
 
@@ -259,11 +623,25 @@ def teardown(expected_tag: str | None = None) -> bool:
         return False
 
     actual_tag = installed_run_tag()
-    if actual_tag != expected_tag:
+    if actual_tag != expected_tag and actual_tag is not None:
         found = repr(actual_tag) if actual_tag is not None else "no readable tag"
         print(f"[teardown] refusing to stop foreign run {found}; expected "
               f"{expected_tag!r}", flush=True)
         return False
+    # `civ6_play` removes the mod from its atexit handler. A missing tag is
+    # therefore recoverable only when this climb recorded a game PID while the
+    # attempt was alive, and that PID still has the same OS start stamp. A
+    # marker-less or already-reused process remains foreign by definition.
+    if actual_tag is None:
+        receipt = _read_cleanup_ownership(expected_tag)
+        if receipt is None:
+            print(f"[teardown] refusing to stop foreign run with no readable tag; "
+                  f"expected {expected_tag!r}", flush=True)
+            return False
+        if not owned_cleanup_game_processes(expected_tag) and busy():
+            print(f"[teardown] refusing to stop foreign run with no readable tag; "
+                  f"expected {expected_tag!r}", flush=True)
+            return False
 
     # A live `civ6_play` keeps this lock until its own finally block has stopped the
     # game.  If it still holds it, leave that controller to finish rather than
@@ -275,10 +653,16 @@ def teardown(expected_tag: str | None = None) -> bool:
         return False
 
     try:
-        if installed_run_tag() != expected_tag:
+        actual_tag = installed_run_tag()
+        if actual_tag not in (expected_tag, None):
             print(f"[teardown] run tag changed while acquiring cleanup ownership; "
                   f"leaving {expected_tag!r} alone", flush=True)
             return False
+        if actual_tag is None and not owned_cleanup_game_processes(expected_tag):
+            if busy():
+                print(f"[teardown] the missing-tag process is no longer proven to "
+                      f"belong to {expected_tag!r}; leaving it alone", flush=True)
+                return False
 
         escaped_tag = re.escape(expected_tag)
         # A dead play process can leave its brain behind, but it is safe to sweep
@@ -294,14 +678,25 @@ def teardown(expected_tag: str | None = None) -> bool:
         # controller cannot start between these lines; an unexpected tag change is a
         # hard refusal, not an excuse to clear or quit somebody else's game.
         if busy():
-            if installed_run_tag() != expected_tag:
-                print(f"[teardown] refusing to stop a run that changed from "
-                      f"{expected_tag!r}", flush=True)
-                return False
+            actual_tag = installed_run_tag()
+            if actual_tag != expected_tag:
+                if actual_tag is not None:
+                    print(f"[teardown] refusing to stop a run that changed from "
+                          f"{expected_tag!r}", flush=True)
+                    return False
+                if not owned_cleanup_game_processes(expected_tag):
+                    print(f"[teardown] refusing to stop an untagged process that "
+                          f"cannot be tied to {expected_tag!r}", flush=True)
+                    return False
             if not launcher.stop(timeout_s=45.0):
-                print("[teardown] the owned game is STILL running after stop(); "
-                      "preserving its run tag", flush=True)
-                return False
+                if not recover_owned_exit_confirmation(expected_tag):
+                    print("[teardown] the owned game is STILL running after stop(); "
+                          "preserving its run tag", flush=True)
+                    return False
+                if not launcher.stop(timeout_s=45.0):
+                    print("[teardown] the owned game remained after the verified "
+                          "exit confirmation; preserving its cleanup receipt", flush=True)
+                    return False
 
         # Do not erase the identity while a process remains.  Besides making the
         # next attempt's diagnostics honest, that keeps a still-running game guarded
@@ -312,6 +707,7 @@ def teardown(expected_tag: str | None = None) -> bool:
             return False
         if installed_run_tag() == expected_tag and install.clear_run_tag():
             print("[teardown] cleared the installed run tag", flush=True)
+        _cleanup_ownership_path(expected_tag).unlink(missing_ok=True)
         dismiss_crash_dialogs()
         return True
     finally:
@@ -1317,6 +1713,12 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
         slice_started = time.time()
         try:
             play.wait(timeout=20.0)
+            # The player may have been interrupted after its own atexit
+            # shutdown uninstalled the control mod. Capture any still-live
+            # child before teardown, but only for a run that actually emitted
+            # a turn; a stale game present before this attempt is never adopted.
+            if last_turn is not None:
+                remember_cleanup_game_processes(tag)
             # ⚠⚠ A PLAYER KILLED FROM OUTSIDE WHILE THE TURN WAS STALE IS A
             # FROZEN ATTEMPT, NOT A FINISHED ONE — and only "frozen" reaches
             # `resume_from_autosave`. The external wedge watchdog signals the
@@ -2366,10 +2768,15 @@ def main() -> int:
         # file next to a real one reads as "the decider said nothing". The single
         # decider logs to `<run-dir>/brain.log`, where `civ6_play` puts it.
         attempt_started_at = time.time()
+        prepare_cleanup_ownership(
+            tag, baseline_pids=getattr(env, "_LAST_GAME_PIDS", ()))
         play = subprocess.Popen(
             play_command(args, tag, orders_db, orders_bin),
             stdout=play_log, stderr=subprocess.STDOUT,
         )
+        player_pid = getattr(play, "pid", None)
+        if isinstance(player_pid, int):
+            complete_cleanup_ownership(tag, player_pid)
 
         # Bound before the `try` so the ledger stamp below reads a variable that
         # always exists, rather than relying on the exact control flow that
@@ -2404,13 +2811,21 @@ def main() -> int:
                 # play process killed by signal, which is the case that motivated the
                 # explicit terminate in the first place.
                 play_log.close()
-                teardown(run_tag)
-                torn_down = True
+                # Older embedding tests and operators may supply a cleanup
+                # callback that returns None; only an explicit False is a
+                # refusal from the built-in ownership guard.
+                cleanup_ok = teardown(run_tag) is not False
+                torn_down = cleanup_ok
                 # The run is over: write up every settler it lost to capture,
                 # beside its events, before the row is read.
                 write_settler_capture_dossiers(run_tag)
                 # Read once per run: this is the attempt's row unless it resumes.
                 record = outcome_of(run_tag)
+                if not cleanup_ok:
+                    print(f"[resume] cleanup for {run_tag} was not proven; "
+                          "not launching a continuation over a surviving game",
+                          flush=True)
+                    break
                 save = resume_from_autosave(
                     record, why, len(resumes), args, attempt_started_at,
                     used_saves={resume["save"] for resume in resumes},
@@ -2426,12 +2841,17 @@ def main() -> int:
                 before_resume = record
                 run_tag = cont
                 play_log = (logs / f"{cont}-play.log").open("w")
+                prepare_cleanup_ownership(
+                    cont, baseline_pids=getattr(env, "_LAST_GAME_PIDS", ()))
                 torn_down = False
                 play = subprocess.Popen(
                     play_command(args, cont, RUN_ROOT / cont / "orders.sqlite",
                                  orders_bin, load_save=save),
                     stdout=play_log, stderr=subprocess.STDOUT,
                 )
+                player_pid = getattr(play, "pid", None)
+                if isinstance(player_pid, int):
+                    complete_cleanup_ownership(cont, player_pid)
         finally:
             # The loop tears each run down before it resumes or breaks; this
             # is the safety net for an exception between those two points.
