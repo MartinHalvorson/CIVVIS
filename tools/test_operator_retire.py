@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -78,6 +79,26 @@ class RetireRequestTest(unittest.TestCase):
             operator_retire.request_active_run(root, "operator", ps_output=harness("civvis-live"))
             with self.assertRaisesRegex(operator_retire.RetireRequestError, "pending"):
                 operator_retire.request_active_run(root, "operator", ps_output=harness("civvis-live"))
+
+    def test_request_distinguishes_current_from_stale_continuation_summaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "control"
+            run = self.make_live_run(root)
+            summary = run / "summary.json"
+            summary.write_text(json.dumps({"reason": "stalled"}))
+            base_ns = 1_700_000_000_000_000_000
+            os.utime(summary, ns=(base_ns, base_ns))
+            os.utime(run / "events.jsonl", ns=(base_ns - 1, base_ns - 1))
+            with self.assertRaisesRegex(operator_retire.RetireRequestError, "already complete"):
+                operator_retire.request_active_run(
+                    root, "operator", ps_output=harness("civvis-live"))
+
+            with (run / "events.jsonl").open("a") as events:
+                events.write('{"kind":"turn","turn":5}\n')
+            os.utime(run / "events.jsonl", ns=(base_ns + 1, base_ns + 1))
+            requested = operator_retire.request_active_run(
+                root, "operator", ps_output=harness("civvis-live"))
+            self.assertEqual(requested["tag"], "civvis-live")
 
     def test_recorded_retirement_closes_the_pending_request(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
