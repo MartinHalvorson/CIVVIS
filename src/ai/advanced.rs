@@ -14043,18 +14043,24 @@ impl AdvancedAi {
             let goal_pick = forced_goal.and_then(|goal| {
                 available
                     .iter()
-                    .filter(|tech| self.tech_leads_to(g, tech, goal))
-                    // The cheapest step by what it will actually cost: the
-                    // printed price with `chase-every-boost` off, the price
-                    // less the boost in hand with it on. See
-                    // `advanced/chase_every_boost.rs`.
-                    .min_by(|a, b| {
-                        self.beeline_step_cost(g, pid, a.as_str(), true)
-                            .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), true))
-                            .unwrap()
-                            .then(a.cmp(b))
-                    })
+                    .find(|tech| tech.as_str() == goal)
                     .cloned()
+                    .or_else(|| {
+                        available
+                            .iter()
+                            .filter(|tech| self.tech_leads_to(g, tech, goal))
+                            // The cheapest step by what it will actually cost: the
+                            // printed price with `chase-every-boost` off, the price
+                            // less the boost in hand with it on. See
+                            // `advanced/chase_every_boost.rs`.
+                            .min_by(|a, b| {
+                                self.beeline_step_cost(g, pid, a.as_str(), true)
+                                    .partial_cmp(&self.beeline_step_cost(g, pid, b.as_str(), true))
+                                    .unwrap()
+                                    .then(a.cmp(b))
+                            })
+                            .cloned()
+                    })
             });
             let fallback_pick = available
                 .iter()
