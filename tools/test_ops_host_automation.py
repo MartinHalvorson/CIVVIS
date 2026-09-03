@@ -155,16 +155,16 @@ class _Host:
         self.stub.chmod(0o755)
 
     def env(self, **extra: str) -> dict:
-        # ⚠ CIVVIS_FOREGROUND_GUARD=0, always. The wrapper starts the real
-        # foreground guard detached; without this, every wrapper run here left
-        # one behind in a HOME that was deleted a moment later — 28 of them on
-        # 2026-08-28, each hammering System Events until nothing answered.
+        # ⚠ Both detached guards stay off here. A wrapper test has a temporary
+        # HOME; leaving either guard behind there once made every later pass
+        # contend for macOS Automation after the test deleted its lock.
         env = clean_env(HOME=str(self.home), CIVVIS_PINFILE=str(self.pin),
                         CIVVIS_VERIFICATION_POLICY=str(self.policy),
                         CIVVIS_LADDER_LOG=str(self.log),
                         CIVVIS_LADDER_LAUNCHER=str(self.stub),
                         CIVVIS_OPERATOR_INTENT_FILE=str(self.intent),
                         CIVVIS_FOREGROUND_GUARD="0",
+                        CIVVIS_TERMINAL_WINDOW_GUARD="0",
                         STUB_OUT=str(self.out))
         env.update(extra)
         return env
@@ -324,6 +324,7 @@ class TheWrapperAppliesThePolicyAndNothingElse(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertNotIn("foreground guard started", host.logged())
             self.assertEqual(host.env()["CIVVIS_FOREGROUND_GUARD"], "0")
+            self.assertEqual(host.env()["CIVVIS_TERMINAL_WINDOW_GUARD"], "0")
 
     def test_it_hands_over_to_the_sibling_launcher_by_default(self):
         text = WRAPPER.read_text()
