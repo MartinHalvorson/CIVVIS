@@ -16833,6 +16833,78 @@ fn targeted_science_recovers_a_persistent_idle_city_with_a_civilian() {
 }
 
 #[test]
+fn never_an_empty_queue_2_uses_a_legal_civilian_below_hard_veto() {
+    let (mut game, city, _) = empire_with_a_capital(79_125);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_never_an_empty_queue_2();
+    // Make every category-valued candidate unattractive enough to cross the
+    // ordinary hard-veto floor. The fixture still has legal civilian menu
+    // entries, which is the host state that used to wedge the live turn.
+    ai.base.w.p_builder = -20_000.0;
+    ai.base.w.p_trader = -20_000.0;
+    ai.base.w.p_military = -20_000.0;
+    ai.base.w.p_building = -20_000.0;
+    ai.base.w.p_district = -20_000.0;
+    ai.base.w.p_wonder = -20_000.0;
+    ai.base.w.p_project = -20_000.0;
+
+    let counts = ai.counts(&game, 0);
+    let items = game.producible_items(0, city);
+    let scores = ai.production_values(&game, 0, city, &items, &plan, counts);
+    let civilian = |game: &Game, item: &Item| match item {
+        Item::Unit { unit } => game
+            .rules
+            .units
+            .get(unit)
+            .is_none_or(|spec| spec.class != "military"),
+        Item::Formation { .. } | Item::Wonder { .. } => false,
+        _ => true,
+    };
+    assert!(
+        items.iter().any(|item| civilian(&game, item)),
+        "fixture: Civ VI exposes at least one legal civilian production item"
+    );
+    assert!(
+        items
+            .iter()
+            .zip(&scores)
+            .filter(|(item, _)| civilian(&game, item))
+            .all(|(_, score)| *score <= PRODUCTION_VETO_FLOOR),
+        "fixture: every civilian candidate must be below the ordinary floor; {items:?} / {scores:?}"
+    );
+
+    ai.advanced_production(&mut game, 0, &plan, false);
+    let started = game.cities[&city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the armed v2 gene must answer a legal empty queue");
+    assert!(
+        game.can_produce(0, city, &started),
+        "the emergency answer must be legal in the same Civvis menu"
+    );
+    assert!(
+        civilian(&game, &started),
+        "the v2 escape hatch must stay civilian"
+    );
+    assert!(
+        !matches!(started, Item::Wonder { .. } | Item::Formation { .. }),
+        "the emergency answer must not be a wonder or formation"
+    );
+}
+
+#[test]
 fn never_an_empty_queue_3_waits_for_a_persistent_non_science_stall() {
     let (mut game, city, _) = empire_with_a_capital(79_124);
     clear_barbarian_fixture(&mut game);
