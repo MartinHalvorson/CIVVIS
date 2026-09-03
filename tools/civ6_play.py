@@ -580,14 +580,16 @@ def build_config(args: argparse.Namespace) -> dict:
     if dialogue_seconds is None:
         dialogue_seconds = 0.25
     # A direct `SendWorkingDeal` has no session for the rival to evaluate.
-    # CIVVIS-driven games therefore need the session path for their buy/sell
-    # orders to produce an answer; ordinary/manual games keep the non-modal
-    # direct path unless the caller opts in explicitly.  `None` is the parser's
-    # intentional "choose from the mode" value, while False remains a real
-    # escape hatch for hosts whose UI cannot carry deal sessions.
+    # That makes the trade lane less capable, but unattended verification must
+    # favour a continuously playable game: this host has reproduced a Civ VI
+    # core wedge immediately after an unanswered MAKE_DEAL session closes.
+    # Keep sessions as an explicit opt-in while the direct path remains the
+    # safe default for both manual and CIVVIS-driven games.  `None` is the
+    # parser's intentional "choose the safe default" value, while True keeps
+    # an isolated interactive-session experiment available.
     deal_sessions = getattr(args, "deal_sessions", None)
     if deal_sessions is None:
-        deal_sessions = bool(getattr(args, "civvis_decides", False))
+        deal_sessions = False
     config = {
         "RunTag": args.tag,
         "AutoStart": True,
@@ -3044,6 +3046,31 @@ def play(args: argparse.Namespace) -> int:
         print("[policy] ignoring --restart-below-leader-ratio="
               f"{legacy_score_ratio}: verification games always play to an "
               "in-game outcome", flush=True)
+    # A saved game can be alive and waiting for its SQLite decision worker even
+    # when the interactive capture path is temporarily unavailable (for example
+    # while the operator is recording).  Attaching that worker must never run
+    # the ordinary launcher's startup/teardown lifecycle: both ends would stop
+    # the healthy, already-loaded game.
+    if getattr(args, "attach_running", False):
+        hold_macos_awake()
+        if not gamelock.acquire(args.tag, wait_s=args.lock_wait,
+                                require_verification_intent=True):
+            halt = gamelock.operator_halt_description()
+            if halt is not None:
+                print(f"game attach blocked: {halt}", file=sys.stderr)
+                return 6
+            foreign = gamelock.foreign_run(args.tag)
+            print(f"another run holds the game: {foreign or gamelock.describe()}",
+                  file=sys.stderr)
+            return 6
+        try:
+            return _attach_running_game(args)
+        finally:
+            # The attached process owns the controller lock, not the Civ VI
+            # process.  Releasing it permits the normal supervisor to take the
+            # next completed game, while preserving a live save on any attach
+            # failure for a safe retry.
+            gamelock.release()
     # One run at a time against this installation. Two harnesses share one mod
     # directory, one log and one process; the second one's install lands in the
     # middle of the first one's game and neither notices.
@@ -3074,6 +3101,228 @@ def play(args: argparse.Namespace) -> int:
         # after its event stream and mirror have stopped.
         launcher.stop()
         gamelock.release()
+
+
+def _attach_running_game(args: argparse.Namespace) -> int:
+    """Attach the log relay and CIVVIS brain to an already-loaded save.
+
+    This is intentionally smaller than :func:`_play`: the launcher, visual
+    bootstrap, and capture-driven popup routines all belong to a *new* game and
+    are unsafe to invoke against an operator's live save.  The game-side mod
+    already owns the turn loop; it only needs the append-only event relay and
+    the SQLite decision worker restored.
+    """
+    if not args.civvis_decides:
+        print("--attach-running requires --civvis-decides", file=sys.stderr)
+        return 2
+
+    run_dir = RUN_ROOT / args.tag
+    run_dir.mkdir(parents=True, exist_ok=True)
+    orders_db = orders_db_path(run_dir, args.orders_db)
+    args.orders_db = str(orders_db)
+    config = build_config(args)
+    installed = modinstall.installed_config()
+    target = modinstall.install_dir()
+    if (not target.is_dir() or installed is None
+            or installed.get("RunTag") != config["RunTag"]
+            or installed.get("DealSessions") != config["DealSessions"]
+            or installed.get("OrdersDb") != config["OrdersDb"]):
+        print("the installed control mod does not match the live saved game",
+              file=sys.stderr)
+        return 3
+
+    binary = Path(args.civvis_bin).expanduser() if args.civvis_bin else (
+        REPO_ROOT / "target" / "release" / "civvis_orders"
+    )
+    if not binary.is_file():
+        print(f"CIVVIS decision binary does not exist: {binary}", file=sys.stderr)
+        return 4
+
+    # EventLogBridge begins at Automation.log's start on purpose.  It recovers
+    # the current state's one missing board after a player process exits, while
+    # its multiset accounting keeps an already-recorded run lossless.
+    bridge = watch.EventLogBridge(run_dir, tag=args.tag)
+    events_path = run_dir / "events.jsonl"
+    try:
+        event_offset = events_path.stat().st_size
+    except OSError:
+        event_offset = 0
+
+    # A caller that knows this is an AutoSave reload gives its opening turn.
+    # Do not let a newer historical journal row impersonate the live board.
+    last_turn = (args.attach_replay_turn
+                 if args.attach_replay_turn is not None else -1)
+    outcome: str | None = None
+    pending_identity = None
+    last_retire_attempt = 0.0
+
+    def observe(event: dict) -> None:
+        nonlocal last_turn, outcome
+        if event.get("run") != args.tag:
+            return
+        kind = event.get("kind")
+        if kind in ("state", "turn"):
+            try:
+                turn = int(event.get("turn", -1))
+            except (TypeError, ValueError):
+                turn = -1
+            if turn >= 0:
+                last_turn = max(last_turn, turn)
+        if kind == "victory":
+            outcome = "victory"
+        elif kind == "defeat" and bool(event.get("ours")):
+            outcome = "defeat"
+        elif kind == "retired":
+            outcome = "retired"
+
+    def process_new_events() -> None:
+        nonlocal event_offset
+        try:
+            with events_path.open("r", errors="replace") as journal:
+                journal.seek(event_offset)
+                fresh = journal.readlines()
+                event_offset = journal.tell()
+        except OSError:
+            return
+        for raw in fresh:
+            try:
+                observe(json.loads(raw))
+            except ValueError:
+                continue
+
+    if args.attach_replay_turn is None:
+        # Without an explicit AutoSave turn, the complete existing journal is
+        # the best available reading of the live seat.
+        try:
+            with events_path.open("r", errors="replace") as journal:
+                for raw in journal:
+                    try:
+                        observe(json.loads(raw))
+                    except ValueError:
+                        continue
+        except OSError:
+            pass
+    bridge.pump()
+    process_new_events()
+    if outcome is not None:
+        print(f"[attach] game already completed with {outcome} at turn {last_turn}",
+              flush=True)
+        return 0
+
+    brain_log = (run_dir / "brain.log").open("a", buffering=1)
+    brain = None
+    first_brain = True
+
+    def start_brain() -> subprocess.Popen:
+        nonlocal first_brain
+        command = supervised_brain_command(args, run_dir, orders_db, binary)
+        # Civ VI autosaves at an opening turn.  Its previous incarnation may
+        # already have a terminal journal row, so deliberately reopen only the
+        # live save's turn once; subsequent worker restarts use SQLite's normal
+        # ready checkpoint.
+        if first_brain and args.attach_replay_turn is not None:
+            command += ["--replay-turn", str(args.attach_replay_turn)]
+        first_brain = False
+        proc = subprocess.Popen(
+            command,
+            cwd=REPO_ROOT,
+            stdout=brain_log,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        print(f"[attach] CIVVIS decision worker pid={proc.pid} "
+              f"replay_turn={args.attach_replay_turn}", flush=True)
+        return proc
+
+    def stop_brain() -> None:
+        nonlocal brain
+        if brain is not None and brain.poll() is None:
+            brain.terminate()
+            try:
+                brain.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                brain.kill()
+                brain.wait(timeout=5)
+        brain = None
+
+    def process_operator_retirement() -> None:
+        nonlocal pending_identity, last_retire_attempt
+        request = operator_retire.read_pending_request(run_dir, args.tag)
+        if request is None:
+            return
+        identity = (request.get("tag"), request.get("requested_utc"))
+        now = time.monotonic()
+        if (identity == pending_identity
+                and now - last_retire_attempt < OPERATOR_RETIRE_RETRY_S):
+            return
+        pending_identity = identity
+        last_retire_attempt = now
+        if last_turn < 0:
+            detail = "no current game turn is available for the native retire request"
+            sent = False
+        else:
+            sent = request_retire(
+                orders_db, args.tag, last_turn,
+                str(request.get("reason") or "operator"),
+            )
+            detail = ("wrote native retire order; awaiting control-mod acknowledgement"
+                      if sent else "could not write the native retire order")
+        try:
+            operator_retire.record_attempt(run_dir, request, detail)
+        except OSError as error:
+            print(f"[attach] could not record retirement state: {error}",
+                  file=sys.stderr, flush=True)
+        print(f"[attach] {'requested' if sent else 'waiting'}: {detail}",
+              flush=True)
+
+    # A brain's normal deadline is a maintenance boundary, not an in-game
+    # outcome.  Restart it while the game is still alive so a long validation
+    # session never loses its decision channel merely because a timer elapsed.
+    brain = start_brain()
+    last_heartbeat = 0.0
+    last_focus = 0.0
+    core_missing_since: float | None = None
+    try:
+        while outcome is None:
+            copied = bridge.pump()
+            if copied:
+                process_new_events()
+            process_operator_retirement()
+            if brain.poll() is not None:
+                code = brain.returncode
+                print(f"[attach] decision worker exited ({code}); restarting "
+                      "against the live game", flush=True)
+                time.sleep(2.0)
+                brain = start_brain()
+            now = time.monotonic()
+            # Civ VI advances frames at a crawl while another app owns the
+            # desktop.  The attach mode has no pixel work, so a light periodic
+            # activation is enough to retain the normal player's foreground
+            # guarantee without disturbing an operator's recording pipeline.
+            if (not screen_locked()
+                    and now - last_focus >= max(1.0, args.focus_every)):
+                focus_game()
+                last_focus = now
+            if env.game_pids():
+                core_missing_since = None
+            elif core_missing_since is None:
+                core_missing_since = now
+                print("[attach] Civ VI process is absent; waiting briefly for "
+                      "the final game event", flush=True)
+            elif now - core_missing_since >= 30.0:
+                print("[attach] Civ VI exited without a final game event", flush=True)
+                return 5
+            if now - last_heartbeat >= 60.0:
+                last_heartbeat = now
+                print(f"[attach] live turn={last_turn} relayed={copied}",
+                      flush=True)
+            time.sleep(0.1)
+    finally:
+        stop_brain()
+        brain_log.close()
+
+    print(f"[attach] game completed with {outcome} at turn {last_turn}", flush=True)
+    return 0
 
 
 def seat_matches_requested(
@@ -3199,6 +3448,13 @@ def _play(args: argparse.Namespace) -> int:
     config = build_config(args)
     events_path = run_dir / "events.jsonl"
     events = events_path.open("a")
+    # A GUI launch agent can drive an already installed game but lacks the
+    # per-app privacy grant that permits writes inside Civ6.app.  Recovery may
+    # therefore preinstall this exact control configuration from the authorized
+    # interactive controller, then ask the persistent player to consume it.
+    # This narrow escape hatch is deliberately explicit and validates the
+    # identity and inbound channel that make a stale control mod dangerous.
+    preinstalled_mod = os.environ.get("CIVVIS_PREINSTALLED_CONTROL_MOD") == "1"
 
     if not launcher.stop():
         print("could not stop the previous Civilization VI process", file=sys.stderr)
@@ -3208,8 +3464,20 @@ def _play(args: argparse.Namespace) -> int:
         # this tag.  Never reset an explicitly shared path behind an operator's
         # back: an attached SQLite handle would keep reading the old inode.
         reset_orders_db(orders_db)
-    target = modinstall.install(config)
-    print(f"installed {target}")
+    if preinstalled_mod:
+        target = modinstall.install_dir()
+        installed = modinstall.installed_config()
+        if (not target.is_dir() or installed is None
+                or installed.get("RunTag") != config["RunTag"]
+                or installed.get("DealSessions") != config["DealSessions"]
+                or installed.get("OrdersDb") != config["OrdersDb"]):
+            print("preinstalled control mod does not match this recovery run",
+                  file=sys.stderr)
+            return 3
+        print(f"using preinstalled {target}")
+    else:
+        target = modinstall.install(config)
+        print(f"installed {target}")
     print(f"  difficulty {config['Difficulty']}  map {config['MapSize']}"
           f"  speed {config['GameSpeed']}  max turns {config['MaxTurns']}")
 
@@ -3269,6 +3537,9 @@ def _play(args: argparse.Namespace) -> int:
     # on the supervisor's ordinary teardown too; the next verification run
     # reinstalls at startup, so removal costs nothing but the file writes.
     def _uninstall_mod():
+        if preinstalled_mod:
+            print("leaving the preinstalled control mod for its authorized owner")
+            return
         try:
             if modinstall.uninstall():
                 print("uninstalled the control mod; Civ6.app is vanilla again")
@@ -4521,6 +4792,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--load-wait", type=float, default=90.0)
     ap.add_argument("--load-save", default=None,
                     help="load this visible single-player save instead of creating a game")
+    ap.add_argument("--attach-running", action="store_true", default=False,
+                    help="attach the log relay and decision worker to an already "
+                         "loaded saved game without launching, stopping, or using "
+                         "screen capture")
+    ap.add_argument("--attach-replay-turn", type=int, default=None,
+                    help="opening turn of a loaded AutoSave to serve again once; "
+                         "used only with --attach-running")
     ap.add_argument("--timeout", type=float, default=7200.0)
     ap.add_argument("--timeout-ceiling", type=float, default=None,
                     help="hard wall-clock bound, in seconds. Between --timeout "
