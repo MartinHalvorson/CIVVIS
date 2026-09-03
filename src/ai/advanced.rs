@@ -13208,6 +13208,19 @@ impl AdvancedAi {
         project: &str,
         plan: &StrategicPlan,
     ) -> f64 {
+        // Once a current controller has crossed the shared specialization
+        // boundary into its Science plan, Commercial Hub Investment spends a
+        // mature queue on Gold and Merchant points instead of the Space Race.
+        // The development half and emergency Recovery plans retain their
+        // ordinary project choices, and the frozen v1 controller stays exact.
+        if self.victory_planning
+            && Self::victory_specialization_active(g)
+            && self.active_victory_target(g) == Some(VictoryTarget::Science)
+            && plan.strategy == GrandStrategy::Science
+            && project == "commercial_hub_investment"
+        {
+            return -10_000.0;
+        }
         let spec = &g.rules.projects[project];
         let city = &g.cities[&cid];
         let production = g.city_yields(cid).production.max(1.0);

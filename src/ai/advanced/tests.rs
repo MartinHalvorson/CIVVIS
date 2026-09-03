@@ -5779,15 +5779,56 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
          {early_targeted_value}"
     );
 
-    // Once the shared halfway boundary opens specialization, the same target
-    // restores the building-before-projects reserve.
+    // Once the shared halfway boundary opens specialization, a Science lane
+    // must keep its mature queue off the unrelated Commercial Hub project.
     game.turn = game.max_turns / 2;
     targeted.refresh_research_weight(&game);
     let targeted_value =
         targeted.district_project_value(&game, 0, city, "commercial_hub_investment", &science_plan);
     assert!(
-        targeted_value <= PROJECT_BEHIND_BUILDINGS_CAP,
-        "the late Science target must cap the repeatable project: {targeted_value}"
+        targeted_value <= -9_999.0,
+        "the late Science target must refuse Commercial Hub Investment: {targeted_value}"
+    );
+
+    // A defensive posture is not victory specialization: it keeps the
+    // project's existing valuation rather than inheriting the late Science
+    // queue veto merely because the long-term target is Science.
+    let recovery_plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let recovery_value = targeted.district_project_value(
+        &game,
+        0,
+        city,
+        "commercial_hub_investment",
+        &recovery_plan,
+    );
+    assert!(
+        recovery_value > -9_999.0,
+        "a Recovery plan must retain its existing project choices: {recovery_value}"
+    );
+
+    // The frozen controller is deliberately outside the new current-planner
+    // contract, even when a test gives it an explicit Science target.
+    let mut legacy_targeted = AdvancedAi::legacy();
+    legacy_targeted.victory_target = Some(VictoryTarget::Science);
+    legacy_targeted.refresh_research_weight(&game);
+    let legacy_value = legacy_targeted.district_project_value(
+        &game,
+        0,
+        city,
+        "commercial_hub_investment",
+        &science_plan,
+    );
+    assert!(
+        legacy_value > -9_999.0,
+        "the frozen controller must retain its pre-veto project valuation: {legacy_value}"
     );
 
     // Library built, University not yet reachable: nothing owed, the race
