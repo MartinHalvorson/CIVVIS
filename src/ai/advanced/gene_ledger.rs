@@ -568,6 +568,18 @@ impl AdvancedAi {
 mod tests {
     use super::*;
 
+    fn deployment_lists_tag_or_its_family_member(deployed: &[&str], tag: &str) -> bool {
+        if deployed.contains(&tag) {
+            return true;
+        }
+        let Some(family) = mutually_exclusive_family(tag) else {
+            return false;
+        };
+        deployed
+            .iter()
+            .any(|candidate| mutually_exclusive_family(candidate) == Some(family))
+    }
+
     /// The generated table and `docs/gene_ledger.json` are two writings of
     /// one measurement; `tools/genes.py write` produces both.
     #[test]
@@ -1078,8 +1090,8 @@ mod tests {
         }
         for tag in &applied.enabled {
             assert!(
-                deployed.contains(tag),
-                "{tag} is enabled yet not listed as deployed"
+                deployment_lists_tag_or_its_family_member(&deployed, tag),
+                "{tag} is enabled yet neither it nor its active family member is listed as deployed"
             );
         }
         for tag in super::super::genes::live_tags() {
@@ -1278,9 +1290,11 @@ mod tests {
                     "{tag}: a live gene is on unless the ledger holds it off"
                 );
             } else if gene.opt_in() {
+                let expected_on = ledger_default_on(tag) == Some(true);
+                let listed = deployed.contains(&tag)
+                    || (expected_on && deployment_lists_tag_or_its_family_member(&deployed, tag));
                 assert_eq!(
-                    deployed.contains(&tag),
-                    ledger_default_on(tag) == Some(true),
+                    listed, expected_on,
                     "{tag}: an opt-in is on only when the ledger turns it on"
                 );
                 assert_eq!(
