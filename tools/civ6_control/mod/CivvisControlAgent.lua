@@ -18754,6 +18754,15 @@ local function tick()
 						if parked > 0 then
 							answered = answered .. "+parked:" .. parked;
 						end
+						-- A units blocker can mask an empty city queue.  The live run
+						-- civvis-20260903T135954Z reached t40 with a pending Ravenna
+						-- production request, then reported only ENDTURN_BLOCKING_UNITS;
+						-- forcing the turn here skipped the production repair arm below.
+						-- Retry the same forced production ladder after parking units,
+						-- so a Civvis request that has not appeared in the host queue yet
+						-- can still be handed to the game before this pass ends.
+						local set = driveProduction(player, turn, true) or 0;
+						answered = answered .. "+production_retry:" .. set;
 						-- A parked answer can leave the Game Core waiting without publishing
 						-- the second sighting that the bounded forfeit below used to need.
 						-- Dismiss and force now, after the position-preserving parking pass;
