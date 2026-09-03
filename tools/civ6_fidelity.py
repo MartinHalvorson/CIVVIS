@@ -825,6 +825,7 @@ ALIASES = {
     "water_entertainment_complex": "water_park",
     "water_street_carnival": "copacabana",
     "beach_resort": "seaside_resort",
+    "mountain_road": "qhapaq_nan",
     "pyramid": "nubian_pyramid",
     # Rows that were reported "Only in CIVVIS" — i.e. compared against nothing.
     "byzantine_tagma": "tagma",
