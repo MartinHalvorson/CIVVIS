@@ -25,6 +25,11 @@ set -u
 unsetopt BG_NICE
 SELF_DIR=${0:A:h}
 LOG=${CIVVIS_LADDER_LOG:-$HOME/Library/Logs/civvis-ladder.log}
+# A Terminal document becomes an ordinary login shell after the command exits,
+# so its title changes from this script to the checkout it last visited.  Keep
+# a per-tab marker that survives that hand-off: it is the only safe identity
+# the delayed reaper can still use without mistaking a reused tty for ours.
+MANAGED_WINDOW_MARKER='CIVVIS managed ladder'
 # CIVVIS_LADDER_SUPERVISOR remains a compatibility override for an operator's
 # direct launcher; normal recovery must use the host so an audit cannot create
 # a second independent supervisor beside it.
@@ -39,8 +44,8 @@ say() {
 # an EXIT trap can inspect it. The old direct-TTY cleanup therefore logged
 # "own tty not found" and left the completed document behind. Spawn a tiny
 # Terminal-descended reaper before exit instead: after the shell is actually
-# idle it can close only a window whose title still proves it was ours. An
-# operator's normal Terminal remains busy and never matches this predicate.
+# idle it can close only a window whose marker still proves it was ours. An
+# operator's normal Terminal never receives that marker.
 WINDOW_REAPER_SCHEDULED=0
 schedule_idle_window_reap() {
   (( WINDOW_REAPER_SCHEDULED )) && return 0
@@ -49,14 +54,23 @@ schedule_idle_window_reap() {
   local own_tty=${TTY:-}
   [[ "$own_tty" == /dev/tty* ]] || return 0
   (
-    /usr/bin/nohup /usr/bin/osascript >>"$LOG" 2>&1 <<'APPLESCRIPT'
+    /usr/bin/nohup /usr/bin/osascript - "$MANAGED_WINDOW_MARKER" >>"$LOG" 2>&1 <<'APPLESCRIPT'
+on run argv
+set windowMarker to item 1 of argv
 delay 1
 set reaped to 0
 tell application "Terminal"
   repeat with i from (count of windows) to 1 by -1
     try
       set w to item i of windows
-      if (busy of w) is false and (((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher")) then
+      set marked to false
+      repeat with t in tabs of w
+        try
+          if (custom title of t) is windowMarker then set marked to true
+        end try
+      end repeat
+      -- The title checks are only for legacy windows that predate the marker.
+      if (busy of w) is false and (marked or ((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher")) then
         close w
         set reaped to reaped + 1
       end if
@@ -64,6 +78,7 @@ tell application "Terminal"
   end repeat
 end tell
 return "window cleanup: reaped " & reaped & " idle managed window(s)"
+end run
 APPLESCRIPT
   ) &
   say "window cleanup: scheduled idle managed-window reaper"
@@ -96,9 +111,10 @@ if [[ -z ${CIVVIS_LADDER_KEEP_WINDOW:-} ]]; then
   # ⚠ The result is LOGGED, not discarded. A silent `|| true` here would make
   # "the window still covers the game" and "the script never ran" look the same
   # from the log, which is the whole failure mode this file exists to prevent.
-  window_report=$(/usr/bin/osascript - "$TTY" 2>&1 <<'APPLESCRIPT'
+  window_report=$(/usr/bin/osascript - "$TTY" "$MANAGED_WINDOW_MARKER" 2>&1 <<'APPLESCRIPT'
 on run argv
   set myTty to item 1 of argv
+  set windowMarker to item 2 of argv
   set mineSeen to 0
   set reaped to 0
   set liveSeen to 0
@@ -108,6 +124,7 @@ on run argv
         set w to item i of windows
         if (count of tabs of w) > 0 then
           set mine to false
+          set marked to false
           -- ⚠ `tty` ALONE IS NOT AN IDENTITY. macOS reassigns a tty device
           -- number as soon as its shell exits, so a dead launcher window keeps
           -- reporting the tty this live one was just given: matching on tty
@@ -115,17 +132,21 @@ on run argv
           -- A window whose shell has exited is not this shell; require both.
           repeat with t in tabs of w
             try
-              if (tty of t) is myTty and (busy of w) is true then set mine to true
+              if (custom title of t) is windowMarker then set marked to true
+              if (tty of t) is myTty and (busy of w) is true then
+                set custom title of t to windowMarker
+                set title displays custom title of t to true
+                set mine to true
+              end if
             end try
           end repeat
           if mine then
             set miniaturized of w to true
             set mineSeen to mineSeen + 1
-          -- Terminal titles the document it opened, not necessarily the script
-          -- that it `exec`s.  Normal recovery opens the operator wrapper, whose
-          -- title is `civvis-verified-head-launcher.sh`; matching only this
-          -- hand-off file left every completed recovery window behind.
-          else if ((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher") then
+          -- The marker survives Terminal's post-command login-shell hand-off.
+          -- Title matching remains only for dead windows created before this
+          -- marker existed.
+          else if marked or ((name of w) contains "civvis-ladder-terminal-launcher") or ((name of w) contains "civvis-verified-head-launcher") then
             if (busy of w) is false then
               close w
               set reaped to reaped + 1
