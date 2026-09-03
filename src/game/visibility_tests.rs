@@ -84,6 +84,15 @@ fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
     // still the authority: moving a sight source in that branch must replace
     // the inherited Arc without disturbing the source world's cache.
     let source_unit_cache = Arc::clone(&game.vision.borrow().entries);
+    let inherited_worker_cache = game.speculative_clone().vision.into_inner();
+    let stamp = game.world_stamp();
+    game.vision
+        .borrow_mut()
+        .merge_current(inherited_worker_cache, stamp);
+    assert!(
+        Arc::ptr_eq(&source_unit_cache, &game.vision.borrow().entries),
+        "merging a worker with no ray misses must not fork the source table"
+    );
     let mut branch = game.speculative_clone();
     assert!(
         Arc::ptr_eq(&source_unit_cache, &branch.vision.borrow().entries),

@@ -1688,8 +1688,10 @@ impl VisionCache {
     ///
     /// Every worker starts from a clone of the same final position. Ignore a
     /// cache that never advanced to that position's stamp (a seat with no
-    /// sight sources can legitimately leave it untouched), then merge the
-    /// flat unit vectors in stable ID order through `put`.
+    /// sight sources can legitimately leave it untouched). An unchanged worker
+    /// still points at the authoritative table, so it needs no merge at all;
+    /// a worker that derived a missing ray has its own copy-on-write table,
+    /// which is folded in stable ID order through `put`.
     fn merge_current(&mut self, other: VisionCache, stamp: u64) {
         if other.stamp != stamp {
             return;
@@ -1697,14 +1699,16 @@ impl VisionCache {
         if self.stamp != stamp {
             self.reset(stamp);
         }
-        for ((unit, key), seen) in other
-            .entries
-            .units
-            .iter()
-            .zip(&other.entries.keys)
-            .zip(&other.entries.seen)
-        {
-            self.put_shared(stamp, *unit, *key, Arc::clone(seen));
+        if !Arc::ptr_eq(&self.entries, &other.entries) {
+            for ((unit, key), seen) in other
+                .entries
+                .units
+                .iter()
+                .zip(&other.entries.keys)
+                .zip(&other.entries.seen)
+            {
+                self.put_shared(stamp, *unit, *key, Arc::clone(seen));
+            }
         }
         if let Some(wonders) = other.built_wonders {
             self.built_wonders = Some(wonders);
@@ -25431,8 +25435,9 @@ impl Game {
     }
 
     /// Compute current sight from one immutable final position, then publish
-    /// each result serially. Worker game clones start with disposable vision
-    /// caches, and the newly filled entries are merged back before returning.
+    /// each result serially. Worker game clones inherit immutable unit rays;
+    /// any missing entries use copy-on-write storage and are merged back before
+    /// returning.
     fn refresh_visibility_parallel(
         &mut self,
         players: Vec<usize>,
