@@ -3172,7 +3172,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             outcome = "victory"
         elif kind == "defeat" and bool(event.get("ours")):
             outcome = "defeat"
-        elif kind == "retired":
+        elif kind in ("retired",):
             outcome = "retired"
 
     def process_new_events() -> None:
