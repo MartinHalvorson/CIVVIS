@@ -13247,7 +13247,12 @@ impl AdvancedAi {
             }
         }
         let horizon = turns.clamp(1.0, 16.0);
-        let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0;
+        // Keep the science-drive's Campus Research Grants credit inside this
+        // routine, before the early-project and building-debt caps below. A
+        // project bonus added after those caps would recreate the exact
+        // overhang the caps were introduced to prevent.
+        let mut value = self.yield_value(ongoing, plan.strategy) * horizon * 4.0
+            + self.science_drive_production_bonus(g, pid, cid, &item);
 
         let gpp_awards = g.project_completion_gpp_awards(pid, cid, project);
         let great_person_lane = self.great_person_lane(g, pid, plan);
