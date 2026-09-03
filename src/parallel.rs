@@ -31,7 +31,10 @@ enum WorkerMessage {
 }
 
 enum BatchMessage<T> {
-    Value(usize, T),
+    /// A worker's completed values. Publishing a batch avoids taking the
+    /// channel lock once per fine-grained job; the receiver still validates
+    /// and installs each result in deterministic index order.
+    Values(Vec<(usize, T)>),
     Panicked(Box<dyn Any + Send + 'static>),
     WorkerDone,
 }
@@ -145,8 +148,9 @@ impl WorkPool {
     /// Evaluate `count` owned jobs and return their results in index order.
     ///
     /// At most one batch task per worker is queued. Those tasks claim indices
-    /// from a shared counter, retaining load balance without one allocation and
-    /// one channel message per candidate. A panic cancels unclaimed work,
+    /// from a shared counter, retaining load balance without one allocation per
+    /// candidate; each worker publishes its completed values in one message. A
+    /// panic cancels unclaimed work,
     /// drains every active worker, and resumes on the caller; the pool itself
     /// remains usable.
     pub fn map<T, F>(&self, count: usize, job: F) -> Vec<T>
@@ -175,23 +179,27 @@ impl WorkPool {
             let result_tx = result_tx.clone();
             self.sender
                 .send(WorkerMessage::Run(Box::new(move || {
+                    let mut results = Vec::new();
                     while !cancelled.load(Ordering::Acquire) {
                         let index = next.fetch_add(1, Ordering::Relaxed);
                         if index >= count {
                             break;
                         }
                         match catch_unwind(AssertUnwindSafe(|| job(index))) {
-                            Ok(value) => {
-                                if result_tx.send(BatchMessage::Value(index, value)).is_err() {
-                                    break;
-                                }
-                            }
+                            Ok(value) => results.push((index, value)),
                             Err(payload) => {
                                 cancelled.store(true, Ordering::Release);
+                                if !results.is_empty() {
+                                    let _ = result_tx.send(BatchMessage::Values(results));
+                                }
                                 let _ = result_tx.send(BatchMessage::Panicked(payload));
-                                break;
+                                let _ = result_tx.send(BatchMessage::WorkerDone);
+                                return;
                             }
                         }
+                    }
+                    if !results.is_empty() {
+                        let _ = result_tx.send(BatchMessage::Values(results));
                     }
                     let _ = result_tx.send(BatchMessage::WorkerDone);
                 })))
@@ -207,7 +215,11 @@ impl WorkPool {
                 .recv()
                 .expect("a persistent worker stopped without reporting completion")
             {
-                BatchMessage::Value(index, value) => values[index] = Some(value),
+                BatchMessage::Values(results) => {
+                    for (index, value) in results {
+                        values[index] = Some(value);
+                    }
+                }
                 BatchMessage::Panicked(payload) => {
                     if first_panic.is_none() {
                         first_panic = Some(payload);
@@ -343,10 +355,8 @@ impl WorkPool {
                     };
                     match catch_unwind(AssertUnwindSafe(|| job(state, indices))) {
                         Ok(results) => {
-                            for (index, value) in results {
-                                if result_tx.send(BatchMessage::Value(index, value)).is_err() {
-                                    break;
-                                }
+                            if !results.is_empty() {
+                                let _ = result_tx.send(BatchMessage::Values(results));
                             }
                         }
                         Err(payload) => {
@@ -368,16 +378,18 @@ impl WorkPool {
                 .recv()
                 .expect("a stateful worker stopped without reporting completion")
             {
-                BatchMessage::Value(index, value) => {
-                    assert!(
-                        index < count,
-                        "stateful worker returned index {index} out of range"
-                    );
-                    assert!(
-                        values[index].is_none(),
-                        "stateful worker returned index {index} twice"
-                    );
-                    values[index] = Some(value);
+                BatchMessage::Values(results) => {
+                    for (index, value) in results {
+                        assert!(
+                            index < count,
+                            "stateful worker returned index {index} out of range"
+                        );
+                        assert!(
+                            values[index].is_none(),
+                            "stateful worker returned index {index} twice"
+                        );
+                        values[index] = Some(value);
+                    }
                 }
                 BatchMessage::Panicked(payload) => {
                     if first_panic.is_none() {
