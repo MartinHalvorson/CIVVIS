@@ -9826,7 +9826,21 @@ fn imminent_city_attack_triggers_before_the_aggregate_ratio_is_critical() {
     assert_eq!(
         AdvancedAi::new().threatened_city(&game, 0),
         Some(city),
-        "an imminent legal city attack must not wait for a second hostile"
+        "an imminent legal city attack must not wait for a second hostile; pressure={pressure:.3}, defense={:.3}, attack={:.3}",
+        game.city_strength(city),
+        crate::game::effective_strength(game.unit_strength(&game.units[&horseman], false), game.units[&horseman].hp),
+    );
+
+    game.remove_unit(horseman);
+    let warrior = game.spawn_test_unit("warrior", 1, attack_tile);
+    assert!(
+        game.attack_reach(warrior).contains(&city_pos),
+        "the weak hostile must still be able to attack the City Center"
+    );
+    let visible = game.player_vision_frame(0);
+    assert!(
+        !AdvancedAi::imminent_city_attack(&game, 0, city, &visible),
+        "a legal but underpowered attack must not raise the imminent alarm"
     );
 }
 
@@ -28034,8 +28048,8 @@ fn campaign_city_score_uses_the_last_seen_city_combat_state() {
 /// The barbarian-scout exemption is a native arm: Firaxis' barbarian scouts
 /// neither attack nor capture, and the native seat's provably cannot (the
 /// minor-seat gate freezes its military units; the engine scout phase moves
-/// by `relocate`, which has no capture hook). The explicit selection withholds
-/// it, while a focused arm can still price the promotion.
+/// by `relocate`, which has no capture hook). The deployment ledger chooses
+/// its live state, while a focused arm can still price the promotion.
 #[test]
 fn the_barbarian_scout_exemption_is_native() {
     assert!(AdvancedAi::new().barbarian_scouts_are_scouts);
@@ -28045,9 +28059,16 @@ fn the_barbarian_scout_exemption_is_native() {
     assert!(!withheld.barbarian_scouts_are_scouts);
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    assert_eq!(
+        live.barbarian_scouts_are_scouts,
+        crate::ai::ledger_default_on("barbarian-scouts-are-scouts")
+            .expect("the native repair is registered in the deployment ledger"),
+        "the live bridge must follow the deployment ledger"
+    );
+    live.disable_barbarian_scouts_are_scouts();
     assert!(
         !live.barbarian_scouts_are_scouts,
-        "the explicit selection withholds this screenable repair"
+        "the focused arm can withhold this screenable repair"
     );
     live.enable_barbarian_scouts_are_scouts();
     assert!(live.barbarian_scouts_are_scouts);
@@ -46272,13 +46293,17 @@ fn named_victory_targets_make_industrial_production_foundational() {
     named.refresh_research_weight(&game);
     let mut adaptive = named.clone();
     adaptive.victory_target = None;
+    // The deployed ledger may independently select the industrial-chain
+    // treatment. This control isolates the named-lane contract from that
+    // screenable choice.
+    adaptive.disable_industrial_chain_debt();
     assert!(
         named.industrial_production_foundation(&game),
         "an active named lane must carry the production contract"
     );
     assert!(
         !adaptive.industrial_production_foundation(&game),
-        "the ledger-held adaptive controller remains unchanged"
+        "the explicitly withheld adaptive controller remains unchanged"
     );
     for target in VictoryTarget::ALL {
         let mut lane = AdvancedAi::targeting(target);

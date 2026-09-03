@@ -333,9 +333,13 @@ local closerSrc = assert(io.open(here .. "/CivvisControlAutoClose.lua")):read("*
 check("the closer listens for the session hold",
 	closerSrc:find("LuaEvents.CivvisDealSession.Add(", 1, true) ~= nil, true)
 check("the closer holds only the diplomacy views",
-	closerSrc:find('dealHold > 0 and (NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView")', 1, true) ~= nil, true)
+	closerSrc:find("local civvisDealView = NAME == \"DiplomacyActionView\" or NAME == \"DiplomacyDealView\";", 1, true) ~= nil, true)
 check("the hold is bounded by the seconds it was given",
 	closerSrc:find("dealHold = dealHold - dt;", 1, true) ~= nil, true)
+check("an expired owned hold enters the force-close path",
+	closerSrc:find("dealForceClose = true;", 1, true) ~= nil, true)
+check("the owned hold can bypass an unfinished fade",
+	closerSrc:find("if civvisDealView and not dealForceClose", 1, true) ~= nil, true)
 
 if failures > 0 then
 	realPrint(string.format("%d failure(s)", failures))

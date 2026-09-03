@@ -686,13 +686,22 @@ else
 	-- do not share globals; LuaEvents are the one channel there is.
 	local dealHold = 0;
 	local holdReported = false;
+	-- A Civvis-owned deal is allowed to use the opening hold while the
+	-- shipped diplomacy fade settles.  If that fade never reports stopped,
+	-- `dialogueReady()` must not turn the bounded hold into an unbounded one.
+	-- Keep this separate from `dealHold`: once the countdown expires it must
+	-- remain true across ticks until the native close ladder has actually hidden
+	-- the context.
+	local dealForceClose = false;
 	pcall(function()
 		LuaEvents.CivvisDealSession.Add(function(subject, open, seconds)
 			if open then
 				dealHold = tonumber(seconds) or 4;
 				holdReported = false;
+				dealForceClose = false;
 			else
 				dealHold = 0;
+				dealForceClose = false;
 			end
 		end);
 	end);
@@ -840,6 +849,7 @@ else
 			reported = false;
 			desktopReportedAt = -1;
 			wonderAnimationWaitReported = false;
+			dealForceClose = false;
 			return;
 		end
 		if not showing then
@@ -848,18 +858,25 @@ else
 			shown = 0;
 		end
 		local dt = tonumber(fDTime) or 0;
-		if dealHold > 0 and (NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView") then
+		local civvisDealView = NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView";
+		if civvisDealView and dealHold > 0 then
 			dealHold = dealHold - dt;
 			if not holdReported then
 				holdReported = true;
 				report("autoclose_hold", string.format(',"seconds":%.2f', dealHold));
 			end
-			return;
+			if dealHold > 0 then return; end
+			-- A deal session with no rival statement can leave BlackFadeAnim
+			-- running forever.  The hold is our explicit ownership proof, so the
+			-- close ladder may act even when the ordinary dialogue readiness gate
+			-- cannot.  The later `isUp()` check still decides whether it worked.
+			dealForceClose = true;
+			report("deal_session_timeout");
 		end
 		remaining = remaining - dt;
 		shown = shown + dt;
 		if remaining > 0 then return; end
-		if (NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView")
+		if civvisDealView and not dealForceClose
 				and not dialogueReady() then
 			-- Keep the elapsed screen time for telemetry, but do not consume a
 			-- closer rung while the shipped controls are still transitioning.
@@ -998,6 +1015,7 @@ else
 			closes = 0;
 			reported = false;
 			desktopReportedAt = -1;
+			dealForceClose = false;
 		end
 		-- ⚠⚠⚠ THE ASK WAS LATCHED, AND THE LATCH ONLY CLEARS WHEN THE SCREEN
 		-- GOES AWAY -- which is exactly what it does not do when help is needed.
