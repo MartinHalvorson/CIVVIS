@@ -119,6 +119,7 @@ impl AdvancedAi {
         let Some(city) = g.cities.get(&cid) else {
             return false;
         };
+        let city_defense = g.city_strength(cid).max(1.0);
         g.units.values().any(|unit| {
             unit.owner != pid
                 && g.is_at_war(pid, unit.owner)
@@ -127,6 +128,8 @@ impl AdvancedAi {
                 && g.unit_visible_to(unit.id, pid)
                 && g.rules.units[unit.kind].class == "military"
                 && g.attack_reach(unit.id).contains(&city.pos)
+                && crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
+                    >= city_defense * IMMINENT_ATTACK_STRENGTH_RATIO
         })
     }
 
