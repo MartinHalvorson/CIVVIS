@@ -334,6 +334,161 @@ class TeardownOwnershipTests(unittest.TestCase):
         release.assert_called_once_with()
 
 
+class ExitConfirmationRecoveryTests(unittest.TestCase):
+    TAG = "civvis-MINE"
+
+    def test_screen_detector_requires_the_red_blue_exit_button_pair(self):
+        try:
+            from PIL import Image, ImageDraw
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        image = Image.new("RGB", (800, 600), (10, 10, 10))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((200, 240, 360, 264), fill=(190, 20, 20))
+        draw.rectangle((400, 240, 560, 264), fill=(20, 80, 190))
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "exit.png"
+            image.save(shot)
+            point = climb.exit_confirmation_ok_pixel(shot)
+        self.assertIsNotNone(point)
+        self.assertAlmostEqual(point[0], 280, delta=4)
+        self.assertAlmostEqual(point[1], 252, delta=4)
+
+    def test_screen_detector_refuses_a_red_control_without_cancel(self):
+        try:
+            from PIL import Image, ImageDraw
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        image = Image.new("RGB", (800, 600), (10, 10, 10))
+        ImageDraw.Draw(image).rectangle((200, 240, 360, 264), fill=(190, 20, 20))
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "not-exit.png"
+            image.save(shot)
+            self.assertIsNone(climb.exit_confirmation_ok_pixel(shot))
+
+    def test_receipt_does_not_adopt_a_reused_pid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            old_root = climb.RUN_ROOT
+            climb.RUN_ROOT = Path(temporary)
+            try:
+                path = climb._cleanup_ownership_path(self.TAG)
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({
+                    "tag": self.TAG,
+                    "player_pid": 99,
+                    "baseline_game_processes": [],
+                    "game_processes": [{"pid": 456, "started": "old"}],
+                }))
+                with mock.patch.object(
+                        climb, "_game_process_identities",
+                        return_value=[{"pid": 456, "started": "new"}]):
+                    self.assertEqual([], climb.owned_cleanup_game_processes(self.TAG))
+            finally:
+                climb.RUN_ROOT = old_root
+
+    def test_remember_records_only_new_processes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            old_root = climb.RUN_ROOT
+            climb.RUN_ROOT = Path(temporary)
+            try:
+                path = climb._cleanup_ownership_path(self.TAG)
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({
+                    "tag": self.TAG,
+                    "player_pid": 99,
+                    "launch_epoch": 1,
+                    "baseline_game_processes": [
+                        {"pid": 101, "started": "old"}],
+                    "game_processes": [],
+                }))
+                with mock.patch.object(
+                        climb, "_game_process_identities", return_value=[
+                            {"pid": 101, "started": "old"},
+                            {"pid": 202, "started": "new"},
+                        ]), mock.patch.object(
+                            climb, "_process_start_epoch", return_value=2):
+                    recorded = climb.remember_cleanup_game_processes(self.TAG)
+                self.assertEqual([{"pid": 202, "started": "new"}], recorded)
+            finally:
+                climb.RUN_ROOT = old_root
+
+    def test_missing_tag_recovery_clicks_only_the_verified_owned_dialog(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            old_root = climb.RUN_ROOT
+            climb.RUN_ROOT = Path(temporary)
+            try:
+                path = climb._cleanup_ownership_path(self.TAG)
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({
+                    "tag": self.TAG,
+                    "player_pid": 99,
+                    "baseline_game_processes": [],
+                    "game_processes": [{"pid": 456, "started": "owned"}],
+                }))
+                with mock.patch.object(climb, "installed_run_tag", return_value=None), \
+                     mock.patch.object(climb, "owned_cleanup_game_processes",
+                                       return_value=[456]), \
+                     mock.patch.object(climb.gamelock, "acquire", return_value=True), \
+                     mock.patch.object(climb.gamelock, "release"), \
+                     mock.patch.object(climb, "busy", side_effect=["456", None]), \
+                     mock.patch.object(climb, "run"), \
+                     mock.patch.object(climb.time, "sleep"), \
+                     mock.patch.object(climb.launcher, "stop",
+                                       side_effect=[False, True]) as stop, \
+                     mock.patch.object(climb, "recover_owned_exit_confirmation",
+                                       return_value=True) as recover, \
+                     mock.patch.object(climb, "dismiss_crash_dialogs"):
+                    self.assertTrue(climb.teardown(self.TAG))
+                recover.assert_called_once_with(self.TAG)
+                self.assertEqual(2, stop.call_count)
+                self.assertFalse(path.exists(), "a completed cleanup drops its receipt")
+            finally:
+                climb.RUN_ROOT = old_root
+
+    def test_missing_tag_without_a_receipt_does_not_stop_a_game(self):
+        with mock.patch.object(climb, "installed_run_tag", return_value=None), \
+             mock.patch.object(climb, "busy", return_value="456"), \
+             mock.patch.object(climb.gamelock, "acquire") as acquire, \
+             mock.patch.object(climb.launcher, "stop") as stop:
+            self.assertFalse(climb.teardown(self.TAG))
+        acquire.assert_not_called()
+        stop.assert_not_called()
+
+    def test_recovery_refuses_to_click_when_another_app_is_frontmost(self):
+        with mock.patch.object(climb, "owned_cleanup_game_processes", return_value=[456]), \
+             mock.patch.object(climb.popup_clear, "frontmost", return_value="Terminal"), \
+             mock.patch.object(climb.macos_window, "screenshot") as screenshot, \
+             mock.patch.object(climb.macos_input, "click") as click:
+            self.assertFalse(climb.recover_owned_exit_confirmation(self.TAG))
+        screenshot.assert_not_called()
+        click.assert_not_called()
+
+    def test_recovery_clicks_the_detected_button_in_quartz_points(self):
+        try:
+            from PIL import Image, ImageDraw
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        image = Image.new("RGB", (800, 600), (10, 10, 10))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((200, 240, 360, 264), fill=(190, 20, 20))
+        draw.rectangle((400, 240, 560, 264), fill=(20, 80, 190))
+
+        def screenshot(path, **_kwargs):
+            image.save(path)
+            return True
+
+        with mock.patch.object(climb, "owned_cleanup_game_processes", return_value=[456]), \
+             mock.patch.object(climb.popup_clear, "frontmost",
+                               return_value="Civ6_Exe_Child"), \
+             mock.patch.object(climb.macos_window, "desktop_size",
+                               return_value=(400, 300)), \
+             mock.patch.object(climb.macos_window, "screenshot",
+                               side_effect=screenshot), \
+             mock.patch.object(climb.macos_input, "click") as click:
+            self.assertTrue(climb.recover_owned_exit_confirmation(self.TAG))
+        click.assert_called_once_with(140, 126, hold_s=0.12, check=True)
+
+
 class _NoWait:
     """The `time` module with `sleep` removed, and nothing else changed."""
 
