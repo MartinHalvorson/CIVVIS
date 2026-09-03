@@ -2999,6 +2999,99 @@ fn live_diplomatic_totals_reach_rebuild_and_sync_without_legacy_erasure() {
     assert_eq!(mirror.game.players[1].dvp, 19);
 }
 
+#[test]
+fn met_gated_rivals_keep_their_host_seats_when_another_player_is_missing() {
+    let mut state = StateSnapshot {
+        turn: 100,
+        seat: Seat {
+            local_player: 0,
+            players: 6,
+            civ: "CIVILIZATION_ROME".to_string(),
+            ..Seat::default()
+        },
+        // Host player 3 is deliberately absent, as it is from the early
+        // met-gated exports in the recorded diplomatic loss. Player 4 must
+        // still land on model seat 4, not inherit seat 3 by array position.
+        rivals: vec![
+            StateRival {
+                player: 1,
+                civ: "CIVILIZATION_GREECE".to_string(),
+                score: 101,
+                military: 11.0,
+                ..StateRival::default()
+            },
+            StateRival {
+                player: 2,
+                civ: "CIVILIZATION_INDIA".to_string(),
+                score: 202,
+                military: 22.0,
+                ..StateRival::default()
+            },
+            StateRival {
+                player: 4,
+                civ: "CIVILIZATION_FRANCE".to_string(),
+                score: 404,
+                military: 44.0,
+                cities: vec![StateCity {
+                    id: 400,
+                    name: "Paris".to_string(),
+                    x: 7,
+                    y: 7,
+                    pop: 8,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateRival::default()
+            },
+        ],
+        ..StateSnapshot::default()
+    };
+    let map = host_major_seat_map(&state, 6);
+    assert_eq!(map.get(&0), Some(&0));
+    assert_eq!(map.get(&1), Some(&1));
+    assert_eq!(map.get(&2), Some(&2));
+    assert_eq!(map.get(&3), Some(&3));
+    assert_eq!(map.get(&4), Some(&4));
+    assert_eq!(
+        host_rival_for_seat(&state, 4, 6).map(|rival| rival.player),
+        Some(4)
+    );
+
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 100,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots: vec![plot(7, 7, "TERRAIN_GRASS")],
+    }]);
+    let rebuilt = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+    assert_eq!(rebuilt.game.players[1].civ, "Greece");
+    assert_eq!(rebuilt.game.players[2].civ, "India");
+    assert_eq!(rebuilt.game.players[4].civ, "France");
+    assert_ne!(rebuilt.game.players[3].civ, "France");
+    assert_eq!(rebuilt.game.players[4].dvp, 0);
+    assert_eq!(rebuilt.game.player_city_ids(4).len(), 1);
+    assert_eq!(
+        rebuilt.game.cities[&rebuilt.game.player_city_ids(4)[0]].name,
+        "Paris"
+    );
+    assert_eq!(rebuilt.game.observed_score.get(&4), Some(&404));
+    assert_eq!(rebuilt.game.observed_score.get(&3), None);
+
+    let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+    assert_eq!(mirror.game.player_city_ids(4).len(), 1);
+    assert_eq!(
+        mirror.game.cities[&mirror.game.player_city_ids(4)[0]].owner,
+        4
+    );
+    assert_eq!(mirror.game.observed_military_power.get(&4), Some(&44.0));
+    state.rivals[2].score = 405;
+    state.turn = 101;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.observed_score.get(&4), Some(&405));
+    assert_eq!(mirror.game.observed_score.get(&3), None);
+}
+
 /// 🔴🔴🔴 The congress standing seats the majors this seat never met.
 ///
 /// Replays `civvis-20260818T103630Z`, which lost a diplomatic victory at
@@ -3039,14 +3132,15 @@ fn congress_standing_seats_the_majors_this_seat_never_met() {
         plots: vec![plot(3, 3, "TERRAIN_GRASS")],
     }]);
     let rebuilt = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
-    // Seat 0 is ours and seat 1 is the one met rival, whose own per-turn
-    // export is the fresher number. The three we never met take the free
-    // seats in ascending host order: 1, 4, 5.
+    // Seat 0 is ours and host player 3 is the met rival, so its stable model
+    // seat is 3. The congress table fills the other host ids in place,
+    // including the majors the seat has never met.
     assert_eq!(rebuilt.game.players[0].dvp, 2);
-    assert_eq!(rebuilt.game.players[1].dvp, 14);
-    assert_eq!(rebuilt.game.players[2].dvp, 10);
-    assert_eq!(rebuilt.game.players[3].dvp, 22);
-    assert_eq!(rebuilt.game.players[4].dvp, 16);
+    assert_eq!(rebuilt.game.players[1].dvp, 10);
+    assert_eq!(rebuilt.game.players[2].dvp, 0);
+    assert_eq!(rebuilt.game.players[3].dvp, 14);
+    assert_eq!(rebuilt.game.players[4].dvp, 22);
+    assert_eq!(rebuilt.game.players[5].dvp, 16);
     assert_eq!(
         rebuilt
             .game
@@ -3065,9 +3159,9 @@ fn congress_standing_seats_the_majors_this_seat_never_met() {
     // under every bar in `urgent_victory_threat`, which is why the shipped
     // seat sat on 847 unspent Favor while the game ended.
     let planner = crate::ai::AdvancedAi::default();
-    assert_eq!(planner.rival_pressure(&rebuilt.game, 3).1, 100);
+    assert_eq!(planner.rival_pressure(&rebuilt.game, 4).1, 100);
     assert!(
-        planner.denial_is_urgent(&rebuilt.game, 3),
+        planner.denial_is_urgent(&rebuilt.game, 4),
         "a rival holding 22 of the 20 points needed is a terminal clock"
     );
     let blind = rebuild_from_state(
@@ -3082,29 +3176,29 @@ fn congress_standing_seats_the_majors_this_seat_never_met() {
         0,
     );
     assert!(
-        !planner.denial_is_urgent(&blind.game, 3),
+        !planner.denial_is_urgent(&blind.game, 4),
         "and without the congress table it is exactly the silence that lost the game"
     );
 
     let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
-    assert_eq!(mirror.game.players[3].dvp, 22);
+    assert_eq!(mirror.game.players[4].dvp, 22);
     // The met rival's live export stays authoritative even when it falls,
     // because `WC_RES_DIPLOVICTORY` option B takes two points away.
     state.turn = 222;
     state.rivals[0].dvp = Some(12);
     mirror.sync(&snapshot, &state, 0);
     assert_eq!(
-        mirror.game.players[1].dvp, 12,
+        mirror.game.players[3].dvp, 12,
         "a met rival's per-turn read outranks a congress table refreshed once a session"
     );
-    assert_eq!(mirror.game.players[3].dvp, 22);
+    assert_eq!(mirror.game.players[4].dvp, 22);
 
     // An older control mod omits the table entirely; that must not erase
     // what a persistent mirror already seated.
     state.turn = 223;
     state.congress_dvp = None;
     mirror.sync(&snapshot, &state, 0);
-    assert_eq!(mirror.game.players[3].dvp, 22);
+    assert_eq!(mirror.game.players[4].dvp, 22);
 }
 
 /// A met rival whose `dvp` the mod could not read still gets the congress
@@ -3129,7 +3223,7 @@ fn congress_standing_backfills_a_met_rival_with_no_live_reading() {
         plots: vec![plot(3, 3, "TERRAIN_GRASS")],
     }]);
     let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
-    assert_eq!(rebuilt.game.players[1].dvp, 17);
+    assert_eq!(rebuilt.game.players[2].dvp, 17);
 }
 
 /// Rival victory progress crosses the bridge. Five of the twelve runs the
@@ -5228,7 +5322,7 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     state.seat.players = 4;
     let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
     let cumae = mirror.game.player_city_ids(0)[0];
-    let auckland = mirror.game.player_city_ids(1)[0];
+    let auckland = mirror.game.player_city_ids(3)[0];
     // The route is on the board, owned by the rival's SEAT, from its city.
     let seated: Vec<_> = mirror
         .game
@@ -5243,7 +5337,7 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
         mirror.game.routes
     );
     assert_eq!(seated[0].origin, auckland);
-    assert_eq!(seated[0].owner, 1);
+    assert_eq!(seated[0].owner, 3);
     assert_eq!(
         mirror.game.observed_incoming_route_deltas.get(&cumae),
         Some(&(0, 0)),
@@ -5257,7 +5351,7 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     assert!(mirror.game.congress_effect_active("trade_policy", "A", "0"));
     assert!(mirror
         .game
-        .congress_effect_active("border_control_treaty", "A", "2"));
+        .congress_effect_active("border_control_treaty", "A", "1"));
     assert!(mirror
         .game
         .congress_effect_active("luxury_policy", "B", "silk"));

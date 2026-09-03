@@ -3023,6 +3023,91 @@ pub fn minor_actor_assignments<'a>(
     out
 }
 
+/// Count the major seats at the front of a mirrored game's player roster.
+///
+/// `Game::new` appends city-states, Free Cities and Barbarians after the major
+/// seats, so this remains stable even when the number of minor actors changes.
+pub fn modeled_major_player_count(game: &crate::game::Game) -> usize {
+    game.players
+        .iter()
+        .take_while(|player| !player.is_minor)
+        .count()
+}
+
+/// Map Civilization VI's major-player ids to CIVVIS's model seats.
+///
+/// The host's `rivals` array is met-gated: a civilization the seat has not met
+/// is absent, so its position in that array is not a stable player id. When the
+/// `seat.players` roster size is available, CIVVIS keeps the host ids in their
+/// original order and only rotates the local host id into model seat zero.
+/// That makes a later sighting of player 3 land on the same seat even if the
+/// earlier export contained players 1, 2, 4 and 5 only.
+///
+/// `model_major_seats` is the number of major slots actually present on the
+/// board. It is zero for callers that do not have a `Game`; in that case the
+/// host's roster size is used. Older direct snapshots may have neither roster
+/// size nor a merged `seat` event, so those retain the historical compact
+/// export-order fallback rather than guessing at unseen seats.
+pub fn host_major_seat_map(
+    state: &StateSnapshot,
+    model_major_seats: usize,
+) -> BTreeMap<usize, usize> {
+    let configured = state.seat.players > 0;
+    if configured {
+        let major_seats = if model_major_seats > 0 {
+            model_major_seats
+        } else {
+            state.seat.players
+        }
+        .max(2);
+        let local_host = usize::try_from(state.seat.local_player)
+            .ok()
+            .filter(|host| *host < major_seats)
+            .unwrap_or(0);
+        let mut seats = BTreeMap::new();
+        seats.insert(local_host, 0);
+        let mut model_seat = 1;
+        for host in 0..major_seats {
+            if host == local_host {
+                continue;
+            }
+            seats.insert(host, model_seat);
+            model_seat += 1;
+        }
+        return seats;
+    }
+
+    let local_host = usize::try_from(state.seat.local_player).unwrap_or(0);
+    let mut seats = BTreeMap::new();
+    seats.insert(local_host, 0);
+    for (index, rival) in state.rivals.iter().enumerate() {
+        let model_seat = index + 1;
+        if model_major_seats > 0 && model_seat >= model_major_seats {
+            break;
+        }
+        seats.insert(rival.player, model_seat);
+    }
+    seats
+}
+
+/// Find a met major by its CIVVIS seat, using the same mapping as the mirror.
+///
+/// This is public because the order bridge must name the original Firaxis
+/// player id when an action targets a model seat; looking up `rivals[seat - 1]`
+/// would send an order to the wrong empire as soon as a met-gated entry is
+/// missing.
+pub fn host_rival_for_seat(
+    state: &StateSnapshot,
+    seat: usize,
+    model_major_seats: usize,
+) -> Option<&StateRival> {
+    let seats = host_major_seat_map(state, model_major_seats);
+    state
+        .rivals
+        .iter()
+        .find(|rival| seats.get(&rival.player).copied() == Some(seat))
+}
+
 /// Resolve a city-state through its exported capital name before its type id.
 ///
 /// Firaxis keeps legacy type ids after renaming actors: the final-patch row for
@@ -4324,13 +4409,12 @@ fn is_known_congress_noop(resolution: &StateResolution) -> bool {
 /// Extend the ordinary host-player map with the anonymous major seats that a
 /// Congress table exposes even when the seat has not met those players.
 ///
-/// `seat_of_host` intentionally contains only players whose identity is known
-/// to the mirror (plus mapped city-states). That is the right map for most
-/// host data, but it made a numeric Congress target such as `"1"` disappear
-/// even though the same Congress export had already listed player 1's
-/// standing. Use the same deterministic ascending-player assignment as
-/// [`apply_congress_dvp`], without changing the global map and accidentally
-/// assigning an unseen major to a city-state slot in unrelated systems.
+/// `seat_of_host` may contain only players whose identity is known to the
+/// mirror (plus mapped city-states) when an older export has no roster size.
+/// Use the same stable major-seat assignment as [`apply_congress_dvp`] for any
+/// numeric Congress target whose standing identifies an otherwise empty major
+/// slot, without changing the global map and accidentally assigning an unseen
+/// major to a city-state slot in unrelated systems.
 fn congress_seat_of_host(
     state: &StateSnapshot,
     seat_of_host: &std::collections::BTreeMap<usize, usize>,
@@ -4351,7 +4435,9 @@ fn congress_seat_of_host(
         .filter(|entry| entry.player != ours && !congress_seats.contains_key(&entry.player))
         .collect();
     unmet.sort_by_key(|entry| entry.player);
-    for (seat, entry) in (state.rivals.len() + 1..major_seats).zip(unmet) {
+    let occupied: BTreeSet<usize> = congress_seats.values().copied().collect();
+    let free_seats = (1..major_seats).filter(|seat| !occupied.contains(seat));
+    for (seat, entry) in free_seats.zip(unmet) {
         congress_seats.insert(entry.player, seat);
     }
     congress_seats
@@ -5335,9 +5421,13 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
     if !state.seat.leader.is_empty() {
         Arc::make_mut(&mut game.observed_leader_types).insert(0, state.seat.leader.clone());
     }
-    for (index, rival) in state.rivals.iter().enumerate() {
+    let seat_of_host = host_major_seat_map(state, modeled_major_player_count(game));
+    for rival in &state.rivals {
+        let Some(&seat) = seat_of_host.get(&rival.player) else {
+            continue;
+        };
         if !rival.leader.is_empty() {
-            Arc::make_mut(&mut game.observed_leader_types).insert(index + 1, rival.leader.clone());
+            Arc::make_mut(&mut game.observed_leader_types).insert(seat, rival.leader.clone());
         }
     }
     let mut unmapped = Vec::new();
@@ -5354,13 +5444,13 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
         }
     };
     note(0, &state.seat.civ, &mut unmapped);
-    // Rival entities are deliberately compacted into seats 1..n in export order;
-    // `rival.player` is the original Firaxis id and is used only when translating
-    // an order back to the host. Identity must follow the compacted entity owner,
-    // otherwise the board gives their cities one civilization and their player
-    // record another.
-    for (index, rival) in state.rivals.iter().enumerate() {
-        note(index + 1, &rival.civ, &mut unmapped);
+    // A met-gated rival list is not a seat list: use the original Firaxis id
+    // through the shared map so a newly met player cannot inherit another
+    // civilization's identity when an earlier export omitted them.
+    for rival in &state.rivals {
+        if let Some(&seat) = seat_of_host.get(&rival.player) {
+            note(seat, &rival.civ, &mut unmapped);
+        }
     }
     for (minor, seat) in minor_actor_assignments(game, state)
         .into_iter()
@@ -8903,19 +8993,17 @@ fn apply_player_religion(
     // With the host's per-religion list, every religion's beliefs sit on its
     // founder's seat and nowhere else: a city following Catholicism then reads
     // exactly Catholicism's follower beliefs (`city_religion_belief_effect`),
-    // whoever founded it and whether or not the mirror has met them. Rivals
-    // hold seats 1..n in the order the host lists them (see the rival loop in
-    // `reconstruct`), so a founder id maps straight onto a seat; a founder the
+    // whoever founded it and whether or not the mirror has met them. A founder
+    // id maps through the stable host-seat map; a founder the
     // seat has not met keeps the anonymous seat `founded_religions` gave the
     // religion above. Every belief named here is also globally claimed, which
     // is all `taken_religion_beliefs` ever said.
     if !state.religions.is_empty() {
-        let seat_of_host: BTreeMap<i64, usize> = state
-            .rivals
-            .iter()
-            .enumerate()
-            .map(|(index, rival)| (rival.player as i64, index + 1))
-            .collect();
+        let seat_of_host: BTreeMap<i64, usize> =
+            host_major_seat_map(state, modeled_major_player_count(game))
+                .into_iter()
+                .filter_map(|(host, seat)| i64::try_from(host).ok().map(|host| (host, seat)))
+                .collect();
         let foreign_seats: Vec<usize> = game
             .players
             .iter()
@@ -9001,20 +9089,18 @@ fn apply_player_religion(
 
 /// Firaxis player id -> mirrored seat, for the two per-city player fields the
 /// capture decision carries (`StateCity::captured_from`, `::original_owner`).
-/// The same rule the war bond and `apply_territory` use: rivals take seats
-/// `i + 1` in export order, city-states and the Free Cities actor take the
-/// seats `minor_actor_assignments` gives them, the local player is seat 0.
+/// The same stable major-seat rule the war bond and `apply_territory` use;
+/// city-states and the Free Cities actor take the seats `minor_actor_assignments`
+/// gives them, and the local player is seat 0.
 fn host_capture_seats(
     game: &crate::game::Game,
     state: &StateSnapshot,
 ) -> std::collections::BTreeMap<i64, usize> {
-    let mut seat_of: std::collections::BTreeMap<i64, usize> = Default::default();
-    if state.seat.local_player >= 0 {
-        seat_of.insert(i64::from(state.seat.local_player), 0);
-    }
-    for (index, rival) in state.rivals.iter().enumerate() {
-        seat_of.insert(rival.player as i64, index + 1);
-    }
+    let mut seat_of: std::collections::BTreeMap<i64, usize> =
+        host_major_seat_map(state, modeled_major_player_count(game))
+            .into_iter()
+            .filter_map(|(host, seat)| i64::try_from(host).ok().map(|host| (host, seat)))
+            .collect();
     for (minor, seat) in minor_actor_assignments(game, state) {
         seat_of.insert(minor.player as i64, seat);
     }
@@ -10407,12 +10493,15 @@ fn apply_observed_host_metrics(
     // board read Nubia at 174 Science against the host's 141, 329 Food against
     // 229, every rival over by its own growth. Same reason the seat's own
     // Dedications are applied before this function runs (`apply_player_ages`
-    // in both callers). Seats are 1..n in export order, as the rival loops in
-    // `rebuild_from_state` and `LiveMirror::sync` assign them.
-    for (index, rival) in state.rivals.iter().enumerate() {
-        let owner = index + 1;
+    // in both callers). Rival owners come from the stable host-seat map, not
+    // from the met-gated export position.
+    let seat_of_host = host_major_seat_map(state, modeled_major_player_count(game));
+    for rival in &state.rivals {
+        let Some(&owner) = seat_of_host.get(&rival.player) else {
+            continue;
+        };
         if owner >= game.players.len() {
-            break;
+            continue;
         }
         apply_rival_public_economy(game, owner, rival, unmapped);
     }
@@ -10421,12 +10510,10 @@ fn apply_observed_host_metrics(
 /// Seat the World Congress diplomatic standing, including the majors this seat
 /// has not met.
 ///
-/// The rival loops assign seats `1..n` in export order and that list is
-/// met-gated, so before this ran `players[*].dvp` could only ever describe
-/// contacted empires. `state.seat.players` sizes the board to every major in
-/// the game, so the seats past the met rivals already exist as the
-/// reconstruction's stand-ins for the ones we have not found — attaching the
-/// congress standing to them is the one public fact we hold about them.
+/// The rival list is met-gated, so its positions cannot identify seats. The
+/// `state.seat.players` roster lets this attach a congress entry to the same
+/// stable model seat as the rival loop, including a major omitted from an
+/// earlier export.
 ///
 /// Deliberately conservative in three ways:
 ///
@@ -10443,12 +10530,7 @@ fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
         return;
     };
     // Host player id -> mirror seat, exactly as the rival loops assign them.
-    let seat_of: std::collections::BTreeMap<usize, usize> = state
-        .rivals
-        .iter()
-        .enumerate()
-        .map(|(index, rival)| (rival.player, index + 1))
-        .collect();
+    let seat_of = host_major_seat_map(state, modeled_major_player_count(game));
     let ours = state.seat.local_player.max(0) as usize;
     let mut unmet: Vec<&StateCongressDvpEntry> = Vec::new();
     for entry in &congress.points {
@@ -10461,7 +10543,8 @@ fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
             Some(&seat) => {
                 let stale = state
                     .rivals
-                    .get(seat - 1)
+                    .iter()
+                    .find(|rival| seat_of.get(&rival.player).copied() == Some(seat))
                     .is_none_or(|rival| rival.dvp.is_none());
                 if stale && seat < game.players.len() {
                     game.players[seat].dvp = entry.points;
@@ -10471,7 +10554,9 @@ fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
         }
     }
     unmet.sort_by_key(|entry| entry.player);
-    for (seat, entry) in (state.rivals.len() + 1..).zip(unmet) {
+    let occupied: BTreeSet<usize> = seat_of.values().copied().collect();
+    let free_seats = (1..modeled_major_player_count(game)).filter(|seat| !occupied.contains(seat));
+    for (seat, entry) in free_seats.zip(unmet) {
         if seat >= game.players.len() {
             break;
         }
@@ -12074,12 +12159,16 @@ pub fn rebuild_from_state(
         }
     }
 
-    // Rivals get seats 1..n in the order Civilization VI reported them, so a
-    // CIVVIS `DeclareWar { player }` maps straight back onto a Civ 6 player id.
-    for (index, rival) in state.rivals.iter().enumerate() {
-        let owner = index + 1;
+    // `state.rivals` is met-gated, so use each rival's original Firaxis id to
+    // reach its stable model seat. A missing player must leave its own slot
+    // untouched rather than shifting every later empire left by one.
+    let mut seat_of_host = host_major_seat_map(state, modeled_major_player_count(&game));
+    for rival in &state.rivals {
+        let Some(&owner) = seat_of_host.get(&rival.player) else {
+            continue;
+        };
         if owner >= game.players.len() {
-            break;
+            continue;
         }
         if rival.military.is_finite() && rival.military >= 0.0 {
             Arc::make_mut(&mut game.observed_military_power).insert(owner, rival.military);
@@ -12152,13 +12241,6 @@ pub fn rebuild_from_state(
     // Met city-states are public actors, not anonymous blocked territory. Keep
     // their real cities, visible units, war state, Envoys and Suzerain so settling,
     // diplomacy and military planning see the same board as the Firaxis seat.
-    let mut seat_of_host: std::collections::BTreeMap<usize, usize> = state
-        .rivals
-        .iter()
-        .enumerate()
-        .map(|(index, rival)| (rival.player, index + 1))
-        .collect();
-    seat_of_host.insert(0, 0);
     for player in game.players.iter_mut().filter(|player| player.is_free_city) {
         player.alive = false;
     }
@@ -12705,12 +12787,13 @@ fn record_host_observed(game: &mut crate::game::Game, snapshot: &Snapshot) {
 const CIV6_CITY_OWNERSHIP_REACH: i32 = 5;
 
 fn apply_territory(game: &mut crate::game::Game, snapshot: &Snapshot, state: &StateSnapshot) {
-    // Civ 6 player id -> CIVVIS seat. Rivals are remapped `i -> i + 1`, the same
-    // mapping the war bond uses; see `LiveMirror::sync`.
-    let mut seat_of: std::collections::BTreeMap<i32, usize> = Default::default();
-    for (index, rival) in state.rivals.iter().enumerate() {
-        seat_of.insert(rival.player as i32, index + 1);
-    }
+    // Civ 6 player id -> CIVVIS seat. The rival array is met-gated, so this
+    // must use the stable host-id map shared by the war and city loops.
+    let mut seat_of: std::collections::BTreeMap<i32, usize> =
+        host_major_seat_map(state, modeled_major_player_count(game))
+            .into_iter()
+            .filter_map(|(host, seat)| i32::try_from(host).ok().map(|host| (host, seat)))
+            .collect();
     for (minor, seat) in minor_actor_assignments(game, state) {
         seat_of.insert(minor.player as i32, seat);
     }
@@ -14095,10 +14178,16 @@ impl LiveMirror {
             apply_foreign_unit_strikes(&mut self.game, uid, unit);
         }
 
-        for (index, rival) in state.rivals.iter().enumerate() {
-            let owner = index + 1;
+        // `state.rivals` is met-gated, so use each rival's original Firaxis id
+        // to reach its stable model seat. A missing player must not shift all
+        // later empire facts onto the wrong civilization.
+        let mut seat_of_host = host_major_seat_map(state, modeled_major_player_count(&self.game));
+        for rival in &state.rivals {
+            let Some(&owner) = seat_of_host.get(&rival.player) else {
+                continue;
+            };
             if owner >= self.game.players.len() {
-                break;
+                continue;
             }
             if rival.military.is_finite() && rival.military >= 0.0 {
                 Arc::make_mut(&mut self.game.observed_military_power).insert(owner, rival.military);
@@ -14241,13 +14330,6 @@ impl LiveMirror {
             }
         }
 
-        let mut seat_of_host: std::collections::BTreeMap<usize, usize> = state
-            .rivals
-            .iter()
-            .enumerate()
-            .map(|(index, rival)| (rival.player, index + 1))
-            .collect();
-        seat_of_host.insert(0, 0);
         let free_city_seats: Vec<usize> = self
             .game
             .players
