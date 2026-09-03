@@ -21,6 +21,9 @@ def completed(arguments, **_kwargs):
 
 
 class MacOSCaptureTest(unittest.TestCase):
+    def tearDown(self) -> None:
+        macos_capture.reset_fallback_breaker()
+
     def test_helper_uses_the_fast_coregraphics_symbol_and_noninteractive_preflight(self) -> None:
         source = macos_capture._SWIFT_SOURCE
         self.assertIn('dlsym(framework, "CGWindowListCreateImage")', source)
@@ -121,9 +124,35 @@ class MacOSCaptureTest(unittest.TestCase):
                      macos_capture.SCREEN_CAPTURE_PERMISSION_DENIED,
                      "",
                      "screen capture permission unavailable",
-                 )):
+                )):
                 with self.assertRaises(macos_capture.CapturePermissionUnavailable):
                     macos_capture.capture_region((0, 0, 864, 542), output)
+
+    def test_capture_probe_uses_the_real_capture_path(self) -> None:
+        with patch.object(macos_capture, "capture_region") as capture:
+            self.assertTrue(macos_capture.capture_probe())
+
+        capture.assert_called_once()
+        self.assertEqual(capture.call_args.args[0], macos_capture.PROBE_REGION_POINTS)
+        probe_output = capture.call_args.args[1]
+        self.assertTrue(str(probe_output).endswith("/frame.png"))
+
+    def test_capture_probe_treats_a_transient_empty_frame_as_unavailable(self) -> None:
+        with patch.object(
+            macos_capture,
+            "capture_region",
+            side_effect=macos_capture.CaptureUnavailable("no frame"),
+        ):
+            self.assertFalse(macos_capture.capture_probe())
+
+    def test_capture_probe_keeps_permission_denial_distinct(self) -> None:
+        with patch.object(
+            macos_capture,
+            "capture_region",
+            side_effect=macos_capture.CapturePermissionUnavailable("denied"),
+        ):
+            with self.assertRaises(macos_capture.CapturePermissionUnavailable):
+                macos_capture.capture_probe()
 
 
 class TheKillIsLooserThanTheHelpersOwnGuard(unittest.TestCase):

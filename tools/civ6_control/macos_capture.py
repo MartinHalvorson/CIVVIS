@@ -370,6 +370,30 @@ def reset_fallback_breaker() -> None:
     _fallback_opened_at = None
 
 
+PROBE_REGION_POINTS = (0, 0, 8, 8)
+
+
+def capture_probe() -> bool:
+    """Return whether the capture path can produce a real frame right now.
+
+    A privacy preflight is necessary but not sufficient on macOS: an active
+    native recorder can leave the grant looking healthy while ScreenCaptureKit
+    returns no image and the CoreGraphics fallback blocks.  Probe through
+    :func:`capture_region` so this check exercises the exact primary/fallback
+    route that setup and popup screenshots will use.  Permission denial still
+    propagates as the specific safe error; every other transient failure is an
+    ordinary false result for the caller's next poll.
+    """
+    try:
+        with tempfile.TemporaryDirectory(prefix="civvis-capture-probe-") as root:
+            capture_region(PROBE_REGION_POINTS, Path(root) / "frame.png")
+    except CapturePermissionUnavailable:
+        raise
+    except (CaptureUnavailable, OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
 def capture_region(box_points, output: str | Path) -> None:
     """Write one screen-point region to ``output`` as a PNG."""
     result = _capture_once(_capture_command(box_points, output, fallback=False))

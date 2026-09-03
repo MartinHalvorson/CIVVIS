@@ -39,6 +39,7 @@ import argparse
 import json
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -249,6 +250,201 @@ def screen_capture_ui_command(command):
     except ValueError:
         return False
     return bool(tokens) and os.path.basename(tokens[0]) == "screencaptureui"
+
+
+STALE_INTERACTIVE_CAPTURE_SECONDS = 300.0
+STALE_INTERACTIVE_COMPANION_SKEW_SECONDS = 120.0
+_STALE_INTERACTIVE_CAPTURE_ARGV = (
+    "/usr/sbin/screencapture", "-pdiU", "-z", "keyboard.interactive",
+)
+
+
+def _process_rows():
+    """Return a bounded process snapshot with enough identity to recover one helper.
+
+    The ordinary activity check intentionally reads only command lines. Recovery
+    needs PID, parent, age and uid as well, so it can fail closed instead of
+    turning a broad ``killall screencapture`` into a user's recording stop.
+    """
+    try:
+        result = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,etime=,uid=,command="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    rows = []
+    for line in result.stdout.splitlines():
+        fields = line.strip().split(None, 4)
+        if len(fields) != 5:
+            continue
+        pid_text, ppid_text, elapsed_text, uid_text, command = fields
+        try:
+            pid = int(pid_text)
+            ppid = int(ppid_text)
+            uid = int(uid_text)
+            elapsed = _elapsed_seconds(elapsed_text)
+        except (TypeError, ValueError):
+            continue
+        if pid > 0 and ppid >= 0 and uid >= 0 and elapsed is not None:
+            rows.append({
+                "pid": pid,
+                "ppid": ppid,
+                "uid": uid,
+                "elapsed": elapsed,
+                "command": command,
+            })
+    return rows
+
+
+def _elapsed_seconds(value):
+    """Parse macOS ``ps etime`` (``[[dd-]hh:]mm:ss``) into seconds."""
+    try:
+        day_text, _, clock = value.partition("-")
+        if not clock:
+            day_text, clock = "0", day_text
+        parts = clock.split(":")
+        if len(parts) == 2:
+            hours, minutes, seconds = 0, int(parts[0]), float(parts[1])
+        elif len(parts) == 3:
+            hours, minutes, seconds = int(parts[0]), int(parts[1]), float(parts[2])
+        else:
+            return None
+        return int(day_text) * 86400 + hours * 3600 + minutes * 60 + seconds
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _exact_interactive_capture(command):
+    """Whether this is the known Cmd-Shift-5 helper, with no output target."""
+    try:
+        return tuple(shlex.split(command)) == _STALE_INTERACTIVE_CAPTURE_ARGV
+    except ValueError:
+        return False
+
+
+def stale_interactive_capture_processes(rows=None):
+    """Find only long-lived, same-user Cmd-Shift-5 helpers with their UI alive.
+
+    This is deliberately much narrower than :func:`native_recording_ui_active`.
+    A helper is eligible only when it has the exact observed argv, is old enough
+    to be a stale stream, was spawned by this user's ``SystemUIServer``, and
+    the matching ``screencaptureui`` companion started within a short window.
+    An unreadable process table returns no candidates.
+    """
+    if rows is None:
+        rows = _process_rows()
+    if not rows:
+        return []
+    uid = os.getuid()
+    by_pid = {row["pid"]: row for row in rows}
+    companions = [
+        row for row in rows
+        if row["uid"] == uid
+        and screen_capture_ui_command(row["command"])
+        and row["elapsed"] >= STALE_INTERACTIVE_CAPTURE_SECONDS
+    ]
+    if not companions:
+        return []
+    found = []
+    for row in rows:
+        if row["uid"] != uid or row["elapsed"] < STALE_INTERACTIVE_CAPTURE_SECONDS:
+            continue
+        if not _exact_interactive_capture(row["command"]):
+            continue
+        if not any(
+            abs(companion["elapsed"] - row["elapsed"])
+            <= STALE_INTERACTIVE_COMPANION_SKEW_SECONDS
+            for companion in companions
+        ):
+            continue
+        parent = by_pid.get(row["ppid"])
+        if parent is None or parent["uid"] != uid:
+            continue
+        try:
+            parent_name = os.path.basename(shlex.split(parent["command"])[0])
+        except (IndexError, ValueError):
+            continue
+        if parent_name != "SystemUIServer":
+            continue
+        found.append(row)
+    return found
+
+
+def _stale_capture_identity_present(expected):
+    """Return True/False, or None when the identity recheck is unreadable."""
+    rows = _process_rows()
+    if rows is None:
+        return None
+    by_pid = {row["pid"]: row for row in rows}
+    for row in rows:
+        if row["pid"] != expected["pid"]:
+            continue
+        # etime is coarse on macOS. A materially younger process with the same
+        # argv is a PID reuse, not permission to escalate the old signal.
+        if (
+            row["uid"] != expected["uid"]
+            or row["ppid"] != expected["ppid"]
+            or row["elapsed"] + 5.0 < expected["elapsed"]
+            or not _exact_interactive_capture(row["command"])
+        ):
+            return False
+        parent = by_pid.get(row["ppid"])
+        if parent is None or parent["uid"] != expected["uid"]:
+            return False
+        try:
+            parent_name = os.path.basename(shlex.split(parent["command"])[0])
+        except (IndexError, ValueError):
+            return False
+        return parent_name == "SystemUIServer"
+    return False
+
+
+def recover_stale_interactive_recording():
+    """Stop one proven stale Cmd-Shift-5 helper, or fail closed.
+
+    Recovery is licensed only when Civilization VI is frontmost.  That makes a
+    long-lived helper on a user's ordinary desktop an untouched foreign capture;
+    the game harness can wait and report it instead.  The PID is re-read before
+    escalation so a reused PID cannot receive a signal meant for another task.
+    """
+    candidates = stale_interactive_capture_processes()
+    if not candidates or not frontmost().startswith("Civ6"):
+        return False
+    recovered = False
+    for candidate in candidates:
+        pid = candidate["pid"]
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            recovered = True
+            continue
+        except OSError:
+            continue
+        time.sleep(0.2)
+        still_exact = _stale_capture_identity_present(candidate)
+        if still_exact is None:
+            continue
+        if still_exact:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                still_exact = False
+            except OSError:
+                continue
+            else:
+                time.sleep(0.1)
+                still_exact = _stale_capture_identity_present(candidate)
+                if still_exact is None:
+                    continue
+        if not still_exact:
+            recovered = True
+    return recovered
 
 
 def native_recording_ui_active():
