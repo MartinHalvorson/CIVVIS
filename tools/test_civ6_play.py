@@ -518,7 +518,10 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertEqual(result, 0)
         hold_awake.assert_called_once_with()
-        wait_capture.assert_called_once_with()
+        # Capture readiness is checked by _play after Civ VI reaches its menu,
+        # so stale-stream recovery has a verified game target. Direct launch
+        # and the log-backed startup wait do not need a screen frame.
+        wait_capture.assert_not_called()
         sleep.assert_called_once_with(2.0)
         acquire.assert_called_once_with(
             "unlock-test", wait_s=0.0, require_verification_intent=True)

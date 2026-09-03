@@ -3056,7 +3056,6 @@ def play(args: argparse.Namespace) -> int:
         return 2
     hold_macos_awake()
     wait_for_unlocked_session()
-    wait_for_safe_screen_capture()
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait,
                             require_verification_intent=True):
         halt = gamelock.operator_halt_description()
@@ -3306,6 +3305,12 @@ def _play(args: argparse.Namespace) -> int:
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
+    # Direct launch and the log-backed menu wait do not need a screen frame.
+    # Defer the real capture gate until Civ VI is alive and frontmost: that
+    # gives stale-stream recovery a verified game target and avoids waiting on
+    # an old Cmd-Shift-5 helper before the new run has even started.
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    wait_for_safe_screen_capture()
     # Establish the requested operator layout before taking any measurements.
     # Menu rows and setup controls are now read from this final geometry.
     place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)

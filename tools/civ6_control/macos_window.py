@@ -219,21 +219,41 @@ def park_setup_pointer(bounds: tuple[int, int, int, int]) -> None:
 def wait_for_safe_screen_capture(
     poll_s: float = CAPTURE_ACCESS_POLL_SECONDS,
 ) -> None:
-    """Wait for a non-interactive screen-capture path before touching Civ VI."""
+    """Wait until the path used by screenshots can produce a real frame."""
     last_reason = None
     while True:
         recording_ui = popup_clear.native_recording_ui_active()
         try:
-            if macos_capture.screen_capture_access_available():
+            if not macos_capture.screen_capture_access_available():
+                reason = "screen capture access is unavailable"
+            elif macos_capture.capture_probe():
                 if recording_ui:
                     print("[capture] native macOS recording/capture UI is active; using "
                           "pre-authorized CoreGraphics capture", flush=True)
                 elif last_reason is not None:
                     print("[capture] safe screen capture is available; continuing", flush=True)
                 return
-            reason = "screen capture access is unavailable"
+            else:
+                reason = "authorized screen capture produced no frame"
+                if popup_clear.recover_stale_interactive_recording():
+                    print("[capture] recovered a stale Cmd-Shift-5 stream; retrying",
+                          flush=True)
+                    macos_capture.reset_fallback_breaker()
+                    last_reason = None
+                    continue
+                if not recording_ui:
+                    # A status-daemon spike can make one probe miss while the
+                    # bounded setup reader still lands a frame a moment later.
+                    # There is no recorder to recover here, so do not turn a
+                    # transient into an indefinite pre-launch wait.
+                    print("[capture] authorized probe missed without a native "
+                          "recorder; continuing to the bounded screenshot retries",
+                          flush=True)
+                    return
             if recording_ui:
                 reason += " while a native macOS recording/capture UI is active"
+        except macos_capture.CapturePermissionUnavailable:
+            reason = "screen capture access is unavailable"
         except macos_capture.CaptureUnavailable as error:
             reason = f"native screen capture is unavailable: {error}"
         if reason != last_reason:

@@ -261,11 +261,14 @@ class SafeScreenCaptureTests(unittest.TestCase):
                           return_value=True) as recording, \
              patch.object(macos_window.macos_capture,
                           "screen_capture_access_available", return_value=True) as access, \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", return_value=True) as probe, \
              patch.object(macos_window.time, "sleep") as sleep:
             macos_window.wait_for_safe_screen_capture(poll_s=0.25)
 
         recording.assert_called_once_with()
         access.assert_called_once_with()
+        probe.assert_called_once_with()
         sleep.assert_not_called()
 
     def test_recording_ui_waits_only_until_preflight_passes(self) -> None:
@@ -273,10 +276,13 @@ class SafeScreenCaptureTests(unittest.TestCase):
                           return_value=True), \
              patch.object(macos_window.macos_capture,
                           "screen_capture_access_available", side_effect=[False, True]) as access, \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", return_value=True) as probe, \
              patch.object(macos_window.time, "sleep") as sleep:
             macos_window.wait_for_safe_screen_capture(poll_s=0.25)
 
         self.assertEqual(access.call_count, 2)
+        probe.assert_called_once_with()
         sleep.assert_called_once_with(0.25)
 
     def test_missing_permission_is_deferred_until_preflight_passes(self) -> None:
@@ -284,11 +290,62 @@ class SafeScreenCaptureTests(unittest.TestCase):
                           return_value=False), \
              patch.object(macos_window.macos_capture,
                           "screen_capture_access_available", side_effect=[False, True]) as access, \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", return_value=True) as probe, \
              patch.object(macos_window.time, "sleep") as sleep:
             macos_window.wait_for_safe_screen_capture(poll_s=0.25)
 
         self.assertEqual(access.call_count, 2)
+        probe.assert_called_once_with()
         sleep.assert_called_once_with(0.25)
+
+    def test_authorized_but_empty_capture_waits_and_rechecks(self) -> None:
+        with patch.object(macos_window.popup_clear, "native_recording_ui_active",
+                          return_value=True), \
+             patch.object(macos_window.macos_capture,
+                          "screen_capture_access_available", return_value=True), \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", side_effect=[False, True]) as probe, \
+             patch.object(macos_window.popup_clear,
+                          "recover_stale_interactive_recording", return_value=False), \
+             patch.object(macos_window.time, "sleep") as sleep:
+            macos_window.wait_for_safe_screen_capture(poll_s=0.25)
+
+        self.assertEqual(probe.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+
+    def test_a_daemon_spike_without_a_recorder_does_not_hold_startup(self) -> None:
+        with patch.object(macos_window.popup_clear, "native_recording_ui_active",
+                          return_value=False), \
+             patch.object(macos_window.macos_capture,
+                          "screen_capture_access_available", return_value=True), \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", return_value=False), \
+             patch.object(macos_window.popup_clear,
+                          "recover_stale_interactive_recording", return_value=False) as recover, \
+             patch.object(macos_window.time, "sleep") as sleep:
+            macos_window.wait_for_safe_screen_capture(poll_s=0.25)
+
+        recover.assert_called_once_with()
+        sleep.assert_not_called()
+
+    def test_stale_capture_recovery_is_retried_before_waiting(self) -> None:
+        with patch.object(macos_window.popup_clear, "native_recording_ui_active",
+                          return_value=True), \
+             patch.object(macos_window.macos_capture,
+                          "screen_capture_access_available", return_value=True), \
+             patch.object(macos_window.macos_capture,
+                          "capture_probe", side_effect=[False, True]), \
+             patch.object(macos_window.popup_clear,
+                          "recover_stale_interactive_recording", return_value=True) as recover, \
+             patch.object(macos_window.macos_capture,
+                          "reset_fallback_breaker") as reset, \
+             patch.object(macos_window.time, "sleep") as sleep:
+            macos_window.wait_for_safe_screen_capture(poll_s=0.25)
+
+        recover.assert_called_once_with()
+        reset.assert_called_once_with()
+        sleep.assert_not_called()
 
 
 class BoundedHostProbeTests(unittest.TestCase):

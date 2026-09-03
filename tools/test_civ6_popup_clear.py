@@ -167,6 +167,76 @@ class NativeRecordingProtectionTest(unittest.TestCase):
             self.assertIsNone(popup_clear.capture_pause_reason())
 
 
+class StaleInteractiveCaptureRecoveryTest(unittest.TestCase):
+    def _rows(self, helper_command=None):
+        uid = os.getuid()
+        helper_command = helper_command or " ".join(
+            popup_clear._STALE_INTERACTIVE_CAPTURE_ARGV)
+        return [
+            {"pid": 682, "ppid": 1, "uid": uid, "elapsed": 1200.0,
+             "command": "/System/Library/CoreServices/SystemUIServer.app/Contents/"
+                        "MacOS/SystemUIServer"},
+            {"pid": 33124, "ppid": 682, "uid": uid, "elapsed": 1200.0,
+             "command": helper_command},
+            {"pid": 88139, "ppid": 1, "uid": uid, "elapsed": 1200.0,
+             "command": "/System/Library/CoreServices/screencaptureui.app/"
+                        "Contents/MacOS/screencaptureui"},
+        ]
+
+    def test_only_the_exact_aged_cmd_shift_5_helper_is_a_candidate(self) -> None:
+        rows = self._rows()
+        self.assertEqual(
+            popup_clear.stale_interactive_capture_processes(rows),
+            [rows[1]],
+        )
+
+    def test_file_backed_recorder_and_fresh_picker_are_not_candidates(self) -> None:
+        rows = self._rows(
+            "/usr/sbin/screencapture -pdiU -z /private/tmp/civvis-cont1-current.png")
+        rows[1]["elapsed"] = popup_clear.STALE_INTERACTIVE_CAPTURE_SECONDS - 1
+        self.assertEqual(popup_clear.stale_interactive_capture_processes(rows), [])
+
+    def test_unrelated_old_capture_ui_is_not_a_matching_companion(self) -> None:
+        rows = self._rows()
+        rows[2]["elapsed"] += popup_clear.STALE_INTERACTIVE_COMPANION_SKEW_SECONDS + 1
+        self.assertEqual(popup_clear.stale_interactive_capture_processes(rows), [])
+
+    def test_recovery_sends_term_then_escalates_only_after_rechecking_the_pid(self) -> None:
+        rows = self._rows()
+        with mock.patch.object(popup_clear, "_process_rows",
+                               side_effect=[rows, rows, []]), \
+             mock.patch.object(popup_clear, "frontmost",
+                               return_value="Civ6_Exe_Child"), \
+             mock.patch.object(popup_clear.os, "kill") as kill, \
+             mock.patch.object(popup_clear.time, "sleep"):
+            self.assertTrue(popup_clear.recover_stale_interactive_recording())
+
+        self.assertEqual(kill.call_args_list, [
+            mock.call(33124, popup_clear.signal.SIGTERM),
+            mock.call(33124, popup_clear.signal.SIGKILL),
+        ])
+
+    def test_unreadable_recheck_never_escalates_or_reports_recovery(self) -> None:
+        rows = self._rows()
+        with mock.patch.object(popup_clear, "_process_rows",
+                               side_effect=[rows, None]), \
+             mock.patch.object(popup_clear, "frontmost",
+                               return_value="Civ6_Exe_Child"), \
+             mock.patch.object(popup_clear.os, "kill") as kill, \
+             mock.patch.object(popup_clear.time, "sleep"):
+            self.assertFalse(popup_clear.recover_stale_interactive_recording())
+
+        kill.assert_called_once_with(33124, popup_clear.signal.SIGTERM)
+
+    def test_recovery_leaves_a_foreign_frontmost_capture_alone(self) -> None:
+        rows = self._rows()
+        with mock.patch.object(popup_clear, "_process_rows", return_value=rows), \
+             mock.patch.object(popup_clear, "frontmost", return_value="Terminal"), \
+             mock.patch.object(popup_clear.os, "kill") as kill:
+            self.assertFalse(popup_clear.recover_stale_interactive_recording())
+        kill.assert_not_called()
+
+
 # Unlike the module under test, these checks really do need Pillow: every one
 # of them paints a synthetic Civilization VI screen and asserts on what the
 # classifier makes of the pixels. A host without it skips them by name rather
