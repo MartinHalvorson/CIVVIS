@@ -77,6 +77,9 @@ const WONDER_RING_RADIUS: i32 = 2;
 /// pocket waits for the next one, or for this one on its way home.
 const WONDER_RING_RECON_UNIT_RANGE: i32 = 10;
 
+/// A V2 ring-recon destination, with the information used to rank it.
+type WonderRingReconCandidate = (i32, Pos, usize, Pos, (Pos, i32), usize);
+
 impl AdvancedAi {
     /// Either version of the family pays the projection; a seat plays one.
     pub(super) fn wonder_adjacent_sites_on(&self) -> bool {
@@ -285,7 +288,7 @@ impl BasicAi {
         // (distance, goal, pocket tiles exposed, wonder, nearest own city,
         // unseen pocket size). The candidate set deliberately matches V1's;
         // only the ordering below changes.
-        let mut candidates: Vec<(i32, Pos, usize, Pos, (Pos, i32), usize)> = Vec::new();
+        let mut candidates: Vec<WonderRingReconCandidate> = Vec::new();
         for (wonder, tile) in &g.map.tiles {
             if !explored.contains(wonder) || !g.tile_is_natural_wonder(tile) {
                 continue;
