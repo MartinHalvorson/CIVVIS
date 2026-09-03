@@ -77,6 +77,9 @@ const WONDER_RING_RADIUS: i32 = 2;
 /// pocket waits for the next one, or for this one on its way home.
 const WONDER_RING_RECON_UNIT_RANGE: i32 = 10;
 
+/// A V2 ring-recon destination, with the information used to rank it.
+type WonderRingReconCandidate = (i32, Pos, usize, Pos, (Pos, i32), usize);
+
 impl AdvancedAi {
     /// Either version of the family pays the projection; a seat plays one.
     pub(super) fn wonder_adjacent_sites_on(&self) -> bool {
@@ -247,6 +250,118 @@ impl BasicAi {
                "{unseen} tiles within two of a natural wonder {city_distance} tiles from {city:?} are \
                 still unseen, and a Settler cannot price a site it has not seen; the nearest is \
                 {distance} tiles away";
+               goal);
+        Some(goal)
+    }
+
+    /// Version two of [`Self::wonder_ring_goal`]. It preserves every V1 trigger
+    /// and refusal, then considers the nearest eligible goal and the goals one
+    /// tile beyond it. The one whose sight disk exposes the most of its
+    /// wonder's radius-two pocket wins, distance next. The detour is therefore
+    /// capped at one tile while each trip is at least as informative as V1's.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::ai) fn wonder_ring_goal_2(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        dry_only: bool,
+        dead: &HashSet<Pos>,
+        threats: &[Pos],
+        reserved: &[Pos],
+    ) -> Option<Pos> {
+        if g.players[pid].is_barbarian {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        let explored = &g.players[pid].explored;
+        let cities = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| g.cities.get(&cid))
+            .map(|city| city.pos)
+            .collect::<Vec<_>>();
+        if cities.is_empty() {
+            return None;
+        }
+
+        // (distance, goal, pocket tiles exposed, wonder, nearest own city,
+        // unseen pocket size). The candidate set deliberately matches V1's;
+        // only the ordering below changes.
+        let mut candidates: Vec<WonderRingReconCandidate> = Vec::new();
+        for (wonder, tile) in &g.map.tiles {
+            if !explored.contains(wonder) || !g.tile_is_natural_wonder(tile) {
+                continue;
+            }
+            let Some(city) = cities
+                .iter()
+                .map(|city| (*city, g.wdist(*city, *wonder)))
+                .min_by_key(|(city, distance)| (*distance, *city))
+            else {
+                continue;
+            };
+            if city.1 > WONDER_RING_RECON_CITY_RADIUS {
+                continue;
+            }
+            let unseen = g
+                .wdisk(*wonder, WONDER_RING_RADIUS)
+                .into_iter()
+                .filter(|position| !explored.contains(position))
+                .count();
+            for goal in g.wdisk(*wonder, WONDER_RING_RADIUS) {
+                if explored.contains(&goal) || dead.contains(&goal) {
+                    continue;
+                }
+                let Some(goal_tile) = g.map.get(goal) else {
+                    continue;
+                };
+                if g.tile_is_natural_wonder(goal_tile)
+                    || !g.unit_can_traverse(uid, goal)
+                    || (dry_only && g.rules.is_water(goal_tile))
+                    || threats.iter().any(|threat| {
+                        g.wdist(*threat, goal) <= crate::ai::EXPLORE_COMMIT_THREAT_RADIUS
+                    })
+                    || reserved
+                        .iter()
+                        .any(|held| g.wdist(*held, goal) <= crate::ai::EXPLORE_COMMIT_SEPARATION)
+                {
+                    continue;
+                }
+                let distance = g.wdist(unit.pos, goal);
+                if distance > WONDER_RING_RECON_UNIT_RANGE {
+                    continue;
+                }
+                let revealed = g
+                    .wdisk(*wonder, WONDER_RING_RADIUS)
+                    .into_iter()
+                    .filter(|site| {
+                        !explored.contains(site) && g.wdist(*site, goal) <= g.unit_sight(uid)
+                    })
+                    .count();
+                candidates.push((distance, goal, revealed, *wonder, city, unseen));
+            }
+        }
+        let nearest = candidates.iter().map(|candidate| candidate.0).min()?;
+        let (distance, goal, revealed, wonder, (city, city_distance), unseen) = candidates
+            .into_iter()
+            .filter(|candidate| candidate.0 <= nearest + 1)
+            .max_by_key(|(distance, goal, revealed, _, _, _)| {
+                (
+                    *revealed,
+                    std::cmp::Reverse(*distance),
+                    std::cmp::Reverse(*goal),
+                )
+            })?;
+        let kind = unit.kind;
+        let name = g.map.tiles[&wonder]
+            .feature
+            .as_deref()
+            .unwrap_or("a natural wonder");
+        think!(self.journal, Military, Detail,
+               "{kind} {uid} scouts the far side of {name}, most revealing first";
+               "{unseen} tiles within two of a natural wonder {city_distance} tiles from \
+                {city:?} are still unseen; {goal:?} is {distance} tiles away (the nearest goal \
+                is {nearest}) and its sight disk covers {revealed} of them";
                goal);
         Some(goal)
     }
@@ -490,6 +605,135 @@ mod tests {
             gene.exploration_goal(&seen, 0, scout, false),
             Some(frontier)
         );
+    }
+
+    #[test]
+    fn version_two_reveals_at_least_as_much_for_at_most_one_extra_tile() {
+        let (game, _, wonder, scout) = wonder_pocket_board();
+        let mut original = BasicAi::new();
+        original.wonder_ring_recon = true;
+        let v1_goal = original
+            .exploration_goal(&game, 0, scout, false)
+            .expect("V1 finds the pocket");
+        let mut gene = BasicAi::new();
+        gene.wonder_ring_recon_2 = true;
+        let goal = gene
+            .exploration_goal(&game, 0, scout, false)
+            .expect("V2 preserves V1's unseen wonder pocket");
+        assert!(game.wdist(goal, wonder) <= WONDER_RING_RADIUS);
+        assert!(
+            game.wdist(game.units[&scout].pos, goal)
+                <= game.wdist(game.units[&scout].pos, v1_goal) + 1,
+            "V2's information gain may cost at most one extra tile"
+        );
+        assert!(!game.players[0].explored.contains(&goal));
+        let revealed = |at| {
+            game.wdisk(wonder, WONDER_RING_RADIUS)
+                .into_iter()
+                .filter(|position| {
+                    !game.players[0].explored.contains(position)
+                        && game.wdist(*position, at) <= game.unit_sight(scout)
+                })
+                .count()
+        };
+        assert!(
+            revealed(goal) >= revealed(v1_goal),
+            "V2 never reveals less of the pocket than V1's nearest-tile choice"
+        );
+    }
+
+    #[test]
+    fn version_two_keeps_the_work_ring_because_the_site_model_needs_it() {
+        let (game, _, wonder, scout) = wonder_pocket_board();
+        let mut centres_known = game.clone();
+        for position in centres_known.nbrs(wonder) {
+            centres_known.players[0].explored.insert(position);
+        }
+        assert!(
+            centres_known
+                .wdisk(wonder, WONDER_RING_RADIUS)
+                .into_iter()
+                .any(|position| !centres_known.players[0].explored.contains(&position)),
+            "the work ring deliberately retains fog"
+        );
+
+        let mut original = BasicAi::new();
+        original.wonder_ring_recon = true;
+        let v1_goal = original
+            .exploration_goal(&centres_known, 0, scout, false)
+            .expect("V1 still vacuums the work ring");
+        assert!(centres_known.wdist(v1_goal, wonder) <= WONDER_RING_RADIUS);
+
+        let mut second = BasicAi::new();
+        second.wonder_ring_recon_2 = true;
+        let v2_goal = second
+            .exploration_goal(&centres_known, 0, scout, false)
+            .expect("V2 preserves the work-tile information V1's city result depended on");
+        assert!(
+            centres_known.wdist(v2_goal, wonder) <= WONDER_RING_RADIUS,
+            "the remaining work ring still wins over the generic frontier"
+        );
+    }
+
+    #[test]
+    fn version_two_preserves_v1_when_no_adjacent_site_is_legal() {
+        let (game, _, wonder, scout) = wonder_pocket_board();
+        let mut original = BasicAi::new();
+        original.w.min_city_dist = 20.0;
+        original.wonder_ring_recon = true;
+        let v1_goal = original
+            .exploration_goal(&game, 0, scout, false)
+            .expect("V1 ignores whether the pocket can seat a city");
+        assert!(game.wdist(v1_goal, wonder) <= WONDER_RING_RADIUS);
+
+        let mut second = BasicAi::new();
+        second.w.min_city_dist = 20.0;
+        second.wonder_ring_recon_2 = true;
+        let v2_goal = second
+            .exploration_goal(&game, 0, scout, false)
+            .expect("V2 preserves V1's trigger even without a legal city centre");
+        assert!(
+            game.wdist(v2_goal, wonder) <= WONDER_RING_RADIUS,
+            "V2 preserves V1's pocket instead of adding a settlement gate"
+        );
+    }
+
+    #[test]
+    fn version_two_preserves_v1_after_the_expansion_window() {
+        let (game, _, wonder, scout) = wonder_pocket_board();
+        let mut original = BasicAi::new();
+        original.w.city_target = 1.0;
+        original.w.settler_stop_turn = 0.0;
+        original.wonder_ring_recon = true;
+        let v1_goal = original
+            .exploration_goal(&game, 0, scout, false)
+            .expect("V1 scouts independently of the expansion horizon");
+        assert!(game.wdist(v1_goal, wonder) <= WONDER_RING_RADIUS);
+
+        let mut second = BasicAi::new();
+        second.w.city_target = 1.0;
+        second.w.settler_stop_turn = 0.0;
+        second.wonder_ring_recon_2 = true;
+        let v2_goal = second
+            .exploration_goal(&game, 0, scout, false)
+            .expect("V2 preserves V1 after the expansion horizon");
+        assert!(game.wdist(v2_goal, wonder) <= WONDER_RING_RADIUS);
+    }
+
+    #[test]
+    fn wonder_ring_recon_versions_are_mutually_exclusive() {
+        let mut ai = AdvancedAi::new();
+        ai.enable_wonder_ring_recon();
+        assert!(ai.base.wonder_ring_recon);
+        assert!(!ai.base.wonder_ring_recon_2);
+
+        ai.enable_wonder_ring_recon_2();
+        assert!(!ai.base.wonder_ring_recon);
+        assert!(ai.base.wonder_ring_recon_2);
+
+        ai.enable_wonder_ring_recon();
+        assert!(ai.base.wonder_ring_recon);
+        assert!(!ai.base.wonder_ring_recon_2);
     }
 
     #[test]
