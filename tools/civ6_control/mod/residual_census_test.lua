@@ -184,11 +184,15 @@ assert(unitsStart and policyStart and policyStart > unitsStart,
 	"the first CIVVIS units answer arm was not found")
 local unitsAnswer = agentSrc:sub(unitsStart, policyStart)
 local parkedAt = unitsAnswer:find("parkReadyUnits(player)", 1, true)
+local productionRetryAt = unitsAnswer:find("driveProduction(player, turn, true)", 1, true)
 local dismissedAt = unitsAnswer:find("dismissBlocker(pid, blocker)", 1, true)
 local forcedAt = unitsAnswer:find('REASON = "UserForced"', 1, true)
-assert(parkedAt and dismissedAt and forcedAt
-	and parkedAt < dismissedAt and dismissedAt < forcedAt,
-	"the first CIVVIS units answer must park, dismiss, and force in one pass")
+assert(parkedAt and productionRetryAt and dismissedAt and forcedAt
+	and parkedAt < productionRetryAt and productionRetryAt < dismissedAt
+	and dismissedAt < forcedAt,
+	"the first CIVVIS units answer must park, retry production, dismiss, and force in one pass")
+assert(unitsAnswer:find('"+production_retry:"', 1, true),
+	"the units answer must report its production retry separately from parked units")
 assert(unitsAnswer:find("same_pass_forced = true", 1, true),
 	"a same-pass forced units answer must skip the ordinary end-turn request")
 -- Parking must never be a MOVE: that is what the branch's own comment forbids,

@@ -42,6 +42,44 @@ SETUP_SCREENSHOT_ATTEMPTS = 1
 AUTOCLOSE_SCREENSHOT_PREFIX = "autoclose-stuck-turn-"
 AUTOCLOSE_SCREENSHOT_ATTEMPTS = 1
 
+# ★★★★★ THE RETRY LADDER IS PRICED FOR A TRANSIENT MISS, NOT A SPINNING HOST.
+#
+# `SHOT_BACKOFF_SECONDS` spends five attempts and 9.0 s of sleep to ride out a
+# host-load spike, which is right when the next attempt might work.  It is the
+# wrong price when the host has already said capture cannot work at all: every
+# one of those five attempts then runs the native helper's 3.5 s guard out and
+# returns nothing, so one unreadable poll costs 5 x 3.5 + 9.0 = 26.5 s.
+#
+# Measured on this host 2026-09-03: `systemstatusd` had been pinned at 99 % CPU
+# for 14 days, `popup_clear.capture_pause_reason()` named it in 0.02 s, and the
+# desktop-rescue path (#3089) was already rationed against exactly this -- but
+# only that path.  Every ordinary `screenshot()` still paid the full ladder.
+#
+# ⚠ THIS IS A CAP, NOT A VETO, AND THE FIRST ATTEMPT IS NEVER SKIPPED.  The
+# preflight is a prediction: `systemstatusd` can be spinning and the capture can
+# still land, which is why #3089's budget spends a real attempt per minute
+# rather than refusing outright.  So the shot is always taken, and one retry
+# survives the cap -- what is dropped is only the three further attempts and the
+# 8.5 s of sleep that a predicted-unavailable host has already answered for.
+# When the preflight is clean, nothing changes: the full ladder still runs.
+UNAVAILABLE_SHOT_ATTEMPTS = 2
+
+
+def capture_looks_unavailable() -> bool:
+    """Does the host say, cheaply, that a capture cannot succeed right now?
+
+    Imported lazily: `popup_clear` is a layer above this module and pulls in the
+    input stack, and this question is only ever asked after a shot has already
+    failed.  Any error answers "no" -- an unknown host is the old behaviour,
+    which is to try the whole ladder.
+    """
+    try:
+        from civ6_control import popup_clear
+
+        return popup_clear.capture_pause_reason() is not None
+    except Exception:  # noqa: BLE001 - a prediction must never end a run
+        return False
+
 
 def game_window(game_process: str) -> tuple[int, int, int, int] | None:
     """Position and size of the game window in points, or ``None``."""
@@ -301,8 +339,19 @@ def screenshot(path: Path, *, attempts: int | None = None,
                 return True
         except OSError:
             pass
+        if attempt == 1 and attempt_limit > UNAVAILABLE_SHOT_ATTEMPTS \
+                and capture_looks_unavailable():
+            print(f"[shot] the host says capture is unavailable; holding "
+                  f"{path.name} to {UNAVAILABLE_SHOT_ATTEMPTS} attempts instead "
+                  f"of {attempt_limit}", flush=True)
+            attempt_limit = UNAVAILABLE_SHOT_ATTEMPTS
         if attempt < attempt_limit:
             time.sleep(SHOT_BACKOFF_SECONDS[attempt - 1])
+        # `range` above was built from the original limit, so a cap applied
+        # inside the loop has to end it here or it would run the full ladder
+        # anyway -- silently, and that is the whole cost this change removes.
+        if attempt >= attempt_limit:
+            break
     print(f"[shot] native capture wrote nothing for {path.name} after "
           f"{attempt_limit} attempts; treating this poll as unreadable", flush=True)
     return False
