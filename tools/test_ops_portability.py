@@ -432,8 +432,25 @@ class TheLoopsOutputSurvivesItsWindow(unittest.TestCase):
         text = self.LAUNCHER.read_text()
         self.assertIn("(tty of t) is myTty and (busy of w) is true", text)
 
-    def test_the_reaper_knows_the_operator_wrapper_title(self):
-        """Terminal keeps the name of the opened wrapper after its hand-off."""
+    def test_managed_windows_keep_a_marker_after_terminal_renames_them(self):
+        """The post-command login shell changes a title but not a custom title.
+
+        A completed document had become `civvis-verification-runtime — -zsh`,
+        so a title-only reaper left it visible.  Both entry points must mark
+        their tab before either can reject or hand off to the next script, and
+        both reapers must use that marker after the shell is gone.
+        """
+        for source in (self.LAUNCHER, OPS / "civvis-verified-head-launcher.sh"):
+            with self.subTest(source=source.name):
+                text = source.read_text()
+                self.assertIn("MANAGED_WINDOW_MARKER='CIVVIS managed ladder'", text)
+                self.assertIn('set custom title of t to windowMarker', text)
+                self.assertIn('set title displays custom title of t to true', text)
+                self.assertIn('(custom title of t) is windowMarker', text)
+
+        # Keep a narrow legacy fallback for windows created by already-deployed
+        # launchers, but never make a broad working-directory name a teardown
+        # criterion for an operator's normal Terminal.
         text = self.LAUNCHER.read_text()
         self.assertIn('contains "civvis-ladder-terminal-launcher"', text)
         self.assertIn('contains "civvis-verified-head-launcher"', text)
