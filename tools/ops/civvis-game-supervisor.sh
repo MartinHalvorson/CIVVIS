@@ -438,7 +438,42 @@ display_mirror_server_pid() {
   return 1
 }
 
+# ★★★★★ A REFUSAL REPEATED FOR AN HOUR IS AN OUTAGE, AND IT READ AS ROUTINE.
+#
+# Every reason this loop declines to start a batch -- a dirty head tree, a fetch
+# it cannot prove, an unresolvable HEAD -- logs one line and sleeps 120 s. Each
+# line is correct and names its remedy. What none of them says is that the lane
+# has now produced NOTHING for an hour: the log is just the same sentence again,
+# and the count is left for whoever scrolls.
+#
+# Measured 2026-09-03: another agent left three uncommitted files in the head
+# tree at 22:38Z. The supervisor refused, correctly, every 120 s. At 23:00Z it
+# was still refusing -- ~45 identical lines, ZERO games, and nothing anywhere
+# said "the lane is down". The same blind spot the wedge watchdog had for an
+# unowned run (#3145): the condition was detected and never escalated.
+#
+# So count the consecutive refusals and, every ESCALATE_EVERY of them, say how
+# long the lane has actually been dead. Elapsed seconds are measured from a
+# clock, not inferred from the count, because not every refusal path sleeps.
+BLOCKED_ESCALATE_EVERY=${CIVVIS_SUPERVISOR_ESCALATE_EVERY:-5}
+BLOCKED_STREAK=0
+BLOCKED_SINCE=0
+# Starts "reached" so the first pass through the loop is not counted as a
+# refusal before anything has had a chance to launch.
+LAUNCH_REACHED=1
+
 while true; do
+  if (( LAUNCH_REACHED )); then
+    BLOCKED_STREAK=0
+    BLOCKED_SINCE=0
+  else
+    BLOCKED_STREAK=$(( BLOCKED_STREAK + 1 ))
+    (( BLOCKED_SINCE == 0 )) && BLOCKED_SINCE=$(date -u +%s)
+    if (( BLOCKED_STREAK % BLOCKED_ESCALATE_EVERY == 0 )); then
+      say "LANE STALLED: no batch has started in $(( ( $(date -u +%s) - BLOCKED_SINCE ) / 60 ))m across ${BLOCKED_STREAK} consecutive refusals; the reason is the line above and it needs an operator"
+    fi
+  fi
+  LAUNCH_REACHED=0
   if ! verification_intent_running; then
     say "verification intent is not running; exiting before the next game ($(intent_reason))"
     exit 0
@@ -718,6 +753,8 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
+  # Reached a launch: the next pass clears the stall counter.
+  LAUNCH_REACHED=1
   say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, screen=${SCREEN_GENE:-none}, screen_source=$SCREEN_SOURCE, log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
