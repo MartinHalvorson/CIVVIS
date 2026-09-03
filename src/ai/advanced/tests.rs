@@ -11661,6 +11661,54 @@ fn research_keeps_a_three_era_window_before_a_later_beeline() {
 }
 
 #[test]
+fn targeted_science_takes_an_unlocked_milestone_outside_the_backlog_window() {
+    let mut game = Game::new_full(1, 20, 14, 76_005, 300, 0, false);
+    let known_ancient: Vec<Name> = game
+        .rules
+        .techs
+        .iter()
+        .filter(|(tech, spec)| spec.era == 0 && tech.as_str() != "bronze_working")
+        .map(|(tech, _)| *tech)
+        .collect();
+    game.players[0].techs.extend(known_ancient);
+    game.players[0].techs.extend([
+        crate::name!("currency"),
+        crate::name!("horseback_riding"),
+        crate::name!("machinery"),
+        crate::name!("radio"),
+        crate::name!("chemistry"),
+    ]);
+    game.turn = game.max_turns / 2;
+
+    assert!(
+        game.available_techs(0).contains(&crate::name!("rocketry")),
+        "the milestone must be legal before it can bypass the research floor"
+    );
+    assert!(
+        !BasicAi::era_window_techs(&game, 0).contains(&crate::name!("rocketry")),
+        "the Ancient backlog should still exclude Rocketry from ordinary choices"
+    );
+
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut game, 0, &plan);
+
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("rocketry"),
+        "an explicit Science race must not delay an already-unlocked victory milestone"
+    );
+}
+
+#[test]
 fn coastal_science_takes_one_era_gated_harbor_tech_package() {
     let mut game = Game::new_full(1, 20, 14, 76_003, 300, 0, false);
     let settler = game

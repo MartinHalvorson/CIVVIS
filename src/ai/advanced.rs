@@ -13870,7 +13870,7 @@ impl AdvancedAi {
             .map(VictoryTarget::strategy)
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
-            let available = BasicAi::era_window_techs(g, pid);
+            let mut available = BasicAi::era_window_techs(g, pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
@@ -13881,6 +13881,28 @@ impl AdvancedAi {
             } else {
                 None
             };
+            // The rolling window protects unattended research from leaving
+            // an old branch behind. An explicit Science target (or an
+            // adaptive seat that is already driving) is a different contract:
+            // when the next victory milestone is already legal, do not make
+            // it wait for unrelated backlog just because its era is outside
+            // that floor. Prerequisites still come through the normal window;
+            // this only admits the exact, already-unlocked milestone.
+            if let Some(milestone) = science_victory_goal
+                .filter(|_| {
+                    self.victory_target == Some(VictoryTarget::Science)
+                        || self.science_drive_active()
+                })
+                .and_then(|goal| {
+                    g.available_techs(pid)
+                        .into_iter()
+                        .find(|tech| tech.as_str() == goal)
+                })
+            {
+                if !available.contains(&milestone) {
+                    available.push(milestone);
+                }
+            }
             let science_harbor_goal = self.science_harbor_research_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
