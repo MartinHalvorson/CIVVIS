@@ -83,7 +83,21 @@ fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
     // A speculative branch inherits the same immutable frame. The stamp is
     // still the authority: moving a sight source in that branch must replace
     // the inherited Arc without disturbing the source world's cache.
+    let source_unit_cache = Arc::clone(&game.vision.borrow().entries);
+    let inherited_worker_cache = game.speculative_clone().vision.into_inner();
+    let stamp = game.world_stamp();
+    game.vision
+        .borrow_mut()
+        .merge_current(inherited_worker_cache, stamp);
+    assert!(
+        Arc::ptr_eq(&source_unit_cache, &game.vision.borrow().entries),
+        "merging a worker with no ray misses must not fork the source table"
+    );
     let mut branch = game.speculative_clone();
+    assert!(
+        Arc::ptr_eq(&source_unit_cache, &branch.vision.borrow().entries),
+        "an unchanged branch should share the validated per-unit ray table"
+    );
     let inherited = branch.vision_frame(0, &mut branch.height_field());
     assert!(
         Arc::ptr_eq(&first, &inherited),
@@ -94,6 +108,14 @@ fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
     assert!(
         !Arc::ptr_eq(&first, &branch_moved),
         "a changed branch must reject the inherited frame"
+    );
+    assert!(
+        !Arc::ptr_eq(&source_unit_cache, &branch.vision.borrow().entries),
+        "the moved source must fork the ray table before writing its replacement"
+    );
+    assert!(
+        Arc::ptr_eq(&source_unit_cache, &game.vision.borrow().entries),
+        "a branch cache write must leave the source world's rays untouched"
     );
     let branch_uncached = branch.player_vision(&mut branch.height_field(), 0);
     assert!(
@@ -1586,20 +1608,36 @@ fn deferred_ai_visibility_publishes_the_same_seat_boundary_state() {
 }
 
 #[test]
-fn speculative_clones_drop_observer_work_and_keep_rules_state() {
+fn speculative_clones_share_valid_sight_work_and_keep_rules_state() {
     let (mut game, origin) = controlled_game(91_011);
     let scout = game.spawn_unit("scout", 0, origin);
     let _ = game.unit_visible_tiles(scout);
     assert!(
-        !game.vision.borrow().seen.is_empty(),
+        !game.vision.borrow().entries.seen.is_empty(),
         "the control world should have a populated unit-vision cache"
+    );
+    let _ = game.wonder_built("pyramids");
+    assert!(
+        game.vision.borrow().built_wonders.is_some(),
+        "the control world should also have its independent production catalog"
     );
 
     let source_explored = game.players[0].explored.len();
     let mut branch = game.speculative_clone();
     assert!(
-        branch.vision.borrow().seen.is_empty(),
-        "a clone must not copy a parent's disposable sight bitsets"
+        Arc::ptr_eq(
+            &game.vision.borrow().entries,
+            &branch.vision.borrow().entries
+        ),
+        "a clone should borrow immutable sight rays until a changed source misses its key"
+    );
+    assert!(
+        !branch.vision.borrow().entries.seen.is_empty(),
+        "the branch should retain the source ray table rather than begin cold"
+    );
+    assert!(
+        branch.vision.borrow().built_wonders.is_none(),
+        "only immutable sight rays cross into the speculative branch"
     );
     assert!(!branch.track_fog_memory);
     assert!(!branch.track_war_ledger);
