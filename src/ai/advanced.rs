@@ -13874,8 +13874,9 @@ impl AdvancedAi {
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan)
                 || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
-            let science_lane_active =
-                self.phase_specialization_active(g) || self.science_drive_active();
+            let science_lane_active = self.victory_target == Some(VictoryTarget::Science)
+                || self.phase_specialization_active(g)
+                || self.science_drive_active();
             let science_victory_goal = if science_lane_active {
                 Self::science_victory_tech_goal(g, pid, objective)
             } else {
