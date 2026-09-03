@@ -39700,7 +39700,8 @@ impl AdvancedAi {
         // Person patronage, or a generic reserve-aware purchase scorer. The
         // emergency spends at most one action and suppresses that later
         // generic pass for this turn.
-        let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan);
+        let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan)
+            || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city);
         // A surprise declaration is itself a timing attack. Before the
         // peaceful purchase portfolio can spend the treasury, put one body in
         // the city nearest the declarer. An already executed city-saving

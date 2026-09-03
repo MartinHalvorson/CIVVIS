@@ -73,6 +73,11 @@
 //! diplomacy can accept a same-turn peace offer, because that offer clears the
 //! planning clone's war state immediately.
 //!
+//! A wall is still too slow when the attack envelope already reaches the
+//! City Center. In that case the same armed treatment buys the best affordable
+//! land defender directly into the city before the queue governor or the
+//! ordinary Gold scorer can spend the treasury elsewhere.
+//!
 //! Off (the defaults) nothing here runs.
 use super::civilian_safety::REACH_SCAN_RADIUS;
 use super::AdvancedAi;
@@ -193,6 +198,117 @@ impl AdvancedAi {
                "{raiders} raider(s) within {SIEGE_RADIUS} tiles and no defender at all; \
                 {cost:.0} of {gold:.0} Gold buys the answer now, ahead of every reserve");
         Some(Item::Unit { unit })
+    }
+
+    /// Buy an immediate local defender for a named major-war city whose
+    /// battlefront can already execute an attack on its City Center.
+    ///
+    /// The existing major-war handoff starts Walls before damage, but Walls
+    /// are production-only in Civ VI and cannot answer an attack arriving in
+    /// one turn. The live run `civvis-20260903T110637Z` demonstrated the gap:
+    /// Cumae started a six-turn Walls build at t60 and fell at t63; Lugdunum
+    /// started a two-turn Walls build at t80 and fell at t84. A purchase is
+    /// the only local answer that arrives before the next host combat phase.
+    ///
+    /// This remains deliberately narrower than `native-emergency-purchase`:
+    /// the operator must have armed `siege-preempts-the-queue`, the live
+    /// battlefront observation must name the city, a major war must be active,
+    /// and the turn-start attack envelope must reach the City Center. The
+    /// candidate list is taken from the host/model purchase menu, then chooses
+    /// the strongest affordable non-siege land unit rather than asking for a
+    /// strongest unit that the treasury or host menu cannot actually provide.
+    pub(super) fn imminent_major_war_defense_purchase(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        threatened_city: Option<u32>,
+    ) -> bool {
+        if !self.base.siege_preempts_the_queue || !self.battlefront_observation {
+            return false;
+        }
+        let Some(cid) = threatened_city else {
+            return false;
+        };
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        let city_name = city.name.clone();
+        let active_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if !active_major_war {
+            return false;
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        if !Self::imminent_city_attack(g, pid, cid, &visible) {
+            return false;
+        }
+
+        let candidate = g
+            .legal_purchase_actions_for_city(pid, cid)
+            .0
+            .into_iter()
+            .filter_map(|action| {
+                let Action::Buy {
+                    city: buyer,
+                    unit,
+                    formation,
+                    currency,
+                } = action
+                else {
+                    return None;
+                };
+                if buyer != cid || formation != 0 || currency != "gold" {
+                    return None;
+                }
+                let spec = g.rules.units.get(&unit)?;
+                if spec.class != "military"
+                    || spec.siege
+                    || spec.promotion_class == "recon"
+                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                {
+                    return None;
+                }
+                let power = spec.strength.max(spec.ranged_attack_strength());
+                Some((
+                    power,
+                    unit.to_string(),
+                    Action::Buy {
+                        city: buyer,
+                        unit,
+                        formation,
+                        currency,
+                    },
+                ))
+            })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    // Keep the same stable smallest-name tie-break as
+                    // `BasicAi::best_military`'s ordered rules walk.
+                    .then_with(|| right.1.cmp(&left.1))
+            });
+        let Some((_, _, action)) = candidate else {
+            return false;
+        };
+        let Action::Buy { unit, .. } = &action else {
+            return false;
+        };
+        let Some(cost) = g.unit_purchase_cost(pid, cid, unit.as_str(), "gold") else {
+            return false;
+        };
+        let gold = g.players[pid].gold;
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        think!(self.journal(), Military, Decision,
+               "Buying {} for {} before an imminent major-war attack", plain(unit), city_name;
+               "the battlefront can strike the City Center this turn; {cost:.0} of {gold:.0} Gold places the strongest affordable land defender immediately");
+        true
     }
 
     /// `guard-breaks-the-pin`: the guard standing on its Settler's tile

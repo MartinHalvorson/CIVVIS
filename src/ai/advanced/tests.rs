@@ -882,6 +882,78 @@ fn armed_siege_preempts_an_imminent_major_war_queue_with_a_defender() {
 }
 
 #[test]
+fn armed_siege_buys_an_immediate_defender_before_a_wall_can_finish() {
+    // A production handoff cannot save a city when the battlefront can already
+    // attack its City Center. The armed live treatment must spend an actually
+    // legal Gold purchase, place it in the city immediately, and leave the
+    // unsafe civilian queue available for the later production handoff.
+    let (mut game, city, _) = empire_with_a_capital(71_147);
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    game.current = 0;
+    game.turn = 90;
+    game.at_war.insert((0, 1));
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.players[0].gold = 1_000.0;
+    game.cities.get_mut(&city).expect("capital exists").pop = 2;
+
+    let city_pos = game.cities[&city].pos;
+    let attack_tile =
+        game.nbrs(city_pos)
+            .into_iter()
+            .find(|position| {
+                *position != city_pos
+                    && game.city_at(*position).is_none()
+                    && game.unit_ids_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the city needs an accessible attack tile");
+    let horseman = game.spawn_test_unit("horseman", 1, attack_tile);
+    assert!(game.player_can_see(0, attack_tile));
+    assert!(game.attack_reach(horseman).contains(&city_pos));
+
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    assert!(game.can_produce(0, city, &settler));
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: settler.clone(),
+        },
+    )
+    .expect("queue the unsafe expansion commitment");
+
+    let before = game.players[0].gold;
+    let mut live = AdvancedAi::new();
+    live.enable_siege_preempts_the_queue();
+    assert!(live.imminent_major_war_defense_purchase(&mut game, 0, Some(city)));
+    assert!(
+        game.players[0].gold < before,
+        "the immediate defense must consume the quoted Gold purchase"
+    );
+    let purchased = game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.pos == city_pos)
+        .expect("the purchased defender must be placed in the City Center");
+    let spec = &game.rules.units[&purchased.kind];
+    assert_eq!(spec.class, "military");
+    assert!(!spec.siege);
+    assert_ne!(spec.promotion_class, "recon");
+    assert!(!matches!(spec.domain.as_deref(), Some("sea" | "air")));
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&settler),
+        "a purchase must not silently erase the production commitment"
+    );
+}
+
+#[test]
 fn confirmed_damage_reclaims_an_unsafe_queue_when_gold_is_unavailable() {
     // In the live Aquileia loss at turn 165, the default-on native emergency
     // had confirmed recent city damage but only 58 Gold, so it could not buy
