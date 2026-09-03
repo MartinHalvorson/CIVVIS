@@ -325,6 +325,12 @@ impl Sphere {
         if from == to {
             return 0;
         }
+        // Adjacency is a common distance query in combat and movement gates.
+        // The six-entry topology row answers it with integer comparisons and
+        // avoids descending the position-sorted ring for the same result.
+        if self.adjacent[from as usize][..self.degree[from as usize] as usize].contains(&to) {
+            return 1;
+        }
         if self.distance_rows[from as usize].get().is_some()
             || self.distance_rows[to as usize].get().is_some()
         {
@@ -444,6 +450,33 @@ impl Sphere {
         let mut out = self.search_disk(from, radius);
         out.sort();
         out
+    }
+
+    /// Visit every tile within `radius` steps without allocating the result.
+    ///
+    /// The owned [`Sphere::disk`] form is still the right API for callers that
+    /// retain or sort the answer. Hot rule queries usually consume each tile
+    /// immediately, though, and allocating a short-lived vector for every
+    /// firing origin was pure transport cost.
+    pub(crate) fn for_each_disk(&self, center: Pos, radius: i32, mut visit: impl FnMut(Pos)) {
+        let Some(from) = self.index_of(center) else {
+            return;
+        };
+        if radius <= 0 {
+            visit(center);
+            return;
+        }
+        if radius <= RING_RADIUS {
+            for &(pos, distance) in &self.rings[from as usize] {
+                if distance as i32 <= radius {
+                    visit(pos);
+                }
+            }
+            return;
+        }
+        for pos in self.search_disk(from, radius) {
+            visit(pos);
+        }
     }
 
     /// Every tile exactly `radius` steps away.

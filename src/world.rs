@@ -280,10 +280,38 @@ pub struct TileGrid {
     tiles: std::sync::Arc<Vec<Tile>>,
     /// `row * width + col` -> index into `tiles`, or `u32::MAX` when a save
     /// omitted that hex.
-    slot: Vec<u32>,
+    ///
+    /// The topology index never changes after the grid is built, while a
+    /// `Game` is cloned for almost every speculative AI action. Keeping it
+    /// behind the same shared allocation as the tile vector removes one
+    /// map-sized copy from every clone; `rebuild` is the only writer and
+    /// replaces the whole index when a grid is constructed from a save.
+    slot: std::sync::Arc<Vec<u32>>,
 }
 
 const EMPTY_SLOT: u32 = u32::MAX;
+
+/// Tile-vector indices for one tile's in-map neighbors. The position form is
+/// retained separately for public callers; movement floods already need these
+/// indices to address their dense scratch and should not resolve them again.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct NeighborIndices {
+    buf: [u32; 6],
+    len: u8,
+}
+
+impl NeighborIndices {
+    #[inline]
+    fn push(&mut self, index: usize) {
+        self.buf[self.len as usize] = index as u32;
+        self.len += 1;
+    }
+
+    #[inline]
+    pub(crate) fn as_slice(&self) -> &[u32] {
+        &self.buf[..self.len as usize]
+    }
+}
 
 impl TileGrid {
     pub fn new(width: i32, height: i32) -> TileGrid {
@@ -292,7 +320,7 @@ impl TileGrid {
             height,
             epoch: 0,
             tiles: std::sync::Arc::new(Vec::new()),
-            slot: Vec::new(),
+            slot: std::sync::Arc::new(Vec::new()),
         };
         let mut tiles = Vec::with_capacity((width.max(0) * height.max(0)) as usize);
         for row in 0..height {
@@ -310,7 +338,7 @@ impl TileGrid {
             height,
             epoch: 0,
             tiles: std::sync::Arc::new(Vec::new()),
-            slot: Vec::new(),
+            slot: std::sync::Arc::new(Vec::new()),
         };
         grid.rebuild(tiles);
         grid
@@ -321,12 +349,13 @@ impl TileGrid {
         tiles.sort_unstable_by_key(|tile| tile.pos);
         tiles.dedup_by_key(|tile| tile.pos);
         let cells = (self.width.max(0) as usize) * (self.height.max(0) as usize);
-        self.slot = vec![EMPTY_SLOT; cells];
+        let mut slot = vec![EMPTY_SLOT; cells];
         for (index, tile) in tiles.iter().enumerate() {
             if let Some(cell) = self.cell(tile.pos) {
-                self.slot[cell] = index as u32;
+                slot[cell] = index as u32;
             }
         }
+        self.slot = std::sync::Arc::new(slot);
         self.tiles = std::sync::Arc::new(tiles);
     }
 
@@ -452,6 +481,28 @@ mod tests {
         );
         assert!(world.set_cliff_edge(land, water, false));
     }
+
+    #[test]
+    fn disk_visitor_has_the_same_membership_as_owned_disk() {
+        let worlds = [
+            WorldMap::new(9, 7),
+            WorldMap::arena(9, 7),
+            WorldMap::globe(3),
+        ];
+        for world in worlds {
+            let centers: Vec<Pos> = world.tiles.keys().copied().step_by(13).take(4).collect();
+            for center in centers {
+                for radius in [0, 1, 6, 7] {
+                    let expected = world.disk(center, radius);
+                    let mut actual = Vec::new();
+                    world.for_each_disk(center, radius, |pos| actual.push(pos));
+                    actual.sort_unstable();
+                    actual.dedup();
+                    assert_eq!(actual, expected, "center {center:?}, radius {radius}");
+                }
+            }
+        }
+    }
 }
 
 impl<'a> IntoIterator for &'a TileGrid {
@@ -543,6 +594,16 @@ pub struct WorldMap {
     /// The globe this map is laid out on, when it is one. Geometry is a pure
     /// function of the frequency, so it is shared rather than saved.
     globe: Option<std::sync::Arc<crate::sphere::Sphere>>,
+    /// In-map adjacency in tile-vector order. The shape and tile membership
+    /// are immutable for a world, while the query itself sits under nearly
+    /// every movement, yield, and visibility rule. Keep it shared across
+    /// speculative game clones and validate it against the public map fields
+    /// before using it, so direct map replacement/topology edits still fall
+    /// back to the original calculation safely.
+    adjacency: std::sync::Arc<Vec<hex::Neighbors>>,
+    adjacency_indices: std::sync::Arc<Vec<NeighborIndices>>,
+    adjacency_slot: std::sync::Arc<Vec<u32>>,
+    adjacency_topology: Topology,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -561,16 +622,12 @@ fn is_cylinder(topology: &Topology) -> bool {
 
 impl From<WorldMapSer> for WorldMap {
     fn from(s: WorldMapSer) -> WorldMap {
-        WorldMap {
-            width: s.width,
-            height: s.height,
-            tiles: TileGrid::from_tiles(s.width, s.height, s.tiles),
-            topology: s.topology,
-            globe: match s.topology {
-                Topology::Cylinder | Topology::Rectangle => None,
-                Topology::Globe(frequency) => Some(crate::sphere::sphere(frequency)),
-            },
-        }
+        let tiles = TileGrid::from_tiles(s.width, s.height, s.tiles);
+        let globe = match s.topology {
+            Topology::Cylinder | Topology::Rectangle => None,
+            Topology::Globe(frequency) => Some(crate::sphere::sphere(frequency)),
+        };
+        WorldMap::from_parts(tiles, s.topology, globe)
     }
 }
 
@@ -587,22 +644,13 @@ impl From<WorldMap> for WorldMapSer {
 
 impl WorldMap {
     pub fn new(width: i32, height: i32) -> WorldMap {
-        WorldMap {
-            width,
-            height,
-            tiles: TileGrid::new(width, height),
-            topology: Topology::Cylinder,
-            globe: None,
-        }
+        WorldMap::from_parts(TileGrid::new(width, height), Topology::Cylinder, None)
     }
 
     /// A bounded arena: the same rectangle of tiles as [`Self::new`], walled
     /// on all four sides instead of wrapping east to west.
     pub fn arena(width: i32, height: i32) -> WorldMap {
-        WorldMap {
-            topology: Topology::Rectangle,
-            ..WorldMap::new(width, height)
-        }
+        WorldMap::from_parts(TileGrid::new(width, height), Topology::Rectangle, None)
     }
 
     /// An all-ocean globe of the given subdivision frequency: `10n² + 2` tiles
@@ -610,13 +658,74 @@ impl WorldMap {
     pub fn globe(frequency: i32) -> WorldMap {
         let sphere = crate::sphere::sphere(frequency);
         let tiles: Vec<Tile> = sphere.positions().map(Tile::new).collect();
+        WorldMap::from_parts(
+            TileGrid::from_tiles(sphere.width(), sphere.height(), tiles),
+            Topology::Globe(frequency),
+            Some(sphere),
+        )
+    }
+
+    fn from_parts(
+        tiles: TileGrid,
+        topology: Topology,
+        globe: Option<std::sync::Arc<crate::sphere::Sphere>>,
+    ) -> WorldMap {
+        let (adjacency, adjacency_indices) =
+            Self::build_adjacency(&tiles, topology, globe.as_deref());
         WorldMap {
-            width: sphere.width(),
-            height: sphere.height(),
-            tiles: TileGrid::from_tiles(sphere.width(), sphere.height(), tiles),
-            topology: Topology::Globe(frequency),
-            globe: Some(sphere),
+            width: tiles.width,
+            height: tiles.height,
+            adjacency_slot: std::sync::Arc::clone(&tiles.slot),
+            adjacency,
+            adjacency_indices,
+            adjacency_topology: topology,
+            tiles,
+            topology,
+            globe,
         }
+    }
+
+    fn build_adjacency(
+        tiles: &TileGrid,
+        topology: Topology,
+        globe: Option<&crate::sphere::Sphere>,
+    ) -> (
+        std::sync::Arc<Vec<hex::Neighbors>>,
+        std::sync::Arc<Vec<NeighborIndices>>,
+    ) {
+        let mut adjacency = Vec::with_capacity(tiles.len());
+        let mut adjacency_indices = Vec::with_capacity(tiles.len());
+        for tile in tiles.values() {
+            let neighbors = {
+                if let Some(globe) = globe {
+                    globe.neighbors(tile.pos)
+                } else {
+                    hex::neighbors(tile.pos)
+                        .into_iter()
+                        .filter_map(|neighbor| {
+                            let neighbor = if topology.wraps_east_west() {
+                                hex::canon(neighbor, tiles.width)
+                            } else {
+                                neighbor
+                            };
+                            tiles.contains_key(&neighbor).then_some(neighbor)
+                        })
+                        .collect()
+                }
+            };
+            let mut indices = NeighborIndices::default();
+            for neighbor in neighbors {
+                if let Some(index) = tiles.index_of(neighbor) {
+                    indices.push(index);
+                }
+            }
+            adjacency.push(neighbors);
+            adjacency_indices.push(indices);
+        }
+        (
+            std::sync::Arc::new(adjacency),
+            std::sync::Arc::new(adjacency_indices),
+        )
     }
 
     /// The globe this map is laid out on, or `None` on a cylinder.
@@ -661,6 +770,13 @@ impl WorldMap {
     /// The tiles that share an edge with this one, and are on the map.
     #[inline]
     pub fn neighbors(&self, pos: Pos) -> hex::Neighbors {
+        if self.adjacency_topology == self.topology
+            && std::sync::Arc::ptr_eq(&self.adjacency_slot, &self.tiles.slot)
+        {
+            if let Some(index) = self.tiles.index_of(pos) {
+                return self.adjacency[index];
+            }
+        }
         if let Some(sphere) = self.sphere() {
             return sphere.neighbors(pos);
         }
@@ -669,6 +785,30 @@ impl WorldMap {
             let neighbor = self.fold(neighbor);
             if self.tiles.contains_key(&neighbor) {
                 out.push(neighbor);
+            }
+        }
+        out
+    }
+
+    /// In-map neighbors for a tile already addressed in tile-vector order.
+    /// The normal path is a shared cache; the fallback keeps hand-built maps
+    /// correct if their public topology or tile grid was replaced directly.
+    #[inline]
+    pub(crate) fn neighbor_indices(&self, index: usize) -> NeighborIndices {
+        if self.adjacency_topology == self.topology
+            && std::sync::Arc::ptr_eq(&self.adjacency_slot, &self.tiles.slot)
+        {
+            if let Some(neighbors) = self.adjacency_indices.get(index) {
+                return *neighbors;
+            }
+        }
+        let mut out = NeighborIndices::default();
+        let Some(tile) = self.tiles.values().as_slice().get(index) else {
+            return out;
+        };
+        for neighbor in self.neighbors(tile.pos) {
+            if let Some(index) = self.tiles.index_of(neighbor) {
+                out.push(index);
             }
         }
         out
@@ -716,6 +856,29 @@ impl WorldMap {
         out.sort_unstable();
         out.dedup();
         out
+    }
+
+    /// Visit every in-map tile within `radius` steps without allocating the
+    /// result. This is for consumers that immediately filter or fold the
+    /// answer; [`Self::disk`] remains the owned, sorted form.
+    pub(crate) fn for_each_disk(&self, center: Pos, radius: i32, mut visit: impl FnMut(Pos)) {
+        if let Some(sphere) = self.sphere() {
+            sphere.for_each_disk(center, radius, visit);
+            return;
+        }
+        if radius < 0 {
+            return;
+        }
+        for dq in -radius..=radius {
+            let lo = (-radius).max(-dq - radius);
+            let hi = radius.min(-dq + radius);
+            for dr in lo..=hi {
+                let pos = self.fold((center.0 + dq, center.1 + dr));
+                if self.tiles.index_of(pos).is_some() {
+                    visit(pos);
+                }
+            }
+        }
     }
 
     /// Every in-map tile exactly `radius` steps from `center`, sorted.
