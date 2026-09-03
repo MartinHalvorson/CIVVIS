@@ -385,11 +385,11 @@ pub fn deployment_treatments_with_forced_live(forced_on: &[&str]) -> Vec<&'stati
     // report names a treatment whose flag is off and omits the one making
     // decisions. The last explicit name is also the one the flag application
     // leaves active when a caller deliberately stacks family members.
-    let parity_winner = forced_on
-        .iter()
-        .copied()
-        .filter(|tag| matches!(*tag, "border-parity" | "border-parity-2"))
-        .last();
+    let parity_winner = forced_on.iter().rev().find_map(|tag| match *tag {
+        "border-parity" => Some("border-parity"),
+        "border-parity-2" => Some("border-parity-2"),
+        _ => None,
+    });
     if let Some(winner) = parity_winner {
         tags.retain(|tag| {
             !matches!(
