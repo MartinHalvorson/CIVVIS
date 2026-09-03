@@ -101,6 +101,29 @@ PROGRESS_TURN_SKEW=${CIVVIS_WEDGE_PROGRESS_TURN_SKEW:-1}
 # rule's to detect. The five-sample turn rule below still owns that class.
 SILENCE_S=${CIVVIS_WEDGE_SILENCE_S:-120}
 SILENCE_CONFIRM=${CIVVIS_WEDGE_SILENCE_CONFIRM:-2}
+
+# ★★★★★ STANDING DOWN IS NOT THE SAME AS LOOKING AWAY.
+#
+# The ownership check below refuses to signal a `civ6_play` this watchdog did
+# not see the climb start, and that refusal is right: a direct player is how a
+# protected autosave continuation and an operator's own session both look, and
+# signalling one would be worse than any wedge. But the branch then reset its
+# strikes and `continue`d, so an unowned run got NO detection either -- it went
+# silent and nothing said so.
+#
+# Measured 2026-09-03, run `civvis-20260903T135954Z-cont2`: the watchdog logged
+# `has an unowned direct civ6_play; watchdog will not signal it` once and then
+# said nothing for hours while that run turned at a **485.7 s median** against
+# 3.8-6.5 s in healthy runs -- and later parked outright at t72 on
+# `ENDTURN_BLOCKING_UNITS`, brain answering in 0.11 s, Civ VI pinned at 98 %
+# CPU, sixteen minutes without a single event. The one line that would have
+# named it was never printed.
+#
+# So the silence rule still RUNS for an unowned run; only the signal is
+# withheld. It reports at a bounded cadence rather than every poll, because the
+# point is to reach a human or the supervisor once, not to fill the log.
+UNOWNED_SILENCE_S=${CIVVIS_WEDGE_UNOWNED_SILENCE_S:-$SILENCE_S}
+UNOWNED_REPORT_EVERY_S=${CIVVIS_WEDGE_UNOWNED_REPORT_EVERY_S:-300}
 SELF_DIR=${0:A:h}
 
 # ⚠⚠⚠ THIS PROCESS OUTLIVES ITS OWN SOURCE, AND THAT HAS COST REAL FIXES.
@@ -343,6 +366,7 @@ handoff_tag=""
 handoff_climb=""
 handoff_polls=0
 last_unowned_tag=""
+unowned_reported_at=0
 while true; do
   sleep "$POLL_S"
   if ! verification_intent_running; then
@@ -386,6 +410,27 @@ while true; do
         && pgrep -f '[c]iv6_play\.py' >/dev/null 2>&1; then
       say "$tag has an unowned direct civ6_play; watchdog will not signal it"
       last_unowned_tag="$tag"
+    fi
+    # Withhold the signal, not the diagnosis. Same `events.jsonl` mtime the
+    # owned path uses: the mod flushes after every line, so it is the run's own
+    # liveness whoever started it.
+    unowned_silence=-1
+    unowned_events="$RUNS/$tag/events.jsonl"
+    if [[ -r "$unowned_events" ]]; then
+      unowned_mtime=$(/usr/bin/stat -f '%m' "$unowned_events" 2>/dev/null || print -r -- "")
+      if [[ "$unowned_mtime" =~ '^[0-9]+$' ]]; then
+        unowned_silence=$(( $(date -u +%s) - unowned_mtime ))
+        (( unowned_silence < 0 )) && unowned_silence=0
+      fi
+    fi
+    if (( unowned_silence >= UNOWNED_SILENCE_S )); then
+      unowned_now=$(date -u +%s)
+      if (( unowned_now - unowned_reported_at >= UNOWNED_REPORT_EVERY_S )); then
+        say "WEDGE UNATTENDED: $tag is unowned and has written nothing for ${unowned_silence}s; this watchdog will not signal it, so an operator or the supervisor has to act"
+        unowned_reported_at=$unowned_now
+      fi
+    else
+      unowned_reported_at=0
     fi
     if [[ -n "$handoff_tag" ]]; then
       handoff_polls=$(( handoff_polls + 1 ))
