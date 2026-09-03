@@ -2311,6 +2311,52 @@ def operator_victory_lane(requested: str, path: Path | None = None,
     return lane
 
 
+# Civilization VI's score clock is also this harness's usual finish horizon.
+# The standard 250 turns are useful for comparable ladder screens, but a live
+# Science/Domination operator may deliberately need longer: the evaluation
+# budget for Domination is 650 turns, and stopping at 250 can award a score win
+# before either requested lane has had a chance to finish.
+#
+# Like VICTORY_LANE_FILE, this is read by the per-batch climber rather than an
+# environment inherited by a multi-day supervisor. An absent, blank, malformed
+# or non-positive value leaves the requested cap intact and warns instead of
+# turning a typo into an overnight no-game failure.
+TURN_CAP_FILE = Path(
+    os.environ.get("CIVVIS_TURN_CAP_FILE", "")
+    or Path.home() / ".civvis-turn-cap"
+)
+
+
+def operator_turn_cap(requested: int, path: Path | None = None,
+                      warn=None) -> int:
+    """The operator's positive turn-cap override, else ``requested``."""
+    path = TURN_CAP_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (FileNotFoundError, NotADirectoryError):
+        return requested
+    except OSError as exc:
+        warn(f"turn-cap file {path} is unreadable ({exc}); keeping {requested}")
+        return requested
+    raw = text.strip()
+    if not raw:
+        return requested
+    try:
+        cap = int(raw)
+    except ValueError:
+        warn(f"turn-cap file {path} names {raw!r}, which is not a positive integer; "
+             f"keeping {requested}")
+        return requested
+    if cap <= 0:
+        warn(f"turn-cap file {path} names {cap}, which is not positive; "
+             f"keeping {requested}")
+        return requested
+    if cap != requested:
+        warn(f"turn-cap file {path} pins {cap}; overriding {requested}")
+    return cap
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
@@ -2611,6 +2657,11 @@ def main() -> int:
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
     args.victory = operator_victory_lane(args.victory)
+    # The same per-batch policy seam controls the actual game score clock. A
+    # long Science/Domination game must not be cut off at the normal 250-turn
+    # comparison horizon because its Terminal-owned supervisor predates the
+    # operator's request. See TURN_CAP_FILE.
+    args.max_turns = operator_turn_cap(args.max_turns)
     refusal = screen_refusal(args)
     if refusal is not None:
         print(f"⚠ live screen refused: {refusal}; this batch plays unarmed",
