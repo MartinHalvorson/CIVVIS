@@ -10387,8 +10387,7 @@ impl AdvancedAi {
             } else {
                 LAND_GRAB_CITY_CEILING
             };
-            (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(LAND_GRAB_CITY_FLOOR, ceiling)
+            (2 + land / LAND_GRAB_TILES_PER_CITY).clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
             (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
         };
