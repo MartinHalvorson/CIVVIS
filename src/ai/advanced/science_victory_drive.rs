@@ -183,6 +183,24 @@ pub const SCIENCE_DRIVE_RESEARCH_BUILDING_BONUS: [(&str, f64); 3] = [
     ("university", 900.0),
     ("research_lab", 1_400.0),
 ];
+/// Version 2's credit for the repeatable Campus Research Grants project once
+/// the city's research and launch-production buildings are caught up.
+pub const SCIENCE_DRIVE_CAMPUS_PROJECT_BONUS: f64 = 900.0;
+
+/// The local buildings that a science city should finish before converting
+/// its Campus into a repeatable project. The ordinary project cap also uses
+/// this debt; keeping the gate here prevents the science-drive bonus from
+/// reopening that old overhang through a second valuation path.
+const SCIENCE_DRIVE_PROJECT_BUILDING_DEBT: [&str; 8] = [
+    "library",
+    "university",
+    "research_lab",
+    "workshop",
+    "factory",
+    "coal_power_plant",
+    "oil_power_plant",
+    "nuclear_power_plant",
+];
 
 const POWER_PLANTS: [&str; 3] = ["coal_power_plant", "oil_power_plant", "nuclear_power_plant"];
 
@@ -601,7 +619,7 @@ impl AdvancedAi {
         };
         let city = &g.cities[&cid];
         let player = &g.players[pid];
-        let research_bonus = Self::science_drive_research_bonus(g, city, item);
+        let research_bonus = Self::science_drive_research_bonus(g, pid, city, item);
         if self.science_drive_launch_city(g, pid) != Some(cid) {
             return research_bonus;
         }
@@ -662,8 +680,15 @@ impl AdvancedAi {
     /// Version 2 keeps the adaptive empire's research funnel alive even when
     /// the general strategic plan has not selected Science. The credit gets
     /// the Campus and each missing research rung rather than only pricing a
-    /// launch city's production chain.
-    fn science_drive_research_bonus(g: &Game, city: &crate::game::City, item: &Item) -> f64 {
+    /// launch city's production chain. Once that funnel and the local
+    /// production chain are complete, it also keeps a Campus Research Grants
+    /// queue competitive with the rest of the late-game filler.
+    fn science_drive_research_bonus(
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        item: &Item,
+    ) -> f64 {
         match item {
             Item::District { district, .. }
                 if g.district_family(*district) == crate::name!("campus")
@@ -692,8 +717,62 @@ impl AdvancedAi {
                     .find(|(name, _)| *name == Self::base_building(g, building))
                     .map_or(0.0, |(_, bonus)| *bonus)
             }
+            Item::Project { project }
+                if project == "campus_research_grants"
+                    && city
+                        .districts
+                        .keys()
+                        .any(|held| g.district_family(*held) == crate::name!("campus"))
+                    && !Self::science_drive_project_building_debt(g, pid, city.id) =>
+            {
+                SCIENCE_DRIVE_CAMPUS_PROJECT_BONUS
+            }
             _ => 0.0,
         }
+    }
+
+    /// Whether a city can still start one of the concrete buildings that a
+    /// repeatable Campus project must wait behind. A unique replacement counts
+    /// as its base building, and an already queued copy is debt already being
+    /// paid. Power plants are one chain rung: once any plant stands or is
+    /// queued, another fuel is not a reason to suppress research grants.
+    fn science_drive_project_building_debt(g: &Game, pid: usize, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        let has_power_plant = city
+            .buildings
+            .iter()
+            .any(|building| POWER_PLANTS.contains(&Self::base_building(g, building)))
+            || city.queue.iter().any(|item| {
+                matches!(item, Item::Building { building }
+                if POWER_PLANTS.contains(&Self::base_building(g, building)))
+            });
+
+        SCIENCE_DRIVE_PROJECT_BUILDING_DEBT
+            .iter()
+            .filter(|base| !has_power_plant || !POWER_PLANTS.contains(base))
+            .any(|base| {
+                let held_or_queued = city
+                    .buildings
+                    .iter()
+                    .any(|building| Self::base_building(g, building) == *base)
+                    || city.queue.iter().any(|item| {
+                        matches!(item, Item::Building { building }
+                        if Self::base_building(g, building) == *base)
+                    });
+                if held_or_queued {
+                    return false;
+                }
+                g.rules.buildings.keys().any(|building| {
+                    Self::base_building(g, building) == *base
+                        && g.can_produce(
+                            pid,
+                            cid,
+                            &Item::Building {
+                                building: *building,
+                            },
+                        )
+                })
+            })
     }
 
     /// A unique building's base, else the building itself.
@@ -1211,6 +1290,7 @@ impl AdvancedAi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::StrategicPlan;
     use crate::game::{Action, Game};
     use crate::Pos;
 
@@ -1602,6 +1682,18 @@ mod tests {
             v2.science_drive_production_bonus(&g, 0, theirs, &library),
             SCIENCE_DRIVE_RESEARCH_BUILDING_BONUS[0].1
         );
+        // Make the first research rung genuinely available so the project
+        // guard is tested against a legal alternative, not merely a missing
+        // technology in this small board.
+        g.players[0].techs.insert(crate::name!("writing"));
+        let grants = Item::Project {
+            project: crate::name!("campus_research_grants"),
+        };
+        assert_eq!(
+            v2.science_drive_production_bonus(&g, 0, theirs, &grants),
+            0.0,
+            "the repeatable project waits while a research building is available"
+        );
         g.cities
             .get_mut(&theirs)
             .unwrap()
@@ -1612,6 +1704,89 @@ mod tests {
             0.0,
             "a completed research rung is not repeatedly rewarded"
         );
+        // Remove every local building rung the project is allowed to wait
+        // behind. The test does not need to model their completion actions;
+        // the valuation only consumes the resulting city state.
+        g.cities.get_mut(&theirs).unwrap().buildings.extend(
+            [
+                "university",
+                "research_lab",
+                "workshop",
+                "factory",
+                "coal_power_plant",
+            ]
+            .into_iter()
+            .map(Name::new),
+        );
+        assert_eq!(
+            v2.science_drive_production_bonus(&g, 0, theirs, &grants),
+            SCIENCE_DRIVE_CAMPUS_PROJECT_BONUS,
+            "a finished research city gets a science-producing filler"
+        );
+        assert_eq!(
+            v2.science_drive_production_bonus(&g, 0, _ours, &grants),
+            0.0,
+            "the project still requires its own Campus"
+        );
+
+        // Exercise the actual project valuation, not only its bonus helper:
+        // the integration call must put the credit on the raw side of the
+        // existing caps where the chooser can see it.
+        let (mut developed, developed_city, _) = board();
+        give_techs(&mut developed, 0, 30);
+        let campus_site = flat_site(&mut developed, developed_city);
+        developed.map.tiles.get_mut(&campus_site).unwrap().district = Some(crate::name!("campus"));
+        developed
+            .cities
+            .get_mut(&developed_city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("campus"), campus_site);
+        developed
+            .cities
+            .get_mut(&developed_city)
+            .unwrap()
+            .buildings
+            .extend(
+                [
+                    "library",
+                    "university",
+                    "research_lab",
+                    "workshop",
+                    "factory",
+                    "coal_power_plant",
+                ]
+                .into_iter()
+                .map(Name::new),
+            );
+        developed.turn = AdvancedAi::science_drive_start(&developed);
+        let mut driven = AdvancedAi::targeting(VictoryTarget::Science);
+        driven.enable_science_victory_drive_2();
+        driven.maintain_science_drive(&developed, 0);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: developed.turn,
+            rush: false,
+        };
+        let stock_value = AdvancedAi::new().district_project_value(
+            &developed,
+            0,
+            developed_city,
+            "campus_research_grants",
+            &plan,
+        );
+        let driven_value = driven.district_project_value(
+            &developed,
+            0,
+            developed_city,
+            "campus_research_grants",
+            &plan,
+        );
+        assert!((driven_value - stock_value - SCIENCE_DRIVE_CAMPUS_PROJECT_BONUS).abs() < 1e-9);
         v2.disable_science_victory_drive_2();
         v2.maintain_science_drive(&g, 0);
         assert_eq!(

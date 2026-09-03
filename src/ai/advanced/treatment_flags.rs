@@ -2120,11 +2120,11 @@ impl AdvancedAi {
         self.science_expansion_phase = true;
     }
 
-    /// Keep the Science lane expanding first until five cities or 100 standard
-    /// turns, the band live wins open from. Opt-in gene `science-opening-band`;
-    /// the live-versus-screen disagreement is argued on
-    /// `SCIENCE_OPENING_BAND_CITY_TARGET`. Filed above the markers: the
-    /// append-point check reads a method line's first identifier.
+    /// Compatibility toggle for callers that used the former Science-only
+    /// opening band. The shared first-half expansion-and-defense phase now
+    /// governs the handoff for every victory lane. Opt-in gene
+    /// `science-opening-band`; the append-point check reads a method line's
+    /// first identifier.
     pub fn enable_science_opening_band(&mut self) {
         self.science_opening_band = true;
     }
