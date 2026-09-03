@@ -5879,8 +5879,10 @@ pub struct AdvancedAi {
     /// Version two keeps the fallback and drops the military half of it: a
     /// Builder, a Trader, a Settler, a building, a district or a project may
     /// answer an idle turn, and a soldier the scorer has already refused may
-    /// not. Where nothing civilian qualifies the city stays idle, which is what
-    /// ships. Opt-in gene `never-an-empty-queue-2`.
+    /// not. It first keeps the hard-veto floor, but when that leaves the host's
+    /// required queue unanswered it takes a last-resort legal civilian rather
+    /// than wedging the whole turn. A Settler still needs a coordinated site;
+    /// no site means idle. Opt-in gene `never-an-empty-queue-2`.
     never_an_empty_queue_2: bool,
 
     /// Version 3 of `never-an-empty-queue`: repair a persistent stall, not a
@@ -5917,7 +5919,9 @@ pub struct AdvancedAi {
     ///
     /// The gene does not re-rank anything. It takes the highest-scoring
     /// candidate above `PRODUCTION_VETO_FLOOR`, so a hard veto is still a veto
-    /// and the ordinary choice is untouched whenever one exists. Opt-in gene
+    /// and the ordinary choice is untouched whenever one exists. Version two
+    /// has its own final legal-civilian escape hatch because an empty queue is
+    /// a host blocker, not a viable strategy. Opt-in gene
     /// `never-an-empty-queue`.
     never_an_empty_queue: bool,
     /// Version one of the native emergency purchase: a damaged city struck
@@ -6610,10 +6614,11 @@ const IMPROVEMENT_HOUSING_WEIGHT: f64 = 4.0;
 /// The scorer returns two sentinels for an item it does not want: -10,000 is
 /// the hard veto (no site, no capacity, illegal for this lane) and -2,000 is
 /// the soft one (a saturated domain, a second Scout, a unit weaker than the
-/// best in its role). `never_an_empty_queue` keeps the hard veto and accepts
-/// the soft one, because a soft refusal is still a real build and the
-/// alternative it is being compared against is not a better build but no build
-/// at all.
+/// best in its role). `never_an_empty_queue` and version three keep the hard
+/// veto and accept the soft one, because a soft refusal is still a real build
+/// and the alternative it is being compared against is not a better build but
+/// no build at all. Version two may cross this floor only for a legal civilian
+/// last resort, because the host cannot end a turn with an empty queue.
 const PRODUCTION_VETO_FLOOR: f64 = -9_000.0;
 
 /// The share of the game's turn budget inside which `government_ladder` still
@@ -24966,10 +24971,14 @@ impl AdvancedAi {
                                     _ => true,
                                 }
                         };
-                        items
+                        let candidates = items
                             .into_iter()
                             .zip(scores)
-                            .filter(|(item, score)| *score > PRODUCTION_VETO_FLOOR && wanted(item))
+                            .filter(|(item, _)| wanted(item))
+                            .collect::<Vec<_>>();
+                        let normal = candidates
+                            .iter()
+                            .filter(|(_, score)| *score > PRODUCTION_VETO_FLOOR)
                             .max_by(|left, right| {
                                 upkeep_free(&left.0)
                                     .cmp(&upkeep_free(&right.0))
@@ -24978,8 +24987,61 @@ impl AdvancedAi {
                                         format!("{:?}", right.0).cmp(&format!("{:?}", left.0))
                                     })
                             })
+                            .map(|(item, score)| (item.clone(), *score, false));
+                        normal.or_else(|| {
+                            // Version two is the only idle-queue arm allowed
+                            // to cross the hard-veto floor. The host's
+                            // `ENDTURN_BLOCKING_PRODUCTION` is a real blocker:
+                            // leaving every candidate below the model's
+                            // strategic floor can strand the whole game on a
+                            // turn even when Civ VI offers legal civilian work.
+                            // Keep this escape hatch civilian and useful. In
+                            // particular, never manufacture a Settler whose
+                            // site scan already said there is nowhere to go.
+                            if !self.never_an_empty_queue_2 {
+                                return None;
+                            }
+                            let civilian_fallback = |item: &Item| match item {
+                                Item::Unit { unit } if unit == "settler" => {
+                                    self.coordinated_settler_site(g, pid, cid).is_some()
+                                }
+                                Item::Unit { .. } => true,
+                                Item::Building { .. }
+                                | Item::District { .. }
+                                | Item::Repair { .. }
+                                | Item::Project { .. }
+                                | Item::Product { .. } => true,
+                                // Wonders are globally contested commitments,
+                                // not an emergency answer to a queue blocker.
+                                Item::Wonder { .. } | Item::Formation { .. } => false,
+                            };
+                            let fallback_rank = |item: &Item| match item {
+                                Item::Repair { .. } => 6,
+                                Item::Building { .. } => 5,
+                                Item::District { .. } => 4,
+                                Item::Project { .. } => 3,
+                                Item::Unit { unit } if unit == "builder" => 2,
+                                Item::Unit { unit } if unit == "trader" => 2,
+                                Item::Unit { unit } if unit == "settler" => 1,
+                                Item::Unit { .. } => 0,
+                                Item::Product { .. } => 0,
+                                Item::Wonder { .. } | Item::Formation { .. } => 0,
+                            };
+                            candidates
+                                .into_iter()
+                                .filter(|(item, _)| civilian_fallback(item))
+                                .max_by(|left, right| {
+                                    fallback_rank(&left.0)
+                                        .cmp(&fallback_rank(&right.0))
+                                        .then_with(|| left.1.total_cmp(&right.1))
+                                        .then_with(|| {
+                                            format!("{:?}", right.0).cmp(&format!("{:?}", left.0))
+                                        })
+                                })
+                                .map(|(item, score)| (item, score, true))
+                        })
                     };
-                    fallback.and_then(|(item, score)| {
+                    fallback.and_then(|(item, score, _hard_veto)| {
                         g.apply(
                             pid,
                             &Action::Produce {
@@ -24993,6 +25055,9 @@ impl AdvancedAi {
                 }
                 None => None,
             };
+            let hard_veto_fallback = chosen
+                .as_ref()
+                .is_some_and(|(score, _)| *score <= PRODUCTION_VETO_FLOOR);
             if chosen.is_none() && committed.is_none() {
                 // The silent turn, named. Measured across five King runs
                 // (2026-08-29): 383 empty city-turns, and 285 of them — 74 %,
@@ -25009,6 +25074,10 @@ impl AdvancedAi {
                     think!(self.journal(), Cities, Detail,
                            "{} builds nothing", g.cities[&cid].name;
                            "two distinct idle turns reached, but no civilian candidate cleared the hard veto");
+                } else if self.never_an_empty_queue || self.never_an_empty_queue_2 {
+                    think!(self.journal(), Cities, Detail,
+                           "{} builds nothing", g.cities[&cid].name;
+                           "the idle-queue gene was armed, but no legal civilian fallback survived the host/model menu");
                 } else {
                     think!(self.journal(), Cities, Detail,
                            "{} builds nothing", g.cities[&cid].name;
@@ -25045,20 +25114,27 @@ impl AdvancedAi {
                             .copied()
                             .unwrap_or(0.0);
                         let city_name = g.cities[&cid].name.clone();
-                        match &committed {
-                            Some((current, current_item)) if *current_item != item => {
-                                think!(self.journal(), Economy, Decision,
-                                       "{} switches to {}", city_name, Self::plain_item(&item);
-                                       "worth {score:.0}, displacing {} at {current:.0}; \
-                                        {banked:.0} banked on the new item",
-                                       Self::plain_item(current_item));
-                            }
-                            _ => {
-                                think!(self.journal(), Economy, Decision,
-                                       "{} starts {}", city_name, Self::plain_item(&item);
-                                       "worth {score:.0} to the {} plan; \
-                                        {banked:.0} already banked",
-                                       plan.strategy.as_str());
+                        if hard_veto_fallback {
+                            think!(self.journal(), Economy, Decision,
+                                   "{} starts {} as the idle-queue safety fallback",
+                                   city_name, Self::plain_item(&item);
+                                   "never-an-empty-queue-2 was armed; all preferred civilian candidates were at or below the hard veto");
+                        } else {
+                            match &committed {
+                                Some((current, current_item)) if *current_item != item => {
+                                    think!(self.journal(), Economy, Decision,
+                                           "{} switches to {}", city_name, Self::plain_item(&item);
+                                           "worth {score:.0}, displacing {} at {current:.0}; \
+                                            {banked:.0} banked on the new item",
+                                           Self::plain_item(current_item));
+                                }
+                                _ => {
+                                    think!(self.journal(), Economy, Decision,
+                                           "{} starts {}", city_name, Self::plain_item(&item);
+                                           "worth {score:.0} to the {} plan; \
+                                            {banked:.0} already banked",
+                                           plan.strategy.as_str());
+                                }
                             }
                         }
                     }
