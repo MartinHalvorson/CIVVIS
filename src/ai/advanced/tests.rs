@@ -1081,7 +1081,7 @@ fn an_explicit_science_target_reserves_its_owed_campus_building() {
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("monument"), crate::name!("walls")];
     game.players[0].techs.insert(crate::name!("writing"));
-    game.turn = 60;
+    game.turn = game.max_turns / 2;
     let library = Item::Building {
         building: crate::name!("library"),
     };
@@ -1561,6 +1561,7 @@ fn boosted_bargain_v2_does_not_interrupt_a_forced_lane_goal() {
         .retain(|tech| tech != &crate::name!("mining"));
     game.players[0].boosted_techs.insert(crate::name!("mining"));
     game.players[0].research = None;
+    game.turn = game.max_turns / 2;
     let plan = StrategicPlan {
         strategy: GrandStrategy::Diplomacy,
         target_player: None,
@@ -2512,8 +2513,8 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
     game.turn = 1;
     let opening = ai.assess(&game, 0);
     assert_eq!(
-        opening.desired_cities, SHARED_SCIENCE_CITY_TARGET,
-        "Science must cap the live land-grab horizon"
+        opening.desired_cities, SHARED_CITY_TARGET_CEILING,
+        "the first half must keep the full expansion horizon"
     );
     assert_eq!(
         opening.strategy,
@@ -2521,10 +2522,10 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
         "the target may still establish its first city opening"
     );
 
-    // Once the small opening has two cities, an assigned Science lane owns
-    // the plan immediately. This catches the hostile-frontier case where a
-    // third settler can be stranded for many turns while the cities need
-    // Campuses.
+    // An assigned Science lane stays in the expansion posture after two
+    // cities while the first half is still running. This catches the
+    // hostile-frontier case where the old handoff stranded a third Settler
+    // while the target lane started tailoring too early.
     let first_city = game.player_city_ids(0)[0];
     let second_position = game
         .map
@@ -2542,25 +2543,32 @@ fn a_science_target_caps_land_grab_and_takes_over_after_the_opening() {
     let two_city_handoff = ai.assess(&game, 0);
     assert_eq!(
         two_city_handoff.strategy,
-        GrandStrategy::Science,
-        "two cities are enough to end the Science opening"
+        GrandStrategy::Expansion,
+        "the first half keeps expanding before Science takes over"
     );
 
-    game.turn = game.standard_duration(SCIENCE_OPENING_EXPANSION_STANDARD_TURNS);
+    game.turn = game.standard_duration(60);
     let handoff = ai.assess(&game, 0);
-    assert_eq!(handoff.desired_cities, SHARED_SCIENCE_CITY_TARGET);
+    assert_eq!(handoff.desired_cities, SHARED_CITY_TARGET_CEILING);
     assert_eq!(
         handoff.strategy,
+        GrandStrategy::Expansion,
+        "the assigned lane stays expansion-first through the first half"
+    );
+
+    game.turn = game.max_turns / 2;
+    let specialized = ai.assess(&game, 0);
+    assert_eq!(specialized.desired_cities, SHARED_SCIENCE_CITY_TARGET);
+    assert_eq!(
+        specialized.strategy,
         GrandStrategy::Science,
-        "a remaining site must not keep an assigned Science seat in Expansion"
+        "the victory lane takes over at halfway"
     );
 }
 
-/// `science-opening-band`: with the gene on, two cities do not end the
-/// Science opening — the posture stays Expansion inside the band's window,
-/// and hands over once the window closes whatever the city count. The stock
-/// two-city handoff with the gene off is the test above, so together they
-/// pin the exact no-op.
+/// `science-opening-band` remains compatible with the general phase policy:
+/// the lane is still Expansion in the first half, and the victory plan takes
+/// over at the shared halfway boundary rather than at the old band deadline.
 #[test]
 fn the_opening_band_keeps_a_two_city_science_seat_expanding() {
     let mut game = Game::new_with(GameOptions {
@@ -2603,12 +2611,19 @@ fn the_opening_band_keeps_a_two_city_science_seat_expanding() {
         "inside the band two cities must not end the Science opening"
     );
 
-    game.turn = game.standard_duration(SCIENCE_OPENING_BAND_STANDARD_TURNS);
+    game.turn = game.standard_duration(100);
     let window_closed = ai.assess(&game, 0);
     assert_eq!(
         window_closed.strategy,
+        GrandStrategy::Expansion,
+        "the old band deadline must not end the first-half expansion posture"
+    );
+
+    game.turn = game.max_turns / 2;
+    assert_eq!(
+        ai.assess(&game, 0).strategy,
         GrandStrategy::Science,
-        "past the band window the lane owns the plan whatever the count"
+        "the assigned lane takes over at halfway"
     );
 }
 
@@ -5743,11 +5758,8 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     );
     assert!(project_value > 0.0, "the project stays a positive fallback");
 
-    // A directly targeted Science controller gets the same guard even when
-    // the deployment genome has not enabled the separately screenable
-    // `buildings-before-projects` treatment. This is the live failure mode:
-    // the objective is Science, but a Commercial Hub Investment must not
-    // consume a city's only chance to build its Library.
+    // During the first half, even a directly targeted Science controller keeps
+    // the opening economy moving instead of forcing the victory funnel.
     let science_plan = StrategicPlan {
         strategy: GrandStrategy::Science,
         target_player: None,
@@ -5759,12 +5771,23 @@ fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
     };
     let mut targeted = AdvancedAi::targeting(VictoryTarget::Science);
     targeted.refresh_research_weight(&game);
+    let early_targeted_value =
+        targeted.district_project_value(&game, 0, city, "commercial_hub_investment", &science_plan);
+    assert!(
+        early_targeted_value > PROJECT_BEHIND_BUILDINGS_CAP,
+        "the early Science target must leave ordinary development available: \
+         {early_targeted_value}"
+    );
+
+    // Once the shared halfway boundary opens specialization, the same target
+    // restores the building-before-projects reserve.
+    game.turn = game.max_turns / 2;
+    targeted.refresh_research_weight(&game);
     let targeted_value =
         targeted.district_project_value(&game, 0, city, "commercial_hub_investment", &science_plan);
     assert!(
         targeted_value <= PROJECT_BEHIND_BUILDINGS_CAP,
-        "the Science target must cap the repeatable project without a genome override: \
-         {targeted_value}"
+        "the late Science target must cap the repeatable project: {targeted_value}"
     );
 
     // Library built, University not yet reachable: nothing owed, the race
@@ -5815,7 +5838,7 @@ fn a_targeted_science_turn_reserves_the_first_campus_building() {
     let city = game.player_city_ids(0)[0];
     install_ai_test_district(&mut game, city, "campus");
     game.players[0].techs.insert(crate::name!("writing"));
-    game.turn = 60;
+    game.turn = game.max_turns / 2;
     game.cities.get_mut(&city).unwrap().queue.clear();
 
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
@@ -8776,7 +8799,9 @@ fn first_governor_matches_the_empire_strategy() {
 /// fails here.
 #[test]
 fn expansion_window_still_climbs_and_wants_a_settler_before_endgame() {
-    let mut game = Game::new_full(1, 30, 18, 7_113, 500, 0, false);
+    // Keep the historical t270 check in the development half; the new
+    // halfway boundary is t300 on this deliberately longer fixture.
+    let mut game = Game::new_full(1, 30, 18, 7_113, 600, 0, false);
     let settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -11296,6 +11321,7 @@ fn adaptive_science_readiness_commits_to_the_rocketry_path() {
     let focus = ai.victory_focus(&game, 0);
     assert_eq!(focus.strategy, GrandStrategy::Science);
     assert!(focus.progress > 50);
+    game.turn = game.max_turns / 2;
 
     let plan = StrategicPlan {
         strategy: GrandStrategy::Science,
@@ -11308,6 +11334,28 @@ fn adaptive_science_readiness_commits_to_the_rocketry_path() {
     };
     ai.advanced_research(&mut game, 0, &plan);
     assert_eq!(game.players[0].research.as_deref(), Some("rocketry"));
+}
+
+#[test]
+fn victory_specialization_starts_at_the_game_halfway_point() {
+    let mut game = Game::new(2, 24, 16, 76_004, 300, 0);
+    assert!(!AdvancedAi::victory_specialization_active(&game));
+    game.turn = 149;
+    assert!(
+        !AdvancedAi::victory_specialization_active(&game),
+        "turn 149 of a 300-turn game is still development"
+    );
+    game.turn = 150;
+    assert!(
+        AdvancedAi::victory_specialization_active(&game),
+        "the victory lane takes over at halfway"
+    );
+
+    game.max_turns = 0;
+    game.world_era = 3;
+    assert!(!AdvancedAi::victory_specialization_active(&game));
+    game.world_era = 4;
+    assert!(AdvancedAi::victory_specialization_active(&game));
 }
 
 #[test]
@@ -11356,7 +11404,7 @@ fn mature_diplomatic_plan_prepares_one_science_backup() {
         .map(|(tech, _)| *tech)
         .collect();
     game.players[0].techs.extend(completed_eras);
-    game.turn = game.standard_duration(220);
+    game.turn = game.max_turns / 2 + 1;
     let plan = StrategicPlan {
         strategy: GrandStrategy::Diplomacy,
         target_player: None,
@@ -11397,6 +11445,7 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     let ai = AdvancedAi::new();
 
     let mut science = Game::new_full(1, 20, 14, 762, 300, 0, false);
+    science.turn = science.max_turns / 2;
     ai.advanced_research(&mut science, 0, &plan(GrandStrategy::Science));
     assert_eq!(
         science.players[0].research.as_deref(),
@@ -11426,6 +11475,7 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     );
 
     let mut culture = Game::new_full(1, 20, 14, 763, 300, 0, false);
+    culture.turn = culture.max_turns / 2;
     ai.advanced_research(&mut culture, 0, &plan(GrandStrategy::Culture));
     assert_eq!(
         culture.players[0].research.as_deref(),
@@ -11434,6 +11484,7 @@ fn adaptive_research_routes_to_the_live_victory_plan() {
     );
 
     let mut diplomacy = Game::new_full(1, 20, 14, 764, 300, 0, false);
+    diplomacy.turn = diplomacy.max_turns / 2;
     ai.advanced_research(&mut diplomacy, 0, &plan(GrandStrategy::Diplomacy));
     let tech = diplomacy.players[0].research.as_deref().unwrap();
     assert!(
@@ -11593,7 +11644,7 @@ fn coastal_science_takes_one_era_gated_harbor_tech_package() {
 
     let ai = AdvancedAi::new();
     assert_eq!(
-        AdvancedAi::science_harbor_research_goal(&game, 0, GrandStrategy::Science),
+        ai.science_harbor_research_goal(&game, 0, GrandStrategy::Science),
         Some("celestial_navigation")
     );
     let plan = StrategicPlan {
@@ -12910,8 +12961,8 @@ fn science_spaceport_queues_follow_the_project_milestones() {
         }
     }
     game.players[0].techs.insert(crate::name!("rocketry"));
-    game.turn = 140;
     game.max_turns = 100_000;
+    game.turn = game.max_turns / 2;
     for city in &cities {
         game.cities.get_mut(city).expect("test city").pop = 12;
     }
@@ -13304,12 +13355,15 @@ fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
         .expect("found city");
     let first = game.player_city_ids(0)[0];
     let second = found_test_city(&mut game, 0);
-    game.players[0].techs.insert(crate::name!("rocketry"));
+    game.players[0].techs = game.rules.techs.keys().cloned().collect();
     game.turn = 140;
-    // The turn limit is a separate treatment (`score_horizon`); hold it
-    // far enough away that both cities price a real pad and the rung is
-    // the only thing under test.
+    // The turn limit is a separate treatment (`score_horizon`); move to the
+    // specialization half while keeping every research prerequisite known,
+    // so the test isolates the one-pad rung rather than research payback.
     game.max_turns = 100_000;
+    // This test exercises the late one-pad specialization, after the shared
+    // expansion-and-defense half has handed the plan to the victory lane.
+    game.turn = game.max_turns / 2;
     // The measured shape: one city out-produces the other, and the race
     // would be run there.
     install_ai_test_district(&mut game, first, "industrial_zone");
@@ -13405,9 +13459,12 @@ fn a_pad_beyond_the_race_stage_earns_no_science_bonus() {
         .expect("found city");
     let first = game.player_city_ids(0)[0];
     let second = found_test_city(&mut game, 0);
-    game.players[0].techs.insert(crate::name!("rocketry"));
-    game.turn = 140;
+    // This fixture isolates the late pad-count rule, not the independent
+    // research-payback horizon. With the halfway clock below, make the race's
+    // project technologies already known so that guard remains out of scope.
+    game.players[0].techs = game.rules.techs.keys().cloned().collect();
     game.max_turns = 100_000;
+    game.turn = game.max_turns / 2;
     install_ai_test_district(&mut game, first, "spaceport");
 
     let plan = StrategicPlan {
@@ -13789,12 +13846,12 @@ fn district_search_values_unique_families_and_real_housing_need() {
     );
 }
 
-/// Once the Campus chain has no currently buildable rung, an explicit Science
-/// target must not fall through to a generic Culture, Gold, or Faith district.
-/// Those districts can look positive in the ordinary production argmax and
-/// still spend the queue seat before Electricity unlocks the Research Lab.
+/// Once the Campus chain has no currently buildable rung, a late explicit
+/// Science target must not fall through to a generic Culture, Gold, or Faith
+/// district. In the first half those ordinary districts remain legal because
+/// the empire is still expanding and defending before it specializes.
 #[test]
-fn a_targeted_science_refuses_unrelated_specialty_districts() {
+fn a_targeted_science_specializes_after_allowing_early_harbors() {
     let mut game = Game::new_full(1, 24, 16, 5_417, 250, 1, false);
     let settler = game
         .player_unit_ids(0)
@@ -13822,19 +13879,29 @@ fn a_targeted_science_refuses_unrelated_specialty_districts() {
     };
     let counts = ai.counts(&game, 0);
 
-    for district in ["theater_square", "commercial_hub", "holy_site", "preserve"] {
+    game.turn = game.max_turns / 2 - 1;
+    for district in ["theater_square", "commercial_hub", "preserve"] {
         let item = Item::District {
             district: Name::new(district),
             pos: site,
         };
         assert!(
-            ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0,
-            "Science must refuse {district}"
+            ai.production_value(&game, 0, city, &item, &plan, &counts) > -9_000.0,
+            "the first half must leave {district} available for development"
         );
     }
+    let holy_site = Item::District {
+        district: Name::new("holy_site"),
+        pos: site,
+    };
+    assert!(
+        ai.production_value(&game, 0, city, &holy_site, &plan, &counts) < -9_000.0,
+        "Holy Sites remain outside the Science lane"
+    );
 
-    // A single Harbor is the bounded coastal-support exception. It must be
-    // available to the Science lane, while a second Harbor remains a detour.
+    // Multiple Harbors are legal in the early expansion phase. The first gets
+    // the support nudge, while a second one remains subject to ordinary value
+    // rather than a global one-Harbor veto.
     let harbor = Item::District {
         district: Name::new("harbor"),
         pos: site,
@@ -13850,8 +13917,28 @@ fn a_targeted_science_refuses_unrelated_specialty_districts() {
         pos: site,
     };
     assert!(
+        ai.production_value(&game, 0, city, &second_harbor, &plan, &counts) > -9_000.0,
+        "early Science may build a useful second Harbor"
+    );
+
+    game.turn = game.max_turns / 2;
+    for district in ["theater_square", "commercial_hub", "preserve"] {
+        let item = Item::District {
+            district: Name::new(district),
+            pos: site,
+        };
+        assert!(
+            ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0,
+            "late Science must refuse {district}"
+        );
+    }
+    assert!(
+        ai.production_value(&game, 0, city, &holy_site, &plan, &counts) < -9_000.0,
+        "Holy Sites remain refused after specialization"
+    );
+    assert!(
         ai.production_value(&game, 0, city, &second_harbor, &plan, &counts) < -9_000.0,
-        "Science should not collect multiple Harbors"
+        "late Science must stop Harbor collection"
     );
 }
 
@@ -44853,8 +44940,8 @@ fn the_science_lane_widens_natively_but_live_verification_stays_bounded() {
     off.victory_target = Some(VictoryTarget::Science);
     assert_eq!(
         off.assess(&game, 0).desired_cities,
-        native_contract,
-        "withheld, the Science contract stands from turn one"
+        shared,
+        "withheld, the first half still follows the expansion horizon"
     );
 }
 
@@ -46005,8 +46092,8 @@ fn a_hub_beside_a_campus_joins_the_science_lanes_trade_network() {
     let city = game.player_city_ids(0)[0];
     game.players[0].techs.insert(crate::name!("currency"));
     game.cities.get_mut(&city).unwrap().pop = 5;
-    game.turn = 80;
     game.max_turns = 250;
+    game.turn = game.max_turns / 2;
 
     let plan = StrategicPlan {
         strategy: GrandStrategy::Science,
