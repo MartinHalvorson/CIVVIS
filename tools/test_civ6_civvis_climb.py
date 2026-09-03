@@ -2792,3 +2792,39 @@ class TheOperatorsLaneOutlivesAStaleEnvironment(unittest.TestCase):
         for lane in climb.VICTORY_LANES:
             got, _ = self.lane(f"{lane}\n")
             self.assertEqual(got, lane)
+
+
+class TheOperatorsTurnCapOutlivesAStaleEnvironment(unittest.TestCase):
+    """The long-lived host must not freeze the score clock at its old value."""
+
+    def cap(self, contents, requested=250):
+        warnings = []
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".civvis-turn-cap"
+            if contents is not None:
+                path.write_text(contents, encoding="utf-8")
+            got = climb.operator_turn_cap(
+                requested, path=path, warn=warnings.append)
+        return got, warnings
+
+    def test_an_absent_file_changes_nothing(self):
+        got, warnings = self.cap(None)
+        self.assertEqual(got, 250)
+        self.assertEqual(warnings, [])
+
+    def test_a_positive_cap_overrides_the_inherited_default(self):
+        got, warnings = self.cap("650\n")
+        self.assertEqual(got, 650)
+        self.assertTrue(any("650" in warning for warning in warnings))
+
+    def test_an_agreeing_cap_is_silent(self):
+        got, warnings = self.cap("650\n", requested=650)
+        self.assertEqual(got, 650)
+        self.assertEqual(warnings, [])
+
+    def test_malformed_and_non_positive_values_are_ignored(self):
+        for contents in ("six-fifty\n", "0\n", "-1\n"):
+            with self.subTest(contents=contents):
+                got, warnings = self.cap(contents)
+                self.assertEqual(got, 250)
+                self.assertTrue(warnings)
