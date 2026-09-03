@@ -2127,6 +2127,17 @@
           "wonder-adjacent-sites": null,
           "wonder-adjacent-sites-2": null
         }
+      },
+      "wonder-ring-recon": {
+        "rule_on": [
+          "wonder-ring-recon"
+        ],
+        "head": null,
+        "ships": "wonder-ring-recon",
+        "versions": {
+          "wonder-ring-recon": null,
+          "wonder-ring-recon-2": null
+        }
       }
     },
     "posterior_shapes": [

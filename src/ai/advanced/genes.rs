@@ -2204,6 +2204,12 @@ pub const GENES: &[Gene] = &[
     // gene refuses those and keeps the original target. Appended at the END,
     // above the markers, so a running screen keeps its positional genome.
     Gene { tag: "detour-keeps-the-site-worth", field: "detour_keeps_the_site_worth", kind: Kind::OptIn, enable: AdvancedAi::enable_detour_keeps_the_site_worth, disable: AdvancedAi::disable_detour_keeps_the_site_worth },
+    // Version two of `wonder-ring-recon`: preserve every V1 trigger, then
+    // choose the most revealing pocket goal among those no more than one tile
+    // beyond V1's nearest. Information improves without a long detour.
+    // Appended above the markers, so a running screen keeps its positional
+    // genome.
+    Gene { tag: "wonder-ring-recon-2", field: "wonder_ring_recon_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_ring_recon_2, disable: AdvancedAi::disable_wonder_ring_recon_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

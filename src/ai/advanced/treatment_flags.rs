@@ -2120,11 +2120,11 @@ impl AdvancedAi {
         self.science_expansion_phase = true;
     }
 
-    /// Keep the Science lane expanding first until five cities or 100 standard
-    /// turns, the band live wins open from. Opt-in gene `science-opening-band`;
-    /// the live-versus-screen disagreement is argued on
-    /// `SCIENCE_OPENING_BAND_CITY_TARGET`. Filed above the markers: the
-    /// append-point check reads a method line's first identifier.
+    /// Compatibility toggle for callers that used the former Science-only
+    /// opening band. The shared first-half expansion-and-defense phase now
+    /// governs the handoff for every victory lane. Opt-in gene
+    /// `science-opening-band`; the append-point check reads a method line's
+    /// first identifier.
     pub fn enable_science_opening_band(&mut self) {
         self.science_opening_band = true;
     }
@@ -2787,12 +2787,26 @@ impl AdvancedAi {
     /// `wonder-ring-recon`; see `advanced/wonder_sites.rs` and
     /// `BasicAi::wonder_ring_recon`.
     pub fn enable_wonder_ring_recon(&mut self) {
+        self.base.wonder_ring_recon_2 = false;
         self.base.wonder_ring_recon = true;
     }
 
     /// The twin of `enable_wonder_ring_recon`.
     pub fn disable_wonder_ring_recon(&mut self) {
         self.base.wonder_ring_recon = false;
+    }
+
+    /// Preserve every nearby natural-wonder pocket V1 scouts, but spend at
+    /// most one extra tile of travel to expose more of its footprint. This is
+    /// version two of `wonder-ring-recon`, so enabling it turns V1 off.
+    pub fn enable_wonder_ring_recon_2(&mut self) {
+        self.base.wonder_ring_recon = false;
+        self.base.wonder_ring_recon_2 = true;
+    }
+
+    /// The twin of `enable_wonder_ring_recon_2`.
+    pub fn disable_wonder_ring_recon_2(&mut self) {
+        self.base.wonder_ring_recon_2 = false;
     }
 
     /// Keep one Builder per city while there is still land to improve, priced
