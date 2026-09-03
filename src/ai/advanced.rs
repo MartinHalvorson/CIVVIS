@@ -556,6 +556,16 @@ const SETTLE_LAG: u32 = 3;
 const SPY_MISSION_ORDER_PATIENCE: u32 = 10;
 const SPY_TRAVEL_ORDER_PATIENCE: u32 = 5;
 
+/// Once a rival has launched Mars, the next Spaceport operation is a direct
+/// denial of its endgame rather than an ordinary source of boosts. Keep the
+/// threshold in the same 0--100 currency as `rival_victory_pressure`.
+const SCIENCE_ROCKETRY_DENIAL_PROGRESS: i32 = 65;
+/// The normal Science espionage values are close enough that success chance
+/// alone always favours Tech Boost. At the denial threshold, this bonus makes
+/// the expected value of a legal Rocketry disruption exceed that boost while
+/// preserving the ordinary choice earlier in the race.
+const SCIENCE_ROCKETRY_DENIAL_PRIORITY: f64 = 360.0;
+
 /// Turns a founded city must then stand to be worth its settler. A new city
 /// starts at one population working its centre tile, so this is deliberately
 /// not ambitious: it is the point where the city has returned the production
@@ -22752,6 +22762,16 @@ impl AdvancedAi {
                         continue;
                     }
                 }
+                let science_denial_pressure = current_city
+                    .and_then(|city| g.cities.get(&city))
+                    .is_some_and(|city| {
+                        if !self.deny_leaders || plan.strategy != GrandStrategy::Science {
+                            return false;
+                        }
+                        let pressure = self.rival_victory_pressure(g, city.owner);
+                        pressure.strategy == GrandStrategy::Science
+                            && pressure.progress >= SCIENCE_ROCKETRY_DENIAL_PROGRESS
+                    });
                 let operation = legal
                     .iter()
                     .filter_map(|action| {
@@ -22777,7 +22797,14 @@ impl AdvancedAi {
                         };
                         let strategic = match (plan.strategy, mission.as_str()) {
                             (GrandStrategy::Science, "steal_tech_boost") => 320.0,
-                            (GrandStrategy::Science, "disrupt_rocketry") => 290.0,
+                            (GrandStrategy::Science, "disrupt_rocketry") => {
+                                290.0
+                                    + if science_denial_pressure {
+                                        SCIENCE_ROCKETRY_DENIAL_PRIORITY
+                                    } else {
+                                        0.0
+                                    }
+                            }
                             (GrandStrategy::Culture, "great_work_heist") => 340.0,
                             (GrandStrategy::Culture, "siphon_funds") => 135.0,
                             (GrandStrategy::Diplomacy, "fabricate_scandal") => 330.0,
