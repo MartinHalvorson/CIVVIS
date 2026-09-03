@@ -268,6 +268,16 @@ else
 fi
 say "launching from $HEAD_REPO (origin/main, pin=head) with ${summary}(${policy_note})"
 
+# The terminal-window guard catches only named one-shot helper documents that
+# older/manual recovery callers started through Terminal `do script`. It shares
+# the Terminal-descended tree so it can immediately miniaturize such a document
+# without touching ordinary Terminal sessions.
+TERMINAL_GUARD=${CIVVIS_TERMINAL_WINDOW_GUARD_SCRIPT:-$OPS/civvis-terminal-window-guard.sh}
+if [[ "${CIVVIS_TERMINAL_WINDOW_GUARD:-1}" != 0 && -x "$TERMINAL_GUARD" ]]; then
+  ( /bin/zsh "$TERMINAL_GUARD" >/dev/null 2>&1 & )
+  say "terminal window guard started (${TERMINAL_GUARD:t})"
+fi
+
 # The foreground guard rides the same Terminal-descended tree, which is the
 # only place it can drive Notification Center and System Settings (see its
 # header). Detached, one instance, exits on its own when the lane is gone.
