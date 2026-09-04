@@ -59,9 +59,12 @@ USER_OPTIONS = {
     "GameEraMomentsLog": 1,
 }
 
-# What a VERIFICATION game turns off, by file. Every one of these is cosmetic:
-# none changes a rule, an order, a turn or anything the ledger reads, and every
-# one costs wall clock that no game needs. Measured 2026-08-24 on the ladder's
+# What a VERIFICATION game turns off or acknowledges, by file. None changes a
+# rule, an order, a turn or anything the ledger reads. The cosmetic cuts save
+# wall clock; the two acknowledgements are exactly the choices Civ VI writes
+# after its own one-time front-end dialogs are accepted. Those dialogs sit in
+# front of the main menu, where a capture-free launcher cannot safely discover
+# them before aiming at a fixed menu row. Measured 2026-08-24 on the ladder's
 # own artefacts (run civvis-20260819T102855Z): the first bootstrap attempt of
 # EVERY game fires into a black window -- the intro video -- fails "top menu
 # not readable (0 rows)" and sleeps twenty seconds; the historic-moment
@@ -73,6 +76,11 @@ VERIFICATION_OPTIONS = {
     "AppOptions.txt": {
         # "Set to 1 play the intro video on startup." The game's own comment.
         "PlayIntroVideo": 0,
+        # These are set by the stock unknown-device OK and outdated-driver
+        # "do not remind me" actions.  They prevent known native dialogs from
+        # masking the main menu during unattended capture-free starts.
+        "AcceptedUnknownDevice": 1,
+        "AcceptedOutdatedDriver": 1,
     },
     "UserOptions.txt": {
         "PlayHistoricMomentAnimation": 0,
@@ -86,7 +94,11 @@ VERIFICATION_OPTIONS = {
 # The game's own values for the same keys, for --revert. ⚠ Keep in step with
 # VERIFICATION_OPTIONS; a test holds the two key sets equal.
 VERIFICATION_DEFAULTS = {
-    "AppOptions.txt": {"PlayIntroVideo": 1},
+    "AppOptions.txt": {
+        "PlayIntroVideo": 1,
+        "AcceptedUnknownDevice": 0,
+        "AcceptedOutdatedDriver": 0,
+    },
     "UserOptions.txt": {"PlayHistoricMomentAnimation": 1},
     "GraphicsOptions.txt": {"EnableShadows": 1, "EnableCloudShadows": 1},
 }
@@ -115,7 +127,7 @@ def report(user: Path) -> None:
             have = env.read_option(path, key)
             flag = "ok " if have == str(want) else "-> "
             print(f"  {flag}{key:<32} {have!r:<8} want {want!r}")
-    print("\nverification (cosmetic; what a live game turns off)")
+    print("\nverification (startup cuts and front-end acknowledgements)")
     for name, keys in VERIFICATION_OPTIONS.items():
         path = user / name
         for key, want in keys.items():
@@ -166,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--apply", action="store_true", help="turn the channels on")
     ap.add_argument("--revert", action="store_true", help="restore shipped defaults")
     ap.add_argument("--verification", action="store_true",
-                    help="turn off the intro video, moment animation and shadows")
+                    help="apply verification startup cuts and front-end acknowledgements")
     ap.add_argument("--restart", action="store_true", help="quit and relaunch around the change")
     args = ap.parse_args(argv)
 

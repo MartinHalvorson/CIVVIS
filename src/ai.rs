@@ -15028,12 +15028,16 @@ impl BasicAi {
         let mut radius = 1;
         let mut examined = 0;
         let _memo = g.query_memo();
+        let mut globe_rings = g
+            .map
+            .sphere()
+            .and_then(|sphere| sphere.outward_ring_search(origin));
         while examined < g.map.tiles.len() {
-            let ring: Vec<Pos> = g
-                .wring(origin, radius)
-                .into_iter()
-                .filter(|pos| g.wdist(origin, *pos) == radius)
-                .collect();
+            let ring = if let Some(search) = &mut globe_rings {
+                search.next_ring()
+            } else {
+                g.wring(origin, radius)
+            };
             if ring.is_empty() {
                 break;
             }
