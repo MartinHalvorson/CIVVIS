@@ -199,7 +199,10 @@ ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-3}
 # A recorded desktop cannot tolerate the ordinary launcher's screenshots.  This
 # opt-in profile is deliberately fixed rather than pretending every visual
 # configuration has a capture-free equivalent: it is Rome / Emperor / Online /
-# Continents / Small, and the in-game seat record remains the proof.
+# Continents / Small, and the in-game seat record remains the proof. The
+# profile uses Online's stock 250-turn clock; a prior 650-turn workaround was
+# an extended score horizon that also postponed the AI's half-clock lane
+# handoff, so long caps belong only to explicitly named experiments.
 CAPTURE_FREE=${CIVVIS_CAPTURE_FREE:-0}
 if [[ "$CAPTURE_FREE" != 0 && "$CAPTURE_FREE" != 1 ]]; then
   say "invalid CIVVIS_CAPTURE_FREE='${CAPTURE_FREE}'; refusing to choose a launcher"
@@ -768,7 +771,7 @@ while true; do
         --map Continents.lua \
         --map-size MAPSIZE_SMALL \
         --speed GAMESPEED_ONLINE \
-        --max-turns 650 \
+        --max-turns 250 \
         "${WITHOUT_ARGS[@]}" \
         "${WITH_ARGS[@]}" \
         "${TIMEOUT_ARGS[@]}" \

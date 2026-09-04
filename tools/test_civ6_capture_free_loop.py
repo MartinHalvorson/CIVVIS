@@ -24,7 +24,7 @@ def args(**changes):
         "map_size": loop.PROFILE["map_size"],
         "speed": loop.PROFILE["speed"],
         "game_mode": [],
-        "max_turns": 650,
+        "max_turns": loop.STOCK_ONLINE_MAX_TURNS,
         "timeout": 10_800.0,
         "timeout_ceiling": 14_400.0,
         "victory": "science",
@@ -45,7 +45,7 @@ class FixedProfileTests(unittest.TestCase):
         self.assertEqual(config["GameSpeed"], "GAMESPEED_ONLINE")
         self.assertEqual(config["MapScript"], "Continents.lua")
         self.assertEqual(config["MapSize"], "MAPSIZE_SMALL")
-        self.assertEqual(config["MaxTurns"], 650)
+        self.assertEqual(config["MaxTurns"], loop.STOCK_ONLINE_MAX_TURNS)
         self.assertTrue(config["CivvisDecides"])
         self.assertTrue(config["ExportState"])
         self.assertFalse(any(config["GameModes"].values()))
@@ -62,11 +62,14 @@ class FixedProfileTests(unittest.TestCase):
         self.assertIn("--civvis-decides", command)
         self.assertIn("--export-state", command)
         self.assertIn("--no-deal-sessions", command)
+        self.assertIn("--max-turns", command)
+        self.assertEqual(command[command.index("--max-turns") + 1], "250")
         self.assertIn("rapid-city-expansion-2", command)
         self.assertNotIn("--load-save", command)
 
     def test_default_turn_freeze_window_is_patient(self):
         parsed = loop.parser().parse_args([])
+        self.assertEqual(parsed.max_turns, loop.STOCK_ONLINE_MAX_TURNS)
         self.assertEqual(parsed.frozen_turn_seconds, 1800.0)
         self.assertEqual(parsed.popup_stuck_seconds, 300.0)
 
