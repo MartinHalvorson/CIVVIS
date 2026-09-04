@@ -3237,7 +3237,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
                 print("[attach] the control mod acknowledged Civilization VI "
                       "ACTION_RETIRE; recording operator_retired", flush=True)
                 state["operator_retire_event"] = event
-                state["operator_retired"] = True
+                state["operator_retired"] = event
             state["outcome"] = event
             terminal = True
 
