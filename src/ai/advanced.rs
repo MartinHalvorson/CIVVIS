@@ -38948,21 +38948,28 @@ impl AdvancedAi {
         {
             return Vec::new();
         }
-        let mut ships = g
-            .player_unit_ids(pid)
-            .into_iter()
-            .filter(|uid| {
-                let unit = &g.units[uid];
-                let spec = &g.rules.units[unit.kind];
-                spec.class == "military"
-                    && spec.domain.as_deref() == Some("sea")
-                    && unit.moves_left > 0.0
-                    && unit.linked_to.is_none()
-                    && BasicAi::naval_recon_ship_can_chart(g, pid, *uid)
-            })
-            .collect::<Vec<_>>();
-        ships.sort_unstable();
-        ships.truncate(NAVAL_RECON_EXPLORER_MAX);
+        // `player_unit_ids` follows the roster's BTreeMap order.  The old
+        // collect/sort/truncate therefore returned exactly the first two ids
+        // that pass this predicate; once both are known, asking every later
+        // ship to flood its waterway cannot change the roster.
+        let ids = g.player_unit_ids(pid);
+        debug_assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
+        let mut ships = Vec::with_capacity(NAVAL_RECON_EXPLORER_MAX);
+        for uid in ids {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            if spec.class == "military"
+                && spec.domain.as_deref() == Some("sea")
+                && unit.moves_left > 0.0
+                && unit.linked_to.is_none()
+                && BasicAi::naval_recon_ship_can_chart(g, pid, uid)
+            {
+                ships.push(uid);
+                if ships.len() == NAVAL_RECON_EXPLORER_MAX {
+                    break;
+                }
+            }
+        }
         ships
     }
 

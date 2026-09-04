@@ -4218,6 +4218,17 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     expected.sort_unstable();
     assert_eq!(live.naval_explorer(&game, 0), expected);
 
+    // The roster is capped by id, not by the order a later scan happens to
+    // encounter its hulls in.  A third viable Galley must not trigger another
+    // waterway walk or displace either of the two established explorers.
+    let third = game.spawn_test_unit("galley", 0, water);
+    assert!(third > second, "test setup must create increasing unit ids");
+    assert_eq!(
+        live.naval_explorer(&game, 0),
+        expected,
+        "the two lowest-id viable ships remain the bounded sea-scout roster"
+    );
+
     // The withheld arm at war leaves the same ship where it is: the war
     // path never explored before this treatment.
     {
