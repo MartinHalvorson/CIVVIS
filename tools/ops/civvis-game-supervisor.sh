@@ -196,6 +196,15 @@ resolve_screen_gene() {
 # batch. Three is the smallest useful default and can be raised or lowered for
 # an operator's host with CIVVIS_PLAY_ATTEMPTS.
 ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-3}
+# A recorded desktop cannot tolerate the ordinary launcher's screenshots.  This
+# opt-in profile is deliberately fixed rather than pretending every visual
+# configuration has a capture-free equivalent: it is Rome / Emperor / Online /
+# Continents / Small, and the in-game seat record remains the proof.
+CAPTURE_FREE=${CIVVIS_CAPTURE_FREE:-0}
+if [[ "$CAPTURE_FREE" != 0 && "$CAPTURE_FREE" != 1 ]]; then
+  say "invalid CIVVIS_CAPTURE_FREE='${CAPTURE_FREE}'; refusing to choose a launcher"
+  exit 64
+fi
 # The live ladder policy is read-only and chooses the lowest rung that still
 # needs a first win or a repeatable trailing batch. CIVVIS_DIFFICULTY remains an
 # explicit emergency/operator override; absent that override, the selected rung
@@ -718,7 +727,7 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
-  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, screen=${SCREEN_GENE:-none}, screen_source=$SCREEN_SOURCE, log climb-$TAG.log)"
+  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (capture_free=$CAPTURE_FREE, forced=${FORCED:-none}, source=$FORCE_SOURCE, screen=${SCREEN_GENE:-none}, screen_source=$SCREEN_SOURCE, log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
   # holds the game; refusing to stop an unowned run", gone in under a second —
@@ -740,19 +749,46 @@ while true; do
   # Every production ladder row is Rome.  Do not inherit the climb's default:
   # an upstream default change must not silently change the civilization that
   # the live ledger compares.
-  CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
-  CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
-  python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
-      --refresh-seconds 0 \
-      --difficulty "$DIFFICULTY" \
-      --leader LEADER_TRAJAN \
-      "${WITHOUT_ARGS[@]}" \
-      "${WITH_ARGS[@]}" \
-      "${SCREEN_ARGS[@]}" \
-      "${TIMEOUT_ARGS[@]}" \
-      ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
-      ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
-      --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
+  if (( CAPTURE_FREE )); then
+    # `civ6_capture_free_loop.py` never captures the desktop.  It owns the
+    # direct Create Game/attach lifecycle and writes the same per-game play-log
+    # marker the success check below already understands.  A live screen gene
+    # is visual instrumentation, so this fixed no-capture profile cannot deal
+    # it; log that fact rather than silently claiming an armed screen.
+    if [[ -n "$SCREEN_GENE" ]]; then
+      say "capture-free batch skips screen gene '$SCREEN_GENE' (no desktop capture)"
+    fi
+    CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
+    CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
+    python3 -u tools/civ6_capture_free_loop.py --attempts "$ATTEMPTS" \
+        --refresh-seconds 0 \
+        --difficulty "$DIFFICULTY" \
+        --leader LEADER_TRAJAN \
+        --ruleset RULESET_EXPANSION_2 \
+        --map Continents.lua \
+        --map-size MAPSIZE_SMALL \
+        --speed GAMESPEED_ONLINE \
+        --max-turns 650 \
+        "${WITHOUT_ARGS[@]}" \
+        "${WITH_ARGS[@]}" \
+        "${TIMEOUT_ARGS[@]}" \
+        ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
+        --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
+  else
+    CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
+    CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
+    python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
+        --refresh-seconds 0 \
+        --difficulty "$DIFFICULTY" \
+        --leader LEADER_TRAJAN \
+        "${WITHOUT_ARGS[@]}" \
+        "${WITH_ARGS[@]}" \
+        "${SCREEN_ARGS[@]}" \
+        "${TIMEOUT_ARGS[@]}" \
+        ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
+        ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
+        --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
+  fi
 
   # "Played a turn" is the only honest success test: a run can reach the map,
   # emit autoclose events and still never seat the agent. Count every play log
