@@ -84,6 +84,43 @@ class AttachRunningTests(unittest.TestCase):
         self.assertEqual(received.attach_replay_turn, 47)
 
 
+class AttachRetirementAuditTests(unittest.TestCase):
+    """Capture-free attachment must preserve a requested native retirement."""
+
+    def test_native_acknowledgement_records_its_matching_request(self) -> None:
+        run_dir = Path("/tmp/civvis-capture-free-retire")
+        request = {"tag": "capture-free", "requested_utc": "2026-09-04T03:05:42Z"}
+        event = {"kind": "retired", "run": "capture-free", "why": "requested"}
+        detail = "the control mod acknowledged Civilization VI ACTION_RETIRE"
+        with patch.object(civ6_play.operator_retire, "read_pending_request",
+                          return_value=request) as pending, \
+             patch.object(civ6_play.operator_retire, "record_retired") as recorded:
+            self.assertTrue(civ6_play._record_attached_operator_retirement(
+                run_dir, "capture-free", event))
+
+        pending.assert_called_once_with(run_dir, "capture-free")
+        recorded.assert_called_once_with(run_dir, request, detail)
+
+    def test_unrequested_or_foreign_retire_does_not_create_a_record(self) -> None:
+        run_dir = Path("/tmp/civvis-capture-free-retire")
+        event = {"kind": "retired", "run": "another-game", "why": "requested"}
+        with patch.object(civ6_play.operator_retire, "read_pending_request") as pending, \
+             patch.object(civ6_play.operator_retire, "record_retired") as recorded:
+            self.assertFalse(civ6_play._record_attached_operator_retirement(
+                run_dir, "capture-free", event))
+
+        pending.assert_not_called()
+        recorded.assert_not_called()
+
+    def test_attach_mode_uses_the_native_acknowledgement_helper(self) -> None:
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        attach = source[source.index("def _attach_running_game("):]
+        self.assertIn(
+            "_record_attached_operator_retirement(run_dir, args.tag, event)",
+            attach,
+        )
+
+
 class TermTakesTheBrainWithIt(unittest.TestCase):
     """A TERMed harness must not leak the brain that blocks the next game.
 
