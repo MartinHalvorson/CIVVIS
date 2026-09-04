@@ -22487,6 +22487,81 @@ impl AdvancedAi {
                     instead of a Spaceport",
                    g.max_turns.saturating_sub(g.turn));
         }
+        self.repair_stalled_science_project_queues(g, pid);
+    }
+
+    /// Reclaim a committed science queue whose Spaceport has been pillaged.
+    ///
+    /// `Game::process_city` correctly stalls a launch project while every
+    /// Spaceport in that city is pillaged, but the strategic governor normally
+    /// treats a non-empty queue as a commitment and never asks the repair menu
+    /// again. That makes a spy or raid turn a recoverable infrastructure loss
+    /// into an indefinitely frozen race: `Item::Repair { repair: "district" }`
+    /// is legal, but the queue head hides it. Switching through `Produce` banks
+    /// the project's progress by its normal item key, repairs the launch site,
+    /// and lets the next science pass resume the same rung.
+    fn repair_stalled_science_project_queues(&self, g: &mut Game, pid: usize) {
+        if self.raced_target() != Some(VictoryTarget::Science) {
+            return;
+        }
+        let is_science_project = |project: &str| {
+            matches!(
+                project,
+                "launch_earth_satellite"
+                    | "launch_moon_landing"
+                    | "launch_mars_colony"
+                    | "exoplanet_expedition"
+                    | "lagrange_laser_station"
+                    | "terrestrial_laser_station"
+            )
+        };
+        for cid in g.player_city_ids(pid) {
+            let Some(Item::Project { project }) = g.cities[&cid].queue.first() else {
+                continue;
+            };
+            if !is_science_project(project) {
+                continue;
+            }
+            let spaceports: Vec<crate::Pos> = g.cities[&cid]
+                .districts
+                .iter()
+                .filter_map(|(district, position)| {
+                    (g.district_family(*district) == "spaceport").then_some(*position)
+                })
+                .collect();
+            if spaceports.is_empty()
+                || spaceports
+                    .iter()
+                    .any(|position| !g.map.tiles[position].pillaged)
+            {
+                continue;
+            }
+            let Some(repair) = spaceports.into_iter().find_map(|position| {
+                let repair = Item::Repair {
+                    repair: crate::name!("district"),
+                    pos: position,
+                };
+                g.can_produce(pid, cid, &repair).then_some(repair)
+            }) else {
+                continue;
+            };
+            let project_name = project.to_string();
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: repair.clone(),
+                },
+            )
+            .is_ok()
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                think!(self.journal(), Cities, Decision,
+                    "{} repairs its pillaged Spaceport before resuming {}",
+                    g.cities[&cid].name, project_name;
+                    "the committed launch queue was stalled because every Spaceport district was inactive; its progress remains banked by item");
+            }
+        }
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {

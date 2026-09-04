@@ -1648,6 +1648,34 @@ mod tests {
     }
 
     #[test]
+    fn science_race_repairs_a_pillaged_spaceport_before_stalling() {
+        let (mut g, ours, _) = board();
+        let pad = install_pad(&mut g, ours);
+        g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
+        let project = Item::Project {
+            project: crate::name!("launch_earth_satellite"),
+        };
+        g.cities.get_mut(&ours).unwrap().queue.push(project);
+        g.cities.get_mut(&ours).unwrap().production = 123.0;
+
+        let ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.repair_stalled_science_project_queues(&mut g, 0);
+
+        assert!(matches!(
+            g.cities[&ours].queue.first(),
+            Some(Item::Repair { repair, pos })
+                if repair == "district" && *pos == pad
+        ));
+        assert_eq!(
+            g.cities[&ours]
+                .production_progress
+                .get("project:launch_earth_satellite"),
+            Some(&123.0),
+            "switching to repair banks the stalled project's progress"
+        );
+    }
+
+    #[test]
     fn science_drive_v2_values_the_research_funnel_only_in_the_launch_city() {
         let (mut g, ours, theirs) = board();
         // Make both cities ours and give the first one a standing pad. The
