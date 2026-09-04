@@ -170,11 +170,15 @@ pub struct Sphere {
     /// has no tile (the empty part of the two pole rows).
     slot: Vec<u32>,
     /// Every tile within [`RING_RADIUS`] of each tile, including the tile
-    /// itself, sorted by position and carrying its distance. Sorted by
-    /// position rather than by distance so that a distance query is a binary
-    /// search over one contiguous run, and a disk is a single pass over it
-    /// that comes out already in map order.
+    /// itself, sorted by position and carrying its distance. The disk readers
+    /// hand these coordinates directly to their caller, so keeping them here
+    /// avoids an extra lookup for every visible or attackable tile.
     rings: Vec<Box<[(Pos, u8)]>>,
+    /// The same local rings as compact `(storage index, distance)` pairs.
+    /// Storage indices already follow ascending [`Pos`] order, so distance
+    /// queries can binary-search integers without making disk iteration pay
+    /// an index-to-position indirection.
+    ring_indices: Vec<Box<[(u32, u8)]>>,
     /// Exact rows from the twelve evenly distributed pentagons. Their triangle
     /// inequalities are an admissible A* heuristic for any other pair.
     landmarks: Vec<Box<[u16]>>,
@@ -338,8 +342,8 @@ impl Sphere {
                 return distance as i32;
             }
         }
-        let ring = &self.rings[from as usize];
-        if let Ok(at) = ring.binary_search_by_key(&b, |(pos, _)| *pos) {
+        let ring = &self.ring_indices[from as usize];
+        if let Ok(at) = ring.binary_search_by_key(&to, |(index, _)| *index) {
             return ring[at].1 as i32;
         }
 
@@ -945,6 +949,7 @@ fn build(frequency: i32) -> Sphere {
         cells,
         slot,
         rings: Vec::new(),
+        ring_indices: Vec::new(),
     };
     sphere.landmarks = sphere
         .degree
@@ -955,6 +960,22 @@ fn build(frequency: i32) -> Sphere {
         .collect();
     sphere.rings = (0..sphere.len())
         .map(|index| sphere.ring_of(index as u32))
+        .collect();
+    sphere.ring_indices = sphere
+        .rings
+        .iter()
+        .map(|ring| {
+            ring.iter()
+                .map(|(pos, distance)| {
+                    (
+                        sphere
+                            .index_of(*pos)
+                            .expect("a precomputed local ring only holds sphere tiles"),
+                        *distance,
+                    )
+                })
+                .collect()
+        })
         .collect();
     sphere
 }
@@ -1102,6 +1123,20 @@ mod tests {
     #[test]
     fn distance_matches_a_search_of_the_map() {
         let globe = sphere(6);
+        assert_eq!(globe.rings.len(), globe.ring_indices.len());
+        for (positions, indices) in globe.rings.iter().zip(&globe.ring_indices) {
+            assert_eq!(positions.len(), indices.len());
+            assert!(
+                indices.windows(2).all(|pair| pair[0].0 < pair[1].0),
+                "the compact sidecar must preserve the position order binary search needs"
+            );
+            for ((position, distance), (index, indexed_distance)) in
+                positions.iter().zip(indices.iter())
+            {
+                assert_eq!(*position, globe.pos[*index as usize]);
+                assert_eq!(*distance, *indexed_distance);
+            }
+        }
         let sources = [0usize, 17, 133, globe.len() - 1];
         for source in sources {
             let from = globe.cells()[source].pos;
