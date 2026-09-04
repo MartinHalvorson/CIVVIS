@@ -243,6 +243,35 @@ def _retire_was_answered(run_tag: str) -> bool:
         return False
 
 
+def _record_attached_operator_retirement(run_dir: Path, tag: str,
+                                         event: dict) -> bool:
+    """Durably acknowledge a native retirement observed by attach mode.
+
+    The full player carries the pending request in its event state, but the
+    capture-free attach loop intentionally has no visual event dispatcher.
+    Its relay still receives the exact ``retired`` acknowledgement from the
+    control mod.  Bind that acknowledgement back to the one matching pending
+    request before the loop exits, so an operator-requested restart is not
+    left looking unfinished.
+
+    ``True`` means the native event belongs to a pending operator request even
+    if reporting the sidecar itself fails.  The event is still the authoritative
+    in-game outcome in that case.
+    """
+    if event.get("kind") != "retired" or event.get("run") != tag:
+        return False
+    request = operator_retire.read_pending_request(run_dir, tag)
+    if request is None:
+        return False
+    detail = "the control mod acknowledged Civilization VI ACTION_RETIRE"
+    try:
+        operator_retire.record_retired(run_dir, request, detail)
+    except OSError as error:
+        print(f"[attach] could not record native retirement acknowledgement: {error}",
+              file=sys.stderr, flush=True)
+    return True
+
+
 def partial_summary(tag: str, config: dict, state: dict) -> dict:
     """The record a run leaves when it is stopped before it can finish one.
 
@@ -3173,7 +3202,12 @@ def _attach_running_game(args: argparse.Namespace) -> int:
         elif kind == "defeat" and bool(event.get("ours")):
             outcome = "defeat"
         elif kind in ("retired",):
-            outcome = "retired"
+            if _record_attached_operator_retirement(run_dir, args.tag, event):
+                print("[attach] the control mod acknowledged Civilization VI "
+                      "ACTION_RETIRE; recording operator_retired", flush=True)
+                outcome = "operator_retired"
+            else:
+                outcome = "retired"
 
     def process_new_events() -> None:
         nonlocal event_offset
