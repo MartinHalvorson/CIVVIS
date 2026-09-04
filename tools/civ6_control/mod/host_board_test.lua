@@ -276,7 +276,9 @@ check("move_capped emitted with both plots", has(lastEvent("move_capped"), '"sen
 check("orders event counts the cap", has(lastEvent("orders"), '"move_capped":1'), true)
 host.units[11].x, host.units[11].y = 3, 1   -- the host walked it to the capped plot
 queue.drain(player, PID, 7)
-check("queued fortify fires on arrival at the CAPPED plot", ops(11), "UNITOPERATION_MOVE_TO@3,1;UNITOPERATION_FORTIFY@nil,nil")
+check("queued fortify waits one settlement pass", ops(11), "UNITOPERATION_MOVE_TO@3,1")
+queue.drain(player, PID, 7)
+check("queued fortify fires after the CAPPED plot settles", ops(11), "UNITOPERATION_MOVE_TO@3,1;UNITOPERATION_FORTIFY@nil,nil")
 
 -- 3. A path whose first step is next turn is refused by name.
 reset()
