@@ -36,10 +36,12 @@ class CaptureFreeSetupTests(unittest.TestCase):
 
         self.assertIn(setup.SINGLE_PLAYER_POINT, clicks)
         self.assertIn(setup.CREATE_GAME_POINT, clicks)
-        # Focusing the window is sufficient.  The first click must therefore
-        # be the verified Single Player control, never a speculative wake-up
-        # click that can become the Tutorial entry during a layout transition.
-        self.assertEqual(clicks[0], setup.SINGLE_PLAYER_POINT)
+        # The first pointer event can be consumed while macOS keys the window;
+        # it must be spent on empty artwork before a menu row is targeted.
+        activation = (round(100 + 864 * setup.MENU_ACTIVATION_FRACTION[0]),
+                      round(200 + 542 * setup.MENU_ACTIVATION_FRACTION[1]))
+        self.assertEqual(clicks[:3], [activation, setup.SINGLE_PLAYER_POINT,
+                                      setup.CREATE_GAME_POINT])
         # Restore Defaults, Emperor, Online, and Start Game are all relative
         # to the prepared fixed-size game window.
         self.assertIn((230, 222), clicks)
