@@ -69,7 +69,7 @@ class TheWinComesFromTheScreensNotTheLedger(unittest.TestCase):
         ranking = (REPO / "GENE_HEURISTIC_RANKING.md").read_text()
         for tag, win in wins.items():
             row = [line for line in ranking.splitlines()
-                   if line.startswith("|") and ("`%s`" % tag) in line]
+                   if line.startswith("|") and ("| `%s` |" % tag) in line]
             if not row or win is None:
                 continue
             self.assertIn("%.2f%%" % win, row[0],
