@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,6 +65,10 @@ class FixedProfileTests(unittest.TestCase):
         self.assertIn("rapid-city-expansion-2", command)
         self.assertNotIn("--load-save", command)
 
+    def test_default_turn_freeze_window_is_patient(self):
+        parsed = loop.parser().parse_args([])
+        self.assertEqual(parsed.frozen_turn_seconds, 1800.0)
+
     def test_source_never_invokes_a_capture_or_ocr_reader(self):
         source = Path(loop.__file__).read_text(encoding="utf-8")
         self.assertNotIn("macos_capture", source)
@@ -104,6 +110,67 @@ class SilenceRecoveryTests(unittest.TestCase):
             should_stop=lambda: True,
         )
         self.assertEqual(reason, "stopped")
+
+
+class TurnFreezeRecoveryTests(unittest.TestCase):
+    def test_heartbeats_without_a_new_turn_return_the_capture_free_wedge(self):
+        ticks = [0.0]
+
+        def now():
+            return ticks[0]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "turn", "turn": 42}) + "\n")
+
+            def sleep(seconds):
+                ticks[0] += seconds
+                with events.open("a") as stream:
+                    stream.write(json.dumps({
+                        "ctx": "autoclose", "kind": "ui_heartbeat",
+                        "screen": "DiplomacyActionView",
+                    }) + "\n")
+
+            reason = loop.monitor_player(
+                _Player(), events, silence_s=10.0, frozen_turn_s=3.0,
+                poll_s=1.0, should_stop=lambda: False, now=now, sleep=sleep,
+            )
+
+        self.assertEqual(reason, "frozen-turn")
+        self.assertEqual(ticks[0], 3.0)
+
+    def test_a_new_turn_resets_the_capture_free_freeze_clock(self):
+        ticks = [0.0]
+
+        class FinishingPlayer:
+            returncode = None
+
+            def poll(self):
+                if ticks[0] >= 4.0:
+                    self.returncode = 0
+                return self.returncode
+
+        def now():
+            return ticks[0]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "turn", "turn": 42}) + "\n")
+
+            def sleep(seconds):
+                ticks[0] += seconds
+                event = {"ctx": "autoclose", "kind": "ui_heartbeat"}
+                if ticks[0] == 2.0:
+                    event = {"kind": "turn", "turn": 43}
+                with events.open("a") as stream:
+                    stream.write(json.dumps(event) + "\n")
+
+            reason = loop.monitor_player(
+                FinishingPlayer(), events, silence_s=10.0, frozen_turn_s=3.0,
+                poll_s=1.0, should_stop=lambda: False, now=now, sleep=sleep,
+            )
+
+        self.assertEqual(reason, "completed")
 
 
 if __name__ == "__main__":
