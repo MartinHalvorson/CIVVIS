@@ -30,6 +30,22 @@ class CaptureFreePolicyTests(unittest.TestCase):
         self.assertIn("--logs \"$LOGS\"", source)
         self.assertIn("capture-free batch skips screen gene", source)
 
+    def test_capture_free_uses_its_fixed_emperor_profile_before_the_ladder(self):
+        source = SUPERVISOR.read_text(encoding="utf-8")
+        start = source.index("  DIFFICULTY=$EXPLICIT_DIFFICULTY")
+        end = source.index("  # ⚠⚠⚠ THE MIRROR SERVER", start)
+        selection = source[start:end]
+        fixed = selection.index("DIFFICULTY=DIFFICULTY_EMPEROR")
+        ladder = selection.index("civ6_ladder_policy.py")
+        self.assertLess(
+            fixed,
+            ladder,
+            "capture-free mode must not ask the general ladder for an invalid rung",
+        )
+        self.assertIn("capture-free profile selects fixed difficulty", selection)
+        self.assertIn("explicit CIVVIS_DIFFICULTY", selection)
+        self.assertIn("requires difficulty DIFFICULTY_EMPEROR", selection)
+
     def test_changed_shell_scripts_still_parse(self):
         if shutil.which("zsh") is None:
             self.skipTest("zsh is not installed")
