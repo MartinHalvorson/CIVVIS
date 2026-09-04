@@ -1874,6 +1874,39 @@ trait FloodArrival: Copy {
     fn stopped(self) -> bool;
 }
 
+/// Receives the reached tiles from one movement relaxation.
+///
+/// Most callers need the historical ordered map. `attack_reach_from_flood`
+/// only folds the reached tiles into a separately sorted target list, though,
+/// so it can retain the dense flood's discovery order in one contiguous vector
+/// instead of materializing a temporary tree first.
+trait MovementFloodOutput<V> {
+    fn reserve_reached(&mut self, count: usize);
+    fn push_reached(&mut self, pos: Pos, value: V);
+}
+
+impl<V> MovementFloodOutput<V> for BTreeMap<Pos, V> {
+    #[inline]
+    fn reserve_reached(&mut self, _count: usize) {}
+
+    #[inline]
+    fn push_reached(&mut self, pos: Pos, value: V) {
+        self.insert(pos, value);
+    }
+}
+
+impl<V> MovementFloodOutput<V> for Vec<(Pos, V)> {
+    #[inline]
+    fn reserve_reached(&mut self, count: usize) {
+        self.reserve(count);
+    }
+
+    #[inline]
+    fn push_reached(&mut self, pos: Pos, value: V) {
+        self.push((pos, value));
+    }
+}
+
 impl FloodArrival for f64 {
     fn start(moves: f64) -> Self {
         moves
@@ -26891,8 +26924,13 @@ impl Game {
 
         let start = unit.pos;
         let max_moves = self.unit_max_moves(uid);
-        let positions = self.flow_past(uid, start, max_moves, true);
-        let flood: Vec<Pos> = positions.keys().copied().collect();
+        // `targets` is sorted below and the sensitivity cache turns `flood`
+        // into a set, so neither consumer observes the ordered-map contract of
+        // `flow_past`. Keep this one flood in its already-dense discovery order
+        // rather than allocating an intermediate `BTreeMap<Pos, f64>` merely to
+        // immediately walk it again.
+        let positions = self.flow_past_unordered(uid, start, max_moves, true);
+        let flood: Vec<Pos> = positions.iter().map(|(position, _)| *position).collect();
         // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
         // A ranged unit offers the same tile from every stride it can shoot
         // from, so the set spent most of its work absorbing duplicates a node
@@ -27716,18 +27754,19 @@ impl Game {
     /// guards (`formation_movement_locked_by_zoc`) before calling: the three
     /// callers return different empty answers, and two of them read the flood's
     /// parents after it, still inside their scope.
-    fn relax_movement<V, P, R>(
+    fn relax_movement_into<V, P, R, O>(
         &self,
         uid: u32,
         start: Pos,
         moves: f64,
         passable: P,
         mut record_parent: R,
-    ) -> BTreeMap<Pos, V>
-    where
+        output: &mut O,
+    ) where
         V: FloodArrival,
         P: Fn(Pos, Pos) -> bool,
         R: FnMut(Pos, Pos),
+        O: MovementFloodOutput<V>,
     {
         let max_moves = self.unit_max_moves(uid);
         // Both of these ask the unit, never the tile, and the loop below asks
@@ -27805,7 +27844,7 @@ impl Game {
                 }
             }
         }
-        let mut best = BTreeMap::new();
+        output.reserve_reached(scratch.movement_touched.len());
         for &index in &scratch.movement_touched {
             let value = if index == start_index {
                 V::start(moves)
@@ -27815,8 +27854,25 @@ impl Game {
                     scratch.movement_stopped[index],
                 )
             };
-            best.insert(map_tiles[index].pos, value);
+            output.push_reached(map_tiles[index].pos, value);
         }
+    }
+
+    fn relax_movement<V, P, R>(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        passable: P,
+        record_parent: R,
+    ) -> BTreeMap<Pos, V>
+    where
+        V: FloodArrival,
+        P: Fn(Pos, Pos) -> bool,
+        R: FnMut(Pos, Pos),
+    {
+        let mut best = BTreeMap::new();
+        self.relax_movement_into(uid, start, moves, passable, record_parent, &mut best);
         best
     }
 
@@ -27833,6 +27889,30 @@ impl Game {
     /// on the same stacking layer is walked through and never landed on. Ask
     /// [`Game::can_stop`] before offering one of these as a destination —
     /// [`Game::reachable`] is the filtered form.
+    fn flow_past_into<O>(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        through_units: bool,
+        output: &mut O,
+    ) where
+        O: MovementFloodOutput<f64>,
+    {
+        if self.formation_movement_locked_by_zoc(uid) {
+            return;
+        }
+        let _memo = self.query_memo();
+        self.relax_movement_into(
+            uid,
+            start,
+            moves,
+            |cur, n| self.entry_at_neighbor(uid, cur, n, through_units) != Entry::Blocked,
+            |_, _| {}, // nobody asks this flood for the walk
+            output,
+        );
+    }
+
     fn flow_past(
         &self,
         uid: u32,
@@ -27840,17 +27920,25 @@ impl Game {
         moves: f64,
         through_units: bool,
     ) -> BTreeMap<Pos, f64> {
-        if self.formation_movement_locked_by_zoc(uid) {
-            return BTreeMap::new();
-        }
-        let _memo = self.query_memo();
-        self.relax_movement(
-            uid,
-            start,
-            moves,
-            |cur, n| self.entry_at_neighbor(uid, cur, n, through_units) != Entry::Blocked,
-            |_, _| {}, // nobody asks this flood for the walk
-        )
+        let mut best = BTreeMap::new();
+        self.flow_past_into(uid, start, moves, through_units, &mut best);
+        best
+    }
+
+    /// The movement flood in traversal-discovery order. This is private to the
+    /// attack-envelope path, whose two consumers either sort later or use set
+    /// membership and therefore do not observe `flow_past`'s ordered-map
+    /// contract.
+    fn flow_past_unordered(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        through_units: bool,
+    ) -> Vec<(Pos, f64)> {
+        let mut positions = Vec::new();
+        self.flow_past_into(uid, start, moves, through_units, &mut positions);
+        positions
     }
 
     /// This turn's cheapest legal path to `to`, or `None` when the unit cannot
@@ -35527,3 +35615,6 @@ mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;
+
+#[cfg(test)]
+mod attack_reach_flood_tests;
