@@ -26634,6 +26634,68 @@ impl Game {
         out
     }
 
+    /// Every destination [`Self::path_to`] can answer this turn, with its
+    /// exact path.
+    ///
+    /// A caller that compares several destinations from one unchanged board
+    /// must not rebuild the same movement flood for each one.  Keep the
+    /// `f64` arrival mode from `path_to` here: a tile inside enemy zone of
+    /// control records zero movement, so the strict-improvement rule retains
+    /// the same parent and tie-breaking path as an individual query.
+    pub(crate) fn paths_to(&self, uid: u32) -> BTreeMap<Pos, Vec<Pos>> {
+        let mut paths = BTreeMap::new();
+        let Some(unit) = self.units.get(&uid) else {
+            return paths;
+        };
+        let (start, moves) = (unit.pos, unit.moves_left);
+        // `path_to` treats the current tile as an empty legal path before it
+        // checks movement, formation locks, or whether the tile can stop a
+        // different unit.  Preserve that observable answer in the bulk form.
+        paths.insert(start, Vec::new());
+        if !self.formation_movement_locked_by_zoc(uid) {
+            let _memo = self.query_memo();
+            let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+            let reach: BTreeMap<Pos, f64> = self.relax_movement(
+                uid,
+                start,
+                moves,
+                |cur, next| self.can_pass_neighbor(uid, cur, next),
+                |next, cur| {
+                    parent.insert(next, cur);
+                },
+            );
+            for (to, _) in reach {
+                if to == start || !self.can_stop(uid, to) {
+                    continue;
+                }
+                let mut path = vec![to];
+                let mut cur = to;
+                while let Some(previous) = parent.get(&cur) {
+                    if *previous == start {
+                        break;
+                    }
+                    path.push(*previous);
+                    cur = *previous;
+                }
+                path.reverse();
+                paths.insert(to, path);
+            }
+        }
+        // `path_to` deliberately handles adjacent destinations through
+        // `can_move`: that carries immediate movement/attack and linked-unit
+        // gates which a longer-path flood has historically not asked.  Replace
+        // the flood's answer for precisely those six destinations so this
+        // bulk reader stays byte-for-byte equivalent to individual queries.
+        for to in self.nbrs(start) {
+            if self.can_move(uid, to) {
+                paths.insert(to, vec![to]);
+            } else {
+                paths.remove(&to);
+            }
+        }
+        paths
+    }
+
     /// Where to walk toward `target` when the way forward is blocked by
     /// nothing but this unit's own units.
     ///
