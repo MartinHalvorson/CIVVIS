@@ -10,9 +10,10 @@ fresh-head supervisor instead of leaving an unowned ``--attach-running``
 process behind.
 
 It supports exactly the known capture-free profile: Rome (Trajan), Emperor,
-Online speed, Continents, Small, Gathering Storm, no game modes.  Rejecting a
-different profile is intentional.  A wrong game is worse than a refused game,
-and the visual launcher remains available for arbitrary configurations.
+Online speed with its stock 250-turn clock, Continents, Small, Gathering
+Storm, and no game modes.  Rejecting a different profile is intentional.  A
+wrong game is worse than a refused game, and the visual launcher remains
+available for arbitrary configurations.
 """
 
 from __future__ import annotations
@@ -61,6 +62,13 @@ PROFILE = {
     "map_size": "MAPSIZE_SMALL",
     "speed": "GAMESPEED_ONLINE",
 }
+
+# Keep the fixed capture-free profile on the same clock as Civ VI's Online
+# speed.  A longer cap is still available as an explicit command-line
+# experiment, but it must not be the unattended verification default: the
+# victory planner uses the game's horizon to decide when to leave expansion
+# and defense for the named lane.
+STOCK_ONLINE_MAX_TURNS = 250
 
 STOP_REQUESTED = False
 
@@ -459,7 +467,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--map-size", dest="map_size", default=PROFILE["map_size"])
     ap.add_argument("--speed", default=PROFILE["speed"])
     ap.add_argument("--game-mode", action="append", default=[])
-    ap.add_argument("--max-turns", type=int, default=650)
+    ap.add_argument("--max-turns", type=int, default=STOCK_ONLINE_MAX_TURNS)
     ap.add_argument("--timeout", type=float, default=10_800.0)
     ap.add_argument("--timeout-ceiling", type=float, default=14_400.0)
     ap.add_argument("--launch-timeout", type=float, default=420.0)

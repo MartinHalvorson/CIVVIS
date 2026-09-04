@@ -26,7 +26,7 @@ class CaptureFreePolicyTests(unittest.TestCase):
         source = SUPERVISOR.read_text(encoding="utf-8")
         self.assertIn("CAPTURE_FREE=${CIVVIS_CAPTURE_FREE:-0}", source)
         self.assertIn("tools/civ6_capture_free_loop.py", source)
-        self.assertIn("--max-turns 650", source)
+        self.assertIn("--max-turns 250", source)
         self.assertIn("--logs \"$LOGS\"", source)
         self.assertIn("capture-free batch skips screen gene", source)
 
