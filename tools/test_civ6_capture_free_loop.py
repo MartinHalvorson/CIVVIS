@@ -157,6 +157,37 @@ class TurnFreezeRecoveryTests(unittest.TestCase):
         self.assertEqual(reason, "popup-stuck")
         self.assertEqual(ticks[0], 4.0)
 
+    def test_native_desktop_request_uses_the_same_capture_free_recovery_window(self):
+        """A capture-free owner has no visual dispatcher to answer this event."""
+        ticks = [0.0]
+
+        def now():
+            return ticks[0]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "turn", "turn": 42}) + "\n")
+
+            def sleep(seconds):
+                ticks[0] += seconds
+                event = {"ctx": "autoclose", "kind": "ui_heartbeat"}
+                if ticks[0] == 1.0:
+                    event = {
+                        "ctx": "autoclose", "kind": "autoclose_desktop",
+                        "screen": "DiplomacyActionView",
+                    }
+                with events.open("a") as stream:
+                    stream.write(json.dumps(event) + "\n")
+
+            reason = loop.monitor_player(
+                _Player(), events, silence_s=10.0, frozen_turn_s=10.0,
+                popup_stuck_s=3.0, poll_s=1.0,
+                should_stop=lambda: False, now=now, sleep=sleep,
+            )
+
+        self.assertEqual(reason, "popup-stuck")
+        self.assertEqual(ticks[0], 4.0)
+
     def test_a_turn_after_native_popup_exhaustion_clears_its_recovery_window(self):
         ticks = [0.0]
 
