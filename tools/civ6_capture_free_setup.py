@@ -81,7 +81,6 @@ def start_bootstrap_game() -> None:
     time.sleep(SUBMENU_SETTLE_S)
     click_point(*PLAY_NOW_POINT)
 
-
 def wait_for_agent_loaded(*, timeout_s: float = BOOTSTRAP_READY_TIMEOUT_S,
                           poll_s: float = BOOTSTRAP_READY_POLL_S,
                           automation_log: Path | None = None) -> bool:
