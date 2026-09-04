@@ -883,15 +883,9 @@ impl WorldMap {
 
     /// Every in-map tile exactly `radius` steps from `center`, sorted.
     ///
-    /// A search that walks outward ring by ring used to ask for the whole disk
-    /// at each radius and throw away everything inside it, which made the walk
-    /// cost the square of the distance it covered — and sorted the disk every
-    /// time. The exploration search does exactly that walk, and this was the
-    /// largest single cost in the engine.
-    ///
-    /// A caller that filters on [`crate::game::Game::wdist`] gets the same answer either
-    /// way: a disk is the union of its rings, and a tile from an inner ring
-    /// cannot be at the outer ring's distance.
+    /// Globe rings outside the small shared geometry table are found as a
+    /// breadth-first boundary, rather than materializing and sorting every
+    /// inner tile in the corresponding disk.
     pub fn ring(&self, center: Pos, radius: i32) -> Vec<Pos> {
         if let Some(sphere) = self.sphere() {
             return sphere.ring(center, radius);
