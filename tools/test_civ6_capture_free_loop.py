@@ -71,7 +71,8 @@ class FixedProfileTests(unittest.TestCase):
         self.assertNotIn("--load-save", command)
 
     def test_start_game_uses_play_now_then_waits_for_the_rehost_agent(self):
-        with mock.patch.object(loop.launcher, "clear_run_logs"), \
+        with mock.patch.object(loop, "apply_capture_free_options") as options, \
+             mock.patch.object(loop.launcher, "clear_run_logs"), \
              mock.patch.object(loop.launcher, "launch") as launch, \
              mock.patch.object(loop.launcher, "wait_for_main_menu",
                                return_value=True), \
@@ -81,10 +82,26 @@ class FixedProfileTests(unittest.TestCase):
              mock.patch.object(loop.setup, "begin_bootstrap_game") as begin:
             self.assertTrue(loop.start_game(args(), "civvis-test", Path("/tmp/run")))
 
+        options.assert_called_once_with()
         launch.assert_called_once_with(stdout=Path("/tmp/run") / "civ6-launch.log")
         start.assert_called_once_with()
         ready.assert_called_once_with()
         begin.assert_called_once_with()
+
+    def test_capture_free_options_use_the_shared_closed_game_profile(self):
+        expected = {"AppOptions.txt": {"PlayIntroVideo": ("1", 0)}}
+        with mock.patch.object(loop.env, "game_pids", return_value=[]), \
+             mock.patch.object(loop.env, "user_dir", return_value=Path("/tmp/user")), \
+             mock.patch.object(loop.civ6_setup, "apply_verification",
+                               return_value=expected) as apply:
+            self.assertEqual(loop.apply_capture_free_options(), expected)
+        apply.assert_called_once_with(Path("/tmp/user"))
+
+    def test_capture_free_options_do_not_edit_a_running_game(self):
+        with mock.patch.object(loop.env, "game_pids", return_value=[123]), \
+             mock.patch.object(loop.civ6_setup, "apply_verification") as apply:
+            self.assertEqual(loop.apply_capture_free_options(), {})
+        apply.assert_not_called()
 
     def test_default_turn_freeze_window_is_patient(self):
         parsed = loop.parser().parse_args([])

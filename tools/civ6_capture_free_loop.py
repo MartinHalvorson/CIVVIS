@@ -36,6 +36,7 @@ sys.path.insert(0, str(HERE))
 import civ6_brain  # noqa: E402
 import civ6_capture_free_setup as setup  # noqa: E402
 import civ6_env as env  # noqa: E402
+import civ6_setup  # noqa: E402
 from civ6_control import gamelock, install, launcher  # noqa: E402
 from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
@@ -160,8 +161,43 @@ def prepare_run(args: argparse.Namespace, tag: str, root: Path = RUN_ROOT) -> tu
     return run_dir, orders_db
 
 
+def apply_capture_free_options() -> dict[str, dict[str, tuple]]:
+    """Apply the shared verification launch options before direct launch.
+
+    The visual owner reaches this through ``civ6_play._play``.  This owner
+    launches Civ VI directly so it must take the same closed-game-only step
+    itself: without it the intro movie or an unacknowledged native graphics
+    warning can consume the fixed Play Now clicks.  Treat an options failure
+    as diagnostic rather than converting it into a new launch failure, just
+    as the normal owner does.
+    """
+    if env.game_pids():
+        print("[capture-free options] game is already running; leaving options alone",
+              flush=True)
+        return {}
+    try:
+        applied = civ6_setup.apply_verification(env.user_dir())
+    except Exception as error:  # noqa: BLE001 - a cosmetic/configuration cut must not block launch
+        print(f"[capture-free options] could not apply verification options: {error}",
+              flush=True)
+        return {}
+    for name, changes in applied.items():
+        for key, (old, new) in changes.items():
+            if old is None:
+                print(f"[capture-free options] {name}: {key} not defined by this version; skipped",
+                      flush=True)
+            else:
+                print(f"[capture-free options] {name}: {key} {old} -> {new}",
+                      flush=True)
+    if not applied:
+        print("[capture-free options] verification options already in place",
+              flush=True)
+    return applied
+
+
 def start_game(args: argparse.Namespace, tag: str, run_dir: Path) -> bool:
     """Launch Civ VI through a generic bootstrap and exact in-game rehost."""
+    apply_capture_free_options()
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "civ6-launch.log")
     if not launcher.wait_for_main_menu(args.launch_timeout):
