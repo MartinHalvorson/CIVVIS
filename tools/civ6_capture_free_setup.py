@@ -36,6 +36,12 @@ GAME_PROCESS = "Civ6_Exe_Child"
 SINGLE_PLAYER_POINT = (1272, 284)
 CREATE_GAME_POINT = (1327, 351)
 
+# A frontmost transition can consume the first pointer event while macOS makes
+# Civ VI's window key.  The normal visual bootstrap primes the same way before
+# aiming at a menu row.  Keep this well inside empty artwork so a transition
+# that has already completed cannot turn the priming event into a menu choice.
+MENU_ACTIVATION_FRACTION = (0.150, 0.850)
+
 MENU_SETTLE_S = 15.0
 SUBMENU_SETTLE_S = 6.0
 CREATE_GAME_SETTLE_S = 8.0
@@ -84,13 +90,13 @@ def start_direct_game(*, restore_defaults: bool = True,
     if not start_only:
         # The event log tells us the core is ready, but not that the FrontEnd
         # has completed its logo/tutorial transition.  Keep the normal
-        # controller's transition allowance and then touch the first known
-        # menu control directly.  `prepare_game_window()` already focuses Civ;
-        # an earlier extra click at a nominally inert window fraction could
-        # land on the Tutorial entry after a FrontEnd layout transition.  That
-        # selected a Tutorial map instead of a verification game and left the
-        # no-visual owner waiting forever for its control-mod handshake.
+        # controller's transition allowance.  Focus alone is not enough: the
+        # first pointer event after a frontmost transition can be consumed
+        # while macOS makes the Civ VI window key.  Prime it on empty artwork,
+        # as the normal visual bootstrap does, before clicking a menu row.
         time.sleep(MENU_SETTLE_S)
+        click_window_fraction(*MENU_ACTIVATION_FRACTION)
+        time.sleep(1.5)
         click_point(*SINGLE_PLAYER_POINT)
         time.sleep(SUBMENU_SETTLE_S)
         click_point(*CREATE_GAME_POINT)
