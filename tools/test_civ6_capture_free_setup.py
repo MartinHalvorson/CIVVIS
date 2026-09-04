@@ -67,7 +67,7 @@ class CaptureFreeSetupTests(unittest.TestCase):
 
         self.assertIn(setup.MENU_SETTLE_S,
                       [call.args[0] for call in sleep.call_args_list])
-        self.assertGreaterEqual(setup.MENU_SETTLE_S, 60.0)
+        self.assertGreaterEqual(setup.MENU_SETTLE_S, 240.0)
 
     def test_desktop_fraction_refuses_an_unknown_desktop(self):
         with mock.patch.object(setup.macos_window, "desktop_size",
