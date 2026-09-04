@@ -605,8 +605,8 @@ impl AdvancedAi {
     }
 
     /// Version 2's production path. Unlike v1 it can price the research
-    /// funnel in every city, re-picks an invalid launch city, and never pays a
-    /// second Spaceport credit while that city already queues one.
+    /// funnel in the launch city, re-picks an invalid launch city, and never
+    /// pays a second Spaceport credit while that city already queues one.
     fn science_drive_production_bonus_v2(
         &self,
         g: &Game,
@@ -619,8 +619,21 @@ impl AdvancedAi {
         };
         let city = &g.cities[&cid];
         let player = &g.players[pid];
-        let research_bonus = Self::science_drive_research_bonus(g, pid, city, item);
-        if self.science_drive_launch_city(g, pid) != Some(cid) {
+        // The launch chain has one serial bottleneck: every queue spent on a
+        // research building in a non-launch city is a queue not available to
+        // the next Spaceport or a parallel production site.  V2 originally
+        // paid this credit in every city, which made the deployed Science
+        // lane fill the empire with Campus buildings while its first pad and
+        // projects slipped past the 250-turn clock.  Keep the funnel credit
+        // where it compounds the race, and let the ordinary science-building
+        // debt value the other cities.
+        let launch_city = self.science_drive_launch_city(g, pid);
+        let research_bonus = if city.owner == pid && launch_city == Some(cid) {
+            Self::science_drive_research_bonus(g, pid, city, item)
+        } else {
+            0.0
+        };
+        if launch_city != Some(cid) {
             return research_bonus;
         }
         let rocketry = player.techs.contains(&crate::name!("rocketry"));
@@ -677,10 +690,10 @@ impl AdvancedAi {
             }
     }
 
-    /// Version 2 keeps the adaptive empire's research funnel alive even when
-    /// the general strategic plan has not selected Science. The credit gets
-    /// the Campus and each missing research rung rather than only pricing a
-    /// launch city's production chain. Once that funnel and the local
+    /// Version 2 keeps the launch city's research funnel alive even when the
+    /// general strategic plan has not selected Science. The credit gets the
+    /// launch city's Campus and each missing research rung rather than only
+    /// pricing its industrial chain. Once that funnel and the local
     /// production chain are complete, it also keeps a Campus Research Grants
     /// queue competitive with the rest of the late-game filler.
     fn science_drive_research_bonus(
@@ -1635,8 +1648,13 @@ mod tests {
     }
 
     #[test]
-    fn science_drive_v2_values_the_research_funnel_in_every_city() {
-        let (mut g, _ours, theirs) = board();
+    fn science_drive_v2_values_the_research_funnel_only_in_the_launch_city() {
+        let (mut g, ours, theirs) = board();
+        // Make both cities ours and give the first one a standing pad. The
+        // second city is therefore a real non-launch queue, not another
+        // player's city accidentally included in a valuation test.
+        g.cities.get_mut(&theirs).unwrap().owner = 0;
+        install_pad(&mut g, ours);
         give_techs(&mut g, 0, 30);
         g.turn = AdvancedAi::science_drive_start(&g);
         let mut v1 = AdvancedAi::new();
@@ -1647,6 +1665,10 @@ mod tests {
         v2.maintain_science_drive(&g, 0);
         assert!(v1.science_drive().is_some());
         assert!(v2.science_drive().is_some());
+        assert_eq!(
+            v2.science_drive().and_then(|drive| drive.launch_city),
+            Some(ours)
+        );
 
         let campus_site = flat_site(&mut g, theirs);
         let campus = Item::District {
@@ -1660,10 +1682,22 @@ mod tests {
         );
         assert_eq!(
             v2.science_drive_production_bonus(&g, 0, theirs, &campus),
-            SCIENCE_DRIVE_CAMPUS_BONUS,
-            "version 2 can build the research funnel outside its launch city"
+            0.0,
+            "version 2 does not pull a non-launch queue into the research funnel"
         );
 
+        let launch_campus_site = flat_site(&mut g, ours);
+        assert_eq!(
+            v2.science_drive_production_bonus(&g, 0, ours, &campus),
+            SCIENCE_DRIVE_CAMPUS_BONUS,
+            "version 2 keeps the research funnel in its launch city"
+        );
+        g.map.tiles.get_mut(&launch_campus_site).unwrap().district = Some(crate::name!("campus"));
+        g.cities
+            .get_mut(&ours)
+            .unwrap()
+            .districts
+            .insert(crate::name!("campus"), launch_campus_site);
         g.map.tiles.get_mut(&campus_site).unwrap().district = Some(crate::name!("campus"));
         g.cities
             .get_mut(&theirs)
@@ -1680,6 +1714,11 @@ mod tests {
         );
         assert_eq!(
             v2.science_drive_production_bonus(&g, 0, theirs, &library),
+            0.0,
+            "a non-launch city does not get the launch funnel's building credit"
+        );
+        assert_eq!(
+            v2.science_drive_production_bonus(&g, 0, ours, &library),
             SCIENCE_DRIVE_RESEARCH_BUILDING_BONUS[0].1
         );
         // Make the first research rung genuinely available so the project
@@ -1692,7 +1731,7 @@ mod tests {
         assert_eq!(
             v2.science_drive_production_bonus(&g, 0, theirs, &grants),
             0.0,
-            "the repeatable project waits while a research building is available"
+            "the non-launch city cannot claim the launch funnel's project credit"
         );
         g.cities
             .get_mut(&theirs)
@@ -1718,15 +1757,27 @@ mod tests {
             .into_iter()
             .map(Name::new),
         );
-        assert_eq!(
-            v2.science_drive_production_bonus(&g, 0, theirs, &grants),
-            SCIENCE_DRIVE_CAMPUS_PROJECT_BONUS,
-            "a finished research city gets a science-producing filler"
+        g.cities.get_mut(&ours).unwrap().buildings.extend(
+            [
+                "library",
+                "university",
+                "research_lab",
+                "workshop",
+                "factory",
+                "coal_power_plant",
+            ]
+            .into_iter()
+            .map(Name::new),
         );
         assert_eq!(
-            v2.science_drive_production_bonus(&g, 0, _ours, &grants),
+            v2.science_drive_production_bonus(&g, 0, theirs, &grants),
             0.0,
-            "the project still requires its own Campus"
+            "a finished non-launch research city still gets no launch credit"
+        );
+        assert_eq!(
+            v2.science_drive_production_bonus(&g, 0, ours, &grants),
+            SCIENCE_DRIVE_CAMPUS_PROJECT_BONUS,
+            "a finished launch city gets a science-producing filler"
         );
 
         // Exercise the actual project valuation, not only its bonus helper:
