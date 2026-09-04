@@ -1726,14 +1726,18 @@ impl VisionCache {
 /// whether that answer survives a later board change.
 #[derive(Debug)]
 pub(crate) struct AttackReachFromFlood {
-    targets: Vec<Pos>,
+    /// The target list is immutable once the flood has built it. Keeping it
+    /// behind an `Arc` lets the AI's `EnvelopeReach` retain precisely this
+    /// sorted list instead of allocating and copying a second one per
+    /// envelope rebuild.
+    targets: Arc<[Pos]>,
     flood: Vec<Pos>,
 }
 
 impl AttackReachFromFlood {
     #[inline]
-    pub(crate) fn targets(&self) -> &[Pos] {
-        &self.targets
+    pub(crate) fn shared_targets(&self) -> Arc<[Pos]> {
+        Arc::clone(&self.targets)
     }
 
     #[inline]
@@ -26774,7 +26778,10 @@ impl Game {
             return Arc::clone(reach);
         }
         let (targets, flood) = self.attack_reach_from_flood(uid);
-        let reach = Arc::new(AttackReachFromFlood { targets, flood });
+        let reach = Arc::new(AttackReachFromFlood {
+            targets: Arc::from(targets),
+            flood,
+        });
         #[cfg(test)]
         {
             cache.computations += 1;

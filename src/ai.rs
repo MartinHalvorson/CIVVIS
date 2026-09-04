@@ -2004,9 +2004,11 @@ struct AttackEnvelopeCache {
 /// `evacuation_tile_cmp` breaks ties on `Pos`, so a different iteration order
 /// is a different game. The constructor enforces ascending-and-distinct
 /// rather than trusting its caller, which is what makes `binary_search` sound
-/// no matter where the tiles came from.
+/// no matter where the tiles came from. The common cached path shares the
+/// engine's already-sorted immutable target buffer; the standalone
+/// constructor keeps enforcing that invariant for every other caller.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub(crate) struct EnvelopeReach(Vec<Pos>);
+pub(crate) struct EnvelopeReach(std::sync::Arc<[Pos]>);
 
 impl EnvelopeReach {
     /// Adopt a list of struck tiles. `Game::attack_reach_from_flood` already
@@ -2017,6 +2019,14 @@ impl EnvelopeReach {
             tiles.sort_unstable();
             tiles.dedup();
         }
+        Self(std::sync::Arc::from(tiles))
+    }
+
+    /// Adopt the engine's immutable, ascending-and-distinct raw target list.
+    /// `Game::attack_reach_from_flood` establishes that order before its
+    /// result enters `AttackReachFromFlood`; keeping the same allocation here
+    /// avoids copying every target just to give it an envelope wrapper.
+    fn from_shared_tiles(tiles: std::sync::Arc<[Pos]>) -> Self {
         Self(tiles)
     }
 
@@ -2047,11 +2057,10 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 
 /// One envelope table and the union of every tile in it, kept together so a
 /// reader can tell whether the union still describes the table it holds. See
-/// [`BasicAi::covered_tiles`].
-type CoveredTiles = (
-    std::sync::Arc<AttackEnvelopes>,
-    std::sync::Arc<EnvelopeReach>,
-);
+/// [`BasicAi::covered_tiles`]. Unlike one raw envelope target list, the union
+/// is freshly assembled here, so its outer `Arc<Vec<_>>` keeps that buffer
+/// without converting it to a second shared slice allocation.
+type CoveredTiles = (std::sync::Arc<AttackEnvelopes>, std::sync::Arc<Vec<Pos>>);
 
 /// One enemy's envelope, with the key that says when it may be reused.
 ///
@@ -6091,7 +6100,7 @@ impl BasicAi {
                 // building the same answer twice.
                 let cached = g.cached_attack_reach_from_flood(reach_key, unit.id);
                 let reach: std::sync::Arc<EnvelopeReach> =
-                    std::sync::Arc::new(EnvelopeReach::from_tiles(cached.targets().to_vec()));
+                    std::sync::Arc::new(EnvelopeReach::from_shared_tiles(cached.shared_targets()));
                 if reusable {
                     store.insert(
                         unit.id,
@@ -6377,7 +6386,7 @@ impl BasicAi {
     fn covered_tiles(
         &self,
         envelopes: &std::sync::Arc<AttackEnvelopes>,
-    ) -> std::sync::Arc<EnvelopeReach> {
+    ) -> std::sync::Arc<Vec<Pos>> {
         let mut slot = self
             .covered_tiles_cache
             .lock()
@@ -6392,7 +6401,11 @@ impl BasicAi {
         for (_, reach) in envelopes.iter() {
             tiles.extend_from_slice(reach.as_slice());
         }
-        let covered = std::sync::Arc::new(EnvelopeReach::from_tiles(tiles));
+        if tiles.windows(2).any(|pair| pair[0] >= pair[1]) {
+            tiles.sort_unstable();
+            tiles.dedup();
+        }
+        let covered = std::sync::Arc::new(tiles);
         *slot = Some((
             std::sync::Arc::clone(envelopes),
             std::sync::Arc::clone(&covered),
@@ -6465,7 +6478,7 @@ impl BasicAi {
             }
             let city_here = g.city_at(position);
             let garrisoned = city_here.is_some() || g.encampment_at(position).is_some();
-            if !garrisoned && (covered.contains(&position) || struck(position)) {
+            if !garrisoned && (covered.binary_search(&position).is_ok() || struck(position)) {
                 continue;
             }
             let city = city_here.is_some_and(|city| {
@@ -27378,6 +27391,20 @@ mod attack_envelope_key_tests {
         assert!(
             !expected.is_empty(),
             "the fixture must cause at least one raw enemy reach to be cached"
+        );
+        let envelope = expected
+            .iter()
+            .find(|(uid, _)| *uid == enemy)
+            .map(|(_, reach)| reach)
+            .expect("the visible spawned enemy must have an envelope");
+        let raw = game.cached_attack_reach_from_flood(
+            (game.turn, BasicAi::attack_envelope_fingerprint(&game, None)),
+            enemy,
+        );
+        assert_eq!(
+            envelope.as_slice().as_ptr(),
+            raw.shared_targets().as_ptr(),
+            "an envelope must retain the raw cache's target allocation instead of copying it"
         );
         let after_first_controller = game.attack_reach_cache_computations();
         assert!(after_first_controller > 0);
