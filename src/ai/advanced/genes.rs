@@ -1325,10 +1325,11 @@ pub const GENES: &[Gene] = &[
     // once. Version one adds a broad native damage timestamp that remains
     // actionable for four turns, even after an attacker has left the board.
     Gene { tag: "native-emergency-purchase", field: "native_emergency_purchase", kind: Kind::OptIn, enable: AdvancedAi::enable_native_emergency_purchase, disable: AdvancedAi::disable_native_emergency_purchase },
-    // Version two keeps the Walls-or-defender answer but requires two current
-    // facts: damage this turn or last, and a visible at-war military unit with
-    // a legal attack envelope to the City Center. This rejects stale scars and
-    // nearby contacts that cannot actually attack; one family version plays.
+    // Version two keeps the Walls-or-defender answer. A host-confirmed hit in
+    // the current turn is authoritative; a one-turn-old damage mark still
+    // needs a visible at-war military unit with a legal City Center attack
+    // envelope. This rejects stale scars and nearby contacts that cannot
+    // actually attack; one family version plays.
     Gene { tag: "native-emergency-purchase-2", field: "native_emergency_purchase_2", kind: Kind::OptIn, enable: AdvancedAi::enable_native_emergency_purchase_2, disable: AdvancedAi::disable_native_emergency_purchase_2 },
     // Operator request, 2026-08-26: play the city-state quests for the Envoy
     // they pay. `src/game/quests.rs` has modelled the eight shipped

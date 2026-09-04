@@ -57,19 +57,19 @@
 //!    doctrine's own choice — and it spends through the reserve exactly as
 //!    the live path does.
 //! 5. **`native-emergency-purchase-2`** — a narrower successor to version
-//!    one. It requires fresh city damage (this turn or the last) *and* a
-//!    currently visible at-war military unit whose legal attack envelope
-//!    reaches the City Center. That independently corroborates the damage
-//!    record and prevents a departed attacker from buying a defender after the
-//!    emergency has cleared.
+//!    one. A host-confirmed hit in the current turn is enough on its own;
+//!    damage from the preceding turn still requires a currently visible,
+//!    at-war military unit whose legal attack envelope reaches the City
+//!    Center. That keeps a same-frame siege hit actionable after its attacker
+//!    leaves sight, while rejecting an older uncorroborated scar.
 //!
 //! ⚠ Version one asks for DAMAGE, not for a hostile in sight.
 //! `besieged_city_item` records why: reacting to a single raider in range
 //! "bought city count while COSTING score: walls and defenders displace the
 //! buildings and districts score is actually made of". Version two preserves
-//! that lesson by requiring the stronger fact that a visible attacker can
-//! legally strike the City Center now, rather than treating mere proximity as
-//! proof.
+//! that lesson by requiring either the host's same-frame strike fact or the
+//! stronger fact that a visible attacker can legally strike the City Center
+//! now, rather than treating mere proximity as proof.
 //!
 //! Each gene is byte-identical when off: every multiplier reads exactly 1.0
 //! (and `x * 1.0`, `x / (p * 1.0)` are exact in IEEE arithmetic), and the
@@ -270,11 +270,13 @@ impl AdvancedAi {
         true
     }
 
-    /// `native-emergency-purchase-2`: a damaged city is an emergency only
-    /// when a fresh native damage record agrees with a present, visible legal
-    /// attacker. Reuse the battlefront's terrain- and movement-accurate
-    /// envelope rather than approximating danger with a radius or peeking
-    /// through fog.
+    /// `native-emergency-purchase-2`: a damaged city is an emergency when
+    /// the host just observed its health fall, or when a still-fresh native
+    /// damage record agrees with a present, visible legal attacker. The
+    /// same-frame host signal remains authoritative after a siege unit fires
+    /// from fog and leaves sight; an older scar still needs corroboration.
+    /// Reuse the battlefront's terrain- and movement-accurate envelope rather
+    /// than approximating danger with a radius or peeking through fog.
     pub(super) fn native_city_emergency_2(&self, g: &Game, pid: usize, cid: u32) -> bool {
         if !self.native_emergency_purchase_2 {
             return false;
@@ -288,6 +290,9 @@ impl AdvancedAi {
             || g.turn - city.last_attacked > EMERGENCY_V2_FRESH_TURNS
         {
             return false;
+        }
+        if city.last_attacked == g.turn {
+            return true;
         }
         let visible = g.player_vision_frame(pid);
         Self::imminent_city_attack(g, pid, cid, &visible)
@@ -787,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn native_emergency_v2_requires_fresh_damage_and_a_visible_legal_attacker() {
+    fn native_emergency_v2_accepts_a_same_frame_host_hit_or_visible_legal_attacker() {
         let (mut g, city) = board();
         g.turn = 30;
         let city_pos = g.cities[&city].pos;
@@ -807,6 +812,17 @@ mod tests {
             "a recent scar without a current attacker is not an emergency"
         );
         assert!(on.native_emergency_item(&g, 0, city).is_none());
+
+        g.cities.get_mut(&city).unwrap().last_attacked = g.turn;
+        assert!(
+            on.native_city_emergency_2(&g, 0, city),
+            "a host-confirmed same-frame hit remains an emergency after the attacker leaves sight"
+        );
+        assert!(
+            on.native_emergency_item(&g, 0, city).is_some(),
+            "the direct host signal reaches the existing walls-or-defender choice"
+        );
+        g.cities.get_mut(&city).unwrap().last_attacked = 29;
         for unit in g.player_unit_ids(0) {
             g.remove_unit(unit);
         }
