@@ -23,21 +23,21 @@ class CaptureFreeSetupTests(unittest.TestCase):
 
     def test_bootstrap_clicks_the_known_play_now_controls(self):
         clicks: list[tuple[int, int]] = []
-        bounds = (0, 33, 1681, 1084)
+        desktop = (1728, 1117)
         with mock.patch.object(setup.time, "sleep"), \
              mock.patch.object(setup.macos_window, "place_game"), \
              mock.patch.object(setup.macos_window, "focus_game"), \
-             mock.patch.object(setup.macos_window, "game_window",
-                               return_value=bounds), \
+             mock.patch.object(setup.macos_window, "desktop_size",
+                               return_value=desktop), \
              mock.patch.object(setup.macos_input, "move"), \
              mock.patch.object(setup.macos_input, "click",
                                side_effect=lambda x, y, **_: clicks.append((x, y))):
             setup.start_bootstrap_game()
             setup.begin_bootstrap_game()
 
-        x, y, width, height = bounds
-        point = lambda fraction: (round(x + width * fraction[0]),
-                                  round(y + height * fraction[1]))
+        width, height = desktop
+        point = lambda fraction: (int(width * fraction[0]),
+                                  int(height * fraction[1]))
         # The first pointer event can be consumed while macOS keys the window;
         # it must be spent on empty artwork before a menu row is targeted.
         self.assertEqual(clicks[:4], [point(setup.MENU_ACTIVATION_FRACTION),
@@ -45,11 +45,11 @@ class CaptureFreeSetupTests(unittest.TestCase):
                                       point(setup.PLAY_NOW_FRACTION),
                                       point(setup.BEGIN_GAME_FRACTION)])
 
-    def test_window_fraction_refuses_an_unknown_window(self):
-        with mock.patch.object(setup.macos_window, "game_window",
+    def test_desktop_fraction_refuses_an_unknown_desktop(self):
+        with mock.patch.object(setup.macos_window, "desktop_size",
                                return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "window is unavailable"):
-                setup.click_window_fraction(0.5, 0.5)
+            with self.assertRaisesRegex(RuntimeError, "desktop size is unavailable"):
+                setup.click_desktop_fraction(0.5, 0.5)
 
     def test_bootstrap_wait_uses_the_agent_log_not_the_desktop(self):
         with mock.patch.object(setup.time, "monotonic", side_effect=[0.0, 0.0]), \
