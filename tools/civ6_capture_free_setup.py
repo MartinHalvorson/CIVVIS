@@ -64,9 +64,9 @@ TITLE_BAR_Y_OFFSET = 20
 # The content-configured marker arrives while this macOS front end is still
 # animating its promotional shell.  A 120-second allowance still left the
 # fixed Play Now sequence on an inert canvas in verification run
-# `civvis-20260904T103554Z`; a five-minute bounded settle is the first
-# measured window that reaches the interactive menu reliably.  This is paid
-# only before a new, zero-turn bootstrap — never during a live game.
+# `civvis-20260904T103554Z`; give that shell a full, bounded five-minute
+# transition allowance. This is paid only before a new, zero-turn bootstrap
+# — never during a live game.
 MENU_SETTLE_S = 300.0
 MENU_ACTIVATION_SETTLE_S = 1.5
 SUBMENU_SETTLE_S = 6.0
