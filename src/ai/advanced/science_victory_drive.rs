@@ -628,9 +628,11 @@ impl AdvancedAi {
         // where it compounds the race, and let the ordinary science-building
         // debt value the other cities.
         let launch_city = self.science_drive_launch_city(g, pid);
-        let research_bonus = (city.owner == pid && launch_city == Some(cid))
-            .then(|| Self::science_drive_research_bonus(g, pid, city, item))
-            .unwrap_or(0.0);
+        let research_bonus = if city.owner == pid && launch_city == Some(cid) {
+            Self::science_drive_research_bonus(g, pid, city, item)
+        } else {
+            0.0
+        };
         if launch_city != Some(cid) {
             return research_bonus;
         }
