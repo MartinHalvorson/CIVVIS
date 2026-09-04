@@ -34,13 +34,17 @@ from civ6_control import macos_input, macos_window  # noqa: E402
 
 GAME_PROCESS = "Civ6_Exe_Child"
 
-# These are the host's already-proven generic Play Now route, measured on its
-# 1728x1117 display with Civ VI in the full usable window.  Unlike Create Game,
-# it never needs the fixed ScenarioSetup panel that has recently transitioned
-# into Tutorial before our known controls landed.
-SINGLE_PLAYER_POINT = (817, 492)
-PLAY_NOW_POINT = (912, 691)
-BEGIN_GAME_POINT = (677, 873)
+# These are the host's already-proven generic Play Now route, expressed as
+# fractions of the Civ VI render window.  The original launcher intentionally
+# used fractions because its menu is laid out against the render target rather
+# than a fixed number of desktop pixels.  The accessibility-reported window can
+# be narrower than the desktop after macOS constrains it below the menu bar, so
+# preserve that property here instead of blindly replaying old pixel values.
+# Unlike Create Game, this route never needs the ScenarioSetup panel that has
+# recently transitioned into Tutorial before known controls landed.
+SINGLE_PLAYER_FRACTION = (0.473, 0.441)
+PLAY_NOW_FRACTION = (0.528, 0.619)
+BEGIN_GAME_FRACTION = (0.392, 0.782)
 
 # A frontmost transition can consume the first pointer event while macOS makes
 # Civ VI's window key.  The normal visual bootstrap primes the same way before
@@ -67,7 +71,7 @@ def click_point(x: int, y: int) -> None:
 
 
 def click_window_fraction(fx: float, fy: float) -> None:
-    """Click a fixed main-menu point within the prepared game window."""
+    """Click a known main-menu fraction within the prepared game window."""
     bounds = macos_window.game_window(GAME_PROCESS)
     if bounds is None:
         raise RuntimeError("Civ VI window is unavailable")
@@ -97,9 +101,9 @@ def start_bootstrap_game() -> None:
     time.sleep(MENU_SETTLE_S)
     click_window_fraction(*MENU_ACTIVATION_FRACTION)
     time.sleep(MENU_ACTIVATION_SETTLE_S)
-    click_point(*SINGLE_PLAYER_POINT)
+    click_window_fraction(*SINGLE_PLAYER_FRACTION)
     time.sleep(SUBMENU_SETTLE_S)
-    click_point(*PLAY_NOW_POINT)
+    click_window_fraction(*PLAY_NOW_FRACTION)
 
 
 def wait_for_agent_loaded(*, timeout_s: float = BOOTSTRAP_READY_TIMEOUT_S,
@@ -130,7 +134,7 @@ def begin_bootstrap_game() -> None:
     # Give the context that wrote ``loaded`` time to finish drawing its gate;
     # this is the same delay used by the previously verified Play Now harness.
     time.sleep(4.0)
-    click_point(*BEGIN_GAME_POINT)
+    click_window_fraction(*BEGIN_GAME_FRACTION)
 
 
 def main(argv: list[str] | None = None) -> int:
