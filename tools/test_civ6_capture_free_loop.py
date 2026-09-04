@@ -68,6 +68,7 @@ class FixedProfileTests(unittest.TestCase):
     def test_default_turn_freeze_window_is_patient(self):
         parsed = loop.parser().parse_args([])
         self.assertEqual(parsed.frozen_turn_seconds, 1800.0)
+        self.assertEqual(parsed.popup_stuck_seconds, 300.0)
 
     def test_source_never_invokes_a_capture_or_ocr_reader(self):
         source = Path(loop.__file__).read_text(encoding="utf-8")
@@ -75,6 +76,16 @@ class FixedProfileTests(unittest.TestCase):
         self.assertNotIn("macos_ocr", source)
         self.assertNotIn("screenshot(", source)
         self.assertNotIn("civ6_nudge_end_turn", source)
+
+    def test_attached_player_implementation_stays_capture_free(self):
+        source = (Path(loop.__file__).parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        start = source.index("def _attach_running_game")
+        end = source.index("\ndef seat_matches_requested", start)
+        attached = source[start:end]
+        self.assertNotIn("screenshot(", attached)
+        self.assertNotIn("popup_clear.", attached)
+        self.assertNotIn("dismiss_leader_dialogue(", attached)
 
 
 class _Player:
@@ -113,6 +124,72 @@ class SilenceRecoveryTests(unittest.TestCase):
 
 
 class TurnFreezeRecoveryTests(unittest.TestCase):
+    def test_exhausted_native_popup_ladder_uses_a_shorter_safe_recovery_window(self):
+        ticks = [0.0]
+
+        def now():
+            return ticks[0]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "turn", "turn": 42}) + "\n")
+
+            def sleep(seconds):
+                ticks[0] += seconds
+                event = {"ctx": "autoclose", "kind": "ui_heartbeat"}
+                if ticks[0] == 1.0:
+                    event = {
+                        "ctx": "autoclose", "kind": "autoclose_stuck",
+                        "screen": "DiplomacyActionView",
+                    }
+                with events.open("a") as stream:
+                    stream.write(json.dumps(event) + "\n")
+
+            reason = loop.monitor_player(
+                _Player(), events, silence_s=10.0, frozen_turn_s=10.0,
+                popup_stuck_s=3.0, poll_s=1.0,
+                should_stop=lambda: False, now=now, sleep=sleep,
+            )
+
+        self.assertEqual(reason, "popup-stuck")
+        self.assertEqual(ticks[0], 4.0)
+
+    def test_a_turn_after_native_popup_exhaustion_clears_its_recovery_window(self):
+        ticks = [0.0]
+
+        class FinishingPlayer:
+            returncode = None
+
+            def poll(self):
+                if ticks[0] >= 5.0:
+                    self.returncode = 0
+                return self.returncode
+
+        def now():
+            return ticks[0]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(json.dumps({"kind": "turn", "turn": 42}) + "\n")
+
+            def sleep(seconds):
+                ticks[0] += seconds
+                event = {"ctx": "autoclose", "kind": "ui_heartbeat"}
+                if ticks[0] == 1.0:
+                    event = {"ctx": "autoclose", "kind": "autoclose_stuck"}
+                elif ticks[0] == 2.0:
+                    event = {"kind": "turn", "turn": 43}
+                with events.open("a") as stream:
+                    stream.write(json.dumps(event) + "\n")
+
+            reason = loop.monitor_player(
+                FinishingPlayer(), events, silence_s=10.0, frozen_turn_s=10.0,
+                popup_stuck_s=3.0, poll_s=1.0,
+                should_stop=lambda: False, now=now, sleep=sleep,
+            )
+
+        self.assertEqual(reason, "completed")
+
     def test_heartbeats_without_a_new_turn_return_the_capture_free_wedge(self):
         ticks = [0.0]
 

@@ -229,14 +229,19 @@ def latest_turn(events: Path) -> int | None:
     return best
 
 
-def appended_turn(events: Path, offset: int) -> tuple[int, int | None]:
-    """Read complete newly appended events and return their highest turn.
+def appended_progress(events: Path, offset: int) -> tuple[int, int | None, bool]:
+    """Read complete appended events and return turn progress plus popup exhaustion.
 
     The capture-free control mod deliberately keeps emitting ``ui_heartbeat``
     records while a native popup close ladder is trying again.  That proves Civ
     VI is alive, but it must not indefinitely impersonate turn progress.  Keep
     an append-only cursor so the supervisor can distinguish a living UI from a
     game that has made no strategic progress.
+
+    ``autoclose_stuck`` is stronger evidence than a heartbeat: the native
+    close ladder has already exhausted its own safe rungs.  It still is not a
+    reason to interrupt a game that recovers on its next turn, so the caller
+    starts a separate bounded grace window rather than restarting immediately.
 
     A log write can be observed halfway through its final JSON line.  Do not
     advance the cursor past that line: the next poll will read it whole instead
@@ -247,9 +252,10 @@ def appended_turn(events: Path, offset: int) -> tuple[int, int | None]:
             offset = 0
         stream = events.open(errors="replace")
     except OSError:
-        return offset, None
+        return offset, None, False
 
     best: int | None = None
+    popup_stuck = False
     with stream:
         stream.seek(offset)
         while True:
@@ -264,9 +270,12 @@ def appended_turn(events: Path, offset: int) -> tuple[int, int | None]:
                 turn = event.get("turn")
             except (ValueError, AttributeError):
                 continue
+            if (event.get("ctx") == "autoclose"
+                    and event.get("kind") == "autoclose_stuck"):
+                popup_stuck = True
             if isinstance(turn, int):
                 best = turn if best is None else max(best, turn)
-    return offset, best
+    return offset, best, popup_stuck
 
 
 def sample_game(run_dir: Path) -> None:
@@ -293,6 +302,7 @@ def monitor_player(
     *,
     silence_s: float,
     frozen_turn_s: float | None = None,
+    popup_stuck_s: float | None = None,
     poll_s: float,
     should_stop: Callable[[], bool] = lambda: STOP_REQUESTED,
     now: Callable[[], float] = time.monotonic,
@@ -303,15 +313,20 @@ def monitor_player(
     A turn can be slow, but a healthy game keeps publishing state, await, or
     blocker records.  A silent stream is therefore a wedge.  Conversely, a
     native popup close ladder may keep publishing heartbeats forever while the
-    turn never changes; that is a separate wedge.  Both cases return control to
-    the supervisor for a clean successor, never to a visual or blind-input
-    recovery path.
+    turn never changes; that is a separate wedge.  When the ladder explicitly
+    says it is exhausted, a shorter grace window is safe: a new turn clears it,
+    while a persistent popup returns control to the supervisor without visual
+    or blind-input recovery.
     """
     last_mtime = event_mtime(events)
     last_activity = now()
+    try:
+        turn_offset = events.stat().st_size
+    except OSError:
+        turn_offset = 0
     last_turn = latest_turn(events)
     last_turn_progress = last_activity
-    turn_offset = 0
+    popup_stuck_since: float | None = None
     while player.poll() is None:
         if should_stop():
             return "stopped"
@@ -319,17 +334,24 @@ def monitor_player(
         if current_mtime is not None and current_mtime != last_mtime:
             last_mtime = current_mtime
             last_activity = now()
-            turn_offset, observed_turn = appended_turn(events, turn_offset)
+            turn_offset, observed_turn, native_popup_stuck = appended_progress(
+                events, turn_offset)
+            if native_popup_stuck and popup_stuck_since is None:
+                popup_stuck_since = last_activity
             if (observed_turn is not None
                     and (last_turn is None or observed_turn > last_turn)):
                 last_turn = observed_turn
                 last_turn_progress = last_activity
+                popup_stuck_since = None
         current = now()
         if current - last_activity >= silence_s:
             return "wedge"
         if (frozen_turn_s is not None and last_turn is not None
                 and current - last_turn_progress >= frozen_turn_s):
             return "frozen-turn"
+        if (popup_stuck_s is not None and popup_stuck_since is not None
+                and current - popup_stuck_since >= popup_stuck_s):
+            return "popup-stuck"
         sleep(poll_s)
     return "completed" if player.returncode == 0 else "player-exited"
 
@@ -391,9 +413,10 @@ def run_once(args: argparse.Namespace, index: int) -> tuple[bool, str, str]:
         player = start_attached_player(args, tag, run_dir, orders_db)
         reason = monitor_player(
             player, run_dir / "events.jsonl", silence_s=args.wedge_silence,
-            frozen_turn_s=args.frozen_turn_seconds, poll_s=args.poll,
+            frozen_turn_s=args.frozen_turn_seconds,
+            popup_stuck_s=args.popup_stuck_seconds, poll_s=args.poll,
         )
-        if reason in ("wedge", "frozen-turn"):
+        if reason in ("wedge", "frozen-turn", "popup-stuck"):
             sample_game(run_dir)
         turn = latest_turn(run_dir / "events.jsonl")
         write_play_marker(Path(args.logs), tag, turn, reason)
@@ -404,6 +427,7 @@ def run_once(args: argparse.Namespace, index: int) -> tuple[bool, str, str]:
             "turn": turn,
             "wedge_detected": reason == "wedge",
             "frozen_turn_detected": reason == "frozen-turn",
+            "popup_stuck_detected": reason == "popup-stuck",
             "player_returncode": player.poll(),
         })
         return turn is not None and turn >= 1, reason, tag
@@ -450,6 +474,9 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--frozen-turn-seconds", type=float, default=1800.0,
                     help="restart only when a live event stream has not advanced "
                          "a turn for this long (default: 30 minutes)")
+    ap.add_argument("--popup-stuck-seconds", type=float, default=300.0,
+                    help="after the native popup ladder reports exhaustion, restart "
+                         "only if no turn follows within this long (default: 5 minutes)")
     ap.add_argument("--poll", type=float, default=2.0)
     return ap
 
@@ -463,6 +490,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.attempts < 1 or args.max_turns < 1:
         parser().error("--attempts and --max-turns must be positive")
     if (args.wedge_silence <= 0 or args.frozen_turn_seconds <= 0
+            or args.popup_stuck_seconds <= 0
             or args.poll <= 0):
         parser().error("wedge timing values must be positive")
     if not Path(args.civvis_bin).is_file():
