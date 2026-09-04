@@ -21,11 +21,17 @@ apt_options=(
 prefer_canonical_ubuntu_archive() {
   local mirror_list=/etc/apt/apt-mirrors.txt
 
-  # Ubuntu's mirror+file configuration reads this list at update time.  Keep
-  # its URL scheme and paths intact; only remove the flaky Azure hostname.
-  if [[ -f "$mirror_list" ]] && sudo grep -Fq 'azure.archive.ubuntu.com' "$mirror_list"; then
-    echo "Using archive.ubuntu.com instead of azure.archive.ubuntu.com."
-    sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' "$mirror_list"
+  # Ubuntu's mirror+file configuration reads this list at update time.  The
+  # runner can keep an HTTP entry alongside a working HTTPS fallback; apt then
+  # returns failure for the HTTP timeout even though the HTTPS index is valid.
+  # Use one canonical HTTPS entry so --error-on=any reports a real outage.
+  if [[ -f "$mirror_list" ]] && sudo grep -Eq \
+      'azure\.archive\.ubuntu\.com|http://archive\.ubuntu\.com' "$mirror_list"; then
+    echo "Using the HTTPS archive.ubuntu.com mirror."
+    sudo sed -i \
+      -e 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' \
+      -e 's#http://archive\.ubuntu\.com#https://archive.ubuntu.com#g' \
+      "$mirror_list"
   fi
 }
 
