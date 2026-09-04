@@ -224,6 +224,33 @@ class AttachSummaryTests(unittest.TestCase):
         record.assert_called_once_with(run_dir / "summary.json")
         publish.assert_called_once_with(run_dir.name, run_dir.parent)
 
+    def test_attached_summary_keeps_native_retirement_payload(self):
+        args = SimpleNamespace(
+            tag="civvis-attach-retirement",
+            ruleset="RULESET_EXPANSION_2",
+            game_mode=[],
+            civvis_decides=True,
+            civvis_victory="science",
+            civvis_without=[],
+            civvis_with=[],
+            move_fallback=True,
+        )
+        config = {
+            "Difficulty": "DIFFICULTY_EMPEROR",
+            "MapSize": "MAPSIZE_SMALL",
+            "GameSpeed": "GAMESPEED_ONLINE",
+            "MapSeed": None,
+            "MaxTurns": 250,
+        }
+        retirement = {"kind": "retired", "turn": 97, "reason": "operator"}
+        summary = civ6_play.attached_summary(
+            args, config,
+            {"turn": 97, "score": 200, "outcome": retirement,
+             "operator_retired": retirement, "operator_retire_event": retirement},
+            Path("/tmp/civvis-attach-retirement"), "operator_retired")
+
+        self.assertEqual(summary["operator_retire"], retirement)
+
 
 class TermTakesTheBrainWithIt(unittest.TestCase):
     """A TERMed harness must not leak the brain that blocks the next game.
