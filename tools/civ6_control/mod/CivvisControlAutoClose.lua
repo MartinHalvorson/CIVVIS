@@ -675,6 +675,46 @@ else
 	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
 	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
 
+	-- ★★★★★ A FRESH SHOW IS A FRESH DIALOGUE, EVEN WHEN THIS CONTEXT NEVER TICKS
+	-- WHILE HIDDEN.
+	--
+	-- `ContextPtr:SetUpdate` stops with the hidden context. That means the
+	-- `not isUp()` reset in `tick` cannot observe the ordinary
+	-- close -> hide -> next-show sequence for DiplomacyActionView: its `closes`
+	-- counter survives into the next, unrelated leader interaction. Once the
+	-- old interaction had reached GIVE_UP_AFTER, every later interaction began
+	-- directly on the 30-second retry path and emitted misleading desktop-help
+	-- asks even though the native ladder was only looking at a new screen.
+	--
+	-- Run `civvis-20260904T042312Z-capture-free-1` showed that exact shape:
+	-- attempts 32/36 belonged to later sessions, while turns continued and the
+	-- capture-free owner intentionally had no desktop rescue. Reset only the
+	-- *attempt accounting* when Firaxis says this context is shown again. The
+	-- active deal hold is deliberately left alone: it is a real CIVVIS-owned
+	-- session and may have been armed before the view becomes visible.
+	local function resetShownAttemptState()
+		showing = false;
+		remaining = 0;
+		shown = 0;
+		closes = 0;
+		reported = false;
+		desktopReportedAt = -1;
+		wonderAnimationWaitReported = false;
+	end
+
+	-- The shipped scripts install `OnShow` during their Initialize path. Preserve
+	-- it exactly and layer the accounting reset around the same context callback;
+	-- this is native lifecycle evidence, not a timer guess or a desktop action.
+	local shippedOnShow = OnShow;
+	if type(shippedOnShow) == "function" then
+		pcall(function()
+			ContextPtr:SetShowHandler(function(...)
+				resetShownAttemptState();
+				return shippedOnShow(...);
+			end);
+		end);
+	end
+
 	-- ★★★★★ A DEAL SESSION CIVVIS OPENED IS NOT A SCREEN TO REFUSE. The
 	-- agent's sale, passage and peace arms now ask inside a `MAKE_DEAL`
 	-- session (the only place a rival evaluates a working deal — see

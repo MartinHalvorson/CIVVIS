@@ -780,8 +780,9 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("desktopReportedAt = closes;", shim)
         # The reset arms it again for the next appearance, and nothing else may
         # make it permanent: the declaration says "Giving up is a BACK-OFF,
-        # never a stop".
-        self.assertEqual(shim.count("desktopReportedAt = -1;"), 3)
+        # never a stop". A context update does not tick while hidden, so the
+        # fresh-show wrapper is also a reset point.
+        self.assertEqual(shim.count("desktopReportedAt = -1;"), 4)
         self.assertNotIn("desktopReported =", shim.replace("desktopReportedAt =", ""))
         self.assertIn("if closes >= GIVE_UP_AFTER then", shim)
         for field in ('"rung":%d', '"mode":%d', '"session":%d', '"fading":%s', '"popup":%s'):
@@ -789,6 +790,39 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("ms_currentViewMode", shim)
         self.assertIn("ms_ActiveSessionID", shim)
         self.assertIn("Controls.BlackFadeAnim:IsStopped()", shim)
+
+    def test_a_fresh_diplomacy_show_resets_retry_accounting(self) -> None:
+        """A hidden context cannot reset itself from its update callback.
+
+        DiplomacyActionView can close asynchronously. Its update stops the
+        moment it hides, so observing only ``not isUp()`` carried a previous
+        screen's GIVE_UP_AFTER count into the next leader interaction and
+        pushed it straight onto the 30-second retry cadence. Wrap the shipped
+        lifecycle callback instead of injecting desktop input.
+        """
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        reset = shim.split("local function resetShownAttemptState()", 1)[1].split(
+            "-- The shipped scripts install `OnShow`", 1
+        )[0]
+        for field in (
+            "showing = false;",
+            "remaining = 0;",
+            "shown = 0;",
+            "closes = 0;",
+            "reported = false;",
+            "desktopReportedAt = -1;",
+        ):
+            self.assertIn(field, reset)
+
+        wrapper = shim.split("local shippedOnShow = OnShow;", 1)[1].split(
+            "-- ★★★★★ A DEAL SESSION", 1
+        )[0]
+        self.assertIn('type(shippedOnShow) == "function"', wrapper)
+        self.assertIn("ContextPtr:SetShowHandler(function(...)", wrapper)
+        self.assertIn("resetShownAttemptState();", wrapper)
+        self.assertIn("return shippedOnShow(...);", wrapper)
+        self.assertNotIn("dealHold = 0", reset)
+        self.assertNotIn("dealForceClose = false", reset)
 
     def test_the_mod_answers_a_retire_row_with_the_shipped_action(self) -> None:
         # ⚠⚠ A killed game is UNFINISHED, not lost: Civilization VI files no
