@@ -658,16 +658,36 @@ while true; do
 
   DIFFICULTY=$EXPLICIT_DIFFICULTY
   if [[ -z "$DIFFICULTY" ]]; then
-    if [[ ! -f "$REPO/tools/civ6_ladder_policy.py" ]]; then
+    if (( CAPTURE_FREE )); then
+      # The non-visual owner is deliberately a fixed profile. Its direct
+      # Create Game helper rejects every rung except Emperor, so asking the
+      # evidence ladder here can select King (as it did on 2026-09-04) and
+      # spend every retry on a command that is guaranteed to play no turns.
+      # Keep the general visual loop on the ladder; capture-free verification
+      # has its own fixed, comparable difficulty contract.
+      DIFFICULTY=DIFFICULTY_EMPEROR
+      say "capture-free profile selects fixed difficulty $DIFFICULTY (ladder rungs are not valid for this owner)"
+    elif [[ ! -f "$REPO/tools/civ6_ladder_policy.py" ]]; then
       say "ladder policy missing at $REPO/tools/civ6_ladder_policy.py; refusing an un-gated run"
       sleep 300
       continue
     fi
-    DIFFICULTY=$(python3 "$REPO/tools/civ6_ladder_policy.py" \
-      --runs "$RUNS_DIR" target 2>>"$SUP") || DIFFICULTY=""
+    if [[ -z "$DIFFICULTY" ]]; then
+      DIFFICULTY=$(python3 "$REPO/tools/civ6_ladder_policy.py" \
+        --runs "$RUNS_DIR" target 2>>"$SUP") || DIFFICULTY=""
+    fi
   fi
   if [[ ! "$DIFFICULTY" =~ ^DIFFICULTY_(SETTLER|CHIEFTAIN|WARLORD|PRINCE|KING|EMPEROR|IMMORTAL|DEITY)$ ]]; then
     say "ladder policy returned invalid difficulty '${DIFFICULTY:-<empty>}'; refusing an ungated run"
+    sleep 300
+    continue
+  fi
+  if (( CAPTURE_FREE )) && [[ "$DIFFICULTY" != DIFFICULTY_EMPEROR ]]; then
+    # An explicit operator override must not be silently rewritten into a
+    # different experiment. Refuse it at the supervisor boundary with a
+    # durable explanation instead of invoking a launcher that can only return
+    # the same no-turn profile error on every retry.
+    say "capture-free profile requires difficulty DIFFICULTY_EMPEROR; explicit CIVVIS_DIFFICULTY=$DIFFICULTY is incompatible, refusing this cycle"
     sleep 300
     continue
   fi
