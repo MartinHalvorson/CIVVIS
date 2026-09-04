@@ -40,11 +40,26 @@ run_apt() {
       "${apt_options[@]}" "$subcommand" "$@"
 }
 
+update_apt_indexes() {
+  # A mirror list can report one dead URL even after another URL has supplied
+  # the complete index.  `--error-on=any` turns that harmless fallback into a
+  # failed update, which then makes this bounded installer retry the same
+  # usable mirror three times.  Retry once without the strict aggregate
+  # verdict; `apt-get install` still verifies that the requested package is
+  # actually available from the indexes that were downloaded.
+  if run_apt update --error-on=any; then
+    return 0
+  fi
+
+  echo "APT update saw a mirror error; accepting usable fallback indexes." >&2
+  run_apt update
+}
+
 prefer_canonical_ubuntu_archive
 
 for ((attempt = 1; attempt <= max_attempts; attempt++)); do
   echo "APT install attempt ${attempt}/${max_attempts}: $*"
-  if run_apt update --error-on=any && \
+  if update_apt_indexes && \
       run_apt install --no-install-recommends -y "$@"; then
     exit 0
   fi
