@@ -30283,13 +30283,18 @@ impl AdvancedAi {
         let visible = self.battlefront_visibility(g, pid);
         // The one-turn routed branch: the candidate value already carries
         // the gene's walk price, so it is not charged again here.
+        //
+        // `path_to` builds a full movement flood from this unchanged Settler
+        // position.  This loop used to repeat that identical flood for every
+        // one of up to 160 scored sites; retain its exact path/tie behavior,
+        // but build the paths once and look up each candidate.
+        let paths = g.paths_to(uid);
         let mut routed = candidates
             .iter()
             .take(SETTLEMENT_ROUTE_CANDIDATE_LIMIT)
             .filter_map(|(position, site_value)| {
-                let path = g.path_to(uid, *position)?;
-                let (movement_cost, risk) =
-                    self.settlement_route_risk(g, pid, uid, &path, &visible);
+                let path = paths.get(position)?;
+                let (movement_cost, risk) = self.settlement_route_risk(g, pid, uid, path, &visible);
                 Some((*position, *site_value - movement_cost * 0.8 - risk))
             })
             .collect::<Vec<_>>();
