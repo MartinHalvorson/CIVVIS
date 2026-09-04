@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""The cosmetic cuts a verification game makes are applied where the game reads them.
+"""Verification startup cuts and front-end acknowledgements reach the game files.
 
 `civ6_setup.VERIFICATION_OPTIONS` turns off the intro video, the historic-moment
-animation and two shadow passes. None of them changes the game that is played;
-every one of them costs wall clock. The cuts are only worth anything if they
-land in the game's own options files, in the keys this version defines, while
-the game is closed -- so the tests exercise the real rewrite on copies of the
-real file shapes, the guards around it, and the one place `civ6_play.py` calls
-it: immediately before the launch.
+animation and two shadow passes, and saves the game's own acknowledgement of
+its known native startup warnings. None changes the game that is played. These
+options are only useful if they land in the game's own files, in the keys this
+version defines, while the game is closed -- so the tests exercise the real
+rewrite on copies of the real file shapes, the guards around it, and the place
+`civ6_play.py` calls it: immediately before the launch.
 """
 
 from __future__ import annotations
@@ -31,6 +31,9 @@ APP_OPTIONS = """;Application options
 RenderWidth 1650
 ;Set to 1 play the intro video on startup.
 PlayIntroVideo 1
+[Misc]
+AcceptedUnknownDevice 0
+AcceptedOutdatedDriver 0
 EnableTuner 1
 """
 
@@ -69,12 +72,18 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
             user = write_user_dir(Path(tmp))
             applied = civ6_setup.apply_verification(user)
             self.assertEqual(applied, {
-                "AppOptions.txt": {"PlayIntroVideo": ("1", 0)},
+                "AppOptions.txt": {
+                    "PlayIntroVideo": ("1", 0),
+                    "AcceptedUnknownDevice": ("0", 1),
+                    "AcceptedOutdatedDriver": ("0", 1),
+                },
                 "UserOptions.txt": {"PlayHistoricMomentAnimation": ("1", 0)},
                 "GraphicsOptions.txt": {"EnableShadows": ("1", 0),
                                         "EnableCloudShadows": ("1", 0)},
             })
             self.assertEqual(env.read_option(user / "AppOptions.txt", "PlayIntroVideo"), "0")
+            self.assertEqual(env.read_option(user / "AppOptions.txt", "AcceptedUnknownDevice"), "1")
+            self.assertEqual(env.read_option(user / "AppOptions.txt", "AcceptedOutdatedDriver"), "1")
             self.assertEqual(env.read_option(user / "GraphicsOptions.txt", "EnableShadows"), "0")
             self.assertEqual(env.read_option(user / "GraphicsOptions.txt", "EnableCloudShadows"), "0")
             # The cuts are cosmetic and stay cosmetic: what the game plays is untouched.
@@ -114,7 +123,9 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
             civ6_setup.apply_verification(user, civ6_setup.VERIFICATION_DEFAULTS)
             for name, keys in civ6_setup.VERIFICATION_OPTIONS.items():
                 for key in keys:
-                    self.assertEqual(env.read_option(user / name, key), "1", f"{name}: {key}")
+                    self.assertEqual(env.read_option(user / name, key),
+                                     str(civ6_setup.VERIFICATION_DEFAULTS[name][key]),
+                                     f"{name}: {key}")
 
     def test_the_defaults_cover_exactly_the_keys_that_are_cut(self) -> None:
         cut = {(name, key) for name, keys in civ6_setup.VERIFICATION_OPTIONS.items()
@@ -133,6 +144,8 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
             printed = "".join(call.args[0] for call in out.write.call_args_list)
             self.assertIn("PlayIntroVideo 1 -> 0", printed)
             self.assertEqual(env.read_option(user / "AppOptions.txt", "PlayIntroVideo"), "0")
+            self.assertEqual(env.read_option(user / "AppOptions.txt", "AcceptedUnknownDevice"), "1")
+            self.assertEqual(env.read_option(user / "AppOptions.txt", "AcceptedOutdatedDriver"), "1")
             # The logging channels are a separate decision and were not touched.
             self.assertEqual(env.read_option(user / "AppOptions.txt", "EnableTuner"), "1")
 
