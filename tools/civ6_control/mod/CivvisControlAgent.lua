@@ -716,6 +716,15 @@ local function applyConfiguration()
 		mods = reenableSelf();
 	end
 
+	-- Optional game modes survive SetToDefaults on this build.  The in-game
+	-- rehost is the capture-free recovery route, so it must establish the same
+	-- exact mode contract as the FrontEnd setup context rather than inheriting a
+	-- previous throwaway game's Dramatic Ages (or any other) setting.
+	for _, mode in ipairs(GAME_MODES) do
+		local wanted = (cfg.GameModes or {})[mode];
+		GameConfiguration.SetValue(mode, wanted and true or false);
+	end
+
 	if cfg.RuleSet then GameConfiguration.SetRuleSet(cfg.RuleSet); end
 	if cfg.MapScript then MapConfiguration.SetScript(cfg.MapScript); updatePlayerCounts(); end
 	if cfg.MapSize then MapConfiguration.SetMapSize(cfg.MapSize); updatePlayerCounts(); end
