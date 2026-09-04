@@ -67,6 +67,7 @@ while the adjacent state and order frames are still available.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -101,6 +102,91 @@ def is_bridge_managed_great_person(unit: dict) -> bool:
 
 def newest_run() -> Path | None:
     return _common.newest_run(RUN_ROOT, "events.jsonl")
+
+
+def _binary_sha256(path: Path) -> str | None:
+    """Return a binary digest, or ``None`` when the file cannot be read."""
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def _recorded_binary(run: Path) -> Path | None:
+    """Resolve the executable that actually produced a run, when it survives.
+
+    A run can outlive the temporary checkout that played it. Prefer its durable
+    runtime provenance, but reject a path that has since been rebuilt in place so
+    an audit never silently compares a historical export with a different model.
+    """
+    updates = run / "runtime_updates.jsonl"
+    if not updates.is_file():
+        return None
+    try:
+        lines = updates.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if record.get("kind") != "runtime_update":
+            continue
+        value = record.get("binary")
+        if not isinstance(value, str) or not value:
+            continue
+        candidate = Path(value).expanduser()
+        if not candidate.is_file():
+            continue
+        expected_digest = record.get("binary_sha256")
+        if isinstance(expected_digest, str) and re.fullmatch(
+                r"[0-9a-fA-F]{64}", expected_digest):
+            if _binary_sha256(candidate) != expected_digest.lower():
+                continue
+        return candidate
+    return None
+
+
+def default_binary(run: Path | None = None, repo: Path | None = None,
+                   cache_root: Path | None = None) -> Path | None:
+    """Find a usable ``civvis_orders`` binary for an unattended audit.
+
+    The run's recorded executable is the only version that can reproduce its
+    decisions exactly. Fresh checkouts then cover normal local builds, while the
+    published runtime cache covers a clean source checkout whose build artifacts
+    were never created.
+    """
+    if run is not None:
+        recorded = _recorded_binary(run)
+        if recorded is not None:
+            return recorded
+
+    checkout = repo or HERE.parent
+    for candidate in (
+        checkout / "target" / "release" / "civvis_orders",
+        checkout / "target" / "ci" / "civvis_orders",
+        checkout / "target" / "debug" / "civvis_orders",
+    ):
+        if candidate.is_file():
+            return candidate
+
+    published_root = cache_root or (
+        Path.home() / ".cache" / "civvis" / "live-game-runtime" / "published"
+    )
+    try:
+        published = sorted(
+            (candidate for candidate in published_root.glob("*/civvis_orders")
+             if candidate.is_file()),
+            key=lambda candidate: candidate.stat().st_mtime,
+        )
+    except OSError:
+        published = []
+    return published[-1] if published else None
 
 
 def read_events(run: Path) -> list[dict]:
@@ -1208,11 +1294,13 @@ def governor_agreement(events: list[dict], dump: dict) -> dict:
     }
 
 
-def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
+def mirror_agreement(run: Path, events: list[dict], orders_bin: Path | None) -> dict:
     """Ask CIVVIS for its board in OFFSET coordinates and diff it against the export."""
     selected = latest_state_event(events)
     if selected is None:
         return {"error": "run exported no state frame"}
+    if orders_bin is None:
+        return {"error": "no civvis_orders binary found in the run, checkout, or published cache"}
     state_index, selected_state = selected
     frame_turn = int(selected_state.get("turn") or 0)
     # Match Snapshot::from_events_at: a state owns only the tile chunks that
@@ -1508,8 +1596,8 @@ def main() -> int:
     ap.add_argument("--stuck-max", type=float, default=0.35,
                     help="fraction of unit-turns motionless on a city centre before it is loud")
     ap.add_argument("--agree-min", type=float, default=0.98)
-    ap.add_argument("--orders-bin",
-                    default=str(HERE.parent / "target" / "release" / "civvis_orders"))
+    ap.add_argument("--orders-bin", default=None,
+                    help="civvis_orders binary (run provenance/cache is used by default)")
     args = ap.parse_args()
 
     if args.all:
@@ -1542,7 +1630,9 @@ def main() -> int:
             "civilian_losses": civilian_losses(events),
         }
         if not args.no_mirror:
-            report["mirror"] = mirror_agreement(run, events, Path(args.orders_bin))
+            orders_bin = (Path(args.orders_bin).expanduser()
+                          if args.orders_bin else default_binary(run))
+            report["mirror"] = mirror_agreement(run, events, orders_bin)
         found = verdicts(report, args.stuck_max, args.agree_min)
         report["verdicts"] = found
         if handle:
