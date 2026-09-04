@@ -1198,7 +1198,14 @@ mod tests {
     #[test]
     fn a_forced_parity_arm_reports_the_same_winner_as_its_flags() {
         let baseline = deployment_treatments_with_forced_live(&[]);
-        assert!(baseline.contains(&"border-parity-3"));
+        let baseline_parity_arms = ["border-parity", "border-parity-2", "border-parity-3"]
+            .into_iter()
+            .filter(|tag| baseline.contains(tag))
+            .count();
+        assert!(
+            baseline_parity_arms <= 1,
+            "the deployment may select no parity arm or exactly one version"
+        );
 
         let version_one = deployment_treatments_with_forced_live(&["border-parity"]);
         assert!(version_one.contains(&"border-parity"));

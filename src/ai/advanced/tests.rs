@@ -25404,14 +25404,16 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
 }
 
 #[test]
-fn settler_threat_detour_is_a_native_opt_in_enabled_by_the_ledger() {
+fn settler_threat_detour_is_a_native_opt_in_governed_by_the_ledger() {
     assert!(!AdvancedAi::new().settler_threat_detour);
     assert!(!AdvancedAi::legacy().settler_threat_detour);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
-    assert!(
-        deployed.settler_threat_detour,
-        "the explicit three-batch selection enables this qualifying arm"
+    let selected = crate::ai::ledger_default_on("settler-threat-detour")
+        .expect("a registered native opt-in has a deployment selection");
+    assert_eq!(
+        deployed.settler_threat_detour, selected,
+        "the deployment must follow the recorded selection"
     );
     let enable = GENES
         .iter()
