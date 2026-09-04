@@ -7,6 +7,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -92,6 +93,27 @@ class WaitForMainMenuTest(unittest.TestCase):
     waits out its deadline. Measured 2026-08-07: six minutes per attempt with no
     Logs directory, no events, and nothing naming the modal on screen.
     """
+
+    def test_final_content_marker_proves_the_menu_is_ready(self) -> None:
+        with TemporaryDirectory() as tmp:
+            log_dir = Path(tmp)
+            (log_dir / "Modding.log").write_text(
+                "Discovered 123 mods\n"
+                + launcher.MAIN_MENU_READY_MARKER + "\n")
+            with mock.patch.object(launcher.env, "logs_dir", return_value=log_dir), \
+                 mock.patch.object(launcher.env, "game_pids") as pids:
+                self.assertTrue(launcher.wait_for_main_menu(timeout_s=1.0))
+        pids.assert_not_called()
+
+    def test_early_discovery_is_not_mistaken_for_an_interactive_menu(self) -> None:
+        with TemporaryDirectory() as tmp:
+            log_dir = Path(tmp)
+            (log_dir / "Modding.log").write_text("Discovered 123 mods\n")
+            with mock.patch.object(launcher.env, "logs_dir", return_value=log_dir), \
+                 mock.patch.object(launcher.env, "game_pids", return_value=[]), \
+                 mock.patch.object(launcher, "gatekeeper_refusal") as asked:
+                self.assertFalse(launcher.wait_for_main_menu(timeout_s=1.0))
+        asked.assert_not_called()
 
     def test_a_refusal_returns_immediately_instead_of_waiting_out_the_timeout(self) -> None:
         slept = []
