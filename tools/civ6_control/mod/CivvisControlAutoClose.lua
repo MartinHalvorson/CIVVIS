@@ -556,12 +556,27 @@ local function endScreen(attempt)
 			and pcall(function() ExitConversationMode(true); end) then
 		return true;
 	end
+	-- A direct deal submission can leave the action view visible after its
+	-- session has been closed.  `CloseSession` alone is intentionally not a
+	-- view close in Firaxis' API; the next frame then reopens the uninitialized
+	-- action context above the map.  Close only after the host confirms that
+	-- this exact session is gone, and refuse to hide a replacement session that
+	-- arrived in the meantime.
 	if (attempt or 1) <= 12 and type(DiplomacyManager) == "table"
-			and ms_ActiveSessionID ~= nil
-			and pcall(function()
-				DiplomacyManager.CloseSession(ms_ActiveSessionID);
-			end) then
-		return true;
+			and ms_ActiveSessionID ~= nil then
+		local sessionID = ms_ActiveSessionID;
+		local closed = false;
+		local noReplacement = false;
+		local checked = pcall(function()
+			DiplomacyManager.CloseSession(sessionID);
+			closed = not DiplomacyManager.IsSessionIDOpen(sessionID);
+			noReplacement = ms_ActiveSessionID == nil or ms_ActiveSessionID == sessionID;
+		end);
+		if checked and closed and noReplacement and type(Close) == "function"
+				and pcall(function() Close(); end) then
+			report("autoclose_session_finalize", string.format(",\"session\":%s", tostring(sessionID)));
+			return true;
+		end
 	end
 	-- ★★★★★ A LEADER ASKING A QUESTION IS NOT A POPUP — but answering it is a LATER
 	-- rung, not the first.
