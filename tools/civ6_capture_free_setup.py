@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Start CIVVIS's fixed recorded-game profile without taking a screen capture.
+"""Bootstrap CIVVIS's fixed recorded-game profile without screen capture.
 
 This is intentionally a small, host-specific launcher rather than a second
 general Civ VI menu driver.  The ordinary verification player reads menus with
 screenshots; that is the right way to support arbitrary settings, but it is not
-appropriate while the operator is recording the desktop.  This helper uses the
-same known Create Game controls that were verified on the recorded Mac and lets
-the installed control mod's FrontEnd defaults supply the remaining settings.
+appropriate while the operator is recording the desktop.
 
-The caller must have already installed a Rome / Emperor / Online / Continents
-configuration and must run from Terminal (the process with the host's
-Accessibility grant).  No image capture, OCR, or image-derived action is used
-here.
+The fixed Create Game screen was not reliable enough on this macOS front end:
+an opening transition can leave its next recorded click on the Tutorial entry.
+Instead, this helper uses the already-verified generic ``Play Now`` route.  The
+in-game CIVVIS agent then rehosts exactly the requested Rome / Emperor / Online
+/ Continents game through ``GameConfiguration``.  Its rehost receipt is the
+authority for the final settings; the bootstrap game is deliberately never
+played.
+
+The caller must have already installed the control mod and must run from
+Terminal (the process with the host's Accessibility grant).  No image capture,
+OCR, or image-derived action is used here.
 """
 
 from __future__ import annotations
@@ -23,28 +28,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import civ6_env as env  # noqa: E402
 from civ6_control import macos_input, macos_window  # noqa: E402
 
 
 GAME_PROCESS = "Civ6_Exe_Child"
 
-# These two menu rows are deliberately absolute display points.  Civ VI's
-# FrontEnd uses a fixed 1024x768 shell and the recorded host's 1728x1117
-# desktop maps Single Player and Create Game to these controls.  Once Create
-# Game is open, the remaining controls are positioned relative to the
-# right-half game window so moving that window does not move the targets.
-SINGLE_PLAYER_POINT = (1272, 284)
-CREATE_GAME_POINT = (1327, 351)
-
-# A frontmost transition can consume the first pointer event while macOS makes
-# Civ VI's window key.  The normal visual bootstrap primes the same way before
-# aiming at a menu row.  Keep this well inside empty artwork so a transition
-# that has already completed cannot turn the priming event into a menu choice.
-MENU_ACTIVATION_FRACTION = (0.150, 0.850)
+# These are the host's already-proven generic Play Now route, measured on its
+# 1728x1117 display with Civ VI in the full usable window.  Unlike Create Game,
+# it never needs the fixed ScenarioSetup panel that has recently transitioned
+# into Tutorial before our known controls landed.
+SINGLE_PLAYER_POINT = (817, 492)
+PLAY_NOW_POINT = (912, 691)
+BEGIN_GAME_POINT = (677, 873)
 
 MENU_SETTLE_S = 15.0
 SUBMENU_SETTLE_S = 6.0
-CREATE_GAME_SETTLE_S = 8.0
+BOOTSTRAP_READY_TIMEOUT_S = 300.0
+BOOTSTRAP_READY_POLL_S = 2.0
 
 
 def click_point(x: int, y: int) -> None:
@@ -58,95 +59,77 @@ def click_point(x: int, y: int) -> None:
     macos_input.click(x, y, hold_s=0.12, check=True)
 
 
-def click_window_fraction(fx: float, fy: float) -> None:
-    """Click a fixed ScenarioSetup control within the prepared game window."""
-    bounds = macos_window.game_window(GAME_PROCESS)
-    if bounds is None:
-        raise RuntimeError("Civ VI window is unavailable")
-    x, y, width, height = bounds
-    click_point(round(x + width * fx), round(y + height * fy))
-
-
-def prepare_game_window() -> None:
-    """Put the game in the geometry used by the known Create Game controls."""
-    macos_window.place_game(GAME_PROCESS, "right", 0.5, 0.5)
+def prepare_bootstrap_window() -> None:
+    """Put Civ VI in the geometry used by the recorded Play Now controls."""
+    macos_window.place_game(GAME_PROCESS, "left", 1.0, 1.0)
     time.sleep(1.0)
     macos_window.focus_game(GAME_PROCESS)
 
 
-def start_direct_game(*, restore_defaults: bool = True,
-                      emperor_online: bool = True,
-                      start_only: bool = False) -> None:
-    """Press Create Game's deterministic Start Game control.
+def start_bootstrap_game() -> None:
+    """Start only the generic game that will hand off to the in-game rehost.
 
-    ``restore_defaults`` ensures that a preceding session cannot leak a game
-    mode or lobby setting into this game.  The installed FrontEnd database
-    supplies Rome, Continents, Small, and the turn cap; Emperor and Online are
-    also selected explicitly because their ScenarioSetup rows are stable on
-    this host.
+    The controlled game must not use its generic settings.  Its sole purpose
+    is to load the enabled-by-default CIVVIS in-game context, whose first
+    startup pass applies the requested profile and issues ``Network.HostGame``.
     """
-    prepare_game_window()
+    prepare_bootstrap_window()
+    # The mod-scan log proves only that the core is initialized.  Retain the
+    # normal menu/logo allowance before touching its two known menu rows.
+    time.sleep(MENU_SETTLE_S)
+    click_point(*SINGLE_PLAYER_POINT)
+    time.sleep(SUBMENU_SETTLE_S)
+    click_point(*PLAY_NOW_POINT)
 
-    if not start_only:
-        # The event log tells us the core is ready, but not that the FrontEnd
-        # has completed its logo/tutorial transition.  Keep the normal
-        # controller's transition allowance.  Focus alone is not enough: the
-        # first pointer event after a frontmost transition can be consumed
-        # while macOS makes the Civ VI window key.  Prime it on empty artwork,
-        # as the normal visual bootstrap does, before clicking a menu row.
-        time.sleep(MENU_SETTLE_S)
-        click_window_fraction(*MENU_ACTIVATION_FRACTION)
-        time.sleep(1.5)
-        click_point(*SINGLE_PLAYER_POINT)
-        time.sleep(SUBMENU_SETTLE_S)
-        click_point(*CREATE_GAME_POINT)
-        time.sleep(CREATE_GAME_SETTLE_S)
+def wait_for_agent_loaded(*, timeout_s: float = BOOTSTRAP_READY_TIMEOUT_S,
+                          poll_s: float = BOOTSTRAP_READY_POLL_S,
+                          automation_log: Path | None = None) -> bool:
+    """Wait for the bootstrap game's in-game CIVVIS context by textual log.
 
-    if restore_defaults:
-        click_window_fraction(0.150, 0.040)
-        time.sleep(3.0)
+    The ``loaded`` lifecycle record is written before the leader-introduction
+    Begin Game gate.  It is therefore a deterministic, capture-free proof that
+    the following recorded Begin Game press has a live game target.
+    """
+    log = automation_log or env.logs_dir() / "Automation.log"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            if "CIVVISJSON " in log.read_text(errors="replace"):
+                return True
+        except OSError:
+            pass
+        if not env.game_pids():
+            return False
+        time.sleep(poll_s)
+    return False
 
-    if emperor_online:
-        # ScenarioSetup.xml fixes these rows for the verified right-half,
-        # half-height window: difficulty's sixth choice is Emperor, and
-        # Online is the first speed choice.  This does not infer controls from
-        # screen pixels; it is the fixed recorded profile.
-        click_window_fraction(0.500, 0.316)
-        time.sleep(0.8)
-        click_window_fraction(0.500, 0.511)
-        time.sleep(0.8)
-        click_window_fraction(0.500, 0.406)
-        time.sleep(0.8)
-        click_window_fraction(0.500, 0.447)
-        time.sleep(1.0)
 
-    click_window_fraction(0.500, 0.978)
-    # Return commits Start Game when the pointer press landed during the final
-    # animation, or clears the first Begin Game gate once hosting has begun.
-    time.sleep(0.75)
-    macos_input.press_key("return", check=True)
+def begin_bootstrap_game() -> None:
+    """Dismiss the generic game's recorded leader-introduction gate."""
+    # Give the context that wrote ``loaded`` time to finish drawing its gate;
+    # this is the same delay used by the previously verified Play Now harness.
+    time.sleep(4.0)
+    click_point(*BEGIN_GAME_POINT)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--tag", required=True,
                         help="run identity retained in the caller's log")
-    parser.add_argument("--start-only", action="store_true")
-    parser.add_argument("--no-restore-defaults", dest="restore_defaults",
-                        action="store_false")
-    parser.add_argument("--no-emperor-online", dest="emperor_online",
-                        action="store_false")
-    parser.set_defaults(restore_defaults=True, emperor_online=True)
+    parser.add_argument("--ready-timeout", type=float,
+                        default=BOOTSTRAP_READY_TIMEOUT_S)
     args = parser.parse_args(argv)
     try:
-        start_direct_game(restore_defaults=args.restore_defaults,
-                          emperor_online=args.emperor_online,
-                          start_only=args.start_only)
+        start_bootstrap_game()
+        if not wait_for_agent_loaded(timeout_s=args.ready_timeout):
+            raise RuntimeError("bootstrap game did not load the CIVVIS agent")
+        begin_bootstrap_game()
     except (OSError, RuntimeError, ValueError) as error:
         print(f"capture-free setup failed for {args.tag}: {error}",
               file=sys.stderr)
         return 2
-    print(f"[capture-free-setup] pressed Create Game for {args.tag}", flush=True)
+    print(f"[capture-free-setup] started Play Now bootstrap for {args.tag}",
+          flush=True)
     return 0
 
 

@@ -109,7 +109,11 @@ def build_config(args: argparse.Namespace, tag: str, orders_db: Path) -> dict:
         "RunTag": tag,
         "AutoStart": True,
         "Play": True,
-        "Rehost": False,
+        # The generic Play Now bootstrap has no requested-game marker.  Its
+        # in-game agent is therefore responsible for applying this exact
+        # profile and hosting the real Rome / Emperor game before any turn is
+        # played.
+        "Rehost": True,
         "SetToDefaults": True,
         "RuleSet": args.ruleset,
         "MapScript": args.map,
@@ -157,12 +161,15 @@ def prepare_run(args: argparse.Namespace, tag: str, root: Path = RUN_ROOT) -> tu
 
 
 def start_game(args: argparse.Namespace, tag: str, run_dir: Path) -> bool:
-    """Launch Civ VI and press only the recorded profile's known controls."""
+    """Launch Civ VI through a generic bootstrap and exact in-game rehost."""
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "civ6-launch.log")
     if not launcher.wait_for_main_menu(args.launch_timeout):
         return False
-    setup.start_direct_game(restore_defaults=True, emperor_online=True)
+    setup.start_bootstrap_game()
+    if not setup.wait_for_agent_loaded():
+        return False
+    setup.begin_bootstrap_game()
     return True
 
 
