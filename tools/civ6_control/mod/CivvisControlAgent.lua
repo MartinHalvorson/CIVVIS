@@ -14905,6 +14905,14 @@ CivvisQueue.push = function(subject, row, expect)
 	elseif #entry.rows == 0 then
 		-- A watch on the opening walk becomes a real queue entry.
 		q.watching = q.watching - 1;
+		-- The opening MOVE_TO is not itself a queue row, so the normal
+		-- post-row barrier below cannot see a direct MOVE_TO -> FORTIFY
+		-- handoff. Preserve that one settlement pass when the first
+		-- follow-up is attached to the rows-less watch.
+		if tostring(entry.opening_verb or "") == "MOVE_TO"
+				and tostring(row.verb or "") == "FORTIFY" then
+			entry.settle_passes = 1;
+		end
 	end
 	entry.rows[#entry.rows + 1] = row;
 	q.count = q.count + 1;
@@ -14923,12 +14931,12 @@ CivvisQueue.pendingCount = function() return CivvisQueue.count + CivvisQueue.wat
 -- A watch is a rows-less entry: it settles like any queued order
 -- (arrival, no movement left, the host's own event, or the grace period)
 -- and is dropped; it never issues anything and names no refusal.
-CivvisQueue.watch = function(subject, expect, origin)
+CivvisQueue.watch = function(subject, expect, origin, openingVerb)
 	local q = CivvisQueue;
 	if q.pending[subject] ~= nil then return; end
 	q.pending[subject] = {
 		rows = {}, next = 1, expect = expect, origin = origin, ready = false, wait = 0,
-		settle_passes = 0,
+		settle_passes = 0, opening_verb = tostring(openingVerb or ""),
 	};
 	q.order[#q.order + 1] = subject;
 	q.watching = q.watching + 1;
@@ -17067,7 +17075,7 @@ local function applyOrders(player, pid, turn, rows)
 							x = tonumber(try(function() return watched:GetX(); end, -1)),
 							y = tonumber(try(function() return watched:GetY(); end, -1)),
 						} or nil;
-						CivvisQueue.watch(subject, firstRun[subject].expect, origin);
+						CivvisQueue.watch(subject, firstRun[subject].expect, origin, row.verb);
 					end
 					if queueOn and ok and foundRetry[subject] ~= nil
 							and tostring(row.verb or "") == "MOVE_TO" then
