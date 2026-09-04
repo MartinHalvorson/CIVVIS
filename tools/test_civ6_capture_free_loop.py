@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -27,6 +28,7 @@ def args(**changes):
         "max_turns": loop.STOCK_ONLINE_MAX_TURNS,
         "timeout": 10_800.0,
         "timeout_ceiling": 14_400.0,
+        "launch_timeout": 420.0,
         "victory": "science",
         "refresh_seconds": 0.0,
         "with_": ["rapid-city-expansion-2"],
@@ -48,6 +50,7 @@ class FixedProfileTests(unittest.TestCase):
         self.assertEqual(config["MaxTurns"], loop.STOCK_ONLINE_MAX_TURNS)
         self.assertTrue(config["CivvisDecides"])
         self.assertTrue(config["ExportState"])
+        self.assertTrue(config["Rehost"])
         self.assertFalse(any(config["GameModes"].values()))
 
     def test_profile_refuses_a_setting_the_known_controls_cannot_verify(self):
@@ -66,6 +69,22 @@ class FixedProfileTests(unittest.TestCase):
         self.assertEqual(command[command.index("--max-turns") + 1], "250")
         self.assertIn("rapid-city-expansion-2", command)
         self.assertNotIn("--load-save", command)
+
+    def test_start_game_uses_play_now_then_waits_for_the_rehost_agent(self):
+        with mock.patch.object(loop.launcher, "clear_run_logs"), \
+             mock.patch.object(loop.launcher, "launch") as launch, \
+             mock.patch.object(loop.launcher, "wait_for_main_menu",
+                               return_value=True), \
+             mock.patch.object(loop.setup, "start_bootstrap_game") as start, \
+             mock.patch.object(loop.setup, "wait_for_agent_loaded",
+                               return_value=True) as ready, \
+             mock.patch.object(loop.setup, "begin_bootstrap_game") as begin:
+            self.assertTrue(loop.start_game(args(), "civvis-test", Path("/tmp/run")))
+
+        launch.assert_called_once_with(stdout=Path("/tmp/run") / "civ6-launch.log")
+        start.assert_called_once_with()
+        ready.assert_called_once_with()
+        begin.assert_called_once_with()
 
     def test_default_turn_freeze_window_is_patient(self):
         parsed = loop.parser().parse_args([])

@@ -21,49 +21,30 @@ class CaptureFreeSetupTests(unittest.TestCase):
         self.assertNotIn("vision.", source)
         self.assertNotIn("screenshot(", source)
 
-    def test_direct_profile_clicks_the_known_create_game_controls(self):
+    def test_bootstrap_clicks_the_known_play_now_controls(self):
         clicks: list[tuple[int, int]] = []
         with mock.patch.object(setup.time, "sleep"), \
              mock.patch.object(setup.macos_window, "place_game"), \
              mock.patch.object(setup.macos_window, "focus_game"), \
-             mock.patch.object(setup.macos_window, "game_window",
-                               return_value=(100, 200, 864, 542)), \
              mock.patch.object(setup.macos_input, "move"), \
              mock.patch.object(setup.macos_input, "click",
-                               side_effect=lambda x, y, **_: clicks.append((x, y))), \
-             mock.patch.object(setup.macos_input, "press_key") as press:
-            setup.start_direct_game()
+                               side_effect=lambda x, y, **_: clicks.append((x, y))):
+            setup.start_bootstrap_game()
+            setup.begin_bootstrap_game()
 
         self.assertIn(setup.SINGLE_PLAYER_POINT, clicks)
-        self.assertIn(setup.CREATE_GAME_POINT, clicks)
-        # The first pointer event can be consumed while macOS keys the window;
-        # it must be spent on empty artwork before a menu row is targeted.
-        activation = (round(100 + 864 * setup.MENU_ACTIVATION_FRACTION[0]),
-                      round(200 + 542 * setup.MENU_ACTIVATION_FRACTION[1]))
-        self.assertEqual(clicks[:3], [activation, setup.SINGLE_PLAYER_POINT,
-                                      setup.CREATE_GAME_POINT])
-        # Restore Defaults, Emperor, Online, and Start Game are all relative
-        # to the prepared fixed-size game window.
-        self.assertIn((230, 222), clicks)
-        self.assertIn((532, 371), clicks)
-        self.assertIn((532, 477), clicks)
-        self.assertIn((532, 442), clicks)
-        self.assertIn((532, 730), clicks)
-        press.assert_called_once_with("return", check=True)
+        self.assertIn(setup.PLAY_NOW_POINT, clicks)
+        self.assertIn(setup.BEGIN_GAME_POINT, clicks)
+        # Focusing the window is sufficient.  The first click must be the
+        # verified Single Player control, never an inert artwork click that
+        # can become Tutorial during a FrontEnd layout transition.
+        self.assertEqual(clicks[0], setup.SINGLE_PLAYER_POINT)
 
-    def test_start_only_does_not_reopen_the_main_menu(self):
-        with mock.patch.object(setup.time, "sleep"), \
-             mock.patch.object(setup.macos_window, "place_game"), \
-             mock.patch.object(setup.macos_window, "focus_game"), \
-             mock.patch.object(setup.macos_window, "game_window",
-                               return_value=(0, 0, 864, 542)), \
-             mock.patch.object(setup.macos_input, "move"), \
-             mock.patch.object(setup.macos_input, "click") as click, \
-             mock.patch.object(setup.macos_input, "press_key"):
-            setup.start_direct_game(start_only=True,
-                                    restore_defaults=False,
-                                    emperor_online=False)
-        click.assert_called_once()
+    def test_bootstrap_wait_uses_the_agent_log_not_the_desktop(self):
+        with mock.patch.object(setup.time, "monotonic", side_effect=[0.0, 0.0]), \
+             mock.patch.object(setup.env, "game_pids", return_value=[123]), \
+             mock.patch.object(Path, "read_text", return_value='CIVVISJSON {"kind":"loaded"}'):
+            self.assertTrue(setup.wait_for_agent_loaded(timeout_s=1.0))
 
 
 if __name__ == "__main__":
