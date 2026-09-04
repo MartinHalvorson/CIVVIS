@@ -8959,6 +8959,43 @@ impl BasicAi {
         settlers.saturating_sub(self.stranded_settlers(g, pid))
     }
 
+    /// The scripted capital opening is an ordering aid, not a safety exemption.
+    ///
+    /// `cities` normally leaves a non-empty queue alone, then plays the four
+    /// opening-book items directly. That bypassed `pick_item`'s local
+    /// barbarian answer: a capital could keep a Settler or Builder queued
+    /// while a visible raider already made every civilian step unsafe. The
+    /// Firaxis bridge is especially exposed because its hostile Scout is a
+    /// real civilian captor but does not carry the native camp-scout marker.
+    ///
+    /// Interrupt only for the first missing body. Once a local defender is
+    /// standing, Walls and ordinary development return to their usual queue
+    /// rules; an already-queued non-recon soldier is also already the right
+    /// answer and is left alone.
+    fn opening_barbarian_defense_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
+        if self.minor
+            || self.barb
+            || !city.is_capital
+            || (self.book_pos >= 4 && !self.book_settler_pending)
+        {
+            return None;
+        }
+        let already_answering = city.queue.first().is_some_and(|current| match current {
+            Item::Unit { unit } | Item::Formation { unit, .. } => g
+                .rules
+                .units
+                .get(unit)
+                .is_some_and(|spec| spec.class == "military" && spec.promotion_class != "recon"),
+            _ => false,
+        });
+        if already_answering {
+            return None;
+        }
+        self.barbarian_defense_item(g, pid, cid)
+            .filter(|item| matches!(item, Item::Unit { .. }))
+    }
+
     fn cities(&mut self, g: &mut Game, pid: usize) {
         self.refresh_settler_idle(g, pid);
         let mut settlers: usize = 0;
@@ -9143,6 +9180,47 @@ impl BasicAi {
             }
         }
         for cid in &city_ids {
+            // The first opening defender is allowed to preempt a Settler or
+            // Builder already in the capital's queue. This runs before the
+            // pending-book Settler as well: a held opening cannot jump ahead
+            // of the same local threat it was waiting to survive.
+            if let Some(item) = self.opening_barbarian_defense_item(g, pid, *cid) {
+                let displaced = g.cities[cid].queue.first().cloned();
+                if g.apply(
+                    pid,
+                    &Action::Produce {
+                        city: *cid,
+                        item: item.clone(),
+                    },
+                )
+                .is_ok()
+                {
+                    if self.journal.wants(crate::reasoning::Level::Decision) {
+                        let city = &g.cities[cid];
+                        think!(self.journal, Military, Decision,
+                               "{} delays its opening for nearby barbarian pressure", city.name;
+                               "{} takes the queue before {}; a civilian-safe route is already blocked",
+                               Self::item_label(&item),
+                               displaced
+                                   .as_ref()
+                                   .map(Self::item_label)
+                                   .unwrap_or_else(|| "the next opening item".to_string()));
+                    }
+                    if let Item::Unit { unit } = &item {
+                        let spec = &g.rules.units[unit];
+                        if spec.class == "military" {
+                            military += 1;
+                            if spec.is_melee_capable() {
+                                melee += 1;
+                            }
+                            if spec.has_ranged_attack() {
+                                ranged += 1;
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
             // The held opening-book Settler takes the capital's queue the turn
             // the city reaches the host's floor. See `opening_settler_waits`.
             if self.book_settler_pending
@@ -22266,6 +22344,93 @@ mod tests {
             choice,
             Some(trader),
             "a nearby raider must displace the Trader"
+        );
+    }
+
+    /// The live bridge imports a visible Firaxis Scout without the native
+    /// camp-scout record, because the host does not expose that relationship.
+    /// It therefore reaches the normal local-raider alarm. The regression was
+    /// not threat recognition: the opening book simply skipped the alarm and
+    /// left a nearly-finished Settler in place while civilians waited out the
+    /// Scout. A first defender must take that queue.
+    #[test]
+    fn opening_queue_yields_to_an_unmarked_live_barbarian_scout() {
+        let (mut native, native_city, native_scout) = barbarian_at_the_gates_game(91_502);
+        for uid in native.player_unit_ids(0) {
+            native.remove_unit(uid);
+        }
+        native.units.get_mut(&native_scout).unwrap().kind = crate::name!("scout");
+        let native_home = native.cities[&native_city].pos;
+        native.barb_scout_homes.insert(native_scout, native_home);
+        native.cities.get_mut(&native_city).unwrap().pop = 2;
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        native
+            .apply(
+                0,
+                &Action::Produce {
+                    city: native_city,
+                    item: settler.clone(),
+                },
+            )
+            .unwrap();
+        let mut native_ai = BasicAi::new();
+        assert!(
+            !native_ai.barbarian_local_alarm_for_controller(&native, 0, native_city),
+            "the native engine-managed Scout remains outside the defense ring"
+        );
+        native_ai.cities(&mut native, 0);
+        assert_eq!(
+            native.cities[&native_city].queue.first(),
+            Some(&settler),
+            "the native Scout does not interrupt the opening"
+        );
+
+        let (mut g, city, scout) = barbarian_at_the_gates_game(91_503);
+        for uid in g.player_unit_ids(0) {
+            g.remove_unit(uid);
+        }
+        g.units.get_mut(&scout).unwrap().kind = crate::name!("scout");
+        assert!(
+            !g.barb_scout_homes.contains_key(&scout),
+            "the host-imported Scout has no native camp assignment"
+        );
+        g.cities.get_mut(&city).unwrap().pop = 2;
+        assert!(g.can_produce(0, city, &settler));
+        g.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: settler.clone(),
+            },
+        )
+        .unwrap();
+        g.cities.get_mut(&city).unwrap().production = 9.0;
+
+        let mut ai = BasicAi::new();
+        assert!(ai.book_pos < 4, "the scripted opening is still active");
+        assert!(ai.barbarian_local_alarm_for_controller(&g, 0, city));
+        assert_eq!(ai.barbarian_defense_gap(&g, 0, city), 1);
+
+        ai.cities(&mut g, 0);
+
+        let head = g.cities[&city].queue.first().expect("a defense queue");
+        assert!(
+            matches!(
+                head,
+                Item::Unit { unit }
+                    if g.rules.units[unit].class == "military"
+                        && g.rules.units[unit].promotion_class != "recon"
+            ),
+            "the opening Settler yields to a local defender, got {head:?}"
+        );
+        assert!(
+            g.cities[&city]
+                .production_progress
+                .values()
+                .any(|progress| (*progress - 9.0).abs() < f64::EPSILON),
+            "the delayed Settler keeps its accumulated production"
         );
     }
 
