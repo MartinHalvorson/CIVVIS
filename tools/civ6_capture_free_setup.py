@@ -42,7 +42,14 @@ SINGLE_PLAYER_POINT = (817, 492)
 PLAY_NOW_POINT = (912, 691)
 BEGIN_GAME_POINT = (677, 873)
 
+# A frontmost transition can consume the first pointer event while macOS makes
+# Civ VI's window key.  The normal visual bootstrap primes the same way before
+# aiming at a menu row.  Keep this well inside empty artwork so a transition
+# that has already completed cannot turn the priming event into a menu choice.
+MENU_ACTIVATION_FRACTION = (0.150, 0.850)
+
 MENU_SETTLE_S = 15.0
+MENU_ACTIVATION_SETTLE_S = 1.5
 SUBMENU_SETTLE_S = 6.0
 BOOTSTRAP_READY_TIMEOUT_S = 300.0
 BOOTSTRAP_READY_POLL_S = 2.0
@@ -57,6 +64,15 @@ def click_point(x: int, y: int) -> None:
     # proven cadence without inspecting any pixels.
     time.sleep(0.5)
     macos_input.click(x, y, hold_s=0.12, check=True)
+
+
+def click_window_fraction(fx: float, fy: float) -> None:
+    """Click a fixed main-menu point within the prepared game window."""
+    bounds = macos_window.game_window(GAME_PROCESS)
+    if bounds is None:
+        raise RuntimeError("Civ VI window is unavailable")
+    x, y, width, height = bounds
+    click_point(round(x + width * fx), round(y + height * fy))
 
 
 def prepare_bootstrap_window() -> None:
@@ -75,11 +91,16 @@ def start_bootstrap_game() -> None:
     """
     prepare_bootstrap_window()
     # The mod-scan log proves only that the core is initialized.  Retain the
-    # normal menu/logo allowance before touching its two known menu rows.
+    # normal menu/logo allowance before touching its two known menu rows.  The
+    # first pointer event can still be consumed while macOS keys the window,
+    # so spend it on empty artwork just as the normal visual bootstrap does.
     time.sleep(MENU_SETTLE_S)
+    click_window_fraction(*MENU_ACTIVATION_FRACTION)
+    time.sleep(MENU_ACTIVATION_SETTLE_S)
     click_point(*SINGLE_PLAYER_POINT)
     time.sleep(SUBMENU_SETTLE_S)
     click_point(*PLAY_NOW_POINT)
+
 
 def wait_for_agent_loaded(*, timeout_s: float = BOOTSTRAP_READY_TIMEOUT_S,
                           poll_s: float = BOOTSTRAP_READY_POLL_S,

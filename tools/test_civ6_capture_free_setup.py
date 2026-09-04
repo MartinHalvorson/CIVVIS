@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The recorded Create Game helper must remain explicitly capture-free."""
+"""The recorded Play Now helper must remain explicitly capture-free."""
 
 from __future__ import annotations
 
@@ -26,6 +26,8 @@ class CaptureFreeSetupTests(unittest.TestCase):
         with mock.patch.object(setup.time, "sleep"), \
              mock.patch.object(setup.macos_window, "place_game"), \
              mock.patch.object(setup.macos_window, "focus_game"), \
+             mock.patch.object(setup.macos_window, "game_window",
+                               return_value=(0, 33, 1728, 1084)), \
              mock.patch.object(setup.macos_input, "move"), \
              mock.patch.object(setup.macos_input, "click",
                                side_effect=lambda x, y, **_: clicks.append((x, y))):
@@ -35,10 +37,13 @@ class CaptureFreeSetupTests(unittest.TestCase):
         self.assertIn(setup.SINGLE_PLAYER_POINT, clicks)
         self.assertIn(setup.PLAY_NOW_POINT, clicks)
         self.assertIn(setup.BEGIN_GAME_POINT, clicks)
-        # Focusing the window is sufficient.  The first click must be the
-        # verified Single Player control, never an inert artwork click that
-        # can become Tutorial during a FrontEnd layout transition.
-        self.assertEqual(clicks[0], setup.SINGLE_PLAYER_POINT)
+        # The first pointer event can be consumed while macOS keys the window;
+        # it must be spent on empty artwork before a menu row is targeted.
+        activation = (round(1728 * setup.MENU_ACTIVATION_FRACTION[0]),
+                      round(33 + 1084 * setup.MENU_ACTIVATION_FRACTION[1]))
+        self.assertEqual(clicks[:4], [activation, setup.SINGLE_PLAYER_POINT,
+                                      setup.PLAY_NOW_POINT,
+                                      setup.BEGIN_GAME_POINT])
 
     def test_bootstrap_wait_uses_the_agent_log_not_the_desktop(self):
         with mock.patch.object(setup.time, "monotonic", side_effect=[0.0, 0.0]), \
