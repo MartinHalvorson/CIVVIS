@@ -1746,21 +1746,75 @@ impl AttackReachFromFlood {
     }
 }
 
-/// Reach answers for one complete envelope-board fingerprint.
+/// One exact-board raw-reach table retained by [`AttackReachCache`].
+///
+/// The cache is shared by speculative [`Game`] clones. Tactical planning often
+/// returns to a parent board after examining one child, so retaining a few
+/// complete fingerprints lets that revisit reuse the same floods. The key is
+/// still the complete envelope-board fingerprint: this is a lifetime change,
+/// not a weaker invalidation rule.
+struct AttackReachSnapshot {
+    key: (u32, u64),
+    reaches: HashMap<u32, Arc<AttackReachFromFlood>>,
+}
+
+/// The raw cache only needs the active board plus the small nesting of
+/// speculative boards around it. Four snapshots retain parent/child revisits
+/// without allowing a long tactical search to turn cached flood maps into an
+/// unbounded allocation.
+const ATTACK_REACH_SNAPSHOT_CAPACITY: usize = 4;
+
+/// Reach answers for a few recently visited complete envelope-board
+/// fingerprints.
 ///
 /// `BasicAi` already computes this fingerprint before it asks for an envelope.
-/// Storing only one board at a time is deliberate: a speculative branch that
-/// changes a unit must never be served its parent's reach, and retaining a
-/// table for every short-lived tactical branch would trade flood work for an
-/// unbounded cache. A matching board, however, is common when separate
-/// controllers inspect the same position, and a game clone shares this cache
-/// through its [`Arc`].
+/// A snapshot may only be read under its exact key, so a speculative branch
+/// never receives its parent's reach. The table is intentionally tiny and LRU:
+/// sibling branches often return to one of the last few boards, while retaining
+/// every short-lived branch would trade flood work for an unbounded cache.
+/// Matching boards are also common when separate controllers inspect the same
+/// position, and a game clone shares this cache through its [`Arc`].
 #[derive(Default)]
 struct AttackReachCache {
-    key: Option<(u32, u64)>,
-    reaches: HashMap<u32, Arc<AttackReachFromFlood>>,
+    /// Least-recently-used first and most-recently-used last. Keeping this as
+    /// a tiny vector avoids hashing the already-computed fingerprint again;
+    /// the hot path only compares the last snapshot.
+    snapshots: Vec<AttackReachSnapshot>,
     #[cfg(test)]
     computations: u64,
+}
+
+impl AttackReachCache {
+    /// The exact snapshot for `key`, promoted to most-recently-used. The
+    /// capacity check is part of the semantic contract: caches are optional
+    /// acceleration, never retained simulation state.
+    fn snapshot(&mut self, key: (u32, u64)) -> &mut AttackReachSnapshot {
+        if self
+            .snapshots
+            .last()
+            .is_none_or(|snapshot| snapshot.key != key)
+        {
+            if let Some(index) = self
+                .snapshots
+                .iter()
+                .position(|snapshot| snapshot.key == key)
+            {
+                let snapshot = self.snapshots.remove(index);
+                self.snapshots.push(snapshot);
+            } else {
+                if self.snapshots.len() == ATTACK_REACH_SNAPSHOT_CAPACITY {
+                    self.snapshots.remove(0);
+                }
+                self.snapshots.push(AttackReachSnapshot {
+                    key,
+                    reaches: HashMap::new(),
+                });
+            }
+        }
+        self.snapshots
+            .last_mut()
+            .expect("the requested snapshot was just inserted or promoted")
+    }
 }
 
 /// Everything about a mover that decides which tiles it could ever stand
@@ -26770,11 +26824,7 @@ impl Game {
             .attack_reach_cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if cache.key != Some(key) {
-            cache.key = Some(key);
-            cache.reaches.clear();
-        }
-        if let Some(reach) = cache.reaches.get(&uid) {
+        if let Some(reach) = cache.snapshot(key).reaches.get(&uid) {
             return Arc::clone(reach);
         }
         let (targets, flood) = self.attack_reach_from_flood(uid);
@@ -26786,7 +26836,7 @@ impl Game {
         {
             cache.computations += 1;
         }
-        cache.reaches.insert(uid, Arc::clone(&reach));
+        cache.snapshot(key).reaches.insert(uid, Arc::clone(&reach));
         reach
     }
 
@@ -35460,3 +35510,6 @@ mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;
+
+#[cfg(test)]
+mod attack_reach_cache_tests;
