@@ -53,6 +53,22 @@ class CaptureFreeSetupTests(unittest.TestCase):
             window_point(setup.BEGIN_GAME_WINDOW_FRACTION),
         ])
 
+    def test_bootstrap_waits_for_the_post_content_menu_settle(self):
+        with mock.patch.object(setup.time, "sleep") as sleep, \
+             mock.patch.object(setup.macos_window, "place_game"), \
+             mock.patch.object(setup.macos_window, "focus_game"), \
+             mock.patch.object(setup.macos_window, "desktop_size",
+                               return_value=(1728, 1117)), \
+             mock.patch.object(setup.macos_window, "game_window",
+                               return_value=(0, 33, 1681, 1084)), \
+             mock.patch.object(setup.macos_input, "move"), \
+             mock.patch.object(setup.macos_input, "click"):
+            setup.start_bootstrap_game()
+
+        self.assertIn(setup.MENU_SETTLE_S,
+                      [call.args[0] for call in sleep.call_args_list])
+        self.assertGreaterEqual(setup.MENU_SETTLE_S, 240.0)
+
     def test_desktop_fraction_refuses_an_unknown_desktop(self):
         with mock.patch.object(setup.macos_window, "desktop_size",
                                return_value=None):
