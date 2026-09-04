@@ -143,6 +143,7 @@ class AttachSummaryTests(unittest.TestCase):
                 civvis_victory="science",
                 civvis_without=[],
                 civvis_with=[],
+                move_fallback=True,
             )
             config = {
                 "Difficulty": "DIFFICULTY_EMPEROR",
@@ -191,6 +192,7 @@ class AttachSummaryTests(unittest.TestCase):
                 civvis_victory="science",
                 civvis_without=[],
                 civvis_with=[],
+                move_fallback=True,
             )
             config = {
                 "Difficulty": "DIFFICULTY_EMPEROR",

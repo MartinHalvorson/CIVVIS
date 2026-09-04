@@ -3544,15 +3544,23 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         "screen_arm": (getattr(args, "screen_arm", None)
                         if getattr(args, "civvis_decides", False) else None),
         "mod_arms": {
-            name: getattr(args, name, None)
-            for name in (
-                "peace_deterrence", "peacetime_war_floors",
-                "counter_resolutions", "envoy_place", "envoy_levy",
-                "envoy_consider", "probe_citizens", "campus_specialist",
-                "order_queue", "cap_moves_to_reach", "settler_escort_cap_sync",
-                "cancel_queued_paths", "combat_frames", "strike_preview",
-                "move_fallback", "replan_frames", "tile_delta",
-            )
+            "PeaceDeterrence": getattr(args, "peace_deterrence", None),
+            "PeacetimeWarFloors": getattr(args, "peacetime_war_floors", None),
+            "CounterResolutions": getattr(args, "counter_resolutions", None),
+            "EnvoyPlace": getattr(args, "envoy_place", None),
+            "EnvoyLevy": getattr(args, "envoy_levy", None),
+            "EnvoyConsider": getattr(args, "envoy_consider", None),
+            "ProbeCitizens": getattr(args, "probe_citizens", None),
+            "CampusSpecialist": getattr(args, "campus_specialist", None),
+            "OrderQueue": getattr(args, "order_queue", None),
+            "CapMovesToReach": getattr(args, "cap_moves_to_reach", None),
+            "SettlerEscortCapSync": getattr(args, "settler_escort_cap_sync", None),
+            "CancelQueuedPaths": getattr(args, "cancel_queued_paths", None),
+            "CombatFrames": getattr(args, "combat_frames", None),
+            "StrikePreview": getattr(args, "strike_preview", None),
+            "MoveFallback": args.move_fallback,
+            "ReplanFrames": getattr(args, "replan_frames", None),
+            "TileDelta": getattr(args, "tile_delta", None),
         },
         "city_two_turn": (sorted(state.get("founds") or [])[1]
                           if len(state.get("founds") or []) >= 2 else None),
