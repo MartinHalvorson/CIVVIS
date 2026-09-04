@@ -6924,6 +6924,55 @@ fn overseas_settlement_claims_a_discovered_foreign_landfall_when_home_is_full() 
 }
 
 #[test]
+fn water_world_replaces_a_remote_cached_settler_target_with_a_nearby_landfall() {
+    let (mut g, source, remote) = island_colony_game();
+    g.map_script = crate::setup::MapScript::WaterWorld;
+    for tile in g.map.tiles.values_mut() {
+        if tile.terrain == "coast" {
+            tile.terrain = crate::name!("ocean");
+        }
+    }
+    let nearby = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| *pos != remote && g.wdist(source, *pos) == 5)
+        .min()
+        .expect("fixture has a foreign island five tiles from the capital");
+    for position in g.wdisk(nearby, 1) {
+        g.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("grassland");
+    }
+    g.map.tiles.get_mut(&nearby).unwrap().terrain = crate::name!("plains");
+    g.players[0].techs.extend([
+        crate::name!("sailing"),
+        crate::name!("shipbuilding"),
+        crate::name!("cartography"),
+    ]);
+    let explored: Vec<Pos> = g.map.tiles.keys().copied().collect();
+    g.players[0].explored.extend(explored);
+    let settler = g.spawn_test_unit("settler", 0, source);
+    let mut ai = AdvancedAi::new();
+    ai.settler_targets.insert(settler, remote);
+
+    assert!(
+        g.wdist(source, remote) > WATER_WORLD_SETTLER_TARGET_PRESERVE_DISTANCE,
+        "fixture's cached site must be distant enough to be reconsidered"
+    );
+    assert!(ai.advanced_settler_step(&mut g, 0, settler));
+    let chosen = ai.settler_targets[&settler];
+    assert!(
+        g.wdist(chosen, nearby) <= 1,
+        "Water World chooses the closest known foreign landfall, not the old remote score: \
+         chose {chosen:?}, nearby {nearby:?}, remote {remote:?}"
+    );
+    assert!(
+        g.wdist(source, chosen) < g.wdist(source, remote),
+        "the replacement must meaningfully shorten the founding trip"
+    );
+}
+
+#[test]
 fn island_expansion_genes_are_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
     assert!(!ai.base.island_exploration);
@@ -10719,6 +10768,51 @@ fn coastal_science_takes_one_era_gated_harbor_tech_package() {
     assert!(
         ai.tech_leads_to(&game, selected, "celestial_navigation"),
         "the bounded support package must research Harbor prerequisites"
+    );
+}
+
+#[test]
+fn water_world_forces_cartography_ahead_of_the_science_beeline() {
+    let (mut game, _, _) = island_colony_game();
+    game.map_script = crate::setup::MapScript::WaterWorld;
+    game.map
+        .tiles
+        .values_mut()
+        .find(|tile| tile.terrain == "coast")
+        .expect("island fixture has open water")
+        .terrain = crate::name!("ocean");
+    game.turn = 30;
+    game.players[0].techs.extend(
+        game.rules.tech_ancestors["cartography"]
+            .iter()
+            .map(|tech| Name::new(tech)),
+    );
+    assert!(
+        game.available_techs(0)
+            .iter()
+            .any(|tech| tech == "cartography"),
+        "fixture must make Cartography immediately selectable"
+    );
+    assert_eq!(
+        BasicAi::water_world_navigation_goal(&game, 0),
+        Some("cartography")
+    );
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    AdvancedAi::new().advanced_research(&mut game, 0, &plan);
+
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("cartography"),
+        "ocean access must not lose the slot to the unrelated science path"
     );
 }
 

@@ -30,9 +30,10 @@ impl AdvancedAi {
         avoid: Option<Pos>,
         home_landmass: &BTreeSet<Pos>,
     ) -> Option<Pos> {
-        if !self.overseas_settlement
+        let water_world = g.map_script == crate::setup::MapScript::WaterWorld;
+        if (!self.overseas_settlement && !water_world)
             || home_landmass.is_empty()
-            || self.home_landmass_has_settlement_room(g, pid, uid, home_landmass)
+            || (!water_world && self.home_landmass_has_settlement_room(g, pid, uid, home_landmass))
         {
             return None;
         }

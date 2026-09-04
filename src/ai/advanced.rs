@@ -1452,6 +1452,12 @@ const SETTLER_STALL_LIMIT: u32 = 3;
 /// the next picks, so a threat that flickers in and out of sight cannot flip
 /// the settler between two sites every frame. See `settler_target_hysteresis`.
 const SETTLER_TARGET_HYSTERESIS_TURNS: u32 = 6;
+/// On Water World, retain a legal cached destination only while it is close
+/// enough to be a real commitment rather than a stale global-score choice.
+/// Eight hexes is the ordinary local settlement search radius (and about four
+/// Settler turns), so this preserves an expedition already nearing land while
+/// allowing a newly discovered nearby island to replace a 25+ hex voyage.
+const WATER_WORLD_SETTLER_TARGET_PRESERVE_DISTANCE: i32 = 8;
 /// A visible hostile can make the *approach* to an otherwise excellent city
 /// site unsafe without making the site itself unsafe. Keep that corridor out
 /// of every settler's ranking briefly, then let it compete again once the
@@ -12806,6 +12812,7 @@ impl AdvancedAi {
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid);
+            let water_world_goal = BasicAi::water_world_navigation_goal(g, pid);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
                 && (objective != GrandStrategy::Science
                     || self.barbarian_research_is_urgent(g, pid))
@@ -12815,6 +12822,12 @@ impl AdvancedAi {
                 None
             };
             let forced_goal = match objective {
+                // Water World is five percent land. Unlike ordinary naval
+                // scoring, this is a map-mandated expansion capability: a
+                // major cannot get a second island until its ships cross
+                // ocean. Commit the research slot rather than letting a
+                // victory-lane or yield unlock delay Cartography indefinitely.
+                _ if water_world_goal.is_some() => water_world_goal,
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
                 }) =>
@@ -30063,14 +30076,27 @@ impl AdvancedAi {
         // Preserve a colony already under way, but replace a merely cached
         // home-island target once the overseas gene finds a discovered foreign
         // landfall and the home landmass has genuinely run short of room.
-        let overseas_target = if self.overseas_settlement
+        // Water World is different: the map has only five percent land, so a
+        // distant cached score is not a commitment when a known nearer island
+        // can found the next city sooner. Keep ordinary-map gene behavior
+        // exactly as it was.
+        let water_world = g.map_script == crate::setup::MapScript::WaterWorld;
+        let overseas_target = if (self.overseas_settlement || water_world)
             && self.early_settler_home(uid).is_none()
             && !(valid_target == Some(current) && g.can_found_city(uid))
         {
             let home_landmass = BasicAi::capital_landmass(g, pid);
-            valid_target
-                .filter(|target| !home_landmass.contains(target))
-                .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
+            if water_world {
+                valid_target
+                    .filter(|target| {
+                        g.wdist(current, *target) <= WATER_WORLD_SETTLER_TARGET_PRESERVE_DISTANCE
+                    })
+                    .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
+            } else {
+                valid_target
+                    .filter(|target| !home_landmass.contains(target))
+                    .or_else(|| self.overseas_settlement_target(g, pid, uid, avoid, &home_landmass))
+            }
         } else {
             None
         };

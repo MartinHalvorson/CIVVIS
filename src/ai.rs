@@ -3880,6 +3880,9 @@ impl BasicAi {
     /// ships of its own, more than one coast to join up, room to settle
     /// overseas, or a war it may have to fight at sea.
     fn naval_ambitions(g: &Game, pid: usize) -> bool {
+        if Self::water_world_navigation_required(g, pid) {
+            return true;
+        }
         let coastal_cities = g
             .player_city_ids(pid)
             .into_iter()
@@ -3917,13 +3920,60 @@ impl BasicAi {
         })
     }
 
+    /// Water World deliberately leaves only five percent of the board as
+    /// land. For a major civilization there, ocean navigation is not a
+    /// situational naval investment: it is the prerequisite for the next
+    /// city once its starting island is full. Do not apply that conclusion to
+    /// city-states, whose one-city role is intentional. The capital need not
+    /// itself touch water: Shipbuilding embarks its Settler from a nearby
+    /// shore, and many valid Water World starts are one tile inland. Research
+    /// is chosen before the opening Settler founds, so that Settler also
+    /// counts as the empire's foothold for this purpose.
+    fn water_world_navigation_required(g: &Game, pid: usize) -> bool {
+        g.map_script == crate::setup::MapScript::WaterWorld
+            && g.players.get(pid).is_some_and(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && (!g.player_city_ids(pid).is_empty()
+                        || g.player_unit_ids(pid)
+                            .into_iter()
+                            .any(|uid| g.units[&uid].kind == "settler"))
+            })
+    }
+
+    /// The mandatory ocean-navigation chain on Water World. This stays
+    /// separate from the general naval scorer: ordinary island maps can have
+    /// viable local expansion, while this map's defining constraint is that
+    /// a major cannot grow past its island without Cartography.
+    pub(crate) fn water_world_navigation_goal(g: &Game, pid: usize) -> Option<&'static str> {
+        Self::water_world_navigation_required(g, pid)
+            .then(|| Self::water_research_goal(g, pid))
+            .flatten()
+    }
+
     pub(crate) fn water_research_goal(g: &Game, pid: usize) -> Option<&'static str> {
-        if !Self::empire_is_coastal(g, pid) {
+        if !Self::water_world_navigation_required(g, pid) && !Self::empire_is_coastal(g, pid) {
             return None;
         }
         let player = &g.players[pid];
         if !player.techs.contains(&crate::name!("sailing")) {
             return Some("sailing");
+        }
+        if Self::water_world_navigation_required(g, pid) {
+            if !player.techs.contains(&crate::name!("shipbuilding")) {
+                return Some("shipbuilding");
+            }
+            // Cartography's actual prerequisite tree does not include
+            // Celestial Navigation. On ordinary maps a Harbor detour can be
+            // worthwhile, but on a map with only five percent land it delays
+            // the capability that opens every remaining city site.
+            if g.map.tiles.values().any(|tile| tile.terrain == "ocean")
+                && !player.techs.contains(&crate::name!("cartography"))
+            {
+                return Some("cartography");
+            }
+            return None;
         }
         // Past Sailing the naval chain gets expensive, and it overrides every
         // other research priority while it is being pursued. An empire with
@@ -18623,6 +18673,55 @@ mod tests {
         let ai = BasicAi::new();
         ai.research(&mut g, 0);
         assert_eq!(g.players[0].research.as_deref(), Some("sailing"));
+    }
+
+    #[test]
+    fn water_world_major_commits_to_ocean_navigation_before_it_has_a_second_city() {
+        let mut opening = Game::new_full(1, 18, 10, 91_001, 120, 0, false);
+        opening.map_script = crate::setup::MapScript::WaterWorld;
+        assert_eq!(
+            BasicAi::water_world_navigation_goal(&opening, 0),
+            Some("sailing"),
+            "research is chosen while the opening Settler is still unfounded"
+        );
+
+        let (mut g, _, _) = island_colony_game(1);
+        g.players[0].techs.insert(crate::name!("sailing"));
+
+        assert_eq!(
+            BasicAi::water_research_goal(&g, 0),
+            None,
+            "a normal one-city island does not yet justify the expensive naval chain"
+        );
+
+        let capital = g.player_city_ids(0)[0];
+        for position in g.nbrs(g.cities[&capital].pos) {
+            g.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("plains");
+        }
+        assert!(
+            !BasicAi::empire_is_coastal(&g, 0),
+            "fixture needs the one-tile-inland capital from the failed replay"
+        );
+        g.map_script = crate::setup::MapScript::WaterWorld;
+        g.map
+            .tiles
+            .values_mut()
+            .find(|tile| tile.terrain == "coast")
+            .expect("island fixture has open water")
+            .terrain = crate::name!("ocean");
+        assert_eq!(
+            BasicAi::water_world_navigation_goal(&g, 0),
+            Some("shipbuilding"),
+            "Water World's five-percent land share makes a second island the next expansion path"
+        );
+
+        grant_tech_with_prerequisites(&mut g, 0, "shipbuilding");
+        g.turn = 30;
+        assert_eq!(
+            BasicAi::water_world_navigation_goal(&g, 0),
+            Some("cartography"),
+            "Water World goes straight to ocean navigation instead of detouring through Harbors"
+        );
     }
 
     #[test]
