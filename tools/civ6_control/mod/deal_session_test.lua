@@ -400,6 +400,64 @@ update(0.05)
 check("an early host close enters the native close ladder", closeCalls, 1)
 check("the early host close hides the action view", hidden, true)
 
+-- A direct deal can also leave a live session on an otherwise blank action
+-- view.  The ordinary close rung calls CloseSession, but Firaxis does not hide
+-- the view as part of that API.  Exercise all ten native rungs: the first nine
+-- are deliberately inert, while the session rung must prove it closed and
+-- finish the same context without closing a replacement session.
+local orphanHidden = false
+local orphanUpdate = nil
+local orphanCloseFocusedCalls = 0
+local orphanCloseCalls = 0
+local orphanSessionCloses = 0
+local orphanSessionOpen = true
+ContextPtr = {
+	GetID = function() return "DiplomacyActionView" end,
+	IsHidden = function() return orphanHidden end,
+	SetHide = function(_, value) orphanHidden = value end,
+	SetUpdate = function(_, callback) orphanUpdate = callback end,
+}
+Controls = {
+	BlackFadeAnim = { IsStopped = function() return true end },
+}
+ms_ActiveSessionID = 77
+ms_currentViewMode = -1
+CloseFocusedState = function()
+	orphanCloseFocusedCalls = orphanCloseFocusedCalls + 1
+end
+Close = function()
+	orphanCloseCalls = orphanCloseCalls + 1
+	orphanHidden = true
+end
+DiplomacyManager = {
+	CloseSession = function(sessionID)
+		check("the closer shuts only the captured session", sessionID, 77)
+		orphanSessionCloses = orphanSessionCloses + 1
+		orphanSessionOpen = false
+	end,
+	IsSessionIDOpen = function(sessionID)
+		check("the closer verifies the captured session", sessionID, 77)
+		return orphanSessionOpen
+	end,
+}
+LuaEvents = {
+	CivvisDealSession = {
+		Add = function() end,
+	},
+}
+local orphanChunk, orphanErr = loadfile(here .. "/CivvisControlAutoClose.lua")
+assert(orphanChunk, "could not reload the autoclose shim: " .. tostring(orphanErr))
+local orphanRan, orphanRuntimeErr = pcall(orphanChunk)
+assert(orphanRan, "CivvisControlAutoClose.lua raised in orphan-session test: " .. tostring(orphanRuntimeErr))
+assert(type(orphanUpdate) == "function", "the orphan-session closer has no update callback")
+for rung = 1, 10 do
+	orphanUpdate(rung == 1 and 0.05 or 30.01)
+end
+check("the first nine rungs leave the blank session visible", orphanCloseFocusedCalls, 6)
+check("the verified session is closed once", orphanSessionCloses, 1)
+check("a closed blank session finishes its action view", orphanCloseCalls, 1)
+check("the session finalizer hides the action view", orphanHidden, true)
+
 setmetatable(_G, oldGlobalMetatable)
 
 if failures > 0 then
