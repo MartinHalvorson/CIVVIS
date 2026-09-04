@@ -237,6 +237,12 @@ def latest_turn(events: Path) -> int | None:
     return best
 
 
+NATIVE_POPUP_EXHAUSTION_KINDS = frozenset((
+    "autoclose_stuck",
+    "autoclose_desktop",
+))
+
+
 def appended_progress(events: Path, offset: int) -> tuple[int, int | None, bool]:
     """Read complete appended events and return turn progress plus popup exhaustion.
 
@@ -247,9 +253,11 @@ def appended_progress(events: Path, offset: int) -> tuple[int, int | None, bool]
     game that has made no strategic progress.
 
     ``autoclose_stuck`` is stronger evidence than a heartbeat: the native
-    close ladder has already exhausted its own safe rungs.  It still is not a
-    reason to interrupt a game that recovers on its next turn, so the caller
-    starts a separate bounded grace window rather than restarting immediately.
+    close ladder has already exhausted its own safe rungs.  In this owner,
+    ``autoclose_desktop`` means the same thing: it has no desktop-rescue path
+    by design.  Neither event is a reason to interrupt a game that recovers on
+    its next turn, so the caller starts a separate bounded grace window rather
+    than restarting immediately.
 
     A log write can be observed halfway through its final JSON line.  Do not
     advance the cursor past that line: the next poll will read it whole instead
@@ -279,7 +287,7 @@ def appended_progress(events: Path, offset: int) -> tuple[int, int | None, bool]
             except (ValueError, AttributeError):
                 continue
             if (event.get("ctx") == "autoclose"
-                    and event.get("kind") == "autoclose_stuck"):
+                    and event.get("kind") in NATIVE_POPUP_EXHAUSTION_KINDS):
                 popup_stuck = True
             if isinstance(turn, int):
                 best = turn if best is None else max(best, turn)
