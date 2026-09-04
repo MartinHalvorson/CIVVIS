@@ -3179,14 +3179,27 @@ def _attach_running_game(args: argparse.Namespace) -> int:
 
     # A caller that knows this is an AutoSave reload gives its opening turn.
     # Do not let a newer historical journal row impersonate the live board.
-    last_turn = (args.attach_replay_turn
-                 if args.attach_replay_turn is not None else -1)
-    outcome: str | None = None
+    state = {
+        "turn": (args.attach_replay_turn
+                 if args.attach_replay_turn is not None else -1),
+        "score": -1,
+        "outcome": None,
+        "seat": None,
+        "configured": False,
+        "modes": None,
+        "mode_mismatch": False,
+        "ruleset": None,
+        "founds": [],
+        "cities_at_60": None,
+        "operator_retire_event": None,
+        "operator_retired": None,
+    }
+    terminal = False
     pending_identity = None
     last_retire_attempt = 0.0
 
     def observe(event: dict) -> None:
-        nonlocal last_turn, outcome
+        nonlocal terminal
         if event.get("run") != args.tag:
             return
         kind = event.get("kind")
@@ -3196,18 +3209,37 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             except (TypeError, ValueError):
                 turn = -1
             if turn >= 0:
-                last_turn = max(last_turn, turn)
+                state["turn"] = max(state["turn"], turn)
+        if kind == "seat":
+            state["seat"] = event
+            configured, modes_match, ruleset_match = seat_matches_requested(event, args)
+            state["configured"] = configured
+            state["modes"] = event.get("modes")
+            state["mode_mismatch"] = not modes_match
+            state["ruleset"] = event.get("ruleset")
+            state["ruleset_match"] = ruleset_match
+        elif kind == "found":
+            turn = event.get("turn")
+            if isinstance(turn, int):
+                state["founds"].append(turn)
+        elif kind == "turn":
+            state["score"] = event.get("score", state["score"])
+            if event.get("turn") == OPENING_TEMPO_TURN:
+                state["cities_at_60"] = event.get("cities")
         if kind == "victory":
-            outcome = "victory"
+            state["outcome"] = event
+            terminal = True
         elif kind == "defeat" and bool(event.get("ours")):
-            outcome = "defeat"
+            state["outcome"] = event
+            terminal = True
         elif kind in ("retired",):
             if _record_attached_operator_retirement(run_dir, args.tag, event):
                 print("[attach] the control mod acknowledged Civilization VI "
                       "ACTION_RETIRE; recording operator_retired", flush=True)
-                outcome = "operator_retired"
-            else:
-                outcome = "retired"
+                state["operator_retire_event"] = event
+                state["operator_retired"] = True
+            state["outcome"] = event
+            terminal = True
 
     def process_new_events() -> None:
         nonlocal event_offset
@@ -3238,9 +3270,12 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             pass
     bridge.pump()
     process_new_events()
-    if outcome is not None:
-        print(f"[attach] game already completed with {outcome} at turn {last_turn}",
-              flush=True)
+    if terminal:
+        reason = ("operator_retired" if state.get("operator_retired")
+                  else "completed")
+        write_attached_summary(args, config, state, run_dir, reason)
+        print(f"[attach] game already completed with "
+              f"{state['outcome'].get('kind')} at turn {state['turn']}", flush=True)
         return 0
 
     brain_log = (run_dir / "brain.log").open("a", buffering=1)
@@ -3291,12 +3326,12 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             return
         pending_identity = identity
         last_retire_attempt = now
-        if last_turn < 0:
+        if state["turn"] < 0:
             detail = "no current game turn is available for the native retire request"
             sent = False
         else:
             sent = request_retire(
-                orders_db, args.tag, last_turn,
+                orders_db, args.tag, state["turn"],
                 str(request.get("reason") or "operator"),
             )
             detail = ("wrote native retire order; awaiting control-mod acknowledgement"
@@ -3317,7 +3352,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
     last_focus = 0.0
     core_missing_since: float | None = None
     try:
-        while outcome is None:
+        while not terminal:
             copied = bridge.pump()
             if copied:
                 process_new_events()
@@ -3348,14 +3383,18 @@ def _attach_running_game(args: argparse.Namespace) -> int:
                 return 5
             if now - last_heartbeat >= 60.0:
                 last_heartbeat = now
-                print(f"[attach] live turn={last_turn} relayed={copied}",
+                print(f"[attach] live turn={state['turn']} relayed={copied}",
                       flush=True)
             time.sleep(0.1)
     finally:
         stop_brain()
         brain_log.close()
 
-    print(f"[attach] game completed with {outcome} at turn {last_turn}", flush=True)
+    reason = ("operator_retired" if state.get("operator_retired")
+              else "completed")
+    write_attached_summary(args, config, state, run_dir, reason)
+    print(f"[attach] game completed with {state['outcome'].get('kind')} "
+          f"at turn {state['turn']}", flush=True)
     return 0
 
 
@@ -3461,6 +3500,135 @@ def summary_reason(state: dict, reason: str) -> str:
     if state.get("abandoned") and reason == "stopped":
         return "abandoned"
     return reason
+
+
+def attached_summary(args: argparse.Namespace, config: dict, state: dict,
+                     run_dir: Path, reason: str) -> dict:
+    """Build the durable summary for a capture-free attach completion.
+
+    Attach mode deliberately skips the visual bootstrap, but it still owns a
+    complete Civ VI run.  Keeping its summary shape close to the normal player
+    summary lets the ladder use the same outcome/configuration gates.
+    """
+    outcome = state.get("outcome") or None
+    summary = {
+        "tag": args.tag,
+        "finished_utc": utc_stamp(),
+        "difficulty": config["Difficulty"],
+        "map_size": config["MapSize"],
+        "speed": config["GameSpeed"],
+        "seed_probe": getattr(args, "seed_probe", False),
+        "seed_request": config.get("MapSeed"),
+        "max_turns": config["MaxTurns"],
+        "reason": reason,
+        "configured": bool(state.get("configured")),
+        "modes": state.get("modes"),
+        "modes_requested": sorted(getattr(args, "game_mode", []) or []),
+        "ruleset": state.get("ruleset"),
+        "ruleset_requested": args.ruleset,
+        "last_turn": state.get("turn"),
+        "last_score": state.get("score"),
+        "seat": state.get("seat"),
+        "outcome": outcome,
+        "operator_retire": (state.get("operator_retired")
+                             or state.get("operator_retire_event")),
+        "victory_target": (args.civvis_victory
+                            if getattr(args, "civvis_decides", False)
+                            else None),
+        "withheld": (sorted(getattr(args, "civvis_without", []) or [])
+                      if getattr(args, "civvis_decides", False) else None),
+        "forced": (sorted(getattr(args, "civvis_with", []) or [])
+                    if getattr(args, "civvis_decides", False) else None),
+        "screen_gene": (getattr(args, "screen_gene", None)
+                         if getattr(args, "civvis_decides", False) else None),
+        "screen_arm": (getattr(args, "screen_arm", None)
+                        if getattr(args, "civvis_decides", False) else None),
+        "mod_arms": {
+            "PeaceDeterrence": getattr(args, "peace_deterrence", None),
+            "PeacetimeWarFloors": getattr(args, "peacetime_war_floors", None),
+            "CounterResolutions": getattr(args, "counter_resolutions", None),
+            "EnvoyPlace": getattr(args, "envoy_place", None),
+            "EnvoyLevy": getattr(args, "envoy_levy", None),
+            "EnvoyConsider": getattr(args, "envoy_consider", None),
+            "ProbeCitizens": getattr(args, "probe_citizens", None),
+            "CampusSpecialist": getattr(args, "campus_specialist", None),
+            "OrderQueue": getattr(args, "order_queue", None),
+            "CapMovesToReach": getattr(args, "cap_moves_to_reach", None),
+            "SettlerEscortCapSync": getattr(args, "settler_escort_cap_sync", None),
+            "CancelQueuedPaths": getattr(args, "cancel_queued_paths", None),
+            "CombatFrames": getattr(args, "combat_frames", None),
+            "StrikePreview": getattr(args, "strike_preview", None),
+            "MoveFallback": args.move_fallback,
+            "ReplanFrames": getattr(args, "replan_frames", None),
+            "TileDelta": getattr(args, "tile_delta", None),
+        },
+        "city_two_turn": (sorted(state.get("founds") or [])[1]
+                          if len(state.get("founds") or []) >= 2 else None),
+        "cities_at_60": state.get("cities_at_60"),
+    }
+    try:
+        import civ6_ladder
+        totals = civ6_ladder.orders_totals(run_dir / "events.jsonl")
+        if totals:
+            summary["orders_seen"], summary["orders_applied"] = totals
+        by_kind = civ6_ladder.orders_by_kind(run_dir / "events.jsonl")
+        if by_kind:
+            summary["orders"] = by_kind
+        autonomy = civ6_ladder.seat_autonomy(run_dir / "events.jsonl")
+        if autonomy:
+            summary["seat_autonomy"] = autonomy
+        standing = civ6_ladder.final_standing(run_dir / "events.jsonl")
+        if standing:
+            summary["rival_best"] = standing[1]
+        deals = civ6_ladder.deal_totals(run_dir / "events.jsonl")
+        if deals:
+            summary["deals"] = deals
+        combat = civ6_ladder.combat_totals(run_dir / "events.jsonl")
+        if combat:
+            summary["combat"] = combat
+        boosts = civ6_ladder.boost_totals(run_dir / "events.jsonl")
+        if boosts:
+            summary["boosts"] = boosts
+        revisions = civ6_ladder.decider_revisions(run_dir / "runtime_updates.jsonl")
+        if revisions:
+            summary["decider_revisions"] = revisions
+        binaries = civ6_ladder.decider_binaries(run_dir / "runtime_updates.jsonl")
+        if binaries:
+            summary["decider_binaries"] = binaries
+        genome = civ6_ladder.decider_genome(run_dir / "why.log")
+        if genome is not None:
+            summary["genome_treatments"] = {
+                key: genome.pop(key, None)
+                for key in ("treatments", "ledger_withheld", "forced")
+            }
+            summary["genome"] = genome
+            summary["strategy_requested"] = (
+                getattr(args, "civvis_strategy", "") or None)
+    except Exception as exc:  # noqa: BLE001 - reporting must not lose the run
+        print(f"[attach] bridge-health totals unavailable: {exc}",
+              file=sys.stderr, flush=True)
+    return summary
+
+
+def write_attached_summary(args: argparse.Namespace, config: dict, state: dict,
+                           run_dir: Path, reason: str) -> None:
+    """Write and index one completed capture-free attach run."""
+    path = run_dir / "summary.json"
+    summary = attached_summary(args, config, state, run_dir, reason)
+    path.write_text(json.dumps(summary, indent=2, sort_keys=True))
+    try:
+        import civ6_ladder
+        civ6_ladder.record_summary(path)
+    except Exception as exc:  # noqa: BLE001 - the summary remains recoverable
+        print(f"[attach] ladder record failed (summary is on disk): {exc}",
+              file=sys.stderr, flush=True)
+    try:
+        import civ6_ladder
+        civ6_ladder.publish_run(run_dir.name, run_dir.parent)
+    except Exception as exc:  # noqa: BLE001 - publish can be retried later
+        print(f"[attach] ledger publish failed (summary is on disk): {exc}",
+              file=sys.stderr, flush=True)
+    print(f"[attach] wrote summary.json for {args.tag}", flush=True)
 
 
 def _play(args: argparse.Namespace) -> int:

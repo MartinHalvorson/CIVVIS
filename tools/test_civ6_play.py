@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import builtins
+import json
 import os
 import re
 import sys
@@ -119,6 +120,109 @@ class AttachRetirementAuditTests(unittest.TestCase):
             "_record_attached_operator_retirement(run_dir, args.tag, event)",
             attach,
         )
+
+
+class AttachSummaryTests(unittest.TestCase):
+    """Capture-free completion must enter the same ledger as visual play."""
+
+    def test_attached_summary_preserves_actual_outcome_and_game_identity(self):
+        import civ6_ladder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-summary"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text(
+                json.dumps({"kind": "turn", "ctx": "agent", "turn": 60,
+                            "cities": 5, "score": 180, "rival_best": 170}) + "\n"
+            )
+            args = SimpleNamespace(
+                tag=run_dir.name,
+                ruleset="RULESET_EXPANSION_2",
+                game_mode=[],
+                civvis_decides=True,
+                civvis_victory="science",
+                civvis_without=[],
+                civvis_with=[],
+                move_fallback=True,
+            )
+            config = {
+                "Difficulty": "DIFFICULTY_EMPEROR",
+                "MapSize": "MAPSIZE_SMALL",
+                "GameSpeed": "GAMESPEED_ONLINE",
+                "MapSeed": None,
+                "MaxTurns": 250,
+            }
+            outcome = {"kind": "victory", "local_team": 0, "team": 0,
+                       "victory": 0, "won": True, "turn": 100}
+            state = {
+                "turn": 100,
+                "score": 300,
+                "outcome": outcome,
+                "seat": {"victory_types": [{"index": 0, "type": "score"}]},
+                "configured": True,
+                "modes": [],
+                "ruleset": "RULESET_EXPANSION_2",
+                "founds": [20, 45],
+                "cities_at_60": 5,
+            }
+
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+
+        self.assertTrue(civ6_ladder.is_win(summary))
+        self.assertEqual(summary["outcome"], outcome)
+        self.assertEqual(summary["configured"], True)
+        self.assertEqual(summary["ruleset"], "RULESET_EXPANSION_2")
+        self.assertEqual(summary["victory_target"], "science")
+        self.assertEqual(summary["city_two_turn"], 45)
+        self.assertEqual(summary["cities_at_60"], 5)
+
+    def test_write_attached_summary_indexes_the_run_after_writing_it(self):
+        import civ6_ladder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-summary"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("\n")
+            args = SimpleNamespace(
+                tag=run_dir.name,
+                ruleset="RULESET_EXPANSION_2",
+                game_mode=[],
+                civvis_decides=True,
+                civvis_victory="science",
+                civvis_without=[],
+                civvis_with=[],
+                move_fallback=True,
+            )
+            config = {
+                "Difficulty": "DIFFICULTY_EMPEROR",
+                "MapSize": "MAPSIZE_SMALL",
+                "GameSpeed": "GAMESPEED_ONLINE",
+                "MapSeed": None,
+                "MaxTurns": 250,
+            }
+            state = {
+                "turn": 100,
+                "score": 300,
+                "outcome": {"kind": "victory", "local_team": 0,
+                            "team": 0, "victory": 0, "won": True},
+                "seat": {"victory_types": [{"index": 0, "type": "score"}]},
+                "configured": True,
+                "modes": [],
+                "ruleset": "RULESET_EXPANSION_2",
+                "founds": [],
+                "cities_at_60": None,
+            }
+            with patch.object(civ6_ladder, "record_summary") as record, \
+                 patch.object(civ6_ladder, "publish_run") as publish:
+                civ6_play.write_attached_summary(
+                    args, config, state, run_dir, "completed")
+
+            written = json.loads((run_dir / "summary.json").read_text())
+
+        self.assertEqual(written["outcome"]["kind"], "victory")
+        record.assert_called_once_with(run_dir / "summary.json")
+        publish.assert_called_once_with(run_dir.name, run_dir.parent)
 
 
 class TermTakesTheBrainWithIt(unittest.TestCase):
