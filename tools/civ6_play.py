@@ -3035,17 +3035,18 @@ def dismiss_world_congress_between_turns() -> bool:
 
 
 def apply_verification_options() -> dict[str, dict[str, tuple]]:
-    """Turn off what a verification game never needs, right before launching it.
+    """Apply verification startup options right before launching a game.
 
     The intro video (the black window every first bootstrap attempt used to
     fire into, then sleep twenty seconds), the historic-moment animation and
-    two shadow passes: `civ6_setup.VERIFICATION_OPTIONS`, all cosmetic. This
-    runs in the one place the game is known to be closed -- the harness is
-    about to launch it -- because the game rewrites its options files on
-    launch and on exit, and a change written while it runs is lost. Never
-    blocks a launch: a game already running is left alone (its files are not
-    ours to edit at that moment), and any other failure is reported and
-    skipped, since a shadow pass is not worth a lost attempt.
+    two shadow passes are cosmetic. The profile also records Civ VI's own
+    one-time known-device and driver-warning acknowledgements so those native
+    dialogs cannot cover the fixed front-end controls. This runs in the one
+    place the game is known to be closed -- the harness is about to launch it
+    -- because the game rewrites its options files on launch and on exit, and
+    a change written while it runs is lost. Never blocks a launch: a game
+    already running is left alone (its files are not ours to edit at that
+    moment), and any other failure is reported and skipped.
     """
     if env.game_pids():
         print("[options] the game is already running; leaving its options alone",
@@ -4988,8 +4989,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tick-frames", type=int, default=12)
     ap.add_argument("--startup-timeout", type=float, default=420.0)
     ap.add_argument("--keep-game-options", action="store_true",
-                    help="do not turn off the intro video, moment animation and "
-                         "shadows before launching (see civ6_setup.VERIFICATION_OPTIONS)")
+                    help="do not apply verification startup cuts and front-end "
+                         "acknowledgements before launching (see "
+                         "civ6_setup.VERIFICATION_OPTIONS)")
     ap.add_argument("--host-timeout", type=float, default=300.0)
     ap.add_argument("--load-wait", type=float, default=90.0)
     ap.add_argument("--load-save", default=None,
