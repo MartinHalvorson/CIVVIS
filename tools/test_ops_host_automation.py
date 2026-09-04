@@ -354,7 +354,8 @@ class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
             home.mkdir()
             game = make_tree(Path(raw) / "game")
             done = self._install(home, "--head-repo", str(game),
-                                 CIVVIS_DIFFICULTY="DIFFICULTY_KING", CIVVIS_PLAY_ATTEMPTS="1")
+                                 CIVVIS_DIFFICULTY="DIFFICULTY_KING", CIVVIS_CAPTURE_FREE="1",
+                                 CIVVIS_PLAY_ATTEMPTS="1")
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
             self.assertEqual((home / "bin" / "civvis-games").resolve(), SWITCH)
             link = home / civvis_collab.LADDER_OPERATOR_WRAPPER.name
@@ -374,6 +375,8 @@ class TheInstallerWiresAHostToTheTrackedTree(unittest.TestCase):
             self.assertIn(f"CIVVIS_HEAD_REPO={game}", policy)
             self.assertIn("CIVVIS_DIFFICULTY=DIFFICULTY_KING", policy,
                           "a .zprofile-style export migrates into the policy")
+            self.assertIn("CIVVIS_CAPTURE_FREE=1", policy,
+                          "recording-safe mode must reach the next Terminal host")
             self.assertIn("CIVVIS_PLAY_ATTEMPTS=1", policy)
             self.assertIn("#CIVVIS_VICTORY=", policy, "unset keys are left as prompts")
             # A second run is a no-op that says so, and leaves the policy alone.
