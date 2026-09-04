@@ -193,6 +193,25 @@ pub struct Sphere {
     distance_row_count: AtomicUsize,
 }
 
+/// Consecutive sorted breadth-first rings from one globe tile.
+///
+/// The local table handles the common small radii. A caller that walks farther
+/// outward keeps this search's frontier and visited table, instead of
+/// reconstructing every inner disk for each next radius.
+pub(crate) struct SphereRingSearch<'a> {
+    sphere: &'a Sphere,
+    from: u32,
+    radius: i32,
+    wide: Option<WideRingSearch>,
+    done: bool,
+}
+
+struct WideRingSearch {
+    seen: Vec<bool>,
+    frontier: Vec<u32>,
+    next: Vec<u32>,
+}
+
 const EMPTY: u32 = u32::MAX;
 
 impl Sphere {
@@ -257,6 +276,17 @@ impl Sphere {
     /// Every tile of the globe, in storage order.
     pub fn positions(&self) -> impl Iterator<Item = Pos> + '_ {
         self.pos.iter().copied()
+    }
+
+    /// Start a consecutive outward ring walk from `center`.
+    pub(crate) fn outward_ring_search(&self, center: Pos) -> Option<SphereRingSearch<'_>> {
+        self.index_of(center).map(|from| SphereRingSearch {
+            sphere: self,
+            from,
+            radius: 0,
+            wide: None,
+            done: false,
+        })
     }
 
     /// How many neighbours a tile has: five at the twelve pentagons, six
@@ -486,7 +516,9 @@ impl Sphere {
     /// Every tile exactly `radius` steps away.
     ///
     /// Within the cached ring radius this is a filter over a table the globe
-    /// already holds; past it there is nothing better than taking the disk.
+    /// already holds. Beyond that radius, retain only the breadth-first
+    /// frontier: materializing the whole disk makes an outward ring walk pay
+    /// for every inner tile again at every radius.
     pub fn ring(&self, center: Pos, radius: i32) -> Vec<Pos> {
         let Some(from) = self.index_of(center) else {
             return Vec::new();
@@ -501,7 +533,9 @@ impl Sphere {
                 .map(|(pos, _)| *pos)
                 .collect();
         }
-        self.disk(center, radius)
+        let mut out = self.search_ring(from, radius);
+        out.sort_unstable();
+        out
     }
 
     fn cached_distance(&self, from: u32, to: u32) -> Option<u16> {
@@ -647,6 +681,93 @@ impl Sphere {
                 }
             }
         }
+        out
+    }
+
+    /// Find one breadth-first boundary without retaining its inner disks.
+    fn search_ring(&self, from: u32, radius: i32) -> Vec<Pos> {
+        let radius = radius.clamp(0, u16::MAX as i32) as u16;
+        let mut distance = vec![u16::MAX; self.len()];
+        distance[from as usize] = 0;
+        let mut queue = VecDeque::from([from]);
+        let mut out = Vec::new();
+        while let Some(cell) = queue.pop_front() {
+            let step = distance[cell as usize];
+            if step == radius {
+                out.push(self.pos[cell as usize]);
+                continue;
+            }
+            let at = cell as usize;
+            for neighbor in &self.adjacent[at][..self.degree[at] as usize] {
+                if distance[*neighbor as usize] == u16::MAX {
+                    distance[*neighbor as usize] = step + 1;
+                    queue.push_back(*neighbor);
+                }
+            }
+        }
+        out
+    }
+
+    fn wide_ring_search(&self, from: u32) -> WideRingSearch {
+        let mut seen = vec![false; self.len()];
+        let mut frontier = Vec::new();
+        for &(cell, distance) in &self.ring_indices[from as usize] {
+            seen[cell as usize] = true;
+            if distance as i32 == RING_RADIUS {
+                frontier.push(cell);
+            }
+        }
+        WideRingSearch {
+            seen,
+            frontier,
+            next: Vec::new(),
+        }
+    }
+}
+
+impl SphereRingSearch<'_> {
+    /// The next radius's tiles, sorted, or an empty vector after the globe's
+    /// diameter has been reached.
+    pub(crate) fn next_ring(&mut self) -> Vec<Pos> {
+        if self.done {
+            return Vec::new();
+        }
+        self.radius += 1;
+        if self.radius <= RING_RADIUS {
+            return self.sphere.rings[self.from as usize]
+                .iter()
+                .filter(|(_, distance)| *distance as i32 == self.radius)
+                .map(|(pos, _)| *pos)
+                .collect();
+        }
+        let wide = self
+            .wide
+            .get_or_insert_with(|| self.sphere.wide_ring_search(self.from));
+        let WideRingSearch {
+            seen,
+            frontier,
+            next,
+        } = wide;
+        next.clear();
+        for &cell in frontier.iter() {
+            let at = cell as usize;
+            for neighbor in &self.sphere.adjacent[at][..self.sphere.degree[at] as usize] {
+                if !seen[*neighbor as usize] {
+                    seen[*neighbor as usize] = true;
+                    next.push(*neighbor);
+                }
+            }
+        }
+        std::mem::swap(frontier, next);
+        if frontier.is_empty() {
+            self.done = true;
+            return Vec::new();
+        }
+        let mut out: Vec<Pos> = frontier
+            .iter()
+            .map(|cell| self.sphere.pos[*cell as usize])
+            .collect();
+        out.sort_unstable();
         out
     }
 }
@@ -1163,6 +1284,37 @@ mod tests {
                 let expected = walked.values().filter(|steps| **steps <= radius).count();
                 assert_eq!(disk.len(), expected, "radius {radius}");
                 assert!(disk.windows(2).all(|pair| pair[0] < pair[1]));
+            }
+        }
+    }
+
+    #[test]
+    fn wide_rings_match_their_exact_sorted_distance_boundary() {
+        let globe = sphere(7);
+        for source in [0usize, 17, 133, globe.len() - 1] {
+            let from = globe.cells()[source].pos;
+            let distance = globe.search_all(source as u32);
+            let diameter = i32::from(*distance.iter().max().unwrap());
+            let mut search = globe.outward_ring_search(from).unwrap();
+            for radius in [RING_RADIUS + 1, RING_RADIUS + 4, diameter, diameter + 1] {
+                let mut expected: Vec<Pos> = globe
+                    .positions()
+                    .zip(distance.iter())
+                    .filter_map(|(pos, steps)| (i32::from(*steps) == radius).then_some(pos))
+                    .collect();
+                expected.sort_unstable();
+                let actual = globe.ring(from, radius);
+                assert_eq!(actual, expected, "{from:?}, radius {radius}");
+                assert!(actual.windows(2).all(|pair| pair[0] < pair[1]));
+            }
+            for radius in 1..=diameter + 1 {
+                let mut expected: Vec<Pos> = globe
+                    .positions()
+                    .zip(distance.iter())
+                    .filter_map(|(pos, steps)| (i32::from(*steps) == radius).then_some(pos))
+                    .collect();
+                expected.sort_unstable();
+                assert_eq!(search.next_ring(), expected, "{from:?}, radius {radius}");
             }
         }
     }
