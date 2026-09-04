@@ -11146,6 +11146,30 @@ impl Game {
         }
     }
 
+    /// Generations for every mutable input to the cached safe-healing target
+    /// scan, plus the small diplomacy state that has no mutation wrapper.
+    ///
+    /// The caller keeps the three direct generations separate, avoiding a
+    /// needless hash collision across them. `at_war`, the arena mode, and the
+    /// barbarian seat all affect `is_at_war`; the latter two are static for a
+    /// game, but retaining them makes the cache's complete input explicit.
+    pub(crate) fn healing_target_stamp(&self) -> (u64, u64, u64, u64) {
+        let mut wars = vision_key(&[self.at_war.len() as u64]);
+        for &(a, b) in &self.at_war {
+            wars = vision_key(&[wars, a as u64, b as u64]);
+        }
+        (
+            self.map.tiles.epoch(),
+            self.cities.generation(),
+            self.players.epoch(),
+            vision_key(&[
+                wars,
+                self.barb_pid.map_or(u64::MAX, |pid| pid as u64),
+                self.is_arena() as u64,
+            ]),
+        )
+    }
+
     /// What a unit standing in nuclear fallout loses at the start of its turn.
     ///
     /// The shipped WMDs table carries the blast radius, the ICBM range and how
