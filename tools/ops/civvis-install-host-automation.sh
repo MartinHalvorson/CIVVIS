@@ -57,7 +57,7 @@ UID_N=$(id -u)
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 NEW_LABELS=(com.civvis.keepplaying com.civvis.run-prune com.civvis.worktree-prune)
 OLD_LABELS=(com.martbot.civvis-keepplaying com.martbot.civvis-run-prune)
-POLICY_KEYS=(CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_PLAY_ATTEMPTS
+POLICY_KEYS=(CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS
              CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_PLAY_TIMEOUT
              CIVVIS_PLAY_TIMEOUT_CEILING)
 
