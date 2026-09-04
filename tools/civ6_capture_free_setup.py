@@ -34,13 +34,18 @@ from civ6_control import macos_input, macos_window  # noqa: E402
 
 GAME_PROCESS = "Civ6_Exe_Child"
 
-# These are the host's already-proven generic Play Now route, measured on its
-# 1728x1117 display with Civ VI in the full usable window.  Unlike Create Game,
-# it never needs the fixed ScenarioSetup panel that has recently transitioned
-# into Tutorial before our known controls landed.
-SINGLE_PLAYER_POINT = (817, 492)
-PLAY_NOW_POINT = (912, 691)
-BEGIN_GAME_POINT = (677, 873)
+# These are the host's already-proven generic Play Now route, expressed as
+# fractions of Civ VI's desktop render canvas.  The normal launcher has always
+# used these desktop fractions: an accessibility window can be narrower when
+# macOS reports Civ VI at a scaled resolution, while its front-end controls
+# remain positioned against the full canvas.  Mapping the fractions into that
+# narrower window selected the Alexander scenario instead of Play Now in the
+# 2026-09-04 live recovery.  Unlike Create Game, this route never needs the
+# ScenarioSetup panel that has recently transitioned into Tutorial before known
+# controls landed.
+SINGLE_PLAYER_FRACTION = (0.473, 0.441)
+PLAY_NOW_FRACTION = (0.528, 0.619)
+BEGIN_GAME_FRACTION = (0.392, 0.782)
 
 # A frontmost transition can consume the first pointer event while macOS makes
 # Civ VI's window key.  The normal visual bootstrap primes the same way before
@@ -66,13 +71,15 @@ def click_point(x: int, y: int) -> None:
     macos_input.click(x, y, hold_s=0.12, check=True)
 
 
-def click_window_fraction(fx: float, fy: float) -> None:
-    """Click a fixed main-menu point within the prepared game window."""
-    bounds = macos_window.game_window(GAME_PROCESS)
-    if bounds is None:
-        raise RuntimeError("Civ VI window is unavailable")
-    x, y, width, height = bounds
-    click_point(round(x + width * fx), round(y + height * fy))
+def click_desktop_fraction(fx: float, fy: float) -> None:
+    """Click a known main-menu fraction within Civ VI's desktop canvas."""
+    size = macos_window.desktop_size()
+    if size is None:
+        raise RuntimeError("desktop size is unavailable")
+    width, height = size
+    # Match the original generic launcher exactly: it truncates its calculated
+    # coordinates rather than rounding across a menu-row boundary.
+    click_point(int(width * fx), int(height * fy))
 
 
 def prepare_bootstrap_window() -> None:
@@ -95,11 +102,11 @@ def start_bootstrap_game() -> None:
     # first pointer event can still be consumed while macOS keys the window,
     # so spend it on empty artwork just as the normal visual bootstrap does.
     time.sleep(MENU_SETTLE_S)
-    click_window_fraction(*MENU_ACTIVATION_FRACTION)
+    click_desktop_fraction(*MENU_ACTIVATION_FRACTION)
     time.sleep(MENU_ACTIVATION_SETTLE_S)
-    click_point(*SINGLE_PLAYER_POINT)
+    click_desktop_fraction(*SINGLE_PLAYER_FRACTION)
     time.sleep(SUBMENU_SETTLE_S)
-    click_point(*PLAY_NOW_POINT)
+    click_desktop_fraction(*PLAY_NOW_FRACTION)
 
 
 def wait_for_agent_loaded(*, timeout_s: float = BOOTSTRAP_READY_TIMEOUT_S,
@@ -130,7 +137,7 @@ def begin_bootstrap_game() -> None:
     # Give the context that wrote ``loaded`` time to finish drawing its gate;
     # this is the same delay used by the previously verified Play Now harness.
     time.sleep(4.0)
-    click_point(*BEGIN_GAME_POINT)
+    click_desktop_fraction(*BEGIN_GAME_FRACTION)
 
 
 def main(argv: list[str] | None = None) -> int:
