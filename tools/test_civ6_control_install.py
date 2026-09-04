@@ -1616,6 +1616,63 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("PlayerConfigurations[id]:SetLeaderTypeName(cfg.Leader)", rehost)
         self.assertIn("GetLeaderTypeName()", source.split("local function rehost()", 1)[1])
 
+    def test_live_rehost_explicitly_clears_or_applies_every_game_mode(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        rehost = source.split("local function applyConfiguration()", 1)[1].split(
+            "local function rehost()", 1
+        )[0]
+        self.assertIn("for _, mode in ipairs(GAME_MODES) do", rehost)
+        self.assertIn("(cfg.GameModes or {})[mode]", rehost)
+        self.assertIn("GameConfiguration.SetValue(mode, wanted and true or false)", rehost)
+
+    def test_frontend_defaults_render_a_direct_exact_create_game(self) -> None:
+        """The native FrontEnd database route must cover all requested axes."""
+        config = {
+            "Difficulty": "DIFFICULTY_EMPEROR",
+            "GameSpeed": "GAMESPEED_ONLINE",
+            "MapScript": "Continents.lua",
+            "MapSize": "MAPSIZE_SMALL",
+            "MaxTurns": 650,
+            "Leader": "LEADER_TRAJAN",
+            "RuleSet": "RULESET_EXPANSION_2",
+        }
+        template = (install.MOD_SOURCE / "CivvisControlConfig.xml").read_text()
+        rendered = install._frontend_defaults_xml(template, config)
+
+        self.assertNotIn("CIVVIS_DEFAULT_", rendered)
+        self.assertIn("<DefaultValue>DIFFICULTY_EMPEROR</DefaultValue>", rendered)
+        self.assertIn("<DefaultValue>GAMESPEED_ONLINE</DefaultValue>", rendered)
+        self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Game" TargetId="GAME_HANDICAP" '
+            'TargetValue="DIFFICULTY_EMPEROR"\n'
+            '\t\t\t Hash="1" Static="1"',
+            rendered,
+        )
+        self.assertIn(
+            'SourceId="RULESET" SourceValue="RULESET_EXPANSION_2"\n'
+            '\t\t\t TargetGroup="Game" TargetId="GAME_SPEED_TYPE" '
+            'TargetValue="GAMESPEED_ONLINE"\n'
+            '\t\t\t Hash="1" Static="1"',
+            rendered,
+        )
+        self.assertIn("<DefaultValue>Continents.lua</DefaultValue>", rendered)
+        self.assertIn("<DefaultValue>MAPSIZE_SMALL</DefaultValue>", rendered)
+        self.assertIn("<DefaultValue>650</DefaultValue>", rendered)
+        self.assertIn("<DefaultValue>TURNLIMIT_CUSTOM</DefaultValue>", rendered)
+        self.assertIn(
+            'Ruleset="RULESET_EXPANSION_2" PlayerId="0" '
+            'Domain="Players:Expansion2_Players" Value="LEADER_TRAJAN"',
+            rendered,
+        )
+
+    def test_frontend_defaults_leave_the_roster_unrestricted_without_a_leader(self) -> None:
+        template = (install.MOD_SOURCE / "CivvisControlConfig.xml").read_text()
+        rendered = install._frontend_defaults_xml(template, {"MaxTurns": 250})
+
+        self.assertNotIn("CIVVIS_DEFAULT_", rendered)
+        self.assertNotIn("RulesetSupportedValues", rendered)
+
     def test_permission_denied_deploys_a_staged_copy_through_finder(self) -> None:
         target = Path("/protected/DLC/CivvisControl")
         staging = Path(tempfile.mkdtemp(prefix="civvis-install-test-"))
