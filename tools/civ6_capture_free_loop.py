@@ -229,6 +229,46 @@ def latest_turn(events: Path) -> int | None:
     return best
 
 
+def appended_turn(events: Path, offset: int) -> tuple[int, int | None]:
+    """Read complete newly appended events and return their highest turn.
+
+    The capture-free control mod deliberately keeps emitting ``ui_heartbeat``
+    records while a native popup close ladder is trying again.  That proves Civ
+    VI is alive, but it must not indefinitely impersonate turn progress.  Keep
+    an append-only cursor so the supervisor can distinguish a living UI from a
+    game that has made no strategic progress.
+
+    A log write can be observed halfway through its final JSON line.  Do not
+    advance the cursor past that line: the next poll will read it whole instead
+    of losing the turn that finally proves recovery.
+    """
+    try:
+        if events.stat().st_size < offset:
+            offset = 0
+        stream = events.open(errors="replace")
+    except OSError:
+        return offset, None
+
+    best: int | None = None
+    with stream:
+        stream.seek(offset)
+        while True:
+            raw = stream.readline()
+            if not raw:
+                break
+            if not raw.endswith("\n"):
+                break
+            offset = stream.tell()
+            try:
+                event = json.loads(raw)
+                turn = event.get("turn")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(turn, int):
+                best = turn if best is None else max(best, turn)
+    return offset, best
+
+
 def sample_game(run_dir: Path) -> None:
     """Leave a short stack sample before abandoning a proven silent game."""
     if not Path("/usr/bin/sample").is_file():
@@ -252,20 +292,26 @@ def monitor_player(
     events: Path,
     *,
     silence_s: float,
+    frozen_turn_s: float | None = None,
     poll_s: float,
     should_stop: Callable[[], bool] = lambda: STOP_REQUESTED,
     now: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> str:
-    """Wait for a player, escalating only after no event activity.
+    """Wait for a player, escalating after a silent or turn-frozen game.
 
     A turn can be slow, but a healthy game keeps publishing state, await, or
-    blocker records.  A silent stream is therefore a wedge: leave its stack
-    sample and return control to the supervisor for a fresh game.  The separate
-    climb watchdog exclusively owns any forced end-turn recovery.
+    blocker records.  A silent stream is therefore a wedge.  Conversely, a
+    native popup close ladder may keep publishing heartbeats forever while the
+    turn never changes; that is a separate wedge.  Both cases return control to
+    the supervisor for a clean successor, never to a visual or blind-input
+    recovery path.
     """
     last_mtime = event_mtime(events)
     last_activity = now()
+    last_turn = latest_turn(events)
+    last_turn_progress = last_activity
+    turn_offset = 0
     while player.poll() is None:
         if should_stop():
             return "stopped"
@@ -273,9 +319,17 @@ def monitor_player(
         if current_mtime is not None and current_mtime != last_mtime:
             last_mtime = current_mtime
             last_activity = now()
+            turn_offset, observed_turn = appended_turn(events, turn_offset)
+            if (observed_turn is not None
+                    and (last_turn is None or observed_turn > last_turn)):
+                last_turn = observed_turn
+                last_turn_progress = last_activity
         current = now()
         if current - last_activity >= silence_s:
             return "wedge"
+        if (frozen_turn_s is not None and last_turn is not None
+                and current - last_turn_progress >= frozen_turn_s):
+            return "frozen-turn"
         sleep(poll_s)
     return "completed" if player.returncode == 0 else "player-exited"
 
@@ -337,9 +391,9 @@ def run_once(args: argparse.Namespace, index: int) -> tuple[bool, str, str]:
         player = start_attached_player(args, tag, run_dir, orders_db)
         reason = monitor_player(
             player, run_dir / "events.jsonl", silence_s=args.wedge_silence,
-            poll_s=args.poll,
+            frozen_turn_s=args.frozen_turn_seconds, poll_s=args.poll,
         )
-        if reason == "wedge":
+        if reason in ("wedge", "frozen-turn"):
             sample_game(run_dir)
         turn = latest_turn(run_dir / "events.jsonl")
         write_play_marker(Path(args.logs), tag, turn, reason)
@@ -349,6 +403,7 @@ def run_once(args: argparse.Namespace, index: int) -> tuple[bool, str, str]:
             "reason": reason,
             "turn": turn,
             "wedge_detected": reason == "wedge",
+            "frozen_turn_detected": reason == "frozen-turn",
             "player_returncode": player.poll(),
         })
         return turn is not None and turn >= 1, reason, tag
@@ -392,6 +447,9 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--civvis-bin",
                     default=str(HERE.parent / "target" / "release" / "civvis_orders"))
     ap.add_argument("--wedge-silence", type=float, default=120.0)
+    ap.add_argument("--frozen-turn-seconds", type=float, default=1800.0,
+                    help="restart only when a live event stream has not advanced "
+                         "a turn for this long (default: 30 minutes)")
     ap.add_argument("--poll", type=float, default=2.0)
     return ap
 
@@ -404,7 +462,8 @@ def main(argv: list[str] | None = None) -> int:
         parser().error(str(error))
     if args.attempts < 1 or args.max_turns < 1:
         parser().error("--attempts and --max-turns must be positive")
-    if args.wedge_silence <= 0 or args.poll <= 0:
+    if (args.wedge_silence <= 0 or args.frozen_turn_seconds <= 0
+            or args.poll <= 0):
         parser().error("wedge timing values must be positive")
     if not Path(args.civvis_bin).is_file():
         print(f"CIVVIS decision binary does not exist: {args.civvis_bin}",
