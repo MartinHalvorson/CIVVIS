@@ -34,24 +34,26 @@ from civ6_control import macos_input, macos_window  # noqa: E402
 
 GAME_PROCESS = "Civ6_Exe_Child"
 
-# These are the host's already-proven generic Play Now route, expressed as
-# fractions of Civ VI's desktop render canvas.  The normal launcher has always
-# used these desktop fractions: an accessibility window can be narrower when
-# macOS reports Civ VI at a scaled resolution, while its front-end controls
-# remain positioned against the full canvas.  Mapping the fractions into that
-# narrower window selected the Alexander scenario instead of Play Now in the
-# 2026-09-04 live recovery.  Unlike Create Game, this route never needs the
-# ScenarioSetup panel that has recently transitioned into Tutorial before known
-# controls landed.
-SINGLE_PLAYER_FRACTION = (0.473, 0.441)
-PLAY_NOW_FRACTION = (0.528, 0.619)
-BEGIN_GAME_FRACTION = (0.392, 0.782)
+# These are the current host's generic Play Now controls, expressed as
+# fractions of the full desktop render canvas.  The Civ VII promotional panel
+# moved the top-level menu down and left on 2026-09-04; the older fractions
+# clicked empty artwork (and, after a submenu transition, Game Options).  The
+# points below are the centers read from the live 1728x1117 desktop frame:
+# Single Player ~= (598,521), Play Now ~= (895,732).
+SINGLE_PLAYER_FRACTION = (0.346, 0.466)
+PLAY_NOW_FRACTION = (0.518, 0.655)
+
+# The post-host leader card uses the same window-relative placement as the
+# normal visual launcher.  Keep this separate from the desktop-canvas menu
+# coordinates: the full-height capture-free window is narrower than the
+# desktop canvas at its right edge.
+BEGIN_GAME_WINDOW_FRACTION = (0.394, 0.801)
 
 # A frontmost transition can consume the first pointer event while macOS makes
-# Civ VI's window key.  The normal visual bootstrap primes the same way before
-# aiming at a menu row.  Keep this well inside empty artwork so a transition
-# that has already completed cannot turn the priming event into a menu choice.
-MENU_ACTIVATION_FRACTION = (0.150, 0.850)
+# Civ VI's window key.  Clicking the native title bar is inert even if the
+# front end has already finished transitioning; the old content-area wake click
+# landed in the live promotional panel on this layout.
+TITLE_BAR_Y_OFFSET = 20
 
 MENU_SETTLE_S = 15.0
 MENU_ACTIVATION_SETTLE_S = 1.5
@@ -82,6 +84,24 @@ def click_desktop_fraction(fx: float, fy: float) -> None:
     click_point(int(width * fx), int(height * fy))
 
 
+def click_window_fraction(fx: float, fy: float) -> None:
+    """Click a known control relative to Civ VI's current window."""
+    bounds = macos_window.game_window(GAME_PROCESS)
+    if bounds is None:
+        raise RuntimeError("Civ VI window is unavailable")
+    x, y, width, height = bounds
+    click_point(int(x + width * fx), int(y + height * fy))
+
+
+def click_window_title_bar() -> None:
+    """Make Civ VI key without sending a click into the front-end canvas."""
+    bounds = macos_window.game_window(GAME_PROCESS)
+    if bounds is None:
+        raise RuntimeError("Civ VI window is unavailable")
+    x, y, width, _ = bounds
+    click_point(x + width // 2, y + TITLE_BAR_Y_OFFSET)
+
+
 def prepare_bootstrap_window() -> None:
     """Put Civ VI in the geometry used by the recorded Play Now controls."""
     macos_window.place_game(GAME_PROCESS, "left", 1.0, 1.0)
@@ -100,9 +120,9 @@ def start_bootstrap_game() -> None:
     # The mod-scan log proves only that the core is initialized.  Retain the
     # normal menu/logo allowance before touching its two known menu rows.  The
     # first pointer event can still be consumed while macOS keys the window,
-    # so spend it on empty artwork just as the normal visual bootstrap does.
+    # so spend it on the native title bar rather than on menu artwork.
     time.sleep(MENU_SETTLE_S)
-    click_desktop_fraction(*MENU_ACTIVATION_FRACTION)
+    click_window_title_bar()
     time.sleep(MENU_ACTIVATION_SETTLE_S)
     click_desktop_fraction(*SINGLE_PLAYER_FRACTION)
     time.sleep(SUBMENU_SETTLE_S)
@@ -137,7 +157,7 @@ def begin_bootstrap_game() -> None:
     # Give the context that wrote ``loaded`` time to finish drawing its gate;
     # this is the same delay used by the previously verified Play Now harness.
     time.sleep(4.0)
-    click_desktop_fraction(*BEGIN_GAME_FRACTION)
+    click_window_fraction(*BEGIN_GAME_WINDOW_FRACTION)
 
 
 def main(argv: list[str] | None = None) -> int:
