@@ -505,6 +505,12 @@ fn a_civ_qualifier_is_stripped_and_great_is_not() {
         "Firaxis declares the Hwacha as Korea's Field Cannon replacement"
     );
     assert_eq!(
+        resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_GEORGIAN_KHEVSURETI")
+            .as_deref(),
+        Some("man_at_arms"),
+        "Georgia's unmodelled Khevsureti must remain visible as its replacement role"
+    );
+    assert_eq!(
         resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_NUBIAN_PITATI")
             .as_deref(),
         Some("pitati_archer"),
@@ -8521,6 +8527,51 @@ fn a_rivals_unique_unit_lands_as_what_it_replaces() {
     assert!(
         nonsense.game.units.is_empty(),
         "an unknown base must not be guessed at"
+    );
+}
+
+/// ★★★★★ Georgia's Khevsureti replaces Man-at-Arms, but the live rival-unit
+/// export omits both `base` and `class`. Keep it on the threat board through the
+/// explicit host spelling rather than letting a nearby army disappear.
+#[test]
+fn a_georgian_khevsureti_is_planted_as_a_man_at_arms() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 12,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(4, 4, "TERRAIN_GRASS")],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 12,
+        ..StateSnapshot::default()
+    };
+    state.units.push(StateUnit {
+        id: 17,
+        kind: "UNIT_GEORGIAN_KHEVSURETI".to_string(),
+        x: 4,
+        y: 4,
+        hp: 100.0,
+        ..StateUnit::default()
+    });
+
+    let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+    let unit = rebuilt
+        .game
+        .units
+        .values()
+        .next()
+        .expect("the Khevsureti must reach the reconstructed board");
+    assert_eq!(unit.kind.as_str(), "man_at_arms");
+    assert!(
+        rebuilt.unmapped.is_empty(),
+        "the explicit role bridge is a recognized approximation: {:?}",
+        rebuilt.unmapped
+    );
+    assert!(
+        rebuilt.dropped_units.is_empty(),
+        "the mapped unit must not be reported as dropped: {:?}",
+        rebuilt.dropped_units
     );
 }
 

@@ -6481,6 +6481,11 @@ fn civvis_unit_name(civ6: &str) -> String {
         // is preferable to deleting a visible hostile from the board entirely.
         "scottish_highlander" => "ranger".to_string(),
         "korean_hwacha" => "field_cannon".to_string(),
+        // Georgia's Khevsureti replaces Man-at-Arms. The live export does not
+        // include `base` or `class` for this rival unit, so the generic fallback
+        // cannot recover it; keep the hostile on the threat board as its stock
+        // role (the unique hill bonus is not modeled).
+        "georgian_khevsureti" => "man_at_arms".to_string(),
         _ => base,
     }
 }
