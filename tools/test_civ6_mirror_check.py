@@ -643,6 +643,18 @@ class MirrorCheckTest(unittest.TestCase):
 
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
+    def test_georgian_khevsureti_uses_man_at_arms_replacement_role(self) -> None:
+        state = {"rivals": [{"units": [{
+            "kind": "UNIT_GEORGIAN_KHEVSURETI", "x": 3, "y": 5,
+            "hp": 88, "fortified": False, "fortify_turns": 0,
+        }]}]}
+        board = {"view_player": 0, "units": [{
+            "owner": 1, "type": "man_at_arms", "pos": [1, 5],
+            "hp": 88, "fortified": False, "fortify_turns": 0,
+        }]}
+
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
     def test_hostile_type_field_is_checked_as_a_real_unit_kind(self) -> None:
         state = {"hostiles": [{
             "type": "UNIT_WARRIOR", "player": 63, "x": 3, "y": 5,
