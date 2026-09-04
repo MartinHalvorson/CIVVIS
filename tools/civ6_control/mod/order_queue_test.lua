@@ -20,6 +20,8 @@
 --      exclusion is not a disposition.
 --   9. an asynchronous Governor assignment is submitted once per turn, not
 --      once per replan frame, while still retrying on the next turn.
+--   10. a MOVE_TO -> FORTIFY handoff gets one settlement pass so an accepted
+--      host operation cannot be cancelled before fortification lands.
 --
 -- Run: lua5.1 tools/civ6_control/mod/order_queue_test.lua
 
@@ -297,7 +299,10 @@ host.allow_cancel = true
 queue.drain(player, PID, 7)
 check("landed operation is cancelled before the follow-up", host.commands[1]
 	and host.commands[1].command, "UNITCOMMAND_CANCEL")
-check("follow-up runs after landed operation cancellation", ops(142),
+check("cancelled path gets a settlement pass", ops(142), "UNITOPERATION_MOVE_TO")
+check("cancelled path keeps follow-up pending", queue.pendingCount(), 1)
+queue.drain(player, PID, 7)
+check("follow-up runs after landed operation settles", ops(142),
 	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")
 check("landed-operation queue drains", queue.pendingCount(), 0)
 
@@ -316,6 +321,9 @@ check("asynchronous cancellation keeps the follow-up pending", ops(143),
 	"UNITOPERATION_MOVE_TO")
 check("asynchronous cancellation does not race the follow-up", queue.pendingCount(), 1)
 host.deactivate(143)
+queue.drain(player, PID, 7)
+check("asynchronous cancellation gets a settlement pass", ops(143), "UNITOPERATION_MOVE_TO")
+check("asynchronous cancellation keeps follow-up pending", queue.pendingCount(), 1)
 queue.drain(player, PID, 7)
 check("follow-up runs after cancellation settles", ops(143),
 	"UNITOPERATION_MOVE_TO,UNITOPERATION_FORTIFY")

@@ -14843,7 +14843,7 @@ end
 -- One bare global table: the main chunk sits two slots under Lua 5.1's
 -- 200-local ceiling (see the CI headroom check), so nothing here is a `local`.
 CivvisQueue = {
-	pending = {},   -- host unit id -> { rows, next, expect, ready, wait }
+	pending = {},   -- host unit id -> { rows, next, expect, ready, wait, settle_passes }
 	order = {},     -- unit ids in the order they were first queued
 	count = 0,
 	-- Units whose OPENING walk is still in flight and have nothing queued
@@ -14896,7 +14896,10 @@ CivvisQueue.push = function(subject, row, expect)
 	local q = CivvisQueue;
 	local entry = q.pending[subject];
 	if entry == nil then
-		entry = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
+		entry = {
+			rows = {}, next = 1, expect = expect, ready = false, wait = 0,
+			settle_passes = 0,
+		};
 		q.pending[subject] = entry;
 		q.order[#q.order + 1] = subject;
 	elseif #entry.rows == 0 then
@@ -14924,7 +14927,8 @@ CivvisQueue.watch = function(subject, expect, origin)
 	local q = CivvisQueue;
 	if q.pending[subject] ~= nil then return; end
 	q.pending[subject] = {
-		rows = {}, next = 1, expect = expect, origin = origin, ready = false, wait = 0
+		rows = {}, next = 1, expect = expect, origin = origin, ready = false, wait = 0,
+		settle_passes = 0,
 	};
 	q.order[#q.order + 1] = subject;
 	q.watching = q.watching + 1;
@@ -15057,6 +15061,17 @@ CivvisQueue.drain = function(player, pid, turn)
 				end
 				local ready = (entry.ready or arrived or spent or moved_from_origin
 					or entry.wait >= grace) and not active_operation;
+				-- A path can report its destination before Civ VI has finished
+				-- deactivating the asynchronous MOVE_TO. On the live host the
+				-- activity read can briefly say "awake" in that window, so an
+				-- immediately accepted FORTIFY is then cancelled by next-turn
+				-- cleanup without ever granting fortification. Give only this
+				-- MOVE_TO -> FORTIFY handoff one additional drain pass; strikes
+				-- and useful actions retain their existing latency.
+				if ready and (entry.settle_passes or 0) > 0 then
+					entry.settle_passes = entry.settle_passes - 1;
+					ready = false;
+				end
 				-- See `CivvisBoard.moveNoop`: a leg the host accepted, whose unit
 				-- is still on the plot it was sent from with its movement intact
 				-- once the watch runs out, is a no-op. It is named and answered
@@ -15112,6 +15127,10 @@ CivvisQueue.drain = function(player, pid, turn)
 								entry.expect = ok and CivvisQueue.expectFor(row) or nil;
 								entry.ready = false;
 								entry.wait = 0;
+								entry.settle_passes = ok
+									and verb == "MOVE_TO"
+									and tostring(entry.rows[entry.next].verb or "") == "FORTIFY"
+									and 1 or 0;
 							end
 						end
 					end
