@@ -68,6 +68,7 @@ class FixedProfileTests(unittest.TestCase):
         self.assertNotIn("macos_capture", source)
         self.assertNotIn("macos_ocr", source)
         self.assertNotIn("screenshot(", source)
+        self.assertNotIn("civ6_nudge_end_turn", source)
 
 
 class _Player:
@@ -78,9 +79,8 @@ class _Player:
 
 
 class SilenceRecoveryTests(unittest.TestCase):
-    def test_one_nudge_is_sent_only_after_event_silence_then_the_owner_returns(self):
+    def test_event_silence_returns_the_wedge_to_the_supervisor(self):
         ticks = [0.0]
-        nudges = []
 
         def now():
             return ticks[0]
@@ -88,26 +88,22 @@ class SilenceRecoveryTests(unittest.TestCase):
         def sleep(seconds):
             ticks[0] += seconds
 
-        reason, nudged = loop.monitor_player(
+        reason = loop.monitor_player(
             _Player(), Path("/definitely/missing/events.jsonl"),
-            silence_s=4.0, nudge_settle_s=3.0, poll_s=1.0,
+            silence_s=4.0, poll_s=1.0,
             should_stop=lambda: False,
-            nudge=lambda: nudges.append(ticks[0]) or True,
             now=now, sleep=sleep,
         )
         self.assertEqual(reason, "wedge")
-        self.assertTrue(nudged)
-        self.assertEqual(nudges, [4.0])
+        self.assertEqual(ticks[0], 4.0)
 
-    def test_operator_stop_never_sends_a_forced_end_turn(self):
-        reason, nudged = loop.monitor_player(
+    def test_operator_stop_returns_without_a_recovery_action(self):
+        reason = loop.monitor_player(
             _Player(), Path("/definitely/missing/events.jsonl"),
-            silence_s=1.0, nudge_settle_s=1.0, poll_s=1.0,
+            silence_s=1.0, poll_s=1.0,
             should_stop=lambda: True,
-            nudge=lambda: self.fail("nudge must not run during operator stop"),
         )
         self.assertEqual(reason, "stopped")
-        self.assertFalse(nudged)
 
 
 if __name__ == "__main__":

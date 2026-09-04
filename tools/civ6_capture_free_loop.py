@@ -37,7 +37,6 @@ import civ6_capture_free_setup as setup  # noqa: E402
 import civ6_env as env  # noqa: E402
 from civ6_control import gamelock, install, launcher  # noqa: E402
 from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
-from civ6_nudge_end_turn import nudge as nudge_end_turn  # noqa: E402
 
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
@@ -253,42 +252,32 @@ def monitor_player(
     events: Path,
     *,
     silence_s: float,
-    nudge_settle_s: float,
     poll_s: float,
     should_stop: Callable[[], bool] = lambda: STOP_REQUESTED,
-    nudge: Callable[[], bool] = nudge_end_turn,
     now: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-) -> tuple[str, bool]:
+) -> str:
     """Wait for a player, escalating only after no event activity.
 
     A turn can be slow, but a healthy game keeps publishing state, await, or
-    blocker records.  Event silence therefore gates the real SHIFT+RETURN
-    action.  One nudge gets a short settle window; no new event after that is a
-    wedge and the owner returns control to the supervisor for a fresh game.
+    blocker records.  A silent stream is therefore a wedge: leave its stack
+    sample and return control to the supervisor for a fresh game.  The separate
+    climb watchdog exclusively owns any forced end-turn recovery.
     """
     last_mtime = event_mtime(events)
     last_activity = now()
-    nudged_at: float | None = None
-    nudged = False
     while player.poll() is None:
         if should_stop():
-            return "stopped", nudged
+            return "stopped"
         current_mtime = event_mtime(events)
         if current_mtime is not None and current_mtime != last_mtime:
             last_mtime = current_mtime
             last_activity = now()
-            nudged_at = None
         current = now()
-        if nudged_at is not None:
-            if current - nudged_at >= nudge_settle_s:
-                return "wedge", nudged
-        elif current - last_activity >= silence_s:
-            nudged = True
-            nudge()
-            nudged_at = current
+        if current - last_activity >= silence_s:
+            return "wedge"
         sleep(poll_s)
-    return ("completed" if player.returncode == 0 else "player-exited"), nudged
+    return "completed" if player.returncode == 0 else "player-exited"
 
 
 def owns_game(tag: str) -> bool:
@@ -341,15 +330,14 @@ def run_once(args: argparse.Namespace, index: int) -> tuple[bool, str, str]:
     run_dir: Path | None = None
     player: subprocess.Popen | None = None
     reason = "launch-failed"
-    nudged = False
     try:
         run_dir, orders_db = prepare_run(args, tag)
         if not start_game(args, tag, run_dir):
             return False, reason, f"{tag}: Civ VI did not reach the main menu"
         player = start_attached_player(args, tag, run_dir, orders_db)
-        reason, nudged = monitor_player(
+        reason = monitor_player(
             player, run_dir / "events.jsonl", silence_s=args.wedge_silence,
-            nudge_settle_s=args.nudge_settle, poll_s=args.poll,
+            poll_s=args.poll,
         )
         if reason == "wedge":
             sample_game(run_dir)
@@ -360,7 +348,7 @@ def run_once(args: argparse.Namespace, index: int) -> tuple[bool, str, str]:
             "finished_utc": utc_now(),
             "reason": reason,
             "turn": turn,
-            "nudged": nudged,
+            "wedge_detected": reason == "wedge",
             "player_returncode": player.poll(),
         })
         return turn is not None and turn >= 1, reason, tag
@@ -404,7 +392,6 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--civvis-bin",
                     default=str(HERE.parent / "target" / "release" / "civvis_orders"))
     ap.add_argument("--wedge-silence", type=float, default=120.0)
-    ap.add_argument("--nudge-settle", type=float, default=25.0)
     ap.add_argument("--poll", type=float, default=2.0)
     return ap
 
@@ -417,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
         parser().error(str(error))
     if args.attempts < 1 or args.max_turns < 1:
         parser().error("--attempts and --max-turns must be positive")
-    if args.wedge_silence <= 0 or args.nudge_settle <= 0 or args.poll <= 0:
+    if args.wedge_silence <= 0 or args.poll <= 0:
         parser().error("wedge timing values must be positive")
     if not Path(args.civvis_bin).is_file():
         print(f"CIVVIS decision binary does not exist: {args.civvis_bin}",
