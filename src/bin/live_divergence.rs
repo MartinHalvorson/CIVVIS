@@ -226,6 +226,10 @@ pub struct LedgerCombat {
     pub attacker: i64,
     pub defender: i64,
     pub damage_to_defender: Option<f64>,
+    /// Defender HP at `CombatVisBegin`, before this blow. Civilization VI
+    /// reports damage capped at that remaining HP when the blow kills a
+    /// wounded unit; the engine's expected damage must use the same cap.
+    pub defender_hp: Option<f64>,
     pub attacker_kind: String,
     pub defender_kind: String,
     /// Where each side stood when the combat opened (`CivvisLedger.describe`,
@@ -240,9 +244,9 @@ pub struct LedgerCombat {
     pub ranged_verb: bool,
 }
 
-/// One side of a ledger `combat`: its Civilization VI id, unit kind and the
-/// plot it stood on when the combat opened (`None` when unreadable).
-type CombatSide = (i64, String, Option<(i32, i32)>);
+/// One side of a ledger `combat`: its Civilization VI id, unit kind, opening
+/// HP and the plot it stood on when the combat opened (`None` when unreadable).
+type CombatSide = (i64, String, Option<f64>, Option<(i32, i32)>);
 
 /// Parse a `combat` event. Only unit-versus-unit fights with a known defender
 /// damage are priced; district fights (walls, garrisons) are not modelled here.
@@ -266,22 +270,28 @@ pub fn parse_combat(value: &serde_json::Value) -> Option<LedgerCombat> {
             (Some(x), Some(y)) => Some((x, y)),
             _ => None,
         };
+        let hp = side
+            .get("hp")
+            .and_then(|value| value.as_f64())
+            .filter(|value| value.is_finite() && (0.0..=100.0).contains(value));
         Some((
             side.get("id")?.as_i64()?,
             side.get("kind")
                 .and_then(|k| k.as_str())
                 .unwrap_or("?")
                 .to_string(),
+            hp,
             pos,
         ))
     };
-    let (attacker, attacker_kind, attacker_pos) = side("attacker")?;
-    let (defender, defender_kind, defender_pos) = side("defender")?;
+    let (attacker, attacker_kind, _, attacker_pos) = side("attacker")?;
+    let (defender, defender_kind, defender_hp, defender_pos) = side("defender")?;
     Some(LedgerCombat {
         turn: value.get("turn")?.as_u64()? as u32,
         attacker,
         defender,
         damage_to_defender: value.get("damage_to_defender").and_then(|d| d.as_f64()),
+        defender_hp,
         attacker_kind,
         defender_kind,
         attacker_pos,
@@ -326,13 +336,20 @@ pub fn combat_pairs(combats: &[LedgerCombat], mirror: &LiveMirror) -> Vec<Pair> 
             let did = board_id(&combat.defender)?;
             let attacker = game.units.get(&uid)?;
             let defender = game.units.get(&did)?;
-            let sim = match exact_strengths(game, combat, uid, did) {
+            let expected = match exact_strengths(game, combat, uid, did) {
                 Some((att, def)) => expected_damage(att, def),
                 None => expected_damage(
                     game.unit_strength(attacker, false),
                     game.unit_strength(defender, true),
                 ),
             };
+            // The host's ledger measures HP actually removed. A blow that
+            // would deal 100 to a unit entering combat at 8 HP is recorded as
+            // 8, not 100; use the opening ledger HP when available so a kill
+            // is not reported as model drift. Older events lack that field,
+            // so the mirrored unit's opening HP is the conservative fallback.
+            let defender_hp = combat.defender_hp.unwrap_or(defender.hp as f64);
+            let sim = expected.min(defender_hp.max(0.0));
             Some(Pair {
                 turn: combat.turn,
                 key: format!("{} -> {}", combat.attacker_kind, combat.defender_kind),
@@ -873,6 +890,7 @@ mod tests {
             (40, 65536, 131072)
         );
         assert_eq!(combat.damage_to_defender, Some(37.0));
+        assert_eq!(combat.defender_hp, Some(100.0));
         assert_eq!(
             combat.attacker_pos,
             Some((10, 4)),
@@ -938,6 +956,7 @@ mod tests {
             attacker: 65536,
             defender: 131072,
             damage_to_defender: Some(damage),
+            defender_hp: None,
             attacker_kind: "UNIT_WARRIOR".into(),
             defender_kind: "UNIT_WARRIOR".into(),
             attacker_pos: None,
@@ -970,6 +989,19 @@ mod tests {
             pairs[0].sim, bare,
             "the hill under the defender is a term the bare formula never carried"
         );
+    }
+
+    #[test]
+    fn a_killing_blow_is_capped_at_the_defenders_opening_hp() {
+        let mirror = fight("UNIT_WARRIOR", (3, 3), (4, 3));
+        let mut combat = ledger(8.0);
+        combat.defender_hp = Some(8.0);
+
+        let pairs = combat_pairs(&[combat], &mirror);
+
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].live, 8.0);
+        assert_eq!(pairs[0].sim, 8.0, "a lethal expected blow is health-capped");
     }
 
     #[test]
