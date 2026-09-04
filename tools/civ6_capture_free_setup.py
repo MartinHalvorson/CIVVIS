@@ -84,10 +84,13 @@ def start_direct_game(*, restore_defaults: bool = True,
     if not start_only:
         # The event log tells us the core is ready, but not that the FrontEnd
         # has completed its logo/tutorial transition.  Keep the normal
-        # controller's transition allowance and touch only known controls.
+        # controller's transition allowance and then touch the first known
+        # menu control directly.  `prepare_game_window()` already focuses Civ;
+        # an earlier extra click at a nominally inert window fraction could
+        # land on the Tutorial entry after a FrontEnd layout transition.  That
+        # selected a Tutorial map instead of a verification game and left the
+        # no-visual owner waiting forever for its control-mod handshake.
         time.sleep(MENU_SETTLE_S)
-        click_window_fraction(0.150, 0.850)  # inert artwork; brings Civ forward
-        time.sleep(1.5)
         click_point(*SINGLE_PLAYER_POINT)
         time.sleep(SUBMENU_SETTLE_S)
         click_point(*CREATE_GAME_POINT)

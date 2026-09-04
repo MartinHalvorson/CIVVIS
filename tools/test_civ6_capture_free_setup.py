@@ -36,6 +36,10 @@ class CaptureFreeSetupTests(unittest.TestCase):
 
         self.assertIn(setup.SINGLE_PLAYER_POINT, clicks)
         self.assertIn(setup.CREATE_GAME_POINT, clicks)
+        # Focusing the window is sufficient.  The first click must therefore
+        # be the verified Single Player control, never a speculative wake-up
+        # click that can become the Tutorial entry during a layout transition.
+        self.assertEqual(clicks[0], setup.SINGLE_PLAYER_POINT)
         # Restore Defaults, Emperor, Online, and Start Game are all relative
         # to the prepared fixed-size game window.
         self.assertIn((230, 222), clicks)
