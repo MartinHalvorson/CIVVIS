@@ -3201,7 +3201,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             outcome = "victory"
         elif kind == "defeat" and bool(event.get("ours")):
             outcome = "defeat"
-        elif kind == "retired":
+        elif kind in ("retired",):
             if _record_attached_operator_retirement(run_dir, args.tag, event):
                 print("[attach] the control mod acknowledged Civilization VI "
                       "ACTION_RETIRE; recording operator_retired", flush=True)
