@@ -2062,6 +2062,24 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 /// without converting it to a second shared slice allocation.
 type CoveredTiles = (std::sync::Arc<AttackEnvelopes>, std::sync::Arc<Vec<Pos>>);
 
+/// The three route priorities used by a recovering unit. They are immutable
+/// while a board and hostile-envelope table are unchanged, so frontier clones
+/// can share one full-map scan instead of repeating it per unit.
+#[derive(Debug, PartialEq, Eq)]
+struct SafeHealingTargets {
+    cities: HashSet<Pos>,
+    friendly_tiles: HashSet<Pos>,
+    neutral_tiles: HashSet<Pos>,
+}
+
+/// A safe-healing scan together with every input that selects its tiles.
+struct SafeHealingTargetCache {
+    pid: usize,
+    stamp: (u64, u64, u64, u64),
+    envelopes: std::sync::Arc<AttackEnvelopes>,
+    targets: std::sync::Arc<SafeHealingTargets>,
+}
+
 /// One enemy's envelope, with the key that says when it may be reused.
 ///
 /// ★★★★★ THE BOARD KEY IS TOO COARSE AND THAT IS MOST OF THE COST. The
@@ -2656,6 +2674,9 @@ pub struct BasicAi {
     /// Every tile any hostile envelope covers, unioned once and kept against
     /// the exact envelope table it was built from. See [`Self::covered_tiles`].
     covered_tiles_cache: std::sync::Arc<std::sync::Mutex<Option<CoveredTiles>>>,
+    /// Safe recovery destinations, shared by snapshot planners while the
+    /// board state and hostile-envelope table they read remain identical.
+    safe_healing_targets_cache: std::sync::Arc<std::sync::Mutex<Option<SafeHealingTargetCache>>>,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -4939,6 +4960,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -5403,6 +5425,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -6433,29 +6456,39 @@ impl BasicAi {
             .collect()
     }
 
-    fn safe_healing_step(
+    /// Every route target [`Self::safe_healing_step`] would select before it
+    /// asks the moving unit for a path.
+    ///
+    /// ★★★★ THE KEY COVERS EVERY READ, NOT JUST THE OBVIOUS MAP. The exact
+    /// hostile-envelope `Arc` protects coverage, while
+    /// `Game::healing_target_stamp` changes for every map, city, player, or
+    /// diplomacy input used below. The cache entry retains that `Arc`, so
+    /// pointer identity cannot be recycled under a live entry. This is one
+    /// immutable full-map scan per shared frontier board rather than one per
+    /// recovering unit.
+    fn safe_healing_targets(
         &self,
         g: &Game,
         pid: usize,
-        uid: u32,
         envelopes: &std::sync::Arc<AttackEnvelopes>,
-    ) -> Option<Pos> {
-        // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
-        // and it used to price every tile with `evacuation_tile` — a defender
-        // strength, every covering enemy's attack strength, and a scan of
-        // every hostile city with `is_at_war` per city — 3,404 times per unit
-        // on a 74×46 map. That was half the simulator after #2059. The scan
-        // only keeps a tile whose incoming damage is exactly zero, and
-        // `evacuation_incoming_damage` is zero precisely when the tile is a
-        // garrison district or lies outside every enemy envelope AND out of
-        // strike range of every hostile walled city and encampment (each
-        // covering source contributes at least the clamp's floor of one).
-        // So the safety test is a set lookup, computed once, and the tile
-        // loop pays only for its heal-rate read — under a query-memo scope, so
-        // `suzerain_of` is answered once per minor, not once per tile.
-        let _memo = g.query_memo();
+    ) -> std::sync::Arc<SafeHealingTargets> {
+        let stamp = g.healing_target_stamp();
+        let slot = self
+            .safe_healing_targets_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(cached) = slot.as_ref() {
+            if cached.pid == pid
+                && cached.stamp == stamp
+                && std::sync::Arc::ptr_eq(&cached.envelopes, envelopes)
+            {
+                return std::sync::Arc::clone(&cached.targets);
+            }
+        }
+        drop(slot);
+
         let covered = self.covered_tiles(envelopes);
-        let strike_sources: Vec<Pos> = Self::district_strike_sources(g, pid);
+        let strike_sources = Self::district_strike_sources(g, pid);
         let struck = |position: Pos| {
             strike_sources.iter().any(|source| {
                 g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position)
@@ -6493,9 +6526,49 @@ impl BasicAi {
                 neutral_tiles.insert(position);
             }
         }
-        g.route_step_to_any(uid, &cities)
-            .or_else(|| g.route_step_to_any(uid, &friendly_tiles))
-            .or_else(|| g.route_step_to_any(uid, &neutral_tiles))
+        let targets = std::sync::Arc::new(SafeHealingTargets {
+            cities,
+            friendly_tiles,
+            neutral_tiles,
+        });
+        let mut slot = self
+            .safe_healing_targets_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *slot = Some(SafeHealingTargetCache {
+            pid,
+            stamp,
+            envelopes: std::sync::Arc::clone(envelopes),
+            targets: std::sync::Arc::clone(&targets),
+        });
+        targets
+    }
+
+    fn safe_healing_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        envelopes: &std::sync::Arc<AttackEnvelopes>,
+    ) -> Option<Pos> {
+        // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
+        // and it used to price every tile with `evacuation_tile` — a defender
+        // strength, every covering enemy's attack strength, and a scan of
+        // every hostile city with `is_at_war` per city — 3,404 times per unit
+        // on a 74×46 map. That was half the simulator after #2059. The scan
+        // only keeps a tile whose incoming damage is exactly zero, and
+        // `evacuation_incoming_damage` is zero precisely when the tile is a
+        // garrison district or lies outside every enemy envelope AND out of
+        // strike range of every hostile walled city and encampment (each
+        // covering source contributes at least the clamp's floor of one).
+        // So the safety test is a set lookup, computed once, and the tile
+        // loop pays only for its heal-rate read — under a query-memo scope, so
+        // `suzerain_of` is answered once per minor, not once per tile.
+        let _memo = g.query_memo();
+        let targets = self.safe_healing_targets(g, pid, envelopes);
+        g.route_step_to_any(uid, &targets.cities)
+            .or_else(|| g.route_step_to_any(uid, &targets.friendly_tiles))
+            .or_else(|| g.route_step_to_any(uid, &targets.neutral_tiles))
             .filter(|next| g.can_move(uid, *next))
     }
 
@@ -22199,6 +22272,112 @@ mod tests {
         assert!(
             ai.recovering_units.contains(&ours),
             "and it is still recovering: leaving the tile is not rejoining the line"
+        );
+    }
+
+    /// The target scan is deliberately shared by the cloned boards a frontier
+    /// planner creates, but no state it reads may cross that boundary stale.
+    #[test]
+    fn safe_healing_targets_share_clones_and_refresh_every_board_input() {
+        let mut game = Game::new_full(3, 24, 16, 91_485, 120, 1, false);
+        for pid in [0, 1] {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each major begins with a settler");
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("found the fixture capital");
+        }
+        assert!(game.at_war.insert((0, 1)), "the fixture begins at peace");
+        let hostile_city = game
+            .cities
+            .values()
+            .find(|city| city.owner == 1)
+            .map(|city| city.id)
+            .expect("the second major begins with a city");
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("the fixture seats one city-state");
+        // Keep the identical table on every board below. That makes every
+        // refresh prove the board stamp rather than merely a new envelope.
+        let envelopes = std::sync::Arc::new(Vec::new());
+        let ai = BasicAi::new();
+        let first = ai.safe_healing_targets(&game, 0, &envelopes);
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &ai.safe_healing_targets(&game, 0, &envelopes)
+        ));
+        let clone = game.clone();
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &ai.safe_healing_targets(&clone, 0, &envelopes)
+        ));
+
+        let assert_refresh = |label: &str, board: &Game| {
+            let before = ai.safe_healing_targets(&game, 0, &envelopes);
+            let warm = ai.safe_healing_targets(board, 0, &envelopes);
+            assert!(
+                !std::sync::Arc::ptr_eq(&before, &warm),
+                "{label}: the changed board reused the original target set"
+            );
+            let cold = BasicAi::new().safe_healing_targets(board, 0, &envelopes);
+            assert_eq!(
+                warm.as_ref(),
+                cold.as_ref(),
+                "{label}: the warm cache differs from a fresh scan"
+            );
+        };
+
+        let mut map_changed = game.clone();
+        let owned_tile = map_changed
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                map_changed.city_at(*position).is_none()
+                    && map_changed.map.tiles[position].owner_city == Some(hostile_city)
+            })
+            .expect("the hostile capital owns at least one non-centre tile");
+        map_changed
+            .map
+            .tiles
+            .get_mut(&owned_tile)
+            .unwrap()
+            .owner_city = None;
+        assert_refresh("tile ownership", &map_changed);
+
+        let mut city_changed = game.clone();
+        city_changed.cities.get_mut(&hostile_city).unwrap().wall_hp += 1;
+        assert_refresh("city strike state", &city_changed);
+
+        let mut player_changed = game.clone();
+        player_changed
+            .players
+            .get_mut(0)
+            .unwrap()
+            .envoys
+            .push((minor, 3));
+        assert_refresh("suzerain input", &player_changed);
+
+        let mut diplomacy_changed = game.clone();
+        assert!(
+            diplomacy_changed.at_war.insert((0, 2)),
+            "the added war must change diplomacy"
+        );
+        assert_refresh("war ledger", &diplomacy_changed);
+
+        let different_envelopes = std::sync::Arc::new(Vec::new());
+        let original = ai.safe_healing_targets(&game, 0, &envelopes);
+        let different = ai.safe_healing_targets(&game, 0, &different_envelopes);
+        assert!(
+            !std::sync::Arc::ptr_eq(&original, &different),
+            "a different hostile coverage table reused its target set"
         );
     }
 
