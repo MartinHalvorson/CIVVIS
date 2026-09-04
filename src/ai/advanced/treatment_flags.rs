@@ -2663,11 +2663,11 @@ impl AdvancedAi {
         self.native_emergency_purchase = false;
     }
 
-    /// Version two buys the same local answer only for damage this turn or
-    /// last that a visible at-war military unit can legally follow with a City
-    /// Center attack. One family version plays, so enabling this successor
-    /// turns version one off. Opt-in gene `native-emergency-purchase-2`; see
-    /// `advanced/gold_and_cards.rs`.
+    /// Version two buys the same local answer on a host-confirmed hit in the
+    /// current turn, or on a one-turn-old damage mark that a visible at-war
+    /// military unit can legally follow with a City Center attack. One family
+    /// version plays, so enabling this successor turns version one off. Opt-in
+    /// gene `native-emergency-purchase-2`; see `advanced/gold_and_cards.rs`.
     pub fn enable_native_emergency_purchase_2(&mut self) {
         self.native_emergency_purchase = false;
         self.native_emergency_purchase_2 = true;
