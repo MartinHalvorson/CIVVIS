@@ -10258,6 +10258,11 @@ impl Game {
         self.unit_ids_at(pos).to_vec()
     }
 
+    /// This player's unit ids in stable ascending order.
+    ///
+    /// The roster is a `BTreeMap` keyed by id.  Keep that order through the
+    /// read memo too: callers use the first few qualifying units as a
+    /// deterministic bounded roster.
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
         if let Some(ids) = self
             .query_memo
