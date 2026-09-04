@@ -55,7 +55,13 @@ BEGIN_GAME_WINDOW_FRACTION = (0.394, 0.801)
 # landed in the live promotional panel on this layout.
 TITLE_BAR_Y_OFFSET = 20
 
-MENU_SETTLE_S = 15.0
+# ``Modding.log`` proves content configuration is complete, but the front-end
+# tree can still be replacing its promotional/main-menu layout.  The shorter
+# historic allowance reached a visible menu that was not yet interactive and
+# sent Play Now into the wrong row.  This capture-free owner has one fixed
+# profile, so prefer a bounded patient settle over a blind retry on a recorded
+# desktop.
+MENU_SETTLE_S = 120.0
 MENU_ACTIVATION_SETTLE_S = 1.5
 SUBMENU_SETTLE_S = 6.0
 BOOTSTRAP_READY_TIMEOUT_S = 300.0
