@@ -226,6 +226,7 @@ fn builder_recovery_needs_local_work_and_no_existing_builder() {
         for pos in positions {
             let tile = g.map.tiles.get_mut(&pos).unwrap();
             tile.terrain = crate::name!("grassland");
+            tile.hills = false;
             tile.feature = None;
             tile.improvement = None;
             tile.resource = None;
@@ -251,7 +252,7 @@ fn expansion_requires_pace_and_a_real_site_and_stops_with_a_walker() {
             ai.enable_expansion_best_idle_city();
         }
         g.cities.get_mut(&cid).unwrap().pop = 4;
-        g.turn = 10;
+        g.turn = 25;
         // The settlement atlas reads explored tiles.
         let positions: Vec<_> = g.map.tiles.keys().copied().collect();
         for pos in positions {
@@ -327,7 +328,7 @@ fn expansion_v2_rejects_late_or_population_poor_launches() {
     assert!(ai.higher_level_investment_target(&g, 0, &plan).is_some());
     ai.enable_expansion_best_idle_city_2();
     assert!(ai.higher_level_investment_target(&g, 0, &plan).is_none());
-    g.turn = 1;
+    g.turn = 25;
     g.cities.get_mut(&cid).unwrap().pop = 3;
     assert!(ai.higher_level_investment_target(&g, 0, &plan).is_none());
     g.cities.get_mut(&cid).unwrap().pop = 4;
@@ -435,6 +436,7 @@ fn builder_v2_needs_three_distinct_jobs_not_three_improvement_choices() {
     for (index, pos) in positions.iter().take(3).enumerate() {
         let tile = g.map.tiles.get_mut(pos).unwrap();
         tile.terrain = crate::name!("grassland");
+        tile.hills = false;
         tile.feature = None;
         tile.resource = None;
         tile.improvement = None;

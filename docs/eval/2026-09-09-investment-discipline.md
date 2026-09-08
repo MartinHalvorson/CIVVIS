@@ -106,7 +106,17 @@ and victory reservations. Decision journal entries identify the selected version
 
 The validation section below will record executed checks and fixed-size reach
 probes. These are hypotheses about better spending, not claims of improved win
-rates. No deployment gene is promoted by this change. Native Emperor screens
-apply equal difficulty bonuses to all majors; they do not reproduce the live
-player's asymmetric handicap. A positive small probe must not be used as proof
+rates. No deployment gene is promoted by this change. These probes use `--difficulty emperor --rivals firaxis-mix --handicap rivals
+--rival-chairs 3 --p-on 0.5`: three measured seats without the Emperor bonuses
+against three boosted rival seats. This exercises an asymmetric handicap,
+though it is not the live one-player/five-rival shape or the Firaxis AI itself. A positive small probe must not be used as proof
 of a higher-level live improvement.
+
+
+Before execution, fix six games per gene (30 games total), two workers per
+probe, seed windows 109090000–109090005 (Builder), 109091000–109091005
+(culture), 109092000–109092005 (expansion), 109093000–109093005 (research),
+and 109094000–109094005 (trade). Each uses only its one new gene in `--genes`;
+other genes retain the evaluator baseline. Each game contributes three measured
+seats and three excluded rival seats. This is a reach screen, not a promotion
+trial, and the sample size will not be increased to obtain a favorable sign.
