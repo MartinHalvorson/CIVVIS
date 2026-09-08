@@ -83,3 +83,16 @@ whether we issue tourism-enabling sales after that crossing. Track solvency
 alongside these metrics: an unaffordable cultural build order is still a
 losing build order. Compare completed games rather than counting resumed
 copies as independent wins.
+
+Local validation completed with 3,178 tests passed and 50 ignored. Six-player
+Emperor/Online soaks (250-turn cap) finished Culture-only seeds 820260908 and
+820260909 with a culture victory at 131 and a draw at 250; mixed-victory seeds
+820260910 and 820260911 ended in science victories at 189 and 183. The draw is
+retained as a draw, not counted as a culture win.
+
+A read-only `civvis_orders` replay of the retained live turn-200 board, with
+its science target and original treatment flags, emits a `policy_deck` that
+includes `POLICY_MUSIC_CENSORSHIP` while retaining the science objective.
+This verifies host-order generation, not host acceptance or a changed outcome
+for the already completed game. Replay output and validation logs are retained
+in the host's `civvis-culture-evidence-20260908` directory.

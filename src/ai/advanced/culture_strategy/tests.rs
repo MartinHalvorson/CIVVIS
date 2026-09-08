@@ -287,6 +287,7 @@ fn culture_production_recovers_the_treasury_before_adding_upkeep() {
     let mut g = board();
     g.players[0].gold = 0.0;
     g.players[0].gold_per_turn = -12.0;
+    g.players[0].techs.insert(crate::name!("pottery"));
     let cid = g.player_city_ids(0)[0];
     let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
     ai.disable_war_economy();
