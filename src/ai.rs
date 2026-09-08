@@ -312,6 +312,7 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
+mod movement_risk;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
@@ -2975,6 +2976,8 @@ pub struct BasicAi {
     /// lives here because `projected_counter_damage` does. Opt-in gene
     /// `defend-where-you-stand`; see `advanced/engine_pricing.rs`.
     pub(crate) defend_where_you_stand: bool,
+    /// Frozen historical movement; false for every current controller.
+    pub(crate) legacy_movement: bool,
     /// ★ THE BARBARIANS HUNT THE RELIGIOUS CORPS TOO. A Missionary beside a
     /// city it is converting stands still for three turns at zero movement,
     /// and in Civilization VI a raider that reaches it condemns it. Here the
@@ -4957,6 +4960,7 @@ impl BasicAi {
             contested_land_first: false,
             exchange_is_the_engines: false,
             defend_where_you_stand: false,
+            legacy_movement: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -5421,6 +5425,7 @@ impl BasicAi {
             contested_land_first: false,
             exchange_is_the_engines: false,
             defend_where_you_stand: false,
+            legacy_movement: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -6198,9 +6203,10 @@ impl BasicAi {
         position: Pos,
         envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> bool {
-        envelopes
-            .iter()
-            .any(|(enemy_id, reach)| reach.contains(&position) && g.units.contains_key(enemy_id))
+        Self::movement_hazard_damage(g, pid, position) > 0.0
+            || envelopes.iter().any(|(enemy_id, reach)| {
+                reach.contains(&position) && g.units.contains_key(enemy_id)
+            })
             || g.cities
                 .values()
                 .any(|city| Self::city_centre_strikes(g, pid, city, position))
@@ -6239,15 +6245,20 @@ impl BasicAi {
         // or Encampment damage that district, not the formation stationed in
         // it. That makes a friendly city a genuine safe refuge even while the
         // enemy can still bombard its walls.
+        let hazard = IncomingDamage::default().with(Self::movement_hazard_damage(g, pid, position));
         let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
         if garrisoned {
-            return IncomingDamage::default();
+            return hazard;
         }
         if !Self::anything_can_reach(g, pid, position, envelopes) {
             return IncomingDamage::default();
         }
         let mut defender = unit.clone();
         defender.pos = position;
+        if position != unit.pos {
+            defender.fortified = false;
+            defender.fortify_turns = 0;
+        }
         let defense = effective_strength(
             g.unit_strength(&defender, true) + g.tile_defense_bonus(position),
             defender.hp,
@@ -6300,7 +6311,10 @@ impl BasicAi {
                 })
                 .fold(IncomingDamage::default(), IncomingDamage::with)
         };
-        unit_damage.merge(city_damage).merge(encampment_damage)
+        unit_damage
+            .merge(city_damage)
+            .merge(encampment_damage)
+            .merge(hazard)
     }
 
     /// The largest single blow anything the controller can see would land on
@@ -12589,7 +12603,6 @@ impl BasicAi {
         }
         let upos = g.units[&uid].pos;
         let u = &g.units[&uid];
-        let my_def = effective_strength(g.unit_strength(u, true), u.hp);
         let prefer_dry = self.come_ashore && g.rules.units[u.kind].domain.as_deref() != Some("sea");
         let doctrine = Self::unit_doctrine(g, uid);
         let (preferred_range, progress, threat_caution) = match doctrine {
@@ -12615,6 +12628,8 @@ impl BasicAi {
         } else {
             Vec::new()
         };
+        let movement_risk =
+            (!self.legacy_movement).then(|| self.movement_risk_frame(g, pid, uid, target));
         let score = |g: &Game, tile: Pos| -> f64 {
             let depth_error = (g.wdist(tile, target) - preferred_range).abs();
             let mut s = -3.0 * progress * depth_error as f64;
@@ -12627,12 +12642,13 @@ impl BasicAi {
                     }
                     if o.owner == pid && *oid != uid {
                         adjacent_support += 1;
-                    } else if enemy_ids.contains(&o.owner) {
-                        let att = effective_strength(g.unit_strength(o, false), o.hp);
+                    } else if self.legacy_movement && enemy_ids.contains(&o.owner) {
+                        let attack = effective_strength(g.unit_strength(o, false), o.hp);
+                        let defense = effective_strength(g.unit_strength(u, true), u.hp);
                         s -= self.w.mv_threat
                             * threat_caution
                             * 30.0
-                            * ((att - my_def) / 25.0).exp();
+                            * ((attack - defense) / 25.0).exp();
                     }
                 }
             }
@@ -12641,6 +12657,9 @@ impl BasicAi {
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
+            if let Some(risk) = &movement_risk {
+                s += risk.score(g, pid, uid, tile, self.w.mv_threat * threat_caution);
+            }
             // ⭐ The score above has no terrain term at all, and open water is
             // doubly attractive because of it: a sea tile is usually the
             // geometrically shorter road to an objective across a bay, AND it
@@ -12953,6 +12972,9 @@ impl BasicAi {
     /// movement points the generic mover enters it and immediately routes
     /// back out, repeating the same round trip every turn.
     fn settler_step_toward(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
+        if let Some(acted) = self.risk_aware_route_step(g, pid, uid, target, 0) {
+            return acted;
+        }
         if let Some(next) = g
             .route_step(uid, target, 0)
             .filter(|next| g.can_move(uid, *next))
@@ -12974,6 +12996,9 @@ impl BasicAi {
         target: Pos,
         stop_range: i32,
     ) -> bool {
+        if let Some(acted) = self.risk_aware_route_step(g, pid, uid, target, stop_range) {
+            return acted;
+        }
         let cur = g.units[&uid].pos;
         if g.wdist(cur, target) <= stop_range {
             return false;
@@ -24057,7 +24082,7 @@ mod tests {
     }
 
     #[test]
-    fn scout_explores_while_strong_assault_unit_attacks() {
+    fn scout_avoids_damage_while_strong_assault_unit_attacks() {
         let mut g = Game::new_full(2, 24, 16, 38, 30, 0, false);
         g.at_war.insert((0, 1));
         let (enemy_pos, scout_pos, assault_pos, hidden) = g
@@ -24108,10 +24133,15 @@ mod tests {
 
         let mut ai = BasicAi::new();
         assert!(ai.military_step(&mut g, 0, scout));
-        assert!(matches!(
-            g.log.last(),
-            Some((0, Action::Move { unit, to })) if *unit == scout && *to == hidden
-        ));
+        assert!(matches!(g.log.last(), Some((0, Action::Move { unit, .. })) if *unit == scout));
+        let envelopes = ai.enemy_attack_envelopes(&g, 0);
+        let selected =
+            BasicAi::incoming_damage(&g, 0, scout, g.units[&scout].pos, &envelopes).total;
+        let exposed = BasicAi::incoming_damage(&g, 0, scout, hidden, &envelopes).total;
+        assert!(
+            selected <= exposed,
+            "exploration must not override a safer route"
+        );
         assert!(g.units.contains_key(&enemy));
 
         assert!(

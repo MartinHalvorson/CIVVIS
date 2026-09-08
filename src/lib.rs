@@ -871,6 +871,9 @@ mod tests {
         let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
         let mut g = Game::new_with(crate::game::GameOptions {
             map_topology: crate::setup::MapTopology::Planet,
+            // Exercise forty turns of globe geometry even when improved
+            // movement would enable an earlier culture/religious victory.
+            victory_conditions: crate::game::VictoryConditions::parse("score").unwrap(),
             ..crate::game::GameOptions::new(2, width, height, 4_517, 40, 2)
         });
         assert_eq!(

@@ -334,7 +334,7 @@ fn mirrored_board(g: &Game, pid: usize) -> bool {
 /// keep the engine's line-of-sight test on a native board and drop it on the
 /// mirrored one, where the host's rule is the player's visibility. Ascending
 /// and distinct, like `attack_reach`. The probe is left as it was found.
-fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos> {
+pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos> {
     let Some(saved) = probe.units.get(&uid).cloned() else {
         return Vec::new();
     };
@@ -505,6 +505,10 @@ impl DangerField {
             return Arc::new(Vec::new());
         };
         let mut out = Vec::new();
+        let hazard = crate::ai::BasicAi::movement_hazard_damage(&self.probe, self.pid, tile);
+        if hazard > 0.0 {
+            out.push((None, hazard));
+        }
         // A garrison is not a combat target: blows on a City Center or an
         // Encampment damage the district, not the unit inside it.
         let garrisoned =
