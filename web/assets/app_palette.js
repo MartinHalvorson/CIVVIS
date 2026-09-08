@@ -10,9 +10,9 @@
 // `syncSetupMode()` dies too and the page never registers as a viewer".
 //
 // Moving definitions EARLIER cannot create that. Moving them later can. So a
-// carve out of app.js belongs in a script ahead of it, and this one was checked
-// before it moved: of the 29 names declared here, ZERO reference anything
-// app.js declares above them.
+// carve out of app.js belongs in a script ahead of it. Image callbacks can
+// fire while app.js is still downloading, so they mark their atlas ready but
+// only request a redraw once the renderer has declared its game state.
 //
 // `tools/test_web_assets.py` holds the rest of the contract — that the page,
 // the binary's `include_str!`, and the serving route all name the same scripts,
@@ -50,7 +50,7 @@ const isLandCliffEdge = (tile, side) =>
   !isWater(tile) && !!tile?.cliff_edges?.[side];
 const FEATURE_ATLAS = new Image();
 let FEATURE_ATLAS_READY = false;
-FEATURE_ATLAS.onload = () => { FEATURE_ATLAS_READY = true; if (state) draw(); };
+FEATURE_ATLAS.onload = () => { FEATURE_ATLAS_READY = true; if (typeof state !== "undefined" && state) draw(); };
 FEATURE_ATLAS.src = "/assets/feature-atlas.png";
 const ENVIRONMENT_FEATURE_CELL = {
   floodplains:[0,0], grassland_floodplains:[0,0], plains_floodplains:[0,0],
@@ -59,7 +59,7 @@ const ENVIRONMENT_FEATURE_CELL = {
 };
 const ENVIRONMENT_FEATURE_ATLAS = new Image();
 let ENVIRONMENT_FEATURE_ATLAS_READY = false;
-ENVIRONMENT_FEATURE_ATLAS.onload = () => { ENVIRONMENT_FEATURE_ATLAS_READY = true; if (state) draw(); };
+ENVIRONMENT_FEATURE_ATLAS.onload = () => { ENVIRONMENT_FEATURE_ATLAS_READY = true; if (typeof state !== "undefined" && state) draw(); };
 ENVIRONMENT_FEATURE_ATLAS.src = "/assets/environment-feature-atlas.png";
 // Every natural wonder names the compact strategic silhouette and colors used
 // to keep it recognizable on the command map.
@@ -146,7 +146,7 @@ function naturalWonderContinues(tile, neighbor) {
 const HIDDEN_MAP_MONSTER_ATLAS = new Image();
 let HIDDEN_MAP_MONSTER_ATLAS_READY = false;
 HIDDEN_MAP_MONSTER_ATLAS.onload = () => {
-  HIDDEN_MAP_MONSTER_ATLAS_READY = true; if (state) draw();
+  HIDDEN_MAP_MONSTER_ATLAS_READY = true; if (typeof state !== "undefined" && state) draw();
 };
 HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
 const HIDDEN_MAP_MONSTER_CELL = 256, HIDDEN_MAP_MONSTER_COLUMNS = 6,
