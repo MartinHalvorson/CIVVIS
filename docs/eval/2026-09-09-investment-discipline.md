@@ -120,3 +120,51 @@ and 109094000–109094005 (trade). Each uses only its one new gene in `--genes`;
 other genes retain the evaluator baseline. Each game contributes three measured
 seats and three excluded rival seats. This is a reach screen, not a promotion
 trial, and the sample size will not be increased to obtain a favorable sign.
+
+## Completed validation
+
+- Full Rust suite after merging current main: **3,221 passed, zero failed,
+  50 ignored**. The pre-merge suite also passed (3,220 tests).
+- Thirteen focused tests pass. Six existing scenarios now exercise both
+  versions; additional tests cover each new rejection and family toggling.
+- Changed-file clippy including tests, formatting, and diff whitespace checks
+  pass. All 307 pre-existing registry indices remain in order; five appended.
+- Five fixed-size probes completed: 30 games, 90 measured seats and 90 excluded
+  rival seats. Every summary records clean source
+  `1df55a1365691024ed7135887a79adaa03d66e03`. The later merge adds upstream
+  movement calculation caching and host popup handling; the source stamp
+  identifies the actual screened revision.
+
+The initial probe startup was stopped before any game completed because its
+source stamp reflected a pending test-only lint edit. After committing that
+edit, all five restarted with the same reserved seeds and clean stamps. The
+completed artifacts below, not that aborted startup, are the evidence.
+
+| Gene | On / off seats | Win delta ± clustered SE (pp) | Reading |
+|---|---:|---:|---|
+| `builder-workforce-recovery-2` | 13 / 5 | -4.62 ± 20.48 | Inconclusive |
+| `culture-building-catchup-2` | 12 / 6 | +8.33 ± 20.18 | Inconclusive |
+| `expansion-best-idle-city-2` | 8 / 10 | -17.50 ± 19.20 | Inconclusive |
+| `research-building-catchup-2` | 7 / 11 | +5.19 ± 16.56 | Inconclusive |
+| `trade-building-before-bankruptcy-2` | 8 / 10 | -17.50 ± 22.98 | Inconclusive |
+
+All five readings are inconclusive. The expansion point estimate is negative
+again; this is not evidence that the new guards rescued its strength. The two
+versions used different source revisions, handicap settings and seeds, so
+subtracting their point estimates is not a version-two treatment effect. No
+source is added to the deployment ledger and no new version is enabled by
+default. Family inventory entries are generated with no selected head.
+
+Artifacts are the complete analyzer outputs in
+`docs/gene_screens/fires/2026-09-09-investment-*.json`; raw rows remain under
+`/tmp/civvis-investment-<tag>.jsonl` on this host.
+
+Future selection should use the regular randomized-genome screens and a
+separate held-out set with five handicapped rivals. Track founding turns,
+insolvency turns, civic progress, launch timing and Builder work alongside the
+primary win result to distinguish a better decision from a lucky draw. Any
+higher-level live improvement still needs retained Civilization VI outcomes.
+
+Tool validation: all 194 gene-tool tests and all 14 registry-append tests
+passed. `gene_fires.py --max 0` reports 280/280 genes evidenced, no waivers
+and no missing evidence. `genes.py check` and `eval_manifest.py --check` pass.
