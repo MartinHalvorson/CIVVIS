@@ -784,5 +784,148 @@ class OperatorCommands(unittest.TestCase):
         self.assertTrue(log.note("awaiting_publication").endswith(" awaiting_publication"))
 
 
+class AutomationRecovery(unittest.TestCase):
+    def test_stop_after_publish_never_rotates_even_after_restart(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / ".git").mkdir()
+            state = scheduler.new_state(1000, 1)
+            state["current"]["phase"] = "frozen"
+            path = root / "scheduler-state.json"
+            scheduler.atomic_json(path, state)
+
+            def publish(_root, state_path, current, **kwargs):
+                self.assertTrue(kwargs["publish"])
+                current["current"]["phase"] = "published"
+                scheduler.atomic_json(state_path, current)
+                return "published"
+
+            args = ["run", "--state-dir", str(root), "--repo", str(root),
+                    "--goal-games", "1", "--machine", "test", "--stop-after-publish"]
+            with mock.patch.object(scheduler, "tick", side_effect=publish) as tick, \
+                    mock.patch.object(scheduler, "checkpoint_progress"):
+                self.assertEqual(scheduler.main(args), 0)
+                self.assertEqual(tick.call_count, 1)
+                tick.reset_mock()
+                self.assertEqual(scheduler.main(args), 0)
+                tick.assert_not_called()
+
+    def test_running_segment_persists_progress_before_child_exits(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(1000, 2)
+            batch = state["current"]
+            reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+            binary = root / "fake-binary"
+            binary.touch()
+            batch["source"] = {"binary": str(binary), "worktree": str(root), "commit": "a"}
+            complete_rows(root / batch["rows"], seed_first=1000, target_games=2, complete_games=1)
+            child = mock.Mock(pid=12345)
+            calls = 0
+
+            def wait(**kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise subprocess.TimeoutExpired("fake", 1)
+                self.assertEqual(json.loads((root / "status.json").read_text())["complete_games"], 1)
+                return 0
+
+            child.wait.side_effect = wait
+            with mock.patch.object(scheduler.subprocess, "Popen", return_value=child):
+                scheduler.run_segment(root, root / "state.json", state, batch, reservation, jobs=1)
+            self.assertEqual(calls, 2)
+
+    def test_fingerprint_includes_untracked_report_and_source_diff(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            report = root / "report.json"
+            report.write_text('{"games":1}')
+            with mock.patch.object(scheduler, "git_output", side_effect=["head", "base", "diff"]):
+                first = scheduler.publication_validation_fingerprint(root, "report.json")
+            report.write_text('{"games":2}')
+            with mock.patch.object(scheduler, "git_output", side_effect=["head", "base", "diff"]):
+                second = scheduler.publication_validation_fingerprint(root, "report.json")
+            with mock.patch.object(scheduler, "git_output", side_effect=["head", "base", "changed"]):
+                third = scheduler.publication_validation_fingerprint(root, "report.json")
+            self.assertEqual(len({first, second, third}), 3)
+
+    def test_failure_keeps_assertion_stdout_and_stderr_and_full_log(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            log = root / "checks" / "rust.log"
+            result = subprocess.CompletedProcess([], 101, "assertion failed: expected winner\n",
+                                                 "error: test failed\n")
+            with mock.patch.object(scheduler.subprocess, "run", return_value=result):
+                with self.assertRaises(scheduler.SchedulerError) as caught:
+                    scheduler.run_checked(["cargo", "test"], cwd=root,
+                                          description="tests", log_path=log)
+            self.assertIn("expected winner", str(caught.exception))
+            self.assertIn("error: test failed", str(caught.exception))
+            self.assertIn(str(log), str(caught.exception))
+            self.assertIn("assertion failed", log.read_text())
+
+    def test_validation_retry_skips_only_unchanged_successes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(1000, 1)
+            path = root / "scheduler-state.json"
+            calls = []
+
+            def check(command, **kwargs):
+                calls.append(kwargs["description"])
+                if kwargs["description"] == "test publication source":
+                    raise scheduler.SchedulerError("test failure")
+
+            with mock.patch.object(scheduler, "publication_validation_fingerprint", return_value="first"), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=check):
+                with self.assertRaises(scheduler.SchedulerError):
+                    scheduler.validate_publication(root, path, state, root, "report.json")
+            persisted = json.loads(path.read_text())
+            self.assertEqual(set(persisted["current"]["publication"]["validation"]),
+                             {"ranking", "ranking-tests"})
+            with mock.patch.object(scheduler, "publication_validation_fingerprint", return_value="first"), \
+                    mock.patch.object(scheduler, "run_checked") as run:
+                scheduler.validate_publication(root, path, persisted, root, "report.json")
+                self.assertEqual([call.kwargs["description"] for call in run.call_args_list],
+                                 ["test publication source", "check publication diff"])
+            with mock.patch.object(scheduler, "publication_validation_fingerprint", return_value="changed"), \
+                    mock.patch.object(scheduler, "run_checked") as run:
+                scheduler.validate_publication(root, path, persisted, root, "report.json")
+                self.assertEqual(run.call_count, 4)
+
+    def test_mutation_during_validation_cannot_be_reused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(1000, 1)
+            with mock.patch.object(scheduler, "publication_validation_fingerprint", side_effect=["before", "after"]), \
+                    mock.patch.object(scheduler, "run_checked"):
+                with self.assertRaisesRegex(scheduler.SchedulerError, "changed during validation"):
+                    scheduler.validate_publication(root, root / "state.json", state, root, "report.json")
+            self.assertEqual(state["current"]["publication"]["validation"], {})
+
+    def test_live_progress_preserves_last_good_count_during_partial_write(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(1000, 2)
+            scheduler.reserve_segment(state, scheduler.empty_status())
+            rows = root / state["current"]["rows"]
+            complete_rows(rows, seed_first=1000, target_games=2, complete_games=1)
+            path = root / "state.json"
+            scheduler.checkpoint_progress(root, path, state)
+            self.assertEqual(json.loads((root / "status.json").read_text())["complete_games"], 1)
+            good = rows.read_text()
+            rows.write_text(good + '{"kind":')
+            scheduler.checkpoint_progress(root, path, state)
+            self.assertEqual(json.loads((root / "status.json").read_text())["complete_games"], 1)
+            self.assertIsNotNone(json.loads((root / "progress-error.json").read_text())["error"])
+            complete_rows(rows, seed_first=1000, target_games=2, complete_games=2)
+            scheduler.checkpoint_progress(root, path, state)
+            self.assertEqual(json.loads((root / "status.json").read_text())["complete_games"], 2)
+            self.assertIsNone(json.loads((root / "progress-error.json").read_text())["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -409,7 +409,23 @@ pub fn load_uploaded(session: &mut Session, parsed: &Value) -> Result<(), String
         ));
     }
     let params = session.params.clone();
-    *session = Session::from_saved_game(params, game);
+    let mut next = if parsed.get("mirror_player").is_some() {
+        Session::from_game(params, game)
+    } else {
+        Session::from_saved_game(params, game)
+    };
+    // A mirror publishes a frame, not a playable save. Seat and pause it
+    // before replacing the session so concurrent polls cannot see the full
+    // world between /load and the follower's later /view request.
+    if let Some(player) = parsed.get("mirror_player") {
+        let player = player
+            .as_u64()
+            .and_then(|pid| usize::try_from(pid).ok())
+            .ok_or_else(|| "mirror_player must be a non-negative integer".to_string())?;
+        next.set_view_player(Some(player))?;
+        next.set_spectator_paused(true);
+    }
+    *session = next;
     Ok(())
 }
 
@@ -548,3 +564,6 @@ pub fn action(session: &mut Session, parsed: &Value) -> ActionOutcome {
         refused,
     }
 }
+
+#[cfg(test)]
+mod tests;

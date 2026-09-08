@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import select
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,6 +20,69 @@ SPEC = importlib.util.spec_from_file_location("civvis_watchdog_state", STATE_PAT
 assert SPEC is not None and SPEC.loader is not None
 watchdog_state = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(watchdog_state)
+
+
+@unittest.skipUnless(shutil.which("zsh"), "requires the production zsh shell")
+class KernelOwnershipTest(unittest.TestCase):
+    SCRIPTS = ("civvis-interactive-host.sh", "civvis-game-supervisor.sh")
+
+    def guard(self, name: str) -> str:
+        source = (OPS / name).read_text()
+        start = source.index("acquire_kernel_owner_lock() {")
+        end = source.index("\n}\n", start) + 3
+        call = source.index('acquire_kernel_owner_lock "', end)
+        legacy = (source.index('if ! mkdir "$LOCK"', call)
+                  if "interactive-host" in name else
+                  source.index("acquire_supervisor_lock\n", call))
+        self.assertLess(call, legacy)
+        return "say() { :; }\n" + source[start:end]
+
+    def test_unpublished_pid_cannot_admit_a_second_owner_and_crash_releases(self):
+        for name in self.SCRIPTS:
+            with self.subTest(script=name), tempfile.TemporaryDirectory() as tmp:
+                # The first owner is deliberately paused before PID publication.
+                legacy = Path(tmp) / "owner.lock"
+                legacy.mkdir()
+                lock = str(legacy) + ".owner"
+                guard = self.guard(name)
+                acquire = guard + '\nacquire_kernel_owner_lock "$1" || exit $?\n'
+                holder = subprocess.Popen(
+                    ["zsh", "-c", acquire + 'print ready; read -r release',
+                     "test-owner", lock], stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    ready, _, _ = select.select([holder.stdout], [], [], 5)
+                    self.assertTrue(ready, "owner never acquired the kernel lock")
+                    self.assertEqual(holder.stdout.readline().strip(), "ready")
+                    contender = subprocess.run(
+                        ["zsh", "-c", acquire + 'print admitted',
+                         "test-contender", lock], capture_output=True,
+                        text=True, timeout=5)
+                    self.assertEqual(contender.returncode, 2, contender.stderr)
+                    self.assertNotIn("admitted", contender.stdout)
+                    self.assertTrue(legacy.is_dir())
+                    holder.kill()
+                    holder.wait(timeout=5)
+                    successor = subprocess.run(
+                        ["zsh", "-c", acquire + 'print admitted',
+                         "test-successor", lock], capture_output=True,
+                        text=True, timeout=5)
+                    self.assertEqual(successor.returncode, 0, successor.stderr)
+                    self.assertEqual(successor.stdout.strip(), "admitted")
+                finally:
+                    if holder.poll() is None:
+                        holder.kill()
+                    holder.communicate(timeout=5)
+
+    def test_unusable_lock_path_fails_closed(self):
+        for name in self.SCRIPTS:
+            with self.subTest(script=name), tempfile.TemporaryDirectory() as tmp:
+                result = subprocess.run(
+                    ["zsh", "-c", self.guard(name) +
+                     '\nacquire_kernel_owner_lock "$1"', "test-owner",
+                     str(Path(tmp) / "missing" / "owner")],
+                    capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 70)
 
 
 class RepeatingUnitBlockerTest(unittest.TestCase):
