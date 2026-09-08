@@ -18419,6 +18419,13 @@ impl AdvancedAi {
                            "Offering peace to {}", g.players[*other].civ;
                            "{because}: {my_power:.0} power against their {their_power:.0}");
                 }
+                // A live peace order is only an offer. The host may refuse it
+                // or require tribute, so its next exported war state must end
+                // the war. The report above emits the offer without letting
+                // this speculative pass turn the army's threat field off.
+                if pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty() {
+                    continue;
+                }
                 // Keep this narrow: ordinary adaptive seats still negotiate,
                 // and an appointed campaign or Emergency war retains its
                 // bilateral commitment.
