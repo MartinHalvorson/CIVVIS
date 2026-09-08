@@ -5354,6 +5354,8 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Price affordable 1/3/6 building packages independently of suzerainty.
+    envoy_building_dividends: bool,
     /// Version two of `eureka-chasing-builder`: only the final Builder action
     /// for the technology or civic being researched right now earns a capped
     /// tiebreak premium. V1's global future-boost bidding remains measurable
@@ -7903,6 +7905,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            envoy_building_dividends: false,
             eureka_chasing_builder_2: false,
             enter_the_prophet_race_2: false,
             early_project_restraint_2: false,
@@ -18826,6 +18829,46 @@ impl AdvancedAi {
                             already_secure as i64 * 80
                         }
                         - shared_from_partner as i64 * 300;
+                    let score = if self.envoy_building_dividends {
+                        let ours = g.suzerain_of(minor.id) == Some(pid);
+                        g.envoy_investment_options(pid, minor.id)
+                            .into_iter()
+                            .map(|(placements, count, yields)| {
+                                let economic = self.yield_value(yields, strategy) * 14.0;
+                                let capture = !ours && count >= 3 && count > rival;
+                                let defend = ours && mine == rival + 1 && count > mine;
+                                // A rival's delegation does not tax Library or
+                                // University income. Identity, denial and the
+                                // unique prize pay only on a reachable takeover
+                                // or defense, and a shared prize is not bought twice.
+                                let political = if (capture || defend) && !shared_from_partner {
+                                    (alignment + unique_alignment) * 10
+                                        + if capture {
+                                            denial
+                                                + (suzerain_prize
+                                                    + nobel_peace_suzerain_prize
+                                                    + place
+                                                    + coalition
+                                                    + across)
+                                                    * needed
+                                        } else {
+                                            0
+                                        }
+                                        - if contested_race {
+                                            CONTESTED_RACE_ENVOY_PENALTY
+                                        } else {
+                                            0
+                                        }
+                                } else {
+                                    0
+                                };
+                                ((economic + political as f64) / placements as f64).round() as i64
+                            })
+                            .max()
+                            .unwrap_or(0)
+                    } else {
+                        score
+                    };
                     (
                         score,
                         std::cmp::Reverse(needed),
@@ -18836,6 +18879,13 @@ impl AdvancedAi {
                 .max()
                 .map(|(score, _, _, id)| (id, score));
             let Some((target, score)) = target else { break };
+            if self.envoy_building_dividends && score <= 0 {
+                think!(self.journal(), Diplomacy, Decision,
+                       "Saving envoys for a paying threshold";
+                       "{} placements available; no reachable building dividend or worthwhile suzerainty",
+                       g.players[pid].envoys_free);
+                break;
+            }
             // See `bank_envoys`: retain the bounded discovery/reclaim reserve
             // once nothing on the board is worth an Envoy. Any surplus has a
             // productive opportunity cost, so it reinforces the best available
