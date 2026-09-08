@@ -3590,6 +3590,9 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         boosts = civ6_ladder.boost_totals(run_dir / "events.jsonl")
         if boosts:
             summary["boosts"] = boosts
+        marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
+        if marks:
+            summary["tech_marks"] = marks
         revisions = civ6_ladder.decider_revisions(run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
@@ -3843,6 +3846,19 @@ def _play(args: argparse.Namespace) -> int:
         if path.exists():
             return
         partial = partial_summary(args.tag, config, state)
+        # ⭐ A KILLED RUN STILL MEASURED ITS RESEARCH. `killed` and
+        # `operator_retired` end most Emperor games (61% in September), so a
+        # tech-gap column written only by the finished path would miss the
+        # majority of the record. The marks come from events.jsonl, which is
+        # on disk before this runs; anything that goes wrong reading it is
+        # swallowed, because this is a shutdown hook.
+        try:
+            import civ6_ladder
+            marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
+            if marks:
+                partial["tech_marks"] = marks
+        except Exception:  # noqa: BLE001 - best-effort evidence at exit
+            pass
         try:
             path.write_text(json.dumps(partial, indent=2, sort_keys=True))
         except OSError:
@@ -4575,6 +4591,14 @@ def _play(args: argparse.Namespace) -> int:
         boosts = civ6_ladder.boost_totals(run_dir / "events.jsonl")
         if boosts:
             summary["boosts"] = boosts
+        # The research gap at t100 and t150: our completed techs against the
+        # best rival's, from the first state frame of each mark. The deep-game
+        # reviews kept finding 12–33 techs behind the leader and the row could
+        # not show it. Absent when the run never reached t100 or exported no
+        # state, so an old run reads as silence.
+        marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
+        if marks:
+            summary["tech_marks"] = marks
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log

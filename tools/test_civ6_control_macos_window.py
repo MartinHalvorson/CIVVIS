@@ -92,6 +92,42 @@ class WindowPlacementTests(unittest.TestCase):
             )
         run.assert_not_called()
 
+    def test_enlargement_recovers_from_old_origin_clamp(self) -> None:
+        frame = [864, 33, 864, 542]
+
+        def aspyr_place(_script, _what):
+            # The size write is constrained by the current right-hand origin.
+            frame[2:] = [min(1728, 1728 - frame[0]), 1084]
+            frame[:2] = [0, 33]
+
+        with patch.object(macos_window, "_best_effort_osascript",
+                          side_effect=aspyr_place) as place:
+            macos_window.place_game(
+                self.PROCESS, "left", 1.0, 1.0,
+                get_desktop_size=lambda: (1728, 1117),
+                get_game_window=lambda: tuple(frame))
+        self.assertEqual(tuple(frame), (0, 33, 1728, 1084))
+        self.assertEqual(place.call_count, 2)
+
+    def test_failed_placement_stops_after_one_retry(self) -> None:
+        with patch.object(macos_window, "_best_effort_osascript") as place, \
+             patch("builtins.print") as report:
+            macos_window.place_game(
+                self.PROCESS, "left", 1.0, 1.0,
+                get_desktop_size=lambda: (1728, 1117),
+                get_game_window=lambda: (864, 33, 864, 542))
+        self.assertEqual(place.call_count, 2)
+        self.assertIn("after retry", report.call_args.args[0])
+
+    def test_successful_placement_does_not_retry(self) -> None:
+        frames = iter([(864, 33, 864, 542), (0, 33, 1728, 1084)])
+        with patch.object(macos_window, "_best_effort_osascript") as place:
+            macos_window.place_game(
+                self.PROCESS, "left", 1.0, 1.0,
+                get_desktop_size=lambda: (1728, 1117),
+                get_game_window=lambda: next(frames))
+        place.assert_called_once()
+
     def test_queries_and_focus_target_the_actual_process(self) -> None:
         with patch.object(
             macos_window.subprocess,
