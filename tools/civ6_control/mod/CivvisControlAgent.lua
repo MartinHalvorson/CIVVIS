@@ -2915,22 +2915,6 @@ end
 
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
-	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
-	-- expansion gate is ~190 lines earlier in the ladder — which is exactly how
-	-- settlers came to outrank soldiers in a war that was being lost.
-	local atWar, ourStrength, enemyStrength, strongestMet = warPressure();
-	local losingWar = atWar and enemyStrength > ourStrength;
-	-- ★★★★★ ANSWER WITH CIVVIS'S CHOICE WHEN IT HAS ONE.
-	--
-	-- The end-turn production prompt must be answered or the turn never ends, so this
-	-- ladder cannot simply be switched off on a CIVVIS run — but it does not have to
-	-- INVENT an answer when CIVVIS has already given one for this city. Anything below
-	-- runs only when CIVVIS said nothing about this city this turn, or when what it
-	-- asked for cannot be started.
-	--
-	-- ⚠ `playable` is defined below and still gates it, so a CIVVIS item the engine
-	-- will not accept falls through to the ladder exactly as before. This changes WHO
-	-- decides, never whether the prompt gets answered.
 	local wanted = nil;
 	if cfg.CivvisDecides then
 		local cityId = try(function() return city:GetID(); end);
@@ -2987,6 +2971,30 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		refused[name] = true;
 		return nil, productionFailureReasons(results);
 	end
+
+	-- A direct choice or deferred lease belongs to CivVis. If it cannot run,
+	-- ask CivVis again through a bounded production frame; never invent a build.
+	if wanted ~= nil then
+		local alreadyRefused = refused[wanted];
+		local row, reasons = playable(wanted);
+		if row ~= nil then return wanted, row, "civvis"; end
+		-- Preserve the host refusal so the next exported board can explain it.
+		if not alreadyRefused and reasons ~= nil and #reasons > 0 then
+			emit("civvis_build_unplayable", {
+				turn = turn,
+				city = try(function() return city:GetID(); end, -1),
+				item = tostring(wanted),
+				reasons = reasons,
+			});
+		end
+	end
+	if cfg.CivvisDecides then return nil, nil, nil; end
+
+	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
+	-- expansion gate is ~190 lines earlier in the ladder — which is exactly how
+	-- settlers came to outrank soldiers in a war that was being lost.
+	local atWar, ourStrength, enemyStrength, strongestMet = warPressure();
+	local losingWar = atWar and enemyStrength > ourStrength;
 
 	local ladder = {};
 	-- Era-proof land forces. The old fixed Warrior/Spearman/Swordsman list becomes
@@ -3551,38 +3559,6 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- what changed is that it is now the last line rather than the fourth.
 	ladder[#ladder + 1] = { "UNIT_BUILDER", "floor" };
 
-	-- CIVVIS FIRST. Its choice for this city, this turn, gated by the same `playable`
-	-- the ladder uses — so an item the engine will not start still falls through to
-	-- the ladder below and the prompt is still answered. Reported with its own reason
-	-- so the `build` events say which program decided, and the production fraction in
-	-- `civ6_civvis_status.py` can be read honestly.
-	if wanted ~= nil then
-		local row, reasons = playable(wanted);
-		if row ~= nil then return wanted, row, "civvis"; end
-		-- ★★★★★ SAY WHAT CIVVIS ASKED FOR AND COULD NOT HAVE.
-		--
-		-- When `playable` refuses CIVVIS's choice the ladder silently takes the turn,
-		-- and until now NOTHING recorded what the choice was. The `build` event says
-		-- the ladder decided; it cannot say what it overrode.
-		--
-		-- That is the whole of the open question. On run civvis-20260801T065721Z only
-		-- **16 of 97 builds** were CIVVIS's -- floor 21, develop 20, grow 10, improve
-		-- 9, expand 8 -- and no telemetry anywhere could name a single item CIVVIS
-		-- wanted instead. The same anonymity around `no_params` hid one district for
-		-- an entire project until the refusal carried its verb.
-		--
-		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
-		-- field named `kind` is overwritten before the line is written. That already
-		-- cost this file one blind instrument.
-		if not refused[wanted] and reasons ~= nil and #reasons > 0 then
-			emit("civvis_build_unplayable", {
-				turn = turn,
-				city = try(function() return city:GetID(); end, -1),
-				item = tostring(wanted),
-				reasons = reasons,
-			});
-		end
-	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
 		if row ~= nil then return entry[1], row, entry[2]; end
@@ -16722,6 +16698,7 @@ CivvisFrames.reset = function()
 	-- again on every later tick of the turn (blockers, end-turn retries),
 	-- and the sweep must not run on each of them.
 	CivvisFrames.settled = false;
+	CivvisFrames.productionRepairs = 0;
 end;
 
 -- Called from CivvisLedger.strike for every strike issued, opening or queued.
@@ -16778,8 +16755,8 @@ end;
 
 -- Open the next frame: export the board again, stamped, and re-arm the
 -- handshake so `settleTurn` waits for this frame's answer.
-CivvisFrames.begin = function(player, pid, turn)
-	local reason = CivvisFrames.why() or "strike";
+CivvisFrames.begin = function(player, pid, turn, requestedReason)
+	local reason = requestedReason or CivvisFrames.why() or "strike";
 	CivvisFrames.current = CivvisFrames.current + 1;
 	CivvisFrames.reason = reason;
 	CivvisFrames.settled = false;
@@ -16800,6 +16777,23 @@ CivvisFrames.begin = function(player, pid, turn)
 		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
 	});
 	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
+end;
+
+-- A city can finish or appear after the opening board, including while a unit
+-- blocker masks its production prompt. Export all empty queues together after
+-- orders settle. Two repair frames per turn bound a persistent refusal without
+-- handing the production decision to the harness.
+CivvisFrames.repairProduction = function(player, pid, turn)
+	if not cfg.CivvisDecides or (CivvisFrames.productionRepairs or 0) >= 2 then return false; end
+	local empty = 0;
+	eachCity(player, function(city)
+		local current = try(function() return city:GetBuildQueue():GetCurrentProductionTypeHash(); end);
+		if current == 0 then empty = empty + 1; end
+	end);
+	if empty == 0 then return false; end
+	CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
+	CivvisFrames.begin(player, pid, turn, "production");
+	return true;
 end;
 
 local function applyOrders(player, pid, turn, rows)
@@ -17864,7 +17858,8 @@ local function settleTurn(player, pid, turn, playFallback)
 			-- frame in time is not asked again this turn.
 			CivvisFrames.strikes = 0;
 			CivvisFrames.revealed = 0;
-			CivvisFrames.current = CivvisFrames.max();
+			CivvisFrames.current = math.max(CivvisFrames.current, CivvisFrames.max());
+			CivvisFrames.productionRepairs = 2;
 			emit("combat_frame_timeout", { turn = turn, frame = frame, polls = awaiting.polls,
 			                               reason = CivvisFrames.reason });
 			return true;
@@ -18719,6 +18714,10 @@ local function tick()
 		-- a board it never acted on and read, in telemetry, exactly like a controller
 		-- that decided to do nothing.
 		if cfg.CivvisDecides and not settleTurn(player, pid, turn, playTurn) then
+			return;
+		end
+
+		if cfg.CivvisDecides and CivvisFrames.repairProduction(player, pid, turn) then
 			return;
 		end
 
