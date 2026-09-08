@@ -71,7 +71,7 @@
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
 //!               [--victory-mask rotate:N] [--difficulty RUNG]
 //!               [--difficulty-rotate king:1,emperor:2,immortal:1] [--rivals firaxis-mix]
-//!               [--stock-civs]
+//!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -108,7 +108,7 @@ use civvis::game::{Game, GameOptions, DIPLOMATIC_VICTORY_POINTS};
 use civvis::rng::Rng;
 use civvis::setup::{GameSpeed, MapScript};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::time::Instant;
 
@@ -560,6 +560,71 @@ fn is_zero_u8(value: &u8) -> bool {
 /// says whether its sign agrees.
 const RIVAL_KINDS: [&str; 3] = ["legacy", "firaxis-mix", "random"];
 
+/// `--handicap rivals`: the header value, and the one word the flag accepts
+/// besides `all`.
+const HANDICAP_RIVALS: &str = "rivals";
+
+/// ⭐ THE HANDICAPPED RIVALS (`--handicap rivals --rival-chairs N`, 2026-09-08).
+///
+/// The rung the screen plays (`--difficulty emperor`) hands its bonuses to
+/// EVERY major alike, because no seat is a person's — so an Emperor screen
+/// prices genes among six equally boosted seats, which is not what the live
+/// Civilization VI seat meets: there WE get nothing and every rival AI gets
+/// Emperor's +16% science/culture, +40% production/gold and its bonus start
+/// units. `--handicap rivals` exempts every MEASURED seat from the handicap
+/// (`GameOptions::handicap_exempt`) so only the rival chairs play with it,
+/// and `--rival-chairs N` seats up to `players - 1` of them, so a six-player
+/// game can be one measured seat against five handicapped rivals — the live
+/// shape. Both are provenance in the header; `tools/genes.py` records them
+/// on the source and `--analyze` refuses to merge files that disagree.
+///
+/// ⚠ A win column from such a source is a statement about the seat against
+/// handicapped rivals, not comparable to the self-play columns; see
+/// `docs/GENE_SCREEN.md`.
+///
+/// `(handicap_rivals, rival_chairs)`, or why the request is refused.
+fn rival_settings(
+    handicap: Option<&str>,
+    rival_chairs: Option<u64>,
+    rivals: bool,
+    players: usize,
+) -> Result<(bool, usize), String> {
+    let handicap_rivals = match handicap {
+        None | Some("all") => false,
+        Some(HANDICAP_RIVALS) => true,
+        Some(other) => {
+            return Err(format!(
+                "unknown --handicap {other:?}; all (every major plays the rung's bonuses) or \
+                 rivals (only the rival chairs do)"
+            ))
+        }
+    };
+    if handicap_rivals && !rivals {
+        return Err(
+            "--handicap rivals exempts the measured seats and hands the rung to the rival \
+             chairs, so it needs --rivals firaxis-mix"
+                .to_string(),
+        );
+    }
+    let chairs = match rival_chairs {
+        None => 1,
+        Some(_) if !rivals => {
+            return Err(
+                "--rival-chairs seats rival chairs, so it needs --rivals firaxis-mix".to_string(),
+            )
+        }
+        Some(0) => return Err("--rival-chairs seats at least one chair".to_string()),
+        Some(chairs) if chairs as usize >= players => {
+            let most = players.saturating_sub(1);
+            return Err(format!(
+                "--rival-chairs {chairs} leaves no measured seat among {players} players; at most {most}"
+            ));
+        }
+        Some(chairs) => chairs as usize,
+    };
+    Ok((handicap_rivals, chairs))
+}
+
 /// The lanes a `firaxis-mix` rival pursues, weighted by the live ladder's
 /// losses (diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1).
 const FIRAXIS_MIX_LANES: [(VictoryTarget, u64); 5] = [
@@ -583,6 +648,26 @@ fn rival_index(players: usize, game: usize) -> usize {
     } else {
         game % players
     }
+}
+
+/// ⭐ RIVAL CHAIRS (`--rival-chairs N`, 2026-09-08): the `N` majors that play
+/// the rival in `game` are the [`rival_index`] chair and the `N - 1` after it,
+/// as [`pinned_seats`] lays a field out. `Some(offset)` when major `index`
+/// is the `offset`th rival chair of this game, `None` when it is measured.
+fn rival_offset(players: usize, game: usize, chairs: usize, index: usize) -> Option<usize> {
+    if players == 0 {
+        return None;
+    }
+    (0..chairs).find(|offset| (rival_index(players, game) + offset) % players == index)
+}
+
+/// The seed a rival chair draws its `firaxis-mix` lane from: the game's
+/// seed advanced one lane slot per chair, so the chairs of one game walk
+/// consecutive slots of [`firaxis_mix_target`]'s sequence and a batch's
+/// chairs still play each lane its share. Chair 0 draws from the seed
+/// itself, so a one-chair batch is byte for byte what it was.
+fn rival_lane_seed(seed: u64, offset: usize) -> u64 {
+    seed + offset as u64 * RIVAL_KINDS.len() as u64
 }
 
 /// The lane a `firaxis-mix` rival on `seed` pursues, drawn from
@@ -1344,6 +1429,21 @@ struct Header {
     /// the mix.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     rival_games: BTreeMap<String, usize>,
+    /// ⭐ WHO PLAYS THE RUNG'S HANDICAP (`--handicap`, 2026-09-08): `rivals`
+    /// when every measured seat was exempted from the difficulty bonuses and
+    /// only the rival chairs played with them — the live seat's shape, where
+    /// we get nothing at Emperor and every rival AI gets the rung — or empty
+    /// for `all`, every major handicapped alike, which every file written
+    /// before this field played. Provenance on the source, not a shape leg:
+    /// `tools/genes.py` records it when set and refuses to merge files that
+    /// disagree.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    handicap: String,
+    /// Rival chairs per game (`--rival-chairs N`), written with the mix; zero
+    /// in a file without the mix and in every file written before
+    /// 2026-09-08, which seated one.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    rival_chairs: usize,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -1693,6 +1793,12 @@ struct Profile {
     difficulty_rotate: Option<DifficultyRotation>,
     /// ⭐ Whether one major seat per game plays a fixed rival ([`RIVAL_KINDS`]).
     rivals: bool,
+    /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
+    rival_chairs: usize,
+    /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
+    /// handicap (`GameOptions::handicap_exempt`) and only the rival chairs
+    /// play with it.
+    handicap_rivals: bool,
 }
 
 /// ⭐ WHICH MAJOR SEATS THE FIELD PINS, AND TO WHAT — one entry per major
@@ -1789,12 +1895,32 @@ fn play_game(
         .as_ref()
         .map_or(profile.difficulty.as_str(), |rotation| rotation.rung(seed))
         .to_string();
+    // ⭐ THE RIVAL CHAIRS: `rival_chairs` majors play a fixed opponent of a
+    // kind drawn from the seed, in chairs that rotate with the game index.
+    // Major `index` is rival chair `offset`, or measured when `None`.
+    let rival_chair = |index: usize| {
+        profile
+            .rivals
+            .then(|| rival_offset(profile.players, game, profile.rival_chairs, index))
+            .flatten()
+    };
+    // ⭐ `--handicap rivals`: the majors are pids `0..players`, and every one
+    // that is not a rival chair plays the rung without its handicap. Set
+    // through the options, because the bonus start units are placed at setup.
+    let handicap_exempt: BTreeSet<usize> = if profile.handicap_rivals {
+        (0..profile.players)
+            .filter(|&index| rival_chair(index).is_none())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
     let mut world = Game::new_with(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
         victory_conditions: victories,
         difficulty: difficulty.clone(),
+        handicap_exempt,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -1811,11 +1937,7 @@ fn play_game(
     // instrument that could price it.
     world.native_competitions = profile.native_competitions;
     let pinned = pinned_seats(profile.players, game, &profile.field);
-    // ⭐ THE RIVAL MIX: one major plays a fixed opponent of a kind drawn from
-    // the seed, in a chair that rotates with the game index.
-    let rival = profile
-        .rivals
-        .then(|| (rival_index(profile.players, game), rival_kind(seed)));
+    let kind = rival_kind(seed);
     let mut majors = Vec::new();
     let mut ais: Vec<AdvancedAi> = (0..world.players.len())
         .map(|pid| {
@@ -1824,12 +1946,12 @@ fn play_game(
             } else {
                 let index = majors.len();
                 majors.push(pid);
-                match (pinned.get(index).copied().flatten(), rival) {
+                match (pinned.get(index).copied().flatten(), rival_chair(index)) {
                     (Some(target), _) => field_seat(target, &profile.field_genes),
-                    (None, Some((rival_at, kind))) if rival_at == index => {
-                        rival_seat(kind, seed, genes, &genomes[index])
+                    (None, Some(offset)) => {
+                        rival_seat(kind, rival_lane_seed(seed, offset), genes, &genomes[index])
                     }
-                    (None, _) => seat_with_genome(genes, &genomes[index]),
+                    (None, None) => seat_with_genome(genes, &genomes[index]),
                 }
             }
         })
@@ -1851,16 +1973,16 @@ fn play_game(
         .enumerate()
         .filter(|(index, _)| pinned.get(*index).copied().flatten().is_none())
         .map(|(index, &seat)| {
-            let this_rival = rival.filter(|(rival_at, _)| *rival_at == index);
+            let this_rival = rival_chair(index);
             let mut row = row_for_seat(
                 &world,
                 game,
                 seed,
                 seat,
-                match this_rival {
+                match (this_rival, kind) {
                     // Only a random rival has a genome in header order.
-                    Some((_, "random")) | None => genome_string(&genomes[index]),
-                    Some(_) => String::new(),
+                    (Some(_), "random") | (None, _) => genome_string(&genomes[index]),
+                    (Some(_), _) => String::new(),
                 },
                 secs,
             );
@@ -1872,16 +1994,18 @@ fn play_game(
                     .map_or(world.players[seat].techs.len(), |counts| counts[seat]),
             );
             match this_rival {
-                Some((_, kind)) => {
+                Some(offset) => {
                     // ⭐ NOT a measured seat: `kind` is what every estimator
                     // filters on, so the fixed opponent prices no gene.
                     row.kind = "rival".to_string();
                     row.rival_mix = kind.to_string();
                     if kind == "firaxis-mix" {
-                        row.rival_target = firaxis_mix_target(seed).as_str().to_string();
+                        row.rival_target = firaxis_mix_target(rival_lane_seed(seed, offset))
+                            .as_str()
+                            .to_string();
                     }
                 }
-                None if rival.is_some() => row.rival_mix = "measured".to_string(),
+                None if profile.rivals => row.rival_mix = "measured".to_string(),
                 None => {}
             }
             row
@@ -4115,6 +4239,8 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.difficulty != found.difficulty
                                 || first.difficulty_rotate != found.difficulty_rotate
                                 || first.rivals != found.rivals
+                                || first.handicap != found.handicap
+                                || first.rival_chairs != found.rival_chairs
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -4948,29 +5074,48 @@ fn print_difficulty_rungs(header: &Header, rows: &[Row]) {
     );
 }
 
-/// One line saying whether a fixed rival sat in every game.
+/// One line saying whether a fixed rival sat in every game, how many chairs
+/// it took, and who played the rung's handicap.
 fn rivals_line(header: &Header) -> String {
     if header.rivals.is_empty() {
         return "rivals: none — every major draws a genome and is measured".to_string();
     }
     format!(
-        "rivals: ⭐ {} — one chair per game plays a fixed opponent, rotating {} from the seed ({}); \
-         that seat is not measured",
+        "rivals: ⭐ {} — {} per game play a fixed opponent, rotating {} from the seed ({}); \
+         those seats are not measured · handicap: {}",
         header.rivals,
+        match header.rival_chairs {
+            0 | 1 => "one chair".to_string(),
+            chairs => format!("{chairs} chairs"),
+        },
         RIVAL_KINDS.join(" / "),
         header
             .rival_games
             .iter()
             .map(|(kind, games)| format!("{kind}×{games}"))
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(" "),
+        handicap_read(header)
     )
+}
+
+/// How the rung's handicap was dealt, for the banner and the report.
+fn handicap_read(header: &Header) -> &'static str {
+    if header.handicap == HANDICAP_RIVALS {
+        "rivals only — every measured seat plays the rung without its bonuses, as the live seat does"
+    } else {
+        "all — every major plays the rung's bonuses alike"
+    }
 }
 
 /// ⭐ THE RIVAL MIX READ BACK: games and rival wins per kind, and every gene
 /// past the family-wise bar read against each kind of rival apart.
 struct RivalReport {
     rivals: String,
+    /// `Header::handicap`: empty for `all`.
+    handicap: String,
+    /// Rival chairs per game; a pre-2026-09-08 file seated one.
+    rival_chairs: usize,
     /// Kind, games, games the rival itself won — in [`RIVAL_KINDS`] order.
     kinds: Vec<(String, usize, usize)>,
     /// Per gene past the bar: tag, whole-batch win Δ, (Δ, se, seats) per
@@ -4984,6 +5129,8 @@ impl RivalReport {
     fn json(&self) -> serde_json::Value {
         serde_json::json!({
             "rivals": self.rivals,
+            "handicap": if self.handicap.is_empty() { "all" } else { self.handicap.as_str() },
+            "rival_chairs": self.rival_chairs,
             "family_wise_z": self.family_z,
             "kinds": self.kinds.iter().map(|(kind, games, won)| {
                 serde_json::json!({"kind": kind, "games": games, "rival_won": won})
@@ -5011,7 +5158,11 @@ impl RivalReport {
 fn rival_report(header: &Header, rows: &[Row]) -> Option<RivalReport> {
     let mut kind_of_game: BTreeMap<GameKey, (&str, bool)> = BTreeMap::new();
     for row in rows.iter().filter(|row| row.kind == "rival") {
-        kind_of_game.insert(row.game_key(), (row.rival_mix.as_str(), row.win));
+        // A game with several rival chairs is a rival win when ANY of them won.
+        let entry = kind_of_game
+            .entry(row.game_key())
+            .or_insert((row.rival_mix.as_str(), false));
+        entry.1 |= row.win;
     }
     if header.rivals.is_empty() && kind_of_game.is_empty() {
         return None;
@@ -5055,6 +5206,8 @@ fn rival_report(header: &Header, rows: &[Row]) -> Option<RivalReport> {
         .collect();
     Some(RivalReport {
         rivals: header.rivals.clone(),
+        handicap: header.handicap.clone(),
+        rival_chairs: header.rival_chairs.max(1),
         kinds,
         genes,
         family_z,
@@ -5068,7 +5221,7 @@ fn print_rival_mix(header: &Header, rows: &[Row]) {
         return;
     };
     println!(
-        "\nRival mix · {} · {}",
+        "\nRival mix · {} · {} · {} chair(s) per game · handicap: {}",
         if report.rivals.is_empty() {
             "(rows carry rival seats, header names no mix)".to_string()
         } else {
@@ -5079,7 +5232,9 @@ fn print_rival_mix(header: &Header, rows: &[Row]) {
             .iter()
             .map(|(kind, games, won)| format!("{kind}×{games} games (rival won {won})"))
             .collect::<Vec<_>>()
-            .join(" · ")
+            .join(" · "),
+        report.rival_chairs,
+        handicap_read(header)
     );
     if report.genes.is_empty() {
         println!(
@@ -5413,6 +5568,9 @@ fn usage() -> ! {
          drawn per game from the seed in those shares; barbarians stay at {}\n       \
          the rival mix: [--rivals firaxis-mix] seats one fixed opponent per game — legacy anchor / \
          deployment genome retargeted at a live-census lane / random genome, in turn — that is not measured\n       \
+         the handicapped rivals: [--handicap all|rivals] (default all; rivals exempts every measured seat from \
+         the rung's bonuses so only the rival chairs play with them, as the live seat meets Emperor) \
+         [--rival-chairs N] (default 1, at most players-1); both need --rivals\n       \
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
@@ -5633,6 +5791,9 @@ fn main() {
             std::process::exit(2);
         }
     };
+    let handicap_arg = text(&args, "--handicap");
+    let rival_chairs_arg =
+        present(&args, "--rival-chairs").then(|| number(&args, "--rival-chairs", 1).max(0) as u64);
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -5721,6 +5882,15 @@ fn main() {
         eprintln!("--rivals seats one fixed opponent per game and measures the rest; needs --players 3 or more");
         std::process::exit(2);
     }
+    // ⭐ THE HANDICAPPED RIVALS: who plays the rung's bonuses, and how many
+    // chairs the rival takes. See `rival_settings`.
+    let (handicap_rivals, rival_chairs) =
+        rival_settings(handicap_arg.as_deref(), rival_chairs_arg, rivals, players).unwrap_or_else(
+            |why| {
+                eprintln!("{why}");
+                std::process::exit(2);
+            },
+        );
     // The pursuers' own genome over the deployment one. `none` reproduces the
     // weaker deployment-genome-only field the constant's doc measured.
     let field_genes: Vec<String> = if field.is_empty() {
@@ -5763,7 +5933,7 @@ fn main() {
     } else {
         present(&args, "--native-competitions") || !field.is_empty()
     };
-    let drawn = players - field.len() - usize::from(rivals);
+    let drawn = players - field.len() - if rivals { rival_chairs } else { 0 };
     let p_on = real(&args, "--p-on", P_ON);
     let p_default_on = real(&args, "--p-default-on", P_DEFAULT_ON);
     for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
@@ -5932,6 +6102,12 @@ fn main() {
         } else {
             BTreeMap::new()
         },
+        handicap: if handicap_rivals {
+            HANDICAP_RIVALS.to_string()
+        } else {
+            String::new()
+        },
+        rival_chairs: if rivals { rival_chairs } else { 0 },
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
@@ -5985,6 +6161,8 @@ fn main() {
         difficulty,
         difficulty_rotate,
         rivals,
+        rival_chairs,
+        handicap_rivals,
     };
     println!(
         "gene screen: {games_to_play} games ({} measured seats of {} chairs, every drawn seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
@@ -6015,7 +6193,9 @@ fn main() {
                 .map(|seat| {
                     // ⭐ A `random` rival plays every screened gene at one
                     // half — the draw's own machinery, a flat prior.
-                    if rivals && seat == rival_index(players, game) && rival_kind(seed) == "random"
+                    if rivals
+                        && rival_kind(seed) == "random"
+                        && rival_offset(players, game, rival_chairs, seat).is_some()
                     {
                         draw_genome(start_seed, game, players, seat, &uniform, &families)
                     } else {
@@ -6099,6 +6279,8 @@ mod tests {
             difficulty_games: BTreeMap::new(),
             rivals: String::new(),
             rival_games: BTreeMap::new(),
+            handicap: String::new(),
+            rival_chairs: 0,
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -7240,6 +7422,89 @@ mod tests {
         assert!(rival_seat("random", 1, &genes, &genome)
             .victory_target()
             .is_none());
+    }
+
+    /// ⭐ Rival chairs: `N` consecutive chairs from the rotating rival index,
+    /// chair 0 exactly where the one-chair mix put it, and each chair walks
+    /// its own lane slot so five chairs of one firaxis-mix game are not five
+    /// copies of one lane.
+    #[test]
+    fn rival_chairs_follow_the_rotating_index_and_walk_their_own_lanes() {
+        for game in 0..12 {
+            assert_eq!(rival_offset(6, game, 1, rival_index(6, game)), Some(0));
+            let chairs: Vec<usize> = (0..6)
+                .filter(|&index| rival_offset(6, game, 5, index).is_some())
+                .collect();
+            assert_eq!(chairs.len(), 5, "game {game}");
+            assert!(rival_offset(6, game, 5, (game + 5) % 6).is_none());
+        }
+        assert_eq!(rival_offset(0, 3, 5, 0), None);
+        assert_eq!(rival_lane_seed(7, 0), 7);
+        // Over the batch every lane keeps its share, chairs included.
+        let mut lanes: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut seed = 0;
+        while lanes.values().sum::<usize>() < 72 * 5 {
+            if rival_kind(seed) == "firaxis-mix" {
+                for offset in 0..5 {
+                    *lanes
+                        .entry(firaxis_mix_target(rival_lane_seed(seed, offset)).as_str())
+                        .or_default() += 1;
+                }
+            }
+            seed += 1;
+        }
+        assert_eq!(lanes["diplomatic"], 32 * 5);
+        assert_eq!(lanes["domination"], 5);
+    }
+
+    /// ⭐ `--handicap rivals` and `--rival-chairs` need the mix, the chairs
+    /// leave at least one measured seat, and the header carries both.
+    #[test]
+    fn the_handicap_flags_need_the_mix_and_the_header_carries_them() {
+        assert_eq!(rival_settings(None, None, false, 6), Ok((false, 1)));
+        assert_eq!(rival_settings(Some("all"), None, true, 6), Ok((false, 1)));
+        assert_eq!(
+            rival_settings(Some("rivals"), Some(5), true, 6),
+            Ok((true, 5))
+        );
+        assert!(rival_settings(Some("rivals"), None, false, 6).is_err());
+        assert!(rival_settings(Some("nobody"), None, true, 6).is_err());
+        assert!(rival_settings(None, Some(2), false, 6).is_err());
+        assert!(rival_settings(None, Some(0), true, 6).is_err());
+        assert!(rival_settings(None, Some(6), true, 6).is_err());
+        assert_eq!(rival_settings(None, Some(5), true, 6), Ok((false, 5)));
+        // The header: absent in a plain batch, written with the mix, and
+        // read back; a file that disagrees is a different experiment.
+        let mut header = screen_header(&["a"]);
+        let text = serde_json::to_string(&header).expect("serializes");
+        assert!(
+            !text.contains("handicap") && !text.contains("rival_chairs"),
+            "{text}"
+        );
+        header.rivals = "firaxis-mix".into();
+        header.handicap = HANDICAP_RIVALS.into();
+        header.rival_chairs = 5;
+        let back: Header =
+            serde_json::from_str(&serde_json::to_string(&header).expect("serializes"))
+                .expect("parses");
+        assert_eq!((back.handicap.as_str(), back.rival_chairs), ("rivals", 5));
+        assert_eq!(shape_of(&back), "standard", "provenance, not a shape leg");
+        assert!(rivals_line(&back).contains("5 chairs"));
+        assert!(rivals_line(&back).contains("rivals only"));
+        let report = rival_report(&back, &[]).expect("a mixed header reports");
+        let json = report.json();
+        assert_eq!(json["handicap"], "rivals");
+        assert_eq!(json["rival_chairs"], 5);
+        let plain = rival_report(&screen_header(&["a"]), &[]).is_none();
+        assert!(plain);
+        // A rival win is any chair's win: two chairs, one of them won.
+        let mut rows = vec![test_row(0, 0, "1", false), test_row(0, 1, "1", true)];
+        for row in &mut rows {
+            row.kind = "rival".into();
+            row.rival_mix = "legacy".into();
+        }
+        let report = rival_report(&back, &rows).expect("reports");
+        assert_eq!(report.kinds[0], ("legacy".to_string(), 1, 1));
     }
 
     /// A rival's row is `kind: "rival"` and prices nothing; the measured rows
