@@ -126,6 +126,30 @@ stop_children() {
       && stop_owned_process_tree TERM "$supervisor_pid"
 }
 
+# Hold a kernel lock before inspecting the legacy PID directory. An empty
+# directory can belong to a live process that has not published its PID yet.
+# Keep this file permanently: unlinking it would let contenders lock different
+# inodes. The kernel releases ownership when this shell exits, even on a crash.
+acquire_kernel_owner_lock() {
+  local owner_file=$1 owner_rc=0
+  zmodload zsh/system || return 70
+  ( : >> "$owner_file" ) || return 70
+  zsystem flock -t 0.01 -f CIVVIS_OWNER_FD "$owner_file" 2>/dev/null
+  owner_rc=$?
+  case $owner_rc in
+    0) return 0 ;;
+    2) say "another live owner holds $owner_file; exiting"; return 2 ;;
+    *) say "could not acquire kernel ownership lock $owner_file"; return 70 ;;
+  esac
+}
+
+acquire_kernel_owner_lock "${LOCK}.owner"
+case $? in
+  0) ;;
+  2) exit 0 ;;
+  *) exit 70 ;;
+esac
+
 if ! mkdir "$LOCK" 2>/dev/null; then
   holder=""
   [[ -f "$PID_FILE" ]] && holder=$(<"$PID_FILE")
