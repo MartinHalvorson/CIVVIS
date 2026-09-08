@@ -2224,6 +2224,11 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "expansion-best-idle-city", field: "expansion_best_idle_city", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_best_idle_city, disable: AdvancedAi::disable_expansion_best_idle_city },
     Gene { tag: "research-building-catchup", field: "research_building_catchup", kind: Kind::OptIn, enable: AdvancedAi::enable_research_building_catchup, disable: AdvancedAi::disable_research_building_catchup },
     Gene { tag: "trade-building-before-bankruptcy", field: "trade_building_before_bankruptcy", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_building_before_bankruptcy, disable: AdvancedAi::disable_trade_building_before_bankruptcy },
+    Gene { tag: "builder-workforce-recovery-2", field: "builder_workforce_recovery_2", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_workforce_recovery_2, disable: AdvancedAi::disable_builder_workforce_recovery_2 },
+    Gene { tag: "culture-building-catchup-2", field: "culture_building_catchup_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_building_catchup_2, disable: AdvancedAi::disable_culture_building_catchup_2 },
+    Gene { tag: "expansion-best-idle-city-2", field: "expansion_best_idle_city_2", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_best_idle_city_2, disable: AdvancedAi::disable_expansion_best_idle_city_2 },
+    Gene { tag: "research-building-catchup-2", field: "research_building_catchup_2", kind: Kind::OptIn, enable: AdvancedAi::enable_research_building_catchup_2, disable: AdvancedAi::disable_research_building_catchup_2 },
+    Gene { tag: "trade-building-before-bankruptcy-2", field: "trade_building_before_bankruptcy_2", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_building_before_bankruptcy_2, disable: AdvancedAi::disable_trade_building_before_bankruptcy_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
