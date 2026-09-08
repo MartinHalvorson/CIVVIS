@@ -304,3 +304,47 @@ fn movement_risk_does_not_recruit_another_groups_units_for_a_siege() {
         0
     );
 }
+
+#[test]
+fn movement_risk_cached_strike_reach_agrees_with_fresh_after_board_changes() {
+    let (mut g, pos) = board();
+    let ours = g.spawn_test_unit("warrior", 0, pos);
+    let enemy = g.spawn_test_unit("warrior", 1, g.nbrs(pos)[0]);
+    let distant = g
+        .wdisk(pos, 5)
+        .into_iter()
+        .find(|p| g.wdist(*p, pos) == 5)
+        .unwrap();
+    let builder = g.spawn_test_unit("builder", 0, distant);
+    let ai = BasicAi::new();
+    for step in 0..5 {
+        let cached = ai.movement_risk_frame(&g, 0, ours, pos);
+        let saved = MOVEMENT_REACH.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
+        let fresh = BasicAi::new().movement_risk_frame(&g, 0, ours, pos);
+        MOVEMENT_REACH.with(|slot| *slot.borrow_mut() = saved);
+        let contents = |frame: &MovementRiskFrame| {
+            frame
+                .envelopes
+                .iter()
+                .map(|(id, reach)| (*id, reach.iter().copied().collect::<Vec<_>>()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            contents(&cached),
+            contents(&fresh),
+            "cache disagrees after mutation {step}"
+        );
+        match step {
+            0 => g.relocate(builder, g.nbrs(distant)[0]),
+            1 => g.relocate(ours, g.nbrs(pos)[2]),
+            2 => {
+                g.units.get_mut(&enemy).unwrap().zoc_stopped = true;
+            }
+            3 => {
+                g.turn += 1;
+                g.relocate(enemy, g.nbrs(pos)[4]);
+            }
+            _ => {}
+        }
+    }
+}
