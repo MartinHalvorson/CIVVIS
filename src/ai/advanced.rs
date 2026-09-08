@@ -23242,7 +23242,7 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether war or targeted science production must yield to the baseline
+    /// Whether war or targeted science/culture production must yield to the baseline
     /// solvency recovery before it adds another upkeep bill.
     ///
     /// `BasicAi::product_for` uses the same reserve-and-deficit predicate:
@@ -23268,7 +23268,11 @@ impl AdvancedAi {
         pid: usize,
         counts: &EmpireCounts,
     ) -> bool {
-        if (!self.war_economy && self.active_victory_target(g) != Some(VictoryTarget::Science))
+        if (!self.war_economy
+            && !matches!(
+                self.active_victory_target(g),
+                Some(VictoryTarget::Science | VictoryTarget::Culture)
+            ))
             || self.base.minor
             || self.base.barb
         {

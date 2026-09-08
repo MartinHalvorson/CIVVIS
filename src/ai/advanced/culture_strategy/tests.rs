@@ -238,9 +238,10 @@ fn science_defense_lifts_the_culture_building_veto_without_switching_victory() {
 #[test]
 fn culture_defense_policies_replace_occupied_slots_and_release_after_threat() {
     let mut g = board();
-    g.players[0].government = Some("oligarchy".to_string());
+    g.players[0].government = Some("classical_republic".to_string());
     g.players[0].civics.extend([
         crate::name!("political_philosophy"),
+        crate::name!("foreign_trade"),
         crate::name!("code_of_laws"),
         crate::name!("state_workforce"),
         crate::name!("mysticism"),
@@ -250,7 +251,7 @@ fn culture_defense_policies_replace_occupied_slots_and_release_after_threat() {
     ]);
     g.players[1].civics.insert(crate::name!("cold_war"));
     g.players[0].policies.extend([
-        crate::name!("conscription"),
+        crate::name!("caravansaries"),
         crate::name!("urban_planning"),
         crate::name!("international_space_agency"),
         crate::name!("revelation"),
@@ -279,4 +280,30 @@ fn culture_defense_policies_replace_occupied_slots_and_release_after_threat() {
     assert!(!g.players[0]
         .policies
         .contains(&crate::name!("music_censorship")));
+}
+
+#[test]
+fn culture_production_recovers_the_treasury_before_adding_upkeep() {
+    let mut g = board();
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -12.0;
+    let cid = g.player_city_ids(0)[0];
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.disable_war_economy();
+    let recovery = ai
+        .base
+        .economic_recovery_item(&g, 0, cid, ai.counts(&g, 0).traders)
+        .or_else(|| ai.base.upkeep_free_recovery_item(&g, 0, cid))
+        .unwrap();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&recovery));
 }

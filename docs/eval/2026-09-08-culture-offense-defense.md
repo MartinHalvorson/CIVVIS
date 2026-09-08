@@ -22,7 +22,9 @@ applies when an explicit Culture target is temporarily planning expansion,
 as well as to an adaptive Culture strategy. The premium fades when there
 is too little time left after completion. It does not override illegal
 production or military/emergency refusal sentinels, or create a blanket
-wonder-building priority.
+wonder-building priority. Culture targets also use the same low-reserve,
+negative-income recovery gate as science targets even with war economy off;
+empty queues repair solvency before adding cultural upkeep.
 
 Tourism route bonuses now apply only to living opposing major civilizations.
 Previously city-state destinations received the same bonus despite not being
