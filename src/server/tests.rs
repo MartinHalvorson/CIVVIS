@@ -12319,22 +12319,19 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
     assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
     assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
-    // The deck is the seat's own panel and it opens with the world. Only
-    // an explicit fold is remembered, so a first visit cannot inherit one.
-    assert!(EMBEDDED_INDEX.contains("togglePanel(chosen === \"closed\", false);"));
+    // Single player opens on the map; an explicit preference can keep the
+    // command deck open. Applying the default does not persist a choice.
+    assert!(EMBEDDED_INDEX.contains("togglePanel(chosen !== \"open\", false);"));
 
-    // The standings masthead and the arena rail are this client's own
-    // instrument, so a played game opens with them on screen — #2275 put
-    // them behind ☗ and that is reverted. The report can still be folded
-    // away, and that answer is kept under a key that is not the shared
-    // map-overlay one.
+    // Rankings remain available on demand. Initialization must not save the
+    // default as though the player had explicitly chosen it.
     assert!(EMBEDDED_INDEX.contains(
         "body.civ6-frame:not(.rankings-open) #playerhud,\n  \
              body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }"
     ));
-    assert!(EMBEDDED_INDEX.contains("function toggleRankingsReport(open)"));
-    assert!(EMBEDDED_INDEX.contains("toggleRankingsReport(chosen !== \"0\");"));
-    assert!(EMBEDDED_INDEX.contains("const SOLO_RANKINGS_KEY = \"civvis-solo-rankings-v1\";"));
+    assert!(EMBEDDED_INDEX.contains("function toggleRankingsReport(open, persist = true)"));
+    assert!(EMBEDDED_INDEX.contains("toggleRankingsReport(chosen === \"1\", false);"));
+    assert!(EMBEDDED_INDEX.contains("const SOLO_RANKINGS_KEY = \"civvis-solo-rankings-v2\";"));
     assert!(!EMBEDDED_INDEX.contains("civvis-map-overlays-v1\", rankings"));
 
     // The button says what is blocking it in that game's own words —
@@ -12540,7 +12537,7 @@ fn a_watched_simulation_keeps_the_laboratory() {
              body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }"
     ));
     let rankings = EMBEDDED_INDEX
-        .split_once("function toggleRankingsReport(open) {")
+        .split_once("function toggleRankingsReport(open, persist = true) {")
         .expect("the rankings report")
         .1
         .split_once("\n}")
@@ -12550,7 +12547,7 @@ fn a_watched_simulation_keeps_the_laboratory() {
         !rankings.contains("civvis-map-overlays-v1") && !rankings.contains("OVERLAY_"),
         "the rankings report must never write the shared overlay preferences"
     );
-    assert!(rankings.contains("if (playingSolo()) {"));
+    assert!(rankings.contains("if (persist && playingSolo()) {"));
 
     // A compact map area stacks the report into one band with rules
     // carrying two ids (`#maparea.player-hud-compact #playerhud`), which
