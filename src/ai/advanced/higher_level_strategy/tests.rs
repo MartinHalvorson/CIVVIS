@@ -389,7 +389,7 @@ fn research_v2_preserves_the_spaceport_city_between_launches() {
         .get_mut(&cid)
         .unwrap()
         .districts
-        .remove(&crate::name!("spaceport"));
+        .remove(crate::name!("spaceport"));
     ai.reserve_higher_level_investment(&mut g, 0, &plan);
     assert!(
         matches!(g.cities[&cid].queue.first(), Some(Item::Building { building }) if building == "library")
