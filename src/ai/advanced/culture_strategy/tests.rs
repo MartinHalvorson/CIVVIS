@@ -308,3 +308,27 @@ fn culture_production_recovers_the_treasury_before_adding_upkeep() {
     ai.advanced_production(&mut g, 0, &plan, false);
     assert_eq!(g.cities[&cid].queue.first(), Some(&recovery));
 }
+
+#[test]
+fn censorship_amenity_cost_ends_even_without_a_replacement_card() {
+    let mut g = board();
+    g.players[0].government = Some("classical_republic".to_string());
+    g.players[0]
+        .policies
+        .insert(crate::name!("music_censorship"));
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(0);
+    // An exhausted/host-blocked menu cannot supply a replacement. The
+    // condition ending must itself remove the downside, not await a swap.
+    g.blocked_policies.extend(g.rules.policies.keys().copied());
+    AdvancedAi::targeting(VictoryTarget::Culture).strategic_policies(
+        &mut g,
+        0,
+        GrandStrategy::Culture,
+    );
+    assert!(!g.players[0]
+        .policies
+        .contains(&crate::name!("music_censorship")));
+}

@@ -15693,11 +15693,15 @@ impl AdvancedAi {
         let unsafe_dark_cards: Vec<Name> = g.players[pid]
             .policies
             .iter()
-            .filter(|card| g.rules.policies[card].dark_age && !desired_set.contains(card.as_str()))
+            .filter(|card| {
+                (g.rules.policies[card].dark_age
+                    || (self.victory_planning && card.as_str() == "music_censorship"))
+                    && !desired_set.contains(card.as_str())
+            })
             .cloned()
             .collect();
         for card in unsafe_dark_cards {
-            think!(self.journal(), Policies, Decision, "Dropping the Dark Age card {}", plain(&card);
+            think!(self.journal(), Policies, Decision, "Dropping the situational card {}", plain(&card);
                    "its downside no longer suits the {} plan", objective.as_str());
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
