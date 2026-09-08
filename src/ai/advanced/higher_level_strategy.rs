@@ -17,12 +17,19 @@ enum Debt {
 }
 
 impl Debt {
-    fn tag(self) -> &'static str {
+    fn tag(self, ai: &AdvancedAi) -> &'static str {
         match self {
+            Self::Trade if ai.trade_building_before_bankruptcy_2 => {
+                "trade-building-before-bankruptcy-2"
+            }
             Self::Trade => "trade-building-before-bankruptcy",
+            Self::Expansion if ai.expansion_best_idle_city_2 => "expansion-best-idle-city-2",
             Self::Expansion => "expansion-best-idle-city",
+            Self::Culture if ai.culture_building_catchup_2 => "culture-building-catchup-2",
             Self::Culture => "culture-building-catchup",
+            Self::Research if ai.research_building_catchup_2 => "research-building-catchup-2",
             Self::Research => "research-building-catchup",
+            Self::Builder if ai.builder_workforce_recovery_2 => "builder-workforce-recovery-2",
             Self::Builder => "builder-workforce-recovery",
         }
     }
@@ -57,9 +64,55 @@ impl Debt {
 }
 
 impl AdvancedAi {
+    /// Enable the independently screenable disciplined variant.
+    pub fn enable_trade_building_before_bankruptcy_2(&mut self) {
+        self.trade_building_before_bankruptcy_2 = true;
+        self.trade_building_before_bankruptcy = false;
+    }
+    /// Withhold the disciplined variant.
+    pub fn disable_trade_building_before_bankruptcy_2(&mut self) {
+        self.trade_building_before_bankruptcy_2 = false;
+    }
+    /// Enable the independently screenable disciplined variant.
+    pub fn enable_research_building_catchup_2(&mut self) {
+        self.research_building_catchup_2 = true;
+        self.research_building_catchup = false;
+    }
+    /// Withhold the disciplined variant.
+    pub fn disable_research_building_catchup_2(&mut self) {
+        self.research_building_catchup_2 = false;
+    }
+    /// Enable the independently screenable disciplined variant.
+    pub fn enable_expansion_best_idle_city_2(&mut self) {
+        self.expansion_best_idle_city_2 = true;
+        self.expansion_best_idle_city = false;
+    }
+    /// Withhold the disciplined variant.
+    pub fn disable_expansion_best_idle_city_2(&mut self) {
+        self.expansion_best_idle_city_2 = false;
+    }
+    /// Enable the independently screenable disciplined variant.
+    pub fn enable_culture_building_catchup_2(&mut self) {
+        self.culture_building_catchup_2 = true;
+        self.culture_building_catchup = false;
+    }
+    /// Withhold the disciplined variant.
+    pub fn disable_culture_building_catchup_2(&mut self) {
+        self.culture_building_catchup_2 = false;
+    }
+    /// Enable the independently screenable disciplined variant.
+    pub fn enable_builder_workforce_recovery_2(&mut self) {
+        self.builder_workforce_recovery_2 = true;
+        self.builder_workforce_recovery = false;
+    }
+    /// Withhold the disciplined variant.
+    pub fn disable_builder_workforce_recovery_2(&mut self) {
+        self.builder_workforce_recovery_2 = false;
+    }
     /// Enable `builder-workforce-recovery` for screening.
     pub fn enable_builder_workforce_recovery(&mut self) {
         self.builder_workforce_recovery = true;
+        self.builder_workforce_recovery_2 = false;
     }
     /// Withhold `builder-workforce-recovery`.
     pub fn disable_builder_workforce_recovery(&mut self) {
@@ -68,6 +121,7 @@ impl AdvancedAi {
     /// Enable `culture-building-catchup` for screening.
     pub fn enable_culture_building_catchup(&mut self) {
         self.culture_building_catchup = true;
+        self.culture_building_catchup_2 = false;
     }
     /// Withhold `culture-building-catchup`.
     pub fn disable_culture_building_catchup(&mut self) {
@@ -76,6 +130,7 @@ impl AdvancedAi {
     /// Enable `expansion-best-idle-city` for screening.
     pub fn enable_expansion_best_idle_city(&mut self) {
         self.expansion_best_idle_city = true;
+        self.expansion_best_idle_city_2 = false;
     }
     /// Withhold `expansion-best-idle-city`.
     pub fn disable_expansion_best_idle_city(&mut self) {
@@ -84,6 +139,7 @@ impl AdvancedAi {
     /// Enable `research-building-catchup` for screening.
     pub fn enable_research_building_catchup(&mut self) {
         self.research_building_catchup = true;
+        self.research_building_catchup_2 = false;
     }
     /// Withhold `research-building-catchup`.
     pub fn disable_research_building_catchup(&mut self) {
@@ -92,6 +148,7 @@ impl AdvancedAi {
     /// Enable `trade-building-before-bankruptcy` for screening.
     pub fn enable_trade_building_before_bankruptcy(&mut self) {
         self.trade_building_before_bankruptcy = true;
+        self.trade_building_before_bankruptcy_2 = false;
     }
     /// Withhold `trade-building-before-bankruptcy`.
     pub fn disable_trade_building_before_bankruptcy(&mut self) {
@@ -104,11 +161,11 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Item, Debt)> {
-        if !(self.builder_workforce_recovery
-            || self.culture_building_catchup
-            || self.expansion_best_idle_city
-            || self.research_building_catchup
-            || self.trade_building_before_bankruptcy)
+        if !((self.builder_workforce_recovery || self.builder_workforce_recovery_2)
+            || (self.culture_building_catchup || self.culture_building_catchup_2)
+            || (self.expansion_best_idle_city || self.expansion_best_idle_city_2)
+            || (self.research_building_catchup || self.research_building_catchup_2)
+            || (self.trade_building_before_bankruptcy || self.trade_building_before_bankruptcy_2))
             || self.base.minor
             || self.base.barb
             || plan.strategy == GrandStrategy::Recovery
@@ -138,29 +195,38 @@ impl AdvancedAi {
         };
         let ours = yields(pid);
         let mut best_culture = 0.0_f64;
+        let mut rival_cultures = Vec::new();
         let mut best_science = 0.0_f64;
-        if self.culture_building_catchup || self.research_building_catchup {
+        if (self.culture_building_catchup || self.culture_building_catchup_2)
+            || (self.research_building_catchup || self.research_building_catchup_2)
+        {
             for p in &g.players {
                 if p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.has_met(pid, p.id)
                 {
                     let y = yields(p.id);
                     best_culture = best_culture.max(y.culture);
+                    rival_cultures.push(y.culture.max(0.0));
                     best_science = best_science.max(y.science);
                 }
             }
+        }
+        if self.culture_building_catchup_2 && !rival_cultures.is_empty() {
+            rival_cultures.sort_by(f64::total_cmp);
+            let n = rival_cultures.len();
+            best_culture = (rival_cultures[(n - 1) / 2] + rival_cultures[n / 2]) / 2.0;
         }
         let capacity = g.trade_capacity(pid).max(0) as usize;
         let debts = [
             (
                 Debt::Trade,
-                self.trade_building_before_bankruptcy
+                (self.trade_building_before_bankruptcy || self.trade_building_before_bankruptcy_2)
                     && g.players[pid].gold_per_turn < 2.0 * cities.len() as f64
                     && capacity > 0
                     && counts.traders >= capacity,
             ),
             (
                 Debt::Expansion,
-                self.expansion_best_idle_city
+                (self.expansion_best_idle_city || self.expansion_best_idle_city_2)
                     && g.turn <= Self::expansion_band_turn(g)
                     && cities.len() < Self::expansion_pace(g)
                     && cities.len() < self.settlement_target(plan)
@@ -168,15 +234,17 @@ impl AdvancedAi {
             ),
             (
                 Debt::Culture,
-                self.culture_building_catchup && ours.culture < 0.7 * best_culture,
+                (self.culture_building_catchup || self.culture_building_catchup_2)
+                    && ours.culture < 0.7 * best_culture,
             ),
             (
                 Debt::Research,
-                self.research_building_catchup && ours.science < 0.7 * best_science,
+                (self.research_building_catchup || self.research_building_catchup_2)
+                    && ours.science < 0.7 * best_science,
             ),
             (
                 Debt::Builder,
-                self.builder_workforce_recovery
+                (self.builder_workforce_recovery || self.builder_workforce_recovery_2)
                     && cities.len() >= 2
                     && counts.builders == 0
                     && (counts.settlers > 0 || cities.len() >= Self::expansion_pace(g))
@@ -269,6 +337,9 @@ impl AdvancedAi {
                 {
                     continue;
                 }
+                if !self.disciplined_investment_admitted(g, pid, cid, &item, debt, turns) {
+                    continue;
+                }
                 let gain = match (&item, debt) {
                     (Item::Building { building }, Debt::Culture) => {
                         g.rules.buildings[building].yields.culture
@@ -297,6 +368,79 @@ impl AdvancedAi {
         best.map(|(debt, _, cid, _, item)| (cid, item, debt))
     }
 
+    /// Additional admission tests belong to the new versions only. The old
+    /// arms remain reproducible when selected alone.
+    fn disciplined_investment_admitted(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+        debt: Debt,
+        turns: f64,
+    ) -> bool {
+        let city = &g.cities[&cid];
+        match debt {
+            Debt::Expansion if self.expansion_best_idle_city_2 => {
+                // Reserve population and a ten-standard-turn travel/founding
+                // allowance; this is a conservative deadline, not a path ETA.
+                city.pop >= 4
+                    && turns + g.standard_duration(10) as f64
+                        <= Self::expansion_band_turn(g).saturating_sub(g.turn) as f64
+            }
+            Debt::Trade if self.trade_building_before_bankruptcy_2 => {
+                let trader = Item::Unit {
+                    unit: crate::name!("trader"),
+                };
+                let trader_turns = self
+                    .production_build_turns(g, pid, cid, &trader)
+                    .ceil()
+                    .max(1.0);
+                let maintenance = match item {
+                    Item::Building { building } => g.rules.buildings[building].maintenance,
+                    _ => return false,
+                };
+                // Credit no speculative route income before the unit exists.
+                let gold = g.players[pid].gold;
+                let income = g.players[pid].gold_per_turn;
+                let at_building = gold + income * turns;
+                let at_trader = at_building + (income - maintenance) * trader_turns;
+                at_building >= 0.0
+                    && at_trader >= 0.0
+                    && g.turn_limit().is_none_or(|limit| {
+                        turns + trader_turns + g.standard_duration(20) as f64
+                            <= limit.saturating_sub(g.turn) as f64
+                    })
+            }
+            Debt::Research if self.research_building_catchup_2 => {
+                // Even between unlocked projects, a pad city should retain
+                // its production for the race and its production upgrades.
+                !city
+                    .districts
+                    .keys()
+                    .any(|d| g.district_family(*d) == "spaceport")
+            }
+            Debt::Builder if self.builder_workforce_recovery_2 => {
+                city.owned_tiles
+                    .iter()
+                    .filter(|pos| {
+                        g.map.get(**pos).is_some_and(|tile| {
+                            tile.improvement.is_none()
+                                && !tile.pillaged
+                                && tile.district.is_none()
+                                && g.valid_improvements(pid, **pos)
+                                    .iter()
+                                    .any(|imp| g.rules.improvements[imp].builder_buildable)
+                        })
+                    })
+                    .take(3)
+                    .count()
+                    >= 3
+            }
+            _ => true,
+        }
+    }
+
     pub(super) fn reserve_higher_level_investment(
         &self,
         g: &mut Game,
@@ -317,7 +461,7 @@ impl AdvancedAi {
             && self.journal().wants(Level::Decision)
         {
             think!(self.journal(), Economy, Decision,
-                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), debt.tag();
+                "{} starts {} for {}", g.cities[&city].name, Self::plain_item(&item), debt.tag(self);
                 "one safe idle queue services the development shortfall");
         }
     }
