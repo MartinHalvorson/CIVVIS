@@ -2967,7 +2967,7 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     return True
 
 
-def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
+def dismiss_visually_confirmed_popup(*, diagnostic_path: Path | None = None) -> tuple[bool, str]:
     """Click one safe target only when the current pixels prove a modal exists."""
     rect = game_window()
     if rect is None:
@@ -2976,6 +2976,11 @@ def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
     time.sleep(0.25)
     try:
         window, scale = popup_clear.capture(rect)
+        if diagnostic_path is not None:
+            try:
+                window.save(diagnostic_path)
+            except OSError as error:
+                print(f"[popup] could not save diagnostic frame: {error}", file=sys.stderr)
         surface, targets, _dark = popup_clear.classify(window)
     except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
         # A pre-authorized ScreenCaptureKit request can still yield no image while
@@ -3981,16 +3986,9 @@ def _play(args: argparse.Namespace) -> int:
                 "requested desktop help after"
                 if kind == "autoclose_desktop" else "gave up after"
             )
-            # ★★★★★ ASK THE 0.02 s QUESTION BEFORE SPENDING THE 23.5 s ANSWER.
-            #
-            # This branch is two native captures -- the diagnostic photograph
-            # and the classifier's own frame -- on the same thread that reads
-            # the mod's event log, so the game waits for both. While
-            # `systemstatusd` spins, each one runs its guard out and fails:
-            # measured 11.02 s apiece on this host on 2026-09-02, and the
-            # `autoclose_desktop -> next event` gap was 23.5 s to within a
-            # tenth of a second, 23 times, in one 31-minute game -- 30 % of it.
-            # Run civvis-20260902T095330Z paid 25.8 min of its 68.6.
+            # Capture availability is cheap to check. The visual rescue saves
+            # and classifies the same game-window frame: a separate diagnostic
+            # capture used to double the timeout cost on a degraded host.
             #
             # The budget still spends one real attempt per screen per minute so
             # a genuinely stuck leader screen is rescued (see the module for why
@@ -4021,17 +4019,17 @@ def _play(args: argparse.Namespace) -> int:
             if needs_pixels and not allowed:
                 # The event is already in events.jsonl -- `record` writes it
                 # before this chain runs -- so returning here loses no history,
-                # only the two captures.
+                # only the capture.
                 print(f"[{kind}] {screen} {reason} {event.get('attempts')} "
                       f"attempts; {budget_note}")
                 return
             shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
             attempt_started = time.monotonic()
-            if allowed:
+            if allowed and not needs_pixels:
                 screenshot(shot)
             print(f"[{kind}] {screen} {reason} "
                   f"{event.get('attempts')} attempts; "
-                  + (f"photographed to {shot} ({budget_note})" if allowed
+                  + (f"diagnostic path {shot} ({budget_note})" if allowed
                      else f"not photographed ({budget_note})"))
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
@@ -4052,7 +4050,7 @@ def _play(args: argparse.Namespace) -> int:
                         "WorldCongressBetweenTurns", "GreatWorkShowcase",
                         "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
-                ok, how = dismiss_visually_confirmed_popup()
+                ok, how = dismiss_visually_confirmed_popup(diagnostic_path=shot)
                 # ★ THE PREFLIGHT IS A PREDICTION; THIS IS THE ANSWER.
                 # `capture_pause_reason()` says "systemstatusd is spinning"
                 # whenever that daemon is busy, and measured on this host the

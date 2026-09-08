@@ -1740,6 +1740,39 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
 
 
 class VisualPopupCaptureFailureTests(unittest.TestCase):
+    def test_rescue_saves_and_classifies_one_frame(self) -> None:
+        frame = mock.Mock()
+        frame.size = (1728, 1084)
+        rect = (864, 33, 864, 542)
+        target = (800, 400)
+        with patch.object(civ6_play, "game_window", return_value=rect), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play.popup_clear, "capture", return_value=(frame, 2)) as capture, \
+             patch.object(civ6_play.popup_clear, "classify", return_value=("notice", [target], 0)) as classify, \
+             patch.object(civ6_play.popup_clear, "click_target", return_value=target), \
+             patch.object(civ6_play.popup_clear, "held_click") as click:
+            result = civ6_play.dismiss_visually_confirmed_popup(diagnostic_path=Path("frame.png"))
+        self.assertEqual(result, (True, "confirmed notice button"))
+        capture.assert_called_once_with(rect)
+        frame.save.assert_called_once_with(Path("frame.png"))
+        classify.assert_called_once_with(frame)
+        click.assert_called_once_with(target, rect, 2)
+
+    def test_diagnostic_write_failure_does_not_prevent_safe_classification(self) -> None:
+        frame = mock.Mock()
+        frame.save.side_effect = OSError("disk full")
+        with patch.object(civ6_play, "game_window", return_value=(0, 0, 864, 542)), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play.popup_clear, "capture", return_value=(frame, 2)), \
+             patch.object(civ6_play.popup_clear, "classify", return_value=("map", [], 0)) as classify, \
+             patch.object(civ6_play.popup_clear, "held_click") as click:
+            result = civ6_play.dismiss_visually_confirmed_popup(diagnostic_path=Path("frame.png"))
+        self.assertEqual(result, (False, "no safe visible dialogue (map)"))
+        classify.assert_called_once_with(frame)
+        click.assert_not_called()
+
     def test_transient_popup_capture_miss_leaves_the_game_controller_alive(self) -> None:
         """A blank ScreenCaptureKit frame is not a reason to end a live game."""
         with patch.object(civ6_play, "game_window", return_value=(0, 0, 864, 542)), \
