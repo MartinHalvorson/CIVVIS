@@ -47576,3 +47576,91 @@ fn a_threat_detour_will_not_trade_a_site_for_half_of_one() {
         "a detour that keeps the site's worth is untouched"
     );
 }
+
+/// See `campus_before_halfway`. Since #3124 gated specialization to the
+/// second half of the clock, a Science seat whose plan already reads Science
+/// (its sites taken, expansion done) priced its own Campus at zero to the
+/// lane for 125 of 250 turns. Treated, the Campus carries the lane's 170
+/// before halfway exactly as it does after; after halfway nothing changes;
+/// a Culture seat feels nothing.
+#[test]
+fn the_campus_keeps_its_lane_arm_before_the_halfway_clock() {
+    let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.cities.get_mut(&city).unwrap().pop = 3;
+    game.max_turns = 250;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: 40,
+        rush: false,
+    };
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: game.cities[&city].pos,
+    };
+
+    let seat = |on: bool, target: VictoryTarget, game: &Game| {
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge_universe();
+        if on {
+            ai.enable_campus_before_halfway();
+        } else {
+            ai.disable_campus_before_halfway();
+        }
+        ai.victory_target = Some(target);
+        ai.refresh_research_weight(game);
+        ai
+    };
+
+    game.turn = 40;
+    let treated = seat(true, VictoryTarget::Science, &game);
+    let withheld = seat(false, VictoryTarget::Science, &game);
+    let counts = treated.counts(&game, 0);
+    let lifted = treated.production_value(&game, 0, city, &campus, &plan, &counts);
+    let stock = withheld.production_value(&game, 0, city, &campus, &plan, &counts);
+    assert!(
+        lifted > stock,
+        "before halfway the Science seat's Campus carries the lane's arm: \
+         {lifted} treated vs {stock} withheld"
+    );
+
+    // After halfway the shipped arm already pays 170; the gene adds nothing.
+    game.turn = 130;
+    let treated_late = seat(true, VictoryTarget::Science, &game);
+    let withheld_late = seat(false, VictoryTarget::Science, &game);
+    let counts_late = treated_late.counts(&game, 0);
+    assert_eq!(
+        treated_late.production_value(&game, 0, city, &campus, &plan, &counts_late),
+        withheld_late.production_value(&game, 0, city, &campus, &plan, &counts_late),
+        "after halfway the Campus is priced exactly as before"
+    );
+
+    // The arm follows the plan, as the shipped post-halfway arm does: a
+    // Culture plan's Campus is priced exactly as before.
+    game.turn = 40;
+    let culture_plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        ..plan
+    };
+    let culture = seat(true, VictoryTarget::Culture, &game);
+    let culture_off = seat(false, VictoryTarget::Culture, &game);
+    let counts_culture = culture.counts(&game, 0);
+    assert_eq!(
+        culture.production_value(&game, 0, city, &campus, &culture_plan, &counts_culture),
+        culture_off.production_value(&game, 0, city, &campus, &culture_plan, &counts_culture),
+        "a Culture plan's Campus is priced exactly as before"
+    );
+}
