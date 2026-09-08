@@ -215,6 +215,16 @@ def place_game(game_process: str, side: str = "left", fraction: float = 0.5,
         f'  set position to {{{x}, {y}}}\n'
         'end tell')
     _best_effort_osascript(script, "place")
+    actual = get_game_window()
+    if actual is not None and actual != desired:
+        # Aspyr also clamps an enlargement against the OLD origin. A window
+        # at the right edge can move left but remain half-width on this pass.
+        # Now that its origin has moved, one bounded retry can reach the size.
+        _best_effort_osascript(script, "place retry")
+        actual = get_game_window()
+        if actual is not None and actual != desired:
+            print(f"[window] placement requested {desired}, got {actual} "
+                  "after retry", flush=True)
 
 
 def _best_effort_osascript(script: str, what: str) -> None:
