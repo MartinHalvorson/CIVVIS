@@ -17,6 +17,11 @@ import follow  # noqa: E402
 
 
 class FollowTest(unittest.TestCase):
+    def test_frame_publish_pins_seat_in_the_load_transaction(self):
+        game = {"turn": 42}
+        self.assertEqual(json.loads(follow.mirror_frame_body(game)),
+                         {"game": game, "mirror_player": 0})
+
     def test_visible_server_refreshes_an_existing_tab_after_starting(self) -> None:
         class LiveProcess:
             pid = 4242
