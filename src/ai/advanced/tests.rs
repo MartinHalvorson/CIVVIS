@@ -48060,3 +48060,68 @@ fn envoy_dividends_keep_a_paying_six_tier_and_a_close_defense() {
         "one defensive placement, then save"
     );
 }
+
+/// Live Rome turn 33: a wounded finisher walks onto its victim's tile,
+/// then a second visible cavalry unit removes it. A direct kill is not safety.
+#[test]
+fn immediate_kill_priority_rejects_a_poisoned_finish() {
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_633).expect("flat barbarian fixture");
+    let target = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| g.city_at(*p).is_none() && g.wdist(*p, refuge) > 1)
+        .expect("open adjacent target");
+    let counter_at = g
+        .nbrs(target)
+        .into_iter()
+        .find(|p| *p != front && g.city_at(*p).is_none())
+        .expect("adjacent counterattack");
+    let ours = g.spawn_test_unit("warrior", 0, front);
+    let victim = g.spawn_test_unit("scout", barbarian, target);
+    let counter = g.spawn_test_unit("horseman", barbarian, counter_at);
+    g.units.get_mut(&ours).unwrap().hp = 46;
+    g.units.get_mut(&victim).unwrap().hp = 1;
+    // Host exports exhausted enemies; they refresh before the reply.
+    g.units.get_mut(&counter).unwrap().moves_left = 0.0;
+    g.units.get_mut(&counter).unwrap().attacks_left = 0;
+    let action = Action::Attack { unit: ours, target };
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(barbarian),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    let mut after = g.speculative_clone();
+    after.apply(0, &action).expect("legal finishing strike");
+    assert!(!after.units.contains_key(&victim));
+    assert!(
+        after.units.contains_key(&ours),
+        "survives the direct exchange"
+    );
+    assert_eq!(after.units[&ours].pos, target);
+    assert!(
+        !ai.finisher_survives_reach(&after, 0, ours),
+        "remaining cavalry can kill the finisher"
+    );
+    assert!(ai.immediate_kill_value(&g, 0, &action, &plan).is_none());
+    let mut tactical = g.speculative_clone();
+    ai.advanced_military_step(&mut tactical, 0, ours, &plan);
+    assert!(
+        tactical.units.contains_key(&victim),
+        "the ordinary military path must not reopen the rejected finish"
+    );
+    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 0);
+    assert!(g.units.contains_key(&victim));
+
+    // Removing the second hostile makes the same blow a safe finish. The
+    // killed victim must not remain in a cached attack envelope.
+    g.remove_unit(counter);
+    assert!(ai.immediate_kill_value(&g, 0, &action, &plan).is_some());
+    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 1);
+    assert!(!g.units.contains_key(&victim));
+}
