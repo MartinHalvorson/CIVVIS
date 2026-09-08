@@ -2847,17 +2847,24 @@ def science_pace_of(gene: dict) -> dict | None:
 
 
 def reporting_batch_header(label: str, batch: dict | None) -> str:
+    interval = "start=not recorded; end=not recorded"
     if batch is None:
         return (f"Wins ± /10k total seats — {label} "
-                "(n=not recorded; games/min=not recorded)")
+                f"(n=not recorded; games/min=not recorded; {interval})")
     timing = batch["meta"].get("continuous_batch_timing")
     if not isinstance(timing, dict):
         rate = "games/min=not recorded"
     else:
         rate = (f"{timing['completed_games'] * 60 / timing['elapsed_seconds']:.1f} "
                 "games/min")
+        def formatted_time(key: str) -> str:
+            timestamp = dt.datetime.fromisoformat(timing[key].replace("Z", "+00:00"))
+            return timestamp.astimezone(dt.timezone.utc).strftime("%m-%d-%H-%M")
+
+        interval = (f"start={formatted_time('started_at')} UTC; "
+                    f"end={formatted_time('completed_at')} UTC")
     return (f"Wins ± /10k total seats — {label} "
-            f"(n={fmt_int(batch['meta']['seats'])} total seats; {rate})")
+            f"(n={fmt_int(batch['meta']['seats'])} total seats; {rate}; {interval})")
 
 
 def diff_cell(history: list[dict]) -> str:
