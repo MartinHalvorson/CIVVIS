@@ -16,6 +16,28 @@ from civ6_control import install  # noqa: E402
 
 
 class ProtectedInstallTest(unittest.TestCase):
+    def test_hud_heartbeat_is_installed_configured_and_connected(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        tree = ET.parse(install.MOD_SOURCE / "CivvisControl.modinfo")
+        name = "CivvisControlHeartbeat.lua"
+        self.assertIn(name, install.SCRIPTS)
+        self.assertIn(name, [n.text for n in tree.findall("./Files/File")])
+        self.assertIn(name, [n.text for n in tree.findall("./InGameActions/ImportFiles/File")])
+        actions = tree.findall("./InGameActions/ReplaceUIScript/Properties")
+        self.assertTrue(any(n.findtext("LuaContext") == "TopPanel"
+                            and n.findtext("LuaReplace") == name
+                            and int(n.findtext("LoadOrder", "0")) > 0 for n in actions))
+        references = {n.get("id").lower() for n in tree.findall("./References/Mod")}
+        self.assertTrue({"1b28771a-c749-434b-9053-d1380c553de9",
+                         "4873eb62-8ccc-4574-b784-dda455e74e68"} <= references)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(install, "check_syntax", return_value=None):
+            install._write_mod(Path(tmp), {"Play": True, "CivvisDecides": True})
+            deployed = (Path(tmp) / name).read_text()
+            self.assertTrue(deployed.startswith(install.prelude({"Play": True, "CivvisDecides": True})))
+        agent = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse)", agent)
+
     def test_city_export_preserves_great_works_citizens_yields_and_progress(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("local function exportState", 1)[1].split(
