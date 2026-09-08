@@ -409,7 +409,7 @@ pub fn load_uploaded(session: &mut Session, parsed: &Value) -> Result<(), String
         ));
     }
     let params = session.params.clone();
-    *session = Session::from_game(params, game);
+    *session = Session::from_saved_game(params, game);
     Ok(())
 }
 
