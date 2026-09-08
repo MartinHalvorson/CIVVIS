@@ -1138,7 +1138,7 @@ impl AdvancedAi {
         pid: usize,
         field: &mut DangerField,
     ) -> (Vec<Blow>, BTreeSet<u32>, Vec<WantedPreview>, BTreeSet<u32>) {
-        let (shooters, targets, candidates, mut armed) = self.strike_candidates(g, pid, field);
+        let (shooters, targets, mut candidates, mut armed) = self.strike_candidates(g, pid, field);
         if candidates.is_empty() {
             return (Vec::new(), armed, Vec::new(), BTreeSet::new());
         }
@@ -1149,6 +1149,12 @@ impl AdvancedAi {
         };
         armed.retain(|uid| !doomed.contains(uid));
         let wanted = self.wanted_previews_of(&shooters, &targets, &candidates);
+        // Rotation runs after the selected blows have been applied. A veto
+        // must therefore reach the search itself, before a profitable trade
+        // can spend a unit whose every strike was judged unsurvivable.
+        if !doomed.is_empty() {
+            candidates.retain(|candidate| !doomed.contains(&shooters[candidate.shooter].uid));
+        }
         let (sequence, score) = search_kill_sequence(&shooters, &targets, &candidates, field);
         if score <= 0.0 || sequence.is_empty() {
             return (Vec::new(), armed, wanted, doomed);
@@ -4037,5 +4043,38 @@ mod tests {
             "wounded, it steps out of reach"
         );
         assert!(hurt.battle_planner_recovering.contains(&ours));
+    }
+
+    #[test]
+    fn doomed_veto_blocks_a_profitable_trade_before_the_kill_search_can_spend_it() {
+        let mut g = open_field();
+        g.found_city_for(0, at(10, 4), Some("Refuge".to_string()));
+        let ours = g.spawn_unit("warrior", 0, at(10, 4));
+        let victim = g.spawn_unit("modern_armor", 1, at(11, 4));
+        wound(&mut g, ours, 50);
+        wound(&mut g, victim, 1);
+        let off = version_two();
+        assert!(
+            off.kill_sequence(&g, 0)
+                .iter()
+                .any(|blow| blow.unit == ours),
+            "the control must choose the profitable sacrifice"
+        );
+        let mut ai = version_two();
+        ai.enable_doomed_blow_veto();
+        let mut field = DangerField::new(&g, 0);
+        let (blows, armed, _, doomed) = ai.kill_sequence_in(&g, 0, &mut field);
+        assert!(doomed.contains(&ours));
+        assert!(!armed.contains(&ours));
+        assert!(
+            blows.iter().all(|blow| blow.unit != ours),
+            "the veto must remove the attack before the beam can choose it"
+        );
+        let plan = conquest(&g);
+        ai.plan_battle(&mut g, 0, &plan);
+        assert!(g.units.contains_key(&victim));
+        assert_eq!(g.units[&ours].pos, at(10, 4));
+        assert_eq!(g.units[&ours].hp, 50);
+        assert!(ai.battle_planner_claims(ours));
     }
 }
