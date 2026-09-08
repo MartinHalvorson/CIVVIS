@@ -10348,6 +10348,15 @@ mod tests {
     #[test]
     fn no_path_feedback_retries_local_steps_for_one_turn_only() {
         let (_, mut state) = production_board();
+        state.units = vec![StateUnit {
+            id: 900,
+            kind: "UNIT_SCOUT".into(),
+            x: 4,
+            y: 5,
+            hp: 100.0,
+            moves: 3.0,
+            ..Default::default()
+        }];
         let unit = state.units[0].id;
         let from = (state.units[0].x, state.units[0].y);
         let turn = state.turn;
@@ -10368,6 +10377,14 @@ mod tests {
             }],
         );
         assert_eq!(refusals.local_retry.get(&unit), Some(&(state.turn, from)));
+        let retry_steps = vec![
+            unit_order(unit, "MOVE_TO", Some((5, 5))),
+            unit_order(unit, "MOVE_TO", Some((6, 5))),
+        ];
+        let local = refusals.local_retry.keys().copied().collect();
+        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local);
+        assert_eq!(coalesced, 0);
+        assert_eq!(orders.len(), 2);
         state.frame = 1;
         refusals.observe(&state, &[]);
         assert_eq!(refusals.local_retry.len(), 1);
