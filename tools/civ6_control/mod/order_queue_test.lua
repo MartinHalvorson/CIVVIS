@@ -458,6 +458,47 @@ local retried = applyOrder(player, PID, governorRow, 8)
 check("unassigned governor retries next turn", retried, true)
 check("next-turn governor request is submitted", #host.governor_requests, 2)
 
+-- A completed final move must wake a previously requested end turn even
+-- after all queued follow-ups were drained. No game-core publish is required.
+local settledTickCalls = 0
+for i = 1, 20 do
+    local name = debug.getupvalue(queue.onUnitSettled, i)
+    if name == "tick" then
+        debug.setupvalue(queue.onUnitSettled, i, function() settledTickCalls = settledTickCalls + 1 end)
+    elseif name == "ensureStarted" then
+        debug.setupvalue(queue.onUnitSettled, i, function() end)
+    elseif name == nil then break end
+end
+queue.count = 0
+local requested = {}
+UI.RequestAction = function(...)
+    local action, parameters = ...
+    requested[#requested + 1] = { action = action, parameters = parameters, argc = select("#", ...) }
+end
+ActionTypes = { ACTION_ENDTURN = "end_turn" }
+local parameters = { REASON = "UserForced" }
+queue.requestEndTurn(7, parameters)
+check("end-turn submission arms settlement retry", queue.endTurnRetryTurn, 7)
+check("end-turn action reaches host", requested[1].action, "end_turn")
+check("forced request parameters survive", requested[1].parameters, parameters)
+queue.requestEndTurn(7)
+check("ordinary request keeps the single-argument host signature", requested[2].argc, 1)
+queue.onUnitSettled(PID, 10)
+check("final settled move retries requested turn with empty queue", settledTickCalls, 1)
+queue.onUnitSettled(PID + 1, 10)
+check("rival movement cannot retry our turn", settledTickCalls, 1)
+queue.endTurnRetryTurn = 6
+queue.onUnitSettled(PID, 10)
+check("old-turn request cannot trigger a new-turn tick", settledTickCalls, 1)
+queue.endTurnRetryTurn = nil
+queue.onUnitSettled(PID, 10)
+check("movement before any end-turn request adds no tick", settledTickCalls, 1)
+queue.count = 1
+queue.pending[10] = { ready = false }
+queue.onUnitSettled(PID, 10)
+check("queued follow-up still ticks without an end-turn request", settledTickCalls, 2)
+check("queued follow-up is marked ready", queue.pending[10].ready, true)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)

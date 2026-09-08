@@ -18111,6 +18111,16 @@ function CivvisBoard.movementNotYetRestored(player, turn)
 	return true;
 end
 
+-- Submission is not acceptance: the host may still be settling a movement.
+CivvisQueue.requestEndTurn = function(turn, parameters)
+	CivvisQueue.endTurnRetryTurn = turn;
+	if parameters == nil then
+		UI.RequestAction(ActionTypes.ACTION_ENDTURN);
+	else
+		UI.RequestAction(ActionTypes.ACTION_ENDTURN, parameters);
+	end
+end;
+
 local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
@@ -18812,7 +18822,7 @@ local function tick()
 						                    forfeit = 0, forced = true, same_pass = true });
 						same_pass_forced = true;
 						pcall(function()
-							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							CivvisQueue.requestEndTurn(turn,
 							                 { REASON = "UserForced" });
 						end);
 					end
@@ -18855,7 +18865,7 @@ local function tick()
 							                    forfeit = 0, forced = true, same_pass = true });
 							same_pass_forced = true;
 							pcall(function()
-								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								CivvisQueue.requestEndTurn(turn,
 								                 { REASON = "UserForced" });
 							end);
 						else
@@ -18943,7 +18953,7 @@ local function tick()
 						                    forfeit = 0, forced = true, same_pass = true });
 						same_pass_forced = true;
 						pcall(function()
-							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							CivvisQueue.requestEndTurn(turn,
 							                 { REASON = "UserForced" });
 						end);
 					end
@@ -19171,7 +19181,7 @@ local function tick()
 						-- to park.
 						if not holdForVote then
 							pcall(function()
-								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								CivvisQueue.requestEndTurn(turn,
 								                 { REASON = "UserForced" });
 							end);
 						end
@@ -19206,7 +19216,7 @@ local function tick()
 				if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
 					UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
 				end
-				UI.RequestAction(ActionTypes.ACTION_ENDTURN);
+				CivvisQueue.requestEndTurn(turn);
 			end);
 		end
 	end);
@@ -19323,15 +19333,21 @@ local function onEndTurnBlockingChanged()
 	tick();
 end
 
--- The host says one of our units finished moving or its operation ended.
--- If that unit has queued follow-ups, this is the moment to issue the next
--- one — undivided, like `EndTurnBlockingChanged`, because a board whose only
--- remaining work is a queued strike publishes almost nothing on its own.
+-- The stock UnitPanel.lua:2424,2431 consumes these completion events.
+-- A requested end turn can be refused while the final movement settles, after
+-- our queue has drained. Retry on that completion without waiting for another
+-- divided game-core publish. Only requests from this turn qualify.
 CivvisQueue.onUnitSettled = function(player, unitId)
-	if CivvisQueue.count <= 0 then return; end
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
-	if CivvisQueue.noteUnitEvent(pid, player, unitId) then
+	if pid == nil or pid < 0 or player ~= pid then return; end
+	local ready = CivvisQueue.noteUnitEvent(pid, player, unitId);
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local retry = turn >= 0 and CivvisQueue.endTurnRetryTurn == turn;
+	if ready or retry then
 		ensureStarted();
+		if retry and not ready then
+			emit("turn_retry_settled", { turn = turn, unit = unitId });
+		end
 		tick();
 	end
 end;
