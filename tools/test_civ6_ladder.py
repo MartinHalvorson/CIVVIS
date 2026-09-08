@@ -539,6 +539,25 @@ class HowTheArmyFought(LedgerCase):
         self.assertEqual(totals["move_noop"], 1)
         self.assertEqual(totals["move_fallback"], 0)
 
+    def test_slim_states_retain_treasury_and_threat_context_and_city_removals(self):
+        events = self._events([
+            {"kind": "seat", "local_player": 0},
+            {"kind": "state", "turn": 1, "gold": 0, "units": [
+                {"id": 1, "kind": "UNIT_WARRIOR", "x": 0, "y": 0, "hp": 100,
+                 "combat": 20, "ranged": 0}]},
+            {"kind": "state", "turn": 2, "gold": 10, "units": [
+                {"id": 2, "kind": "UNIT_WARRIOR", "x": 0, "y": 0, "hp": 90,
+                 "combat": 20, "ranged": 0}],
+             "hostiles": [{"x": 1, "y": 0, "type": "UNIT_WARRIOR", "combat": 20}]},
+            {"kind": "state", "turn": 3, "units": []},
+            {"kind": "city_lost", "turn": 3, "city": 7},
+            {"kind": "combat", "attacker": {"player": 0}, "defender": {"player": 1}},
+        ])
+        totals = civ6_ladder.combat_totals(events)
+        self.assertEqual(totals["cities_lost"], 1)
+        self.assertEqual(totals["military_removal_context"],
+                         {"full_hp_treasury_empty": 1, "hostile_within_2": 1})
+
     def test_a_mod_that_never_wrote_a_combat_event_reads_as_silence(self):
         events = self._events([
             {"kind": "turn", "ctx": "agent", "turn": 1,
