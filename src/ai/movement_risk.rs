@@ -16,12 +16,17 @@ pub(super) struct MovementRiskFrame {
     ready: usize,
 }
 
-// The source Arc is the existing complete board/visibility cache identity.
-// Retaining it prevents address reuse; keeping one entry bounds worker memory.
-// Different controller seats have different source Arcs and cannot share sight.
-type MovementReachCache = Option<(Arc<AttackEnvelopes>, Arc<AttackEnvelopes>)>;
+// The existing per-enemy cache invalidates a reach when anything in its
+// movement footprint (including adjacent ZOC sources) changes. Reuse that
+// identity for the corrected strike reach too: moving a distant Builder must
+// not flood every visible enemy's movement again. Arcs prevent address reuse.
+#[derive(Default)]
+struct MovementReachCache {
+    table: Option<(Arc<AttackEnvelopes>, Arc<AttackEnvelopes>)>,
+    enemies: BTreeMap<(usize, u32), (Arc<EnvelopeReach>, Arc<EnvelopeReach>)>,
+}
 thread_local! {
-    static MOVEMENT_REACH: std::cell::RefCell<MovementReachCache> = const { std::cell::RefCell::new(None) };
+    static MOVEMENT_REACH: std::cell::RefCell<MovementReachCache> = std::cell::RefCell::new(MovementReachCache::default());
 }
 
 fn assign_assault_position(
@@ -64,47 +69,63 @@ impl BasicAi {
     ) -> MovementRiskFrame {
         let source = self.enemy_attack_envelopes(g, pid);
         let envelopes = MOVEMENT_REACH.with(|slot| {
-            if let Some((old, reach)) = slot.borrow().as_ref() {
+            let mut cache = slot.borrow_mut();
+            if let Some((old, reach)) = cache.table.as_ref() {
                 if Arc::ptr_eq(old, &source) {
                     return Arc::clone(reach);
                 }
             }
-            let hostiles: Vec<_> = g
-                .units
-                .values()
-                .filter(|unit| {
-                    let spec = &g.rules.units[unit.kind];
-                    unit.owner != pid
-                        && g.is_at_war(pid, unit.owner)
-                        && spec.class == "military"
-                        && (spec.is_melee_capable() || spec.has_ranged_attack())
-                        && g.unit_visible_to(unit.id, pid)
-                })
-                .map(|unit| unit.id)
-                .collect();
-            let reach = if hostiles.is_empty() {
-                Arc::clone(&source)
-            } else {
-                let mut probe = g.speculative_clone();
-                Arc::new(
-                    hostiles
-                        .into_iter()
-                        .map(|enemy| {
-                            let mut targets: Vec<_> = source
-                                .iter()
-                                .find(|(id, _)| *id == enemy)
-                                .map_or_else(Vec::new, |(_, old)| old.iter().copied().collect());
-                            targets.extend(super::advanced::movement_strike_reach(
-                                &mut probe, pid, enemy,
-                            ));
-                            targets.sort_unstable();
-                            targets.dedup();
-                            (enemy, Arc::new(EnvelopeReach::from_tiles(targets)))
-                        })
-                        .collect(),
-                )
-            };
-            *slot.borrow_mut() = Some((source, Arc::clone(&reach)));
+            let mut probe = None;
+            // Keep other seats' entries through the round; camping enemies
+            // often have unchanged reach next turn too. Bound retained worlds
+            // when a worker is reused for successive simulations.
+            if cache.enemies.len() > 1024 {
+                cache.enemies.clear();
+            }
+            let mut envelopes = Vec::new();
+            for unit in g.units.values() {
+                let spec = &g.rules.units[unit.kind];
+                if unit.owner == pid
+                    || !g.is_at_war(pid, unit.owner)
+                    || spec.class != "military"
+                    || !(spec.is_melee_capable() || spec.has_ranged_attack())
+                    || !g.unit_visible_to(unit.id, pid)
+                {
+                    continue;
+                }
+                let raw = source
+                    .iter()
+                    .find(|(id, _)| *id == unit.id)
+                    .map(|(_, reach)| reach);
+                let hit = raw.and_then(|raw| {
+                    cache
+                        .enemies
+                        .get(&(pid, unit.id))
+                        .filter(|(old, _)| Arc::ptr_eq(raw, old))
+                });
+                let reach = if let Some((_, reach)) = hit {
+                    Arc::clone(reach)
+                } else {
+                    let mut targets: Vec<_> =
+                        raw.map_or_else(Vec::new, |old| old.iter().copied().collect());
+                    targets.extend(super::advanced::movement_strike_reach(
+                        probe.get_or_insert_with(|| g.speculative_clone()),
+                        pid,
+                        unit.id,
+                    ));
+                    targets.sort_unstable();
+                    targets.dedup();
+                    Arc::new(EnvelopeReach::from_tiles(targets))
+                };
+                if let Some(raw) = raw {
+                    cache
+                        .enemies
+                        .insert((pid, unit.id), (Arc::clone(raw), Arc::clone(&reach)));
+                }
+                envelopes.push((unit.id, reach));
+            }
+            let reach = Arc::new(envelopes);
+            cache.table = Some((source, Arc::clone(&reach)));
             reach
         });
         let target_city = g.city_at(target).filter(|cid| {
