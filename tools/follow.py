@@ -644,15 +644,17 @@ def start_visible_server(run_dir, players):
     return False
 
 
+def mirror_frame_body(game):
+    """Publish the board and its restricted, paused view in one transaction."""
+    return json.dumps({"game": game, "mirror_player": 0}).encode()
+
+
 def hold_the_frame():
     """Watch our own seat, and never simulate.
 
-    Both must be re-asserted after every `/load`: it rebuilds the Session from
-    the incoming game, so the view player falls back to the seatless spectator
-    and the spectator pause is not carried over. Left alone, the page would
-    reframe onto the whole ocean and then play CIVVIS's own game forward from
-    the real position — a window that starts as a mirror and silently becomes a
-    different game is worse than no window.
+    Startup and browser handoffs can change the selected seat. Frame publishes
+    carry mirror_player in /load so their seat and pause are atomic; this is
+    only the startup/transport pin, never the protection for a frame update.
     """
     for path, payload in (("/view", {"player": 0}),
                           ("/spectator-status", {"paused": True})):
@@ -1061,7 +1063,7 @@ def main():
             continue
 
         try:
-            body = json.dumps({"game": game}).encode()
+            body = mirror_frame_body(game)
             answer = json.loads(http_post(PORT, "/load", body))
         except Exception as error:
             log(f"could not publish: {error}")

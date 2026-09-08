@@ -176,6 +176,37 @@ class AttachSummaryTests(unittest.TestCase):
         self.assertEqual(summary["victory_target"], "science")
         self.assertEqual(summary["city_two_turn"], 45)
         self.assertEqual(summary["cities_at_60"], 5)
+        # No state frame in this run: the research gap stays absent, not zero.
+        self.assertNotIn("tech_marks", summary)
+
+    def test_attached_summary_carries_the_research_gap_at_the_marks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-techs"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 100, "frame": 0,
+                     "techs": [f"TECH_{i}" for i in range(14)],
+                     "rivals": [{"techs": 19}, {"techs": -1}]},
+                    {"kind": "state", "turn": 150, "frame": 0,
+                     "techs": [f"TECH_{i}" for i in range(31)],
+                     "rivals": [{"techs": 40}, {"techs": 47}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 160, "score": 300, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+        self.assertEqual(summary["tech_marks"],
+                         {100: {"techs": 14, "rival_techs": 19},
+                          150: {"techs": 31, "rival_techs": 47}})
 
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
@@ -3072,6 +3103,18 @@ class AStoppedRunStillLeavesARecord(unittest.TestCase):
         row = civ6_play.partial_summary("civvis-x", self._config(), {})
         self.assertIsNone(row["last_turn"])
         self.assertIsNone(row["cities_at_60"])
+
+    def test_the_fallback_measures_the_research_gap_before_writing(self):
+        """A killed run is most of the record; its tech marks must be read
+        from events.jsonl inside the shutdown hook, and never fail it."""
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        self.assertIn('civ6_ladder.tech_marks(run_dir / "events.jsonl")', block)
+        self.assertIn('partial["tech_marks"] = marks', block)
+        self.assertLess(block.index('partial["tech_marks"]'),
+                        block.index("path.write_text"))
 
     def test_the_fallback_is_registered_and_never_overwrites(self):
         source = (Path(__file__).resolve().parent
