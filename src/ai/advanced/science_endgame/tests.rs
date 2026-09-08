@@ -371,3 +371,70 @@ fn nearly_complete_expedition_and_parallel_lasers_fit_the_real_deadline() {
         "the flight itself still takes time"
     );
 }
+
+#[test]
+fn repairing_an_almost_finished_launch_beats_restarting_it_elsewhere() {
+    let (mut g, a, b) = board();
+    g.players[0].science_projects.remove("exoplanet_expedition");
+    let launch = project("exoplanet_expedition");
+    g.apply(
+        0,
+        &Action::Produce {
+            city: a,
+            item: launch.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&a).unwrap().production = g.item_cost_for_city(0, a, &launch) - 1.0;
+    let pos = *g.cities[&a]
+        .districts
+        .get(crate::name!("spaceport"))
+        .unwrap();
+    g.map.tiles.get_mut(&pos).unwrap().pillaged = true;
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.science_production(&mut g, 0);
+    ai.repair_stalled_science_project_queues(&mut g, 0);
+    assert!(matches!(
+        g.cities[&a].queue.first(),
+        Some(Item::Repair { .. })
+    ));
+    assert_ne!(g.cities[&b].queue.first(), Some(&launch));
+    assert!(g.cities[&a].production_progress["project:exoplanet_expedition"] > 0.0);
+}
+
+#[test]
+fn third_pad_prepares_while_mars_is_still_being_built() {
+    let (mut g, a, _) = board();
+    let pos = g
+        .map
+        .tiles
+        .iter()
+        .find_map(|(pos, tile)| {
+            (tile.owner_city.is_none()
+                && g.rules.is_passable(tile)
+                && !g.rules.is_water(tile)
+                && g.cities.values().all(|city| g.wdist(*pos, city.pos) >= 6))
+            .then_some(*pos)
+        })
+        .unwrap();
+    let third = g.found_city_for(0, pos, None);
+    g.cities.get_mut(&third).unwrap().pop = 12;
+    g.players[0].science_projects.remove("launch_mars_colony");
+    g.players[0].science_projects.remove("exoplanet_expedition");
+    let mars = project("launch_mars_colony");
+    g.apply(
+        0,
+        &Action::Produce {
+            city: a,
+            item: mars.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&a).unwrap().production = g.item_cost_for_city(0, a, &mars) - 1.0;
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.science_production(&mut g, 0);
+    assert_eq!(g.cities[&a].queue.first(), Some(&mars));
+    assert!(
+        matches!(g.cities[&third].queue.first(), Some(Item::District { district, .. }) if district == "spaceport")
+    );
+}

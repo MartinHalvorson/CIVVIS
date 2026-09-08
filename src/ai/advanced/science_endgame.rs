@@ -15,7 +15,7 @@ const LAUNCHES: [&str; 4] = [
 const LASERS: [&str; 2] = ["lagrange_laser_station", "terrestrial_laser_station"];
 
 impl AdvancedAi {
-    fn science_endgame_committed(&self, g: &Game, pid: usize) -> bool {
+    pub(super) fn science_endgame_committed(&self, g: &Game, pid: usize) -> bool {
         self.victory_planning
             && g.victory_conditions.science
             && (self.raced_target() == Some(VictoryTarget::Science)
@@ -110,7 +110,7 @@ impl AdvancedAi {
             let speed = 1.0
                 + periods
                     .iter()
-                    .map(|period| (flight as f64 / period).floor())
+                    .map(|period| ((flight - 1) as f64 / period).floor())
                     .sum::<f64>();
             distance += speed;
             if distance >= g.science_victory_points_needed(pid) {
@@ -118,6 +118,24 @@ impl AdvancedAi {
             }
         }
         false
+    }
+
+    /// Repairing a nearly finished launch may beat restarting it elsewhere.
+    /// The caller leaves that queue in place for the existing repair pass.
+    fn science_endgame_pad_repair_turns(g: &Game, pid: usize, cid: u32) -> Option<f64> {
+        g.cities[&cid]
+            .districts
+            .iter()
+            .filter(|(district, pos)| {
+                g.district_family(**district) == "spaceport" && g.map.tiles[pos].pillaged
+            })
+            .map(|(_, pos)| Item::Repair {
+                repair: crate::name!("district"),
+                pos: *pos,
+            })
+            .filter(|repair| g.can_produce(pid, cid, repair))
+            .map(|repair| Self::science_endgame_turns(g, pid, cid, &repair))
+            .min_by(f64::total_cmp)
     }
 
     /// A legal replacement is required before moving a serial launch. This
@@ -189,6 +207,14 @@ impl AdvancedAi {
             };
             if let Some(best) = best {
                 if Some(best) != incumbent {
+                    if incumbent.is_some_and(|cid| {
+                        Self::science_endgame_pad_repair_turns(g, pid, cid).is_some_and(|repair| {
+                            repair + Self::science_endgame_turns(g, pid, cid, &item)
+                                <= Self::science_endgame_turns(g, pid, best, &item)
+                        })
+                    }) {
+                        return true;
+                    }
                     // Prepare every displaced queue before changing anything.
                     let replacements: Option<Vec<_>> = cities
                         .iter()

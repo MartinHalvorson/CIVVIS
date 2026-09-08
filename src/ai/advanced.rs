@@ -22742,7 +22742,9 @@ impl AdvancedAi {
     /// the project's progress by its normal item key, repairs the launch site,
     /// and lets the next science pass resume the same rung.
     fn repair_stalled_science_project_queues(&self, g: &mut Game, pid: usize) {
-        if self.raced_target() != Some(VictoryTarget::Science) {
+        if self.raced_target() != Some(VictoryTarget::Science)
+            && !self.science_endgame_committed(g, pid)
+        {
             return;
         }
         let is_science_project = |project: &str| {
