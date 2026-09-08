@@ -313,6 +313,21 @@ class OneShape(unittest.TestCase):
         self.assertEqual(gene_ledger.shape_of(mixed), "standard")
         self.assertNotIn("rivals", gene_ledger.profile_of(analysis([{"tag": "a"}])))
 
+    def test_the_handicapped_rivals_are_recorded_and_stay_the_standard_shape(self):
+        """`--handicap rivals --rival-chairs 5` is provenance on the source:
+        who played the rung's bonuses and how many rival chairs sat. A plain
+        mix records neither, so every older record stays byte-stable."""
+        live = gene_ledger.profile_of(analysis(
+            [{"tag": "a"}], rivals="firaxis-mix", handicap="rivals", rival_chairs=5))
+        self.assertEqual(live["handicap"], "rivals")
+        self.assertEqual(live["rival_chairs"], 5)
+        self.assertEqual(gene_ledger.shape_of(live), "standard")
+        plain = gene_ledger.profile_of(analysis([{"tag": "a"}], rivals="firaxis-mix"))
+        self.assertNotIn("handicap", plain)
+        self.assertNotIn("rival_chairs", plain)
+        for key in ("handicap", "rival_chairs"):
+            self.assertIn(key, gene_ledger.RECORDED_WHEN_SET)
+
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
         ledger would silently accept a batch the binary no longer plays."""

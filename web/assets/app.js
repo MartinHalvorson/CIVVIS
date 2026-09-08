@@ -188,7 +188,7 @@ function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
     : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
-  return ["gamemode", "humanplayers", "civ6-status", ...world, "startera", "gamespeed",
+  return ["gamemode", "humanplayers", "civ6-status", "leader", "difficulty", ...world, "startera", "gamespeed",
     "victory-options", "tactics-options", "saves-group"];
 }
 // Compose the pass in the live DOM. Moving the real controls (rather than
@@ -25265,22 +25265,17 @@ function drawWorldTracker() {
 
 // ------------------------------------------------------------- the rankings
 //
-// The standings masthead and the arena rail are the laboratory's instrument,
-// and both seats open with them on screen. Civ 6 keeps its Rankings report
-// behind a button (`InGame.xml`: `<LuaContext ID="WorldRankings" Hidden="1"/>`)
-// and #2275 followed it; over a simulation that hid the very thing being
-// watched, so ☗ is now a way to fold the report away rather than the only way
-// to reach it.
-//
-// One report and one class. A played game's answer is kept — a person who
-// folds it away to see more map has said something — and it is kept under a
-// key of its own, which may never be `civvis-map-overlays-v1`.
-const SOLO_RANKINGS_KEY = "civvis-solo-rankings-v1";
+// A human game opens on the map, with the standings and arena statistics
+// available from Rankings. Firaxis uses the same default in
+// Base/Assets/UI/InGame.xml:52 (WorldRankings Hidden="1"). Spectators keep
+// their reports. The old key was written by initialization, even when nobody
+// chose a layout, so it cannot distinguish a preference from the old default.
+const SOLO_RANKINGS_KEY = "civvis-solo-rankings-v2";
 let rankingsReportOpen = false;
-function toggleRankingsReport(open) {
+function toggleRankingsReport(open, persist = true) {
   rankingsReportOpen = open === undefined ? !rankingsReportOpen : !!open;
   document.body.classList.toggle("rankings-open", rankingsReportOpen);
-  if (playingSolo()) {
+  if (persist && playingSolo()) {
     try { localStorage.setItem(SOLO_RANKINGS_KEY, rankingsReportOpen ? "1" : "0"); }
     catch (_) {}
   }
@@ -25291,21 +25286,20 @@ function toggleRankingsReport(open) {
   refitMapAreaToChrome();
   if (state) drawPlayerHud();
 }
-// The played seat's kept answer, read once per page. Default **open**: the
-// standings and the arena rail are what this client is for, and a played game
-// that hid them by default made the arrangement look like it had deleted them.
+// Only a deliberate toggle is a saved preference. Settling the initial layout
+// must not write one, otherwise a future default cannot reach returning users.
 let soloRankingsSettled = false;
 function settleSoloRankings() {
   if (soloRankingsSettled) return;
   soloRankingsSettled = true;
   let chosen = null;
   try { chosen = localStorage.getItem(SOLO_RANKINGS_KEY); } catch (_) {}
-  toggleRankingsReport(chosen !== "0");
+  toggleRankingsReport(chosen === "1", false);
 }
 
-// The deck holds every setting, End Turn and the transport, so both seats open
-// with it. A person who folds it away has said what they want, so that choice
-// is kept and never overridden on a later world.
+// The map already holds the turn controls. Keep setup and simulator tools in
+// the deck, opened from the menu when needed. Unlike the old rankings key,
+// this preference was only written by a person, so existing choices survive.
 const SOLO_DECK_CHOICE_KEY = "civvis-solo-deck-v1";
 let soloDeckSettled = false;
 function settleSoloDeck() {
@@ -25313,7 +25307,7 @@ function settleSoloDeck() {
   soloDeckSettled = true;
   let chosen = null;
   try { chosen = localStorage.getItem(SOLO_DECK_CHOICE_KEY); } catch (_) {}
-  togglePanel(chosen === "closed", false);
+  togglePanel(chosen !== "open", false);
 }
 
 function drawSoloHud() {
@@ -32134,8 +32128,8 @@ function togglePanel(force, persist = true) {
   if (persist) {
     try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
     catch (_) {}
-    // A played game opens with the deck, so the only way this runs there is
-    // that somebody asked for it one way or the other. Keep that answer:
+    // Persisting this in a played game means somebody toggled the deck.
+    // Keep that answer:
     // `settleSoloDeck` must not overrule it next world.
     if (document.body.classList.contains("civ6-frame")) {
       try { localStorage.setItem(SOLO_DECK_CHOICE_KEY, hide ? "closed" : "open"); }
