@@ -1080,6 +1080,11 @@ def victory_type(summary: dict) -> str | None:
 
 def entry_from(summary: dict) -> dict:
     return {
+        # Preserve the observations and full treatment identity after raw run
+        # pruning. A continuation's race remains explicitly segment-scoped.
+        **{key: summary[key] for key in ("race", "boosts", "game_id", "seat",
+                                       "genome_treatments", "max_turns",
+                                       "seed_probe", "seed_request") if key in summary},
         "tag": summary.get("tag"),
         "utc": summary.get("finished_utc") or datetime.now(timezone.utc)
             .strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1337,6 +1342,12 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
         ledger = live_ledger_for(summary_path.parent.parent)
     summary = with_bridge_health(json.loads(summary_path.read_text()),
                                  summary_path)
+    from civ6_race_audit import event_path, game_key, race_totals
+    summary = dict(summary)
+    summary.setdefault("game_id", game_key(summary))
+    evidence = event_path(summary_path.parent)
+    if "race" not in summary and evidence is not None:
+        summary["race"] = race_totals(evidence)
     # Load INSIDE the lock. Reading first and locking second would reintroduce
     # exactly the lost update the lock exists to prevent.
     with ledger_lock(ledger):
