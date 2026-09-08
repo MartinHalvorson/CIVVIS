@@ -4214,11 +4214,6 @@ impl AdvancedAi {
         self.detour_keeps_the_site_worth = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
-
-    // ---- append: e-f ------------------------------------------------
-
     pub fn enable_envoy_building_dividends(&mut self) {
         self.envoy_building_dividends = true;
     }
@@ -4226,6 +4221,11 @@ impl AdvancedAi {
     pub fn disable_envoy_building_dividends(&mut self) {
         self.envoy_building_dividends = false;
     }
+
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
 

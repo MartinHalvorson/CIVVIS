@@ -2216,11 +2216,11 @@ pub const GENES: &[Gene] = &[
     // four past the coverage cliff. Appended above the markers, so a running
     // screen keeps its positional genome.
     Gene { tag: "campus-before-halfway", field: "campus_before_halfway", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_halfway, disable: AdvancedAi::disable_campus_before_halfway },
+    // Empire-wide building dividends compete with affordable diplomatic packages.
+    Gene { tag: "envoy-building-dividends", field: "envoy_building_dividends", kind: Kind::OptIn, enable: AdvancedAi::enable_envoy_building_dividends, disable: AdvancedAi::disable_envoy_building_dividends },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
-    // Empire-wide building dividends compete with affordable diplomatic packages.
-    Gene { tag: "envoy-building-dividends", field: "envoy_building_dividends", kind: Kind::OptIn, enable: AdvancedAi::enable_envoy_building_dividends, disable: AdvancedAi::disable_envoy_building_dividends },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------

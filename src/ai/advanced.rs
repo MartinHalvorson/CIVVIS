@@ -5025,8 +5025,6 @@ pub struct AdvancedAi {
     /// city-state with a real 1/3/6 tier to buy wins it instead. Off
     /// everywhere by default; opt-in gene `contested-suzerainty-brake`.
     contested_suzerainty_brake: bool,
-    /// Price affordable 1/3/6 building packages independently of suzerainty.
-    envoy_building_dividends: bool,
     /// A threat detour must keep most of the site's worth. See
     /// `SETTLER_DETOUR_VALUE_FLOOR` for the live measurement: the median
     /// detour improves on the site it leaves, but a quarter of them give up
@@ -5356,6 +5354,8 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Price affordable 1/3/6 building packages independently of suzerainty.
+    envoy_building_dividends: bool,
     /// Version two of `eureka-chasing-builder`: only the final Builder action
     /// for the technology or civic being researched right now earns a capped
     /// tiebreak premium. V1's global future-boost bidding remains measurable
@@ -7852,7 +7852,6 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             contested_suzerainty_brake: false,
-            envoy_building_dividends: false,
             detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
             chase_every_boost: false,
@@ -7905,6 +7904,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            envoy_building_dividends: false,
             eureka_chasing_builder_2: false,
             enter_the_prophet_race_2: false,
             early_project_restraint_2: false,
