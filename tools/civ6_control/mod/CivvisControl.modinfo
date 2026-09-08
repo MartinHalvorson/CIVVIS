@@ -49,6 +49,15 @@
 			</Properties>
 			<File>CivvisControlAgent.xml</File>
 		</AddUserInterfaces>
+		<ImportFiles id="CivvisControlHeartbeatFiles">
+			<File>CivvisControlHeartbeat.lua</File>
+		</ImportFiles>
+		<ReplaceUIScript id="CivvisControlHeartbeatHUD">
+			<Properties>
+				<LuaContext>TopPanel</LuaContext>
+				<LuaReplace>CivvisControlHeartbeat.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<!-- The game's announcement screens hold the world until somebody
 		     dismisses them, and nobody is at the keyboard. Each one below is
 		     pointed at the same replacement, which loads the shipped screen and
@@ -281,5 +290,6 @@
 		<File>CivvisControlAgent.xml</File>
 		<File>CivvisControlAgent.lua</File>
 		<File>CivvisControlAutoClose.lua</File>
+		<File>CivvisControlHeartbeat.lua</File>
 	</Files>
 </Mod>
