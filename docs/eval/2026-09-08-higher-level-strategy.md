@@ -2,13 +2,14 @@
 
 ## What the evidence supports
 
-The checked-in `docs/CIV6_LADDER.md` is stale for this question: it records
-650 attempts and no King win. The host's
+The current task's `docs/civ6_ladder.json` records 873 attempts and a King
+Science victory at turn 234: `civvis-20260901T033000Z-cont8`, revision
+`fcbcd573d9dc159d9ef72432d483c8d6d44958d1`. The host's
 `~/civvis-civ6-runs/control/ladder.json`, read 2026-09-08, has 818 attempt
-records and a configured King Science victory at turn 234:
-`civvis-20260901T033000Z-cont8`, revision `fcbcd573d9dc159d9ef72432d483c8d6d44958d1`.
-There is no Emperor win. Attempt counts include restarts and continuations;
-they are not an independent-game win-rate denominator.
+records and agrees on that win. Neither records an Emperor win. Attempt
+counts include restarts and continuations; they are not an independent-game
+win-rate denominator. The separate initial `~/CIVVIS` checkout had an older
+650-attempt snapshot; it is not the source for the current rung assessment.
 
 The available recent run directories are a much smaller sample. Running
 `python3 tools/civ6_run_report.py --aggregate ~/civvis-civ6-runs/control`
