@@ -56,7 +56,7 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -551,6 +551,102 @@ def _boost_counts(techs: list, civics: list, boosted_techs: set,
         "civics_inspired_share": (
             round(civics_inspired / len(adopted), 4) if adopted else None),
     }
+
+
+def _rival_tech_count(rival: dict) -> int | None:
+    """One rival's completed-tech count from a `state` frame, or None.
+
+    The host exports rivals two ways: `techs_researched` is the World Rankings
+    counter (what `victory_races` renders), `techs` the older loop count, and
+    either is `-1` when the host could not read the seat that frame. A list
+    is a name export and counts by length. Same preference order as
+    `civ6_mirror_check`: the authoritative counter first, the loop count only
+    when it is missing.
+    """
+    for key in ("techs_researched", "techs"):
+        value = rival.get(key)
+        if isinstance(value, list):
+            return len(value)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    return None
+
+
+def tech_marks(events_path: Path) -> dict | None:
+    """How many techs we and the best rival had completed at t100 and t150:
+    ``{100: {"techs": n, "rival_techs": m}, 150: {...}}``, a mark absent when
+    the run never reached it and a count None when that frame did not say.
+
+    ⭐ THE RESEARCH GAP, PER GAME. Every deep game the ledger has reviewed
+    ended 12–33 techs behind the leader (`docs/CIV6_LADDER.md`, the
+    forts-not-science finding), but the row carried only a final score, so
+    the gap could be read only by opening each run's `events.jsonl`. Two
+    marks are enough to see the pace and where it is lost, and they match
+    `boost_totals`' `at_t100` / `at_t150` so the two readings share a frame.
+
+    The reading is the FIRST `state` frame whose turn is >= the mark — the
+    opening board of that turn, before the seat acted (docs/LIVE_TACTICS.md
+    §8; a later frame of the same turn repeats the board with our own moves
+    on it). "At or after" rather than "exactly" because a frame can be
+    missing on the mark turn itself; a run stopped before the mark reads
+    nothing rather than its last board. Our count is the length of the
+    `techs` list, the rival's the maximum over rivals with a readable count
+    (`_rival_tech_count`), so an unreadable seat lowers the field rather than
+    turning it into -1.
+
+    `None` when no `state` frame carries a `techs` list — a mod predating the
+    state export, not an empire with no research.
+    """
+    marks: dict = {}
+    seen_state = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "state":
+                continue
+            if not isinstance(event.get("techs"), list):
+                continue
+            seen_state = True
+            turn = event.get("turn")
+            if not isinstance(turn, int):
+                continue
+            for mark in BOOST_MARK_TURNS:
+                if turn >= mark and mark not in marks:
+                    rivals = [_rival_tech_count(r)
+                              for r in event.get("rivals") or []
+                              if isinstance(r, dict)]
+                    known = [n for n in rivals if n is not None]
+                    marks[mark] = {
+                        "techs": sum(1 for t in event["techs"]
+                                     if isinstance(t, str)),
+                        "rival_techs": max(known) if known else None,
+                    }
+            if len(marks) == len(BOOST_MARK_TURNS):
+                break
+    return marks if seen_state else None
+
+
+def tech_mark_columns(summary: dict) -> dict:
+    """The four flat ledger columns from a summary's `tech_marks`.
+
+    Flat on the row rather than nested so a spreadsheet, `jq` or the markdown
+    can read them without knowing the shape; None for every mark a run never
+    reached or never recorded. `tech_marks` keys survive JSON as strings, so
+    both spellings are accepted.
+    """
+    marks = summary.get("tech_marks") or {}
+    columns = {}
+    for mark in BOOST_MARK_TURNS:
+        at = marks.get(mark) or marks.get(str(mark)) or {}
+        columns[f"techs_at_{mark}"] = at.get("techs")
+        columns[f"rival_techs_at_{mark}"] = at.get("rival_techs")
+    return columns
 
 
 def open_events(events_path: Path):
@@ -1080,6 +1176,11 @@ def victory_type(summary: dict) -> str | None:
 
 def entry_from(summary: dict) -> dict:
     return {
+        # Preserve the observations and full treatment identity after raw run
+        # pruning. A continuation's race remains explicitly segment-scoped.
+        **{key: summary[key] for key in ("race", "boosts", "game_id", "seat",
+                                       "genome_treatments", "max_turns",
+                                       "seed_probe", "seed_request") if key in summary},
         "tag": summary.get("tag"),
         "utc": summary.get("finished_utc") or datetime.now(timezone.utc)
             .strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1184,6 +1285,13 @@ def entry_from(summary: dict) -> dict:
         "lead": (summary["last_score"] - summary["rival_best"]
                  if summary.get("last_score") is not None
                  and summary.get("rival_best") is not None else None),
+        # ⭐ THE RESEARCH GAP, PER GAME: `techs_at_100`, `rival_techs_at_100`,
+        # `techs_at_150`, `rival_techs_at_150`. The score lead above is the
+        # symptom; this is the cause the deep-game reviews kept finding (12–33
+        # techs behind the leader), on the row so a screen can read it without
+        # reopening events.jsonl. See `tech_marks`; None on a run that never
+        # reached the mark or whose mod predates the state export.
+        **tech_mark_columns(summary),
     }
 
 
@@ -1337,6 +1445,12 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
         ledger = live_ledger_for(summary_path.parent.parent)
     summary = with_bridge_health(json.loads(summary_path.read_text()),
                                  summary_path)
+    from civ6_race_audit import event_path, game_key, race_totals
+    summary = dict(summary)
+    summary.setdefault("game_id", game_key(summary))
+    evidence = event_path(summary_path.parent)
+    if "race" not in summary and evidence is not None:
+        summary["race"] = race_totals(evidence)
     # Load INSIDE the lock. Reading first and locking second would reintroduce
     # exactly the lost update the lock exists to prevent.
     with ledger_lock(ledger):
@@ -1819,6 +1933,15 @@ def cell(value) -> str:
     return "—" if value is None or value == "" else str(value)
 
 
+def tech_cell(attempt: dict, mark: int = 150) -> str:
+    """`ours/rival` at the mark, either half `—` when unknown; `—` for neither."""
+    ours = attempt.get(f"techs_at_{mark}")
+    rival = attempt.get(f"rival_techs_at_{mark}")
+    if ours is None and rival is None:
+        return "—"
+    return f"{cell(ours)}/{cell(rival)}"
+
+
 def victory_board(state: dict) -> list[tuple[int, str | None, dict]]:
     """Every victory condition, and the date each was first beaten per rung.
 
@@ -1977,6 +2100,51 @@ def victory_census(attempts: list) -> list[tuple[int, str | None, int]]:
                   key=lambda row: (-row[2], row[0]))
 
 
+#: The `reason` buckets the attrition table counts; anything else is `other`.
+ATTRITION_REASONS = ("killed", "operator_retired", "abandoned", "stopped",
+                     "game exited", "timeout")
+ATTRITION_DAYS = 14
+
+
+def attrition_census(attempts: list, days: int = ATTRITION_DAYS
+                     ) -> list[tuple[str, dict]]:
+    """How the harness ended games, per UTC day, over the newest `days` days:
+    ``[(day, {reason: count, ..., "other": n, "won": n}), ...]`` oldest first.
+
+    ⭐ 61% OF SEPTEMBER'S EMPEROR GAMES ENDED `killed` OR `operator_retired`
+    — the harness, not the game, decided most of the record, and nothing on
+    the published page said so. Counted by `reason` exactly as recorded, so
+    the table is auditable against the rows; `won` is carried beside the
+    buckets because a won game also ends `stopped`, and a day of stops is
+    either a bad day or a good one.
+
+    The window is anchored on the NEWEST attempt's day, not the clock: the
+    markdown is regenerated by a test that requires byte equality with the
+    committed copy, and a wall-clock window would make that test go stale
+    overnight with no change to the record.
+    """
+    days_seen = sorted({(a.get("utc") or "")[:10] for a in attempts
+                        if isinstance(a, dict) and len(a.get("utc") or "") >= 10})
+    if not days_seen:
+        return []
+    newest = datetime.strptime(days_seen[-1], "%Y-%m-%d")
+    since = (newest - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    table: dict[str, dict] = {}
+    for a in attempts:
+        if not isinstance(a, dict):
+            continue
+        day = (a.get("utc") or "")[:10]
+        if len(day) < 10 or day < since:
+            continue
+        row = table.setdefault(
+            day, {reason: 0 for reason in ATTRITION_REASONS} | {"other": 0, "won": 0})
+        reason = a.get("reason")
+        row[reason if reason in ATTRITION_REASONS else "other"] += 1
+        if a.get("won"):
+            row["won"] += 1
+    return sorted(table.items())
+
+
 def markdown_for(state: dict) -> str:
     wins = state["wins"]
     attempts = state["attempts"]
@@ -2064,6 +2232,31 @@ def markdown_for(state: dict) -> str:
                   + "; the rest stalled, exited, or were stopped before one.",
                   ""]
 
+    attrition = attrition_census(attempts)
+    if attrition:
+        lines += [
+            f"## How the harness ended games, per day (last {ATTRITION_DAYS} days)",
+            "",
+            "Attempts by their recorded `reason`, per UTC day of the row's `utc`,",
+            "over the fourteen days ending on the newest attempt. `killed` is the",
+            "wedge watchdog or the supervisor stopping a parked game;",
+            "`operator_retired` a human ending it; `abandoned` the harness's own",
+            "early-stop policy; `stopped` the game reaching its end — a win ends",
+            "`stopped` too, so `won` is carried beside it. When the first two",
+            "columns carry most of a day, the harness decided the record, not",
+            "the game.",
+            "",
+            "| day | " + " | ".join(ATTRITION_REASONS) + " | other | total | won |",
+            "|---|" + "---|" * (len(ATTRITION_REASONS) + 3),
+        ]
+        for day, counts in attrition:
+            total = sum(counts[reason] for reason in ATTRITION_REASONS) + counts["other"]
+            lines.append(
+                f"| {day} | "
+                + " | ".join(str(counts[reason]) for reason in ATTRITION_REASONS)
+                + f" | {counts['other']} | {total} | {counts['won']} |")
+        lines.append("")
+
     if attempts:
         lines += [
             "## Every attempt",
@@ -2080,8 +2273,13 @@ def markdown_for(state: dict) -> str:
             "compare anything, and until `defeat` existed here the two were the",
             "same row.",
             "",
-            "| run | difficulty | playing for | configured | outcome | turns | score | ended |",
-            "|---|---|---|---|---|---|---|---|",
+            "`techs@150` is our completed-tech count against the best rival's at",
+            "the first board of turn 150 (`tech_marks`); `—` when the run never",
+            "reached it or predates the state export.",
+            "",
+            "| run | difficulty | playing for | configured | outcome | turns | score "
+            "| techs@150 (ours/rival) | ended |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         # ⚠ THE NEWEST FORTY BY THE CLOCK, NOT THE LAST FORTY APPENDED. The
         # published record interleaves two live seats and is topped up by
@@ -2098,6 +2296,7 @@ def markdown_for(state: dict) -> str:
                 f"| {cell(a.get('victory_target'))} "
                 f"| {'yes' if a['configured'] else 'NO'} | {outcome} "
                 f"| {cell(a.get('turns'))} | {cell(a.get('score'))} "
+                f"| {tech_cell(a)} "
                 f"| {cell(a.get('utc'))} |")
         lines.append("")
     return "\n".join(lines)
