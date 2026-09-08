@@ -669,9 +669,30 @@ MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
 MIRROR_ENUM_CACHE_SECONDS = 5.0
 _MIRROR_ENUM_CACHE_AT = 0.0
 _MIRROR_ENUM_CACHE_VALUE = None
+BROWSER_INTENT = os.environ.get(
+    "CIVVIS_MIRROR_BROWSER_INTENT_FILE",
+    os.path.expanduser("~/.civvis-mirror-browser-intent"))
+
+
+def browser_management_enabled():
+    """Only an explicit, current operator opt-in permits desktop automation.
+
+    Read on every action so an already-running follower respects revocation.
+    A missing, unreadable or invalid setting leaves the browser under manual
+    control while the mirror continues serving HTTP.
+    """
+    try:
+        with open(BROWSER_INTENT, encoding="utf-8") as handle:
+            return handle.read().strip() == "managed"
+    except (OSError, UnicodeError):
+        return False
 
 
 def chrome(script):
+    # AppleScript can launch a stopped application even for a read-only query.
+    # Guard the final dispatch too: intent may change after a presence check.
+    if not browser_management_enabled():
+        return ""
     # ⚠ A PENDING AUTOMATION CONSENT KILLED THE WHOLE FOLLOWER (2026-08-14).
     # On a host whose Terminal has never been granted control of Chrome, macOS
     # queues the osascript call behind its consent dialog. Nobody was at the
@@ -732,6 +753,9 @@ def mirror_on_screen(*, fresh=True):
     that repair or refresh a tab use the default fresh read.
     """
     global _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE
+    if not browser_management_enabled():
+        forget_mirror_presence()
+        return None
     now = time.monotonic()
     if (
         not fresh
@@ -780,7 +804,7 @@ def refresh_mirror_page(server_pid):
 
 
 def ensure_on_screen(misses):
-    """Put the mirror back on the display if it has been closed.
+    """Restore a closed mirror only while browser management is opted in.
 
     Leave placement and sizing to the operator. The follower owns the mirror's
     availability, not the desktop layout.
@@ -837,6 +861,9 @@ def ensure_watching(watch):
     tab — a full navigation reboots the client; after two revivals without a
     cure, replace the tab entirely, which also abandons its sessionStorage.
     """
+    if not browser_management_enabled():
+        watch.update(dead_since=None, last_revival=0.0, revivals=0)
+        return
     viewers = mirror_viewers()
     if viewers is None:
         # `/status` is already the server liveness check. Avoid a second HTTP
