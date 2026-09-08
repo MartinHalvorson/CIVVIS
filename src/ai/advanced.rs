@@ -20010,7 +20010,19 @@ impl AdvancedAi {
         if after.players[pid].gold + f64::EPSILON < reserve {
             return None;
         }
-        let positional = production_score * (7.0 + turns.max(1.0));
+        // Undo the production scorer's actual time divisor before applying
+        // the purchase gene's opportunity-cost adjustment. Otherwise a faster
+        // build raises willingness to BUY the item as well, merely because
+        // the old unmodified divisor no longer cancels the production score.
+        let raw_turns = g.item_remaining_cost_for_city(pid, city, item) / production;
+        let build_turns = self.production_build_turns(g, pid, city, item);
+        let purchase_basis = if build_turns == raw_turns {
+            production_score
+        } else {
+            production_score * self.production_time_divisor(g, city, item, build_turns)
+                / self.production_time_divisor(g, city, item, raw_turns)
+        };
+        let positional = purchase_basis * (7.0 + turns.max(1.0));
         let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30 * card;
         // `gold_for_the_young_city`: the same money buys more turns where
         // the Production is not. Exactly 1.0 with the gene off.
@@ -21705,12 +21717,14 @@ impl AdvancedAi {
     }
 
     /// Whether the game has entered the victory-specialization half of its
-    /// clock. The turn limit is the cleanest common denominator across game
-    /// speeds; an unlimited game has no clock boundary, so its Industrial-era
-    /// fallback keeps the same early-development/midgame split.
+    /// clock. A shortened game accelerates this boundary, but extending the
+    /// verification cap cannot postpone development past the normal speed's
+    /// halfway point: rivals do not slow down when the operator retains more
+    /// turns of evidence. Unlimited games keep their Industrial-era fallback.
     fn victory_specialization_active(g: &Game) -> bool {
         if g.max_turns > 0 {
-            g.turn.saturating_mul(2) >= g.max_turns
+            let development_clock = g.max_turns.min(g.game_speed.turn_limit());
+            g.turn.saturating_mul(2) >= development_clock
         } else {
             g.world_era >= 4
         }
@@ -26326,6 +26340,23 @@ impl AdvancedAi {
         }
     }
 
+    fn production_build_turns(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        let production = g.city_yields(cid).production.max(1.0);
+        let rate = if self.victory_planning {
+            (production * g.item_prod_mult(pid, cid, Some(item))).max(1.0)
+        } else {
+            production
+        };
+        g.item_remaining_cost_for_city(pid, cid, item) / rate
+    }
+
+    fn production_time_divisor(&self, g: &Game, cid: u32, item: &Item, turns: f64) -> f64 {
+        let first_district = self.first_district_first
+            && g.cities[&cid].districts.is_empty()
+            && matches!(item, Item::District { district, .. } if g.rules.districts[district].specialty);
+        7.0 + turns.max(1.0) * if first_district { 0.6 } else { 1.0 }
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -26338,8 +26369,12 @@ impl AdvancedAi {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
         let specialization_active = self.phase_specialization_active(g);
-        let production = g.city_yields(cid).production.max(1.0);
-        let turns = g.item_remaining_cost_for_city(pid, cid, item) / production;
+        // Colonization, Ilkum, Veterancy and project modifiers change when
+        // this exact item completes. The final score divides by these turns,
+        // so ignoring the multiplier both underprices discounted development
+        // and can reject a build that actually fits the remaining clock.
+        // The pinned pre-victory-planning controller keeps its old stream.
+        let turns = self.production_build_turns(g, pid, cid, item);
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
         let barbarian_tactics = self.base.barbarian_tactics_enabled();
         let barbarian_pressure = if barbarian_tactics {
@@ -28207,14 +28242,7 @@ impl AdvancedAi {
         // 15-25 turns and divides by 22-32 while a Warrior divides by 12-17;
         // the district's raw score never gets to speak. For THIS city's first
         // specialty district only, the turns count at six tenths.
-        let first_district_item = self.first_district_first
-            && city.districts.is_empty()
-            && matches!(item, Item::District { district, .. } if g.rules.districts[district].specialty);
-        let divisor = if first_district_item {
-            7.0 + turns.max(1.0) * 0.6
-        } else {
-            7.0 + turns.max(1.0)
-        };
+        let divisor = self.production_time_divisor(g, cid, item, turns);
         completion_discount * raw / divisor
     }
 
