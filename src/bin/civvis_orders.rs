@@ -1327,7 +1327,48 @@ fn defer_host_peace_retries(
 /// in sequence instead of waiting a turn. Against an older mod the behaviour
 /// is byte-identical to before: a capability the sender assumes and the
 /// receiver lacks is how an accepted order becomes a silent no-op.
+#[cfg(test)]
 fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usize, usize) {
+    coalesce_unit_paths_except(orders, sequenced, &Default::default())
+}
+
+/// A wounded military unit near an enemy must follow the planner's safe
+/// steps. Sending only the destination lets Firaxis choose a different path,
+/// including a shorter route through the threat the planner walked around.
+/// The host queue executes each step after the preceding move arrives; older
+/// hosts get only the first step and replan from the next observed position.
+fn wounded_local_routes(state: &civvis::mirror::StateSnapshot) -> std::collections::BTreeSet<i64> {
+    state
+        .units
+        .iter()
+        .filter(|unit| {
+            unit.hp > 0.0
+                && unit.hp < 100.0
+                && (unit.combat > 0.0 || unit.ranged > 0.0)
+                && state
+                    .hostiles
+                    .iter()
+                    .chain(
+                        state
+                            .rivals
+                            .iter()
+                            .filter(|rival| rival.at_war)
+                            .flat_map(|rival| rival.units.iter()),
+                    )
+                    .any(|enemy| {
+                        (enemy.combat > 0.0 || enemy.ranged > 0.0)
+                            && offset_distance((unit.x, unit.y), (enemy.x, enemy.y)) <= 3
+                    })
+        })
+        .map(|unit| unit.id)
+        .collect()
+}
+
+fn coalesce_unit_paths_except(
+    orders: Vec<Order>,
+    sequenced: bool,
+    local_routes: &std::collections::BTreeSet<i64>,
+) -> (Vec<Order>, usize, usize) {
     // Per unit: where its kept order sits in `out`, and whether that order is still
     // an open walk (every order for the unit so far has been a MOVE_TO).
     let mut kept: std::collections::BTreeMap<i64, (usize, bool)> =
@@ -1351,7 +1392,7 @@ fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usiz
                 out.push(order);
             }
             Some((index, open)) => {
-                if *open && is_step {
+                if *open && is_step && !local_routes.contains(&subject) {
                     // The walk continues: the host only needs its last hex.
                     out[*index].pos = order.pos;
                     coalesced += 1;
@@ -4235,8 +4276,12 @@ fn decide(
         note_bits.push(format!("found_sites={found_sites}"));
     }
     let sequenced = state.seat.order_queue;
+    let local_routes = wounded_local_routes(state);
+    if !local_routes.is_empty() {
+        note_bits.push(format!("wounded_local_routes={}", local_routes.len()));
+    }
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
-        coalesce_unit_paths(orders, sequenced);
+        coalesce_unit_paths_except(orders, sequenced, &local_routes);
     orders = causally_safe;
     if coalesced_path_steps > 0 {
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
@@ -12920,6 +12965,92 @@ mod tests {
         assert_eq!(orders[0].pos, Some((4, 5)));
         assert_eq!(orders[1].subject, Some(99));
         assert_eq!(orders[2].kind, "research");
+    }
+
+    #[test]
+    fn wounded_routes_preserve_the_planned_detour_and_queued_followup() {
+        let state = civvis::mirror::StateSnapshot {
+            units: vec![civvis::mirror::StateUnit {
+                id: 7,
+                x: 10,
+                y: 10,
+                hp: 45.0,
+                combat: 35.0,
+                ..Default::default()
+            }],
+            hostiles: vec![civvis::mirror::StateUnit {
+                id: 9,
+                x: 11,
+                y: 10,
+                hp: 100.0,
+                combat: 35.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let local = wounded_local_routes(&state);
+        assert!(local.contains(&7));
+        let planned = || {
+            vec![
+                unit_order(7, "MOVE_TO", Some((10, 9))),
+                unit_order(7, "MOVE_TO", Some((11, 8))),
+                unit_order(7, "FORTIFY", None),
+                unit_order(8, "MOVE_TO", Some((20, 9))),
+                unit_order(8, "MOVE_TO", Some((21, 8))),
+            ]
+        };
+        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local);
+        assert_eq!(deferred, 0);
+        assert_eq!(coalesced, 1, "healthy travel still coalesces");
+        assert_eq!(orders[0].pos, Some((10, 9)));
+        assert_eq!(orders[1].pos, Some((11, 8)));
+        assert_eq!(orders[2].verb.as_deref(), Some("FORTIFY"));
+        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local);
+        assert_eq!(deferred, 2);
+        assert_eq!(
+            old_host
+                .iter()
+                .filter(|order| order.subject == Some(7))
+                .count(),
+            1
+        );
+        assert_eq!(old_host[0].pos, Some((10, 9)));
+    }
+
+    #[test]
+    fn local_route_guard_requires_a_wounded_fighter_and_visible_enemy() {
+        let mut state = civvis::mirror::StateSnapshot {
+            units: vec![civvis::mirror::StateUnit {
+                id: 7,
+                x: 10,
+                y: 10,
+                hp: 100.0,
+                combat: 35.0,
+                ..Default::default()
+            }],
+            rivals: vec![civvis::mirror::StateRival {
+                at_war: true,
+                units: vec![civvis::mirror::StateUnit {
+                    x: 11,
+                    y: 10,
+                    combat: 35.0,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(wounded_local_routes(&state).is_empty());
+        state.units[0].hp = 45.0;
+        assert!(wounded_local_routes(&state).contains(&7));
+        state.rivals[0].at_war = false;
+        assert!(wounded_local_routes(&state).is_empty());
+        state.rivals[0].at_war = true;
+        state.units[0].combat = 0.0;
+        assert!(wounded_local_routes(&state).is_empty());
+        state.units[0].combat = 35.0;
+        state.rivals[0].units[0].x = 30;
+        assert!(wounded_local_routes(&state).is_empty());
     }
 
     /// The found carries the hex the planned walk leaves the settler on —
