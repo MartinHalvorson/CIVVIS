@@ -17711,61 +17711,37 @@ fn the_army_target_deters_the_strongest_met_major_in_peacetime() {
     assert_eq!(shipped.enemy_weighted_army_target(&game, 0, 12), 12);
 }
 
-/// The defect this exists for: `do_promote` heals up to 50 and costs the
-/// unit its turn, and promotions were taken the instant they appeared — so
-/// 43% of the 359 promotions in the corpus were taken at full health and
-/// threw the whole heal away.
+/// A pending promotion blocks further XP, including on a healthy ranged
+/// unit that might never need the promotion's healing.
 #[test]
-fn a_promotion_waits_until_its_healing_would_land() {
-    let (mut game, _capital, home) = empire_with_a_capital(71_107);
-    let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1));
-    game.units.get_mut(&warrior).unwrap().xp = 200;
-    game.units.get_mut(&warrior).unwrap().level = 1;
+fn pending_promotions_do_not_wait_for_damage() {
+    for (kind, hp) in [("warrior", 100), ("archer", 100), ("warrior", 40)] {
+        let (mut game, _capital, home) = empire_with_a_capital(71_107);
+        let uid = game.spawn_test_unit(kind, 0, anchor_at(&game, home, 1));
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.xp = 15;
+        unit.level = 1;
+        unit.hp = hp;
+        unit.moves_left = 2.0;
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_promote_when_wounded();
+        assert!(game.promotion_pending(uid));
+        assert!(!game.available_promotions(uid).is_empty());
+        ai.advanced_promotions(&mut game, 0, GrandStrategy::Conquest);
+        assert_eq!(game.units[&uid].promotions.len(), 1);
+        assert_eq!(game.units[&uid].level, 2);
+        assert!(!game.promotion_pending(uid), "XP awards must be unblocked");
+        assert_eq!(game.units[&uid].hp, (hp + 50).min(100));
+        assert_eq!(game.units[&uid].xp, 15);
 
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-    assert!(
-        !ai.promote_when_wounded,
-        "the shipped default must be unchanged"
-    );
-    assert!(
-        !ai.promotion_heal_is_wasted(&game, warrior),
-        "the shipped agent never holds a promotion back"
-    );
-
-    ai.enable_promote_when_wounded();
-    // Full health: every point of the heal would be thrown away.
-    game.units.get_mut(&warrior).unwrap().hp = 100;
-    assert!(ai.promotion_heal_is_wasted(&game, warrior));
-
-    // Just above the ceiling is still a waste; at it, the promotion lands.
-    game.units.get_mut(&warrior).unwrap().hp = PROMOTE_HEAL_HP_CEILING + 1;
-    assert!(ai.promotion_heal_is_wasted(&game, warrior));
-    game.units.get_mut(&warrior).unwrap().hp = PROMOTE_HEAL_HP_CEILING;
-    assert!(!ai.promotion_heal_is_wasted(&game, warrior));
-
-    // A badly hurt unit promotes and is healed for it — the whole point.
-    game.units.get_mut(&warrior).unwrap().hp = 40;
-    assert!(!ai.promotion_heal_is_wasted(&game, warrior));
-    let before = game.units[&warrior].hp;
-    if let Some(promotion) = game.available_promotions(warrior).into_iter().next() {
-        game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
-        game.apply(
-            0,
-            &Action::Promote {
-                unit: warrior,
-                promotion: Name::new(&promotion),
-            },
-        )
-        .expect("a banked promotion is available");
-        assert_eq!(
-            game.units[&warrior].hp,
-            (before + 50).min(100),
-            "promoting a wounded unit is worth up to 50 health"
-        );
+        // A later earned promotion is also taken promptly.
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.xp = 45;
+        unit.moves_left = 2.0;
+        ai.advanced_promotions(&mut game, 0, GrandStrategy::Conquest);
+        assert_eq!(game.units[&uid].promotions.len(), 2);
+        assert!(!game.promotion_pending(uid));
     }
-
-    // A unit that no longer exists is not a promotion decision.
-    assert!(!ai.promotion_heal_is_wasted(&game, u32::MAX));
 }
 
 /// The defect this exists for: a walled enemy capital the army cannot
