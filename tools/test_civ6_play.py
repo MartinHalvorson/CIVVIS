@@ -3249,6 +3249,17 @@ class PollCadenceKeepsItsWallClock(unittest.TestCase):
                       "the batches-per-tick figure this arithmetic rests on moved")
         self.assertGreaterEqual(civ6_play.ORDERS_POLL_TICKS * 16, 32)
 
+    def test_production_repair_waits_for_orders_before_any_blocker_escape(self) -> None:
+        lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text()
+        tick = lua[lua.index("local function tick()") :]
+        settle = tick.index("if cfg.CivvisDecides and not settleTurn(")
+        repair = tick.index("if cfg.CivvisDecides and CivvisFrames.repairProduction(")
+        blocker = tick.index("local blocker = currentBlocker(pid);", settle)
+        self.assertLess(settle, repair)
+        self.assertLess(repair, blocker)
+        self.assertRegex(tick[repair:blocker], r"repairProduction\(player, pid, turn\) then\s+return;")
+
     def test_the_lua_fallbacks_match_the_harness_defaults(self) -> None:
         lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
                / "CivvisControlAgent.lua").read_text()

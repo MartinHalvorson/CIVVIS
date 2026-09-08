@@ -285,6 +285,91 @@ frames.observe(player, PID, 12)
 check("default off: observe counts nothing", frames.revealed, 0)
 check("default off: no frame wanted", frames.wanted(), false)
 
+-- Production repair uses the same stamped handshake even after combat frames
+-- have reached their cap, and never spends unbounded time on an empty queue.
+local function upvalue(fn, wanted)
+	for i = 1, 100 do
+		local name, value = debug.getupvalue(fn, i)
+		if name == nil then break end
+		if name == wanted then return value end
+	end
+	error("missing upvalue " .. wanted)
+end
+local awaiting = upvalue(frames.begin, "awaiting")
+local exported
+for i = 1, 100 do
+	local name = debug.getupvalue(frames.begin, i)
+	if name == nil then break end
+	if name == "exportState" then
+		debug.setupvalue(frames.begin, i, function(p, pid, turn, frame)
+			exported = { player = p, pid = pid, turn = turn, frame = frame }
+		end)
+		break
+	end
+end
+local currentProduction = 123
+local city = { GetID = function() return 7 end,
+	GetBuildQueue = function() return {
+		GetCurrentProductionTypeHash = function() return currentProduction end,
+		CanProduce = function(_, hash) return hash == 123 end,
+	} end }
+player.GetCities = function() return { Members = members({city}) } end
+CivvisControlConfig.ExportState = false
+CivvisControlConfig.CivvisDecides = true
+CivvisControlConfig.ReplanFrames = 2
+frames.reset()
+frames.current = 2
+check("active build needs no repair", frames.repairProduction(player, PID, 12), false)
+currentProduction = 0
+awaiting.done = true; awaiting.polls = 8; awaiting.ticks = 16
+check("empty queue opens repair beyond combat cap", frames.repairProduction(player, PID, 12), true)
+check("repair frame is monotonically stamped", frames.current, 3)
+check("repair names production", frames.reason, "production")
+check("repair exports the current player", exported.player, player)
+check("repair exports the current turn", exported.turn, 12)
+check("repair exports its own frame", exported.frame, 3)
+check("repair awaits its own answer", awaiting.frame, 3)
+check("repair does not use completed opening answer", awaiting.done, false)
+check("repair resets polls", awaiting.polls, 0)
+check("repair resets ticks", awaiting.ticks, 0)
+check("persistent empty queue gets one more repair", frames.repairProduction(player, PID, 12), true)
+check("persistent refusal cannot open a third repair", frames.repairProduction(player, PID, 12), false)
+frames.reset()
+check("new turn restores repair budget", frames.repairProduction(player, PID, 13), true)
+CivvisControlConfig.CivvisDecides = false
+check("standalone harness does not request CivVis", frames.repairProduction(player, PID, 13), false)
+-- No answer uses the existing bounded frame timeout, and prevents another
+-- production request. Frame IDs must never go backwards into an old answer.
+CivvisControlConfig.OrdersPollTicks = 1
+CivvisControlConfig.CombatFramePolls = 1
+awaiting.turn = 13; awaiting.frame = 4; awaiting.done = false; awaiting.polls = 0
+frames.current = 4
+check("missing brain answer releases the bounded wait",
+	rawget(_G, "CivvisSettleTurn")(player, PID, 13, function() error("heuristic fallback") end), true)
+check("timeout preserves monotonic frame IDs", frames.current, 4)
+CivvisControlConfig.CivvisDecides = true
+check("timeout does not reopen production wait", frames.repairProduction(player, PID, 13), false)
+frames.reset()
+currentProduction = 123
+check("settled build ends production repairs", frames.repairProduction(player, PID, 14), false)
+currentProduction = nil
+check("unreadable queue does not spend repair budget", frames.repairProduction(player, PID, 14), false)
+CivvisControlConfig.CivvisDecides = true
+
+-- Exercise the actual production selector shared by every blocker path.
+local drive = upvalue(rawget(_G, "CivvisAnswerBlockerLadder"), "driveProduction")
+local choose = upvalue(drive, "chooseProduction")
+local builds = upvalue(choose, "civvisBuild")
+GameInfo.Types = { UNIT_WARRIOR = { Hash = 123 }, UNIT_SWORDSMAN = { Hash = 456 } }
+check("missing CivVis choice cannot invoke the ladder", choose(city, {}, 1, 13, {}), nil)
+builds[7] = "UNIT_SWORDSMAN"
+check("illegal CivVis choice cannot invoke the ladder", choose(city, {}, 1, 13, {}), nil)
+builds[7] = "UNIT_WARRIOR"
+check("legal CivVis choice remains playable", choose(city, {}, 1, 13, {}), "UNIT_WARRIOR")
+check("refused request cannot invoke the ladder", choose(city, {}, 1, 13, { UNIT_WARRIOR = true }), nil)
+builds[7] = nil; builds["7:next"] = "UNIT_WARRIOR"
+check("deferred CivVis lease remains playable", choose(city, {}, 1, 13, {}), "UNIT_WARRIOR")
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
