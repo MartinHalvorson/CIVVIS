@@ -21273,6 +21273,95 @@ fn live_staged_conquest_preserves_maintenance_runway_before_declaration() {
 }
 
 #[test]
+fn science_core_modernizes_only_when_reserve_and_upkeep_fit() {
+    let (mut g, city, home) = empire_with_a_capital(79_102);
+    g.at_war.clear();
+    g.players[0].civ = "Egypt".into();
+    for tech in g.rules.tech_ancestors["iron_working"].clone() {
+        g.players[0].techs.insert(Name::new(&tech));
+    }
+    g.players[0].techs.insert(crate::name!("iron_working"));
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 400.0);
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("campus"), home);
+    let uid = g.spawn_test_unit("warrior", 0, home);
+    let (_, price, _) = g.unit_gold_upgrade_offer(0, uid).expect("legal upgrade");
+    g.players[0].gold = price + 125.0;
+    g.players[0].gold_per_turn = -1.0;
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.modernize_science_core(&mut g, 0);
+    assert_eq!(
+        g.units[&uid].kind, "warrior",
+        "a cash pile cannot fund recurring debt"
+    );
+    g.players[0].gold_per_turn = 10.0;
+    let mut legacy = g.clone();
+    AdvancedAi::new().modernize_science_core(&mut legacy, 0);
+    assert_eq!(legacy.units[&uid].kind, "warrior");
+    ai.modernize_science_core(&mut g, 0);
+    assert_eq!(g.units[&uid].kind, "swordsman");
+    assert_eq!(g.players[0].gold, 125.0);
+}
+
+#[test]
+fn science_bankruptcy_banks_a_spy_queue_and_preserves_victory_and_defence() {
+    let (mut g, city, home) = empire_with_a_capital(79_103);
+    g.at_war.clear();
+    found_nearby_test_city(&mut g, 0, home);
+    g.players[0].civics.insert(crate::name!("foreign_trade"));
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -18.0;
+    let spy = Item::Unit {
+        unit: crate::name!("spy"),
+    };
+    g.cities.get_mut(&city).unwrap().queue = vec![spy];
+    g.cities.get_mut(&city).unwrap().production = 12.0;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_war_economy();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(
+        g.cities[&city].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("trader")
+        })
+    );
+    assert_eq!(
+        g.cities[&city].production_progress.get("unit:spy"),
+        Some(&12.0)
+    );
+    for item in [
+        Item::Unit {
+            unit: crate::name!("archer"),
+        },
+        Item::Building {
+            building: crate::name!("market"),
+        },
+        Item::Project {
+            project: crate::name!("launch_earth_satellite"),
+        },
+    ] {
+        assert!(
+            !ai.science_recovery_preempts(&g, &item),
+            "preserve {item:?}"
+        );
+    }
+}
+
+#[test]
 fn live_war_economy_recovers_before_rearming_a_bankrupt_army() {
     // The live Rome board at t174 had the same shape: a standing army,
     // nine cities, Gold below BasicAi's recovery reserve, and a negative

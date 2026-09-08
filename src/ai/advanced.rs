@@ -23239,6 +23239,88 @@ impl AdvancedAi {
         economic_recovery && !emergency_defense
     }
 
+    /// Science must stop adding recurring expenses before a bankrupt queue
+    /// finishes. Repairs, victory projects, income infrastructure, and local
+    /// defenders retain their banked commitment.
+    fn science_recovery_preempts(&self, g: &Game, item: &Item) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Science)
+            || Self::active_queue_is_defensive(g, item)
+        {
+            return false;
+        }
+        match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[unit].maintenance > 0.0
+            }
+            Item::Building { building } => {
+                let spec = &g.rules.buildings[building];
+                spec.maintenance > spec.yields.gold
+            }
+            Item::District { district, .. } => {
+                !matches!(
+                    g.district_family(*district).as_str(),
+                    "commercial_hub" | "harbor" | "spaceport"
+                ) && g.rules.districts[district].maintenance > 0.0
+            }
+            _ => false,
+        }
+    }
+
+    /// Modernize one existing core defender before discretionary spending.
+    /// A reserve and the incremental maintenance bill must both fit; matching
+    /// an unaffordable rival army is not a sustainable defence strategy.
+    fn modernize_science_core(&self, g: &mut Game, pid: usize) {
+        if self.active_victory_target(g) != Some(VictoryTarget::Science) || self.war_plan.is_some()
+        {
+            return;
+        }
+        let cities = g.player_city_ids(pid);
+        let reserve = 100.0 + 25.0 * cities.len() as f64;
+        let best = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let unit = &g.units[&uid];
+                let from = &g.rules.units[unit.kind];
+                if from.class != "military"
+                    || from.siege
+                    || matches!(from.domain.as_deref(), Some("sea" | "air"))
+                {
+                    return None;
+                }
+                let core = cities
+                    .iter()
+                    .filter(|cid| {
+                        let city = &g.cities[cid];
+                        !city.districts.is_empty() && crate::hex::distance(city.pos, unit.pos) <= 3
+                    })
+                    .map(|cid| g.cities[cid].districts.len())
+                    .max()?;
+                let (target, price, _) = g.unit_gold_upgrade_offer(pid, uid)?;
+                let to = &g.rules.units[target];
+                let formation = match unit.formation {
+                    0 => 1.0,
+                    1 => 2.0,
+                    _ => 3.0,
+                };
+                let upkeep = (to.maintenance - from.maintenance).max(0.0) * formation;
+                let gain = to.strength.max(to.ranged_attack_strength())
+                    - from.strength.max(from.ranged_attack_strength());
+                (gain > 0.0
+                    && g.players[pid].gold - price >= reserve
+                    && g.players[pid].gold_per_turn >= upkeep)
+                    .then_some((core, gain / price.max(1.0), std::cmp::Reverse(uid), uid))
+            })
+            .max_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.total_cmp(&b.1))
+                    .then(a.2.cmp(&b.2))
+            });
+        if let Some((_, _, _, uid)) = best {
+            let _ = g.apply(pid, &Action::UpgradeUnit { unit: uid });
+        }
+    }
+
     /// The adaptive agent normally delegates routine city queues to the
     /// lightweight governor. Reserve at most one empty queue per turn for a
     /// support capability that the active campaign and army can actually use.
@@ -24650,7 +24732,14 @@ impl AdvancedAi {
                     }
                 }
             }
-            if committed.is_some() && (self.preempt_margin <= 1.0 || economic_recovery) {
+            let recovery_preemption = economic_recovery
+                && committed
+                    .as_ref()
+                    .is_some_and(|(_, item)| self.science_recovery_preempts(g, item));
+            if committed.is_some()
+                && !recovery_preemption
+                && (self.preempt_margin <= 1.0 || economic_recovery)
+            {
                 continue;
             }
             if economic_recovery {
@@ -24676,7 +24765,7 @@ impl AdvancedAi {
                                 "{} starts {}", city_name, Self::plain_item(&item);
                                 "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
                         }
-                        counts.add_item(g, &item);
+                        counts = self.counts(g, pid);
                         self.clear_idle_production_streak(cid);
                     }
                 }
@@ -39962,6 +40051,7 @@ impl AdvancedAi {
         // breakthrough arrives still upgrades appointed predecessors before
         // Great Person patronage, ordinary purchases, diplomacy, or movement.
         self.execute_war_upgrades(g, pid);
+        self.modernize_science_core(g, pid);
         // Modernization normally waits until after every purchase and is
         // suppressed by an appointed war package. A defender that did not
         // choose the declaration timing gets the wartime upgrade pass now.
