@@ -60,10 +60,8 @@ const SIEGE_COMMITMENT_PER_HP: f64 = 1.5;
 /// Without it the campaign could be dragged across the map by damage another
 /// civilization dealt.
 const SIEGE_COMMITMENT_REACH: i32 = 6;
-/// Health above which [`AdvancedAi::promotion_heal_is_wasted`] holds a
-/// promotion back. `do_promote` heals `min(50, 100 - hp)`, so promoting at 100
-/// delivers nothing; 75 asks for at least 25 of the 50 to land before spending
-/// the unit's turn on it.
+/// Healing preference retained for the `promote-when-wounded` treatment.
+/// Pending promotions bypass it because they block further XP awards.
 const PROMOTE_HEAL_HP_CEILING: i32 = 75;
 /// Scale of [`AdvancedAi::strike_opening_value`] against `mv_threat`'s own
 /// `30.0`. At even odds this returns +5.2 where the parity threat penalty is
@@ -38606,47 +38604,12 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether taking a promotion now would waste the healing it carries.
-    ///
-    /// `Game::do_promote` ends with
-    ///
-    /// ```text
-    /// unit.hp = (unit.hp + 50).min(100);
-    /// unit.moves_left = 0.0;
-    /// unit.attacks_left = 0;
-    /// ```
-    ///
-    /// so a promotion is **worth up to 50 health**, and it costs the unit its
-    /// whole turn. `advanced_promotions` took every promotion the instant it
-    /// became available, at whatever health the unit happened to be — so a
-    /// full-health unit paid a turn for nothing and threw the heal away.
-    ///
-    /// Measured across every recorded run on this machine, **359 promotions**:
-    ///
-    /// | health when promoted | | |
-    /// |---|---|---|
-    /// | **100 — heal entirely wasted** | **156** | **43%** |
-    /// | 80-99 | 22 | 6% |
-    /// | 55-79 | 64 | 18% |
-    /// | <= 54 — heal fully used | 117 | 33% |
-    ///
-    /// Median health at promotion is 79, and **54% of all the healing
-    /// available was wasted — 8,307 delivered of 17,950 possible.**
-    ///
-    /// Waiting is close to free: experience is banked on the unit and the
-    /// promotion stays available. A unit that never takes 25 damage never
-    /// promotes under this rule, which is the right trade — it is also a unit
-    /// that is not fighting, so the combat bonus it forgoes is worth little,
-    /// and the moment it is hurt it promotes and heals.
-    ///
-    /// ⚠⚠ **This is a NATIVE-engine treatment and is deliberately NOT in
-    /// `enable_live_bridge`.** The +50 is CIVVIS's own model; the Civilization
-    /// VI bridge does not model it and Civ VI's own promotion rule has not been
-    /// verified here. Deferring a promotion for a heal that never arrives would
-    /// be a pure loss of the combat bonus, so the live controller keeps taking
-    /// promotions immediately until someone checks the real rule.
+    /// Preserve the healing preference only when it cannot stall experience.
+    /// Both XP award paths stop while `Game::promotion_pending` is true, so
+    /// an earned promotion must be taken even at full health. This also
+    /// applies when the deployment ledger enables `promote-when-wounded`.
     fn promotion_heal_is_wasted(&self, g: &Game, uid: u32) -> bool {
-        if !self.promote_when_wounded {
+        if !self.promote_when_wounded || g.promotion_pending(uid) {
             return false;
         }
         g.units
