@@ -26,7 +26,11 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn(name, [n.text for n in tree.findall("./InGameActions/ImportFiles/File")])
         actions = tree.findall("./InGameActions/ReplaceUIScript/Properties")
         self.assertTrue(any(n.findtext("LuaContext") == "TopPanel"
-                            and n.findtext("LuaReplace") == name for n in actions))
+                            and n.findtext("LuaReplace") == name
+                            and int(n.findtext("LoadOrder", "0")) > 0 for n in actions))
+        references = {n.get("id").lower() for n in tree.findall("./References/Mod")}
+        self.assertTrue({"1b28771a-c749-434b-9053-d1380c553de9",
+                         "4873eb62-8ccc-4574-b784-dda455e74e68"} <= references)
         with tempfile.TemporaryDirectory() as tmp, patch.object(install, "check_syntax", return_value=None):
             install._write_mod(Path(tmp), {"Play": True, "CivvisDecides": True})
             deployed = (Path(tmp) / name).read_text()
