@@ -689,6 +689,7 @@ else
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
 	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
 	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
+	local controllerPulseSeconds = 0;
 
 	-- ★★★★★ A FRESH SHOW IS A FRESH DIALOGUE, EVEN WHEN THIS CONTEXT NEVER TICKS
 	-- WHILE HIDDEN.
@@ -709,6 +710,7 @@ else
 	-- session and may have been armed before the view becomes visible.
 	local function resetShownAttemptState()
 		showing = false;
+		controllerPulseSeconds = 0;
 		remaining = 0;
 		shown = 0;
 		closes = 0;
@@ -905,6 +907,7 @@ else
 			heartbeatSeconds = 0;
 		end
 		if not isUp() then
+			controllerPulseSeconds = 0;
 			showing = false;
 			closes = 0;
 			reported = false;
@@ -912,6 +915,17 @@ else
 			wonderAnimationWaitReported = false;
 			dealForceClose = false;
 			return;
+		end
+		-- A leader screen can hide TopPanel while its own UI clock continues.
+		-- Use the same guarded agent wakeup here; keep deal holds and native
+		-- close handling below intact. One long frame produces only one pulse.
+		if cfg.Play ~= false and cfg.CivvisDecides then
+			controllerPulseSeconds = controllerPulseSeconds + math.max(0, tonumber(fDTime) or 0);
+			if controllerPulseSeconds >= 1 then
+				controllerPulseSeconds = 0;
+				pcall(function() LuaEvents.CivvisControlPulse(); end);
+				if not isUp() then showing = false; return; end
+			end
 		end
 		if not showing then
 			showing = true;
