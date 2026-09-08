@@ -4838,6 +4838,8 @@ pub struct AdvancedAi {
     // ---- append: a-b ------------------------------------------------
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     builder_workforce_recovery: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    builder_workforce_recovery_2: bool,
     /// `anvil`: the land group nearest a threatened city of ours holds it
     /// as a formation — a shooter on the centre, melee on the front tiles,
     /// the rest within two — instead of the relief hold point. Opt-in gene;
@@ -4982,6 +4984,8 @@ pub struct AdvancedAi {
     // ---- append: c-d ------------------------------------------------
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     culture_building_catchup: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    culture_building_catchup_2: bool,
     /// ★★★★ TWENTY-SEVEN ENVOYS INTO A RACE THE SEAT WAS ALWAYS GOING TO
     /// LOSE, AND THE PRIZE CAME BACK AS AN ARMY. The envoy scorer prices the
     /// NEXT envoy toward a suzerainty ([`SUZERAIN_PRIZE`] over the envoys
@@ -5358,6 +5362,8 @@ pub struct AdvancedAi {
     // ---- append: e-f ------------------------------------------------
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     expansion_best_idle_city: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    expansion_best_idle_city_2: bool,
     /// Price affordable 1/3/6 building packages independently of suzerainty.
     envoy_building_dividends: bool,
     /// Version two of `eureka-chasing-builder`: only the final Builder action
@@ -5998,6 +6004,8 @@ pub struct AdvancedAi {
     // ---- append: p-r ------------------------------------------------
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    research_building_catchup_2: bool,
     /// A route step that is not legal THIS TURN is a wait, not a new
     /// decision. `commitment_owners_act` releases a settle or improve
     /// decision the moment `route_step` yields no enterable neighbour —
@@ -6379,6 +6387,8 @@ pub struct AdvancedAi {
     // ---- append: t-z ------------------------------------------------
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     trade_building_before_bankruptcy: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    trade_building_before_bankruptcy_2: bool,
     /// Who may be a target, when a war is declared and when peace is sued
     /// for, read off the Objective Board's own requirements: a rival whose
     /// nearest city's Siege bill is over the whole roster is no target, a
@@ -7837,6 +7847,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             builder_workforce_recovery: false,
+            builder_workforce_recovery_2: false,
             anvil: false,
             anvil_orders: BTreeMap::new(),
             anvil_orders_turn: None,
@@ -7865,6 +7876,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             culture_building_catchup: false,
+            culture_building_catchup_2: false,
             contested_suzerainty_brake: false,
             detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
@@ -7919,6 +7931,7 @@ impl AdvancedAi {
 
             // ---- append: e-f ----------------------------------------
             expansion_best_idle_city: false,
+            expansion_best_idle_city_2: false,
             envoy_building_dividends: false,
             eureka_chasing_builder_2: false,
             enter_the_prophet_race_2: false,
@@ -7990,6 +8003,7 @@ impl AdvancedAi {
 
             // ---- append: p-r ----------------------------------------
             research_building_catchup: false,
+            research_building_catchup_2: false,
             route_block_is_a_wait: false,
             recovery_reads_the_war_2: false,
             requisitions: false,
@@ -8045,6 +8059,7 @@ impl AdvancedAi {
 
             // ---- append: t-z ----------------------------------------
             trade_building_before_bankruptcy: false,
+            trade_building_before_bankruptcy_2: false,
             war_policy_via_board: false,
             war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,

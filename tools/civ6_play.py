@@ -2206,6 +2206,28 @@ def _observed_label_points(path: Path, label: str,
     return points
 
 
+def dismiss_connection_issue(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Acknowledge the observed 2K connection notice before reading a menu."""
+    titles = _observed_label_points(path, "Connection Issue", bounds)
+    if len(titles) != 1:
+        return False
+    bodies = _observed_label_points(
+        path, "A connection to Civilization VI could not be established.", bounds)
+    buttons = _observed_label_points(path, "OK", bounds)
+    if len(bodies) != 1 or len(buttons) != 1:
+        return False
+    title, body, button = titles[0], bodies[0], buttons[0]
+    x, y, w, h = bounds
+    if not (x + w * .25 <= title[0] <= x + w * .75
+            and y + h * .2 <= title[1] <= y + h * .8
+            and title[1] < body[1] < button[1] <= title[1] + h * .3
+            and abs(button[0] - title[0]) <= w * .15):
+        return False
+    click_at(*button)
+    print("[startup] acknowledged the visible 2K connection issue", flush=True)
+    return True
+
+
 def _main_menu_point(path: Path, bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
     """Read the Single Player row center instead of assuming a window-height ratio."""
     return _observed_label_point(path, "Single Player", bounds)
@@ -2488,6 +2510,9 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             # miss into minutes of setup latency.
             screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)
             point = _main_menu_point(menushot, bounds)
+            if point is None and dismiss_connection_issue(menushot, bounds):
+                time.sleep(.5)
+                return None  # The polling reader takes a fresh menu frame.
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
@@ -2767,6 +2792,11 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         screenshot(menu)
         target = _observed_label_point(menu, "Load Game", bounds)
         menu_point = _main_menu_point(menu, bounds)
+        if target is None and menu_point is None and dismiss_connection_issue(menu, bounds):
+            time.sleep(.5)
+            screenshot(menu)
+            target = _observed_label_point(menu, "Load Game", bounds)
+            menu_point = _main_menu_point(menu, bounds)
         if target is None and menu_point is not None:
             click_at(*menu_point)
             time.sleep(2.5)
