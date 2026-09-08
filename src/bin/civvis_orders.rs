@@ -903,14 +903,6 @@ struct HostUnitOrderKey {
     pos: Option<(i32, i32)>,
 }
 
-#[derive(Eq, Ord, PartialEq, PartialOrd)]
-struct HostDealOrderKey {
-    kind: &'static str,
-    subject: Option<i64>,
-    verb: Option<String>,
-    pos: Option<(i32, i32)>,
-}
-
 #[derive(Default)]
 struct HostMoveRefusals {
     /// The last `MOVE_TO` sent per host unit: where it stood, the long
@@ -929,7 +921,10 @@ struct HostMoveRefusals {
     /// The diplomacy arm also has one working deal per rival and keeps an ask
     /// pending or cooling down across same-turn frames. An identical
     /// `sell`/`buy` in a later frame therefore cannot be a new deal request.
-    same_turn_deal_orders: std::collections::BTreeSet<HostDealOrderKey>,
+    same_turn_deal_orders: std::collections::BTreeSet<i64>,
+    /// A failed long route gets individually planned steps on the next turn.
+    /// This does not label known terrain impassable after a transient failure.
+    local_retry: std::collections::BTreeMap<i64, (u32, (i32, i32))>,
     /// The first city production request emitted during the current turn,
     /// keyed by Civilization VI city id. Production is a replacement operation:
     /// a later same-turn request competes with the queue already sent to the
@@ -1004,8 +999,19 @@ impl HostMoveRefusals {
                             ours.insert(city, selected);
                             None
                         }
-                        std::collections::btree_map::Entry::Occupied(entry) => {
-                            Some(entry.get().clone())
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            let refused = state.refused_production.get(&city);
+                            if entry.get() != verb
+                                && refused.is_some_and(|items| {
+                                    items.contains(entry.get()) && !items.contains(verb)
+                                })
+                            {
+                                entry.insert(verb.to_string());
+                                ours.insert(city, verb.to_string());
+                                None
+                            } else {
+                                Some(entry.get().clone())
+                            }
                         }
                     };
                     if let Some(first) = first {
@@ -1044,14 +1050,9 @@ impl HostMoveRefusals {
             }
 
             if matches!(order.kind, "sell" | "buy") {
-                let key = HostDealOrderKey {
-                    kind: order.kind,
-                    subject: order.subject,
-                    verb: order.verb.clone(),
-                    pos: order.pos,
-                };
-                let duplicate = !self.same_turn_deal_orders.insert(key);
-                if frame > 0 && duplicate {
+                // Buy and sell share the host's single working deal per rival.
+                // Different items in the same frame still compete for it.
+                if !self.same_turn_deal_orders.insert(unit) {
                     dropped += 1;
                     return false;
                 }
@@ -1096,6 +1097,7 @@ impl HostMoveRefusals {
 
     /// Compare this turn's positions with last turn's orders.
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot, verdicts: &[Order]) {
+        self.local_retry.retain(|_, (turn, _)| *turn >= state.turn);
         let sent = std::mem::take(&mut self.sent);
         for (unit, attempt) in sent {
             // The ladder asks several times per turn; a same-turn frame cannot
@@ -1112,6 +1114,17 @@ impl HostMoveRefusals {
                 self.pending_probes.remove(&unit);
                 continue;
             };
+            if (now.x, now.y) == attempt.from
+                && attempt.from != attempt.destination
+                && verdicts.iter().any(|row| {
+                    row.kind == "order_failed"
+                        && row.subject == Some(unit)
+                        && row.pos == Some((attempt.turn as i32, -1))
+                        && row.verb.as_deref() == Some("unit:MOVE_TO host_noop_no_path")
+                })
+            {
+                self.local_retry.insert(unit, (state.turn, attempt.from));
+            }
             if (now.x, now.y) != attempt.from || attempt.from == attempt.destination {
                 self.pending_probes.remove(&unit);
             } else if attempt.destination == attempt.frontier_step {
@@ -4276,7 +4289,20 @@ fn decide(
         note_bits.push(format!("found_sites={found_sites}"));
     }
     let sequenced = state.seat.order_queue;
-    let local_routes = wounded_local_routes(state);
+    let mut local_routes = wounded_local_routes(state);
+    local_routes.extend(
+        host_move_refusals
+            .local_retry
+            .iter()
+            .filter_map(|(uid, (turn, from))| {
+                (*turn == state.turn
+                    && state
+                        .units
+                        .iter()
+                        .any(|unit| unit.id == *uid && (unit.x, unit.y) == *from))
+                .then_some(*uid)
+            }),
+    );
     if !local_routes.is_empty() {
         note_bits.push(format!("wounded_local_routes={}", local_routes.len()));
     }
@@ -10292,6 +10318,65 @@ mod tests {
     }
 
     #[test]
+    fn an_explicitly_refused_build_releases_the_same_turn_queue_lease() {
+        let (_, mut state) = production_board();
+        let mut refusals = HostMoveRefusals::default();
+        let mut ours = std::collections::BTreeMap::new();
+        let mut first = vec![production_order(7, "DISTRICT_CAMPUS")];
+        refusals.suppress_same_turn_replays(&mut first, &state, &mut ours);
+        state.frame = 1;
+        state
+            .refused_production
+            .insert(7, ["DISTRICT_CAMPUS".into()].into_iter().collect());
+        let mut retry = vec![
+            production_order(7, "DISTRICT_CAMPUS"),
+            production_order(7, "UNIT_BUILDER"),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut retry, &state, &mut ours),
+            1
+        );
+        assert_eq!(retry[0].verb.as_deref(), Some("UNIT_BUILDER"));
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_BUILDER"));
+        let mut competing = vec![production_order(7, "UNIT_TRADER")];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut competing, &state, &mut ours),
+            1
+        );
+    }
+
+    #[test]
+    fn no_path_feedback_retries_local_steps_for_one_turn_only() {
+        let (_, mut state) = production_board();
+        let unit = state.units[0].id;
+        let from = (state.units[0].x, state.units[0].y);
+        let turn = state.turn;
+        let mut refusals = HostMoveRefusals::default();
+        refusals.record(
+            &[unit_order(unit, "MOVE_TO", Some((from.0 + 3, from.1)))],
+            &state,
+            &Default::default(),
+        );
+        state.turn += 1;
+        refusals.observe(
+            &state,
+            &[Order {
+                kind: "order_failed",
+                subject: Some(unit),
+                verb: Some("unit:MOVE_TO host_noop_no_path".into()),
+                pos: Some((turn as i32, -1)),
+            }],
+        );
+        assert_eq!(refusals.local_retry.get(&unit), Some(&(state.turn, from)));
+        state.frame = 1;
+        refusals.observe(&state, &[]);
+        assert_eq!(refusals.local_retry.len(), 1);
+        state.turn += 1;
+        refusals.observe(&state, &[]);
+        assert!(refusals.local_retry.is_empty());
+    }
+
+    #[test]
     fn a_same_turn_replan_keeps_the_first_city_queue_and_ownership() {
         let (_snapshot, mut state) = production_board();
         state.turn = 43;
@@ -10342,7 +10427,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_turn_replan_drops_exact_deal_replays_but_keeps_changed_offers() {
+    fn a_same_turn_replan_preserves_one_working_deal_per_rival() {
         let (_snapshot, mut state) = production_board();
         state.turn = 44;
         state.frame = 0;
@@ -10398,13 +10483,10 @@ mod tests {
         ];
         assert_eq!(
             refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
-            2,
-            "only exact sell/buy replays are removed"
+            3,
+            "a changed offer still competes with this rival's pending deal"
         );
-        assert_eq!(replan.len(), 2);
-        assert!(replan.iter().any(|order| {
-            order.kind == "sell" && order.subject == Some(2) && order.pos == Some((220, 0))
-        }));
+        assert_eq!(replan.len(), 1);
         assert!(replan.iter().any(|order| {
             order.kind == "research" && order.verb.as_deref() == Some("TECH_WRITING")
         }));
