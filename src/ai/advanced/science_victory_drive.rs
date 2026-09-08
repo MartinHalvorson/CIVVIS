@@ -619,6 +619,17 @@ impl AdvancedAi {
         };
         let city = &g.cities[&cid];
         let player = &g.players[pid];
+        // Support that cannot finish before a known rival flight arrives
+        // cannot accelerate our launch. Keep racing projects themselves alive:
+        // a deadline is a reason to cut detours, not abandon the race.
+        if matches!(item, Item::Building { .. } | Item::District { .. })
+            && !matches!(item, Item::District { district, .. }
+                if g.district_family(*district) == "spaceport")
+            && Self::science_project_build_turns(g, pid, cid, item)
+                >= Self::science_support_horizon(g, pid)
+        {
+            return 0.0;
+        }
         // The launch chain has one serial bottleneck: every queue spent on a
         // research building in a non-launch city is a queue not available to
         // the next Spaceport or a parallel production site.  V2 originally
@@ -688,6 +699,40 @@ impl AdvancedAi {
                 }
                 _ => 0.0,
             }
+    }
+
+    /// Earliest observable flight deadline; unmet rivals never supply private
+    /// progress. Missing launch evidence leaves the configured turn limit.
+    fn science_support_horizon(g: &Game, pid: usize) -> f64 {
+        let limit = if g.max_turns == 0 {
+            f64::INFINITY
+        } else {
+            g.max_turns.saturating_sub(g.turn) as f64
+        };
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && g.has_met(pid, rival.id)
+                    && rival.science_projects.contains("exoplanet_expedition")
+            })
+            .map(|rival| {
+                ((EXOPLANET_DESTINATION - rival.exoplanet_distance).max(0.0)
+                    / g.exoplanet_speed(rival.id).max(1.0))
+                .ceil()
+            })
+            .fold(limit, f64::min)
+    }
+
+    /// Compare actual remaining work at this city's item-specific rate.
+    /// Production banks and Space Race modifiers can reverse a raw-yield rank.
+    pub(super) fn science_project_build_turns(g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        g.item_remaining_cost_for_city(pid, cid, item)
+            / (g.city_yields(cid).production.max(0.1)
+                * g.item_prod_mult(pid, cid, Some(item)).max(0.1))
     }
 
     /// Version 2 keeps the launch city's research funnel alive even when the
@@ -1363,6 +1408,72 @@ mod tests {
             .map(|t| Name::new(t))
             .collect();
         g.players[pid].techs.extend(techs);
+    }
+
+    #[test]
+    fn targeted_launch_uses_banked_progress_instead_of_raw_production_rank() {
+        let (mut g, ours, second) = board();
+        g.cities.get_mut(&second).unwrap().owner = 0;
+        for tech in g.rules.tech_ancestors["rocketry"].clone() {
+            g.players[0].techs.insert(Name::new(&tech));
+        }
+        g.players[0].techs.insert(crate::name!("rocketry"));
+        install_pad(&mut g, ours);
+        install_pad(&mut g, second);
+        std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+            ours,
+            crate::rules::Yields {
+                production: 100.0,
+                ..Default::default()
+            },
+        );
+        let project = Item::Project {
+            project: crate::name!("launch_earth_satellite"),
+        };
+        let cost = g.item_cost_for_city(0, second, &project);
+        g.cities
+            .get_mut(&second)
+            .unwrap()
+            .production_progress
+            .insert("project:launch_earth_satellite".into(), cost - 1.0);
+        assert!(
+            AdvancedAi::science_project_build_turns(&g, 0, second, &project)
+                < AdvancedAi::science_project_build_turns(&g, 0, ours, &project)
+        );
+        AdvancedAi::targeting(VictoryTarget::Science).science_production(&mut g, 0);
+        assert_eq!(g.cities[&second].queue.first(), Some(&project));
+    }
+
+    #[test]
+    fn a_known_rival_flight_cuts_support_detours_without_private_information() {
+        let (mut g, ours, _) = board();
+        g.players[1]
+            .science_projects
+            .insert("exoplanet_expedition".into());
+        g.players[1].exoplanet_distance = 49.0;
+        // The fixture can spawn within sight; explicitly forget contact first.
+        g.players[0].met.clear();
+        assert_eq!(
+            AdvancedAi::science_support_horizon(&g, 0),
+            200.0 - g.turn as f64
+        );
+        g.players[0].met.insert(1);
+        assert_eq!(AdvancedAi::science_support_horizon(&g, 0), 1.0);
+        give_techs(&mut g, 0, 30);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_science_victory_drive_2();
+        ai.maintain_science_drive(&g, 0);
+        assert_eq!(
+            ai.science_drive_production_bonus(
+                &g,
+                0,
+                ours,
+                &Item::Building {
+                    building: crate::name!("research_lab")
+                }
+            ),
+            0.0
+        );
     }
 
     #[test]
