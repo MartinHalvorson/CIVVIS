@@ -18119,6 +18119,7 @@ end;
 local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
+	CivvisQueue.controllerTicks = (CivvisQueue.controllerTicks or 0) + 1;
 	local ok, err = pcall(function()
 		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
 		--
@@ -19351,6 +19352,29 @@ CivvisQueue.onUnitSettled = function(player, unitId)
 	end
 end;
 
+-- TopPanel has a visible UI clock even when Game Core stops publishing.
+-- Observe normal ticks first; only a quiet interval needs a fallback wakeup.
+-- `tick` retains every existing ownership, turn, order and reentrancy guard.
+CivvisQueue.onUiPulse = function()
+	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
+	local serial = CivvisQueue.controllerTicks or 0;
+	if CivvisQueue.lastUiTick ~= serial then
+		CivvisQueue.lastUiTick = serial;
+		return;
+	end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	ensureStarted();
+	emit("controller_wake", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		active = try(function() return Players[pid]:IsTurnActive(); end, false),
+		frame = awaiting.frame or 0,
+		pending = CivvisQueue.pendingCount(),
+	});
+	tick();
+	CivvisQueue.lastUiTick = CivvisQueue.controllerTicks or 0;
+end;
+
 local function onTeamVictory(team, victoryType, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
@@ -19547,6 +19571,7 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
+	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		GameCoreEventPublishComplete = onGameCoreTick,

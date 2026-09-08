@@ -18,15 +18,19 @@
 		<EnabledByDefault>1</EnabledByDefault>
 		<CompatibleVersions>2.0</CompatibleVersions>
 	</Properties>
-	<!-- Load after the UI mods whose replacement scripts this mod chains. Both
+	<!-- Load after the UI mods whose replacement scripts this mod chains. These
 	     references are soft: they order the load when the optional mod is
-	     present and are ignored when it is not. Without the first reference,
+	     present and are ignored when it is not. Without the GranColombia_Maya reference,
 	     GranColombia_Maya's NaturalDisasterPopup replacement won and this
 	     closer never armed for that context. Sukritact's Simple UI Adjustments
 	     has the same conflict for WonderBuiltPopup; its replacement also adds
 	     the wonder audio, so the closer chains it rather than silently dropping
 	     that behavior. -->
 	<References>
+		<!-- The HUD wrapper includes this expansion chain; order it after
+		     both stock TopPanel replacements so its UI clock survives. -->
+		<Mod id="1B28771A-C749-434B-9053-D1380C553DE9" title="Expansion1"/>
+		<Mod id="4873eb62-8ccc-4574-b784-dda455e74e68" title="Expansion2"/>
 		<Mod id="9DE86512-DE1A-400D-8C0A-AB46EBBF76B9" title="GranColombia_Maya"/>
 		<Mod id="805cc499-c534-4e0a-bdce-32fb3c53ba38" title="Sukritact's Simple UI Adjustments"/>
 	</References>
@@ -49,6 +53,16 @@
 			</Properties>
 			<File>CivvisControlAgent.xml</File>
 		</AddUserInterfaces>
+		<ImportFiles id="CivvisControlHeartbeatFiles">
+			<File>CivvisControlHeartbeat.lua</File>
+		</ImportFiles>
+		<ReplaceUIScript id="CivvisControlHeartbeatHUD">
+			<Properties>
+				<LoadOrder>100000</LoadOrder>
+				<LuaContext>TopPanel</LuaContext>
+				<LuaReplace>CivvisControlHeartbeat.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<!-- The game's announcement screens hold the world until somebody
 		     dismisses them, and nobody is at the keyboard. Each one below is
 		     pointed at the same replacement, which loads the shipped screen and
@@ -281,5 +295,6 @@
 		<File>CivvisControlAgent.xml</File>
 		<File>CivvisControlAgent.lua</File>
 		<File>CivvisControlAutoClose.lua</File>
+		<File>CivvisControlHeartbeat.lua</File>
 	</Files>
 </Mod>

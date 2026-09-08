@@ -48059,6 +48059,80 @@ fn envoy_dividends_keep_a_paying_six_tier_and_a_close_defense() {
     );
 }
 
+/// Live Rome t80 had ten Warriors, Education and Apprenticeship, but neither
+/// Bronze Working nor Iron Working. The Science lane bypassed the upgrade
+/// score because the scored technology was not yet a legal research choice.
+#[test]
+fn wartime_modernization_routes_science_through_missing_prerequisites() {
+    let mut g = Game::new(2, 24, 16, 21, 250, 0);
+    g.players[0].civ = "Rome".to_string();
+    let home = g.units[&g.player_unit_ids(0)[0]].pos;
+    g.units.retain(|_, unit| unit.owner != 0);
+    for _ in 0..10 {
+        g.spawn_test_unit("warrior", 0, home);
+    }
+    for tech in [
+        "pottery",
+        "mining",
+        "writing",
+        "currency",
+        "apprenticeship",
+        "education",
+    ] {
+        g.players[0].techs.insert(Name::new(tech));
+    }
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(ai.wartime_modernization_tech(&g, 0), None);
+    g.at_war.insert((0, 1));
+    assert_eq!(
+        ai.wartime_modernization_tech(&g, 0).as_deref(),
+        Some("iron_working")
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    g.players[0].research = None;
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("bronze_working"));
+    g.players[0].techs.insert(crate::name!("bronze_working"));
+    g.players[0].research = None;
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("iron_working"));
+    g.players[0].techs.insert(crate::name!("iron_working"));
+    assert_eq!(
+        ai.wartime_modernization_tech(&g, 0),
+        None,
+        "known upgrades must release the Science lane even when Gold is missing"
+    );
+    g.players[0].research = None;
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_ne!(g.players[0].research.as_deref(), Some("iron_working"));
+}
+
+#[test]
+fn wartime_modernization_ignores_single_stragglers_and_city_state_wars() {
+    let mut g = Game::new(2, 24, 16, 21, 250, 0);
+    let home = g.units[&g.player_unit_ids(0)[0]].pos;
+    g.units.retain(|_, unit| unit.owner != 0);
+    g.spawn_test_unit("archer", 0, home);
+    g.at_war.insert((0, 1));
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(ai.wartime_modernization_tech(&g, 0), None);
+    g.spawn_test_unit("archer", 0, home);
+    assert_eq!(
+        ai.wartime_modernization_tech(&g, 0).as_deref(),
+        Some("machinery")
+    );
+    g.players[1].is_minor = true;
+    assert_eq!(ai.wartime_modernization_tech(&g, 0), None);
+}
+
 /// Live Rome turn 33: a wounded finisher walks onto its victim's tile,
 /// then a second visible cavalry unit removes it. A direct kill is not safety.
 #[test]
