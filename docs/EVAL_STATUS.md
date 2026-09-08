@@ -80,7 +80,7 @@ Unreachable:
 - Latest ledger entry: **2026-09-08T22:26:27Z**
 
 - Attempts that ran the full clock: **209**, median score **547**, best **1606**
-- Graded against the best rival: **465** of 209 finished attempts; rival bar median **720**, our lead median **-204**, best **+759**, ahead in **47**
+- Graded against the best rival: **465 configured attempts**; rival bar median **720**, our lead median **-204**, best **+759**, ahead in **47**
 - Lost to a rival's victory before the clock: **148** (diplomatic 61, culture 53, technology 28, religious 5, conquest 1), of which **17** while our own score was the highest on the board
 - The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 221), diplomatic 202–247 (median 235), religious 75–233 (median 170), technology 182–246 (median 227)
 
