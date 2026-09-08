@@ -20,6 +20,7 @@ different change than the one that fixes the supervisor:
 from __future__ import annotations
 
 import os
+import plistlib
 import re
 import subprocess
 import sys
@@ -347,8 +348,7 @@ class ManagedServicesCanBeUpdated(unittest.TestCase):
         self.assertIn("--interval 0.25", source)
 
 
-if __name__ == "__main__":
-    unittest.main()
+
 
 
 # The launcher is zsh, and zsh is what macOS ships. CI runs Linux images that
@@ -546,3 +546,127 @@ class TheExhibitionIsKeptAliveToo(unittest.TestCase):
         )
         self.assertEqual(done.returncode, 78, done.stderr)
         self.assertIn("SPECTATOR_DEPLOY.md", done.stderr)
+
+
+class SpectatorDeploymentOwnerTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.primary = self.home / "primary"
+        self.main = self.home / "managed"
+        self.task = self.home / "task"
+        self.primary.mkdir()
+        subprocess.run(["git", "init", "-q", str(self.primary)], check=True)
+        runner = self.primary / "tools/ops/civvis-spectator-runner.sh"
+        runner.parent.mkdir(parents=True)
+        runner.write_text("#!/bin/zsh\nexit 0\n")
+        def git(*args):
+            subprocess.run(["git", "-C", str(self.primary), *args], check=True,
+                           capture_output=True, text=True)
+        git("add", "tools/ops/civvis-spectator-runner.sh")
+        git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "commit", "-qm", "fixture")
+        git("branch", "-M", "main")
+        git("checkout", "--detach", "-q")
+        git("worktree", "add", "-q", str(self.main), "main")
+        git("worktree", "add", "-q", "-b", "agent/task", str(self.task))
+        self.plist = self.home / "Library/LaunchAgents/com.civvis.spectator.plist"
+        self.plist.parent.mkdir(parents=True)
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(civvis_collab.Path, "home", return_value=self.home).start()
+        mock.patch.object(civvis_collab.sys, "platform", "darwin").start()
+        mock.patch.object(civvis_collab, "host_serves_the_exhibition", return_value=True).start()
+        self.load_job = mock.patch.object(civvis_collab, "load_managed_job").start()
+        self.launchctl_loaded = True
+        real_run = civvis_collab.run
+        def run(args, **kwargs):
+            if args[0] == "launchctl":
+                return subprocess.CompletedProcess(args, 0 if self.launchctl_loaded else 1, "", "")
+            return real_run(args, **kwargs)
+        mock.patch.object(civvis_collab, "run", side_effect=run).start()
+
+    def install_receipt(self, root):
+        self.plist.write_bytes(civvis_collab.macos_spectator_plist(
+            civvis_collab.spectator_runner_source(root), root))
+
+    def deployed_root(self):
+        return plistlib.loads(self.plist.read_bytes())["EnvironmentVariables"]["CIVVIS_DEPLOY_ROOT"]
+
+    def test_new_install_and_other_callers_share_the_stable_main_owner(self):
+        civvis_collab.install_spectator_service(self.primary)
+        self.assertEqual(self.deployed_root(), str(self.main.resolve()))
+        before = self.plist.read_bytes()
+        civvis_collab.install_spectator_service(self.task)
+        civvis_collab.install_spectator_service(self.main)
+        self.assertEqual(self.plist.read_bytes(), before)
+        self.load_job.assert_called_once()
+
+    def test_existing_primary_owner_keeps_its_cache_and_running_service(self):
+        self.install_receipt(self.primary)
+        before = self.plist.read_bytes()
+        civvis_collab.install_spectator_service(self.main)
+        civvis_collab.install_spectator_service(self.task)
+        self.assertEqual(self.plist.read_bytes(), before)
+        self.load_job.assert_not_called()
+
+    def test_configured_detached_deployment_keeps_its_cache(self):
+        deployment = self.home / "deployment"
+        subprocess.run(["git", "-C", str(self.primary), "worktree", "add", "-q",
+                        "--detach", str(deployment)], check=True, capture_output=True)
+        self.install_receipt(deployment)
+        before = self.plist.read_bytes()
+        civvis_collab.install_spectator_service(self.main)
+        self.assertEqual(self.plist.read_bytes(), before)
+        self.load_job.assert_not_called()
+
+    def test_an_existing_task_owner_is_repaired_to_main(self):
+        self.install_receipt(self.task)
+        civvis_collab.install_spectator_service(self.primary)
+        self.assertEqual(self.deployed_root(), str(self.main.resolve()))
+        self.load_job.assert_called_once()
+
+    def test_missing_root_and_invalid_root_types_are_repaired(self):
+        for root in (str(self.home / "gone"), "relative", False, 42):
+            with self.subTest(root=root):
+                self.install_receipt(self.primary)
+                payload = plistlib.loads(self.plist.read_bytes())
+                payload["EnvironmentVariables"]["CIVVIS_DEPLOY_ROOT"] = root
+                self.plist.write_bytes(plistlib.dumps(payload))
+                civvis_collab.install_spectator_service(self.primary)
+                self.assertEqual(self.deployed_root(), str(self.main.resolve()))
+
+    def test_an_unloaded_valid_owner_is_started_without_moving_its_cache(self):
+        self.install_receipt(self.primary)
+        self.launchctl_loaded = False
+        civvis_collab.install_spectator_service(self.main)
+        self.assertEqual(self.deployed_root(), str(self.primary.resolve()))
+        self.load_job.assert_called_once()
+
+    def test_rotating_batch_clone_cannot_remain_the_service_owner(self):
+        ephemeral = self.home / ".civvis-batch" / "repo"
+        subprocess.run(["git", "clone", "-q", "--local", str(self.primary), str(ephemeral)],
+                       check=True, capture_output=True)
+        self.install_receipt(ephemeral)
+        civvis_collab.install_spectator_service(self.primary)
+        self.assertEqual(self.deployed_root(), str(self.main.resolve()))
+        self.load_job.assert_called_once()
+
+    def test_malformed_managed_definition_is_repaired(self):
+        self.plist.write_text(civvis_collab.FRESHNESS_MARKER + " invalid plist")
+        civvis_collab.install_spectator_service(self.primary)
+        self.assertEqual(self.deployed_root(), str(self.main.resolve()))
+        self.load_job.assert_called_once()
+
+    def test_unmanaged_definition_is_preserved(self):
+        before = plistlib.dumps({"Label": civvis_collab.SPECTATOR_LABEL})
+        self.plist.write_bytes(before)
+        with self.assertRaises(civvis_collab.CommandError):
+            civvis_collab.install_spectator_service(self.primary)
+        self.assertEqual(self.plist.read_bytes(), before)
+        self.load_job.assert_not_called()
+
+
+
+if __name__ == "__main__":
+    unittest.main()
