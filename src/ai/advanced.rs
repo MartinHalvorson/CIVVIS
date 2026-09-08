@@ -5101,6 +5101,8 @@ pub struct AdvancedAi {
     /// path skips such cities. Every other family, lane and seat is
     /// untouched. Opt-in gene `campus-through-expansion`.
     campus_through_expansion: bool,
+    /// See `campus_before_halfway`.
+    campus_before_halfway: bool,
     /// `district-planning-2`: the plan's own tile buy competes out of the
     /// treasury reserve (never spending below half of it) instead of
     /// waiting for 200 Gold of surplus headroom, and the purchase bars
@@ -6765,6 +6767,19 @@ const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 5] = [
 /// See `campus_through_expansion`: the Science lane's Campus arm, paid to a
 /// Science seat's Campus while its plan still reads Expansion.
 const CAMPUS_THROUGH_EXPANSION_DISTRICT: f64 = 170.0;
+/// See `campus_before_halfway`: the Science lane's Campus arm before the
+/// halfway clock, the same 170 the lane pays after it. Measured motive
+/// (2026-09-08): every September Emperor ladder game that ran to its outcome
+/// was lost to a rival's science victory at t182–224 while our one science
+/// win took 234 turns at King, and #3124 gated `victory_specialization_active`
+/// to the second half — so for 125 of 250 turns a Science seat priced its own
+/// Campus at zero to the lane.
+const CAMPUS_BEFORE_HALFWAY_DISTRICT: f64 = 170.0;
+/// See `campus_before_halfway`: the population at which a city can staff a
+/// Library, and from which the Campus keeps asking past the half-empire
+/// coverage cliff. Named by the 2026-08-19 repair note above
+/// `campus_keeps_asking` and never wired until the gene.
+const CAMPUS_EVERY_CITY_POP_FLOOR: i32 = 4;
 /// See `trade_route_network`: a Commercial Hub, or a Harbor where no Hub
 /// stands, beside a standing Campus — below the Campus's own 170 so the
 /// research district keeps first claim on a city.
@@ -7843,6 +7858,7 @@ impl AdvancedAi {
             coalition_before_war_3: false,
             city_campaign_2: false,
             campus_through_expansion: false,
+            campus_before_halfway: false,
             district_planning_2: false,
             district_planning_3: false,
             cheapest_wonder_first: false,
@@ -20010,7 +20026,19 @@ impl AdvancedAi {
         if after.players[pid].gold + f64::EPSILON < reserve {
             return None;
         }
-        let positional = production_score * (7.0 + turns.max(1.0));
+        // Undo the production scorer's actual time divisor before applying
+        // the purchase gene's opportunity-cost adjustment. Otherwise a faster
+        // build raises willingness to BUY the item as well, merely because
+        // the old unmodified divisor no longer cancels the production score.
+        let raw_turns = g.item_remaining_cost_for_city(pid, city, item) / production;
+        let build_turns = self.production_build_turns(g, pid, city, item);
+        let purchase_basis = if build_turns == raw_turns {
+            production_score
+        } else {
+            production_score * self.production_time_divisor(g, city, item, build_turns)
+                / self.production_time_divisor(g, city, item, raw_turns)
+        };
+        let positional = purchase_basis * (7.0 + turns.max(1.0));
         let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30 * card;
         // `gold_for_the_young_city`: the same money buys more turns where
         // the Production is not. Exactly 1.0 with the gene off.
@@ -21705,12 +21733,14 @@ impl AdvancedAi {
     }
 
     /// Whether the game has entered the victory-specialization half of its
-    /// clock. The turn limit is the cleanest common denominator across game
-    /// speeds; an unlimited game has no clock boundary, so its Industrial-era
-    /// fallback keeps the same early-development/midgame split.
+    /// clock. A shortened game accelerates this boundary, but extending the
+    /// verification cap cannot postpone development past the normal speed's
+    /// halfway point: rivals do not slow down when the operator retains more
+    /// turns of evidence. Unlimited games keep their Industrial-era fallback.
     fn victory_specialization_active(g: &Game) -> bool {
         if g.max_turns > 0 {
-            g.turn.saturating_mul(2) >= g.max_turns
+            let development_clock = g.max_turns.min(g.game_speed.turn_limit());
+            g.turn.saturating_mul(2) >= development_clock
         } else {
             g.world_era >= 4
         }
@@ -26326,6 +26356,23 @@ impl AdvancedAi {
         }
     }
 
+    fn production_build_turns(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        let production = g.city_yields(cid).production.max(1.0);
+        let rate = if self.victory_planning {
+            (production * g.item_prod_mult(pid, cid, Some(item))).max(1.0)
+        } else {
+            production
+        };
+        g.item_remaining_cost_for_city(pid, cid, item) / rate
+    }
+
+    fn production_time_divisor(&self, g: &Game, cid: u32, item: &Item, turns: f64) -> f64 {
+        let first_district = self.first_district_first
+            && g.cities[&cid].districts.is_empty()
+            && matches!(item, Item::District { district, .. } if g.rules.districts[district].specialty);
+        7.0 + turns.max(1.0) * if first_district { 0.6 } else { 1.0 }
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -26338,8 +26385,12 @@ impl AdvancedAi {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
         let specialization_active = self.phase_specialization_active(g);
-        let production = g.city_yields(cid).production.max(1.0);
-        let turns = g.item_remaining_cost_for_city(pid, cid, item) / production;
+        // Colonization, Ilkum, Veterancy and project modifiers change when
+        // this exact item completes. The final score divides by these turns,
+        // so ignoring the multiplier both underprices discounted development
+        // and can reject a build that actually fits the remaining clock.
+        // The pinned pre-victory-planning controller keeps its old stream.
+        let turns = self.production_build_turns(g, pid, cid, item);
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
         let barbarian_tactics = self.base.barbarian_tactics_enabled();
         let barbarian_pressure = if barbarian_tactics {
@@ -27391,7 +27442,11 @@ impl AdvancedAi {
                 // stays (no city is EVER told half the empire is enough once
                 // it can staff a Library) while the towns keep compounding
                 // until they qualify. Below the cliff nothing changes.
-                let campus_keeps_asking = false;
+                // `campus-before-halfway` wires that floor; withheld, the
+                // literal `false` of the 2026-08-19 repair stands.
+                let campus_keeps_asking = self.campus_before_halfway
+                    && family == "campus"
+                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
 
                 let balanced_core = if self.first_district_first {
                     // `first-district-first`: a slope in place of the cliff.
@@ -27589,6 +27644,11 @@ impl AdvancedAi {
                     }
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") if specialization_active => 170.0,
+                    // `campus-before-halfway`: the lane's own district keeps
+                    // its arm through the first half of the clock too.
+                    (GrandStrategy::Science, "campus") if self.campus_before_halfway => {
+                        CAMPUS_BEFORE_HALFWAY_DISTRICT
+                    }
                     (GrandStrategy::Science, "campus") => 0.0,
                     // One coastal Harbor pays back through empire-wide trade
                     // capacity and gold. During the foundation half the first
@@ -28207,14 +28267,7 @@ impl AdvancedAi {
         // 15-25 turns and divides by 22-32 while a Warrior divides by 12-17;
         // the district's raw score never gets to speak. For THIS city's first
         // specialty district only, the turns count at six tenths.
-        let first_district_item = self.first_district_first
-            && city.districts.is_empty()
-            && matches!(item, Item::District { district, .. } if g.rules.districts[district].specialty);
-        let divisor = if first_district_item {
-            7.0 + turns.max(1.0) * 0.6
-        } else {
-            7.0 + turns.max(1.0)
-        };
+        let divisor = self.production_time_divisor(g, cid, item, turns);
         completion_discount * raw / divisor
     }
 

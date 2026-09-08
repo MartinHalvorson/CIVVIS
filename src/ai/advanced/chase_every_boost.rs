@@ -331,7 +331,9 @@ impl AdvancedAi {
         }
         let payout = g.game_speed.scale(base_cost) * boost.percent.unwrap_or(40.0) / 100.0;
         let study_turns = study_left / Self::research_rate(g, pid, techs);
-        Some((boost.trigger.clone(), payout, study_turns))
+        // A boost can only save the research still outstanding. Near the end
+        // of a study the nominal 40% is not a reason to buy a costly trigger.
+        Some((boost.trigger.clone(), payout.min(study_left), study_turns))
     }
 
     /// `chase-every-boost-2`: reward only a current study's final city
@@ -361,7 +363,8 @@ impl AdvancedAi {
         if claimed_elsewhere {
             return 0.0;
         }
-        let production = g.city_yields(cid).production.max(1.0);
+        let production =
+            (g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item))).max(1.0);
         let build_turns = g.item_remaining_cost_for_city(pid, cid, item) / production;
         let active = [
             (g.players[pid].research.as_deref(), true),
@@ -844,6 +847,43 @@ mod tests {
             0.0,
             "another city already owns the final trigger"
         );
+    }
+
+    #[test]
+    fn active_study_boost_saving_cannot_exceed_remaining_research() {
+        let mut game = capital_board(57_019);
+        game.players[0].civic = Some("military_training".to_string());
+        game.players[0].civic_progress = game.civic_cost("military_training") - 3.0;
+        let (_, payout, _) = armed_v2()
+            .active_study_production_trigger(&game, 0, "military_training", false)
+            .expect("one Encampment completes this inspiration");
+        assert_eq!(payout, 3.0);
+    }
+
+    #[test]
+    fn active_study_trigger_deadline_includes_production_modifiers() {
+        let mut game = capital_board(57_020);
+        let cid = game.player_city_ids(0)[0];
+        let item = Item::District {
+            district: name!("encampment"),
+            pos: game.cities[&cid].pos,
+        };
+        let ai = armed_v2();
+        game.players[0].civic = Some("military_training".to_string());
+        // The same almost-finished district misses the study at the raw rate,
+        // but finishes before it under Veterancy's actual production bonus.
+        let production = game.city_yields(cid).production;
+        let cost = game.item_cost_for_city(0, cid, &item);
+        game.cities.get_mut(&cid).unwrap().production = cost - production * 2.4;
+        let rate = AdvancedAi::research_rate(&game, 0, false);
+        game.players[0].civic_progress = game.civic_cost("military_training") - rate * 2.0;
+        assert_eq!(
+            ai.chase_current_production_premium(&game, 0, cid, &item),
+            0.0
+        );
+        game.players[0].policies.insert(name!("veterancy"));
+        assert!(game.item_prod_mult(0, cid, Some(&item)) > 1.0);
+        assert!(ai.chase_current_production_premium(&game, 0, cid, &item) > 0.0);
     }
 
     #[test]

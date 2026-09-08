@@ -179,6 +179,14 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version \| Total versions |
+|---|---|---|---:|
+| `campus-before-halfway` | off (unmeasured) | `campus-before-halfway` (OptIn): a Science seat's Campus keeps the lane's 170-point arm before the halfway clock instead of pricing at zero, and past the half-empire coverage cliff the Campus keeps asking in any city of `CAMPUS_EVERY_CITY_POP_FLOOR` (four) — the floor the 2026-08-19 repair named and left as a literal `false`. | 1 \| 1 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:
