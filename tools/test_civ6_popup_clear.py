@@ -59,6 +59,11 @@ class PauseMenuTest(unittest.TestCase):
                                return_value=[]):
             self.assertIsNone(popup_clear.pause_menu_button(self.panel()))
 
+    def test_confirmation_over_a_legible_menu_is_not_a_resume_target(self):
+        rows = self.observations()
+        rows.append({"text": "Are you sure you want to exit the game?"})
+        self.assertIsNone(popup_clear.pause_menu_target(rows, (800, 600)))
+
     def test_ocr_failure_does_not_interrupt_the_backstop(self):
         with mock.patch.object(popup_clear.macos_ocr, "recognize",
                                side_effect=popup_clear.macos_ocr.OCRUnavailable("busy")):

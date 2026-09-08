@@ -880,6 +880,9 @@ def pause_menu_target(observations, size):
     matches = {name: [] for name in names}
     for item in observations:
         name = " ".join(str(item.get("text", "")).upper().split())
+        # The menu can remain legible behind an exit/restart confirmation.
+        if "ARE YOU SURE" in name:
+            return None
         if name not in matches:
             continue
         try:
