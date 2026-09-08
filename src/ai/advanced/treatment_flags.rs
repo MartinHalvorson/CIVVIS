@@ -4214,6 +4214,14 @@ impl AdvancedAi {
         self.detour_keeps_the_site_worth = false;
     }
 
+    pub fn enable_envoy_building_dividends(&mut self) {
+        self.envoy_building_dividends = true;
+    }
+
+    pub fn disable_envoy_building_dividends(&mut self) {
+        self.envoy_building_dividends = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
 

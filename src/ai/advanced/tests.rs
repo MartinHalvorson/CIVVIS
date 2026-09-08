@@ -47854,3 +47854,209 @@ fn science_production_recovers_in_peace_without_war_economy() {
     game.players[0].gold = 150.0;
     assert!(!ai.live_war_economy_requires_recovery(&game, 0, &ai.counts(&game, 0)));
 }
+
+fn envoy_dividend_board(city_count: usize) -> (Game, Vec<usize>) {
+    let mut g = Game::new_full(2, 48, 30, 7_713, 250, 3, false);
+    for _ in 0..city_count {
+        let pos = *g
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                matches!(tile.terrain.as_str(), "plains" | "grassland")
+                    && g.cities.values().all(|city| g.wdist(city.pos, **pos) > 3)
+            })
+            .unwrap()
+            .0;
+        let city = g.found_city_for(0, pos, None);
+        install_ai_test_district(&mut g, city, "campus");
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .extend(["library", "university"].into_iter().map(Name::new));
+    }
+    let states: Vec<_> = g
+        .players
+        .iter()
+        .filter(|p| p.is_minor && !p.is_barbarian)
+        .map(|p| p.id)
+        .collect();
+    for (minor, name) in states.iter().zip(["Hattusa", "Geneva", "Zanzibar"]) {
+        g.players[*minor].civ = name.to_string();
+        g.record_contact(0, *minor);
+    }
+    g.players[0].envoys.clear();
+    g.players[0].envoys_free = 3;
+    (g, states)
+}
+
+#[test]
+fn envoy_dividends_price_ten_city_buildings_and_pillage() {
+    let (mut g, states) = envoy_dividend_board(10);
+    let options = g.envoy_investment_options(0, states[0]);
+    assert_eq!(
+        options
+            .iter()
+            .map(|(cost, count, y)| (*cost, *count, y.science))
+            .collect::<Vec<_>>(),
+        vec![(1, 1, 11.0), (3, 3, 31.0)]
+    );
+    let city = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .pillaged_buildings
+        .insert(Name::new("university"));
+    assert_eq!(g.envoy_investment_options(0, states[0])[1].2.science, 29.0);
+}
+
+#[test]
+fn envoy_dividends_buy_three_without_chasing_the_rivals_delegation() {
+    let (mut g, states) = envoy_dividend_board(10);
+    g.players[0].envoys = vec![(states[0], 1), (states[1], 6), (states[2], 6)];
+    g.players[1].envoys = vec![(states[0], 100)];
+    g.players[0].envoys_free = 2;
+    let mut ai = AdvancedAi::new();
+    ai.enable_engine_repairs_universe();
+    ai.enable_envoy_building_dividends();
+    ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+    assert_eq!(g.envoys_at(0, states[0]), 3);
+    assert_eq!(g.envoys_at(0, states[1]), 6);
+    assert_eq!(g.players[0].envoys_free, 0);
+}
+
+#[test]
+fn envoy_dividends_open_libraries_before_an_empty_six_envoy_tier() {
+    let (mut g, states) = envoy_dividend_board(10);
+    g.players[0].envoys = vec![(states[0], 3), (states[2], 6)];
+    g.players[1].envoys = vec![(states[1], 100)];
+    g.players[0].envoys_free = 1;
+    let mut ai = AdvancedAi::new();
+    ai.enable_envoy_building_dividends();
+    ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+    assert_eq!(g.envoys_at(0, states[0]), 3);
+    assert_eq!(g.envoys_at(0, states[1]), 1);
+}
+
+#[test]
+fn envoy_dividends_save_until_a_paying_package_is_affordable() {
+    let (mut g, states) = envoy_dividend_board(10);
+    g.players[0].envoys = vec![(states[0], 1), (states[1], 6), (states[2], 6)];
+    g.players[1].envoys = vec![(states[0], 100)];
+    g.players[0].envoys_free = 1;
+    let mut ai = AdvancedAi::new();
+    ai.enable_envoy_building_dividends();
+    ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+    assert_eq!(g.players[0].envoys_free, 1);
+    assert_eq!(g.envoys_at(0, states[0]), 1);
+    g.players[0].envoys_free += 1;
+    ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+    assert_eq!(g.envoys_at(0, states[0]), 3);
+    assert_eq!(g.players[0].envoys_free, 0);
+}
+
+#[test]
+fn envoy_dividends_policy_packages_match_actual_placements() {
+    for cards in [
+        vec![],
+        vec!["diplomatic_league"],
+        vec!["containment"],
+        vec!["diplomatic_league", "containment"],
+    ] {
+        let (mut g, states) = envoy_dividend_board(1);
+        let minor = states[0];
+        g.players[0].policies = cards.into_iter().map(Name::new).collect();
+        g.players[0].government = Some("democracy".to_string());
+        g.players[1].government = Some("communism".to_string());
+        g.players[1].envoys = vec![(minor, 3)];
+        g.players[0].envoys_free = 6;
+        let options = g.envoy_investment_options(0, minor);
+        for (cost, projected, _) in options {
+            let mut actual = g.clone();
+            for _ in 0..cost {
+                actual
+                    .apply(0, &Action::SendEnvoy { player: minor })
+                    .unwrap();
+            }
+            assert_eq!(actual.envoys_at(0, minor), projected);
+            assert_eq!(actual.players[0].envoys_free, 6 - cost);
+        }
+    }
+}
+
+#[test]
+fn envoy_dividends_remains_a_drawable_opt_in_gene() {
+    let gene = crate::ai::gene("envoy-building-dividends").unwrap();
+    assert!(gene.opt_in() && gene.screenable());
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.envoy_building_dividends);
+    assert!(!AdvancedAi::legacy().envoy_building_dividends);
+    (gene.enable)(&mut ai);
+    assert!(ai.envoy_building_dividends);
+    (gene.disable)(&mut ai);
+    assert!(!ai.envoy_building_dividends);
+}
+
+#[test]
+fn envoy_dividends_amani_and_league_match_actual_placements() {
+    for puppeteer in [false, true] {
+        let (mut g, states) = envoy_dividend_board(1);
+        let minor = states[0];
+        let city = g.player_city_ids(minor)[0];
+        g.turn = 100;
+        g.players[0].governor_roster.insert(
+            "amani".to_string(),
+            crate::game::GovernorState {
+                city: Some(city),
+                assigned_turn: 0,
+                disabled_until: 0,
+                promotions: if puppeteer {
+                    ["puppeteer".to_string()].into_iter().collect()
+                } else {
+                    Default::default()
+                },
+            },
+        );
+        g.players[0].policies.insert(Name::new("diplomatic_league"));
+        g.players[1].envoys = vec![(minor, 10)];
+        let options = g.envoy_investment_options(0, minor);
+        assert!(!options.is_empty());
+        for (cost, projected, _) in options {
+            let mut actual = g.clone();
+            for _ in 0..cost {
+                actual
+                    .apply(0, &Action::SendEnvoy { player: minor })
+                    .unwrap();
+            }
+            assert_eq!(actual.envoys_at(0, minor), projected);
+        }
+    }
+}
+
+#[test]
+fn envoy_dividends_keep_a_paying_six_tier_and_a_close_defense() {
+    let (mut g, states) = envoy_dividend_board(10);
+    for city in g.player_city_ids(0) {
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(Name::new("research_lab"));
+    }
+    g.players[0].envoys = states.iter().map(|minor| (*minor, 6)).collect();
+    g.players[0].envoys[0].1 = 3;
+    g.players[0].envoys_free = 3;
+    let mut ai = AdvancedAi::new();
+    ai.enable_envoy_building_dividends();
+    ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+    assert_eq!(g.envoys_at(0, states[0]), 6);
+    g.players[1].envoys = vec![(states[0], 5)];
+    g.players[0].envoys_free = 3;
+    ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+    assert_eq!(g.envoys_at(0, states[0]), 7);
+    assert_eq!(
+        g.players[0].envoys_free, 2,
+        "one defensive placement, then save"
+    );
+}

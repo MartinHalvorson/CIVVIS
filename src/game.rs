@@ -17390,6 +17390,79 @@ impl Game {
         Some((threshold - current, gain))
     }
 
+    /// Affordable envoy packages, priced with the same active buildings as
+    /// turn income. Each row is (placements, effective delegation, yield gain).
+    /// Stop at the last paying tier or a one-envoy suzerainty defense margin.
+    pub(crate) fn envoy_investment_options(
+        &self,
+        pid: usize,
+        minor: usize,
+    ) -> Vec<(i64, i64, Yields)> {
+        if !self.can_send_envoy(pid, minor) {
+            return Vec::new();
+        }
+        let current = self.envoys_at(pid, minor);
+        let rival = self
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian && p.id != pid)
+            .map(|p| self.envoys_at(p.id, minor))
+            .max()
+            .unwrap_or(0);
+        let capture = 3.max(rival + 1);
+        let defend = self.suzerain_of(minor) == Some(pid) && current == rival + 1;
+        let target = 6.max(if defend { current + 1 } else { capture });
+        let kind = self.cs_type(&self.players[minor].civ);
+        let (messenger, multiplier) = self.amani_envoy_terms(pid, minor);
+        let foreign_government = self
+            .suzerain_of(minor)
+            .filter(|leader| *leader != pid)
+            .is_some_and(|leader| self.players[leader].government != self.players[pid].government);
+        let mut raw = self.raw_envoys_at(pid, minor);
+        let mut previous = current;
+        let mut options = Vec::new();
+        for spent in 1..=self.players[pid].envoys_free.min((target - current).max(0)) {
+            // Match do_send_envoy: the first *raw* placement gets League;
+            // Containment stops when we tie or displace the foreign Suzerain.
+            let first = if raw == 0 {
+                self.policy_effect(pid, "first_envoy_bonus") as i64
+            } else {
+                0
+            };
+            let foreign = if foreign_government && previous < rival {
+                self.policy_effect(pid, "different_government_envoy_bonus") as i64
+            } else {
+                0
+            };
+            raw += 1 + first + foreign;
+            let count = ((raw as f64 + messenger) * multiplier).round() as i64;
+            let pays = [1, 3, 6]
+                .into_iter()
+                .any(|tier| previous < tier && count >= tier);
+            let captures = previous < capture && count >= capture;
+            if pays || captures || (defend && spent == 1) {
+                let mut gain = Yields::default();
+                for city in self.cities.values().filter(|city| city.owner == pid) {
+                    let before = self.envoy_type_yields_for_count(city, kind, current);
+                    let mut after = self.envoy_type_yields_for_count(city, kind, count);
+                    after.food -= before.food;
+                    after.production -= before.production;
+                    after.gold -= before.gold;
+                    after.science -= before.science;
+                    after.culture -= before.culture;
+                    after.faith -= before.faith;
+                    gain.add(after);
+                }
+                options.push((spent, count, gain));
+            }
+            previous = count;
+            if count >= target {
+                break;
+            }
+        }
+        options
+    }
+
     fn envoy_yields(&self, pid: usize, city: &City) -> Yields {
         let mut yields = Yields::default();
         // A city-state at war with the seat suspends its type bonuses for the
