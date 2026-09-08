@@ -47711,3 +47711,40 @@ fn the_campus_keeps_its_lane_arm_before_the_halfway_clock() {
         "a Culture plan's Campus is priced exactly as before"
     );
 }
+
+#[test]
+fn science_production_recovers_in_peace_without_war_economy() {
+    let (mut game, city, home) = empire_with_a_capital(79_101);
+    found_nearby_test_city(&mut game, 0, home);
+    game.at_war.clear();
+    game.players[0].civics.insert(crate::name!("foreign_trade"));
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -18.0;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.disable_war_economy();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let recovery = ai
+        .base
+        .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+        .expect("two cities with Foreign Trade can add a recovery Trader");
+    assert!(matches!(&recovery, Item::Unit { unit } if unit == "trader"));
+    assert!(ai.live_war_economy_requires_recovery(&game, 0, &ai.counts(&game, 0)));
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&city].queue.first(), Some(&recovery));
+
+    // Positive cash flow and a sufficient reserve both leave science free
+    // to use the normal scorer, even with the war gene disabled.
+    game.players[0].gold_per_turn = 1.0;
+    assert!(!ai.live_war_economy_requires_recovery(&game, 0, &ai.counts(&game, 0)));
+    game.players[0].gold_per_turn = -18.0;
+    game.players[0].gold = 150.0;
+    assert!(!ai.live_war_economy_requires_recovery(&game, 0, &ai.counts(&game, 0)));
+}
