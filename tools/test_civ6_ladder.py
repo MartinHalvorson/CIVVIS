@@ -1255,6 +1255,37 @@ class ARowSaysWhichGameItWasPlayedIn(LedgerCase):
         self.assertNotIn("no ruleset readback", note)
 
 
+class RivalVictoriesAreCompletedGames(LedgerCase):
+    def test_rival_victory_survives_recording_and_renders_as_an_outcome(self):
+        for index in (0, 5):
+            with self.subTest(index=index):
+                tag = f"rival-victory-{index}"
+                civ6_ladder.record_summary(write_run(self.runs, summary(
+                    tag, outcome={"kind": "victory", "won": False,
+                                  "victory": index, "team": 4})))
+                state = self.state()
+                entry = next(a for a in state["attempts"] if a["tag"] == tag)
+                self.assertEqual(entry["reason"], "stopped")
+                self.assertFalse(entry["won"])
+                self.assertFalse(entry["defeat"])
+                row = next(line for line in civ6_ladder.markdown_for(state).splitlines()
+                           if f"`{tag}`" in line)
+                self.assertIn("| rival victory |", row)
+                self.assertNotIn("| stopped |", row)
+
+    def test_historical_victory_rows_need_no_raw_run_or_backfill(self):
+        state = {"attempts": [dict(civ6_ladder.entry_from(summary("historic")),
+                                   victory=5, won=False)], "wins": {}}
+        self.assertIn("| rival victory |", civ6_ladder.markdown_for(state))
+
+    def test_no_terminal_evidence_still_reports_the_stop_reason(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary("no-outcome")))
+        row = next(line for line in civ6_ladder.markdown_for(self.state()).splitlines()
+                   if "`no-outcome`" in line)
+        self.assertIn("| stopped |", row)
+        self.assertNotIn("rival victory", row)
+
+
 class ADefeatIsNotAStall(LedgerCase):
     """★★★★★ OUR OWN DEFEAT WAS INDISTINGUISHABLE FROM THE HARNESS HANGING.
 

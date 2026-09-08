@@ -2266,7 +2266,9 @@ def markdown_for(state: dict) -> str:
             "",
             "`outcome` is what the game did, not what the harness saw last.",
             "`defeat` means this controller was eliminated and the game said so;",
-            "`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;",
+            "`rival victory` means another team completed a victory condition.",
+            "Without a recorded victory or elimination, `stopped`, `stalled` and",
+            "`timeout` describe how the harness ended the run, not a game outcome;",
             "`abandoned` means the harness stopped under a recorded early-stop",
             "policy: either five turns below a measured expected-win floor, or",
             "five post-turn-100 turns below the configured leader score ratio",
@@ -2292,6 +2294,8 @@ def markdown_for(state: dict) -> str:
         for a in sorted(attempts, key=lambda row: row.get("utc") or "")[-40:]:
             outcome = ("win" if a["won"]
                        else "defeat" if a.get("defeat")
+                       else "rival victory" if a.get("victory") is not None
+                            and a.get("won") is False
                        else cell(a.get("reason")))
             difficulty = NAMES.get(a.get("difficulty"), a.get("difficulty"))
             lines.append(

@@ -102,7 +102,9 @@ the game.
 
 `outcome` is what the game did, not what the harness saw last.
 `defeat` means this controller was eliminated and the game said so;
-`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;
+`rival victory` means another team completed a victory condition.
+Without a recorded victory or elimination, `stopped`, `stalled` and
+`timeout` describe how the harness ended the run, not a game outcome;
 `abandoned` means the harness stopped under a recorded early-stop
 policy: either five turns below a measured expected-win floor, or
 five post-turn-100 turns below the configured leader score ratio
@@ -127,20 +129,20 @@ reached it or predates the state export.
 | `civvis-20260902T222804Z-cont1` | Emperor | — | NO | killed | 88 | 217 | — | 2026-09-02T22:55:09Z |
 | `civvis-20260902T222804Z-cont2` | Emperor | — | NO | killed | 153 | 353 | — | 2026-09-02T23:21:52Z |
 | `civvis-20260902T222804Z-cont3` | Emperor | — | NO | killed | 174 | 381 | — | 2026-09-02T23:36:32Z |
-| `civvis-20260902T222804Z-cont4` | Emperor | science | yes | stopped | 224 | 305 | — | 2026-09-02T23:49:24Z |
+| `civvis-20260902T222804Z-cont4` | Emperor | science | yes | rival victory | 224 | 305 | — | 2026-09-02T23:49:24Z |
 | `civvis-20260902T235828Z` | Emperor | — | NO | killed | 99 | 150 | — | 2026-09-03T00:24:20Z |
 | `civvis-20260902T235828Z-cont1` | Emperor | — | NO | killed | 113 | 134 | — | 2026-09-03T00:33:53Z |
 | `civvis-20260902T235828Z-cont2` | Emperor | — | NO | killed | -1 | -1 | — | 2026-09-03T00:35:59Z |
-| `civvis-20260903T004232Z` | Emperor | science | yes | stopped | 211 | 341 | — | 2026-09-03T01:15:44Z |
+| `civvis-20260903T004232Z` | Emperor | science | yes | rival victory | 211 | 341 | — | 2026-09-03T01:15:44Z |
 | `civvis-20260903T012007Z` | Emperor | — | NO | killed | 64 | 163 | — | 2026-09-03T01:35:53Z |
 | `civvis-20260903T012007Z-cont1` | Emperor | — | NO | killed | 64 | 170 | — | 2026-09-03T01:43:25Z |
-| `civvis-20260903T012007Z-cont2` | Emperor | science | yes | stopped | 182 | 552 | — | 2026-09-03T02:10:31Z |
-| `civvis-20260903T021106Z` | Emperor | science | yes | stopped | 207 | 381 | — | 2026-09-03T02:56:28Z |
-| `civvis-20260903T030102Z` | Emperor | science | yes | stopped | 190 | 458 | — | 2026-09-03T03:33:37Z |
+| `civvis-20260903T012007Z-cont2` | Emperor | science | yes | rival victory | 182 | 552 | — | 2026-09-03T02:10:31Z |
+| `civvis-20260903T021106Z` | Emperor | science | yes | rival victory | 207 | 381 | — | 2026-09-03T02:56:28Z |
+| `civvis-20260903T030102Z` | Emperor | science | yes | rival victory | 190 | 458 | — | 2026-09-03T03:33:37Z |
 | `civvis-20260903T033809Z` | Emperor | — | NO | killed | 136 | 461 | — | 2026-09-03T04:05:17Z |
 | `civvis-20260903T033809Z-cont1` | Emperor | — | NO | killed | 136 | 461 | — | 2026-09-03T04:12:48Z |
 | `civvis-20260903T033809Z-cont2` | Emperor | — | NO | killed | -1 | -1 | — | 2026-09-03T04:14:53Z |
-| `civvis-20260903T043245Z` | Emperor | science | yes | stopped | 209 | 563 | — | 2026-09-03T05:11:42Z |
+| `civvis-20260903T043245Z` | Emperor | science | yes | rival victory | 209 | 563 | — | 2026-09-03T05:11:42Z |
 | `civvis-20260903T051741Z` | Emperor | science | yes | game exited | 45 | 104 | — | 2026-09-03T05:29:12Z |
 | `civvis-20260903T052942Z` | Emperor | science | yes | game exited | 88 | 300 | — | 2026-09-03T05:45:55Z |
 | `civvis-20260903T052942Z-cont1` | Emperor | — | NO | killed | -1 | -1 | — | 2026-09-03T05:48:21Z |
