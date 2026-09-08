@@ -3762,6 +3762,24 @@ impl AdvancedAi {
         self.campus_through_expansion = false;
     }
 
+    /// `campus-before-halfway` (OptIn): a Science seat's Campus keeps the
+    /// lane's 170-point arm before the halfway clock instead of pricing at
+    /// zero, and past the half-empire coverage cliff the Campus keeps asking
+    /// in any city of `CAMPUS_EVERY_CITY_POP_FLOOR` (four) — the floor the
+    /// 2026-08-19 repair named and left as a literal `false`. Measured
+    /// motive (2026-09-08): September Emperor ladder games were lost to a
+    /// rival's science win at t182–224; #3124 reserved the first half of the
+    /// clock for expansion and defence, which also zeroed the Campus's lane
+    /// arm for 125 turns of a 250-turn game.
+    pub fn enable_campus_before_halfway(&mut self) {
+        self.campus_before_halfway = true;
+    }
+
+    /// The twin of `enable_campus_before_halfway`.
+    pub fn disable_campus_before_halfway(&mut self) {
+        self.campus_before_halfway = false;
+    }
+
     /// `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no
     /// Hub stands) beside a standing Campus escapes the Science contract and
     /// is priced as trade capacity; a Market or Lighthouse is worth the

@@ -20,6 +20,15 @@ screen's game count, target count, fresh seed, output path, and worker cap
 (floor 85% of logical cores).  Each batch pins a detached clean ``origin/main``
 source worktree and its release binary; the next batch refreshes that source
 only after the previous table publication has merged.
+
+While games run, ``status.json`` and the durable completed counts refresh
+every ten seconds. A transient incomplete row is recorded in
+``progress-error.json`` without interrupting the game writer. Publication
+checks save complete stdout/stderr under the batch's ``logs/`` directory and
+checkpoint successful checks against HEAD, base, diff, and report content;
+an unchanged retry resumes at the failed check.
+Use ``run --stop-after-publish`` for a bounded tournament that publishes its
+own result and exits after the merge, including after a service restart.
 """
 from __future__ import annotations
 
@@ -456,14 +465,27 @@ def reserve_segment(state: dict[str, Any], status: dict[str, Any]) -> dict[str, 
 
 
 def run_checked(command: Iterable[str], *, cwd: Path, description: str,
-                env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+                env: dict[str, str] | None = None,
+                log_path: Path | None = None) -> subprocess.CompletedProcess[str]:
+    if log_path is not None:
+        print(f"{utc_now()} {description}: started; log={log_path}", flush=True)
     result = subprocess.run(
         list(command), cwd=cwd, text=True, capture_output=True, check=False,
         env=None if env is None else {**os.environ, **env},
     )
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            f"{description}\nexit={result.returncode}\n\nstdout:\n{result.stdout}"
+            f"\nstderr:\n{result.stderr}", encoding="utf-8")
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
-        raise SchedulerError(f"{description} failed ({result.returncode}): {detail[-2000:]}")
+        # Cargo puts the failing test and assertion on stdout, but its generic
+        # "test failed" footer on stderr. Preserve both, even when both exist.
+        detail = f"stdout:\n{result.stdout[-2000:]}\nstderr:\n{result.stderr[-2000:]}"
+        location = f"; full log: {log_path}" if log_path is not None else ""
+        raise SchedulerError(f"{description} failed ({result.returncode}){location}: {detail}")
+    if log_path is not None:
+        print(f"{utc_now()} {description}: passed", flush=True)
     return result
 
 
@@ -650,6 +672,7 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
               f"target_games={reservation['target_games']} pid={process.pid}", flush=True)
         stopped_at_deadline = False
         stopped_at: str | None = None
+        next_progress_at = time.monotonic()
         try:
             while True:
                 adopted = adopt_cut_request(state_root, state_pathname, state)
@@ -668,6 +691,9 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
                     returncode = process.wait(timeout=wait_seconds)
                     break
                 except subprocess.TimeoutExpired:
+                    if time.monotonic() >= next_progress_at:
+                        checkpoint_progress(state_root, state_pathname, state)
+                        next_progress_at = time.monotonic() + 10.0
                     continue
         except KeyboardInterrupt:
             reservation["returncode"] = terminate_owned_process(process)
@@ -685,6 +711,23 @@ def run_segment(state_root: Path, state_pathname: Path, state: dict[str, Any],
         stopped_at_deadline=stopped_at_deadline,
         stopped_at=stopped_at,
     )
+
+
+def checkpoint_progress(state_root: Path, state_pathname: Path, state: dict[str, Any]) -> None:
+    """Persist validated live counts without interrupting a writer mid-record."""
+    try:
+        report = status_report(state_root, state)
+    except (LedgerError, SchedulerError) as error:
+        # A sampled six-seat group can be incomplete while the worker writes.
+        # Keep the last validated counts, expose the sampling failure, and
+        # let the next poll retry. Terminal validation remains strict.
+        atomic_json(state_root / "progress-error.json", {
+            "observed_at": utc_now(), "error": str(error)})
+        return
+    report["updated_at"] = utc_now()
+    atomic_json(state_pathname, state)
+    atomic_json(state_root / "status.json", report)
+    atomic_json(state_root / "progress-error.json", {"observed_at": utc_now(), "error": None})
 
 
 def parse_utc_timestamp(value: Any, *, name: str) -> dt.datetime:
@@ -1285,6 +1328,39 @@ def mark_published_if_already_merged(batch: dict[str, Any], publication: dict[st
     return True
 
 
+def publication_validation_fingerprint(worktree: Path, report: str) -> str:
+    """Invalidate saved successes whenever source, generated data, or HEAD changes."""
+    head = git_output(worktree, "rev-parse", "HEAD")
+    base = git_output(worktree, "rev-parse", "origin/main")
+    diff = git_output(worktree, "diff", "--binary", "HEAD", "--")
+    # A newly created report is untracked and therefore absent from git diff.
+    report_hash = sha256(worktree / report)
+    return hashlib.sha256(f"{head}\n{base}\n{diff}\n{report_hash}".encode()).hexdigest()
+
+
+def validate_publication(state_root: Path, state_pathname: Path, state: dict[str, Any],
+                         worktree: Path, report: str) -> None:
+    publication = state["current"]["publication"]
+    fingerprint = publication_validation_fingerprint(worktree, report)
+    saved = publication.setdefault("validation", {})
+    checks = (
+        ("ranking", [sys.executable, "tools/genes.py", "check"], "verify generated ranking", None),
+        ("ranking-tests", [sys.executable, "tools/test_genes.py"], "run generated-ranking regressions", None),
+        ("rust-tests", ["cargo", "test", "--profile", "ci", "--locked"], "test publication source", {"RUST_TEST_THREADS": "1"}),
+        ("diff", ["git", "diff", "--check", "HEAD", "--"], "check publication diff", None),
+    )
+    for name, command, description, env in checks:
+        if saved.get(name) == fingerprint:
+            print(f"{utc_now()} {description}: reusing unchanged successful validation", flush=True)
+            continue
+        run_checked(command, cwd=worktree, description=description, env=env,
+                    log_path=batch_directory(state_root, state["current"]) / "logs" / f"{name}.log")
+        if publication_validation_fingerprint(worktree, report) != fingerprint:
+            raise SchedulerError("publication files changed during validation; retry against the new content")
+        saved[name] = fingerprint
+        atomic_json(state_pathname, state)
+
+
 def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo: Path,
                   machine: str, agent: str) -> None:
     """Publish a frozen batch via a fresh isolated PR before rotating again.
@@ -1395,14 +1471,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         if unexpected:
             raise SchedulerError(
                 "publishing a report would change an unexpected path: " + ", ".join(unexpected))
-        run_checked([sys.executable, "tools/genes.py", "check"], cwd=worktree,
-                    description="verify generated ranking")
-        run_checked([sys.executable, "tools/test_genes.py"], cwd=worktree,
-                    description="run generated-ranking regressions")
-        run_checked(["cargo", "test", "--profile", "ci", "--locked"], cwd=worktree,
-                    description="test publication source", env={"RUST_TEST_THREADS": "1"})
-        run_checked(["git", "diff", "--check", "origin/main..."], cwd=worktree,
-                    description="check publication diff")
+        validate_publication(state_root, state_pathname, state, worktree, report)
         publication["stage"] = "prepared"
         atomic_json(state_pathname, state)
         stage = "prepared"
@@ -1626,6 +1695,7 @@ def status_report(state_root: Path, state: dict[str, Any]) -> dict[str, Any]:
         "deadline_at": deadline.get("deadline_at") if deadline else None,
         "deadline_cutoff_at": deadline.get("cutoff_at") if deadline else None,
         "games_per_hour": rate_per_hour,
+        "games_per_minute": round(rate_per_hour / 60.0, 2) if rate_per_hour is not None else None,
         "eta_at": eta_at,
     }
 
@@ -1713,6 +1783,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--machine", help="fleet machine id; defaults to Git config")
     parser.add_argument("--no-publish", action="store_true",
                         help="freeze at the boundary instead of creating a publication PR")
+    parser.add_argument("--stop-after-publish", action="store_true",
+                        help="publish this batch automatically, then exit without starting a successor")
     parser.add_argument("--once", action="store_true",
                         help="perform one durable transition instead of serving forever")
     parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS,
@@ -1725,6 +1797,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="cut: stop this many minutes from now")
     parser.add_argument("--note", help="cut: free-text reason kept in the deadline record")
     args = parser.parse_args(argv)
+    if args.stop_after_publish and (args.no_publish or args.command != "run"):
+        parser.error("--stop-after-publish requires run with publication enabled")
     try:
         if args.command == "status":
             state_root = args.state_dir.expanduser().resolve()
@@ -1801,14 +1875,21 @@ def main(argv: list[str] | None = None) -> int:
                 publish, once = True, True
             outcomes = OutcomeLog()
             while True:
+                if args.stop_after_publish and state["current"]["phase"] == "published":
+                    checkpoint_progress(state_root, state_file, state)
+                    return 0
                 outcome = tick(
                     state_root, state_file, state, repo=repo, jobs=jobs,
                     machine=machine, agent=args.publisher_agent, publish=publish,
                 )
+                checkpoint_progress(state_root, state_file, state)
                 line = outcomes.note(outcome)
                 if line is not None:
                     print(line, flush=True)
                 if outcome == "published":
+                    if args.stop_after_publish:
+                        print("batch publication merged; stopping without a successor", flush=True)
+                        return 0
                     print("next: restart the scheduler service (launchctl kickstart -k gui/$UID/<label>) "
                           "so it rotates onto the merge commit and starts the next batch", flush=True)
                 if once or outcome in {"awaiting_publication"}:
