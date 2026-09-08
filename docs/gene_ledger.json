@@ -1922,6 +1922,15 @@
           "district-planning-3": null
         }
       },
+      "doomed-blow-veto": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "doomed-blow-veto": null,
+          "doomed-blow-veto-2": null
+        }
+      },
       "early-project-restraint": {
         "rule_on": [
           "early-project-restraint"

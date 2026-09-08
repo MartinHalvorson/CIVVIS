@@ -77,3 +77,20 @@ the replay binary SHA-256 is
 `b34bc2208807102320d339dd7610445dbd9c704f0f7383cffbcc4a23bcb8a8f6`.
 Earlier files without `final` are preliminary evidence and are not the
 numbers reported here.
+
+The registry repair appends the new tag after every existing gene, preserving
+positional genome indices. The ledger, ranking and evaluation manifest are
+regenerated without changing the deployment genome. All 168 gene-tool tests,
+21 manifest tests and the gene-fire tests pass.
+
+The additional standard single-gene probe reserved seeds 99132000..99132005
+(6 games / 36 seats). It completed 5 games / 30 seats before its last game
+was repeatedly externally suspended. That paused process was terminated;
+the committed analysis explicitly records `partial: true`, the six-game
+reservation and five-game completion. This is evidence for the registry's
+nonzero-variance gate only. It is not a completed trial or a default-selection
+source, and the small observational contrasts do not establish improvement.
+The file is `docs/gene_screens/fires/2026-09-08-doomed-blow-veto-2.json`.
+The probe binary records revision 9b101711fbe1, before the registry entry
+was moved to the tail; its header records its own tag order. Named-gene
+behavior is unchanged by that placement repair.

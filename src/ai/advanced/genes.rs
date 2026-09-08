@@ -2163,9 +2163,6 @@ pub const GENES: &[Gene] = &[
     // with one survivable blow keeps the ladder's freedom. Priced on the
     // arena beside `battle-planner-2`. See `advanced/battle_planner.rs`.
     Gene { tag: "doomed-blow-veto", field: "doomed_blow_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto, disable: AdvancedAi::disable_doomed_blow_veto },
-    // Reprice all strikers after each friendly kill; only a sequence whose
-    // surviving enemy replies spare every striker can become the final plan.
-    Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
     // Version two of `missionary-last-charge-explores`: a one-charge
     // Missionary searches a continent-scale horizon, ranks distant
     // high-reveal fog, and insists on a route the movement rules permit.
@@ -2227,6 +2224,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "expansion-best-idle-city", field: "expansion_best_idle_city", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_best_idle_city, disable: AdvancedAi::disable_expansion_best_idle_city },
     Gene { tag: "research-building-catchup", field: "research_building_catchup", kind: Kind::OptIn, enable: AdvancedAi::enable_research_building_catchup, disable: AdvancedAi::disable_research_building_catchup },
     Gene { tag: "trade-building-before-bankruptcy", field: "trade_building_before_bankruptcy", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_building_before_bankruptcy, disable: AdvancedAi::disable_trade_building_before_bankruptcy },
+    // Reprice all strikers after each friendly kill; only a sequence whose
+    // surviving enemy replies spare every striker can become the final plan.
+    Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
