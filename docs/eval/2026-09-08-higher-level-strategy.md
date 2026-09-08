@@ -151,3 +151,33 @@ for all seats do not reproduce the live player's asymmetric handicap.
   `d42d2cd63127ea3b3b3ee0f358456c591c804066`. The later merge changes the
   tournament-selected background, so these are explicitly reach probes of
   that recorded source, not strength evidence for the refreshed deployment.
+
+## Completed reach probes
+
+All five fixed-size probes completed: 60 games / 360 player seats in total.
+The following are exploratory on-minus-off estimates in percentage points;
+SE is clustered by game. These small samples do not authorize promotion.
+
+| Gene | On / off seats | Win delta ± SE (pp) | Analyzer reading |
+|---|---:|---:|---|
+| `builder-workforce-recovery` | 9 / 63 | -6.35 ± 12.70 | ~ |
+| `culture-building-catchup` | 11 / 61 | +1.79 ± 13.88 | ~ |
+| `expansion-best-idle-city` | 17 / 55 | -14.12 ± 5.97 | hurts * (thin) |
+| `research-building-catchup` | 21 / 51 | +3.36 ± 10.83 | ~ |
+| `trade-building-before-bankruptcy` | 20 / 52 | -2.31 ± 9.67 | ~ |
+
+The expansion arm carries a negative early signal, not a successful fix.
+It stays off and should receive particular scrutiny before any promotion;
+the other probes are inconclusive. The five mechanism tests prove concrete
+order changes, and the committed summaries satisfy the repository reach
+gate. Their intervals and small on-seat counts remain visible. No source
+was entered into the deployment ledger and no gene was promoted.
+
+Artifacts: `docs/gene_screens/fires/2026-09-08-higher-level-*.json`. Each
+retains the analyzer's reproducibility block and clean build stamp. Raw rows
+remain in `/tmp/civvis-higher-level-<tag>.jsonl` on this host and are
+reproducible using the recorded source, options and seed windows.
+
+Final tooling validation: all 194 gene-tool tests and all 14 registry-append
+tests passed. The reach ratchet reports 275 registered genes with evidence,
+zero waived and zero unproven.
