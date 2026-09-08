@@ -4836,6 +4836,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    builder_workforce_recovery: bool,
     /// `anvil`: the land group nearest a threatened city of ours holds it
     /// as a formation — a shooter on the centre, melee on the front tiles,
     /// the rest within two — instead of the relief hold point. Opt-in gene;
@@ -4978,6 +4980,8 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    culture_building_catchup: bool,
     /// ★★★★ TWENTY-SEVEN ENVOYS INTO A RACE THE SEAT WAS ALWAYS GOING TO
     /// LOSE, AND THE PRIZE CAME BACK AS AN ARMY. The envoy scorer prices the
     /// NEXT envoy toward a suzerainty ([`SUZERAIN_PRIZE`] over the envoys
@@ -5352,6 +5356,8 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    expansion_best_idle_city: bool,
     /// Price affordable 1/3/6 building packages independently of suzerainty.
     envoy_building_dividends: bool,
     /// Version two of `eureka-chasing-builder`: only the final Builder action
@@ -5990,6 +5996,8 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    research_building_catchup: bool,
     /// A route step that is not legal THIS TURN is a wait, not a new
     /// decision. `commitment_owners_act` releases a settle or improve
     /// decision the moment `route_step` yields no enterable neighbour —
@@ -6369,6 +6377,8 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    trade_building_before_bankruptcy: bool,
     /// Who may be a target, when a war is declared and when peace is sued
     /// for, read off the Objective Board's own requirements: a rival whose
     /// nearest city's Siege bill is over the whole roster is no target, a
@@ -7021,6 +7031,7 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
+mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
 /// build a Settler, the citizens work food. One opt-in gene; see
@@ -7823,6 +7834,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_workforce_recovery: false,
             anvil: false,
             anvil_orders: BTreeMap::new(),
             anvil_orders_turn: None,
@@ -7850,6 +7862,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            culture_building_catchup: false,
             contested_suzerainty_brake: false,
             detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
@@ -7903,6 +7916,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            expansion_best_idle_city: false,
             envoy_building_dividends: false,
             eureka_chasing_builder_2: false,
             enter_the_prophet_race_2: false,
@@ -7973,6 +7987,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            research_building_catchup: false,
             route_block_is_a_wait: false,
             recovery_reads_the_war_2: false,
             requisitions: false,
@@ -8027,6 +8042,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            trade_building_before_bankruptcy: false,
             war_policy_via_board: false,
             war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,
@@ -40432,6 +40448,8 @@ impl AdvancedAi {
             // Science reservations, then claims only an idle, non-threatened
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
+            // Reach both governors without changing their dispatch or opening book.
+            self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
             // claims only one idle, safe queue after all higher-priority
