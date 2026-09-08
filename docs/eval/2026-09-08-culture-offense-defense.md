@@ -20,7 +20,8 @@ Square coverage and the completed Amphitheater/Museum/Broadcast Center chain,
 including its Great Work capacity and cultural Great Person points. This
 applies when an explicit Culture target is temporarily planning expansion,
 as well as to an adaptive Culture strategy. The premium fades when there
-is too little time left after completion. It does not override illegal
+is too little time left after completion, capped at the normal game-speed
+turn limit even when live verification allows 650 turns. It does not override illegal
 production or military/emergency refusal sentinels, or create a blanket
 wonder-building priority. Culture targets also use the same low-reserve,
 negative-income recovery gate as science targets even with war economy off;
@@ -84,7 +85,7 @@ alongside these metrics: an unaffordable cultural build order is still a
 losing build order. Compare completed games rather than counting resumed
 copies as independent wins.
 
-Local validation completed with 3,178 tests passed and 50 ignored. Six-player
+Local validation completed with 3,179 tests passed and 50 ignored. Six-player
 Emperor/Online soaks (250-turn cap) finished Culture-only seeds 820260908 and
 820260909 with a culture victory at 131 and a draw at 250; mixed-victory seeds
 820260910 and 820260911 ended in science victories at 189 and 183. The draw is

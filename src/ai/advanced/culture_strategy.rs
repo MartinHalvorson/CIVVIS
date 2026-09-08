@@ -132,7 +132,12 @@ impl AdvancedAi {
         if culture <= 0.0 && chain <= 0.0 {
             return 0.0;
         }
-        let horizon = ((g.max_turns.saturating_sub(g.turn) as f64 - turns).max(0.0)
+        let horizon = ((g
+            .max_turns
+            .min(g.game_speed.turn_limit())
+            .saturating_sub(g.turn) as f64
+            - turns)
+            .max(0.0)
             / g.standard_duration(80).max(1) as f64)
             .clamp(0.0, 1.0);
         let offense = self.active_victory_target(g) == Some(VictoryTarget::Culture)

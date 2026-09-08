@@ -191,7 +191,9 @@ fn culture_chain_stays_valuable_during_expansion_but_must_finish_in_time() {
         ),
         0.0
     );
-    g.turn = 248;
+    // Extending the verification cap must not extend the development clock.
+    g.max_turns = 650;
+    g.turn = g.game_speed.turn_limit() - 2;
     assert_eq!(
         ai.culture_race_production_bonus(&g, 0, &amph, GrandStrategy::Culture, 5.0),
         0.0
@@ -322,7 +324,7 @@ fn censorship_amenity_cost_ends_even_without_a_replacement_card() {
         .foreign_tourists = Some(0);
     // An exhausted/host-blocked menu cannot supply a replacement. The
     // condition ending must itself remove the downside, not await a swap.
-    g.blocked_policies.extend(g.rules.policies.keys().copied());
+    Arc::make_mut(&mut g.blocked_policies).extend(g.rules.policies.keys().copied());
     AdvancedAi::targeting(VictoryTarget::Culture).strategic_policies(
         &mut g,
         0,
