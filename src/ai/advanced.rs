@@ -23198,7 +23198,7 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether the live war-production path must yield to the baseline
+    /// Whether war or targeted science production must yield to the baseline
     /// solvency recovery before it adds another upkeep bill.
     ///
     /// `BasicAi::product_for` uses the same reserve-and-deficit predicate:
@@ -23214,14 +23214,20 @@ impl AdvancedAi {
     /// Keep the baseline's emergency exception. An empire at major war with
     /// fewer military units than cities may still raise its first garrison;
     /// every other live war queue takes the same recovery branch that the
-    /// ordinary governor would have used.
+    /// ordinary governor would have used. Science targeting also bypasses the
+    /// baseline picker, including when the optional war-economy gene is off.
+    /// Rome on 2026-09-08 stayed insolvent from t100 through t190 in peace
+    /// while this guard was disabled, continually replacing unpaid units.
     fn live_war_economy_requires_recovery(
         &self,
         g: &Game,
         pid: usize,
         counts: &EmpireCounts,
     ) -> bool {
-        if !self.war_economy || self.base.minor || self.base.barb {
+        if (!self.war_economy && self.active_victory_target(g) != Some(VictoryTarget::Science))
+            || self.base.minor
+            || self.base.barb
+        {
             return false;
         }
         let city_count = g.player_city_ids(pid).len();
