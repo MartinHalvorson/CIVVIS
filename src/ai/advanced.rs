@@ -22645,12 +22645,22 @@ impl AdvancedAi {
                                 || self.raced_target() == Some(VictoryTarget::Science)
                                 || g.cities[cid].queue.is_empty())
                     })
-                    .max_by(|a, b| {
-                        g.city_yields(*a)
-                            .production
-                            .partial_cmp(&g.city_yields(*b).production)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| b.cmp(a))
+                    .min_by(|a, b| {
+                        if races_science || self.raced_target() == Some(VictoryTarget::Science) {
+                            Self::science_project_build_turns(g, pid, *a, &project_item)
+                                .total_cmp(&Self::science_project_build_turns(
+                                    g,
+                                    pid,
+                                    *b,
+                                    &project_item,
+                                ))
+                                .then_with(|| a.cmp(b))
+                        } else {
+                            g.city_yields(*b)
+                                .production
+                                .total_cmp(&g.city_yields(*a).production)
+                                .then_with(|| a.cmp(b))
+                        }
                     })
             };
             if let Some(city) = project_city {
