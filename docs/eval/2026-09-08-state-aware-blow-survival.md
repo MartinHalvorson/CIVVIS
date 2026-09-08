@@ -10,7 +10,9 @@ An unsafe intermediate sequence remains searchable: a later friendly strike
 may remove the retaliator. Directly fatal melee exchanges are refused, and
 the existing wounded-finisher rule remains. The verifier then replays only
 accepted blows on a fresh clone and checks their resulting positions again.
-A dropped rescuing strike therefore cannot leave an unsafe accepted prefix.
+It removes rejected or unsafe strikes and repeats until stable, preserving
+independent safe shots. A dropped rescuing strike therefore cannot leave an
+unsafe accepted prefix.
 Unselected shooters with no individually surviving strike retain the retreat
 handoff. The versions are mutually exclusive and both remain opt-in.
 
@@ -25,9 +27,12 @@ is dropped; version two rejects that prefix.
 The saved cont3 turn-121 pikeman frame retreats to (12,23) and fortifies with
 version two, matching the repaired version one's protection of that case.
 This is a one-shot replay, not proof that the host executes the retreat.
-Expected native damage, finite beam width and host refusal remain limits;
-this change does not guarantee survival under every random roll or partial
-host execution.
+Expected native damage, finite beam width and host refusal remain limits.
+The beam updates killed enemies and our post-strike HP, while surviving
+enemies' wounds and friendly support positions retain the frame estimate;
+the final verifier replays accepted actions on the actual resulting model
+board. Existing per-strike tactical approval remains in force. This does
+not guarantee survival under every random roll or partial host execution.
 
 Initial comparisons were run on base5652bda8f. Before final evaluation,
 #3243's movement-risk changes are being integrated and the comparisons

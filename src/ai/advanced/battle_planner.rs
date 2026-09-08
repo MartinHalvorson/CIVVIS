@@ -1623,23 +1623,42 @@ impl AdvancedAi {
                 }
             }
         }
-        if self.doomed_blow_veto_2 && !self.verified_sequence_survives(g, pid, &verified) {
-            return (Vec::new(), 0, dropped + verified.len() as u32);
+        if self.doomed_blow_veto_2 {
+            loop {
+                let (rejected, surviving_kills) =
+                    self.rejected_strikers_in_sequence(g, pid, plan, &verified);
+                if rejected.is_empty() {
+                    kills = surviving_kills;
+                    break;
+                }
+                let before = verified.len();
+                verified.retain(|blow| !rejected.contains(&blow.unit));
+                dropped += (before - verified.len()) as u32;
+            }
         }
         (verified, kills, dropped)
     }
 
-    /// The verifier can drop a late strike that was supposed to remove an
-    /// earlier striker's reply. Replay only the accepted blows, without any
-    /// discarded attacks or moves, before trusting that final position.
-    fn verified_sequence_survives(&self, g: &Game, pid: usize, blows: &[Blow]) -> bool {
+    /// Replay only retained blows. Removing a rejected rescuer may expose
+    /// an earlier striker, so the caller repeats until the sequence is
+    /// stable. Independent safe shots remain available throughout.
+    fn rejected_strikers_in_sequence(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        blows: &[Blow],
+    ) -> (BTreeSet<u32>, u32) {
+        let mut rejected = BTreeSet::new();
+        let mut kills = 0;
         if blows.is_empty() {
-            return true;
+            return (rejected, kills);
         }
         let mut after = g.speculative_clone();
         for blow in blows {
             let Some(unit) = after.units.get(&blow.unit) else {
-                return false;
+                rejected.insert(blow.unit);
+                continue;
             };
             if unit.pos != blow.from
                 && (after
@@ -1656,7 +1675,8 @@ impl AdvancedAi {
                         .get(&blow.unit)
                         .is_none_or(|unit| unit.pos != blow.from))
             {
-                return false;
+                rejected.insert(blow.unit);
+                continue;
             }
             let action = if blow.ranged {
                 Action::Ranged {
@@ -1669,19 +1689,28 @@ impl AdvancedAi {
                     target: blow.target,
                 }
             };
-            if after.apply(pid, &action).is_err() {
-                return false;
+            let (result, applied) =
+                Self::tactical_attack_result_in(&mut after, pid, blow.unit, &action, plan);
+            if matches!(applied, AppliedAttack::Applied)
+                && (result.eliminates_enemy_unit || result.value >= 0.0)
+            {
+                kills += u32::from(result.eliminates_enemy_unit);
+            } else {
+                rejected.insert(blow.unit);
             }
         }
         let mut field = DangerField::with_reach(&after, pid, self.strike_reach);
-        blows.iter().all(|blow| {
-            let Some(unit) = after.units.get(&blow.unit) else {
-                return false;
-            };
-            let incoming = field.danger(unit.pos, unit.id);
-            incoming < f64::from(unit.hp)
-                && (g.units[&blow.unit].hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER)
-        })
+        for blow in blows {
+            let survives = after.units.get(&blow.unit).is_some_and(|unit| {
+                let incoming = field.danger(unit.pos, unit.id);
+                incoming < f64::from(unit.hp)
+                    && (g.units[&blow.unit].hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER)
+            });
+            if !survives {
+                rejected.insert(blow.unit);
+            }
+        }
+        (rejected, kills)
     }
 
     /// Land the verified blows on the real board, in order, each mover
@@ -4331,6 +4360,51 @@ mod tests {
             "the old verifier keeps the unsafe prefix"
         );
     }
+    #[test]
+    fn an_independent_safe_shot_survives_rejection_of_an_unsafe_combination() {
+        let mut g = open_field();
+        let first = g.spawn_unit("archer", 0, at(10, 4));
+        let second = g.spawn_unit("archer", 0, at(10, 5));
+        let independent = g.spawn_unit("archer", 0, at(3, 3));
+        let enemy_first = g.spawn_unit("crossbowman", 1, at(11, 4));
+        let enemy_second = g.spawn_unit("crossbowman", 1, at(11, 5));
+        let distant = g.spawn_unit("warrior", 1, at(4, 3));
+        for uid in [first, second] {
+            wound(&mut g, uid, 50);
+        }
+        for uid in [enemy_first, enemy_second, distant] {
+            wound(&mut g, uid, 1);
+        }
+        g.units.get_mut(&second).unwrap().attacks_left = 0;
+        let blows: Vec<Blow> = [
+            (first, enemy_first),
+            (second, enemy_second),
+            (independent, distant),
+        ]
+        .into_iter()
+        .map(|(ours, enemy)| Blow {
+            unit: ours,
+            from: g.units[&ours].pos,
+            target: g.units[&enemy].pos,
+            defender: enemy,
+            ranged: true,
+            expected: 100.0,
+            finishes: true,
+        })
+        .collect();
+        let mut ai = version_two();
+        ai.enable_strike_reach();
+        ai.enable_doomed_blow_veto_2();
+        let plan = conquest(&g);
+        let (verified, kills, dropped) = ai.verify_blows(&g, 0, &plan, &blows);
+        assert_eq!(
+            verified.iter().map(|blow| blow.unit).collect::<Vec<_>>(),
+            vec![independent]
+        );
+        assert_eq!(kills, 1);
+        assert_eq!(dropped, 2);
+    }
+
     #[test]
     fn a_safe_alternative_does_not_license_a_more_valuable_fatal_strike() {
         let mut g = open_field();
