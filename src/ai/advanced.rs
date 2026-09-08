@@ -1445,8 +1445,8 @@ struct TacticalAttackCandidate {
     score: f64,
     target: Pos,
     action: Action,
-    /// A simulated direct kill with a positive immediate exchange.  It outranks
-    /// a nonlethal option even when the slower reply search is pessimistic:
+    /// A simulated direct kill with a positive immediate exchange and a
+    /// survivable post-strike tile. It outranks a nonlethal option:
     /// a unit that can be removed now does not get another turn to heal,
     /// retreat, pillage, or join a focus fire sequence.
     lethal_kill: bool,
@@ -36072,12 +36072,8 @@ impl AdvancedAi {
     /// combat rolls are seeded, so an advertised finishing blow is only a
     /// finish when the exact action actually removes the defender.
     ///
-    /// A kill must still pay for itself *immediately*.  That is the
-    /// "typically" in the policy: a damaged GDR is not ordered to die for a
-    /// cheap Warrior merely because that Warrior happens to be at one health.
-    /// Once the direct exchange clears this gate, however, a reply estimate
-    /// cannot resurrect the removed unit, so the action is allowed to outrank
-    /// a nonlethal alternative.
+    /// A finish must pay for itself and leave a surviving attacker outside
+    /// lethal reply damage. Removing one hostile does not remove its allies.
     fn immediate_kill_value(
         &self,
         g: &Game,
@@ -36106,7 +36102,7 @@ impl AdvancedAi {
             .iter()
             .filter(|other| !after.units.contains_key(other))
             .count();
-        if eliminated == 0 {
+        if eliminated == 0 || !self.finisher_survives_reach(&after, pid, uid) {
             return None;
         }
         let value = match action {
@@ -36130,6 +36126,18 @@ impl AdvancedAi {
             _ => return None,
         };
         (value.is_finite() && value > 0.0).then_some((value, eliminated))
+    }
+
+    /// Price the post-strike tile and remaining enemies, with next-turn reach.
+    /// The killing blow can move a melee attacker out of cover and reduce its
+    /// HP; pricing either the original tile or original HP misses that trap.
+    fn finisher_survives_reach(&self, after: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = after.units.get(&uid) else {
+            return false;
+        };
+        let envelopes = self.base.enemy_attack_envelopes(after, pid);
+        let incoming = BasicAi::incoming_damage(after, pid, uid, unit.pos, &envelopes);
+        incoming.total * crate::ai::COMBAT_ROLL_MAX < f64::from(unit.hp)
     }
 
     /// Spend one immediate, positive kill per unit before either tactical
@@ -38045,6 +38053,17 @@ impl AdvancedAi {
             ),
         ) in candidates.into_iter().zip(evaluations).enumerate()
         {
+            // The immediate-kill pass and the ordinary tactical ladder must
+            // agree: declining a poisoned finish above is useless if this
+            // second path immediately takes it through its kill override.
+            if self.victory_planning && eliminates_enemy_unit {
+                let mut after = g.speculative_clone();
+                if after.apply(pid, &action).is_err()
+                    || !self.finisher_survives_reach(&after, pid, uid)
+                {
+                    continue;
+                }
+            }
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
             let mut score = attack_value - threshold;
