@@ -5101,6 +5101,8 @@ pub struct AdvancedAi {
     /// path skips such cities. Every other family, lane and seat is
     /// untouched. Opt-in gene `campus-through-expansion`.
     campus_through_expansion: bool,
+    /// See `campus_before_halfway`.
+    campus_before_halfway: bool,
     /// `district-planning-2`: the plan's own tile buy competes out of the
     /// treasury reserve (never spending below half of it) instead of
     /// waiting for 200 Gold of surplus headroom, and the purchase bars
@@ -6765,6 +6767,19 @@ const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 5] = [
 /// See `campus_through_expansion`: the Science lane's Campus arm, paid to a
 /// Science seat's Campus while its plan still reads Expansion.
 const CAMPUS_THROUGH_EXPANSION_DISTRICT: f64 = 170.0;
+/// See `campus_before_halfway`: the Science lane's Campus arm before the
+/// halfway clock, the same 170 the lane pays after it. Measured motive
+/// (2026-09-08): every September Emperor ladder game that ran to its outcome
+/// was lost to a rival's science victory at t182–224 while our one science
+/// win took 234 turns at King, and #3124 gated `victory_specialization_active`
+/// to the second half — so for 125 of 250 turns a Science seat priced its own
+/// Campus at zero to the lane.
+const CAMPUS_BEFORE_HALFWAY_DISTRICT: f64 = 170.0;
+/// See `campus_before_halfway`: the population at which a city can staff a
+/// Library, and from which the Campus keeps asking past the half-empire
+/// coverage cliff. Named by the 2026-08-19 repair note above
+/// `campus_keeps_asking` and never wired until the gene.
+const CAMPUS_EVERY_CITY_POP_FLOOR: i32 = 4;
 /// See `trade_route_network`: a Commercial Hub, or a Harbor where no Hub
 /// stands, beside a standing Campus — below the Campus's own 170 so the
 /// research district keeps first claim on a city.
@@ -7843,6 +7858,7 @@ impl AdvancedAi {
             coalition_before_war_3: false,
             city_campaign_2: false,
             campus_through_expansion: false,
+            campus_before_halfway: false,
             district_planning_2: false,
             district_planning_3: false,
             cheapest_wonder_first: false,
@@ -27391,7 +27407,11 @@ impl AdvancedAi {
                 // stays (no city is EVER told half the empire is enough once
                 // it can staff a Library) while the towns keep compounding
                 // until they qualify. Below the cliff nothing changes.
-                let campus_keeps_asking = false;
+                // `campus-before-halfway` wires that floor; withheld, the
+                // literal `false` of the 2026-08-19 repair stands.
+                let campus_keeps_asking = self.campus_before_halfway
+                    && family == "campus"
+                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
 
                 let balanced_core = if self.first_district_first {
                     // `first-district-first`: a slope in place of the cliff.
@@ -27589,6 +27609,11 @@ impl AdvancedAi {
                     }
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") if specialization_active => 170.0,
+                    // `campus-before-halfway`: the lane's own district keeps
+                    // its arm through the first half of the clock too.
+                    (GrandStrategy::Science, "campus") if self.campus_before_halfway => {
+                        CAMPUS_BEFORE_HALFWAY_DISTRICT
+                    }
                     (GrandStrategy::Science, "campus") => 0.0,
                     // One coastal Harbor pays back through empire-wide trade
                     // capacity and gold. During the foundation half the first

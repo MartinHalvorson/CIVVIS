@@ -2211,6 +2211,11 @@ pub const GENES: &[Gene] = &[
     // Appended above the markers, so a running screen keeps its positional
     // genome.
     Gene { tag: "wonder-ring-recon-2", field: "wonder_ring_recon_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_ring_recon_2, disable: AdvancedAi::disable_wonder_ring_recon_2 },
+    // `campus-before-halfway` (2026-09-08): a Science seat's Campus keeps the
+    // lane's arm before the halfway clock and keeps asking in every city of
+    // four past the coverage cliff. Appended above the markers, so a running
+    // screen keeps its positional genome.
+    Gene { tag: "campus-before-halfway", field: "campus_before_halfway", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_halfway, disable: AdvancedAi::disable_campus_before_halfway },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
