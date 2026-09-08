@@ -24692,10 +24692,8 @@ impl AdvancedAi {
             if committed.is_some() {
                 self.clear_idle_production_streak(cid);
             }
-            // The ordinary governor's recovery path only receives empty
-            // queues. Preserve that contract even when an experimental
-            // preemption margin is active: a banked unit can finish, but no
-            // fresh upkeep-bearing commitment starts while the treasury heals.
+            // Recovery preserves useful commitments. Targeted science may
+            // bank an upkeep-heavy queue below when it deepens the deficit.
             // `siege-preempts-the-queue`: see `advanced/siege_response.rs`. A
             // raider within `SIEGE_RADIUS` of a city with no defender at all is
             // bought out of the treasury first; a queue holding anything but a
@@ -26479,6 +26477,14 @@ impl AdvancedAi {
     ) -> f64 {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
+        // The undermanned-war exception permits defenders, not another Spy
+        // replacement loop while the same treasury is already in deficit.
+        if g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < 100.0 + 25.0 * city_count as f64
+            && self.science_recovery_preempts(g, item)
+        {
+            return -10_000.0;
+        }
         let specialization_active = self.phase_specialization_active(g);
         // Colonization, Ilkum, Veterancy and project modifiers change when
         // this exact item completes. The final score divides by these turns,

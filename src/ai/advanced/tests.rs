@@ -21290,6 +21290,7 @@ fn science_core_modernizes_only_when_reserve_and_upkeep_fit() {
         .districts
         .insert(crate::name!("campus"), home);
     let uid = g.spawn_test_unit("warrior", 0, home);
+    g.players[0].gold = 1000.0;
     let (_, price, _) = g.unit_gold_upgrade_offer(0, uid).expect("legal upgrade");
     g.players[0].gold = price + 125.0;
     g.players[0].gold_per_turn = -1.0;
@@ -21342,6 +21343,22 @@ fn science_bankruptcy_banks_a_spy_queue_and_preserves_victory_and_defence() {
     assert_eq!(
         g.cities[&city].production_progress.get("unit:spy"),
         Some(&12.0)
+    );
+    g.at_war.insert((0, 1));
+    let counts = ai.counts(&g, 0);
+    assert!(!ai.live_war_economy_requires_recovery(&g, 0, &counts));
+    assert_eq!(
+        ai.production_value(
+            &g,
+            0,
+            city,
+            &Item::Unit {
+                unit: crate::name!("spy")
+            },
+            &plan,
+            &counts
+        ),
+        -10_000.0
     );
     for item in [
         Item::Unit {
