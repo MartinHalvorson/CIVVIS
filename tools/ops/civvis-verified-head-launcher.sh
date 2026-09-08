@@ -51,6 +51,9 @@
 #                                     250-turn game needs the room (a Warlord
 #                                     win reached t247 and hit the old 8100 s).
 #   CIVVIS_PLAY_TIMEOUT_CEILING       the hard ceiling. Default 14400.
+#   CIVVIS_CAPTURE_FREE               1 runs the fixed Rome / Emperor / Online /
+#                                     Continents profile without screen capture.
+#                                     Default 0 retains the general visual launcher.
 #   CIVVIS_SCREEN_GENE                one gene tag: every game is dealt an
 #                                     on/off arm of it from its own run tag
 #                                     and records the arm (docs/LIVE_SCREEN.md).
@@ -178,6 +181,7 @@ fi
 
 typeset -A policy
 policy=(
+  CIVVIS_CAPTURE_FREE         0
   CIVVIS_PLAY_ATTEMPTS        1
   CIVVIS_PLAY_TIMEOUT         10800
   CIVVIS_PLAY_TIMEOUT_CEILING 14400
@@ -206,6 +210,9 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_PLAY_ATTEMPTS|CIVVIS_PLAY_TIMEOUT|CIVVIS_PLAY_TIMEOUT_CEILING)
         [[ "$value" =~ '^[1-9][0-9]*$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a positive integer" ;;
+      CIVVIS_CAPTURE_FREE)
+        [[ "$value" =~ '^[01]$' ]] \
+          || refuse "$POLICY:$lineno CIVVIS_CAPTURE_FREE='$value' must be 0 or 1" ;;
       CIVVIS_RESTART_BELOW_LEADER_RATIO)
         [[ "$value" =~ '^(0|1|0?\.[0-9]+|1\.0+)$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a ratio from 0 to 1" ;;
@@ -216,7 +223,7 @@ if [[ -f "$POLICY" ]]; then
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
         continue ;;
     esac
     policy[$key]=$value
@@ -249,7 +256,7 @@ origin=$(git -C "$HEAD_REPO" remote get-url origin 2>/dev/null || true)
 # Never inherit a labelled experiment, a retired strategy, an alternate host,
 # or a former restart policy from the window that opened this.
 unset CIVVIS_WITH CIVVIS_WITHOUT CIVVIS_WITH_FILE CIVVIS_SCREEN_GENE CIVVIS_STRATEGY CIVVIS_VICTORY \
-      CIVVIS_DIFFICULTY CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
+      CIVVIS_DIFFICULTY CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
       CIVVIS_ABANDON_BELOW_WIN_RATE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING \
       CIVVIS_HEAD_REPO CIVVIS_LADDER_HOST CIVVIS_LADDER_SUPERVISOR CIVVIS_SUPERVISOR \
       CIVVIS_INTERACTIVE_HOST_LOG CIVVIS_INTERACTIVE_HOST_LOCK
@@ -267,6 +274,16 @@ else
   policy_note="no $POLICY — defaults; the rung comes from the ladder policy"
 fi
 say "launching from $HEAD_REPO (origin/main, pin=head) with ${summary}(${policy_note})"
+
+# The terminal-window guard catches only named one-shot helper documents that
+# older/manual recovery callers started through Terminal `do script`. It shares
+# the Terminal-descended tree so it can immediately miniaturize such a document
+# without touching ordinary Terminal sessions.
+TERMINAL_GUARD=${CIVVIS_TERMINAL_WINDOW_GUARD_SCRIPT:-$OPS/civvis-terminal-window-guard.sh}
+if [[ "${CIVVIS_TERMINAL_WINDOW_GUARD:-1}" != 0 && -x "$TERMINAL_GUARD" ]]; then
+  ( /bin/zsh "$TERMINAL_GUARD" >/dev/null 2>&1 & )
+  say "terminal window guard started (${TERMINAL_GUARD:t})"
+fi
 
 # The foreground guard rides the same Terminal-descended tree, which is the
 # only place it can drive Notification Center and System Settings (see its

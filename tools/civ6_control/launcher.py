@@ -19,11 +19,13 @@ make that possible, and each was established by measurement on this build:
   reports the app ID from the environment. Steam's own launcher will
   separately complain "Game configuration unavailable" if it sees the process
   it did not start; that popup is cosmetic and does not affect the game.
-- **Startup is verifiable from the logs.** ``Logs/Modding.log`` gets its mod
-  scan once the game core is up, and ``Logs/Automation.log`` is written from
-  app init onwards whenever the automation system is active. Both live in the
-  *nested* user directory (see ``civ6_env.user_dir``), and both are removed
-  before launch so a stale file cannot be read as this run's.
+- **Startup is verifiable from the logs.** ``Logs/Modding.log`` records both
+  the early mod scan and the later completion of game-content configuration;
+  the latter is when the front end can accept exact menu controls.
+  ``Logs/Automation.log`` is written from app init onwards whenever the
+  automation system is active. Both live in the *nested* user directory (see
+  ``civ6_env.user_dir``), and both are removed before launch so a stale file
+  cannot be read as this run's.
 """
 
 from __future__ import annotations
@@ -42,6 +44,13 @@ STEAM_APP_ID = "289070"
 # Logs that identify a run rather than the installation. Cleared before launch
 # so "did this run write it" is answerable without parsing timestamps.
 RUN_LOGS = ("Automation.log", "Modding.log", "Lua.log")
+
+# ``Discovered`` proves only that the engine began scanning mods.  On this
+# macOS front end it arrives while the menu is still non-interactive; Civ VI
+# writes this final line only after it has finished applying content and made
+# the front end usable.  `clear_run_logs` above makes the marker specific to
+# the launch being observed.
+MAIN_MENU_READY_MARKER = "No need to reconfigure game content, marking it finished"
 
 
 def game_binary() -> Path:
@@ -161,11 +170,13 @@ def gatekeeper_refusal() -> str | None:
 
 
 def wait_for_main_menu(timeout_s: float = 420.0, poll_s: float = 3.0) -> bool:
-    """Wait until the game core has scanned mods, which means the menu is up.
+    """Wait until the front end has finished content configuration.
 
-    ``Modding.log`` gaining its "Discovered" line is the first thing the core
-    writes that proves it got past engine init. Polling the process as well
-    means a crash fails fast instead of waiting out the whole timeout.
+    ``Modding.log`` gaining its ``Discovered`` line proves only that the core
+    got past engine init; it can precede a non-interactive menu by more than a
+    minute.  The final content-configured marker above is the stronger
+    capture-free readiness signal. Polling the process as well means a crash
+    fails fast instead of waiting out the whole timeout.
 
     A macOS refusal is polled for the same reason, and is the one case where a
     LIVE process is not evidence of progress — see ``gatekeeper_refusal``.
@@ -180,7 +191,7 @@ def wait_for_main_menu(timeout_s: float = 420.0, poll_s: float = 3.0) -> bool:
     # start here, so `now - 0.0 >= 15.0` stayed false for the first 15 seconds.
     refusal_checked: float | None = None
     while time.monotonic() < deadline:
-        if log.is_file() and "Discovered" in log.read_text(errors="replace"):
+        if log.is_file() and MAIN_MENU_READY_MARKER in log.read_text(errors="replace"):
             return True
         if not env.game_pids():
             return False

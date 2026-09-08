@@ -556,12 +556,27 @@ local function endScreen(attempt)
 			and pcall(function() ExitConversationMode(true); end) then
 		return true;
 	end
+	-- A direct deal submission can leave the action view visible after its
+	-- session has been closed.  `CloseSession` alone is intentionally not a
+	-- view close in Firaxis' API; the next frame then reopens the uninitialized
+	-- action context above the map.  Close only after the host confirms that
+	-- this exact session is gone, and refuse to hide a replacement session that
+	-- arrived in the meantime.
 	if (attempt or 1) <= 12 and type(DiplomacyManager) == "table"
-			and ms_ActiveSessionID ~= nil
-			and pcall(function()
-				DiplomacyManager.CloseSession(ms_ActiveSessionID);
-			end) then
-		return true;
+			and ms_ActiveSessionID ~= nil then
+		local sessionID = ms_ActiveSessionID;
+		local closed = false;
+		local noReplacement = false;
+		local checked = pcall(function()
+			DiplomacyManager.CloseSession(sessionID);
+			closed = not DiplomacyManager.IsSessionIDOpen(sessionID);
+			noReplacement = ms_ActiveSessionID == nil or ms_ActiveSessionID == sessionID;
+		end);
+		if checked and closed and noReplacement and type(Close) == "function"
+				and pcall(function() Close(); end) then
+			report("autoclose_session_finalize", string.format(",\"session\":%s", tostring(sessionID)));
+			return true;
+		end
 	end
 	-- ★★★★★ A LEADER ASKING A QUESTION IS NOT A POPUP — but answering it is a LATER
 	-- rung, not the first.
@@ -674,6 +689,46 @@ else
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
 	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
 	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
+
+	-- ★★★★★ A FRESH SHOW IS A FRESH DIALOGUE, EVEN WHEN THIS CONTEXT NEVER TICKS
+	-- WHILE HIDDEN.
+	--
+	-- `ContextPtr:SetUpdate` stops with the hidden context. That means the
+	-- `not isUp()` reset in `tick` cannot observe the ordinary
+	-- close -> hide -> next-show sequence for DiplomacyActionView: its `closes`
+	-- counter survives into the next, unrelated leader interaction. Once the
+	-- old interaction had reached GIVE_UP_AFTER, every later interaction began
+	-- directly on the 30-second retry path and emitted misleading desktop-help
+	-- asks even though the native ladder was only looking at a new screen.
+	--
+	-- Run `civvis-20260904T042312Z-capture-free-1` showed that exact shape:
+	-- attempts 32/36 belonged to later sessions, while turns continued and the
+	-- capture-free owner intentionally had no desktop rescue. Reset only the
+	-- *attempt accounting* when Firaxis says this context is shown again. The
+	-- active deal hold is deliberately left alone: it is a real CIVVIS-owned
+	-- session and may have been armed before the view becomes visible.
+	local function resetShownAttemptState()
+		showing = false;
+		remaining = 0;
+		shown = 0;
+		closes = 0;
+		reported = false;
+		desktopReportedAt = -1;
+		wonderAnimationWaitReported = false;
+	end
+
+	-- The shipped scripts install `OnShow` during their Initialize path. Preserve
+	-- it exactly and layer the accounting reset around the same context callback;
+	-- this is native lifecycle evidence, not a timer guess or a desktop action.
+	local shippedOnShow = OnShow;
+	if type(shippedOnShow) == "function" then
+		pcall(function()
+			ContextPtr:SetShowHandler(function(...)
+				resetShownAttemptState();
+				return shippedOnShow(...);
+			end);
+		end);
+	end
 
 	-- ★★★★★ A DEAL SESSION CIVVIS OPENED IS NOT A SCREEN TO REFUSE. The
 	-- agent's sale, passage and peace arms now ask inside a `MAKE_DEAL`

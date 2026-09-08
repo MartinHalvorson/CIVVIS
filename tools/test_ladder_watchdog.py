@@ -692,6 +692,68 @@ class InteractiveHostOwnership(unittest.TestCase):
                     external.terminate()
                     external.wait(timeout=5)
 
+    def test_capture_free_host_never_starts_the_visual_popup_keeper(self):
+        """The no-capture profile must not regain visual automation on restart.
+
+        The host polls its helpers after startup.  Keeping it alive for several
+        short polls proves both the initial helper launch and its respawn path
+        leave the popup keeper alone, while the ordinary supervisor is still
+        owned and alive.
+        """
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            log = tmp / "host.log"
+            started = tmp / "supervisor.started"
+            popup_started = tmp / "popup.started"
+            host_lock = tmp / "host.lock"
+            supervisor_lock = tmp / "supervisor.lock"
+            supervisor = tmp / "civvis-game-supervisor.sh"
+            supervisor.write_text(
+                "#!/bin/zsh\n"
+                f"print -r -- started > {started}\n"
+                "while true; do sleep 1; done\n")
+            supervisor.chmod(0o755)
+            popup_keeper = tmp / "popup-keeper.sh"
+            popup_keeper.write_text(
+                "#!/bin/zsh\n"
+                f"print -r -- started > {popup_started}\n"
+                "while true; do sleep 1; done\n")
+            popup_keeper.chmod(0o755)
+            gamelock = tmp / "gamelock.py"
+            gamelock.write_text("raise SystemExit(1)\n")
+            host = subprocess.Popen(
+                ["/bin/zsh", str(self.HOST)],
+                env={
+                    **os.environ,
+                    "CIVVIS_CAPTURE_FREE": "1",
+                    "CIVVIS_SUPERVISOR": str(supervisor),
+                    "CIVVIS_POPUP_KEEPER": str(popup_keeper),
+                    "CIVVIS_MIRROR_KEEPER": str(tmp / "absent-mirror-keeper.sh"),
+                    "CIVVIS_WEDGE_WATCHDOG": str(tmp / "absent-watchdog.sh"),
+                    "CIVVIS_GAMELOCK": str(gamelock),
+                    "CIVVIS_INTERACTIVE_HOST_LOG": str(log),
+                    "CIVVIS_INTERACTIVE_HOST_LOCK": str(host_lock),
+                    "CIVVIS_SUPERVISOR_LOCK": str(supervisor_lock),
+                    "CIVVIS_WEDGE_LOCK": str(tmp / "wedge.lock"),
+                    "CIVVIS_INTERACTIVE_HOST_POLL_S": "0.1",
+                },
+            )
+            try:
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline and not started.exists():
+                    time.sleep(0.05)
+                self.assertTrue(started.exists(), "the host must start its supervisor")
+                time.sleep(0.5)
+                self.assertFalse(popup_started.exists(),
+                                 "capture-free host must not start a visual popup keeper")
+                self.assertIn("capture-free session: visual popup keeper disabled",
+                              log.read_text())
+                self.assertIsNone(host.poll(), "host should keep supervising")
+            finally:
+                if host.poll() is None:
+                    host.terminate()
+                    host.wait(timeout=5)
+
     def test_an_existing_popup_keeper_is_adopted_not_respawned(self):
         """A host restart must reuse the lock-owned clearer keeper.
 

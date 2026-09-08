@@ -1726,14 +1726,18 @@ impl VisionCache {
 /// whether that answer survives a later board change.
 #[derive(Debug)]
 pub(crate) struct AttackReachFromFlood {
-    targets: Vec<Pos>,
+    /// The target list is immutable once the flood has built it. Keeping it
+    /// behind an `Arc` lets the AI's `EnvelopeReach` retain precisely this
+    /// sorted list instead of allocating and copying a second one per
+    /// envelope rebuild.
+    targets: Arc<[Pos]>,
     flood: Vec<Pos>,
 }
 
 impl AttackReachFromFlood {
     #[inline]
-    pub(crate) fn targets(&self) -> &[Pos] {
-        &self.targets
+    pub(crate) fn shared_targets(&self) -> Arc<[Pos]> {
+        Arc::clone(&self.targets)
     }
 
     #[inline]
@@ -1859,10 +1863,48 @@ trait FloodArrival: Copy {
     /// A neighbour reached with `rem` movement left, `zoc` telling whether
     /// arriving there entered an enemy zone of control.
     fn arrival(rem: f64, zoc: bool) -> Self;
+    /// Rebuild the answer from the score and stop bit kept by the dense flood
+    /// scratch. This is separate from [`Self::arrival`] because the `f64`
+    /// representation folds ZOC into a zero score while the approach flood
+    /// retains the score and stores ZOC as its stop bit.
+    fn recorded(remaining: f64, stopped: bool) -> Self;
     /// Movement kept here — the value the relaxation compares.
     fn remaining(self) -> f64;
     /// Whether the flood must not expand past this tile.
     fn stopped(self) -> bool;
+}
+
+/// Receives the reached tiles from one movement relaxation.
+///
+/// Most callers need the historical ordered map. `attack_reach_from_flood`
+/// only folds the reached tiles into a separately sorted target list, though,
+/// so it can retain the dense flood's discovery order in one contiguous vector
+/// instead of materializing a temporary tree first.
+trait MovementFloodOutput<V> {
+    fn reserve_reached(&mut self, count: usize);
+    fn push_reached(&mut self, pos: Pos, value: V);
+}
+
+impl<V> MovementFloodOutput<V> for BTreeMap<Pos, V> {
+    #[inline]
+    fn reserve_reached(&mut self, _count: usize) {}
+
+    #[inline]
+    fn push_reached(&mut self, pos: Pos, value: V) {
+        self.insert(pos, value);
+    }
+}
+
+impl<V> MovementFloodOutput<V> for Vec<(Pos, V)> {
+    #[inline]
+    fn reserve_reached(&mut self, count: usize) {
+        self.reserve(count);
+    }
+
+    #[inline]
+    fn push_reached(&mut self, pos: Pos, value: V) {
+        self.push((pos, value));
+    }
 }
 
 impl FloodArrival for f64 {
@@ -1876,6 +1918,10 @@ impl FloodArrival for f64 {
         } else {
             rem
         }
+    }
+
+    fn recorded(remaining: f64, _stopped: bool) -> Self {
+        remaining
     }
 
     fn remaining(self) -> f64 {
@@ -1894,6 +1940,10 @@ impl FloodArrival for (f64, bool) {
 
     fn arrival(rem: f64, zoc: bool) -> Self {
         (rem, zoc)
+    }
+
+    fn recorded(remaining: f64, stopped: bool) -> Self {
+        (remaining, stopped)
     }
 
     fn remaining(self) -> f64 {
@@ -1935,9 +1985,11 @@ struct ZocTest {
     peer: Option<u32>,
 }
 
+type AStarEntry = Reverse<(i32, Reverse<i32>, Pos, usize)>;
+
 #[derive(Default)]
 struct RouteScratch {
-    astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos)>>,
+    astar_frontier: BinaryHeap<AStarEntry>,
     bfs_frontier: VecDeque<(Pos, usize)>,
     path: Vec<Pos>,
     parent: Vec<u32>,
@@ -1945,6 +1997,15 @@ struct RouteScratch {
     distance: Vec<i32>,
     astar_touched: Vec<usize>,
     bfs_touched: Vec<usize>,
+    /// Dense movement-flood state. The old flood used a `BTreeMap<Pos, V>`
+    /// for every relaxation; these vectors keep the same strict-improvement
+    /// and LIFO visitation order while replacing tree descent with array
+    /// reads. `movement_touched` is the only part reset between floods.
+    movement_frontier: Vec<usize>,
+    movement_touched: Vec<usize>,
+    movement_seen: Vec<bool>,
+    movement_score: Vec<f64>,
+    movement_stopped: Vec<bool>,
 }
 
 impl Clone for RouteScratch {
@@ -2803,7 +2864,11 @@ mod city_roster {
     /// the two.
     #[derive(Default)]
     pub struct Cities {
-        map: BTreeMap<u32, City>,
+        /// Speculative unit branches usually never change a city. Sharing the
+        /// roster across those clones removes a full B-tree walk and all of
+        /// each City's nested allocations; the mutable accessors below detach
+        /// it only for a branch that really writes a city.
+        map: Arc<BTreeMap<u32, City>>,
         vision: std::cell::RefCell<Option<Arc<CityVisionStamps>>>,
         /// Bumped alongside every `invalidate()`, so a caller outside this
         /// module can tell "some city was exposed mutably since I last
@@ -2856,31 +2921,34 @@ mod city_roster {
         #[inline]
         pub fn get_mut(&mut self, id: &u32) -> Option<&mut City> {
             self.invalidate();
-            self.map.get_mut(id)
+            Arc::make_mut(&mut self.map).get_mut(id)
         }
 
         pub fn values_mut(&mut self) -> std::collections::btree_map::ValuesMut<'_, u32, City> {
             self.invalidate();
-            self.map.values_mut()
+            Arc::make_mut(&mut self.map).values_mut()
         }
 
         pub fn insert(&mut self, id: u32, city: City) -> Option<City> {
             self.invalidate();
-            self.map.insert(id, city)
+            Arc::make_mut(&mut self.map).insert(id, city)
         }
 
         pub fn remove(&mut self, id: &u32) -> Option<City> {
             self.invalidate();
-            self.map.remove(id)
+            Arc::make_mut(&mut self.map).remove(id)
         }
 
         pub fn clear(&mut self) {
             self.invalidate();
-            self.map.clear();
+            Arc::make_mut(&mut self.map).clear();
         }
 
         pub fn into_values(self) -> std::collections::btree_map::IntoValues<u32, City> {
-            self.map.into_values()
+            match Arc::try_unwrap(self.map) {
+                Ok(map) => map.into_values(),
+                Err(shared) => shared.as_ref().clone().into_values(),
+            }
         }
     }
 
@@ -2891,7 +2959,7 @@ mod city_roster {
         /// reasoning `VisionFrameCache::clone` records for the sight frames.
         fn clone(&self) -> Self {
             Self {
-                map: self.map.clone(),
+                map: Arc::clone(&self.map),
                 vision: std::cell::RefCell::new(self.vision.borrow().clone()),
                 generation: self.generation,
             }
@@ -2918,7 +2986,7 @@ mod city_roster {
     impl FromIterator<(u32, City)> for Cities {
         fn from_iter<I: IntoIterator<Item = (u32, City)>>(items: I) -> Self {
             Self {
-                map: items.into_iter().collect(),
+                map: Arc::new(items.into_iter().collect()),
                 vision: std::cell::RefCell::new(None),
                 generation: 0,
             }
@@ -10223,6 +10291,11 @@ impl Game {
         self.unit_ids_at(pos).to_vec()
     }
 
+    /// This player's unit ids in stable ascending order.
+    ///
+    /// The roster is a `BTreeMap` keyed by id.  Keep that order through the
+    /// read memo too: callers use the first few qualifying units as a
+    /// deterministic bounded roster.
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
         if let Some(ids) = self
             .query_memo
@@ -23662,7 +23735,7 @@ impl Game {
         // Sight range is a hard cap in Civ VI. Elevation decides what a unit can
         // see *past*, never how far it can see: a Mountain outside a Settler's
         // three tiles stays dark until something walks close enough to it.
-        for target in self.wdisk(from, radius) {
+        self.map.for_each_disk(from, radius, |target| {
             if flying
                 || self.tile_has_visibility_line(
                     heights,
@@ -23674,7 +23747,7 @@ impl Game {
             {
                 self.mark_visible(&mut visible, target);
             }
-        }
+        });
         visible
     }
 
@@ -24538,9 +24611,9 @@ impl Game {
                 && self.suzerain_of(minor.id) == Some(pid)
         }) {
             for city in self.cities.values().filter(|city| city.owner == minor.id) {
-                for position in self.wdisk(city.pos, 3) {
-                    self.mark_visible(&mut visible, position);
-                }
+                self.map.for_each_disk(city.pos, 3, |position| {
+                    self.mark_visible(&mut visible, position)
+                });
             }
         }
         // Spies are city-based rather than map Units in this engine, but have
@@ -26594,6 +26667,68 @@ impl Game {
         out
     }
 
+    /// Every destination [`Self::path_to`] can answer this turn, with its
+    /// exact path.
+    ///
+    /// A caller that compares several destinations from one unchanged board
+    /// must not rebuild the same movement flood for each one.  Keep the
+    /// `f64` arrival mode from `path_to` here: a tile inside enemy zone of
+    /// control records zero movement, so the strict-improvement rule retains
+    /// the same parent and tie-breaking path as an individual query.
+    pub(crate) fn paths_to(&self, uid: u32) -> BTreeMap<Pos, Vec<Pos>> {
+        let mut paths = BTreeMap::new();
+        let Some(unit) = self.units.get(&uid) else {
+            return paths;
+        };
+        let (start, moves) = (unit.pos, unit.moves_left);
+        // `path_to` treats the current tile as an empty legal path before it
+        // checks movement, formation locks, or whether the tile can stop a
+        // different unit.  Preserve that observable answer in the bulk form.
+        paths.insert(start, Vec::new());
+        if !self.formation_movement_locked_by_zoc(uid) {
+            let _memo = self.query_memo();
+            let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+            let reach: BTreeMap<Pos, f64> = self.relax_movement(
+                uid,
+                start,
+                moves,
+                |cur, next| self.can_pass_neighbor(uid, cur, next),
+                |next, cur| {
+                    parent.insert(next, cur);
+                },
+            );
+            for (to, _) in reach {
+                if to == start || !self.can_stop(uid, to) {
+                    continue;
+                }
+                let mut path = vec![to];
+                let mut cur = to;
+                while let Some(previous) = parent.get(&cur) {
+                    if *previous == start {
+                        break;
+                    }
+                    path.push(*previous);
+                    cur = *previous;
+                }
+                path.reverse();
+                paths.insert(to, path);
+            }
+        }
+        // `path_to` deliberately handles adjacent destinations through
+        // `can_move`: that carries immediate movement/attack and linked-unit
+        // gates which a longer-path flood has historically not asked.  Replace
+        // the flood's answer for precisely those six destinations so this
+        // bulk reader stays byte-for-byte equivalent to individual queries.
+        for to in self.nbrs(start) {
+            if self.can_move(uid, to) {
+                paths.insert(to, vec![to]);
+            } else {
+                paths.remove(&to);
+            }
+        }
+        paths
+    }
+
     /// Where to walk toward `target` when the way forward is blocked by
     /// nothing but this unit's own units.
     ///
@@ -26743,7 +26878,10 @@ impl Game {
             return Arc::clone(reach);
         }
         let (targets, flood) = self.attack_reach_from_flood(uid);
-        let reach = Arc::new(AttackReachFromFlood { targets, flood });
+        let reach = Arc::new(AttackReachFromFlood {
+            targets: Arc::from(targets),
+            flood,
+        });
         #[cfg(test)]
         {
             cache.computations += 1;
@@ -26770,21 +26908,29 @@ impl Game {
             return (vec![], vec![]);
         }
 
+        let attack_range = self.unit_attack_range(uid);
         if spec.domain.as_deref() == Some("air") {
             let origin = self.air_operation_origin(uid);
-            return (
-                self.wdisk(origin, self.unit_attack_range(uid))
-                    .into_iter()
-                    .filter(|target| *target != origin && self.map.tiles.contains_key(target))
-                    .collect(),
-                vec![],
-            );
+            let mut targets = Vec::new();
+            self.map.for_each_disk(origin, attack_range, |target| {
+                if target != origin {
+                    targets.push(target);
+                }
+            });
+            targets.sort_unstable();
+            targets.dedup();
+            return (targets, vec![]);
         }
 
         let start = unit.pos;
         let max_moves = self.unit_max_moves(uid);
-        let positions = self.flow_past(uid, start, max_moves, true);
-        let flood: Vec<Pos> = positions.keys().copied().collect();
+        // `targets` is sorted below and the sensitivity cache turns `flood`
+        // into a set, so neither consumer observes the ordered-map contract of
+        // `flow_past`. Keep this one flood in its already-dense discovery order
+        // rather than allocating an intermediate `BTreeMap<Pos, f64>` merely to
+        // immediately walk it again.
+        let positions = self.flow_past_unordered(uid, start, max_moves, true);
+        let flood: Vec<Pos> = positions.iter().map(|(position, _)| *position).collect();
         // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
         // A ranged unit offers the same tile from every stride it can shoot
         // from, so the set spent most of its work absorbing duplicates a node
@@ -26792,7 +26938,21 @@ impl Game {
         // second set. A `Vec` sorted once produces the identical ascending,
         // distinct sequence this function's contract promises, from one
         // buffer, and `BasicAi`'s envelope adopts it without copying.
-        let mut targets: Vec<Pos> = Vec::new();
+        let radius = attack_range.max(0) as usize;
+        let disk_capacity = 1usize
+            .saturating_add(
+                3usize
+                    .saturating_mul(radius)
+                    .saturating_mul(radius.saturating_add(1)),
+            )
+            .min(64);
+        let per_position = if spec.has_ranged_attack() {
+            disk_capacity
+        } else {
+            6
+        };
+        let mut targets: Vec<Pos> =
+            Vec::with_capacity(positions.len().saturating_mul(per_position));
         for (from, remaining) in positions {
             if remaining <= 0.0 {
                 continue;
@@ -26804,20 +26964,16 @@ impl Game {
                     || from == start
                     || self.promotion_effect(unit, "attack_after_move") > 0.0)
             {
-                for target in self.wdisk(from, self.unit_attack_range(uid)) {
-                    if target != from
-                        && self.map.tiles.contains_key(&target)
-                        && self.unit_has_line_of_sight_from(uid, from, target)
-                    {
+                self.map.for_each_disk(from, attack_range, |target| {
+                    if target != from && self.unit_has_line_of_sight_from(uid, from, target) {
                         targets.push(target);
                     }
-                }
+                });
             }
 
             if spec.is_melee_capable() {
                 for target in self.nbrs(from) {
-                    if !self.map.tiles.contains_key(&target)
-                        || !self.unit_can_melee_target_domain(uid, target)
+                    if !self.unit_can_melee_target_domain(uid, target)
                         || !self.unit_can_cross_cliff(uid, from, target)
                     {
                         continue;
@@ -26870,8 +27026,14 @@ impl Game {
             if from != start && !self.can_stop(uid, from) {
                 continue;
             }
-            for to in self.nbrs(from) {
-                if !self.map.tiles.contains_key(&to) || !self.can_enter_neighbor(uid, from, to) {
+            let Some(from_index) = self.map.tiles.index_of(from) else {
+                continue;
+            };
+            let neighbors = self.map.neighbor_indices(from_index);
+            let map_tiles = self.map.tiles.values().as_slice();
+            for &neighbor_index in neighbors.as_slice() {
+                let to = map_tiles[neighbor_index as usize].pos;
+                if !self.can_enter_neighbor(uid, from, to) {
                     continue;
                 }
                 let cost = self.unit_step_cost(uid, from, to);
@@ -26971,15 +27133,18 @@ impl Game {
         // On equal f-scores, prefer the node furthest along the route. This
         // avoids breadth-first expansion of an entire open plain/ocean before
         // following one of several equally short paths to the destination.
-        scratch
-            .astar_frontier
-            .push(Reverse((self.wdist(start, to), Reverse(0), start)));
+        scratch.astar_frontier.push(Reverse((
+            self.wdist(start, to),
+            Reverse(0),
+            start,
+            start_index,
+        )));
 
         let mut goal = None;
-        while let Some(Reverse((_, Reverse(traveled), cur))) = scratch.astar_frontier.pop() {
-            let Some(cur_index) = self.map.tiles.index_of(cur) else {
-                continue;
-            };
+        let map_tiles = self.map.tiles.values().as_slice();
+        while let Some(Reverse((_, Reverse(traveled), cur, cur_index))) =
+            scratch.astar_frontier.pop()
+        {
             if traveled != scratch.distance[cur_index] {
                 continue;
             }
@@ -26987,16 +27152,16 @@ impl Game {
                 goal = Some(cur_index);
                 break;
             }
-            for n in self.nbrs(cur) {
+            let neighbors = self.map.neighbor_indices(cur_index);
+            for &neighbor_index in neighbors.as_slice() {
+                let index = neighbor_index as usize;
+                let n = map_tiles[index].pos;
                 // As in `first_route_step`: the distance test is a array read
                 // and `can_path_through_known_traversable` is a ruleset sweep, so test the
                 // cheap one first. Every edge cost here is 1, so a neighbour
                 // that cannot improve on the distance already recorded is the
                 // common case, and both orders leave state untouched when
                 // they skip.
-                let Some(index) = self.map.tiles.index_of(n) else {
-                    continue;
-                };
                 let next_distance = traveled + 1;
                 if next_distance >= scratch.distance[index] {
                     continue;
@@ -27020,11 +27185,10 @@ impl Game {
                 let estimate = next_distance + (self.wdist(n, to) - range).max(0);
                 scratch
                     .astar_frontier
-                    .push(Reverse((estimate, Reverse(next_distance), n)));
+                    .push(Reverse((estimate, Reverse(next_distance), n, index)));
             }
         }
         let mut cursor = goal?;
-        let map_tiles = self.map.tiles.values().as_slice();
         scratch.path.push(map_tiles[cursor].pos);
         while cursor != start_index {
             let previous = scratch.parent[cursor];
@@ -27283,21 +27447,19 @@ impl Game {
             if zones[index] != 0 {
                 continue;
             }
-            let seed = self.map.tiles.values().as_slice()[index].pos;
             if traversable[index] == 0 {
                 continue;
             }
             label += 1;
             zones[index] = label;
-            queue.push_back(seed);
-            while let Some(cur) = queue.pop_front() {
-                for n in self.nbrs(cur) {
-                    let Some(slot) = self.map.tiles.index_of(n) else {
-                        continue;
-                    };
+            queue.push_back(index);
+            while let Some(cur_index) = queue.pop_front() {
+                let neighbors = self.map.neighbor_indices(cur_index);
+                for &neighbor_index in neighbors.as_slice() {
+                    let slot = neighbor_index as usize;
                     if zones[slot] == 0 && traversable[slot] != 0 {
                         zones[slot] = label;
-                        queue.push_back(n);
+                        queue.push_back(slot);
                     }
                 }
             }
@@ -27407,10 +27569,11 @@ impl Game {
         // tie-break while avoiding a fresh flood for every unit.
         let mut best_distance = i32::MAX;
         let mut best = None;
-        for next in self.nbrs(start) {
-            let Some(index) = self.map.tiles.index_of(next) else {
-                continue;
-            };
+        let map_tiles = self.map.tiles.values().as_slice();
+        let neighbors = self.map.neighbor_indices(start_index);
+        for &neighbor_index in neighbors.as_slice() {
+            let index = neighbor_index as usize;
+            let next = map_tiles[index].pos;
             if !self.can_enter_neighbor(uid, start, next) {
                 continue;
             }
@@ -27438,6 +27601,7 @@ impl Game {
     ) -> Vec<i32> {
         const UNREACHED: i32 = i32::MAX;
         let mut distance = vec![UNREACHED; self.map.tiles.len()];
+        let map_tiles = self.map.tiles.values().as_slice();
         let mut queue = VecDeque::new();
         for &goal in goals {
             let Some(index) = self.map.tiles.index_of(goal) else {
@@ -27450,15 +27614,15 @@ impl Game {
                 continue;
             }
             distance[index] = 0;
-            queue.push_back((goal, index));
+            queue.push_back(index);
         }
 
-        while let Some((current, current_index)) = queue.pop_front() {
+        while let Some(current_index) = queue.pop_front() {
             let next_distance = distance[current_index].saturating_add(1);
-            for predecessor in self.nbrs(current) {
-                let Some(index) = self.map.tiles.index_of(predecessor) else {
-                    continue;
-                };
+            let neighbors = self.map.neighbor_indices(current_index);
+            for &neighbor_index in neighbors.as_slice() {
+                let index = neighbor_index as usize;
+                let predecessor = map_tiles[index].pos;
                 if distance[index] != UNREACHED || zones[index] == 0 {
                     continue;
                 }
@@ -27471,7 +27635,7 @@ impl Game {
                     continue;
                 }
                 distance[index] = next_distance;
-                queue.push_back((predecessor, index));
+                queue.push_back(index);
             }
         }
         distance
@@ -27518,10 +27682,14 @@ impl Game {
         scratch.seen[start_index] = true;
         scratch.bfs_touched.push(start_index);
         scratch.bfs_frontier.push_back((start, start_index));
+        let map_tiles = self.map.tiles.values().as_slice();
 
         let mut goal = None;
         'search: while let Some((cur, cur_index)) = scratch.bfs_frontier.pop_front() {
-            for n in self.nbrs(cur) {
+            let neighbors = self.map.neighbor_indices(cur_index);
+            for &neighbor_index in neighbors.as_slice() {
+                let index = neighbor_index as usize;
+                let n = map_tiles[index].pos;
                 // Settle the cheap disqualifiers before asking whether the
                 // unit may enter. Every interior tile is reached as a
                 // neighbour of all six of its own neighbours, so five of
@@ -27531,9 +27699,6 @@ impl Game {
                 // owner and a city lookup, only to discard the answer.
                 // Skipping earlier cannot change the walk: both orders
                 // `continue` without touching any state.
-                let Some(index) = self.map.tiles.index_of(n) else {
-                    continue;
-                };
                 if scratch.seen[index] {
                     continue;
                 }
@@ -27589,18 +27754,19 @@ impl Game {
     /// guards (`formation_movement_locked_by_zoc`) before calling: the three
     /// callers return different empty answers, and two of them read the flood's
     /// parents after it, still inside their scope.
-    fn relax_movement<V, P, R>(
+    fn relax_movement_into<V, P, R, O>(
         &self,
         uid: u32,
         start: Pos,
         moves: f64,
         passable: P,
         mut record_parent: R,
-    ) -> BTreeMap<Pos, V>
-    where
+        output: &mut O,
+    ) where
         V: FloodArrival,
         P: Fn(Pos, Pos) -> bool,
         R: FnMut(Pos, Pos),
+        O: MovementFloodOutput<V>,
     {
         let max_moves = self.unit_max_moves(uid);
         // Both of these ask the unit, never the tile, and the loop below asks
@@ -27608,19 +27774,47 @@ impl Game {
         // `Game::unit_moves_cap` and `Game::formation_zoc_test`.
         let cap = self.unit_moves_cap(uid);
         let zoc = self.formation_zoc_test(uid);
-        let mut best: BTreeMap<Pos, V> = BTreeMap::new();
-        best.insert(start, V::start(moves));
-        let mut queue = vec![start];
-        while let Some(cur) = queue.pop() {
-            let here = best[&cur];
-            let rem = here.remaining();
-            if rem <= 0.0 || here.stopped() {
+        const UNSEEN: f64 = f64::NEG_INFINITY;
+        let tile_count = self.map.tiles.len();
+        let mut scratch = self.route_scratch.borrow_mut();
+        if scratch.movement_seen.len() < tile_count {
+            scratch.movement_seen.resize(tile_count, false);
+            scratch.movement_score.resize(tile_count, UNSEEN);
+            scratch.movement_stopped.resize(tile_count, false);
+        }
+        let touched = scratch.movement_touched.len();
+        for index in 0..touched {
+            let slot = scratch.movement_touched[index];
+            scratch.movement_seen[slot] = false;
+            scratch.movement_score[slot] = UNSEEN;
+            scratch.movement_stopped[slot] = false;
+        }
+        scratch.movement_touched.clear();
+        scratch.movement_frontier.clear();
+        let start_index =
+            self.map.tiles.index_of(start).unwrap_or_else(|| {
+                panic!("movement flood started outside the world map at {start:?}")
+            });
+        scratch.movement_seen[start_index] = true;
+        scratch.movement_score[start_index] = moves;
+        scratch.movement_touched.push(start_index);
+        scratch.movement_frontier.push(start_index);
+        let map_tiles = self.map.tiles.values().as_slice();
+        while let Some(cur_index) = scratch.movement_frontier.pop() {
+            let cur = map_tiles[cur_index].pos;
+            let rem = scratch.movement_score[cur_index];
+            let stopped = scratch.movement_stopped[cur_index];
+            if rem <= 0.0 || stopped {
                 continue;
             }
-            for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n) || !passable(cur, n) {
+            let neighbors = self.map.neighbor_indices(cur_index);
+            for &neighbor_index in neighbors.as_slice() {
+                let neighbor_index = neighbor_index as usize;
+                let n = map_tiles[neighbor_index].pos;
+                if !passable(cur, n) {
                     continue;
                 }
+                let index = neighbor_index;
                 let cost = self.unit_step_cost(uid, cur, n);
                 let fresh = cur == start && rem >= max_moves;
                 if rem < cost && !fresh {
@@ -27637,17 +27831,48 @@ impl Game {
                 // Comparing the pre-ZOC movement instead leaves every distance
                 // identical and hands `path_to` a different walk to a
                 // destination under a zone of control.
-                if best
-                    .get(&n)
-                    .map(|b| arrival.remaining() > b.remaining())
-                    .unwrap_or(true)
-                {
-                    best.insert(n, arrival);
+                let score = arrival.remaining();
+                if !scratch.movement_seen[index] || score > scratch.movement_score[index] {
+                    if !scratch.movement_seen[index] {
+                        scratch.movement_seen[index] = true;
+                        scratch.movement_touched.push(index);
+                    }
+                    scratch.movement_score[index] = score;
+                    scratch.movement_stopped[index] = arrival.stopped();
                     record_parent(n, cur);
-                    queue.push(n);
+                    scratch.movement_frontier.push(index);
                 }
             }
         }
+        output.reserve_reached(scratch.movement_touched.len());
+        for &index in &scratch.movement_touched {
+            let value = if index == start_index {
+                V::start(moves)
+            } else {
+                V::recorded(
+                    scratch.movement_score[index],
+                    scratch.movement_stopped[index],
+                )
+            };
+            output.push_reached(map_tiles[index].pos, value);
+        }
+    }
+
+    fn relax_movement<V, P, R>(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        passable: P,
+        record_parent: R,
+    ) -> BTreeMap<Pos, V>
+    where
+        V: FloodArrival,
+        P: Fn(Pos, Pos) -> bool,
+        R: FnMut(Pos, Pos),
+    {
+        let mut best = BTreeMap::new();
+        self.relax_movement_into(uid, start, moves, passable, record_parent, &mut best);
         best
     }
 
@@ -27664,6 +27889,30 @@ impl Game {
     /// on the same stacking layer is walked through and never landed on. Ask
     /// [`Game::can_stop`] before offering one of these as a destination —
     /// [`Game::reachable`] is the filtered form.
+    fn flow_past_into<O>(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        through_units: bool,
+        output: &mut O,
+    ) where
+        O: MovementFloodOutput<f64>,
+    {
+        if self.formation_movement_locked_by_zoc(uid) {
+            return;
+        }
+        let _memo = self.query_memo();
+        self.relax_movement_into(
+            uid,
+            start,
+            moves,
+            |cur, n| self.entry_at_neighbor(uid, cur, n, through_units) != Entry::Blocked,
+            |_, _| {}, // nobody asks this flood for the walk
+            output,
+        );
+    }
+
     fn flow_past(
         &self,
         uid: u32,
@@ -27671,17 +27920,25 @@ impl Game {
         moves: f64,
         through_units: bool,
     ) -> BTreeMap<Pos, f64> {
-        if self.formation_movement_locked_by_zoc(uid) {
-            return BTreeMap::new();
-        }
-        let _memo = self.query_memo();
-        self.relax_movement(
-            uid,
-            start,
-            moves,
-            |cur, n| self.entry_at_neighbor(uid, cur, n, through_units) != Entry::Blocked,
-            |_, _| {}, // nobody asks this flood for the walk
-        )
+        let mut best = BTreeMap::new();
+        self.flow_past_into(uid, start, moves, through_units, &mut best);
+        best
+    }
+
+    /// The movement flood in traversal-discovery order. This is private to the
+    /// attack-envelope path, whose two consumers either sort later or use set
+    /// membership and therefore do not observe `flow_past`'s ordered-map
+    /// contract.
+    fn flow_past_unordered(
+        &self,
+        uid: u32,
+        start: Pos,
+        moves: f64,
+        through_units: bool,
+    ) -> Vec<(Pos, f64)> {
+        let mut positions = Vec::new();
+        self.flow_past_into(uid, start, moves, through_units, &mut positions);
+        positions
     }
 
     /// This turn's cheapest legal path to `to`, or `None` when the unit cannot
@@ -35358,3 +35615,6 @@ mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;
+
+#[cfg(test)]
+mod attack_reach_flood_tests;

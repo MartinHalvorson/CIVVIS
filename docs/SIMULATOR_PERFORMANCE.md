@@ -3868,6 +3868,74 @@ and neither window resolves a change this small:
 
 The equal report hashes are load-bearing; the opposite timing signs are not.
 
+## 2026-09-03 — clone topology, indexed movement, and allocation-free geometry
+
+The current-main profile still put the simulator's speculative-action path under
+the microscope: `Game::clone`, movement floods, attack envelopes, visibility
+disks, and the persistent worker pool were all paying for data that was either
+immutable topology or immediately consumed. This pass kept the public answers
+and tie-breaking rules intact while moving the transport underneath them.
+
+### The changes
+
+- `TileGrid` now shares its immutable offset-to-tile slot table across clones,
+  and `Cities` shares its B-tree until a mutable city operation actually
+  detaches it. This removes the map-sized slot copy and the city-roster walk
+  from the common speculative clone; writes retain copy-on-write semantics.
+- `WorldMap` builds and shares topology adjacency once. It also retains the
+  neighbor tile indices beside the public position form, so dense movement and
+  route floods stay in tile-vector space instead of resolving every edge back
+  through the position index. The cache checks both topology and the slot
+  allocation before use, so public tile-grid replacement still takes the old
+  safe path.
+- `RouteScratch` now owns reusable dense movement scores, stop bits, touched
+  slots, and frontiers. The movement API still returns its historical sorted
+  `BTreeMap`, and its strict-improvement/LIFO order is unchanged; only the
+  inner relaxation avoids a tree operation per candidate. A compact-vector
+  return experiment was measured and reverted: it fell to 259 turns/sec on the
+  small benchmark versus the 281–284 turns/sec baseline.
+- A worker publishes its completed `WorkPool` results as one batch rather than
+  taking the result-channel path once per candidate. Index validation,
+  deterministic result placement, and panic/drain behavior remain unchanged.
+- Globe and flat-map disks now have an internal visitor form. Attack envelopes,
+  visibility rays, and immediate city-state sight folds consume disks without
+  allocating a temporary `Vec`; the owned sorted `disk` API remains available
+  to callers that retain the answer. Adjacent globe distances also answer from
+  the six-entry topology row before the general ring search.
+
+### Evidence
+
+The developed 6-player, 74×46, 9-city-state, Online Continents rollout is a
+useful end-turn probe, but it is not a paired benchmark: this machine runs other
+agents and a live spectator. The previously recorded current-main medians were
+28.4 µs for `clone`, 26.6 µs for speculative clone, 145.1 µs for clone + move,
+2,833.9 µs for clone + end turn, 26.3 µs for no-fog clone + move, and 879.1 µs
+for no-fog clone + end. The final release probe reported 13.6, 13.2, 87.1,
+1,993.7, 16.7, and 763.1 µs respectively. Treat those as directional local
+evidence, not a resolved percentage claim.
+
+The standard release benchmark reported **291 turns/sec** for 16 games,
+100 turns, one job, and **776 turns/sec** for 32 games, 100 turns, eight jobs.
+The earlier current-main serial recordings were 281–284 turns/sec. A fresh
+150-turn deterministic simulation produced the same winner and complete report
+as the baseline; its only diff was the wall-clock line (`20.254s` versus
+`19.550s`).
+
+The final macOS sample still identifies the honest next frontier: advanced AI
+turn evaluation dominates, with attack reach around 14.4% inclusive, movement
+floods around 10.3%, visibility around 6–7%, `Sphere::distance` about 6.4%
+self-time, and allocator/libc primitives about 16.8% of running samples.
+`Sphere::disk` is down to about 1.1% self-time after the visitor path. The
+remaining AI decision logic is shared with active strategy work, so this task
+does not rewrite it under another agent's ownership claim.
+
+The full locked suite passed after the implementation: **2,960 library tests
+passed, 46 ignored**, plus 14 main-binary tests, 143 order-channel tests, 17
+integration tests, 4 protocol-parity tests, and four ignored documentation
+tests. The focused movement, routing, world-disk, Sphere, and persistent-pool
+tests also passed. No generated profile or benchmark output is part of the
+checkout.
+
 ### The first CI gate saw no measurable regression
 
 GitHub's required five-pair deployment gate, against base `49722445`, also

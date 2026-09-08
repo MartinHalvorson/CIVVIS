@@ -159,6 +159,8 @@ class AGameThatWillNotExitReportsTheSafeStopFailure(unittest.TestCase):
     def test_quit_game_writes_the_remaining_pids_to_stderr(self):
         with mock.patch.object(civ6_env, "game_pids",
                                side_effect=[[4242], [4242], [4242]]), \
+             mock.patch.object(civ6_env, "request_macos_quit",
+                               return_value=False), \
              mock.patch.object(civ6_env.os, "kill") as kill, \
              mock.patch("time.time", side_effect=[0.0, 21.0]), \
              mock.patch("time.sleep"), \
@@ -171,6 +173,28 @@ class AGameThatWillNotExitReportsTheSafeStopFailure(unittest.TestCase):
             file=sys.stderr,
             flush=True,
         )
+
+
+class MacosQuitMenuTest(unittest.TestCase):
+    """The native menu is a graceful fallback, not a disguised hard kill."""
+
+    def test_request_macos_quit_uses_the_application_quit_menu(self):
+        completed = mock.Mock(returncode=0, stdout="true\n")
+        with mock.patch.object(civ6_env.sys, "platform", "darwin"), \
+             mock.patch.object(civ6_env.subprocess, "run",
+                               return_value=completed) as ran:
+            self.assertTrue(civ6_env.request_macos_quit())
+
+        command = ran.call_args.args[0]
+        self.assertEqual(command[:2], ["osascript", "-e"])
+        self.assertIn("Quit Civilization VI", command[2])
+        self.assertEqual(ran.call_args.kwargs["timeout"], 5)
+
+    def test_request_macos_quit_refuses_non_macos_hosts(self):
+        with mock.patch.object(civ6_env.sys, "platform", "linux"), \
+             mock.patch.object(civ6_env.subprocess, "run") as ran:
+            self.assertFalse(civ6_env.request_macos_quit())
+        ran.assert_not_called()
 
 
 if __name__ == "__main__":

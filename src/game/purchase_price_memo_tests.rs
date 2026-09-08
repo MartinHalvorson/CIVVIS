@@ -68,6 +68,14 @@ fn a_warm_purchase_price_memo_matches_a_cold_derivation_under_one_guard() {
         !cold.is_empty(),
         "three rich cities must offer at least one purchase"
     );
+    assert!(
+        game.query_memo
+            .purchase_price
+            .borrow()
+            .as_ref()
+            .is_some_and(|quotes| !quotes.is_empty()),
+        "an enclosing QueryMemo must still retain quotes for a second purchase-menu pass"
+    );
 
     // Warm: read again under the same still-open guard, with nothing between
     // the two asks that could change an answer.
@@ -96,6 +104,28 @@ fn a_warm_purchase_price_memo_matches_a_cold_derivation_under_one_guard() {
             }
         }
     }
+}
+
+/// The standalone projection takes the cheap uncached price path for its
+/// one-shot sweep. Its answer must nevertheless remain the literal purchase
+/// portion of the full legal-action enumeration, including its stable order.
+#[test]
+fn standalone_purchase_menu_matches_the_stock_purchase_projection() {
+    let game = several_cities(91_405);
+    let stock = game
+        .legal_actions_within(0, ActionFamilies::PURCHASES | ActionFamilies::EMPIRE)
+        .into_iter()
+        .filter(|action| {
+            matches!(
+                action,
+                Action::Buy { .. }
+                    | Action::BuyBuilding { .. }
+                    | Action::BuyDistrict { .. }
+                    | Action::BuyPlot { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(game.legal_purchase_actions(0), stock);
 }
 
 /// ★★★★ THE REGRESSION THIS DESIGN EXISTS TO AVOID.

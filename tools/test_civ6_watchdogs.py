@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -246,6 +247,62 @@ class ReachVerdictTest(unittest.TestCase):
 
 
 class InfrastructureMirrorTest(unittest.TestCase):
+    def test_default_binary_prefers_a_matching_run_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "runtime" / "civvis_orders"
+            binary.parent.mkdir()
+            binary.write_bytes(b"the exact runtime")
+            digest = civ6_watchdogs._binary_sha256(binary)
+            run = root / "run"
+            run.mkdir()
+            (run / "runtime_updates.jsonl").write_text(json.dumps({
+                "kind": "runtime_update",
+                "binary": str(binary),
+                "binary_sha256": digest,
+            }) + "\n")
+
+            self.assertEqual(civ6_watchdogs.default_binary(run, root / "checkout"), binary)
+
+    def test_default_binary_falls_back_when_recorded_binary_was_rebuilt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recorded = root / "runtime" / "civvis_orders"
+            recorded.parent.mkdir()
+            recorded.write_bytes(b"rebuilt image")
+            run = root / "run"
+            run.mkdir()
+            (run / "runtime_updates.jsonl").write_text(json.dumps({
+                "kind": "runtime_update",
+                "binary": str(recorded),
+                "binary_sha256": "0" * 64,
+            }) + "\n")
+            cached = root / "cache" / "published" / ("a" * 40) / "civvis_orders"
+            cached.parent.mkdir(parents=True)
+            cached.write_bytes(b"published image")
+
+            self.assertEqual(
+                civ6_watchdogs.default_binary(
+                    run, root / "checkout", root / "cache" / "published"
+                ),
+                cached,
+            )
+
+    def test_default_binary_uses_published_cache_without_a_local_build(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cached = root / "published" / ("b" * 40) / "civvis_orders"
+            cached.parent.mkdir(parents=True)
+            cached.write_bytes(b"published image")
+
+            with mock.patch.object(civ6_watchdogs, "HERE", root / "checkout" / "tools"):
+                self.assertEqual(
+                    civ6_watchdogs.default_binary(
+                        repo=root / "checkout", cache_root=root / "published"
+                    ),
+                    cached,
+                )
+
     def test_latest_state_event_cuts_the_stream_at_the_selected_frame(self) -> None:
         events = [
             {"kind": "tiles", "turn": 10, "plots": [{"x": 1, "y": 1}]},

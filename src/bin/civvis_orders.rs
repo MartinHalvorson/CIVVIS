@@ -1574,29 +1574,31 @@ fn host_city_target(
 
 /// Resolve a CIVVIS player seat back to the Firaxis player id the order channel uses.
 ///
-/// Major civilizations occupy compact seats in the exact order of `state.rivals`,
-/// but city-states live in the mirror's later minor seats and are only exported
-/// through `state.minors`.  Resolve those through an exact city plot rather than
-/// assuming a generated city-state roster has the host's player numbering.
+/// Major civilizations occupy the model's stable major seats, while city-states
+/// live in the mirror's later minor seats and are only exported through
+/// `state.minors`. Resolve those through an exact city plot rather than assuming
+/// a generated city-state roster has the host's player numbering.
 fn host_player_target(
     mirror_state: &civvis::mirror::LiveMirror,
     state: &civvis::mirror::StateSnapshot,
     player: usize,
 ) -> Option<i64> {
-    state
-        .rivals
-        .get(player.saturating_sub(1))
-        .map(|rival| rival.player as i64)
-        .or_else(|| {
-            mirror_state
-                .game
-                .cities
-                .values()
-                .filter(|city| city.owner == player)
-                .find_map(|city| {
-                    host_city_target(mirror_state, state, city.id).map(|(_, owner)| owner as i64)
-                })
-        })
+    civvis::mirror::host_rival_for_seat(
+        state,
+        player,
+        civvis::mirror::modeled_major_player_count(&mirror_state.game),
+    )
+    .map(|rival| rival.player as i64)
+    .or_else(|| {
+        mirror_state
+            .game
+            .cities
+            .values()
+            .filter(|city| city.owner == player)
+            .find_map(|city| {
+                host_city_target(mirror_state, state, city.id).map(|(_, owner)| owner as i64)
+            })
+    })
 }
 
 /// Resolve a mirrored city-state SEAT back to Firaxis's minor player id.
@@ -1863,12 +1865,10 @@ fn border_buy_exploration_targets(
     if explorers.is_empty() {
         return Default::default();
     }
-    let seats_by_host: std::collections::BTreeMap<usize, usize> = state
-        .rivals
-        .iter()
-        .enumerate()
-        .map(|(index, rival)| (rival.player, index + 1))
-        .collect();
+    let seats_by_host = civvis::mirror::host_major_seat_map(
+        state,
+        civvis::mirror::modeled_major_player_count(game),
+    );
     let mut targets: std::collections::BTreeMap<
         usize,
         (
@@ -1921,8 +1921,7 @@ fn border_buy_exploration_targets(
 /// Why no passage-purchase order was appended this turn, for the note;
 /// `None` when one was. `sealed_by` is the mirrored board's
 /// `sealed_border_owners`; rival records are looked up by the mirror's own
-/// seating rule (majors take seats 1.. in export order, the same mapping
-/// `host_player_target` uses).
+/// stable host-id seating rule (the same mapping `host_player_target` uses).
 fn append_border_buy_order(
     sealed_by: &std::collections::BTreeMap<usize, u32>,
     exploration: &std::collections::BTreeMap<usize, BorderExplorationPriority>,
@@ -1932,16 +1931,14 @@ fn append_border_buy_order(
 ) -> Option<&'static str> {
     let has_sealable_border = sealed_by.iter().any(|(seat, count)| {
         *count >= BORDER_BUY_MIN_SEALED
-            && state
-                .rivals
-                .get(seat.saturating_sub(1))
+            && civvis::mirror::host_rival_for_seat(state, *seat, 0)
                 .is_some_and(|rival| !rival.at_war && rival.open_borders != Some(true))
     });
     let worst = sealed_by
         .iter()
         .filter(|(_, count)| **count >= BORDER_BUY_MIN_SEALED)
         .filter_map(|(seat, count)| {
-            state.rivals.get(seat.saturating_sub(1)).and_then(|rival| {
+            civvis::mirror::host_rival_for_seat(state, *seat, 0).and_then(|rival| {
                 exploration
                     .get(seat)
                     .map(|priority| (*seat, rival, *count, *priority))
@@ -4099,7 +4096,11 @@ fn decide(
         let already = orders.iter().any(|o| o.kind == "war");
         if arm.war_from_plan && !already {
             if let Some(seat) = report.target_player {
-                if let Some(rival) = state.rivals.get(seat.saturating_sub(1)) {
+                if let Some(rival) = civvis::mirror::host_rival_for_seat(
+                    state,
+                    seat,
+                    civvis::mirror::modeled_major_player_count(&mirror_state.game),
+                ) {
                     if !rival.at_war {
                         orders.push(Order {
                             kind: "war",
@@ -4121,7 +4122,11 @@ fn decide(
         // the real Civilization VI rival. Run civvis-20260801T221459Z: 106
         // offer decisions from t118, zero orders, the losing war unexitable.
         for seat in &report.peace_offers {
-            if let Some(rival) = state.rivals.get(seat.saturating_sub(1)) {
+            if let Some(rival) = civvis::mirror::host_rival_for_seat(
+                state,
+                *seat,
+                civvis::mirror::modeled_major_player_count(&mirror_state.game),
+            ) {
                 let subject = rival.player as i64;
                 let already = orders
                     .iter()
@@ -14466,7 +14471,9 @@ mod tests {
         // Two peaceful majors have enough sealed ground to sell passage. The
         // larger French seal is remote; our Scout is one step from Kongo's
         // border, which is itself beside unknown ground and the lobby still
-        // has an uncontacted major and city-states.
+        // has an uncontacted major and city-states. Host player 3 is omitted
+        // from the met-gated rival list, so Kongo remains model seat 2 and
+        // France remains model seat 4.
         let mut kongo_border = grass(4, 3);
         kongo_border.o = 2;
         let mut france_border = grass(10, 5);
@@ -14483,7 +14490,7 @@ mod tests {
             gold: 200,
             civics: vec!["CIVIC_EARLY_EMPIRE".to_string()],
             seat: civvis::mirror::Seat {
-                players: 4,
+                players: 5,
                 city_states: 3,
                 ..civvis::mirror::Seat::default()
             },
@@ -14516,22 +14523,22 @@ mod tests {
             }],
             ..StateSnapshot::default()
         };
-        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 3, 250, 0);
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 5, 3, 250, 0);
         assert!(
             mirror.uid_of.contains_key(&91),
             "fixture precondition: the Scout reaches the mirrored board"
         );
         let sealed_by: std::collections::BTreeMap<usize, u32> =
-            [(1, 7), (2, 21)].into_iter().collect();
+            [(2, 7), (4, 21)].into_iter().collect();
         let exploration =
             border_buy_exploration_targets(&snapshot, &state, &mirror.game, &sealed_by);
         let kongo = exploration
-            .get(&1)
+            .get(&2)
             .expect("the nearby Scout can use Kongo's frontier");
         assert_eq!(kongo.explorers, 1);
         assert!(kongo.frontier_tiles > 0);
         assert!(
-            !exploration.contains_key(&2),
+            !exploration.contains_key(&4),
             "a larger seal outside the Scout's approach is not an exploration purchase"
         );
 
@@ -14542,6 +14549,55 @@ mod tests {
         );
         assert_eq!(orders[0].subject, Some(2));
         assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
+    }
+
+    #[test]
+    fn order_targets_keep_host_ids_when_a_met_gated_rival_is_missing() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 100,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            seat: civvis::mirror::Seat {
+                local_player: 0,
+                players: 6,
+                ..civvis::mirror::Seat::default()
+            },
+            rivals: vec![
+                StateRival {
+                    player: 1,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 2,
+                    ..StateRival::default()
+                },
+                // Host player 3 is not met and is absent from this export.
+                StateRival {
+                    player: 4,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+
+        assert_eq!(host_player_target(&mirror, &state, 1), Some(1));
+        assert_eq!(host_player_target(&mirror, &state, 2), Some(2));
+        assert_eq!(host_player_target(&mirror, &state, 3), None);
+        assert_eq!(host_player_target(&mirror, &state, 4), Some(4));
+
+        let war = translate(&Action::DeclareWar { player: 4 }, &mirror, &state)
+            .expect("a mapped rival's war declaration crosses");
+        assert_eq!(war.subject, Some(4));
+        let peace = translate(&Action::MakePeace { player: 4 }, &mirror, &state)
+            .expect("a mapped rival's peace offer crosses");
+        assert_eq!(peace.subject, Some(4));
     }
 
     #[test]

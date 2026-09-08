@@ -22487,6 +22487,81 @@ impl AdvancedAi {
                     instead of a Spaceport",
                    g.max_turns.saturating_sub(g.turn));
         }
+        self.repair_stalled_science_project_queues(g, pid);
+    }
+
+    /// Reclaim a committed science queue whose Spaceport has been pillaged.
+    ///
+    /// `Game::process_city` correctly stalls a launch project while every
+    /// Spaceport in that city is pillaged, but the strategic governor normally
+    /// treats a non-empty queue as a commitment and never asks the repair menu
+    /// again. That makes a spy or raid turn a recoverable infrastructure loss
+    /// into an indefinitely frozen race: `Item::Repair { repair: "district" }`
+    /// is legal, but the queue head hides it. Switching through `Produce` banks
+    /// the project's progress by its normal item key, repairs the launch site,
+    /// and lets the next science pass resume the same rung.
+    fn repair_stalled_science_project_queues(&self, g: &mut Game, pid: usize) {
+        if self.raced_target() != Some(VictoryTarget::Science) {
+            return;
+        }
+        let is_science_project = |project: &str| {
+            matches!(
+                project,
+                "launch_earth_satellite"
+                    | "launch_moon_landing"
+                    | "launch_mars_colony"
+                    | "exoplanet_expedition"
+                    | "lagrange_laser_station"
+                    | "terrestrial_laser_station"
+            )
+        };
+        for cid in g.player_city_ids(pid) {
+            let Some(Item::Project { project }) = g.cities[&cid].queue.first() else {
+                continue;
+            };
+            if !is_science_project(project) {
+                continue;
+            }
+            let spaceports: Vec<crate::Pos> = g.cities[&cid]
+                .districts
+                .iter()
+                .filter_map(|(district, position)| {
+                    (g.district_family(*district) == "spaceport").then_some(*position)
+                })
+                .collect();
+            if spaceports.is_empty()
+                || spaceports
+                    .iter()
+                    .any(|position| !g.map.tiles[position].pillaged)
+            {
+                continue;
+            }
+            let Some(repair) = spaceports.into_iter().find_map(|position| {
+                let repair = Item::Repair {
+                    repair: crate::name!("district"),
+                    pos: position,
+                };
+                g.can_produce(pid, cid, &repair).then_some(repair)
+            }) else {
+                continue;
+            };
+            let project_name = project.to_string();
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: repair.clone(),
+                },
+            )
+            .is_ok()
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                think!(self.journal(), Cities, Decision,
+                    "{} repairs its pillaged Spaceport before resuming {}",
+                    g.cities[&cid].name, project_name;
+                    "the committed launch queue was stalled because every Spaceport district was inactive; its progress remains banked by item");
+            }
+        }
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
@@ -30208,13 +30283,18 @@ impl AdvancedAi {
         let visible = self.battlefront_visibility(g, pid);
         // The one-turn routed branch: the candidate value already carries
         // the gene's walk price, so it is not charged again here.
+        //
+        // `path_to` builds a full movement flood from this unchanged Settler
+        // position.  This loop used to repeat that identical flood for every
+        // one of up to 160 scored sites; retain its exact path/tie behavior,
+        // but build the paths once and look up each candidate.
+        let paths = g.paths_to(uid);
         let mut routed = candidates
             .iter()
             .take(SETTLEMENT_ROUTE_CANDIDATE_LIMIT)
             .filter_map(|(position, site_value)| {
-                let path = g.path_to(uid, *position)?;
-                let (movement_cost, risk) =
-                    self.settlement_route_risk(g, pid, uid, &path, &visible);
+                let path = paths.get(position)?;
+                let (movement_cost, risk) = self.settlement_route_risk(g, pid, uid, path, &visible);
                 Some((*position, *site_value - movement_cost * 0.8 - risk))
             })
             .collect::<Vec<_>>();
@@ -38873,21 +38953,28 @@ impl AdvancedAi {
         {
             return Vec::new();
         }
-        let mut ships = g
-            .player_unit_ids(pid)
-            .into_iter()
-            .filter(|uid| {
-                let unit = &g.units[uid];
-                let spec = &g.rules.units[unit.kind];
-                spec.class == "military"
-                    && spec.domain.as_deref() == Some("sea")
-                    && unit.moves_left > 0.0
-                    && unit.linked_to.is_none()
-                    && BasicAi::naval_recon_ship_can_chart(g, pid, *uid)
-            })
-            .collect::<Vec<_>>();
-        ships.sort_unstable();
-        ships.truncate(NAVAL_RECON_EXPLORER_MAX);
+        // `player_unit_ids` follows the roster's BTreeMap order.  The old
+        // collect/sort/truncate therefore returned exactly the first two ids
+        // that pass this predicate; once both are known, asking every later
+        // ship to flood its waterway cannot change the roster.
+        let ids = g.player_unit_ids(pid);
+        debug_assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
+        let mut ships = Vec::with_capacity(NAVAL_RECON_EXPLORER_MAX);
+        for uid in ids {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            if spec.class == "military"
+                && spec.domain.as_deref() == Some("sea")
+                && unit.moves_left > 0.0
+                && unit.linked_to.is_none()
+                && BasicAi::naval_recon_ship_can_chart(g, pid, uid)
+            {
+                ships.push(uid);
+                if ships.len() == NAVAL_RECON_EXPLORER_MAX {
+                    break;
+                }
+            }
+        }
         ships
     }
 

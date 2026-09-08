@@ -1497,6 +1497,53 @@ fn approach_reach_keeps_movement_for_a_blow_inside_zoc_and_stops_the_walk_there(
     }
 }
 
+/// The bulk route reader exists to serve many candidate sites from one flood.
+/// Its paths must remain the individual `path_to` answers, including its
+/// special direct-neighbor gate and the first parent retained inside enemy
+/// zone of control.
+#[test]
+fn paths_to_matches_each_individual_path_query() {
+    fn assert_paths_match(game: &Game, uid: u32) {
+        let expected = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter_map(|to| game.path_to(uid, to).map(|path| (to, path)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(game.paths_to(uid), expected);
+    }
+
+    let (mut game, enemy, ring) = controlled_game(31_782);
+    game.spawn_unit("warrior", 1, enemy);
+    let start = game
+        .nbrs(ring[0])
+        .into_iter()
+        .find(|position| game.wdist(*position, enemy) == 2)
+        .expect("an interior tile two steps from the enemy");
+    let mover = game.spawn_unit("warrior", 0, start);
+
+    // One exact check covers every reachable destination, while the enemy's
+    // ring exercises the no-expansion zone-of-control path behavior.
+    assert_paths_match(&game, mover);
+
+    // `path_to` treats adjacent targets as an immediate move rather than a
+    // longer detour.  Spending the attack removes that direct move for this
+    // Warrior; the bulk reader must remove the same six answers.
+    game.units.get_mut(&mover).unwrap().attacks_left = 0;
+    assert_paths_match(&game, mover);
+
+    // Cover the terrain, units, costs, and map-edge neighbour ordering that a
+    // normal generated game supplies, rather than only the deliberately flat
+    // zone-of-control fixture above.  The helper is generic even though the
+    // Settler planner is its first consumer.
+    let mut generated = Game::new_full(4, 20, 14, 31_783, 40, 3, false);
+    generated.begin_turn(0);
+    for uid in generated.units.keys().copied().collect::<Vec<_>>() {
+        assert_paths_match(&generated, uid);
+    }
+}
+
 #[test]
 fn civilian_support_religious_and_district_zoc_follow_civ6_behavior() {
     for (seed, kind) in [(310, "builder"), (311, "battering_ram")] {

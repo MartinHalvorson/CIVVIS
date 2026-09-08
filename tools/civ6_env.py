@@ -252,6 +252,37 @@ def game_pids(timeout_s: float = GAME_PIDS_TIMEOUT_S) -> list[int]:
     return list(_LAST_GAME_PIDS)
 
 
+def request_macos_quit() -> bool:
+    """Ask Civ VI's own macOS menu to quit, without escalating a process.
+
+    The direct child executable is not a normal scriptable application, so a
+    bare Apple event or Command-Q can be swallowed by its render loop.  Its
+    accessibility menu remains available and exposes ``Quit Civilization VI``.
+    This is deliberately just a normal UI quit request: callers must still
+    verify that the process actually left, and must never turn a refusal into
+    SIGKILL.
+    """
+    if sys.platform != "darwin":
+        return False
+    script = '''tell application "System Events"
+    tell process "Civ6_Exe_Child"
+        if exists menu bar item 2 of menu bar 1 then
+            click menu item "Quit Civilization VI" of menu 1 of menu bar item 2 of menu bar 1
+            return true
+        end if
+    end tell
+end tell
+return false'''
+    try:
+        done = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and done.stdout.strip().lower() == "true"
+
+
 def quit_game(timeout_s: float = 20.0) -> bool:
     """Stop the game if it is running. True when nothing is left running.
 
@@ -262,12 +293,22 @@ def quit_game(timeout_s: float = 20.0) -> bool:
 
     if not game_pids():
         return True
+    # Prefer the application's own Quit menu where macOS exposes it.  It gives
+    # the game a chance to flush options/save state before the longstanding
+    # TERM fallback.  Leave most of the caller's bounded stop window for that
+    # fallback; this is not a second, unbounded shutdown attempt.
+    deadline = time.time() + timeout_s
+    if request_macos_quit():
+        native_deadline = min(deadline, time.time() + 5.0)
+        while time.time() < native_deadline:
+            if not game_pids():
+                return True
+            time.sleep(0.5)
     for pid in game_pids():
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
-    deadline = time.time() + timeout_s
     while time.time() < deadline:
         if not game_pids():
             return True

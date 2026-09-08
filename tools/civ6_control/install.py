@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from xml.sax.saxutils import escape as xml_escape
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -44,6 +45,18 @@ SCRIPTS = (
     "CivvisControlAgent.lua",
     "CivvisControlAutoClose.lua",
 )
+
+
+# The Configuration database's ruleset-specific leader domain is the one
+# actual FrontEnd channel this macOS build loads. Keeping the mapping here
+# makes a direct Create Game launch select the requested human leader without
+# the unreliable in-game rehost workaround. Unknown rulesets retain Civ's
+# ordinary roster rather than inventing an invalid database domain.
+LEADER_DOMAINS = {
+    "RULESET_STANDARD": "Players:StandardPlayers",
+    "RULESET_EXPANSION_1": "Players:Expansion1_Players",
+    "RULESET_EXPANSION_2": "Players:Expansion2_Players",
+}
 
 PRELUDE_HEADER = """-- Prepended by tools/civ6_control/install.py. Do not edit the installed copy.
 --
@@ -79,6 +92,57 @@ def prelude(config: dict) -> str:
         lines.append(f"\t{key} = {lua_value(config[key])},\n")
     lines.append("}\n\n")
     return "".join(lines)
+
+
+def _frontend_defaults_xml(source: str, config: dict) -> str:
+    """Render direct Create Game defaults into the FrontEnd database update."""
+    defaults = {
+        "CIVVIS_DEFAULT_DIFFICULTY": config.get("Difficulty") or "DIFFICULTY_PRINCE",
+        "CIVVIS_DEFAULT_SPEED": config.get("GameSpeed") or "GAMESPEED_STANDARD",
+        "CIVVIS_DEFAULT_MAP": config.get("MapScript") or "Continents.lua",
+        "CIVVIS_DEFAULT_MAP_SIZE": config.get("MapSize") or "MAPSIZE_SMALL",
+        "CIVVIS_DEFAULT_RULESET": config.get("RuleSet") or "RULESET_EXPANSION_2",
+    }
+    try:
+        max_turns = int(config.get("MaxTurns") or 500)
+    except (TypeError, ValueError) as error:
+        raise ValueError("MaxTurns must be an integer") from error
+    if max_turns < 1:
+        raise ValueError("MaxTurns must be positive")
+    defaults["CIVVIS_DEFAULT_MAX_TURNS"] = str(max_turns)
+
+    rendered = source
+    # MAP_SIZE contains the MAP token, so render longest placeholders first.
+    # A normal dict order would turn ``CIVVIS_DEFAULT_MAP_SIZE`` into
+    # ``Continents.lua_SIZE`` before its own replacement had a chance to run.
+    for token in sorted(defaults, key=len, reverse=True):
+        value = defaults[token]
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{token} must render to a non-empty string")
+        rendered = rendered.replace(token, xml_escape(value))
+
+    leader = config.get("Leader")
+    if leader:
+        ruleset = defaults["CIVVIS_DEFAULT_RULESET"]
+        domain = LEADER_DOMAINS.get(ruleset)
+        if domain is None:
+            raise ValueError(
+                f"cannot constrain a requested leader for unsupported ruleset {ruleset!r}"
+            )
+        rendered = rendered.replace("CIVVIS_DEFAULT_LEADER_DOMAIN", xml_escape(domain))
+        rendered = rendered.replace("CIVVIS_DEFAULT_LEADER", xml_escape(str(leader)))
+    else:
+        rendered = re.sub(
+            r"\n\t<!-- install\.py retains this one-row whitelist.*?</RulesetSupportedValues>",
+            "",
+            rendered,
+            flags=re.S,
+        )
+
+    unresolved = re.findall(r"CIVVIS_DEFAULT_[A-Z_]+", rendered)
+    if unresolved:
+        raise ValueError(f"unresolved FrontEnd defaults: {sorted(set(unresolved))}")
+    return rendered
 
 
 def install_dir() -> Path:
@@ -119,7 +183,7 @@ def _write_mod(target: Path, config: dict) -> None:
             # for an explicit diagnostic probe: a literal 0 reads as unset, so
             # omit both rows unless the probe supplied a positive request.
             seed = int(config.get("MapSeed") or 0)
-            text_xml = src.read_text()
+            text_xml = _frontend_defaults_xml(src.read_text(), config)
             if seed > 0:
                 text_xml = text_xml.replace("CIVVIS_SEED", str(seed))
             else:

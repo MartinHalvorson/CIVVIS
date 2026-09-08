@@ -21,11 +21,17 @@ apt_options=(
 prefer_canonical_ubuntu_archive() {
   local mirror_list=/etc/apt/apt-mirrors.txt
 
-  # Ubuntu's mirror+file configuration reads this list at update time.  Keep
-  # its URL scheme and paths intact; only remove the flaky Azure hostname.
-  if [[ -f "$mirror_list" ]] && sudo grep -Fq 'azure.archive.ubuntu.com' "$mirror_list"; then
-    echo "Using archive.ubuntu.com instead of azure.archive.ubuntu.com."
-    sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' "$mirror_list"
+  # Ubuntu's mirror+file configuration reads this list at update time.  The
+  # runner can keep an HTTP entry alongside a working HTTPS fallback; apt then
+  # returns failure for the HTTP timeout even though the HTTPS index is valid.
+  # Use one canonical HTTPS entry so --error-on=any reports a real outage.
+  if [[ -f "$mirror_list" ]] && sudo grep -Eq \
+      'azure\.archive\.ubuntu\.com|http://archive\.ubuntu\.com' "$mirror_list"; then
+    echo "Using the HTTPS archive.ubuntu.com mirror."
+    sudo sed -i \
+      -e 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' \
+      -e 's#http://archive\.ubuntu\.com#https://archive.ubuntu.com#g' \
+      "$mirror_list"
   fi
 }
 
@@ -40,11 +46,26 @@ run_apt() {
       "${apt_options[@]}" "$subcommand" "$@"
 }
 
+update_apt_indexes() {
+  # A mirror list can report one dead URL even after another URL has supplied
+  # the complete index.  `--error-on=any` turns that harmless fallback into a
+  # failed update, which then makes this bounded installer retry the same
+  # usable mirror three times.  Retry once without the strict aggregate
+  # verdict; `apt-get install` still verifies that the requested package is
+  # actually available from the indexes that were downloaded.
+  if run_apt update --error-on=any; then
+    return 0
+  fi
+
+  echo "APT update saw a mirror error; accepting usable fallback indexes." >&2
+  run_apt update
+}
+
 prefer_canonical_ubuntu_archive
 
 for ((attempt = 1; attempt <= max_attempts; attempt++)); do
   echo "APT install attempt ${attempt}/${max_attempts}: $*"
-  if run_apt update --error-on=any && \
+  if update_apt_indexes && \
       run_apt install --no-install-recommends -y "$@"; then
     exit 0
   fi

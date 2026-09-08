@@ -33,6 +33,12 @@ PID_FILE=$LOCK/pid
 SUPERVISOR_LOCK=${CIVVIS_SUPERVISOR_LOCK:-$HOME/.civvis-game-supervisor.lock}
 SUPERVISOR_PID_FILE=$SUPERVISOR_LOCK/pid
 POLL_S=${CIVVIS_INTERACTIVE_HOST_POLL_S:-5}
+# The supervisor's fixed capture-free profile advances and dismisses native
+# dialogs through the control mod.  Its popup keeper is deliberately visual
+# automation, so inheriting it here would reintroduce screen capture into a
+# recording-safe session before the supervisor gets a chance to select its
+# capture-free owner.
+CAPTURE_FREE=${CIVVIS_CAPTURE_FREE:-0}
 INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
 supervisor_pid=""
 supervisor_owned=0
@@ -215,6 +221,16 @@ start_popup_keeper() {
   say "started popup keeper pid $popup_keeper_pid"
 }
 
+start_managed_helpers() {
+  if [[ "$CAPTURE_FREE" == 1 ]]; then
+    say "capture-free session: visual popup keeper disabled"
+  else
+    start_popup_keeper || true
+  fi
+  start_mirror_keeper || true
+  start_wedge_watchdog || true
+}
+
 start_mirror_keeper() {
   local holder=""
   [[ -f "$HOME/.civvis-mirror-keeper.lock/pid" ]] && holder=$(<"$HOME/.civvis-mirror-keeper.lock/pid")
@@ -281,9 +297,7 @@ elif held=$(hold_status); then
   exit 0
 elif start_supervisor; then
   if (( supervisor_owned )); then
-    start_popup_keeper || true
-    start_mirror_keeper || true
-    start_wedge_watchdog || true
+    start_managed_helpers
   else
     say "external supervisor already owns the live batch; not starting duplicate helpers"
   fi
@@ -300,13 +314,11 @@ while true; do
   if ! pid_is_live "$supervisor_pid"; then
     say "game supervisor exited; restarting"
     if start_supervisor && (( supervisor_owned )); then
-      start_popup_keeper || true
-      start_mirror_keeper || true
-      start_wedge_watchdog || true
+      start_managed_helpers
     fi
   fi
   if (( supervisor_owned )); then
-    if ! pid_is_live "$popup_keeper_pid"; then
+    if [[ "$CAPTURE_FREE" != 1 ]] && ! pid_is_live "$popup_keeper_pid"; then
       say "popup keeper exited; restarting"
       start_popup_keeper || true
     fi

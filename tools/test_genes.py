@@ -1454,7 +1454,22 @@ class ContinuousBatchTiming(unittest.TestCase):
         header = ranking.reporting_batch_header("Last Batch", {"meta": record, "rows": {}})
         self.assertEqual(
             header,
-            "Wins ± /10k total seats — Last Batch (n=18,000 total seats; 120.0 games/min)")
+            "Wins ± /10k total seats — Last Batch (n=18,000 total seats; 120.0 games/min; "
+            "start=08-25-10-00 UTC; end=08-25-10-25 UTC)")
+
+    def test_header_normalizes_offset_and_formats_24_hour_year_boundary(self):
+        data = self.report()
+        data["continuous_batch_timing"].update({
+            "started_at": "2026-12-31T18:50:00-05:00",
+            "completed_at": "2026-12-31T19:15:00-05:00",
+        })
+        record = gene_ledger.source_record(Path("timed.json"), data)
+        header = ranking.reporting_batch_header("Last Batch", {"meta": record})
+        self.assertIn("start=12-31-23-50 UTC; end=01-01-00-15 UTC", header)
+
+    def test_empty_batch_has_no_invented_timestamps(self):
+        header = ranking.reporting_batch_header("Third Batch", None)
+        self.assertIn("start=not recorded; end=not recorded", header)
 
     def test_timing_refuses_a_duration_that_disagrees_with_its_timestamps(self):
         data = self.report()
@@ -1468,7 +1483,8 @@ class ContinuousBatchTiming(unittest.TestCase):
         self.assertEqual(
             header,
             "Wins ± /10k total seats — Prior Batch "
-            "(n=30,000 total seats; games/min=not recorded)")
+            "(n=30,000 total seats; games/min=not recorded; "
+            "start=not recorded; end=not recorded)")
 
 
 class PreFingerprintSources(unittest.TestCase):

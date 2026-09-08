@@ -138,6 +138,9 @@ UNIT_MODEL_FALLBACKS = {
     # carry these unique specifications, but it must not erase the visible unit.
     "scottish_highlander": "ranger",
     "korean_hwacha": "field_cannon",
+    # Georgia's Khevsureti replaces Man-at-Arms. The live rival export omits
+    # base/class for it, so mirror the explicit bridge used by mirror.rs.
+    "georgian_khevsureti": "man_at_arms",
 }
 RESOURCE_RULES = json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "resources.json").read_text()

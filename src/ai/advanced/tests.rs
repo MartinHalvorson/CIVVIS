@@ -4218,6 +4218,17 @@ fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     expected.sort_unstable();
     assert_eq!(live.naval_explorer(&game, 0), expected);
 
+    // The roster is capped by id, not by the order a later scan happens to
+    // encounter its hulls in.  A third viable Galley must not trigger another
+    // waterway walk or displace either of the two established explorers.
+    let third = game.spawn_test_unit("galley", 0, water);
+    assert!(third > second, "test setup must create increasing unit ids");
+    assert_eq!(
+        live.naval_explorer(&game, 0),
+        expected,
+        "the two lowest-id viable ships remain the bounded sea-scout roster"
+    );
+
     // The withheld arm at war leaves the same ship where it is: the war
     // path never explored before this treatment.
     {
@@ -25404,14 +25415,16 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
 }
 
 #[test]
-fn settler_threat_detour_is_a_native_opt_in_enabled_by_the_ledger() {
+fn settler_threat_detour_is_a_native_opt_in_governed_by_the_ledger() {
     assert!(!AdvancedAi::new().settler_threat_detour);
     assert!(!AdvancedAi::legacy().settler_threat_detour);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
-    assert!(
-        deployed.settler_threat_detour,
-        "the explicit three-batch selection enables this qualifying arm"
+    let selected = crate::ai::ledger_default_on("settler-threat-detour")
+        .expect("a registered native opt-in has a deployment selection");
+    assert_eq!(
+        deployed.settler_threat_detour, selected,
+        "the deployment must follow the recorded selection"
     );
     let enable = GENES
         .iter()
