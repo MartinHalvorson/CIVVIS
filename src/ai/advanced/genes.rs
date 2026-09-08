@@ -2163,6 +2163,9 @@ pub const GENES: &[Gene] = &[
     // with one survivable blow keeps the ladder's freedom. Priced on the
     // arena beside `battle-planner-2`. See `advanced/battle_planner.rs`.
     Gene { tag: "doomed-blow-veto", field: "doomed_blow_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto, disable: AdvancedAi::disable_doomed_blow_veto },
+    // Reprice all strikers after each friendly kill; only a sequence whose
+    // surviving enemy replies spare every striker can become the final plan.
+    Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
     // Version two of `missionary-last-charge-explores`: a one-charge
     // Missionary searches a continent-scale horizon, ranks distant
     // high-reveal fog, and insists on a route the movement rules permit.
