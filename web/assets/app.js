@@ -6380,22 +6380,37 @@ async function boot() {
     bootBusy = false;
   }
 }
+// A turn request includes the rivals' moves. Keep the human controls from
+// submitting another action against the old turn while that request runs.
+let turnAdvancePending = false;
 async function send(action) {
-  if (SPEC) return;
-  if (["attack", "ranged", "theological_attack"].includes(action.type) && action.unit !== undefined)
-    pendingStrike = { id: action.unit, to: action.target };
-  render(await fetchJSON("/action", { method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({action}) }));
-  // A unit that has spent itself hands the turn to the closest unvisited one,
-  // so an action pass works through nearby groups before returning to a unit
-  // the player already considered. Anything else — a half-move, a city order
-  // — leaves the selection be.
-  if (action.unit !== undefined && state && !SPEC && !gameFinished(state) &&
-      (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
-    advanceToNextActionUnit(true);
-  } else {
+  if (SPEC || turnAdvancePending) return;
+  const advancing = action.type === "end_turn";
+  if (advancing) {
+    turnAdvancePending = true;
     drawTurnLoop();
+  }
+  try {
+    if (["attack", "ranged", "theological_attack"].includes(action.type) && action.unit !== undefined)
+      pendingStrike = { id: action.unit, to: action.target };
+    render(await fetchJSON("/action", { method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action}) }));
+    // A unit that has spent itself hands the turn to the closest unvisited one,
+    // so an action pass works through nearby groups before returning to a unit
+    // the player already considered. Anything else — a half-move, a city order
+    // — leaves the selection be.
+    if (action.unit !== undefined && state && !SPEC && !gameFinished(state) &&
+        (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
+      advanceToNextActionUnit(true);
+    } else {
+      drawTurnLoop();
+    }
+  } finally {
+    if (advancing) {
+      turnAdvancePending = false;
+      drawTurnLoop();
+    }
   }
 }
 
@@ -31879,7 +31894,8 @@ function drawTurnButton() {
   // from the only lit control on the screen.
   const over = gameFinished(state);
   const eliminated = state.players[0] && state.players[0].alive === false;
-  button.disabled = over || eliminated || autoplaying;
+  button.disabled = over || eliminated || autoplaying || turnAdvancePending;
+  button.setAttribute("aria-busy", String(turnAdvancePending));
   // Auto-play holds the seat. Say so on the button rather than leaving a lit
   // control that quietly does nothing while an agent plays.
   if (autoplaying && !over && !eliminated) {
@@ -31896,6 +31912,12 @@ function drawTurnButton() {
     button.title = eliminated && !over
       ? "Your last city is gone. Start a new game from Game setup."
       : "This world has reached its result. Start a new game from Game setup.";
+    return;
+  }
+  if (turnAdvancePending) {
+    button.classList.remove("blocked");
+    button.innerHTML = `Please wait<span class="endturn-hint">The other civilizations are taking their turns</span>`;
+    button.title = "Your next turn will be ready when the other civilizations finish.";
     return;
   }
   // The capture modal disables the button outright; leave that alone.
@@ -32069,6 +32091,8 @@ function paintActionCorner() {
     eyebrow = "This game";
     title = eliminated && !over ? "Your civilization has fallen" : "The game is over";
     sub = "Start another from the deck.";
+  } else if (turnAdvancePending) {
+    eyebrow = "Turn in progress"; title = "Please wait"; sub = "The other civilizations are taking their turns.";
   } else if (next) {
     title = `${next.icon} ${escapeAttr(next.label)}`; sub = next.detail || "";
   } else {
@@ -32080,12 +32104,12 @@ function paintActionCorner() {
   if (headHtml !== actionHeadHtml) { actionHeadHtml = headHtml; head.innerHTML = headHtml; }
   // Rebuilt only when it reads differently: this runs after every action, and
   // a list that is re-laid-out under the pointer loses its scroll and its hover.
-  const list = next && !autoplaying && !over && !eliminated ? actionOptionsFor(next) : "";
+  const list = next && !autoplaying && !turnAdvancePending && !over && !eliminated ? actionOptionsFor(next) : "";
   if (list !== actionOptionsHtml) { actionOptionsHtml = list; options.innerHTML = list; }
   publishSoloHeight(panel, "--solo-action-height");
 }
 function advanceTurn(force = false) {
-  if (!state || SPEC) return;
+  if (!state || SPEC || turnAdvancePending) return;
   // The seat is on loan while auto-play runs; taking it back mid-turn would
   // race a batch the agent is already playing.
   if (autoplaying) return;

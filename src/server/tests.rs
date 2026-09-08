@@ -11477,7 +11477,8 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     // A win and a draw both end the engine. Elimination and Auto-play are
     // the two other reasons the seat cannot act.
     assert!(EMBEDDED_INDEX.contains("const over = gameFinished(state);"));
-    assert!(EMBEDDED_INDEX.contains("button.disabled = over || eliminated || autoplaying;"));
+    assert!(EMBEDDED_INDEX
+        .contains("button.disabled = over || eliminated || autoplaying || turnAdvancePending;"));
     assert!(EMBEDDED_INDEX.contains("The game is over<span class=\"endturn-hint\">"));
     // The keys agree with the button.
     assert!(EMBEDDED_INDEX.contains("if (gameFinished(state)) return;"));
@@ -12064,7 +12065,8 @@ fn browser_lists_the_whole_empire() {
 fn browser_tells_the_player_when_they_have_been_eliminated() {
     assert!(EMBEDDED_INDEX
         .contains("const eliminated = state.players[0] && state.players[0].alive === false;"));
-    assert!(EMBEDDED_INDEX.contains("button.disabled = over || eliminated || autoplaying;"));
+    assert!(EMBEDDED_INDEX
+        .contains("button.disabled = over || eliminated || autoplaying || turnAdvancePending;"));
     assert!(EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">"));
     // The keys agree with the button.
     assert!(EMBEDDED_INDEX
