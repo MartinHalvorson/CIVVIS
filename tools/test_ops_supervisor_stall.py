@@ -102,6 +102,10 @@ class TheLaneSaysWhenItIsDown(unittest.TestCase):
         self.assertIn("LAUNCH_REACHED=1\n\nwhile true; do", source)
 
     def test_the_script_is_valid_zsh(self) -> None:
+        # The CI runner is Linux without zsh; the syntax check is a
+        # developer-machine gate there, like the fixture test above.
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is needed here")
         done = subprocess.run(["zsh", "-n", str(SUPERVISOR)],
                               capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
