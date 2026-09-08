@@ -3278,15 +3278,40 @@ def macos_spectator_plist(runner: Path, repo: Path) -> bytes:
     ).encode("utf-8")
 
 
+def spectator_deployment_root(repo: Path, installed: Path) -> Path:
+    """Keep a durable installed owner; callers must not move its runtime cache.
+
+    Task launchers run from different checkouts of the same clone. Using their
+    cwd rewrites the job and restarts an in-flight build on every switch. Only
+    the primary checkout and main management worktree are durable owners; a
+    task worktree or rotating batch clone must not own the service lifetime.
+    """
+    try:
+        payload = plistlib.loads(installed.read_bytes())
+        environment = payload.get("EnvironmentVariables", {}) if isinstance(payload, dict) else {}
+        raw = environment.get("CIVVIS_DEPLOY_ROOT") if isinstance(environment, dict) else None
+        if isinstance(raw, str) and Path(raw).is_absolute():
+            candidate = Path(raw).resolve()
+            if not ephemeral_service_source(candidate) and repo_root(candidate) == candidate:
+                durable = (candidate == common_git_dir(candidate).parent
+                           or candidate == main_worktree(candidate))
+                if durable and spectator_runner_source(candidate).is_file():
+                    return candidate
+    except (OSError, ValueError, plistlib.InvalidFileException, CommandError):
+        pass
+    return main_worktree(repo)
+
+
 def install_spectator_service(repo: Path) -> Optional[Path]:
     """Keep the exhibition supervisor alive. `None` where it does not apply."""
     if sys.platform != "darwin" or not host_serves_the_exhibition():
         return None
-    runner = spectator_runner_source(repo)
+    path = Path.home() / "Library" / "LaunchAgents" / f"{SPECTATOR_LABEL}.plist"
+    owner = spectator_deployment_root(repo, path)
+    runner = spectator_runner_source(owner)
     if not runner.is_file():
         raise CommandError(f"versioned spectator runner is missing: {runner}")
-    path = Path.home() / "Library" / "LaunchAgents" / f"{SPECTATOR_LABEL}.plist"
-    changed = write_managed_service(path, macos_spectator_plist(runner, repo))
+    changed = write_managed_service(path, macos_spectator_plist(runner, owner))
     domain = f"gui/{os.getuid()}"
     loaded = not run(("launchctl", "print", f"{domain}/{SPECTATOR_LABEL}"),
                      check=False).returncode
