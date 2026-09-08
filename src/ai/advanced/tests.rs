@@ -14475,6 +14475,7 @@ fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
     let (mut stock_game, home, target, raider) = setup();
     let builder = stock_game.spawn_test_unit("builder", 0, home);
     let mut stock = AdvancedAi::new();
+    stock.base.legacy_movement = true; // Historical untreated capture control.
     assert!(stock.advanced_builder_step(&mut stock_game, 0, builder, GrandStrategy::Expansion));
     assert_eq!(stock.builder_targets.get(&builder), Some(&target));
     assert_ne!(

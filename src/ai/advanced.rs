@@ -6980,6 +6980,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
@@ -7611,6 +7612,7 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        ai.base.legacy_movement = true;
         ai.base.precise_evacuation = false;
         // The adjacent camp clear is default-ON everywhere current, but this
         // gate keeps that controller treatment outside the frozen anchor (see
@@ -35371,6 +35373,18 @@ impl AdvancedAi {
         };
         let body_pace = self.body_pace(g, uid, group, target, &field_enemies);
         let screen_frame = self.screen_frame(g, uid, group, &field_enemies);
+        let movement_risk = (!self.base.legacy_movement).then(|| {
+            let mut risk =
+                self.base
+                    .movement_risk_frame_for_group(g, pid, uid, target, Some(&group.units));
+            risk.retain_enemies(|enemy| {
+                visible.as_ref().is_none_or(|frame| {
+                    g.sees(frame, g.units[&enemy].pos)
+                        && self.battlefront_unit_visible(g, pid, enemy)
+                })
+            });
+            risk
+        });
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -35406,45 +35420,52 @@ impl AdvancedAi {
                     value += self.base.w.mv_support;
                 }
             }
-            // `defend-where-you-stand`: priced once for this tile, and only
-            // if something actually reaches it. `None` with the gene off,
-            // and then the defence below is the snapshot's, as before. See
-            // `advanced/engine_pricing.rs`.
-            let mut standing_defense: Option<f64> = None;
-            for enemy in g.units.values().filter(|other| {
-                enemies.contains(&other.owner)
-                    && visible.as_ref().is_none_or(|visible| {
-                        g.sees(visible, other.pos)
-                            && self.battlefront_unit_visible(g, pid, other.id)
-                    })
-            }) {
-                let enemy_spec = &g.rules.units[enemy.kind];
-                if enemy_spec.class != "military"
-                    || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
-                {
-                    continue;
-                }
-                let radius = if enemy_spec.has_ranged_attack() {
-                    g.unit_attack_range(enemy.id).max(1)
-                } else {
-                    1
-                };
-                if g.wdist(tile, enemy.pos) <= radius {
-                    let attack =
-                        crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
-                    let defense = *standing_defense.get_or_insert_with(|| {
-                        let base = self
-                            .base
-                            .defence_base_where_it_would_stand(g, uid, tile)
-                            .unwrap_or_else(|| g.unit_strength(&unit, true));
-                        crate::game::effective_strength(base, unit.hp)
-                    });
-                    value -= self.base.w.mv_threat
-                        * threat_caution
-                        * 30.0
-                        * ((attack - defense) / 25.0).exp();
+            if let Some(risk) = &movement_risk {
+                value += risk.score(g, pid, uid, tile, self.base.w.mv_threat * threat_caution);
+            } else {
+                // `defend-where-you-stand`: priced once for this tile, and only
+                // if something actually reaches it. `None` with the gene off,
+                // and then the defence below is the snapshot's, as before. See
+                // `advanced/engine_pricing.rs`.
+                let mut standing_defense: Option<f64> = None;
+                for enemy in g.units.values().filter(|other| {
+                    enemies.contains(&other.owner)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                }) {
+                    let enemy_spec = &g.rules.units[enemy.kind];
+                    if enemy_spec.class != "military"
+                        || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
+                    {
+                        continue;
+                    }
+                    let radius = if enemy_spec.has_ranged_attack() {
+                        g.unit_attack_range(enemy.id).max(1)
+                    } else {
+                        1
+                    };
+                    if g.wdist(tile, enemy.pos) <= radius {
+                        let attack = crate::game::effective_strength(
+                            g.unit_strength(enemy, false),
+                            enemy.hp,
+                        );
+                        let defense = *standing_defense.get_or_insert_with(|| {
+                            let base = self
+                                .base
+                                .defence_base_where_it_would_stand(g, uid, tile)
+                                .unwrap_or_else(|| g.unit_strength(&unit, true));
+                            crate::game::effective_strength(base, unit.hp)
+                        });
+                        value -= self.base.w.mv_threat
+                            * threat_caution
+                            * 30.0
+                            * ((attack - defense) / 25.0).exp();
+                    }
                 }
             }
+
             // Walking into the sea costs most of the unit; the score has no
             // other term that notices. Sized to outweigh the few tiles of
             // objective progress a detour around a bay gives up, without
