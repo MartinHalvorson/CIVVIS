@@ -73,16 +73,16 @@ Unreachable:
 
 ## Live ladder
 
-- Attempts recorded: **873**
-- Configured attempts: **772**
-- Terminal outcomes: **348**
+- Attempts recorded: **911**
+- Configured attempts: **789**
+- Terminal outcomes: **359**
 - Configured wins: **24**
-- Latest ledger entry: **2026-09-03T09:39:12Z**
+- Latest ledger entry: **2026-09-08T22:26:27Z**
 
 - Attempts that ran the full clock: **209**, median score **547**, best **1606**
-- Graded against the best rival: **449** of 209 finished attempts; rival bar median **691**, our lead median **-202**, best **+759**, ahead in **47**
-- Lost to a rival's victory before the clock: **137** (diplomatic 60, culture 48, technology 23, religious 5, conquest 1), of which **17** while our own score was the highest on the board
-- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 228), diplomatic 202–247 (median 239), religious 75–233 (median 170), technology 182–246 (median 233)
+- Graded against the best rival: **465** of 209 finished attempts; rival bar median **720**, our lead median **-204**, best **+759**, ahead in **47**
+- Lost to a rival's victory before the clock: **148** (diplomatic 61, culture 53, technology 28, religious 5, conquest 1), of which **17** while our own score was the highest on the board
+- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 221), diplomatic 202–247 (median 235), religious 75–233 (median 170), technology 182–246 (median 227)
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this
