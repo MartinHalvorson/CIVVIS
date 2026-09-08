@@ -8988,8 +8988,8 @@ fn first_governor_matches_the_empire_strategy() {
 /// fails here.
 #[test]
 fn expansion_window_still_climbs_and_wants_a_settler_before_endgame() {
-    // Keep the historical t270 check in the development half; the new
-    // halfway boundary is t300 on this deliberately longer fixture.
+    // A longer turn cap no longer postpones Standard's development boundary
+    // past t250. Exercise the expansion ramp inside that boundary.
     let mut game = Game::new_full(1, 30, 18, 7_113, 600, 0, false);
     let settler = game
         .player_unit_ids(0)
@@ -9003,11 +9003,11 @@ fn expansion_window_still_climbs_and_wants_a_settler_before_endgame() {
     }
     let city = game.player_city_ids(0)[0];
     game.cities.get_mut(&city).unwrap().pop = 6;
-    game.turn = 270;
+    game.turn = 240;
 
     let ai = AdvancedAi::new();
     let plan = ai.assess(&game, 0);
-    assert_eq!(plan.desired_cities, 6);
+    assert_eq!(plan.desired_cities, 5);
     assert!(
         plan.desired_cities > 3,
         "the ramp must still climb above the base floor inside the window"
@@ -11545,6 +11545,53 @@ fn victory_specialization_starts_at_the_game_halfway_point() {
     assert!(!AdvancedAi::victory_specialization_active(&game));
     game.world_era = 4;
     assert!(AdvancedAi::victory_specialization_active(&game));
+}
+
+#[test]
+fn extending_an_online_verification_game_does_not_delay_specialization() {
+    let mut game = Game::new(2, 24, 16, 76_005, 650, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    game.turn = 124;
+    assert!(!AdvancedAi::victory_specialization_active(&game));
+    game.turn = 125;
+    assert!(AdvancedAi::victory_specialization_active(&game));
+    game.max_turns = 100;
+    game.turn = 50;
+    assert!(AdvancedAi::victory_specialization_active(&game));
+}
+
+#[test]
+fn production_deadline_uses_the_items_policy_acceleration() {
+    let mut game = Game::new(2, 24, 16, 76_006, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let cid = game.player_city_ids(0)[0];
+    let ai = AdvancedAi::new();
+    let plan = ai.assess(&game, 0);
+    let counts = ai.counts(&game, 0);
+    let item = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    // Hold the board and raw military value fixed. Only Agoge's acceleration
+    // changes: an unfinished build misses the cap without it, fits with it.
+    let production = game.city_yields(cid).production.max(1.0);
+    let cost = game.item_cost_for_city(0, cid, &item);
+    game.cities.get_mut(&cid).unwrap().production = cost - production * 8.0;
+    game.turn = 244;
+    assert_eq!(
+        ai.production_value(&game, 0, cid, &item, &plan, &counts),
+        -1_500.0
+    );
+    game.players[0].policies.insert(crate::name!("agoge"));
+    assert!(game.item_prod_mult(0, cid, Some(&item)) >= 1.5);
+    assert_ne!(
+        ai.production_value(&game, 0, cid, &item, &plan, &counts),
+        -1_500.0
+    );
 }
 
 #[test]
@@ -43295,7 +43342,7 @@ fn a_card_boosted_item_loses_gold_purchase_priority_only_with_the_gene_on() {
     assert_eq!(
         score(&off, &game),
         Some(plain),
-        "the shipped scorer cannot see the boost at all"
+        "correcting build time must not inflate willingness to buy the same item"
     );
     let boosted = score(&on, &game);
     assert!(
