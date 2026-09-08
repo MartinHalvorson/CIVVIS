@@ -4219,6 +4219,14 @@ impl AdvancedAi {
 
     // ---- append: e-f ------------------------------------------------
 
+    pub fn enable_envoy_building_dividends(&mut self) {
+        self.envoy_building_dividends = true;
+    }
+
+    pub fn disable_envoy_building_dividends(&mut self) {
+        self.envoy_building_dividends = false;
+    }
+
     // ---- append: g-k ------------------------------------------------
 
     // ---- append: l-o ------------------------------------------------

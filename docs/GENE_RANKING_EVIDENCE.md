@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `campus-before-halfway` | off (unmeasured) | `campus-before-halfway` (OptIn): a Science seat's Campus keeps the lane's 170-point arm before the halfway clock instead of pricing at zero, and past the half-empire coverage cliff the Campus keeps asking in any city of `CAMPUS_EVERY_CITY_POP_FLOOR` (four) — the floor the 2026-08-19 repair named and left as a literal `false`. | 1 \| 1 |
+| `envoy-building-dividends` | off (unmeasured) | Price affordable 1/3/6 building packages independently of suzerainty. | 1 \| 1 |
 
 ## Removed from the code
 

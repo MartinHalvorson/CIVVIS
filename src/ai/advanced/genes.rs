@@ -2219,6 +2219,8 @@ pub const GENES: &[Gene] = &[
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
+    // Empire-wide building dividends compete with affordable diplomatic packages.
+    Gene { tag: "envoy-building-dividends", field: "envoy_building_dividends", kind: Kind::OptIn, enable: AdvancedAi::enable_envoy_building_dividends, disable: AdvancedAi::disable_envoy_building_dividends },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
