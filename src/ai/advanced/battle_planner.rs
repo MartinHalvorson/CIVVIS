@@ -435,8 +435,8 @@ pub(super) struct DangerField {
     /// next turn (`Game::attack_reach`: full movement, read through units),
     /// ascending and distinct so membership is a binary search.
     reaches: Vec<(u32, Vec<Pos>)>,
-    /// (tile, our unit) → each source's expected blow there.
-    cache: BTreeMap<(Pos, u32), Blows>,
+    /// (tile, our unit, remaining HP) → each source's expected blow there.
+    cache: BTreeMap<(Pos, u32, i32), Blows>,
     /// `strike-reach`: hostiles whose strike reach held a tile the movement
     /// flood did not. Zero with the gene off.
     pub(super) widened: u32,
@@ -491,7 +491,14 @@ impl DangerField {
     /// Every blow that would land on `uid` standing unfortified on `tile`
     /// next turn, by source.
     pub(super) fn contributions(&mut self, tile: Pos, uid: u32) -> Blows {
-        if let Some(hit) = self.cache.get(&(tile, uid)) {
+        let hp = self.probe.units.get(&uid).map_or(0, |unit| unit.hp);
+        self.contributions_at_hp(tile, uid, hp)
+    }
+
+    /// A melee strike wounds the attacker before the enemy replies. Its
+    /// reduced defensive strength belongs in the reply price and cache key.
+    fn contributions_at_hp(&mut self, tile: Pos, uid: u32, hp: i32) -> Blows {
+        if let Some(hit) = self.cache.get(&(tile, uid, hp)) {
             return Arc::clone(hit);
         }
         let Some(saved) = self.probe.units.get(&uid).cloned() else {
@@ -507,6 +514,7 @@ impl DangerField {
             if let Some(unit) = self.probe.units.get_mut(&uid) {
                 unit.fortified = false;
                 unit.fortify_turns = 0;
+                unit.hp = hp;
             }
             for (enemy, reach) in &self.reaches {
                 if reach.binary_search(&tile).is_err() {
@@ -571,7 +579,7 @@ impl DangerField {
             }
         }
         let out = Arc::new(out);
-        self.cache.insert((tile, uid), Arc::clone(&out));
+        self.cache.insert((tile, uid, hp), Arc::clone(&out));
         out
     }
 
@@ -584,8 +592,8 @@ impl DangerField {
     }
 
     /// The field with the named enemies already dead.
-    fn danger_without(&mut self, tile: Pos, uid: u32, dead: &BTreeSet<u32>) -> f64 {
-        self.contributions(tile, uid)
+    fn danger_without(&mut self, tile: Pos, uid: u32, hp: i32, dead: &BTreeSet<u32>) -> f64 {
+        self.contributions_at_hp(tile, uid, hp)
             .iter()
             .filter(|(source, _)| source.is_none_or(|id| !dead.contains(&id)))
             .map(|(_, blow)| blow)
@@ -831,7 +839,12 @@ impl BeamState {
         let mut danger = 0.0;
         if !dies {
             let dead = Self::dead_of(killed, targets);
-            danger = field.danger_without(end, shooter.uid, &dead);
+            danger = field.danger_without(
+                end,
+                shooter.uid,
+                (f64::from(shooter.hp) - returned).floor().max(1.0) as i32,
+                &dead,
+            );
             if danger >= f64::from(shooter.hp) - returned {
                 cost += death_value(shooter.cost);
             } else {
@@ -930,8 +943,10 @@ fn search_kill_sequence(
 /// `doomed-blow-veto`: the shooters whose every candidate blow would leave
 /// them dead on the enemy's next turn — the return damage of the blow (a
 /// melee blow's; a ranged blow takes none) plus the danger field at the
-/// stand, at or over the unit's hit points. Such a unit has no blow worth
-/// the ladder's freedom: the rotation takes it as exposed instead.
+/// post-strike stand, priced at its remaining HP, at or over the unit's hit
+/// points. A killed target contributes no reply; a melee finisher stands on
+/// the tile it emptied. Such a unit has no blow worth the ladder's freedom:
+/// the rotation takes it as exposed instead.
 fn doomed_shooters(
     shooters: &[Shooter],
     targets: &[Target],
@@ -951,8 +966,23 @@ fn doomed_shooters(
             } else {
                 candidate.return_on(def)
             };
-            let after = field.danger(candidate.from, shooter.uid);
-            if f64::from(shooter.hp) - back - after > 0.0 {
+            let hp = f64::from(shooter.hp) - back;
+            if hp <= 0.0 {
+                continue;
+            }
+            let kill = candidate.damage_on(def) >= f64::from(target.hp) * KILL_MARGIN;
+            let end = if kill && !candidate.ranged {
+                target.pos
+            } else {
+                candidate.from
+            };
+            let dead = if kill {
+                BTreeSet::from([target.uid])
+            } else {
+                BTreeSet::new()
+            };
+            let after = field.danger_without(end, shooter.uid, hp.floor().max(1.0) as i32, &dead);
+            if hp - after > 0.0 {
                 survivable = true;
                 break;
             }
@@ -1685,12 +1715,20 @@ impl AdvancedAi {
                 || unit.linked_to.is_some()
                 || unit.moves_left <= 0.0
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
-                || g.city_at(unit.pos).is_some()
-                || g.encampment_at(unit.pos).is_some()
                 || self.guard_is_bound_to_any_settler(uid)
                 // `battle-planner-3`: the siege's taker holds its post.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
+                continue;
+            }
+            if g.city_at(unit.pos).is_some() || g.encampment_at(unit.pos).is_some() {
+                // A garrison needs no evacuation, but its proposed sortie
+                // still needs the veto. Otherwise the early return lets the
+                // ladder reopen the very poisoned finish marked above.
+                if doomed.contains(&uid) {
+                    self.base.fortify_or_stop(g, pid, uid);
+                    self.battle_planner_ordered.insert(uid);
+                }
                 continue;
             }
             let here = field.danger(unit.pos, uid);
@@ -3778,6 +3816,116 @@ mod tests {
         super::super::test_support::opt_in_off_in_both_controllers("doomed-blow-veto", |ai| {
             ai.doomed_blow_veto
         });
+    }
+
+    #[test]
+    fn reply_damage_uses_remaining_hp_without_poisoning_the_field_cache() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(10, 4));
+        g.spawn_unit("warrior", 1, at(11, 4));
+        let mut field = DangerField::new(&g, 0);
+        let healthy = field.danger(at(10, 4), ours);
+        let wounded = field.danger_without(at(10, 4), ours, 40, &BTreeSet::new());
+        assert!(wounded > healthy, "wounds reduce the defender's strength");
+        assert_eq!(field.probe.units[&ours].hp, 100);
+        assert_eq!(field.danger(at(10, 4), ours), healthy);
+        wound(&mut g, ours, 40);
+        assert_eq!(DangerField::new(&g, 0).danger(at(10, 4), ours), wounded);
+    }
+
+    /// Use an explicit host preview to isolate reply accounting from the
+    /// uncertain strike roll. The field still uses real units and geometry.
+    fn previewed_finisher(
+        g: &Game,
+        ours: u32,
+        victim: u32,
+        ranged: bool,
+    ) -> (Vec<Shooter>, Vec<Target>, Vec<Candidate>) {
+        let unit = &g.units[&ours];
+        let enemy = &g.units[&victim];
+        (
+            vec![Shooter {
+                uid: ours,
+                pos: unit.pos,
+                hp: unit.hp,
+                cost: 40.0,
+                value: 250.0,
+            }],
+            vec![Target {
+                uid: victim,
+                pos: enemy.pos,
+                hp: enemy.hp,
+                strength: 20.0,
+                kill_value: 250.0,
+                siege: false,
+                captures: true,
+            }],
+            vec![Candidate {
+                shooter: 0,
+                target: 0,
+                from: unit.pos,
+                ranged,
+                att: 30.0,
+                def_base: 20.0,
+                host: Some((100.0, 0.0)),
+            }],
+        )
+    }
+
+    #[test]
+    fn doomed_veto_does_not_count_the_enemy_a_ranged_finisher_removes() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("archer", 0, at(10, 4));
+        let victim = g.spawn_unit("archer", 1, at(11, 4));
+        wound(&mut g, ours, 10);
+        wound(&mut g, victim, 1);
+        let (shooters, targets, candidates) = previewed_finisher(&g, ours, victim, true);
+        let mut field = DangerField::new(&g, 0);
+        assert!(field.danger(at(10, 4), ours) > 10.0);
+        assert!(doomed_shooters(&shooters, &targets, &candidates, &mut field).is_empty());
+        // A non-finishing shot still leaves a lethal answer on the board.
+        let mut chip = candidates.clone();
+        chip[0].host = Some((0.0, 0.0));
+        assert!(doomed_shooters(&shooters, &targets, &chip, &mut field).contains(&ours));
+    }
+
+    #[test]
+    fn doomed_veto_prices_a_melee_finisher_outside_its_original_garrison() {
+        let mut g = open_field();
+        g.found_city_for(0, at(10, 4), Some("Refuge".to_string()));
+        let ours = g.spawn_unit("warrior", 0, at(10, 4));
+        let victim = g.spawn_unit("archer", 1, at(11, 4));
+        g.spawn_unit("crossbowman", 1, at(12, 4));
+        wound(&mut g, ours, 30);
+        wound(&mut g, victim, 1);
+        let (shooters, targets, candidates) = previewed_finisher(&g, ours, victim, false);
+        let mut field = DangerField::new(&g, 0);
+        assert_eq!(field.danger(at(10, 4), ours), 0.0);
+        assert!(field.danger_without(at(11, 4), ours, 30, &BTreeSet::from([victim])) > 30.0);
+        assert!(doomed_shooters(&shooters, &targets, &candidates, &mut field).contains(&ours));
+    }
+
+    #[test]
+    fn doomed_garrison_is_claimed_before_the_ladder_can_order_a_sortie() {
+        let mut g = open_field();
+        g.found_city_for(0, at(10, 4), Some("Refuge".to_string()));
+        let ours = g.spawn_unit("warrior", 0, at(10, 4));
+        let mut field = DangerField::new(&g, 0);
+        let mut ai = version_two();
+        ai.enable_doomed_blow_veto();
+        ai.rotate_wounded(
+            &mut g,
+            0,
+            &mut field,
+            &BTreeSet::new(),
+            &BTreeSet::from([ours]),
+        );
+        assert!(
+            ai.battle_planner_claims(ours),
+            "the garrison must not fall through to a sortie"
+        );
+        assert_eq!(g.units[&ours].pos, at(10, 4));
+        assert!(g.units[&ours].fortified);
     }
 
     /// A warrior whose one blow — on an archer two tiles off along a clear

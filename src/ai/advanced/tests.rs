@@ -48197,3 +48197,69 @@ fn immediate_kill_priority_rejects_a_poisoned_finish() {
     assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 1);
     assert!(!g.units.contains_key(&victim));
 }
+
+#[test]
+fn live_science_peace_offer_keeps_the_war_and_threats_until_host_acceptance() {
+    let mut game = Game::new_full(2, 24, 16, 7_923, 300, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    let ours = game.player_city_ids(0)[0];
+    let here = game.cities[&ours].pos;
+    let theirs = game.cities[&game.player_city_ids(1)[0]].pos;
+    game.spawn_test_unit("modern_armor", 0, here);
+    game.spawn_test_unit("modern_armor", 1, theirs);
+    for _ in 0..2 {
+        game.spawn_test_unit("warrior", 1, theirs);
+    }
+    game.current = 0;
+    game.turn = 60;
+    game.record_contact(0, 1);
+    game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    game.turn = game.peace_available_at(0, 1).unwrap();
+    game.host_observed = Arc::new(BTreeSet::from([here, theirs]));
+    assert!(game.military_power(0) < game.military_power(1) * 0.85);
+    assert!(game.military_power(0) >= game.military_power(1) * 0.62);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: Some(ours),
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.major_war_since = Some(60);
+    let prior_peace_until = science.peace_until;
+    science.plan = Some(plan.clone());
+    science.advanced_diplomacy(&mut game, 0, &plan);
+    assert_eq!(science.plan_report().unwrap().peace_offers, vec![1]);
+    assert!(
+        science.peace_offers.contains(&1),
+        "the bridge must still send the offer"
+    );
+    assert!(
+        game.is_at_war(0, 1),
+        "a proposed peace must not disable tactical threats"
+    );
+    assert_eq!(science.major_war_since, Some(60));
+    assert_eq!(science.peace_until, prior_peace_until);
+    assert!(!science.base.enemy_attack_envelopes(&game, 0).is_empty());
+    // A refusal leaves the same war in the next host frame; a repeated plan
+    // must continue to defend it rather than carry a speculative peace clock.
+    science.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(game.is_at_war(0, 1));
+    assert!(science.peace_offers.contains(&1));
+    // Only the authoritative accepted state closes this mirrored war.
+    game.apply(0, &Action::MakePeace { player: 1 }).unwrap();
+    science.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(!game.is_at_war(0, 1));
+    assert!(!science.peace_offers.contains(&1));
+}
