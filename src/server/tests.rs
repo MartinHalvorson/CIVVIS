@@ -12100,6 +12100,8 @@ fn browser_runs_a_civ_six_turn_loop() {
         "kind: \"deal\"",
         "kind: \"congress\"",
         "kind: \"dedication\"",
+        "kind: \"government\"",
+        "kind: \"policy\"",
         "kind: \"research\"",
         "kind: \"civic\"",
         "kind: `produce:${city.id}`",

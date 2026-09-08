@@ -26,7 +26,7 @@ order, and the End Turn button is the thing that says it:
 
 1. Something demands an answer (a captured city's fate, a proposed deal, a
    World Congress vote, an age dedication).
-2. Something is unchosen (research, civic, production, a policy, a pantheon).
+2. Something is unchosen (research, civic, production, a government, a policy).
 3. Something is unmoved (a unit that still has movement and no standing order).
 4. Nothing is waiting — the button turns green and says **Next Turn**.
 
@@ -51,16 +51,17 @@ key — walks them.
 | 2 | A rival has proposed a deal | accept / reject in Diplomacy |
 | 3 | The World Congress is voting | vote buttons in Government |
 | 4 | A new age needs its dedication | dedication buttons in Government |
-| 5 | A pantheon may be founded | Religion panel |
-| 6 | A policy slot is empty | Government panel |
+| 5 | No government is adopted and one is available | Government panel |
+| 6 | A policy slot is empty and a legal card fits | Government panel |
 | 7 | No research is selected | Science card / tech tree |
 | 8 | No civic is selected | Culture card / civics tree |
 | 9 | A city is producing nothing | city screen ▸ Build |
 | 10 | A unit has moves and no orders | select the unit; move, fortify, skip or sleep |
 
-Blockers 1–4 and 7–10 are engine-legal actions the client can already resolve;
-5 and 6 arrive with the panels that resolve them, and a blocker is never shown
-before the UI that answers it exists. A blocker is skippable — `Shift`+`1`,
+Government and policy prompts open the existing Government panel. They use
+engine-legal actions, so an empty slot with no compatible card does not block
+the turn. Pantheons remain clickable standing notifications in the Religion
+panel. A blocker is skippable — `Shift`+`1`,
 or shift-clicking the button, ends the turn regardless — because a rule that
 cannot be overridden becomes a trap the first time a player disagrees with it.
 
