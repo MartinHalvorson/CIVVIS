@@ -610,6 +610,16 @@ class SpectatorDeploymentOwnerTest(unittest.TestCase):
         self.assertEqual(self.plist.read_bytes(), before)
         self.load_job.assert_not_called()
 
+    def test_configured_detached_deployment_keeps_its_cache(self):
+        deployment = self.home / "deployment"
+        subprocess.run(["git", "-C", str(self.primary), "worktree", "add", "-q",
+                        "--detach", str(deployment)], check=True, capture_output=True)
+        self.install_receipt(deployment)
+        before = self.plist.read_bytes()
+        civvis_collab.install_spectator_service(self.main)
+        self.assertEqual(self.plist.read_bytes(), before)
+        self.load_job.assert_not_called()
+
     def test_an_existing_task_owner_is_repaired_to_main(self):
         self.install_receipt(self.task)
         civvis_collab.install_spectator_service(self.primary)

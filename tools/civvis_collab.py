@@ -3283,8 +3283,8 @@ def spectator_deployment_root(repo: Path, installed: Path) -> Path:
 
     Task launchers run from different checkouts of the same clone. Using their
     cwd rewrites the job and restarts an in-flight build on every switch. Only
-    the primary checkout and main management worktree are durable owners; a
-    task worktree or rotating batch clone must not own the service lifetime.
+    the primary checkout, main management tree and configured detached trees
+    are retained; task branches and rotating batch clones are repaired.
     """
     try:
         payload = plistlib.loads(installed.read_bytes())
@@ -3294,6 +3294,7 @@ def spectator_deployment_root(repo: Path, installed: Path) -> Path:
             candidate = Path(raw).resolve()
             if not ephemeral_service_source(candidate) and repo_root(candidate) == candidate:
                 durable = (candidate == common_git_dir(candidate).parent
+                           or git(candidate, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
                            or candidate == main_worktree(candidate))
                 if durable and spectator_runner_source(candidate).is_file():
                     return candidate
