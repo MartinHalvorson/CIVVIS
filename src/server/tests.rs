@@ -5675,7 +5675,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // ahead of the advanced drawer, which strands it above the whole form
     // — the way the endgame rules were stranded until they were nested.
     assert!(EMBEDDED_INDEX.contains(
-        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
+        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"leader\", \"difficulty\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
     ));
     // Recomposed on every change of mode, from the same one function.
     assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
@@ -11027,6 +11027,45 @@ fn spectator_chronicle_tracks_war_declarations_losses_and_peace() {
 }
 
 #[test]
+fn loading_a_human_save_from_the_exhibition_returns_control_to_the_player() {
+    let human = Session::new(current());
+    let saved = crate::protocol::save_value(&human.game).unwrap();
+    let mut exhibition = current();
+    exhibition.spectate = true;
+    exhibition.seed = 42;
+
+    // The named native save and the uploaded/WASM route restore the same
+    // control mode, regardless of which world is currently on screen.
+    let named = Session::from_saved_game(exhibition.clone(), human.game.clone());
+    assert!(!named.params.spectate);
+    let mut uploaded = Session::new(exhibition);
+    crate::routes::load_uploaded(&mut uploaded, &json!({"game": saved})).unwrap();
+    assert_eq!(uploaded.state()["spectate"], false);
+    assert_eq!(uploaded.game.seed, human.game.seed);
+    assert_eq!(uploaded.game.turn, human.game.turn);
+    assert_eq!(uploaded.game.current, human.game.current);
+    assert!(uploaded.game.human_seats.contains(&0));
+    assert!(!uploaded.state()["legal_actions"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let outcome = crate::routes::action(&mut uploaded, &json!({"action": {"type": "end_turn"}}));
+    assert!(outcome.out["error"].is_null(), "{}", outcome.out);
+    assert_eq!(uploaded.game.turn, human.game.turn + 1);
+    assert_eq!(uploaded.game.current, 0);
+}
+
+#[test]
+fn loading_an_exhibition_save_does_not_invent_a_human_seat() {
+    let mut exhibition = current();
+    exhibition.spectate = true;
+    let game = Session::new(exhibition).game;
+    let restored = Session::from_saved_game(current(), game);
+    assert!(restored.params.spectate);
+    assert!(restored.game.human_seats.is_empty());
+}
+
+#[test]
 fn restored_session_preserves_progress_and_derives_its_world_settings() {
     let mut game = Session::new(current()).game;
     game.turn = 37;
@@ -11098,7 +11137,7 @@ fn browser_sets_up_and_reopens_a_single_player_game() {
 /// must open that game — on the supervised exhibition too, where every
 /// simulation is a fresh process but a human game takes this one over.
 /// The control itself persists when the world changes; only its presentation
-/// transforms, so a second Start new game button never materializes.
+/// transforms. The setup panel also offers the same action beside its choices.
 #[test]
 fn browser_transforms_restart_control_for_single_player() {
     assert!(EMBEDDED_INDEX
@@ -11138,10 +11177,8 @@ fn browser_transforms_restart_control_for_single_player() {
     // carries a second class because a third mode hides it for a different
     // reason — see `browser_keeps_the_civilization_vi_mode_available_for_verification`.
     assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
-    assert!(
-        EMBEDDED_INDEX.contains("class=\"small game-advanced-setting human-setting civ6-hidden\"")
-    );
-    assert!(EMBEDDED_INDEX.contains("class=\"small game-advanced-setting human-setting\""));
+    assert!(EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\""));
+    assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\""));
     // Settings staged for the next simulation describe a spectated world,
     // so they may only adopt that mode while one is on screen.
     assert!(EMBEDDED_INDEX
@@ -11175,7 +11212,7 @@ fn browser_keeps_the_civilization_vi_mode_available_for_verification() {
         "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // leader pool
         "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // leader selection
         "class=\"custom-leader-selection game-advanced-setting civ6-hidden\"", // custom table
-        "class=\"small game-advanced-setting human-setting civ6-hidden\"",
+        "class=\"small human-setting civ6-hidden\"",
         "class=\"small civ6-hidden tactics-hidden\">World shape",
         "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\"", // thermal
         "class=\"overlay-options game-advanced-setting civ6-hidden tactics-hidden\"", // wraparound

@@ -409,7 +409,11 @@ pub fn load_uploaded(session: &mut Session, parsed: &Value) -> Result<(), String
         ));
     }
     let params = session.params.clone();
-    let mut next = Session::from_game(params, game);
+    let mut next = if parsed.get("mirror_player").is_some() {
+        Session::from_game(params, game)
+    } else {
+        Session::from_saved_game(params, game)
+    };
     // A mirror publishes a frame, not a playable save. Seat and pause it
     // before replacing the session so concurrent polls cannot see the full
     // world between /load and the follower's later /view request.

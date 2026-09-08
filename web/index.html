@@ -1771,6 +1771,11 @@
   .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: var(--type-small); }
   /* Leader and difficulty only mean anything with somebody at the keyboard. */
   body.spectating .human-setting { display: none; }
+  #single-player-entry { width: 100%; margin-bottom: 8px; }
+  body:not(.watching-sim) #single-player-entry { display: none; }
+  #setup-start { width: 100%; margin-top: 12px; }
+  #setup-start[hidden] { display: none; }
+  body.watching-sim #saves-group .save-row { display: none; }
   /* Playing the other game, the panel configures the other game. Only the
      settings `CivvisControlSetup.lua` actually writes into Civilization VI
      survive the switch — difficulty, map, size, speed — because a row that
@@ -4924,6 +4929,8 @@
   </div>
   <div class="side-scroll">
     <div class="side-actions" aria-label="Simulation controls">
+      <button class="primary" id="single-player-entry" type="button"
+        title="Choose your leader, difficulty and world">Play single player</button>
       <div id="specbar" style="display:none">
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
@@ -5434,10 +5441,10 @@
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
           inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
           title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
-        <label class="small game-advanced-setting human-setting civ6-hidden" data-advanced-order="70">Leader<select id="leader" style="margin-top:4px">
+        <label class="small human-setting civ6-hidden">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
         </select></label>
-        <label class="small game-advanced-setting human-setting" data-advanced-order="80">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
+        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
           <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate, wraparound &amp; seed</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
@@ -5480,6 +5487,7 @@
           </div>
         </details>
       </div>
+      <button class="primary" id="setup-start" type="button" hidden>Start new game</button>
       </div>
     </details>
     <!-- The column runs deepest-cause first: a civilization's current strategy
