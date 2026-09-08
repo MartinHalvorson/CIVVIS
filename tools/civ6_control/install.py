@@ -44,6 +44,7 @@ SCRIPTS = (
     "CivvisControlSetup.lua",
     "CivvisControlAgent.lua",
     "CivvisControlAutoClose.lua",
+    "CivvisControlHeartbeat.lua",
 )
 
 

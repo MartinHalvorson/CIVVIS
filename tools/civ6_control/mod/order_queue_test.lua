@@ -499,6 +499,53 @@ queue.onUnitSettled(PID, 10)
 check("queued follow-up still ticks without an end-turn request", settledTickCalls, 2)
 check("queued follow-up is marked ready", queue.pending[10].ready, true)
 
+-- The visible HUD can wake the actual controller entry point even when no
+-- game-core or unit-completion callback arrives. Normal ticks suppress it.
+local pulseCalls = 0
+local pulseCfg = { CivvisDecides = true }
+local pulseUpvalues = {}
+for i = 1, 30 do
+    local name = debug.getupvalue(queue.onUiPulse, i)
+    if name == nil then break end
+    pulseUpvalues[name] = i
+    if name == "tick" then
+        debug.setupvalue(queue.onUiPulse, i, function()
+            pulseCalls = pulseCalls + 1
+            queue.controllerTicks = (queue.controllerTicks or 0) + 1
+        end)
+    elseif name == "cfg" then
+        debug.setupvalue(queue.onUiPulse, i, pulseCfg)
+    end
+end
+queue.controllerTicks = 5; queue.lastUiTick = nil
+queue.onUiPulse()
+check("first pulse observes normal controller activity", pulseCalls, 0)
+queue.controllerTicks = 6
+queue.onUiPulse()
+check("normal controller activity suppresses fallback", pulseCalls, 0)
+queue.onUiPulse()
+check("quiet interval wakes controller without game-core events", pulseCalls, 1)
+queue.onUiPulse()
+check("continued quiet intervals remain recoverable", pulseCalls, 2)
+pulseCfg.Play = false
+queue.onUiPulse()
+check("disabled play prevents fallback", pulseCalls, 2)
+pulseCfg.Play = true; pulseCfg.CivvisDecides = false
+queue.onUiPulse()
+check("standalone harness has no CivVis heartbeat", pulseCalls, 2)
+pulseCfg.CivvisDecides = true
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.inTick, true)
+queue.onUiPulse()
+check("reentrant pulse cannot wake controller", pulseCalls, 2)
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.inTick, false)
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, true)
+queue.onUiPulse()
+check("finished game cannot be woken", pulseCalls, 2)
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, false)
+Game.GetLocalPlayer = function() return -1 end
+queue.onUiPulse()
+check("no local seat cannot be woken", pulseCalls, 2)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)

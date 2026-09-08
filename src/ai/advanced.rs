@@ -13895,6 +13895,54 @@ impl AdvancedAi {
             .any(|cid| Self::imminent_city_attack(g, pid, cid, &visible))
     }
 
+    /// An active major war must be able to retire its standing land army.
+    /// Score bonuses cannot reach a missing prerequisite when a victory lane
+    /// owns the research slot. Route one immediate successor explicitly; once
+    /// its technology is known, let production/resources/Gold catch up before
+    /// requesting another generation. Do not require stockpiled resources here:
+    /// the missing prerequisite may be the technology that reveals them.
+    fn wartime_modernization_tech(&self, g: &Game, pid: usize) -> Option<Name> {
+        if !self.victory_planning
+            || !g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            })
+        {
+            return None;
+        }
+        let mut goals: BTreeMap<Name, (usize, f64)> = BTreeMap::new();
+        for unit in g.units.values().filter(|unit| unit.owner == pid) {
+            let held = &g.rules.units[unit.kind];
+            if held.class != "military" || matches!(held.domain.as_deref(), Some("sea" | "air")) {
+                continue;
+            }
+            let Some(successor) = held.upgrade_to else {
+                continue;
+            };
+            let successor = &g.rules.units[g.player_unit_replacement(pid, successor)];
+            let Some(tech) = successor.tech else { continue };
+            if !successor.buildable || g.players[pid].techs.contains(&tech) {
+                continue;
+            }
+            let gain = successor.strength.max(successor.ranged_attack_strength())
+                - held.strength.max(held.ranged_attack_strength());
+            if gain > 0.0 {
+                let entry = goals.entry(tech).or_default();
+                entry.0 += 1;
+                entry.1 += gain;
+            }
+        }
+        goals
+            .into_iter()
+            // One obsolete scout must not displace the empire's victory lane.
+            .filter(|(_, (count, _))| *count >= 2)
+            .max_by(|(a, (_, av)), (b, (_, bv))| av.total_cmp(bv).then_with(|| b.cmp(a)))
+            .map(|(tech, _)| tech)
+    }
+
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // Explicit evaluator targets and the adaptive live plan must drive the
         // same prerequisite search.  Previously only `victory_target` enabled
@@ -13956,6 +14004,7 @@ impl AdvancedAi {
             } else {
                 None
             };
+            let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -14009,6 +14058,7 @@ impl AdvancedAi {
                 // the strongest upgrade supported by the army already in the
                 // field; `goal_pick` below walks its prerequisites.
                 _ if barbarian_military_goal.is_some() => barbarian_military_goal.as_deref(),
+                _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 // `enter-the-prophet-race`: Astrology is a dead-end branch no
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
@@ -14136,6 +14186,11 @@ impl AdvancedAi {
                             if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the cheapest step toward {}, needed to catch a nearby barbarian army",
+                                    plain(goal)
+                                )
+                            } else if wartime_modernization_goal.as_deref() == Some(goal) {
+                                format!(
+                                    "the cheapest step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
                                 )
                             } else {
