@@ -41982,10 +41982,8 @@ fn a_live_settler_escapes_a_direct_barbarian_capture_after_explicit_withhold() {
         ai.live_formationless_settler_shadow,
         "the deployed seat uses the live shadow"
     );
-    assert!(
-        !ai.civilian_out_of_reach,
-        "the average-based deployment selection keeps the broader civilian-safety opt-in off"
-    );
+    // Rankings may deploy this opt-in; this regression exercises an explicit
+    // withhold independently of the current tournament-selected default.
     ai.disable_civilian_out_of_reach();
     assert!(
         !ai.civilian_out_of_reach,
