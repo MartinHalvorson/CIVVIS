@@ -3,8 +3,10 @@
 Run: `civvis-20260908T173748Z`, Emperor, Trajan, Online, science target,
 controller revision `cc4655df2`. Evidence is the retained `events.jsonl`,
 `why.log`, and `runtime_updates.jsonl` in the host's
-`civvis-civ6-runs/control/civvis-20260908T173748Z` directory. This is an
-in-progress game diagnosis through turn 208, not a completed outcome or a
+`civvis-civ6-runs/control/civvis-20260908T173748Z` directory. The completed game ended in a rival culture victory on turn 208: the
+explicit outcome records `won: false`, `team: 3`, `victory: 3`; the seat
+export maps victory index 3 to `VICTORY_CULTURE`. The process reason
+`stopped` does not override that in-game result. This single loss is not a
 controlled estimate of win-rate improvement.
 
 ## Observed failure chain
@@ -38,7 +40,10 @@ in the game did not substitute for productive early cities.
 Georgia produced 280.9 science at turn 150 and had already completed Moon
 Landing. We had only Earth Satellite at 175 and Moon Landing by 190. War
 then removed Ostia at 194 and Rome at 200. The science gap preceded the war;
-the invasion compounded an existing economic and development failure.
+the invasion compounded an existing economic and development failure. The
+actual terminal result was culture, so Georgia's science lead must not be
+misreported as the winning condition. Low domestic culture also left our
+science attempt vulnerable to a different rival's victory clock.
 
 ## Implemented correction
 
@@ -73,6 +78,8 @@ A production regression passing establishes routing, not positive income or
 a live win. Further deficits with the guard active would require examining
 commercial-district legality, trade safety, and committed queues.
 
+Track rival culture pressure as well as science project completion; reaching
+our science milestones is insufficient if another victory resolves first.
 Separately measure early retained cities, Campus/Library completion, loyalty
 losses, and Spaceport/project milestones. These remain improvement targets;
 this patch does not claim to solve settling, loyalty, or the whole science
