@@ -190,6 +190,42 @@ mod tests {
         assert_eq!(headless.handicap_combat_strength(0), 0.0);
     }
 
+    /// ⭐ An exempt seat plays Emperor with none of the rung's bonuses —
+    /// yields, strength, XP, start units — while the other majors keep all of
+    /// them: the shape the live Civ 6 seat meets, and what the gene screen's
+    /// `--handicap rivals` builds. It is not a human seat (below Prince a
+    /// human is paid; an exempt seat still is not), and it survives a save.
+    #[test]
+    fn an_exempt_seat_plays_the_rung_without_its_handicap() {
+        let mut exempt = options("emperor", "standard", &[]);
+        exempt.handicap_exempt = BTreeSet::from([0]);
+        let g = Game::new_with(exempt);
+        let spec = &g.rules.difficulties["emperor"];
+        assert_eq!(g.handicap_yield_pct(0), Default::default());
+        assert_eq!(g.handicap_yield_pct(1), spec.ai_yield_pct);
+        assert!(spec.ai_yield_pct.science > 0.0, "Emperor pays the AI");
+        assert_eq!(g.handicap_combat_strength(0), 0.0);
+        assert_eq!(g.handicap_combat_strength(1), spec.ai_combat_strength);
+        assert_eq!(g.handicap_xp_pct(0), 0.0);
+        assert_eq!(g.handicap_xp_pct(1), spec.ai_xp_pct);
+        let bonus: usize = spec.ai_bonus_units.values().sum();
+        assert!(bonus > 0, "Emperor hands the AI extra start units");
+        assert_eq!(
+            g.player_unit_ids(1).len(),
+            g.player_unit_ids(0).len() + bonus,
+        );
+        assert!(!g.is_human_seat(0));
+        let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        assert_eq!(restored.handicap_exempt, BTreeSet::from([0]));
+        assert_eq!(restored.handicap_yield_pct(0), Default::default());
+        // Below Prince an exempt seat is not paid the human's bonus either,
+        // even when it is also the human's chair.
+        let mut below = options("settler", "standard", &[0]);
+        below.handicap_exempt = BTreeSet::from([0]);
+        let below = Game::new_with(below);
+        assert_eq!(below.handicap_combat_strength(0), 0.0);
+    }
+
     /// The other shipped table the ladder is transcribed from, and the one
     /// that runs the opposite way. `StartingBuildings` gates exactly one of
     /// its 24 rows on difficulty — `BUILDING_WALLS`, `ERA_ANCIENT`,

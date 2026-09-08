@@ -621,7 +621,14 @@ FIELDLESS = {
 #: wrote nothing, and a batch that names its rung says so on the source.
 #: `rivals` is the rival mix (`--rivals firaxis-mix`): one chair per game
 #: plays a fixed, unmeasured opponent. Recorded the same way.
-RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate", "rivals")
+#: `handicap` / `rival_chairs` (2026-09-08) say who played the rung's bonuses
+#: and how many rival chairs a game seated (`--handicap rivals
+#: --rival-chairs 5`: every measured seat exempt, five handicapped rivals —
+#: the live seat's shape). Recorded the same way, and read with care: the
+#: win column of such a source is a statement about the seat against
+#: handicapped rivals, not the self-play column beside it (`column_estimate`).
+RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate", "rivals",
+                     "handicap", "rival_chairs")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since

@@ -5596,6 +5596,17 @@ pub struct GameOptions {
     pub barbarian_difficulty: String,
     pub speed: String,
     pub human_seats: BTreeSet<usize>,
+    /// ⭐ MAJOR SEATS THAT PLAY THE RUNG WITHOUT ITS HANDICAP (2026-09-08):
+    /// no AI yields, Combat Strength, XP, bonus start units or era boosts,
+    /// and none of the below-Prince human bonuses either. The gene screen's
+    /// `--handicap rivals` puts every measured seat here so only the rival
+    /// chairs play with Emperor's bonuses — the shape the live Civ 6 seat
+    /// meets, where WE get nothing and every rival AI gets the rung. A
+    /// separate set rather than `human_seats` because a human seat is
+    /// also a person's chair everywhere else (`server.rs` hands it to the
+    /// browser, `odds.rs` prices it as a human, below Prince it is PAID).
+    /// Empty in every save written before this field existed.
+    pub handicap_exempt: BTreeSet<usize>,
     /// Optional pre-game team assignment for each major seat. An empty vector
     /// means free-for-all; otherwise it must contain exactly `players`
     /// entries. Equal non-`None` values place those seats on one team.
@@ -5681,6 +5692,7 @@ impl GameOptions {
             barbarian_difficulty: default_barbarian_difficulty(),
             speed: default_speed(),
             human_seats: BTreeSet::new(),
+            handicap_exempt: BTreeSet::new(),
             teams: Vec::new(),
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
@@ -6171,6 +6183,12 @@ pub struct Game {
     /// all-agent game leaves this empty, which is why headless simulation is
     /// unaffected by the setting unless a seat is declared human.
     pub human_seats: BTreeSet<usize>,
+    /// Major seats that take no handicap at all at this rung — neither the
+    /// AI's bonuses nor a human's. See `Game::handicap_exempt`. Must be set
+    /// here rather than on the built world because the bonus start units
+    /// are placed during setup.
+    #[serde(default)]
+    pub handicap_exempt: BTreeSet<usize>,
     /// The published game whose rules this world is played by. Kept on the
     /// save alongside the rest of the setup so a restart offers what was
     /// actually played, rather than today's default.
@@ -6997,6 +7015,8 @@ struct GameSer {
     #[serde(default)]
     human_seats: BTreeSet<usize>,
     #[serde(default)]
+    handicap_exempt: BTreeSet<usize>,
+    #[serde(default)]
     events: Vec<Event>,
     #[serde(default)]
     base_ruleset: BaseRuleset,
@@ -7248,6 +7268,7 @@ impl From<GameSer> for Game {
             barbarian_difficulty: s.barbarian_difficulty,
             speed,
             human_seats: s.human_seats,
+            handicap_exempt: s.handicap_exempt,
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
@@ -7479,6 +7500,7 @@ impl From<Game> for GameSer {
             // save cannot preserve two conflicting speeds.
             speed: g.game_speed.id().to_string(),
             human_seats: g.human_seats,
+            handicap_exempt: g.handicap_exempt,
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
@@ -7800,6 +7822,7 @@ impl Game {
             barbarian_difficulty,
             speed,
             human_seats,
+            handicap_exempt,
             teams,
             disaster_intensity,
             game_modes,
@@ -7950,6 +7973,7 @@ impl Game {
             barbarian_difficulty,
             speed,
             human_seats,
+            handicap_exempt,
             base_ruleset,
             start_era,
             future_era,
@@ -8147,8 +8171,9 @@ impl Game {
             g.spawn_unit("settler", i, *pos);
             g.spawn_unit("warrior", i, *pos);
             // Above Prince the AI seats open with extra units, exactly as the
-            // shipped `Eras.xml` bonus start table describes.
-            if !g.is_human_seat(i) {
+            // shipped `Eras.xml` bonus start table describes. An exempt seat
+            // opens like a human one: Settler and Warrior only.
+            if !g.is_human_seat(i) && !g.is_handicap_exempt(i) {
                 let bonus = g.difficulty_spec().ai_bonus_units.clone();
                 for (kind, count) in bonus {
                     for _ in 0..count {
@@ -8786,6 +8811,14 @@ impl Game {
         self.human_seats.contains(&pid)
     }
 
+    /// Whether this seat was declared to play the rung without its handicap
+    /// (`Game::handicap_exempt`). Read by every handicap the rung applies to
+    /// a major, so one set covers yields, strength, XP, start units, era
+    /// boosts and the below-Prince human bonuses alike.
+    pub fn is_handicap_exempt(&self, pid: usize) -> bool {
+        self.handicap_exempt.contains(&pid)
+    }
+
     /// Whether this world is a Tactics arena rather than a Civ world.
     ///
     /// The map script is the mode's only marker — there is no separate mode
@@ -8911,11 +8944,14 @@ impl Game {
     }
 
     /// Handicaps reach the major civilizations only: city-states and
-    /// barbarians are not on either side of the difficulty bargain.
+    /// barbarians are not on either side of the difficulty bargain, and a
+    /// seat in `handicap_exempt` has stepped out of it on purpose.
     fn takes_handicap(&self, pid: usize) -> bool {
-        self.players
-            .get(pid)
-            .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+        !self.is_handicap_exempt(pid)
+            && self
+                .players
+                .get(pid)
+                .is_some_and(|player| !player.is_minor && !player.is_barbarian)
     }
 
     /// Whether this seat may take a new tile with its own Culture or Gold.
@@ -30182,7 +30218,7 @@ impl Game {
         let era_boosts = self.difficulty_spec().ai_era_boosts;
         if era_boosts > 0 {
             for pid in majors.clone() {
-                if self.is_human_seat(pid) {
+                if self.is_human_seat(pid) || self.is_handicap_exempt(pid) {
                     continue;
                 }
                 self.grant_random_boosts(pid, era_boosts, true);
