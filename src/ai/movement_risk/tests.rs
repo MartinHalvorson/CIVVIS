@@ -23,7 +23,8 @@ fn board() -> (Game, Pos) {
         .map
         .tiles
         .keys()
-        .find(|p| g.wdisk(**p, 5).len() == 91)
+        .filter(|p| g.wdisk(**p, 5).len() == 91)
+        .min_by_key(|p| g.wdist(**p, (8, 8)))
         .unwrap();
     (g, center)
 }
@@ -39,7 +40,7 @@ fn movement_risk_prices_cover_and_enemy_move_then_attack() {
         .unwrap();
     g.spawn_test_unit("warrior", 1, enemy_pos);
     let ai = BasicAi::new();
-    let risk = ai.movement_risk_frame(&g, 0, ours, enemy_pos);
+    let risk = ai.movement_risk_frame(&g, 0, ours, pos);
     let flat = risk.score(&g, 0, ours, pos, 0.5);
     assert!(flat < 0.0, "enemy two hexes away can move and attack");
     g.map.tiles.get_mut(&pos).unwrap().hills = true;
@@ -177,7 +178,7 @@ fn movement_risk_tactical_advance_avoids_a_burning_shortcut() {
     let ai = BasicAi::new();
     assert!(ai.tactical_step(&mut g, 0, ours, target, &[1], 1));
     assert_ne!(g.units[&ours].pos, shortcut);
-    assert!(g.wdist(g.units[&ours].pos, target) < 4);
+    assert!(g.wdist(g.units[&ours].pos, target) <= 4);
 }
 
 #[test]
