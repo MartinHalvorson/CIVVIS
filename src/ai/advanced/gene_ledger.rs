@@ -1238,10 +1238,14 @@ mod tests {
             );
         }
 
-        assert!(deployed.contains(&"siege-is-progress-3"));
-        assert!(!deployed.contains(&"siege-is-progress-2"));
-
+        // Reporting batches may reselect the shipped member. Pin each arm
+        // explicitly when checking that its inactive sibling is omitted.
         for (forced, winner, loser) in [
+            (
+                "siege-is-progress-3",
+                "siege-is-progress-3",
+                "siege-is-progress-2",
+            ),
             ("air-surge-2", "air-surge-2", "air-surge"),
             (
                 "district-planning-2",
