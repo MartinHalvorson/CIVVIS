@@ -5675,7 +5675,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // ahead of the advanced drawer, which strands it above the whole form
     // — the way the endgame rules were stranded until they were nested.
     assert!(EMBEDDED_INDEX.contains(
-        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
+        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"leader\", \"difficulty\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
     ));
     // Recomposed on every change of mode, from the same one function.
     assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
@@ -11098,7 +11098,7 @@ fn browser_sets_up_and_reopens_a_single_player_game() {
 /// must open that game — on the supervised exhibition too, where every
 /// simulation is a fresh process but a human game takes this one over.
 /// The control itself persists when the world changes; only its presentation
-/// transforms, so a second Start new game button never materializes.
+/// transforms. The setup panel also offers the same action beside its choices.
 #[test]
 fn browser_transforms_restart_control_for_single_player() {
     assert!(EMBEDDED_INDEX
@@ -11139,9 +11139,9 @@ fn browser_transforms_restart_control_for_single_player() {
     // reason — see `browser_keeps_the_civilization_vi_mode_available_for_verification`.
     assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
     assert!(
-        EMBEDDED_INDEX.contains("class=\"small game-advanced-setting human-setting civ6-hidden\"")
+        EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\"")
     );
-    assert!(EMBEDDED_INDEX.contains("class=\"small game-advanced-setting human-setting\""));
+    assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\""));
     // Settings staged for the next simulation describe a spectated world,
     // so they may only adopt that mode while one is on screen.
     assert!(EMBEDDED_INDEX
@@ -11175,7 +11175,7 @@ fn browser_keeps_the_civilization_vi_mode_available_for_verification() {
         "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // leader pool
         "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // leader selection
         "class=\"custom-leader-selection game-advanced-setting civ6-hidden\"", // custom table
-        "class=\"small game-advanced-setting human-setting civ6-hidden\"",
+        "class=\"small human-setting civ6-hidden\"",
         "class=\"small civ6-hidden tactics-hidden\">World shape",
         "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\"", // thermal
         "class=\"overlay-options game-advanced-setting civ6-hidden tactics-hidden\"", // wraparound
