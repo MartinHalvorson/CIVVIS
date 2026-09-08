@@ -26,6 +26,8 @@ or displaced. Amani's established delegation and multiplier come from
 the same implementation as turn income. No game rules or income changed.
 `data/policies.json` supplies Diplomatic League's `first_envoy_bonus: 1`
 and Containment's `different_government_envoy_bonus: 1`.
+The installed `Base/Assets/Gameplay/Data/Policies.xml:1646–1648` confirms
+`DIPLOMATICLEAGUE_DUPLICATEFIRSTINFLUENCETOKEN`, `Amount`, `1`.
 
 ## Arithmetic and behavioral validation
 
@@ -49,6 +51,33 @@ promote the gene.
 cargo build --profile ci --locked --features developer-tools --bin gene_screen
 target/ci/gene_screen --games 12 --jobs 4 --difficulty emperor \
   --genes envoy-building-dividends --start-seed 980908001 \
-  --out /tmp/civvis-envoy-building-dividends.jsonl \
+  --out /tmp/civvis-envoy-building-dividends.jsonl
+target/ci/gene_screen --analyze /tmp/civvis-envoy-building-dividends.jsonl \
   --json docs/gene_screens/fires/envoy-building-dividends.json
 ```
+
+## Regression checks
+
+- `cargo test --profile ci --locked`: 3,177 passed, 50 ignored, zero failures.
+- `cargo test --profile ci --locked envoy_dividends -- --nocapture`: all eight new tests passed.
+- `python3 -m unittest discover -s tools -p test_treatment_append_points.py`: 14 passed.
+- `python3 tools/genes.py check`: current.
+- `python3 tools/rust_quality.py --base origin/main --head HEAD`: changed lines formatted and warning-free.
+
+## Completed exercise
+
+The validated reader reports all 12 games / 72 seats complete, one winner per
+game, and an analysis matching the raw rows. All games ended in Science
+victories. The gene was on for 16 seats (5 wins, 31.25%) and off for 56 seats
+(7 wins, 12.5%). The difference is +18.75 percentage points with standard error
+10.27 points; the reported 95% interval is approximately −1.4 to +38.9 points.
+This is inconclusive (`~`), not evidence sufficient to change the default.
+Score-share difference is +1.11 points, standard error 1.21 points.
+
+The committed firing artifact records the clean build commit, executable and
+gene-set hashes, seed range and complete analysis. `python3 tools/gene_fires.py
+--max 0` now reports 270/270 genes with firing evidence and zero unproven.
+`python3 tools/continuous_screen_status.py /tmp/civvis-envoy-building-dividends.jsonl
+--analysis docs/gene_screens/fires/envoy-building-dividends.json` verifies the
+complete game and seat counts. The evaluation inventory was regenerated;
+all 21 `test_eval_manifest.py` tests pass.
