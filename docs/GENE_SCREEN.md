@@ -2238,6 +2238,41 @@ past the family-wise bar read on the three kinds apart**, with `agree` when
 every kind's sign is the whole batch's and `SPLIT` when a gene pays against
 one rival and not another.
 
+### ⭐ Handicapped rivals: `--handicap rivals --rival-chairs N` (2026-09-08)
+
+`--difficulty emperor` hands the rung's bonuses to **every** major alike,
+because the screen declares no seat human — six equally boosted seats, which is
+not what the live Civilization VI seat meets: there *we* get nothing at Emperor
+and every rival AI gets +16% science/culture, +40% production/gold, the bonus
+start units and the era boosts. The recipe for that shape is
+
+```
+gene_screen --games N --difficulty emperor --rivals firaxis-mix --handicap rivals --rival-chairs 5 --out rows.jsonl
+```
+
+`--handicap rivals` puts every measured seat in `GameOptions::handicap_exempt`
+(a set of its own, not `human_seats`, which is a person's chair everywhere
+else), so only the rival chairs play with the rung; `--rival-chairs N` seats
+`N` consecutive rival chairs from the rotating rival index (at most
+`players - 1`, so one measured seat against five handicapped rivals in a
+six-player game), every chair of a `firaxis-mix` game drawing its own lane
+slot so the batch still plays each lane its share. Both need `--rivals`; the
+default `--handicap all` is the batch as it was. **The rival chairs are
+unmeasured** (`kind: "rival"`, as above), and the header records `handicap`
+and `rival_chairs` beside `rivals` — provenance `tools/genes.py` records on
+the source (`RECORDED_WHEN_SET`) and `--analyze` refuses to merge across.
+
+**Read such a source on its own.** `wins_per_10k` in `tools/genes.py` prices a
+win column against the 1-in-`players` a seat takes by chance, and
+`column_estimate`'s docstring says when that column and the on-off difference
+coincide: only while the arms are symmetric about chance, which every all-seats
+self-play source is. One measured seat against five Emperor rivals is not —
+both arms sit far below 1/6, as the single-seat probe `2026-08-20-s2` did — so
+a win column from a `--handicap rivals` source is a statement about the seat
+against handicapped rivals, **not comparable to the self-play columns** beside
+it; the on-off difference (`win_delta_pp`, what the posterior reads) is the
+statement about the gene. The arithmetic is deliberately unchanged.
+
 ## ⭐ The drift meter (2026-08-25)
 
 Every `--analyze` now prints, under *how the games ended*, the batch's share
