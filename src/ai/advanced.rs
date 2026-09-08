@@ -7007,6 +7007,7 @@ mod battlefront;
 /// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
 mod chokepoints;
 
+mod culture_strategy;
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
@@ -15680,18 +15681,27 @@ impl AdvancedAi {
             desired.splice(0..0, nobel_peace_direct_favor_cards.iter().copied());
         }
 
-        // If circumstances changed, remove a downside-bearing Dark Age card
-        // immediately.  Most importantly, Isolationism can never coexist with
-        // a live settler or an Expansion plan.
+        // Tourism defense must enter the protected set before ordinary cards
+        // are considered, including when the empire targets another victory.
+        let culture_defense_cards = self.culture_defense_cards(g, pid);
+        desired.retain(|card| !culture_defense_cards.contains(card));
+        desired.splice(0..0, culture_defense_cards.iter().copied());
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
+        // If circumstances changed, remove a downside-bearing Dark Age card
+        // immediately. Isolationism must not coexist with a live Settler.
+
         let unsafe_dark_cards: Vec<Name> = g.players[pid]
             .policies
             .iter()
-            .filter(|card| g.rules.policies[card].dark_age && !desired_set.contains(card.as_str()))
+            .filter(|card| {
+                (g.rules.policies[card].dark_age
+                    || (self.victory_planning && card.as_str() == "music_censorship"))
+                    && !desired_set.contains(card.as_str())
+            })
             .cloned()
             .collect();
         for card in unsafe_dark_cards {
-            think!(self.journal(), Policies, Decision, "Dropping the Dark Age card {}", plain(&card);
+            think!(self.journal(), Policies, Decision, "Dropping the situational card {}", plain(&card);
                    "its downside no longer suits the {} plan", objective.as_str());
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
@@ -15745,6 +15755,12 @@ impl AdvancedAi {
                 .iter()
                 .filter(|current| {
                     !desired_set.contains(current.as_str())
+                        // Defensive cards must be able to take an occupied
+                        // slot, but never evict each other or a different
+                        // typed lane card merely to borrow wildcard capacity.
+                        || (culture_defense_cards.contains(&card)
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && g.rules.policies[current].slot == g.rules.policies[card].slot)
                         // An ordinary desired card normally remains protected
                         // from a policy reassessment. A live Nobel Peace
                         // direct-Favor card is a timed host competition action,
@@ -16231,11 +16247,13 @@ impl AdvancedAi {
             .victory_target
             .map(VictoryTarget::strategy)
             .unwrap_or(strategy);
+        let culture_threats = self.culture_trade_threats(g, pid);
         if objective == GrandStrategy::Culture && g.turn % 6 == pid as u32 % 6 {
             let best = g
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
                 .filter(|deal| {
                     deal.item == "open_borders"
                         && deal.direction == "buy"
@@ -16263,6 +16281,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
                 .filter(|deal| {
                     deal.category == "great_work"
                         && deal.direction == "buy"
@@ -16291,6 +16310,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
                         && deal.my_value >= 2.0
@@ -16307,8 +16327,26 @@ impl AdvancedAi {
             }
             return;
         }
-        self.base
-            .bilateral_trade_excluding(g, pid, excluded_partner);
+        if culture_threats.is_empty() {
+            self.base
+                .bilateral_trade_excluding(g, pid, excluded_partner);
+        } else if !self.base.minor && !self.base.barb && g.turn % 6 == pid as u32 % 6 {
+            let best = g
+                .quick_deals(pid)
+                .into_iter()
+                .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .max_by(|left, right| {
+                    self.base
+                        .deal_objective(left)
+                        .total_cmp(&self.base.deal_objective(right))
+                });
+            if let Some(deal) =
+                best.filter(|deal| deal.my_value >= 2.0 && deal.partner_value >= 2.0)
+            {
+                self.base.close_quick_deal(g, pid, deal);
+            }
+        }
     }
 
     fn propose_strategic_alliance(
@@ -23208,7 +23246,7 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether war or targeted science production must yield to the baseline
+    /// Whether war or targeted science/culture production must yield to the baseline
     /// solvency recovery before it adds another upkeep bill.
     ///
     /// `BasicAi::product_for` uses the same reserve-and-deficit predicate:
@@ -23234,7 +23272,11 @@ impl AdvancedAi {
         pid: usize,
         counts: &EmpireCounts,
     ) -> bool {
-        if (!self.war_economy && self.active_victory_target(g) != Some(VictoryTarget::Science))
+        if (!self.war_economy
+            && !matches!(
+                self.active_victory_target(g),
+                Some(VictoryTarget::Science | VictoryTarget::Culture)
+            ))
             || self.base.minor
             || self.base.barb
         {
@@ -27126,6 +27168,9 @@ impl AdvancedAi {
                     && great_work_vetoed
                     && !self.lane_lost
                     && !self.culture_floor_lifts_veto(g, pid, spec)
+                    && !(spec.yields.culture > 0.0
+                        && self.culture_race_production_bonus(g, pid, item, plan.strategy, turns)
+                            > 0.0)
                 {
                     return -10_000.0;
                 }
@@ -28349,7 +28394,8 @@ impl AdvancedAi {
         // as the line above, and independent of it. See
         // `advanced/city_state_quests.rs`.
         let raw = if raw > 0.0 {
-            raw + self.production_boost_premium(g, pid, cid, item, raw)
+            raw + self.culture_race_production_bonus(g, pid, item, plan.strategy, turns)
+                + self.production_boost_premium(g, pid, cid, item, raw)
                 + self.quest_production_premium(g, pid, item, plan.strategy)
                 + self.quest_boost_premium(g, pid, item, plan.strategy)
         } else {
@@ -33993,17 +34039,8 @@ impl AdvancedAi {
             .victory_target
             .map(VictoryTarget::strategy)
             .unwrap_or(strategy);
-        // One route unlocks the entire empire's +25% Tourism pressure against
-        // that civilization (+75% with Online Communities). Duplicate routes
-        // do not stack, so Culture agents connect every rival before
-        // optimizing the route's ordinary yields.
-        if objective == GrandStrategy::Culture
-            && city.owner != pid
-            && !g.has_tourism_trade_route(pid, city.owner)
-        {
-            let modifier = 25.0 + g.policy_effect(pid, "trade_partner_tourism_pct");
-            value += 12.0 + g.tourism_per_turn(pid).min(400.0) * modifier / 100.0;
-        }
+        value += self.culture_route_bonus(g, pid, city.owner, objective);
+
         value
     }
 
