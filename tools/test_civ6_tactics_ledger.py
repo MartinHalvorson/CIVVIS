@@ -288,6 +288,30 @@ class EvacuationTest(unittest.TestCase):
 
 
 class CityOccupationTest(unittest.TestCase):
+    def test_repeated_callbacks_and_recapture_track_ownership(self):
+        lost = {"kind": "city_occupation", "turn": 10, "player": 1,
+                "city": 90, "name": "Rome", "original_owner": 0, "ours_now": False}
+        retaken = {**lost, "turn": 12, "player": 0, "city": 91, "ours_now": True}
+        self.assertEqual(ledger.city_occupations([
+            lost, {**lost, "turn": 11}, retaken, retaken,
+            {**lost, "turn": 15, "city": 92}], 0), (1, 2))
+
+    def test_roster_loss_overrides_duplicate_occupation_callbacks(self):
+        events = [{"kind": "city_lost", "turn": 10, "city": 1}] * 2
+        events += [{"kind": "city_occupation", "turn": turn, "player": 1,
+                    "city": turn, "original_owner": 0, "ours_now": False}
+                   for turn in (9, 11)]
+        self.assertEqual(ledger.city_occupations(events, 0), (0, 1))
+
+    def test_lethal_city_and_repeated_unit_callbacks_are_not_extra_deaths(self):
+        unit = {"kind": "combat", "attacker": {"player": 0, "id": 1, "type": "unit"},
+                "defender": {"player": 1, "id": 2, "type": "unit"},
+                "defender_killed": True}
+        city = {**unit, "defender": {"player": 1, "id": 3, "type": "city"}}
+        report = ledger.combat_section([unit, unit, city, city], 0)
+        self.assertEqual(report["kills"], 1)
+        self.assertEqual(report["losses"], 0)
+
     def test_a_captured_city_is_counted_and_a_lost_one_is_not_a_capture(self) -> None:
         events = [
             {"kind": "seat", "local_player": 0},

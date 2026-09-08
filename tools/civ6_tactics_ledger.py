@@ -298,24 +298,32 @@ def arrival_section(events: list[dict[str, Any]], unit_orders: list) -> dict[str
 def city_occupations(
     events: list[dict[str, Any]], local_player: int | None
 ) -> tuple[int, int]:
-    """`(taken, lost)` cities, from the mod's `city_occupation` events.
+    """Ownership transitions, not repeated occupation-status callbacks.
 
-    The mod has emitted these since the tactical ledger landed and nothing
-    has ever read them, so no report has been able to say whether a war
-    ended in a capture — the question eleven declared wars and four sieges
-    to 180-190/200 were waiting on.
+    City IDs change on capture. Use birth owner + name across those changes;
+    unnamed older events can only be deduplicated within an owner/ID pair.
+    Prefer explicit own-roster removals for losses when the exporter has them.
     """
     taken = lost = 0
+    ownership = {}
+    removals = set()
     for event in events:
+        if event.get("kind") == "city_lost" and local_player is not None:
+            removals.add((event.get("turn"), event.get("city", event.get("id"))))
         if event.get("kind") != "city_occupation" or local_player is None:
             continue
         ours_now = event.get("ours_now")
-        was_ours = event.get("original_owner") == local_player
-        if ours_now is True and not was_ours:
+        if not isinstance(ours_now, bool):
+            continue
+        key = ((event.get("original_owner"), event["name"]) if event.get("name")
+               else (event.get("player"), event.get("city")))
+        was_ours = ownership.get(key, event.get("original_owner") == local_player)
+        if ours_now and not was_ours:
             taken += 1
-        elif ours_now is False and was_ours:
+        elif not ours_now and was_ours:
             lost += 1
-    return taken, lost
+        ownership[key] = ours_now
+    return taken, len(removals) if removals else lost
 
 
 def combat_section(events: list[dict[str, Any]], local_player: int | None) -> dict[str, Any] | None:
@@ -327,6 +335,18 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
     preview_error: list[float] = []
     kills_by_kind: collections.Counter = collections.Counter()
     losses_by_kind: collections.Counter = collections.Counter()
+    deaths = set()
+
+    def new_unit_death(participant):
+        if participant.get("type") != "unit":
+            return False
+        key = (participant.get("player"), participant.get("id"))
+        if None in key:
+            return False  # no unique unit death can be established
+        if key in deaths:
+            return False
+        deaths.add(key)
+        return True
     for event in combats:
         attacker = event.get("attacker") or {}
         defender = event.get("defender") or {}
@@ -344,14 +364,14 @@ def combat_section(events: list[dict[str, Any]], local_player: int | None) -> di
             side["damage_taken" if we_attack else "damage_dealt"] += int(taken)
         if defender.get("type") == "city" or defender.get("type") == "district":
             side["city_strikes"] += 1
-        if event.get("defender_killed"):
+        if event.get("defender_killed") and new_unit_death(defender):
             if we_attack:
                 ours["kills"] += 1
                 kills_by_kind[str(defender.get("kind") or "?")] += 1
             else:
                 theirs["kills"] += 1
                 losses_by_kind[str(defender.get("kind") or "?")] += 1
-        if event.get("attacker_killed"):
+        if event.get("attacker_killed") and new_unit_death(attacker):
             if we_attack:
                 ours["losses_attacking"] += 1
                 losses_by_kind[str(attacker.get("kind") or "?")] += 1
