@@ -127,3 +127,26 @@ single-gene screens establish measurement reach only. Future regular screens
 must judge the genes under the existing deployment rule; a higher difficulty
 win improvement requires actual live evidence. Equal native difficulty bonuses
 for all seats do not reproduce the live player's asymmetric handicap.
+
+## Validation
+
+- `cargo test --profile ci --locked`: 3,197 passed, zero failed, 50 ignored
+  (including four documentation examples). Repeated successfully after merging
+  the current tournament ledger from `origin/main`.
+- Seven focused tests cover registration, each gene's legal production order,
+  queued answers, income recovery, opening expiry, threats, Recovery, active
+  queues and the finite-clock cutoff.
+- `cargo fmt --check` and `git diff --check origin/main...` passed.
+- `cargo clippy --profile ci --locked --lib --message-format=json`: passed;
+  no diagnostics in the changed AI files.
+- `python3 tools/genes.py check` and
+  `python3 tools/eval_manifest.py --check`: current after regeneration.
+- Five independent single-gene screens were pre-sized at 12 games / 72 seats
+  each, two workers each, Emperor majors, ordinary standard-screen settings
+  otherwise. Seed windows are 108090000–108090011 (Builder),
+  108091000–108091011 (culture), 108092000–108092011 (expansion),
+  108093000–108093011 (research), 108094000–108094011 (trade).
+  Each binary reports clean source commit
+  `d42d2cd63127ea3b3b3ee0f358456c591c804066`. The later merge changes the
+  tournament-selected background, so these are explicitly reach probes of
+  that recorded source, not strength evidence for the refreshed deployment.
