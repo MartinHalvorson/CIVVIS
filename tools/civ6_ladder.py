@@ -425,18 +425,20 @@ def combat_totals(events_path: Path) -> dict | None:
             kind = event.get("kind")
             if kind == "seat" and isinstance(event.get("local_player"), int):
                 local_player = event["local_player"]
-            if kind in ("combat", "unit_lost", "city_occupation", "order_verified",
+            if kind in ("combat", "unit_lost", "city_lost", "city_occupation", "order_verified",
                         "order_failed", "host_move", "move_noop", "move_fallback"):
                 events.append(event)
             elif kind == "state":
                 # The first frame of each turn is the board a death turn began
-                # on (`civ6_tactics_ledger._states`); only our units' hit
-                # points are read from it, so the frame is kept slim.
+                # on. Preserve the treasury and visible threats used to
+                # classify roster disappearances as well as unit health.
                 units = event.get("units")
                 events.append({
                     "kind": "state",
                     "turn": event.get("turn"),
                     "frame": event.get("frame"),
+                    "gold": event.get("gold"),
+                    "hostiles": event.get("hostiles"),
                     "units": [
                         {key: unit.get(key) for key in ("id", "kind", "x", "y", "hp", "combat", "ranged")}
                         for unit in (units if isinstance(units, list) else [])
@@ -457,6 +459,7 @@ def combat_totals(events_path: Path) -> dict | None:
         "cities_taken": combat["cities_taken"],
         "cities_lost": combat["cities_lost"],
         "military_units_gone": roster["military_units_gone"],
+        "military_removal_context": roster["context_at_last_sight"],
         # How many of those the seat saw coming; see
         # `civ6_tactics_ledger.SALVAGEABLE_HP`.
         "lost_when_salvageable": roster["lost_when_salvageable"],

@@ -47,6 +47,7 @@ def race_totals(path: Path) -> dict | None:
     boost_audit = {"techs": [], "civics": []}
     observed_turns = set()
     idle = set()
+    economy = {}
     for state in events(path):
         turn = state.get("turn")
         if state.get("kind") != "state" or type(turn) is not int:
@@ -57,6 +58,9 @@ def race_totals(path: Path) -> dict | None:
             first = turn
         last = turn
         observed_turns.add(turn)
+        if turn not in economy:
+            gold, gpt = state.get("gold"), state.get("gold_per_turn")
+            economy[turn] = (gold, gpt)
 
         def mark(name):
             milestones.setdefault(name, {"observed_turn": turn,
@@ -113,6 +117,8 @@ def race_totals(path: Path) -> dict | None:
                 "cities": len(cities), "campuses": campuses, "libraries": libraries,
                 "operational_spaceports": pads, "science": state.get("science"),
                 "culture": state.get("culture"),
+                "gold": state.get("gold"), "gold_per_turn": state.get("gold_per_turn"),
+                "military": state.get("military"),
                 "production": (state.get("public_stats") or {}).get("production"),
                 "techs": len(state["techs"]) if "techs" in state else None,
                 "research": state.get("research"),
@@ -127,6 +133,13 @@ def race_totals(path: Path) -> dict | None:
             "missing_turns": last - first + 1 - len(observed_turns),
             "milestones": milestones, "checkpoints": checkpoints,
             "cities": city_history, "idle_city_turns": len(idle),
+            "economy_observed_turns": sum(isinstance(gold, (int, float)) and
+                                          isinstance(gpt, (int, float))
+                                          for gold, gpt in economy.values()),
+            "empty_treasury_deficit_turns": sum(isinstance(gold, (int, float)) and
+                                               isinstance(gpt, (int, float)) and
+                                               gold <= 0 and gpt < 0
+                                               for gold, gpt in economy.values()),
             "boost_audit": boost_audit}
 
 
@@ -182,13 +195,31 @@ def report(runs: list[Path]) -> dict:
             reasons.append("no_game_outcome")
         elif len(terminals) > 1:
             reasons.append("multiple_terminal_segments")
+        elif terminals[0]["outcome"].get("kind") == "victory" and not isinstance(
+                terminals[0]["outcome"].get("won"), bool):
+            reasons.append("unknown_winner")
         games.append({"game": key, "segments": [s.get("tag") for s, _ in segments],
                       "eligible": not reasons, "exclusions": reasons,
                       "cohort": hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest(),
                       "identity": identity,
                       "outcome": terminals[-1].get("outcome") if terminals else None,
                       "readings": [r for _, r in segments]})
-    return {"games": games, "game_count": len(games),
+    cohorts = {}
+    for game in games:
+        group = cohorts.setdefault(game["cohort"], {
+            "identity": game["identity"], "eligible_games": 0,
+            "excluded_games": 0, "wins": 0, "losses": 0})
+        if not game["eligible"]:
+            group["excluded_games"] += 1
+            continue
+        group["eligible_games"] += 1
+        outcome = game["outcome"]
+        won = outcome.get("kind") == "victory" and outcome.get("won") is True
+        group["wins" if won else "losses"] += 1
+    for group in cohorts.values():
+        group["win_rate"] = (group["wins"] / group["eligible_games"]
+                             if group["eligible_games"] else None)
+    return {"games": games, "cohorts": cohorts, "game_count": len(games),
             "eligible_games": sum(g["eligible"] for g in games)}
 
 

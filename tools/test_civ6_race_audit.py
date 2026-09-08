@@ -56,6 +56,17 @@ class RaceAuditTests(unittest.TestCase):
     def test_empty_nonstate_stream_is_unknown(self):
         self.assertIsNone(audit.race_totals(self.write_events([{"kind": "orders"}])))
 
+    def test_economy_uses_first_frame_and_preserves_missing_evidence(self):
+        result = audit.race_totals(self.write_events([
+            {"kind": "state", "turn": 99},
+            {"kind": "state", "turn": 100, "gold": 0, "gold_per_turn": -12,
+             "military": 50, "cities": []},
+            {"kind": "state", "turn": 100, "gold": 500, "gold_per_turn": 2},
+            {"kind": "state", "turn": 101, "gold": 20, "gold_per_turn": -12}]))
+        self.assertEqual(result["empty_treasury_deficit_turns"], 1)
+        self.assertEqual(result["economy_observed_turns"], 2)
+        self.assertEqual(result["checkpoints"]["100"]["military"], 50)
+
     def test_continuations_group_but_capture_free_attempts_do_not(self):
         self.assertEqual(audit.game_key({"tag": "civvis-20260901T000000Z-cont8"}),
                          "civvis-20260901T000000Z")
@@ -95,6 +106,33 @@ class RaceAuditTests(unittest.TestCase):
         self.assertEqual(entry["game_id"], "game")
         self.assertEqual(entry["genome_treatments"], summary["genome_treatments"])
         self.assertEqual(entry["boosts"], summary["boosts"])
+
+    def test_complete_fixed_controller_cohorts_count_games_and_real_winners(self):
+        runs = []
+        for index, (revision, outcome) in enumerate([
+                ("a", {"kind": "victory", "won": True}),
+                ("a", {"kind": "victory", "won": False}),
+                ("a", None), ("b", {"kind": "victory", "won": False})]):
+            run = self.root / str(index)
+            run.mkdir()
+            summary = {key: "verified" for key in (
+                "difficulty", "ruleset", "speed", "map_size", "max_turns",
+                "victory_target", "modes", "genome_treatments", "mod_arms")}
+            summary.update(tag=str(index), configured=True, outcome=outcome,
+                           seat={key: "verified" for key in
+                                 ("leader", "map", "players", "victories")},
+                           decider_revisions=[revision],
+                           decider_binaries=[{"binary_sha256": revision}],
+                           race={"first_turn": 1})
+            (run / "summary.json").write_text(json.dumps(summary))
+            runs.append(run)
+        result = audit.report(runs)
+        self.assertEqual(result["eligible_games"], 3)
+        self.assertEqual(len(result["cohorts"]), 2)
+        first = next(c for c in result["cohorts"].values()
+                     if c["identity"]["revisions"] == ["a"])
+        self.assertEqual((first["wins"], first["losses"], first["excluded_games"]), (1, 1, 1))
+        self.assertEqual(first["win_rate"], 0.5)
 
 
 if __name__ == "__main__":
