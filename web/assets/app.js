@@ -31704,6 +31704,16 @@ function turnBlockers() {
       button: "Choose dedication", hint: `${titleCase(me.age || "new")} age`,
       detail: `A ${titleCase(me.age || "new")} age has begun and wants its dedication.`,
       act: () => focusSection("govsec")});
+  if (!watchingBattlefield() && !me.government && legal("government").length)
+    out.push({kind: "government", icon: "⚿", tone: "action", label: "Choose a government",
+      button: "Choose government",
+      detail: "Adopt a government to unlock its policy slots.", act: () => openEmpire("government")});
+  // The engine offers slot_policy only when the card fits without replacing
+  // another card. An empty slot with no compatible card must not gate a turn.
+  if (!watchingBattlefield() && emptyPolicySlots() > 0 && legal("slot_policy").length)
+    out.push({kind: "policy", icon: "⚿", tone: "action", label: "Fill your policy slots",
+      button: "Choose policies", hint: `${emptyPolicySlots()} empty`,
+      detail: "Choose cards for your government's empty slots.", act: () => openEmpire("government")});
   if (!me.research && legal("research").length)
     out.push({kind: "research", icon: "⌬", tone: "action", label: "Choose research",
       button: "Choose research",
@@ -31753,11 +31763,6 @@ function standingNotices() {
   if (empire && me.prophet_pending)
     out.push({kind: "prophet", icon: "☼", tone: "good", topic: "prophet",
       label: "A Great Prophet awaits", detail: "Found a religion with them."});
-  const slots = Object.values(me.policy_slots || {}).reduce((a, b) => a + b, 0);
-  if (empire && slots > (me.policies || []).length && legal("slot_policy").length)
-    out.push({kind: "policy", icon: "⚿", tone: "good", topic: "policy",
-      label: "An empty policy slot",
-      detail: `${slots - me.policies.length} card slot(s) unfilled.`});
   if (empire && me.governor_titles_available > 0)
     out.push({kind: "governor", icon: "♜", tone: "good", topic: "governor",
       label: "A Governor title is unspent",
@@ -31959,6 +31964,10 @@ function actionOptionsFor(next) {
           (has ? ", boosted" : "")});
     }).join("") + actionMore(names.length, `openTree(${JSON.stringify(tree)})`,
       science ? "Technology tree" : "Civics tree");
+  }
+  if (kind === "government" || kind === "policy") {
+    return actionMore(0, `openEmpire("government")`,
+      kind === "government" ? "Choose government" : "Choose policy cards");
   }
   if (kind.startsWith("produce:")) {
     const cityId = Number(kind.slice("produce:".length));
