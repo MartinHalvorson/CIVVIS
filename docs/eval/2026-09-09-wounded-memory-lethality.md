@@ -25,4 +25,26 @@ position are not observed. The memory radius remains an uncertainty projection,
 not an exact path or line-of-sight prediction. This estimate is therefore a
 policy heuristic, not a guaranteed maximum damage bound.
 
-Validation is in progress. No win-rate or rescued-host-game claim is made.
+The new trigger uses the strongest single remembered shot plus visible
+incoming damage. It does not sum a speculative army of remembered guns.
+Candidate refuges retain the visible-damage ordering and then compare the
+nominal remembered shot before the existing location priorities.
+
+Five focused controls passed, covering the healthy Chariot and live prepass
+reservation, weak/off/unseen/expired/peace memories, multiple weak memories,
+known defenses and the naval penalty, and agreement with the actual combat
+price of an unmodified visible gun. The full default-feature test suite passed
+3,282 tests with 50 ignored. The gene-screen binary's 61 tests and changed-line
+formatting/clippy passed. Integration with current main passed cargo check.
+
+A same-binary persistent replay of seven frames, turn 165 frame 0 through
+turn 167 frame 0, changes the Chariot's turn 166 and 167 orders from ATTACK at
+(39,35) under deployed version one to MOVE_TO at (41,35) under version two.
+Source `0d20ae5082c76e638c0146afbddba966fd311120` and both binary hashes are in
+the local evidence artifact `memory-lethality-provenance.json`.
+
+A standard 12-game, 72-seat full-gene screen is running on disjoint seeds
+916731000–916731011, six-player Continents, Online, 250 turns, Emperor, all
+victory types. Its result is pending. The host's CPU headroom governor pauses
+background screens while any cargo test is active; the original screen
+process is retained. No win-rate or rescued-host-game claim is made.
