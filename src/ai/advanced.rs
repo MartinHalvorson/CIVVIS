@@ -2038,19 +2038,20 @@ pub struct AdvancedAi {
     /// result on resampling.
     pub settler_price: f64,
     /// How much better a candidate must be before a city abandons what it is
-    /// already building. **1.0 by default, which disables preemption entirely
-    /// and reproduces the shipped behaviour exactly.**
+    /// already building. **1.0 by default: adaptive controllers disable
+    /// preemption; named victory governors use a 25% improvement margin.**
+    /// Values above 1.0 explicitly configure the margin for either governor.
+    /// See `marginal_usefulness::production_review_margin`.
     ///
-    /// `advanced_production` skips any city whose queue is non-empty, so
-    /// `production_value` is consulted only on an idle city — this agent never
-    /// reconsiders a build once started. `expansion_funnel` measured what that
+    /// Historically `advanced_production` skipped non-empty queues, so
+    /// `production_value` was consulted only on an idle city. `expansion_funnel` measured what that
     /// costs: over 48 seats, on **25.8% of all seat-turns** the empire was
     /// short of its own planned city target, permitted a settler, had a
     /// reachable site, and every city was mid-build. The genuine valuation
     /// loss — a free city choosing something else — is only **2.6%**.
     ///
-    /// The plan above this re-assesses every 5 turns (`plan_stale`); the queue
-    /// underneath re-assesses never. Switching is close to free here because
+    /// The plan above this re-assesses every 5 turns (`plan_stale`); the
+    /// historical queue governor never re-assessed. Switching is close to free here because
     /// `City::production_progress` banks a paused build by item key, which is
     /// the Civ 6 rule and the reason a strong human switches to a settler
     /// routinely.
@@ -6882,6 +6883,7 @@ mod gold_and_cards;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
+mod marginal_usefulness;
 mod production_compounding;
 
 /// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
@@ -24432,6 +24434,7 @@ impl AdvancedAi {
             self.expansion_census.dispatch_calls += 1;
         }
         let mut counts = self.counts(g, pid);
+        let preempt_margin = self.production_review_margin(g);
         // `requisitions`: the board assessed for this turn before its
         // shortfall is read below; exact no-op with the gene off. See
         // `advanced/requisitions.rs`.
@@ -24455,6 +24458,12 @@ impl AdvancedAi {
             None
         };
         for cid in city_ids {
+            // A named victory governor compares alternatives against the
+            // empire without this queue: the unit being reconsidered cannot
+            // satisfy its own demand. Refresh after each city's actual order.
+            if self.active_victory_target(g).is_some() {
+                counts = self.counts_without_city_queue(g, pid, cid);
+            }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
@@ -24520,7 +24529,7 @@ impl AdvancedAi {
                     .is_some_and(|(_, item)| self.science_recovery_preempts(g, item));
             if committed.is_some()
                 && !recovery_preemption
-                && (self.preempt_margin <= 1.0 || economic_recovery)
+                && (preempt_margin <= 1.0 || economic_recovery)
             {
                 continue;
             }
@@ -24941,7 +24950,8 @@ impl AdvancedAi {
                     // between two nearly equal candidates.
                     let displaces_commitment = match &committed {
                         Some((current, current_item)) => {
-                            *current_item != item && score > *current * self.preempt_margin
+                            *current_item != item
+                                && score > *current + current.abs() * (preempt_margin - 1.0)
                         }
                         None => true,
                     };
@@ -32545,7 +32555,7 @@ impl AdvancedAi {
         strategy: GrandStrategy,
         city_shortfall: f64,
     ) -> f64 {
-        self.improvement_value_for(g, pid, pos, improvement, strategy)
+        self.marginal_improvement_value(g, pid, pos, improvement, strategy)
             + self.production_foundation_improvement_bonus(
                 g,
                 pos,
@@ -33087,6 +33097,9 @@ impl AdvancedAi {
             });
         }
         if !here.is_empty() {
+            if let Some(acted) = self.more_useful_builder_job(g, pid, uid, strategy) {
+                return acted;
+            }
             self.builder_targets.remove(&uid);
             // `order_retry`: `worthwhile_improvements` is already ranked and
             // only its head was ever attempted, so a tile that refuses the
