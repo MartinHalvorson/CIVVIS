@@ -6926,8 +6926,13 @@ mod tests {
         let (techs, se) = e.techs_boosted_share.expect("every row carries the census");
         assert!((techs - 25.0).abs() < 1e-9, "Δ techs boosted share {techs}");
         assert!(se >= 0.0 && se.is_finite(), "se {se}");
-        let (civics, _) = e.civics_inspired_share.expect("every row carries the census");
-        assert!((civics + 10.0).abs() < 1e-9, "Δ civics inspired share {civics}");
+        let (civics, _) = e
+            .civics_inspired_share
+            .expect("every row carries the census");
+        assert!(
+            (civics + 10.0).abs() < 1e-9,
+            "Δ civics inspired share {civics}"
+        );
         let json = pace_json(e.techs_boosted_share, e.n_on, e.n_off);
         assert!((json["diff"].as_f64().unwrap() - 25.0).abs() < 1e-9);
         assert_eq!(json["n_on"], 18);

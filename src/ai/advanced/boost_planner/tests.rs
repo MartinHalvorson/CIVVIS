@@ -522,9 +522,15 @@ fn a_commitment_whose_node_comes_under_study_keeps_its_window_to_completion() {
         .iter()
         .find(|objective| objective.node == name!("machinery"))
         .expect("a commitment under study is kept past its start-turn deadline");
-    assert_eq!(standing.deadline, 12, "the commitment keeps the deadline it was given");
+    assert_eq!(
+        standing.deadline, 12,
+        "the commitment keeps the deadline it was given"
+    );
     let completion = ai.boost_horizon(&game, 0, true, 1)[0].deadline;
-    assert!(completion > 13, "an opening empire takes many turns over Machinery");
+    assert!(
+        completion > 13,
+        "an opening empire takes many turns over Machinery"
+    );
     assert_eq!(ai.boost_commitment_deadline(&game, 0, standing), completion);
 
     // Once research moves on, the old start-turn window is what is left,

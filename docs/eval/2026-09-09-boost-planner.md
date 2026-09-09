@@ -220,6 +220,9 @@ What the senior review changed, and why, so it is not rebuilt by accident:
 
 ## Fires probe (not a ledger source)
 
+Re-run after review on the reviewed code, from a `--features developer-tools`
+`ci` build:
+
 ```sh
 target/ci/gene_screen --games 12 --jobs 4 --genes boost-planner --p-on 0.5 \
   --difficulty emperor --rivals firaxis-mix --handicap rivals --rival-chairs 3 \
@@ -229,61 +232,53 @@ target/ci/gene_screen --analyze docs/gene_screens/fires/2026-09-09-boost-planner
 ```
 
 The rows are `docs/gene_screens/fires/2026-09-09-boost-planner.jsonl`; the
-analysis (`gene_screen --analyze <rows> --json <out>`) is
-`docs/gene_screens/fires/2026-09-09-boost-planner.json`. Twelve games, 36
-measured seats of 72 chairs (14 on, 22 off), seeds 26081900..26081911,
-majors at Emperor with the rung's bonuses given only to the three
-`firaxis-mix` rival chairs.
+analysis is `docs/gene_screens/fires/2026-09-09-boost-planner.json`. Twelve
+games, 36 measured seats of 72 chairs (14 on, 22 off), seeds
+26081900..26081911, majors at Emperor with the rung's bonuses given only to
+the three `firaxis-mix` rival chairs.
 
 | Column | Δ (seats on − seats off) | z |
 |---|---:|---:|
-| win | **+14.9 ± 12.9 pp** (28.6 % on, 13.6 % off) | +1.16 |
-| score share | **−2.26 ± 1.78 pp** | −1.27 |
-| techs @ standard t150 | **−0.97 ± 1.21** | −0.80 |
-| techs @ end | −3.72 ± 4.82 | −0.77 |
-| science / turn | −17.91 ± 54.09 | −0.33 |
-| games finished | −5.09 ± 5.27 pp | −0.97 |
+| **techs boosted share** (`techs_boosted_share_pp`) | **−1.84 ± 2.19 pp** (38.0 % on, 39.8 % off) | −0.84 |
+| **civics inspired share** (`civics_inspired_share_pp`) | **+0.46 ± 2.76 pp** (38.7 % on, 38.2 % off) | +0.17 |
+| win | −3.9 ± 13.4 pp (14.3 % on, 18.2 % off) | −0.29 |
+| score share | −3.14 ± 1.31 pp | −2.39 `*` |
+| techs @ standard t150 | −0.46 ± 1.04 | −0.44 |
+| techs @ end | −2.45 ± 3.65 | −0.67 |
+| science / turn | −34.1 ± 35.7 | −0.95 |
 
-Read honestly: **nothing here is resolved** (`read: "~"`, and the row's own
-`win_resolves_pp` is 36.1 against a Δ of 14.9), and the two columns the gene
-exists to move — `science_pace` and `techs_end` — are **negative**, not
-positive. On 36 seats that is well inside noise in both directions, but it is
-not encouraging, and it is the opposite sign from the mechanism's story. The
-probe's only job was met: every statistic is non-zero, so the gene fires
-(`tools/gene_fires.py --max 0` exits 0, 279 of 279 genes shown to fire).
+Read honestly. The first two rows are the gene's own instrument, and they say
+the plan **did not move the share of the tree that arrived boosted** at this
+size: both arms sit at ~38–40 % of techs and ~38 % of civics, and the Δ is
+inside two points either way. The score-share row carries a screen flag
+(`read: "share hurts * (thin)"`), which on 36 seats is one flag in twenty-two
+by chance and is not a measurement; but nothing here points the mechanism's
+way. The junior's first probe (before review, with the deferral and the site
+seam in) read win +14.9 ± 12.9, share −2.26 ± 1.78, techs @150 −0.97 ± 1.21 —
+the same picture, a different draw.
 
-The screen does **not** export a `boost_totals` column, so the direct
-measurement this gene wants — the share of researched nodes that arrived
-boosted, on against off — is not available from the artifact. That is the
-first thing a reviewer should add if this gene is taken further: the win and
-share columns cannot distinguish "the plan did not fire" from "the plan fired
-and did not pay", and `science_pace` at 36 seats cannot either.
-
-A twelve-game probe is not a measurement (`docs/GENE_SCREEN.md`, *"A probe's
-win Δ is not a measurement of the gene"*). Pricing belongs to the continuous
-screen.
+The probe's only job was met: every statistic is non-zero, so the gene fires
+(`tools/gene_fires.py --max 0` exits 0). A twelve-game probe is not a
+measurement (`docs/GENE_SCREEN.md`, *"A probe's win Δ is not a measurement of
+the gene"*); pricing belongs to the continuous screen, and the
+`techs_boosted_share_pp` column is now the row to read there. A boosted share
+that does not move on the screen either is the signal to remove the gene: a
+15 % premium on three committed objectives may simply be too small to change
+what a city builds when `chase-every-boost` already prices every trigger.
 
 ## Gaps and open questions
 
-- **The deferral is narrow by construction.** It requires the node to be
-  buyable inside the same three turns the trigger needs, which on an opening
-  board is rare — the tests have to build a rich capital to reach the regime at
-  all. Most of the gene's effect will come from the premium, not the deferral.
-  Whether the deferral earns its complexity is a question for the screen, and
-  it can be cut without touching anything else.
+- **The probe's boosted share did not move.** Both arms boost ~38–40 % of
+  their techs. Either the committed objectives are rarely cheap on a
+  competitive board, or a 15 % share-of-value premium does not re-order what a
+  city builds once `chase-every-boost`'s capped half-share is already on the
+  same items. The screen's `techs_boosted_share_pp` row decides; a flat share
+  there is the removal signal.
 - **`chase-every-boost` ships on**, so on the deployment genome this gene's
-  premiums stack on top of that gene's. They are capped at different fractions
-  of different bases and cannot both be paid on the same *decision* more than
-  once each, but the interaction is unmeasured; an interaction reading against
-  `chase-every-boost` off would be worth having.
-- **The Builder half of "in progress"** is the loose one: a Builder standing
-  with a charge is a weaker commitment than an item at the front of a city
-  queue. It is bounded by the same three-turn window and by the objective being
-  cheap and live, but a tighter test — the Builder actually assigned to that
-  tile — would be better if the objective board exposes one.
-- **`coastal_city` is the only placement objective**, and it pays on the settle
-  site rather than on the Settler. If the screen says the site seam is noise,
-  that class can be dropped to `Expensive` and the seam removed.
+  premiums stack on top of that gene's. The stack is bounded (at most 65 % of
+  the choice's own value, zero at or below zero; tested), but the interaction
+  is unmeasured; an interaction reading against `chase-every-boost` off would
+  be worth having.
 - **The horizon is a projection of the picker, not the picker itself.** A
   forced lane goal can overturn any step, which is why objectives expire; but
   it does mean the horizon can commit to a boost on a node the lane never

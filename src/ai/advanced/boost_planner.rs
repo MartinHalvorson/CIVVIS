@@ -657,7 +657,9 @@ impl AdvancedAi {
         self.boost_horizon(g, pid, standing.techs, 1)
             .first()
             .filter(|step| step.node == standing.node)
-            .map_or(standing.deadline, |step| step.deadline.max(standing.deadline))
+            .map_or(standing.deadline, |step| {
+                step.deadline.max(standing.deadline)
+            })
     }
 
     /// Say what was taken up, and what was collected or let go.
