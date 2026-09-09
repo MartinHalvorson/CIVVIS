@@ -265,17 +265,36 @@ impl Game {
         district == family || self.district_family(district) == self.district_family(family)
     }
 
-    /// `district_is_family` with the family's own family already resolved.
+    /// `district_is_family` that resolves the family's own family at most once
+    /// across a whole sweep, and only if some district forces the question.
     ///
     /// ⭐ THE ONE THE CITY LOOPS WANT. `district_is_family` resolves BOTH sides,
     /// so a sweep over a city's districts walked the replacement chain for the
     /// same `family` once per district it looked at -- and
     /// `building_district_is_active`, which does hoist it, is the hottest self
-    /// time in the batch profile at 6.8%. Same answer: when
-    /// `district == family` the two chains end at the same name anyway, so the
-    /// cheap identity test is kept only as the short-circuit it already was.
-    fn district_has_resolved_family(&self, district: Name, family: Name, wanted: Name) -> bool {
-        district == family || self.district_family(district) == wanted
+    /// time in the batch profile at 6.8%.
+    ///
+    /// ⚠⚠ AND `wanted` IS LAZY BECAUSE HOISTING IT EAGERLY IS A PESSIMIZATION.
+    /// The first version of this took `wanted: Name` and resolved it before the
+    /// loop. That is strictly MORE work than the original whenever the loop
+    /// never needs it: a city with no districts pays one chain walk for
+    /// nothing, and a city whose first district IS the family asked about used
+    /// to short-circuit on the identity test having walked no chain at all.
+    /// Measured that way the change read +0.96% -- slower -- inside a spread
+    /// too wide to resolve, which is exactly the trap
+    /// `tools/speed_ab.py`'s own docstring records ("a hoisted allocation
+    /// measured as an improvement was a 10x pessimization once counted
+    /// properly"). Deferred, the count is `min(original, 1)` in every case and
+    /// the sweep can only be cheaper.
+    fn district_has_lazy_family(
+        &self,
+        district: Name,
+        family: Name,
+        wanted: &mut Option<Name>,
+    ) -> bool {
+        district == family
+            || self.district_family(district)
+                == *wanted.get_or_insert_with(|| self.district_family(family))
     }
 
     pub fn city_has_district_family(&self, city: &City, family: impl AsName) -> bool {
@@ -283,10 +302,10 @@ impl Game {
         if family == crate::name!("city_center") {
             return true;
         }
-        let wanted = self.district_family(family);
+        let mut wanted = None;
         city.districts
             .keys()
-            .any(|district| self.district_has_resolved_family(*district, family, wanted))
+            .any(|district| self.district_has_lazy_family(*district, family, &mut wanted))
     }
 
     /// The districts Civilization VI counts as *specialty* — the ones the
@@ -336,9 +355,9 @@ impl Game {
         if family == crate::name!("city_center") {
             return true;
         }
-        let wanted = self.district_family(family);
+        let mut wanted = None;
         city.districts.iter().any(|(district, position)| {
-            self.district_has_resolved_family(*district, family, wanted)
+            self.district_has_lazy_family(*district, family, &mut wanted)
                 && self.district_is_active(city, district, *position)
         })
     }
@@ -392,9 +411,9 @@ impl Game {
         family: impl AsName,
     ) -> Option<Pos> {
         let family = family.as_name();
-        let wanted = self.district_family(family);
+        let mut wanted = None;
         city.districts.iter().find_map(|(district, position)| {
-            self.district_has_resolved_family(*district, family, wanted)
+            self.district_has_lazy_family(*district, family, &mut wanted)
                 .then_some(*position)
         })
     }
@@ -405,9 +424,9 @@ impl Game {
         family: impl AsName,
     ) -> Option<Pos> {
         let family = family.as_name();
-        let wanted = self.district_family(family);
+        let mut wanted = None;
         city.districts.iter().find_map(|(district, position)| {
-            (self.district_has_resolved_family(*district, family, wanted)
+            (self.district_has_lazy_family(*district, family, &mut wanted)
                 && self.district_is_active(city, district, *position))
             .then_some(*position)
         })
