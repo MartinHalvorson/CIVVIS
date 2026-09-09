@@ -2063,6 +2063,39 @@ struct SafeHealingTargets {
     neutral_tiles: HashSet<Pos>,
 }
 
+/// A cache slot that a clone does NOT inherit.
+///
+/// ⚠⚠ Every other `Arc<Mutex<..>>` cache on `BasicAi` is keyed by CONTENT --
+/// `covered_tiles_cache` by the envelope `Arc`'s identity, `envelope_board` by
+/// `attack_envelope_fingerprint` -- so sharing it with a cloned AI is safe. The
+/// safe-healing entry is keyed by `Game`'s monotonic COUNTERS, which answer "did
+/// this board change since I looked" and cannot answer "are these two boards the
+/// same": two siblings that each took one write carry the same counter
+/// (`sibling_clones_share_a_healing_stamp_so_the_cache_may_not_cross_boards`
+/// pins exactly that). Resetting on clone keeps the counter key sound, and costs
+/// only the first scan on a branched board.
+struct FreshOnClone<T>(std::sync::Mutex<Option<T>>);
+
+// Derived `Default` would demand `T: Default`, which a cache entry has no
+// meaningful empty value for; the slot's empty value is `None`.
+impl<T> Default for FreshOnClone<T> {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl<T> Clone for FreshOnClone<T> {
+    fn clone(&self) -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl<T> FreshOnClone<T> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<T>> {
+        self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 /// A safe-healing scan together with every input that selects its tiles.
 struct SafeHealingTargetCache {
     pid: usize,
@@ -2666,9 +2699,10 @@ pub struct BasicAi {
     /// Every tile any hostile envelope covers, unioned once and kept against
     /// the exact envelope table it was built from. See [`Self::covered_tiles`].
     covered_tiles_cache: std::sync::Arc<std::sync::Mutex<Option<CoveredTiles>>>,
-    /// Safe recovery destinations, shared by snapshot planners while the
-    /// board state and hostile-envelope table they read remain identical.
-    safe_healing_targets_cache: std::sync::Arc<std::sync::Mutex<Option<SafeHealingTargetCache>>>,
+    /// Safe recovery destinations, reused across this seat's own recovering
+    /// units while the board state and hostile-envelope table stay identical.
+    /// NOT inherited by a cloned AI -- see `FreshOnClone`.
+    safe_healing_targets_cache: FreshOnClone<SafeHealingTargetCache>,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -4946,7 +4980,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            safe_healing_targets_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -5400,7 +5434,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            safe_healing_targets_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -6458,10 +6492,7 @@ impl BasicAi {
         envelopes: &std::sync::Arc<AttackEnvelopes>,
     ) -> std::sync::Arc<SafeHealingTargets> {
         let stamp = g.healing_target_stamp();
-        let slot = self
-            .safe_healing_targets_cache
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let slot = self.safe_healing_targets_cache.lock();
         if let Some(cached) = slot.as_ref() {
             if cached.pid == pid
                 && cached.stamp == stamp
@@ -6516,10 +6547,7 @@ impl BasicAi {
             friendly_tiles,
             neutral_tiles,
         });
-        let mut slot = self
-            .safe_healing_targets_cache
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut slot = self.safe_healing_targets_cache.lock();
         *slot = Some(SafeHealingTargetCache {
             pid,
             stamp,
@@ -22230,6 +22258,44 @@ mod tests {
         assert!(
             ai.recovering_units.contains(&ours),
             "and it is still recovering: leaving the tile is not rejoining the line"
+        );
+    }
+
+    /// ⚠⚠ THE STAMP CANNOT TELL TWO DIVERGENT BOARDS APART, WHICH IS WHY THE
+    /// CACHE MUST NOT BE SHARED ACROSS THEM.
+    ///
+    /// `Tiles::epoch` documents "two reads of the same epoch saw the same map".
+    /// That holds for one map's history and NOT across clones: two siblings that
+    /// each take one write carry the same counter and different content, as this
+    /// pins. `healing_target_stamp` is built from four such counters.
+    ///
+    /// So the safe-healing entry is deliberately **per AI instance and reset on
+    /// clone** (see `FreshOnClone`). A shared entry keyed on these counters could
+    /// hand one board's target sets to another board that merely happens to have
+    /// taken the same number of writes.
+    #[test]
+    fn sibling_clones_share_a_healing_stamp_so_the_cache_may_not_cross_boards() {
+        let game = Game::new_full(3, 24, 16, 91_485, 120, 1, false);
+        let mut a = game.clone();
+        let mut b = game.clone();
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().take(2).collect();
+        // One mutable open each, on DIFFERENT tiles: same counter, different map.
+        a.map.tiles.get_mut(&positions[0]);
+        b.map.tiles.get_mut(&positions[1]);
+        assert_eq!(
+            a.healing_target_stamp(),
+            b.healing_target_stamp(),
+            "these boards differ; if the stamp ever starts distinguishing them, \
+             the FreshOnClone reset below may be relaxed"
+        );
+        // And the reset is what keeps that harmless: a cloned AI starts empty.
+        let ai = BasicAi::new();
+        let envelopes = std::sync::Arc::new(Vec::new());
+        let first = ai.safe_healing_targets(&a, 0, &envelopes);
+        let cloned_ai = ai.clone();
+        assert!(
+            !std::sync::Arc::ptr_eq(&first, &cloned_ai.safe_healing_targets(&b, 0, &envelopes)),
+            "a cloned AI must not answer board B from board A's entry"
         );
     }
 
