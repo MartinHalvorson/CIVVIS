@@ -73,4 +73,41 @@ Firaxis AI. Do not extend the sample in response to results. These probes test
 reachability and obvious regressions; neither significance nor default promotion
 is expected from such a small sample.
 
-Validation and screen results will be recorded below after completion.
+## Results
+
+All five fixed probes completed: 30 games, 90 measured seats and 90 excluded
+rival seats. Every header records clean source commit
+`efde91307e8bc5b879fe4dbc03b5e075515e587e`, registry SHA-256
+`939176e5e7018db57e2e6b99a3696212dcbe6074f4c8385196fa7d6e9efcb4a7`, and binary SHA-256
+`e2e9109e048bb40765662f92f2729013f2d2c5c259d0af371959bf9b775ffcd4`.
+
+| Gene | On / off seats | Win difference ± standard error (percentage points) | Read |
+| --- | ---: | ---: | --- |
+
+| [`pingala-follows-research`](../gene_screens/fires/2026-09-09-governor-pingala-follows-research.json) | 6 / 12 | -8.33 ± 19.78 | Inconclusive |
+| [`magnus-follows-settlers`](../gene_screens/fires/2026-09-09-governor-magnus-follows-settlers.json) | 12 / 6 | +33.33 ± 23.57 | Inconclusive |
+| [`liang-follows-builders`](../gene_screens/fires/2026-09-09-governor-liang-follows-builders.json) | 9 / 9 | +0.00 ± 26.36 | Inconclusive |
+| [`reyna-follows-revenue`](../gene_screens/fires/2026-09-09-governor-reyna-follows-revenue.json) | 14 / 4 | -17.86 ± 17.67 | Inconclusive |
+| [`amani-follows-suzerainty`](../gene_screens/fires/2026-09-09-governor-amani-follows-suzerainty.json) | 6 / 12 | -16.67 ± 18.63 | Inconclusive |
+
+None meets even its individual 1.96 z threshold on wins. Magnus's positive point
+estimate is not sufficient to promote it; Pingala, Reyna and Amani's negative
+estimates remain visible. Liang's zero win difference has nonzero uncertainty;
+it is not evidence of equivalence. These randomized chair contrasts meet the
+repository's nonzero-statistic evidence rule, but variance alone is not a trace
+of the governor branch executing. The focused action tests provide direct
+behavioral evidence. No higher-level win improvement is established, and no
+default changes are justified.
+
+Local Rust validation: 3,226 passed, 49 ignored, no failures; all six focused
+governor tests passed. The changed-line Rust quality gate passed across all
+targets/features, including tests. Fourteen append-point tests passed. The
+initial gene-tool run had one expected failure for absent screen evidence;
+the final run passed all 194 gene-tool tests with these completed artifacts.
+The firing ratchet passed with no waivers; generated evidence and the evaluation
+manifest are current, and `git diff --check` passed.
+
+Screens were delayed by the host resource manager pausing native screening
+while other Rust test workloads ran. No seed, sample size or strategy was
+changed in response to partial results. These are AI-only changes, with no
+engine rule changes requiring a separate mechanics soak.
