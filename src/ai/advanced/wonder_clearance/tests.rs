@@ -63,6 +63,11 @@ fn blocked_wonder_retains_its_site_and_assigns_a_real_force_without_the_board() 
     assert!(ai.reserve_wonder_clearance(&g, 0, settler, site));
     let roster = ai.wonder_clearance[&settler].units.clone();
     assert_eq!(roster.len(), 3);
+    // Ordinary escort recruitment must leave the clearing team together.
+    ai.live_formationless_settler_shadow = true;
+    assert!(ai.formationless_settler_escort());
+    ai.stacked_escort_pace(&mut g, 0, settler);
+    assert!(ai.settler_guards.get(&settler).is_none());
     assert_eq!(
         roster
             .iter()

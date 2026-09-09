@@ -30704,6 +30704,13 @@ impl AdvancedAi {
             .chain(self.settler_sea_guards.values())
             .copied()
             .chain(self.builder_support.values().map(|support| support.guard))
+            // Clearing the approach is already a civilian-support assignment;
+            // ordinary escort selection must not dismantle its force.
+            .chain(
+                self.wonder_clearance
+                    .values()
+                    .flat_map(|r| r.units.iter().copied()),
+            )
             .collect()
     }
 
