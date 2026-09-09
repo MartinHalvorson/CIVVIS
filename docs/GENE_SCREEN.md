@@ -533,6 +533,51 @@ screen never seats two versions together and the ledger never ships two, an
 hand-built seat — but write it so the newer version's enable turns the older
 one off anyway, so a hand-built seat cannot play both.
 
+## ⚠⚠ A batch publish kills every open gene PR, silently (2026-09-09)
+
+A publish rewrites `docs/gene_ledger.json`, `GENE_HEURISTIC_RANKING.md`,
+`docs/GENE_RANKING_EVIDENCE.md`, `docs/EVAL_STATUS.md`, `docs/eval_manifest.json`
+and the `BATCH_COLUMNS` table inside `src/ai/advanced/genes.rs`. **Every open PR
+that touches a gene touches those same files**, so every publish conflicts with
+all of them at once.
+
+That alone would be routine. What makes it a trap is the interaction:
+
+1. the gene PR goes ready and arms auto-merge;
+2. a batch publishes before it merges;
+3. the PR turns `CONFLICTING` — **and a conflicting PR gets no CI runs**;
+4. so the armed auto-merge has no green checks to act on, and never will.
+
+The PR then reads as healthy — auto-merge armed, no failing check, nothing
+obviously wrong — while being permanently stopped. Two were found in exactly that
+state on 2026-09-09, #3258 and #3259, eleven hours after their last push, with
+their authors' sessions gone. Nothing in the tooling reports it; the only symptom
+is a PR that never merges.
+
+**The window is hours, not days.** Publishes on 2026-09-09 landed 1, 12, 17 and 24
+hours apart — four in one day. A gene PR that sits ready overnight will be caught.
+
+### What to do
+
+- **Merge gene PRs promptly once green.** The cost of waiting is not a stale
+  branch, it is a dead one.
+- **When resolving, regenerate — never hand-merge.** Five of the six conflicting
+  files are generated, and so is the conflicting region of `genes.rs`. Take the
+  newer side and run `tools/genes.py write` and `tools/eval_manifest.py --write`.
+- **Expect `overwrite-guard` to fail and answer it honestly.** The regeneration
+  rewrites lines the publish added, so it wants `Supersedes: #<publish>`. Before
+  declaring it, check the regeneration *preserved* that publish rather than
+  reverting it: compare `BATCH_COLUMNS` against the newer side for a few tags, and
+  compare `rules.hysteresis_held`. The declaration is cheap; being entitled to it
+  is not.
+- **⛔ Re-check the PR's premise against the new batch before shipping.** This is
+  the important one, and the reason a mechanical resolution is dangerous. Fixing a
+  conflict makes a PR mergeable; it says nothing about whether its reasoning still
+  holds. #3258 culled "four war genes the ranking condemns" — after #3330's
+  3,173-game batch, three of the four read positive on the newest column and
+  `naval-recon-2` had climbed 94 places to P(>0) = 51.3%. Resolved mechanically, it
+  would have deleted working code under an all-green checklist.
+
 ## Cost
 
 The same run prices the runtime cost of every gene without adding a timer to
