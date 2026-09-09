@@ -453,11 +453,6 @@
         59,
         10
       ],
-      "district-planning-2": [
-        11,
-        -70,
-        -16
-      ],
       "district-planning-3": [
         -3,
         -12,
@@ -698,11 +693,6 @@
         13,
         6
       ],
-      "improvement-housing-value": [
-        -30,
-        -10,
-        -11
-      ],
       "industrial-chain-debt": [
         9,
         7,
@@ -848,11 +838,6 @@
         11,
         -6
       ],
-      "opening-warrior-recon": [
-        -36,
-        13,
-        -38
-      ],
       "opening-warrior-recon-2": [
         28,
         16,
@@ -937,11 +922,6 @@
         -9,
         -15,
         -26
-      ],
-      "rapid-city-expansion": [
-        -133,
-        -209,
-        -120
       ],
       "rapid-city-expansion-2": [
         105,
@@ -1112,16 +1092,6 @@
         18,
         1,
         16
-      ],
-      "settler-screen": [
-        -18,
-        -5,
-        -26
-      ],
-      "settler-second-look": [
-        -11,
-        -27,
-        -13
       ],
       "settler-site-gate": [
         -5,
@@ -1435,7 +1405,6 @@
       "district-coverage": "off",
       "district-coverage-2": "off",
       "district-planning": "on",
-      "district-planning-2": "off",
       "district-planning-3": "off",
       "domination-city-count": "off",
       "doomed-blow-veto": "off",
@@ -1484,7 +1453,6 @@
       "hostile-memory": "off",
       "housing-research": "off",
       "idle-faith-patronage": "off",
-      "improvement-housing-value": "off",
       "industrial-chain-debt": "on",
       "island-exploration": "off",
       "lane-culture-spending": "off",
@@ -1514,7 +1482,6 @@
       "one-launch-pad": "on",
       "one-shot-recovery": "on",
       "one-war-at-a-time": "off",
-      "opening-warrior-recon": "off",
       "opening-warrior-recon-2": "on",
       "opportunistic-war": "off",
       "order-retry": "off",
@@ -1532,7 +1499,6 @@
       "quest-production": "on",
       "quest-trade-route": "off",
       "raid-pillage-prizes": "off",
-      "rapid-city-expansion": "remove",
       "rapid-city-expansion-2": "on",
       "recon-replacement": "off",
       "recorded-tactical-step": "off",
@@ -1567,8 +1533,6 @@
       "settler-guard-holds": "off",
       "settler-guard-holds-2": "on",
       "settler-never-idles": "on",
-      "settler-screen": "off",
-      "settler-second-look": "remove",
       "settler-site-gate": "off",
       "settler-target-floor": "on",
       "settler-target-hysteresis": "off",
@@ -1901,7 +1865,6 @@
         "ships": "district-planning",
         "versions": {
           "district-planning": 0.244584,
-          "district-planning-2": null,
           "district-planning-3": null
         }
       },
@@ -2033,17 +1996,6 @@
           "never-an-empty-queue-3": null
         }
       },
-      "opening-warrior-recon": {
-        "rule_on": [
-          "opening-warrior-recon-2"
-        ],
-        "head": null,
-        "ships": "opening-warrior-recon-2",
-        "versions": {
-          "opening-warrior-recon": null,
-          "opening-warrior-recon-2": null
-        }
-      },
       "power-the-laboratory": {
         "rule_on": [],
         "head": "power-the-laboratory",
@@ -2051,17 +2003,6 @@
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
-        }
-      },
-      "rapid-city-expansion": {
-        "rule_on": [
-          "rapid-city-expansion-2"
-        ],
-        "head": null,
-        "ships": "rapid-city-expansion-2",
-        "versions": {
-          "rapid-city-expansion": null,
-          "rapid-city-expansion-2": null
         }
       },
       "recovery-reads-the-war": {
@@ -2576,7 +2517,7 @@
         "win_z": 4.063,
         "share_delta_pp": 0.523,
         "share_z": 5.915,
-        "read": "HELPS ** · share HELPS **",
+        "read": "HELPS ** \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3026,7 +2967,7 @@
         "win_z": 2.094,
         "share_delta_pp": 0.296,
         "share_z": 3.353,
-        "read": "helps * · share helps *",
+        "read": "helps * \u00b7 share helps *",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3656,7 +3597,7 @@
         "win_z": 2.017,
         "share_delta_pp": 0.197,
         "share_z": 2.463,
-        "read": "helps * · share helps *",
+        "read": "helps * \u00b7 share helps *",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3791,7 +3732,7 @@
         "win_z": 3.464,
         "share_delta_pp": 0.375,
         "share_z": 4.121,
-        "read": "helps * · share HELPS **",
+        "read": "helps * \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4241,7 +4182,7 @@
         "win_z": 3.229,
         "share_delta_pp": 0.341,
         "share_z": 4.381,
-        "read": "helps * · share HELPS **",
+        "read": "helps * \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4421,7 +4362,7 @@
         "win_z": 3.564,
         "share_delta_pp": 0.482,
         "share_z": 5.452,
-        "read": "HELPS ** · share HELPS **",
+        "read": "HELPS ** \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4601,7 +4542,7 @@
         "win_z": 2.907,
         "share_delta_pp": 0.337,
         "share_z": 4.293,
-        "read": "helps * · share HELPS **",
+        "read": "helps * \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4691,7 +4632,7 @@
         "win_z": 3.94,
         "share_delta_pp": 0.407,
         "share_z": 4.569,
-        "read": "HELPS ** · share HELPS **",
+        "read": "HELPS ** \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4736,7 +4677,7 @@
         "win_z": 3.362,
         "share_delta_pp": 0.418,
         "share_z": 4.632,
-        "read": "helps * · share HELPS **",
+        "read": "helps * \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -5681,7 +5622,7 @@
         "win_z": 4.325,
         "share_delta_pp": 1.141,
         "share_z": 12.467,
-        "read": "HELPS ** · share HELPS **",
+        "read": "HELPS ** \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -5816,7 +5757,7 @@
         "win_z": 5.21,
         "share_delta_pp": 0.577,
         "share_z": 6.468,
-        "read": "HELPS ** · share HELPS **",
+        "read": "HELPS ** \u00b7 share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
