@@ -1,22 +1,13 @@
-//! Three Deity habits as opt-in genes (operator, 2026-08-24: *"study expert
+//! Two Deity habits as opt-in genes (operator, 2026-08-24: *"study expert
 //! level deity civ 6 tips and tricks and implement the best as heuristics"*).
+//! A third, `chop-into-the-queue` (a Builder chops woods, rainforest or marsh
+//! into the Settler, district or wonder at the front of the owning city's
+//! queue), left the code on 2026-09-09 under the batch rule at -23/-22/-11;
+//! its rows stay in the ranking's *Removed from the code* table.
 //!
 //! The expert play these encode, and why each is a gene rather than a fact
 //! the agent already knew:
 //!
-//! - **`chop-into-the-queue`.** A Deity player chops woods, rainforest and
-//!   marsh into the item that matters — a Settler, a district, a wonder —
-//!   because a one-off lump of production the turn it is needed is worth
-//!   more than a tile's extra point forever. `Game::builder_operations`
-//!   has offered `chop_woods` / `chop_rainforest` / `clear_marsh` since the
-//!   feature-removal tables shipped, and `Game::do_builder_operation` pays
-//!   the shipped `Feature_Removes` yield scaled by the world era and Magnus's
-//!   `harvest_pct`; nothing in the agent ever asked for one. The Builder's
-//!   job list now carries a chop wherever the owning city's queue front is a
-//!   Settler, a district or a wonder, priced as a one-shot lump of the
-//!   plan's yield weights (`CHOP_QUEUE_ONE_SHOT_FACTOR` of the per-turn
-//!   scale), halved on a tile the city works today and for production past
-//!   what the item still needs.
 //! - **`eureka-chasing-builder`.** Sixty-two technologies and fifty-three
 //!   civics carry a boost worth 40% of their cost, and `tech_value` already
 //!   pays +28 for a technology whose boost is *in hand* — but nothing ever
@@ -31,32 +22,17 @@
 //!   Engineering, two Markets for Guilds. `production_value` adds the boost's
 //!   research to the item's raw value, spread the same way.
 //!
-//! All three read the shipped `BoostSpec` rows (`data/techs.json`,
+//! Both read the shipped `BoostSpec` rows (`data/techs.json`,
 //! `data/civics.json`) through the same trigger vocabulary
 //! `Game::boost_met` checks, so a trigger the engine cannot detect is never
 //! chased. Off, every path is byte-identical to before.
 
 use std::cell::RefCell;
 
-use super::{AdvancedAi, GrandStrategy};
+use super::AdvancedAi;
 use crate::game::{Game, Item};
 use crate::name::Name;
-use crate::rules::Yields;
 use crate::Pos;
-
-/// `chop_into_the_queue`: how much of a chop's one-off lump counts against
-/// the per-turn scale every other Builder job is priced on. A forest chop is
-/// 20 production in the Ancient era; a quarter of its weighted value sits
-/// above a Mine and below a luxury connection, and the Classical doubling
-/// lifts it past the luxury.
-pub(super) const CHOP_QUEUE_ONE_SHOT_FACTOR: f64 = 0.25;
-/// `chop_into_the_queue`: the discount on a tile the city works today — the
-/// feature's own yield is lost the turn it is chopped.
-pub(super) const CHOP_QUEUE_WORKED_TILE_FACTOR: f64 = 0.5;
-/// `chop_into_the_queue`: production past what the queue front still needs
-/// banks in the city's stock rather than vanishing, but it is not what the
-/// chop was for; it counts at this fraction.
-pub(super) const CHOP_QUEUE_OVERFLOW_FACTOR: f64 = 0.5;
 
 /// `eureka_chasing_*`: a boost on a node more than this many eras past the
 /// world era is not chased — three Archers for Machinery are worth training
@@ -113,83 +89,6 @@ pub(super) struct EurekaChaseCache {
 }
 
 impl AdvancedAi {
-    /// What a chop on `pos` is worth to its owning city's queue right now, and
-    /// which operation performs it, under `chop_into_the_queue`. `None` when
-    /// the gene is off, the tile has no chop to offer, or the queue front is
-    /// not a Settler, a district or a wonder.
-    pub(super) fn chop_into_the_queue_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        pos: Pos,
-        strategy: GrandStrategy,
-        worked: bool,
-    ) -> Option<(Name, f64)> {
-        if !self.chop_into_the_queue {
-            return None;
-        }
-        let tile = g.map.get(pos)?;
-        if tile.improvement.is_some() {
-            return None;
-        }
-        let feature = tile.feature?;
-        let cid = tile.owner_city?;
-        let city = g.cities.get(&cid)?;
-        if city.owner != pid {
-            return None;
-        }
-        let front = city.queue.first()?;
-        let chop_worthy = match front {
-            Item::Unit { unit } => unit == "settler",
-            Item::District { .. } | Item::Wonder { .. } => true,
-            _ => false,
-        };
-        if !chop_worthy {
-            return None;
-        }
-        let remaining = g.item_remaining_cost_for_city(pid, cid, front);
-        if remaining <= 0.0 {
-            return None;
-        }
-        let operation = g.builder_operations(pid, pos).into_iter().find(|op| {
-            matches!(
-                op.as_str(),
-                "chop_woods" | "chop_rainforest" | "clear_marsh"
-            )
-        })?;
-        let scale =
-            (g.world_era as f64 + 1.0) * (1.0 + g.governor_effect(pid, cid, "harvest_pct") / 100.0);
-        let mut lump = Yields::default();
-        for (kind, base) in &g.rules.features[feature].chop {
-            let amount = base * scale;
-            match kind.as_str() {
-                "production" => lump.production += amount,
-                "gold" => lump.gold += amount,
-                _ => lump.food += amount,
-            }
-        }
-        let useful = lump.production.min(remaining);
-        let overflow = lump.production - useful;
-        let mut value = self.yield_value(
-            Yields {
-                production: useful,
-                ..lump
-            },
-            strategy,
-        ) + self.yield_value(
-            Yields {
-                production: overflow,
-                ..Yields::default()
-            },
-            strategy,
-        ) * CHOP_QUEUE_OVERFLOW_FACTOR;
-        value *= CHOP_QUEUE_ONE_SHOT_FACTOR;
-        if worked {
-            value *= CHOP_QUEUE_WORKED_TILE_FACTOR;
-        }
-        Some((Name::new(&operation), value))
-    }
-
     /// Every unresearched, unboosted technology or civic within
     /// `EUREKA_CHASE_ERA_REACH` eras whose boost an improvement, a unit, a
     /// building or a district can still complete, with the steps left and the
@@ -466,11 +365,6 @@ mod tests {
     use crate::name;
 
     #[test]
-    fn chop_into_the_queue_is_a_native_opt_in_off_in_both_controllers() {
-        opt_in_off_in_both_controllers("chop-into-the-queue", |ai| ai.chop_into_the_queue);
-    }
-
-    #[test]
     fn eureka_chasing_builder_is_a_native_opt_in_off_in_both_controllers() {
         opt_in_off_in_both_controllers("eureka-chasing-builder", |ai| ai.eureka_chasing_builder);
     }
@@ -527,94 +421,6 @@ mod tests {
         ring.into_iter()
             .next()
             .expect("an owned land tile beside the capital")
-    }
-
-    fn forest_beside_the_capital(seed: u64) -> (Game, u32, Pos) {
-        let (mut game, cid, home) = capital_board(seed);
-        let pos = bare_ring_tile(&game, cid, home);
-        let tile = game.map.tiles.get_mut(&pos).unwrap();
-        tile.feature = Some(name!("forest"));
-        tile.resource = None;
-        tile.improvement = None;
-        tile.hills = false;
-        game.players[0].techs.insert(name!("mining"));
-        assert!(
-            game.builder_operations(0, pos)
-                .iter()
-                .any(|op| op == "chop_woods"),
-            "Mining opens the chop on a forest the capital owns"
-        );
-        (game, cid, pos)
-    }
-
-    /// The chop itself: a Builder standing on an owned forest while the
-    /// capital builds a Settler chops it under the gene and the lump lands in
-    /// the city's production stock; the same Builder without the gene leaves
-    /// the forest standing.
-    #[test]
-    fn chop_into_the_queue_chops_a_forest_into_a_settler() {
-        let run = |gene: bool| -> (bool, f64) {
-            let (mut game, cid, pos) = forest_beside_the_capital(41_001);
-            game.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
-                unit: name!("settler"),
-            }];
-            let before = game.cities[&cid].production;
-            let builder = game.spawn_unit("builder", 0, pos);
-            let mut ai = AdvancedAi::new();
-            if gene {
-                ai.enable_chop_into_the_queue();
-            }
-            assert!(ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
-            (
-                game.map.tiles[&pos].feature.is_none(),
-                game.cities[&cid].production - before,
-            )
-        };
-        let (chopped, lump) = run(true);
-        assert!(chopped, "the gene chops the forest into the Settler");
-        assert!(
-            lump >= 20.0 - f64::EPSILON,
-            "an Ancient forest pays 20 production, got {lump}"
-        );
-        let (chopped, lump) = run(false);
-        assert!(
-            !chopped && lump == 0.0,
-            "off, the forest stands and the stock is untouched"
-        );
-    }
-
-    /// Not every queue is worth a tile's feature: a Monument at the front
-    /// offers no chop, and the valuation says so before any Builder moves.
-    #[test]
-    fn chop_into_the_queue_holds_the_forest_for_a_monument() {
-        let (mut game, cid, pos) = forest_beside_the_capital(41_002);
-        let mut ai = AdvancedAi::new();
-        ai.enable_chop_into_the_queue();
-        game.cities.get_mut(&cid).unwrap().queue = vec![Item::Building {
-            building: name!("monument"),
-        }];
-        assert_eq!(
-            ai.chop_into_the_queue_value(&game, 0, pos, GrandStrategy::Expansion, false),
-            None
-        );
-        game.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
-            unit: name!("settler"),
-        }];
-        let (op, idle) = ai
-            .chop_into_the_queue_value(&game, 0, pos, GrandStrategy::Expansion, false)
-            .expect("a Settler at the front opens the chop");
-        assert_eq!(op, "chop_woods");
-        let (_, worked) = ai
-            .chop_into_the_queue_value(&game, 0, pos, GrandStrategy::Expansion, true)
-            .unwrap();
-        assert!(
-            idle > 0.0 && worked < idle,
-            "a worked tile chops for less: {worked} < {idle}"
-        );
-        assert!(
-            idle > ai.improvement_value(&game, pos, "farm", GrandStrategy::Expansion),
-            "the Settler's lump outbids a plain farm on the same tile"
-        );
     }
 
     /// The table both eureka genes read: with Mining known and Masonry
