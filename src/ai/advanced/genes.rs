@@ -2146,6 +2146,8 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
+    // One safe first-slot Scout, independent of later recon replacement.
+    Gene { tag: "scout-first-opening", field: "scout_first_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_scout_first_opening, disable: AdvancedAi::disable_scout_first_opening },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
