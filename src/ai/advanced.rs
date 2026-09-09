@@ -6007,6 +6007,9 @@ pub struct AdvancedAi {
     /// capitals leaves it by. Opt-in gene `pass-picket`; see
     /// `advanced/recon_disruption.rs`.
     pass_picket: bool,
+    /// V2 takes a same-turn pass block against a visible rival Settler
+    /// before exploring. One assigned recon unit, no multi-unit screen.
+    pass_picket_2: bool,
     /// This turn's recon orders — picket posts — drawn once per turn from
     /// the start-of-turn board so units planned in parallel agree on them.
     /// See `advanced/recon_disruption.rs`.
@@ -7820,6 +7823,7 @@ impl AdvancedAi {
             quest_boost: false,
             religious_veto_defence: false,
             pass_picket: false,
+            pass_picket_2: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
             power_the_laboratory_2: false,
 

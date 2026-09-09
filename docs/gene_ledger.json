@@ -2178,6 +2178,17 @@
           "opportunistic-war-2": null
         }
       },
+      "pass-picket": {
+        "rule_on": [
+          "pass-picket"
+        ],
+        "head": null,
+        "ships": "pass-picket",
+        "versions": {
+          "pass-picket": null,
+          "pass-picket-2": null
+        }
+      },
       "power-the-laboratory": {
         "rule_on": [
           "power-the-laboratory"

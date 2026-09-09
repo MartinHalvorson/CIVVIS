@@ -197,6 +197,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `liang-follows-builders` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `magnus-follows-settlers` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `opportunistic-war-2` | off (unmeasured) | Price only prizes with a short route after declaration. | 1 \| 2 |
+| `pass-picket-2` | off (unmeasured) | Hold a pass against a visible approaching Settler before exploring. | 1 \| 2 |
 | `pingala-follows-research` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `research-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `research-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
