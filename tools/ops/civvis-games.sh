@@ -220,7 +220,11 @@ version_report() {
   fi
   if [[ -s $forced ]]; then
     local_list=$(tr -d '\n' < "$forced")
-    if [[ $local_list == "$repo_list" ]]; then
+    # Forced tags are a set: order and duplicates do not change the arm.
+    local -a local_tags repo_tags
+    local_tags=("${(@s:,:)local_list}")
+    repo_tags=("${(@s:,:)repo_list}")
+    if [[ "${(j:,:)${(@ou)local_tags}}" == "${(j:,:)${(@ou)repo_tags}}" ]]; then
       say "  ⚠ forced    ${forced/#$HOME/~} equals the repo list (set $(stat -f %Sm "$forced")); delete it to track the repository"
     else
       say "  ⚠⚠ OVERRIDE  ${forced/#$HOME/~} = $local_list  (set $(stat -f %Sm "$forced"))"
