@@ -17021,20 +17021,29 @@ impl Game {
         if self.cs_bonus(city_state).is_none() {
             return false;
         }
-        let economic_partner = self.alliance_partner(pid, "economic", 3);
-        self.players
-            .iter()
-            .filter(|minor| {
-                minor.alive && minor.is_minor && !minor.is_barbarian && minor.civ == city_state
-            })
-            .any(|minor| {
-                if self.congress_effect_active("sovereignty", "B", self.cs_type(&minor.civ)) {
-                    return false;
-                }
-                let suzerain = self.suzerain_of(minor.id);
-                suzerain == Some(pid)
-                    || economic_partner.is_some_and(|partner| suzerain == Some(partner))
-            })
+        // The Economic Alliance walk is only needed by the second arm, and the
+        // first arm -- we are the suzerain ourselves -- answers most calls. It
+        // is a pure `find` over this player's alliances, so deferring it is the
+        // same answer; computing it eagerly paid for it on every call that
+        // never asked.
+        let mut economic_partner: Option<Option<usize>> = None;
+        for minor in self.players.iter().filter(|minor| {
+            minor.alive && minor.is_minor && !minor.is_barbarian && minor.civ == city_state
+        }) {
+            if self.congress_effect_active("sovereignty", "B", self.cs_type(&minor.civ)) {
+                continue;
+            }
+            let suzerain = self.suzerain_of(minor.id);
+            if suzerain == Some(pid) {
+                return true;
+            }
+            let partner =
+                *economic_partner.get_or_insert_with(|| self.alliance_partner(pid, "economic", 3));
+            if partner.is_some_and(|partner| suzerain == Some(partner)) {
+                return true;
+            }
+        }
+        false
     }
 
     fn at_war_with_any_civilization(&self, pid: usize) -> bool {
@@ -19732,8 +19741,12 @@ impl Game {
                     .unwrap_or(0.0)
             })
             .sum::<f64>();
-        if self.grants_city_state_unique_bonus(city.owner, "Cardiff")
-            && self.city_has_active_district_family(city, crate::name!("harbor"))
+        // The Harbor test first: it reads this city's own districts, where
+        // `grants_city_state_unique_bonus` scans every player. Both are pure
+        // predicates of `&self`, so `&&` gives the same answer either way and
+        // the common no-Harbor city now pays for neither.
+        if self.city_has_active_district_family(city, crate::name!("harbor"))
+            && self.grants_city_state_unique_bonus(city.owner, "Cardiff")
         {
             renewable += 2.0;
         }
@@ -20997,6 +21010,19 @@ impl Game {
         let mut groups: BTreeMap<String, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
             self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
+        // ⭐ HOISTED, LIKE `integrate_industry` ABOVE IT. Mexico City's suzerain
+        // bonus depends on `city.owner` and a literal, so it is invariant over
+        // every city and every building below -- and because it stood FIRST in
+        // an `&&`, the cheap district-family test could never short-circuit it.
+        // `grants_city_state_unique_bonus` walks an alliance map and then every
+        // player, calling `congress_effect_active`, `cs_type` and `suzerain_of`
+        // per minor: with nine city-states and ten cities of ten buildings that
+        // is a hundred empire-wide scans per call, and the call is made per city
+        // per amenity derivation. Sampled over a six-game 250-turn screen it was
+        // 7.2% of running samples on its own, the largest single self-time entry
+        // under `regional_building_effects` (15.6% inclusive).
+        let mexico_city_regional_range =
+            self.grants_city_state_unique_bonus(city.owner, "Mexico City");
         for source in self
             .cities
             .values()
@@ -21014,7 +21040,7 @@ impl Game {
                     .and_then(|district| self.city_district_family_position(source, district))
                     .unwrap_or(source.pos);
                 let regional_range = spec.regional_range
-                    + if self.grants_city_state_unique_bonus(city.owner, "Mexico City")
+                    + if mexico_city_regional_range
                         && spec.district.is_some_and(|district| {
                             self.district_is_family(district, crate::name!("industrial_zone"))
                                 || self.district_is_family(
