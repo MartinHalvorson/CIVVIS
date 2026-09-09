@@ -15413,7 +15413,7 @@ mod tests {
     }
 
     /// ★★★★★ The whole envoy chain inside the bridge: the held count reaches
-    /// the board, the deployed controller spends it on the planning clone, and
+    /// the board, the spend-all controller spends it on the planning clone, and
     /// each `SendEnvoy` crosses as an `envoy` order naming Firaxis's minor
     /// player id — including a city-state met before its centre is in view,
     /// which has no mirrored city to resolve through.
@@ -15496,9 +15496,12 @@ mod tests {
         // A major seat is not a city-state.
         assert!(translate(&Action::SendEnvoy { player: 1 }, &mirror, &state).is_none());
 
-        // The deployed controller spends what the board holds.
+        // Pin the spend-all policy: this checks order translation, not the
+        // tournament-selected defaults for saving envoys for future dividends.
         let mut ai = civvis::ai::AdvancedAi::new();
         ai.enable_live_bridge();
+        ai.disable_envoy_building_dividends();
+        ai.disable_bank_envoys();
         let mut planned = mirror.game.clone();
         let begin = planned.log.len();
         ai.take_turn(&mut planned, 0);
