@@ -56,6 +56,7 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	if k == "Units" then
 		return setmetatable({}, { __index = function(_, name)
 			if name == "UNIT_SETTLER" then return { UnitType = name, Combat = 0, RangedCombat = 0 } end
+			if name == "UNIT_SCOUT" then return { UnitType = name, Combat = 10, PromotionClass = "PROMOTION_CLASS_RECON" } end
 			if name == "UNIT_ARCHER" then return { UnitType = name, Combat = 15, RangedCombat = 25 } end
 			return { UnitType = name, Combat = 20, RangedCombat = 0 }
 		end })
@@ -65,6 +66,7 @@ end })
 GameInfo.Types = {
 	UNIT_SETTLER = { Hash = 101, Kind = "KIND_UNIT" },
 	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },
+	UNIT_ARCHER = { Hash = 103, Kind = "KIND_UNIT" },
 }
 GameInfo.CommemorationTypes = {
 	[17] = { CommemorationType = "COMMEMORATION_INFRASTRUCTURE" },
@@ -420,6 +422,51 @@ check("started pipeline survives the first founding", startedPipelineHeld, false
 check("started pipeline names the refusal", startedPipelineWhy,
 	"opening_settler_in_progress")
 check("started pipeline remains queued", host.cities[42].current, 101)
+
+-- An explicit military response must reach the host even with a protected
+-- opening Settler, including after founding the first expansion city.
+local defended, defenseWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 16)
+check("opening defense reaches host", defended, true)
+check("opening defense names its build", defenseWhy, "UNIT_ARCHER")
+check("opening defense replaces settler", host.cities[42].current, 103)
+
+-- Reproduce the stalled one-city opening: two live Settlers are already
+-- waiting for routes. The bridge must let the governor stop a third queue.
+host.cities[43] = nil
+host.cities[42].current = 101
+host.units[501] = { id = 501, kind = "UNIT_SETTLER", x = 5, y = 5, moves = 2 }
+host.units[502] = { id = 502, kind = "UNIT_SETTLER", x = 6, y = 6, moves = 2 }
+local backlog, backlogWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 17)
+check("settler backlog releases queue", backlog, true)
+check("backlog replacement names its build", backlogWhy, "UNIT_SCOUT")
+check("backlog replacement reaches host", host.cities[42].current, 102)
+
+-- A single walking Settler still permits the quiet second expansion pipeline.
+host.units[502] = nil
+host.cities[42].current = 101
+local smallPipeline, smallWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 18)
+check("small quiet pipeline stays committed", smallPipeline, false)
+check("small quiet pipeline refusal", smallWhy, "opening_settler_in_progress")
+
+-- Host siege evidence also releases the lock when CivVis requested an
+-- economic item; the emergency path must be reachable before the lock return.
+DefenseTypes = { DISTRICT_GARRISON = 1, DISTRICT_OUTER = 2 }
+Map.GetPlot = function() return {} end
+CityManager.GetDistrictAt = function()
+	return {
+		GetDefenseStrength = function() return 13 end,
+		GetDamage = function(_, kind) return kind == 1 and 179 or 0 end,
+		GetMaxDamage = function(_, kind) return kind == 1 and 200 or 0 end,
+	}
+end
+local siege, siegeWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 19)
+check("damaged capital releases opening lock", siege, true)
+check("unavailable walls preserve CivVis request", siegeWhy, "UNIT_SCOUT")
+check("siege request reaches host", host.cities[42].current, 102)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))

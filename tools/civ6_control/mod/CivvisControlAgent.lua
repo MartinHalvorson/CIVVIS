@@ -12913,6 +12913,12 @@ local function applyOrder(player, pid, row, turn)
 		local currentTurns = tonumber(try(function()
 			return city:GetBuildQueue():GetTurnsLeft();
 		end, -1)) or -1;
+		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
+			cityWarThreat(player, pid, city);
+		local wallRadius = cfg.EmergencyWallRadius or 3;
+		local immediateThreat = maxWallDamage ~= nil and maxWallDamage <= 0
+			and ((damage ~= nil and damage > 0)
+				or (nearestEnemy ~= nil and nearestEnemy <= wallRadius));
 		-- An opening Settler is a commitment, not a provisional queue suggestion.
 		-- CIVVIS receives a fresh board every turn and can otherwise replace it
 		-- with a newly preferred Scout before either item completes.  The live
@@ -12921,17 +12927,45 @@ local function applyOrder(player, pid, row, turn)
 		-- only the current city count released the queue on that exact frame and
 		-- replaced it with the deferred opening Warrior.  Remember a Settler that
 		-- was already protected in the one-city opening, and release that exact
-		-- city lock only after its host queue changes away from Settler.  A later
+		-- city lock after its host queue changes away from Settler. A later
 		-- two-city Settler never acquires the lock, so ordinary replacement stays
 		-- available once the opening pipeline has actually completed.
+		-- A production commitment must not veto the governor's response to a
+		-- blocked expansion. In civvis-20260908T235216Z it refused Warriors
+		-- on turns 33-39 while three Settlers walked and Rome took 179 damage.
+		-- Preserve a small opening pipeline, but release it for actual defense,
+		-- an immediate siege, or a backlog of two already-built Settlers.
+		local walkingSettlers = 0;
+		eachUnit(player, function(unit)
+			local unitRow = GameInfo.Units[unit:GetUnitType()];
+			if unitRow ~= nil and unitRow.UnitType == "UNIT_SETTLER" then
+				walkingSettlers = walkingSettlers + 1;
+			end
+		end);
+		local requestedUnit = row2.Kind == "KIND_UNIT" and GameInfo.Units[resolved] or nil;
+		local requestedDefense = resolved == "BUILDING_WALLS"
+			or (requestedUnit ~= nil
+				and requestedUnit.PromotionClass ~= "PROMOTION_CLASS_RECON"
+				and ((requestedUnit.Combat or 0) > 0
+					or (requestedUnit.RangedCombat or 0) > 0
+					or (requestedUnit.Bombard or 0) > 0));
+		local releaseOpening = immediateThreat or requestedDefense or walkingSettlers >= 2;
+		if releaseOpening then CivvisOpeningSettlerLocks[cityId] = nil; end
 		local currentOpening = current;
 		local settlerRow = GameInfo.Types["UNIT_SETTLER"];
 		if currentOpening ~= 0 and settlerRow ~= nil
 				and currentOpening == settlerRow.Hash then
 			local cityCount = 0;
 			eachCity(player, function() cityCount = cityCount + 1; end);
-			if cityCount == 1 then CivvisOpeningSettlerLocks[cityId] = true; end
-			if resolved ~= "UNIT_SETTLER"
+			if releaseOpening and resolved ~= "UNIT_SETTLER" then
+				emit("opening_settler_released", {
+					turn = turn, city = cityId, requested = resolved,
+					walking_settlers = walkingSettlers, defense = requestedDefense,
+					immediate_threat = immediateThreat == true,
+				});
+			end
+			if cityCount == 1 and not releaseOpening then CivvisOpeningSettlerLocks[cityId] = true; end
+			if resolved ~= "UNIT_SETTLER" and not releaseOpening
 					and (cityCount == 1 or CivvisOpeningSettlerLocks[cityId]) then
 				emit("opening_settler_preserved", {
 					turn = turn, city = cityId, requested = resolved,
@@ -12973,12 +13007,6 @@ local function applyOrder(player, pid, row, turn)
 		-- fourteen tiles away is not. `EmergencyWallRadius` is a knob so this is
 		-- tunable and can be withheld -- set it very large to restore the old
 		-- unbounded behaviour exactly.
-		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
-			cityWarThreat(player, pid, city);
-		local wallRadius = cfg.EmergencyWallRadius or 3;
-		local immediateThreat = maxWallDamage ~= nil and maxWallDamage <= 0
-			and ((damage ~= nil and damage > 0)
-				or (nearestEnemy ~= nil and nearestEnemy <= wallRadius));
 		local currentUnit = current ~= 0 and try(function()
 			return GameInfo.Units[current];
 		end) or nil;
@@ -13076,7 +13104,7 @@ local function applyOrder(player, pid, row, turn)
 		if ok and verb == "UNIT_SETTLER" then
 			local cityCount = 0;
 			eachCity(player, function() cityCount = cityCount + 1; end);
-			if cityCount == 1 then CivvisOpeningSettlerLocks[cityId] = true; end
+			if cityCount == 1 and not releaseOpening then CivvisOpeningSettlerLocks[cityId] = true; end
 		end
 		return ok, ok and (emergencyWall and "BUILDING_WALLS" or verb) or "throw";
 	end
