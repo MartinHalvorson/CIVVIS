@@ -152,7 +152,11 @@ resolve_forced_arm() {
     from_file=$local_list
     FORCE_FILE=$LOCAL_FORCE_FILE
     FORCE_SOURCE="local-override:$LOCAL_FORCE_FILE"
-    if [[ "$local_list" == "$repo_list" ]]; then
+    # Forced tags are a set: order and duplicates do not change the arm.
+    local -a local_tags repo_tags
+    local_tags=("${(@s:,:)local_list}")
+    repo_tags=("${(@s:,:)repo_list}")
+    if [[ "${(j:,:)${(@ou)local_tags}}" == "${(j:,:)${(@ou)repo_tags}}" ]]; then
       say "force-on LOCAL OVERRIDE $LOCAL_FORCE_FILE is in effect and equals the repo list ($REPO_FORCE_FILE_REL); delete it to track the repository"
     else
       say "force-on LOCAL OVERRIDE $LOCAL_FORCE_FILE is in effect: playing ${local_list} instead of the repo list ${repo_list:-none} ($REPO_FORCE_FILE_REL)"
