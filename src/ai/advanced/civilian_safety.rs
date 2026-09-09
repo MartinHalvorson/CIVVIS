@@ -171,6 +171,20 @@ impl BarbarianReach {
             .count()
     }
 
+    /// A ship can move onto this water tile. Unlike civilian coastal capture,
+    /// this does not treat adjacent land as an embarked military position.
+    fn naval_covers(&self, pos: Pos) -> bool {
+        self.raiders.iter().any(|raider| {
+            raider.sea && (raider.pos == pos || raider.reach.binary_search(&pos).is_ok())
+        })
+    }
+
+    fn land_covers(&self, pos: Pos) -> bool {
+        self.raiders.iter().any(|raider| {
+            !raider.sea && (raider.pos == pos || raider.reach.binary_search(&pos).is_ok())
+        })
+    }
+
     /// Hex distance to the nearest raider, `i32::MAX` when there is none.
     pub(super) fn nearest(&self, g: &Game, pos: Pos) -> i32 {
         self.raiders
@@ -182,6 +196,75 @@ impl BarbarianReach {
 }
 
 impl AdvancedAi {
+    /// Keep a safe land escort out of a known fleet's reach while chasing its
+    /// settler. The ordinary follow step is tried on isolated state so this
+    /// covers its actual choice, including risk-aware routing and fallback.
+    pub(super) fn escort_naval_memory_step(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> Option<bool> {
+        let unit = g.units.get(&uid)?;
+        let current = unit.pos;
+        if !self.hostile_memory_2
+            || matches!(
+                g.rules.units[unit.kind].domain.as_deref(),
+                Some("sea" | "air")
+            )
+            || g.map
+                .get(current)
+                .is_some_and(|tile| g.rules.is_water(tile))
+        {
+            return None;
+        }
+        let reach = self.barbarian_reach(g, pid, current, REACH_SCAN_RADIUS);
+        if !g.nbrs(current).into_iter().any(|pos| {
+            g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile)) && reach.naval_covers(pos)
+        }) || reach.land_covers(current)
+            || super::battle_planner::strike_danger(g, pid, current, uid) != 0.0
+        {
+            return None;
+        }
+        let mut trial = g.speculative_clone();
+        let mut trial_base = self.base.clone();
+        trial_base.journal = Default::default();
+        if !trial_base.step_toward(&mut trial, pid, uid, target) {
+            return None;
+        }
+        let chosen = trial.units.get(&uid)?.pos;
+        if !g.map.get(chosen).is_some_and(|tile| g.rules.is_water(tile))
+            || !reach.naval_covers(chosen)
+        {
+            return None;
+        }
+        let here = g.wdist(current, target);
+        let mut dry: Vec<_> = g
+            .nbrs(current)
+            .into_iter()
+            .filter(|pos| {
+                g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+                    && g.wdist(*pos, target) < here
+                    && g.can_move(uid, *pos)
+                    && !reach.land_covers(*pos)
+                    && super::battle_planner::strike_danger(g, pid, *pos, uid) == 0.0
+            })
+            .collect();
+        dry.sort_by_key(|pos| (g.wdist(*pos, target), *pos));
+        for pos in dry {
+            if self.base.path_move(g, pid, uid, pos) {
+                think!(self.journal(), Expansion, Detail, "Guard follows on land";
+                       "the ordinary step would embark into a known fleet's reach"; pos);
+                return Some(true);
+            }
+        }
+        think!(self.journal(), Expansion, Detail, "Guard waits ashore";
+               "the next escort step enters a known fleet's reach; no safe forward land step exists";
+               current);
+        Some(self.base.fortify_or_stop(g, pid, uid))
+    }
+
     /// The exact one-turn reach constraint is an opt-in on native boards,
     /// but the live bridge always carries the capture lessons.  Keeping that
     /// distinction here lets the host protect both civilian kinds without
@@ -240,7 +323,7 @@ impl AdvancedAi {
         // to any visible owner at war with the seat, even when no Barbarian
         // player is present in the mirrored unit table.
         let current_frame_includes_all_hostiles =
-            self.hostile_memory || self.live_settler_capture_lessons;
+            self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons;
         let uses_memory = current_frame_includes_all_hostiles;
         let visible = self.battlefront_visibility(g, pid);
         let in_scope = |owner: usize| {

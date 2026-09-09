@@ -2232,6 +2232,8 @@ pub const GENES: &[Gene] = &[
     // Reprice all strikers after each friendly kill; only a sequence whose
     // surviving enemy replies spare every striker can become the final plan.
     Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
+    // Retain hostile sightings for civilians and a land escort about to embark.
+    Gene { tag: "hostile-memory-2", field: "hostile_memory_2", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_2, disable: AdvancedAi::disable_hostile_memory_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

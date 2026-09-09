@@ -3627,6 +3627,17 @@ impl AdvancedAi {
     /// back into the fog. See `AdvancedAi::barbarian_reach`.
     pub fn enable_hostile_memory(&mut self) {
         self.hostile_memory = true;
+        self.hostile_memory_2 = false;
+    }
+
+    /// Version two retains civilian memory and prices a land escort's embarkation.
+    pub fn enable_hostile_memory_2(&mut self) {
+        self.hostile_memory = false;
+        self.hostile_memory_2 = true;
+    }
+
+    pub fn disable_hostile_memory_2(&mut self) {
+        self.hostile_memory_2 = false;
     }
 
     /// The twin of `enable_hostile_memory`.

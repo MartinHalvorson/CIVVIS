@@ -5625,6 +5625,8 @@ pub struct AdvancedAi {
     /// `civilian_safety::HOSTILE_MEMORY_TURNS` turns after it walks back into
     /// the fog. See `AdvancedAi::barbarian_reach`.
     hostile_memory: bool,
+    /// Version two also protects land escorts from embarking into known naval reach.
+    hostile_memory_2: bool,
     /// Where each in-scope military unit was last seen, and the facts needed
     /// to project its capture reach after the visible-only host export drops
     /// it. The key is the stable Civ 6 id when the live mirror provides one;
@@ -7968,6 +7970,7 @@ impl AdvancedAi {
             industrial_chain_debt: false,
             guard_breaks_the_pin: false,
             hostile_memory: false,
+            hostile_memory_2: false,
             hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
             government_ladder_2: false,
@@ -8118,7 +8121,7 @@ impl AdvancedAi {
         // use the same bounded memory for barbarian sightings, while the
         // opt-in `hostile-memory` gene additionally widens the owner scope on
         // native/evaluator boards.
-        if self.hostile_memory || self.live_settler_capture_lessons {
+        if self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons {
             self.remember_visible_hostiles(g, pid);
         }
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
@@ -37348,6 +37351,9 @@ impl AdvancedAi {
             think!(self.journal(), Expansion, Detail, "Guard stands with its settler";
                    "sharing the tile blocks capture outright"; settler_pos);
             return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+        if let Some(acted) = self.escort_naval_memory_step(g, pid, uid, settler_pos) {
+            return Some(acted);
         }
         // A guard that cannot close this turn stays a guard: the settler's
         // own bounded patience decides when to stop waiting, and an idle
