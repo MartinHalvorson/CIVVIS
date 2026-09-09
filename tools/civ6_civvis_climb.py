@@ -69,6 +69,7 @@ sys.path.insert(0, str(HERE))
 from civ6_control import (gamelock, install, launcher, macos_input,
                           macos_window, popup_clear)  # noqa: E402
 import civ6_env as env  # noqa: E402
+import computer_control as desktop_control  # noqa: E402
 # The objective list is not restated here. This launcher's `--victory` is
 # forwarded verbatim to `civ6_play.py --civvis-victory`, which forwards it
 # verbatim to `civvis_orders --victory`; a second copy of the names is a second
@@ -232,6 +233,12 @@ def dismiss_crash_dialogs() -> None:
     end tell
     """
     run(["osascript", "-e", script], timeout=25.0)
+    # Newer macOS crash alerts belong to UserNotificationCenter. Its other
+    # windows may be permission prompts, so use the text-gated crash-only path.
+    try:
+        desktop_control.dismiss_modals(civ6_crashes_only=True)
+    except Exception:
+        pass  # Accessibility being unavailable must not prevent recovery.
 
 
 def _cleanup_ownership_path(tag: str) -> Path:

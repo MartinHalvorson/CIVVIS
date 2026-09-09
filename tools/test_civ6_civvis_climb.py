@@ -25,6 +25,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_civvis_climb as climb
 
 
+class CrashAlertCleanupTest(unittest.TestCase):
+    def test_teardown_cleanup_uses_the_crash_only_modal_path(self):
+        with mock.patch.object(climb, "run", return_value=""), \
+             mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
+            climb.dismiss_crash_dialogs()
+        dismiss.assert_called_once_with(civ6_crashes_only=True)
+
+    def test_accessibility_failure_cannot_break_teardown(self):
+        with mock.patch.object(climb, "run", return_value=""), \
+             mock.patch.object(climb.desktop_control, "dismiss_modals", side_effect=OSError("unavailable")):
+            climb.dismiss_crash_dialogs()
+
+
 class BusyOnlyCountsARealGame(unittest.TestCase):
     """`pgrep -f` matches command lines, so anything that NAMES the harness hits.
 
