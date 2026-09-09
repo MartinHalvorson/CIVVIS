@@ -47982,3 +47982,24 @@ fn remembered_threat_ties_do_not_trade_this_turns_healing_for_a_better_healing_t
             "an equally threatened tile is not a withdrawal, even if it would heal faster later (v{version})");
     }
 }
+
+#[test]
+fn battle_recovery_follows_surviving_units_across_a_live_id_rebuild() {
+    let mut ai = AdvancedAi::new();
+    // The rebuilt board reuses the old wounded unit's id for a healthy
+    // survivor, while another recovering unit has died. Recovery belongs
+    // to the surviving host identity, not either reused native number.
+    ai.battle_planner_recovering.extend([7, 9]);
+    ai.remap_unit_memory(&BTreeMap::from([(7, 8), (8, 7)]));
+    assert_eq!(ai.battle_planner_recovering, BTreeSet::from([8]));
+    ai.remap_unit_memory(&BTreeMap::from([(8, 12), (7, 13)]));
+    assert_eq!(ai.battle_planner_recovering, BTreeSet::from([12]));
+}
+
+#[test]
+fn forgetting_unit_identity_discards_battle_recovery() {
+    let mut ai = AdvancedAi::new();
+    ai.battle_planner_recovering.insert(7);
+    ai.forget_unit_memory();
+    assert!(ai.battle_planner_recovering.is_empty());
+}
