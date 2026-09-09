@@ -67,7 +67,7 @@ fn blocked_wonder_retains_its_site_and_assigns_a_real_force_without_the_board() 
     ai.live_formationless_settler_shadow = true;
     assert!(ai.formationless_settler_escort());
     ai.stacked_escort_pace(&mut g, 0, settler);
-    assert!(ai.settler_guards.get(&settler).is_none());
+    assert!(!ai.settler_guards.contains_key(&settler));
     assert_eq!(
         roster
             .iter()
