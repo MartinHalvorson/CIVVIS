@@ -2,10 +2,30 @@
 //! defense refuses to finance a rival's finish and raises a reachable bar.
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
-use crate::game::{Game, Item, QuickDeal};
+use crate::game::{Action, ActionFamilies, Game, Item, QuickDeal};
 use std::collections::BTreeSet;
 
+/// Version one prepares at half the culture-victory bar. The Emperor ladder
+/// (`docs/civ6_ladder.json`) lost most of its games to a rival culture
+/// finish between turns 155 and 208, and one game with that defence in
+/// place still lost at t177: by the time a rival shows 50 percent the
+/// Theater chain, the policy cards and the trade denial all arrive late.
+pub(super) const CULTURE_THREAT_PRESSURE: i32 = 50;
+
+/// `culture-threat-early`: the same defence, armed at 30 percent.
+pub(super) const CULTURE_THREAT_PRESSURE_EARLY: i32 = 30;
+
 impl AdvancedAi {
+    /// The rival pressure, as a percent of the global culture-victory bar,
+    /// at which a rival becomes a defensive threat. Off, version one's 50.
+    pub(super) fn culture_threat_pressure(&self) -> i32 {
+        if self.culture_threat_early {
+            CULTURE_THREAT_PRESSURE_EARLY
+        } else {
+            CULTURE_THREAT_PRESSURE
+        }
+    }
+
     /// Public counters, not score or our own small domestic total. Firaxis's
     /// WorldRankings.lua:1674-1687 compares visitors with the largest rival
     /// staycationer count. Halfway is a preparation threshold, not a forecast
@@ -14,13 +34,14 @@ impl AdvancedAi {
         if !self.victory_planning || !g.victory_conditions.culture {
             return BTreeSet::new();
         }
+        let bar = self.culture_threat_pressure();
         self.rival_culture_pressures(g)
             .into_iter()
             .filter(|(rival, pressure)| {
                 *rival != pid
                     && !g.same_team(pid, *rival)
                     && g.has_met(pid, *rival)
-                    && *pressure >= 50
+                    && *pressure >= bar
             })
             .map(|(rival, _)| rival)
             .collect()
@@ -35,6 +56,45 @@ impl AdvancedAi {
         }
         deal.category != "great_work"
             && !(deal.item == "open_borders" && threats.contains(&deal.partner))
+    }
+
+    /// `culture-threat-early`: while a threat exists, nothing at all is sold
+    /// to the threatening rival. Version one keeps luxury, strategic and
+    /// Gold sales open to it, and every one of them finances the finish it
+    /// is defending against. Off, exactly [`AdvancedAi::culture_deal_safe`].
+    pub(super) fn culture_deal_allowed(&self, deal: &QuickDeal, threats: &BTreeSet<usize>) -> bool {
+        Self::culture_deal_safe(deal, threats)
+            && !(self.culture_threat_early
+                && deal.direction == "sell"
+                && threats.contains(&deal.partner))
+    }
+
+    /// `culture-threat-early`: a culture threat is a denunciation candidate.
+    /// The denouncement starts the Formal War clock the war desk already
+    /// reads (`preferred_war_opening`) and costs the rival the friendship and
+    /// alliance routes to our market. One per turn, the most pressing rival
+    /// first; the engine's own legality (met, at peace, not friends or
+    /// allied, not already denounced) is read from the diplomacy family
+    /// rather than assumed. Returns the denounced rival.
+    pub(super) fn culture_threat_denunciation(&self, g: &mut Game, pid: usize) -> Option<usize> {
+        if !self.culture_threat_early {
+            return None;
+        }
+        let threats = self.culture_trade_threats(g, pid);
+        if threats.is_empty() {
+            return None;
+        }
+        let pressures = self.rival_culture_pressures(g);
+        let legal = g.legal_actions_within(pid, ActionFamilies::DIPLOMACY);
+        let mut candidates: Vec<usize> = threats
+            .into_iter()
+            .filter(|rival| legal.contains(&Action::Denounce { player: *rival }))
+            .collect();
+        candidates.sort_by_key(|rival| (-pressures.get(rival).copied().unwrap_or(0), *rival));
+        let rival = *candidates.first()?;
+        g.apply(pid, &Action::Denounce { player: rival })
+            .is_ok()
+            .then_some(rival)
     }
 
     /// Late tourism defense is useful even when someone else holds the
@@ -63,13 +123,14 @@ impl AdvancedAi {
             return 0.0;
         }
         let ours = g.domestic_tourists(pid).max(0) as f64;
+        let bar = self.culture_threat_pressure();
         self.rival_culture_pressures(g)
             .into_iter()
             .filter(|(rival, pressure)| {
                 *rival != pid
                     && !g.same_team(pid, *rival)
                     && g.has_met(pid, *rival)
-                    && *pressure >= 50
+                    && *pressure >= bar
             })
             .map(|(rival, pressure)| {
                 let bar = g

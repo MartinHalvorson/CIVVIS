@@ -813,6 +813,142 @@ def culture_mark_columns(summary: dict) -> dict:
     return columns
 
 
+#: The space race's four launches in order, spelled as the control mod exports
+#: a completed one in `science_projects` (`CivvisControlAgent.lua`, the
+#: `scienceProjects` loop: `PlayerStats:GetNumProjectsAdvanced(index) > 0`,
+#: the World Rankings science screen's own test). Base Civilization VI splits
+#: the Mars Colony into three parts; Gathering Storm replaces them with one
+#: `PROJECT_LAUNCH_MARS_BASE`. A stage is complete when EVERY spelling in its
+#: set has crossed, so the three-part Mars counts once and only when whole,
+#: and the Gathering Storm base counts on its own.
+SPACE_RACE_STAGES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("earth_satellite", frozenset({"PROJECT_LAUNCH_EARTH_SATELLITE"})),
+    ("moon_landing", frozenset({"PROJECT_LAUNCH_MOON_LANDING"})),
+    ("mars_colony", frozenset({"PROJECT_LAUNCH_MARS_BASE"})),
+    ("exoplanet_expedition",
+     frozenset({"PROJECT_LAUNCH_EXOPLANET_EXPEDITION"})),
+)
+#: The base-game Mars Colony: all three parts, or the expansion's single base.
+MARS_COLONY_PARTS = frozenset({
+    "PROJECT_LAUNCH_MARS_REACTOR",
+    "PROJECT_LAUNCH_MARS_HABITATION",
+    "PROJECT_LAUNCH_MARS_HYDROPONICS",
+})
+SPACEPORT = "DISTRICT_SPACEPORT"
+
+
+def _stages_completed(projects: list) -> set[str]:
+    """Which of the four launches a `science_projects` list says are done."""
+    done = {p for p in projects if isinstance(p, str)}
+    stages = set()
+    for name, spellings in SPACE_RACE_STAGES:
+        if spellings <= done or (name == "mars_colony"
+                                 and MARS_COLONY_PARTS <= done):
+            stages.add(name)
+    return stages
+
+
+def _has_spaceport(event: dict) -> bool:
+    """Whether any of our cities holds a FINISHED Spaceport on this board.
+
+    `cities[].districts[].type` is the plot's district type, which is set the
+    turn the district is placed; `complete` is `District:IsComplete()`. An
+    older export without `complete` is taken at its word.
+    """
+    for city in event.get("cities") or []:
+        if not isinstance(city, dict):
+            continue
+        for district in city.get("districts") or []:
+            if (isinstance(district, dict)
+                    and district.get("type") == SPACEPORT
+                    and district.get("complete") is not False):
+                return True
+    return False
+
+
+def launch_marks(events_path: Path) -> dict | None:
+    """The space race as of the LAST `state` frame: ``{"spaceport_turn": t,
+    "launches_completed": n, "last_launch_turn": t}``.
+
+    ⭐ WHY THIS ROW EXISTS. Emperor games that reach t200 build a Spaceport
+    and complete one to three of the four launches before a rival wins at
+    t213–228, and the row recorded nothing about it: a `rival victory` at
+    t226 with 470 score read the same whether the seat was two launches from
+    winning or had never laid the district. `science_projects` and every
+    city's district list already cross the bridge on every board
+    (`CivvisControlAgent.lua`, `scienceProjects`); this reads them and adds
+    no export.
+
+    Unlike `tech_marks` and `culture_marks`, which read a fixed turn, the
+    race is read to the END of the run -- the question is how far the seat
+    got, not where it stood at t150. `spaceport_turn` is the first frame
+    whose board carries a finished Spaceport; `launches_completed` the
+    number of the four stages done on the last board (Earth Satellite, Moon
+    Landing, Mars Colony, Exoplanet Expedition; the base game's three Mars
+    parts count as one stage once all three are done); `last_launch_turn`
+    the turn the most recent of those stages first appeared. Each turn None
+    when it never happened. A stage completes during a turn, so the first
+    board that shows it is the NEXT turn's opening frame: the turn recorded
+    is when the ledger could first see it.
+
+    `None` when no `state` frame carried a `science_projects` list -- a mod
+    predating that export, not an empire that never launched.
+    """
+    seen_state = False
+    spaceport_turn = None
+    first_seen: dict[str, int] = {}
+    completed: set[str] = set()
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "state":
+                continue
+            projects = event.get("science_projects")
+            if not isinstance(projects, list):
+                continue
+            seen_state = True
+            turn = event.get("turn")
+            if not isinstance(turn, int):
+                continue
+            if spaceport_turn is None and _has_spaceport(event):
+                spaceport_turn = turn
+            # The LAST board decides what counts; the first sighting of each
+            # stage dates it. A project cannot un-complete, so the last frame's
+            # set is the union of everything seen -- read from the frame anyway
+            # so a corrupt earlier line cannot inflate the count.
+            completed = _stages_completed(projects)
+            for stage in completed:
+                first_seen.setdefault(stage, turn)
+    if not seen_state:
+        return None
+    dated = [first_seen[s] for s in completed if s in first_seen]
+    return {
+        "spaceport_turn": spaceport_turn,
+        "launches_completed": len(completed),
+        "last_launch_turn": max(dated) if dated else None,
+    }
+
+
+LAUNCH_COLUMNS = ("spaceport_turn", "launches_completed", "last_launch_turn")
+
+
+def launch_mark_columns(summary: dict) -> dict:
+    """The three flat ledger columns from a summary's `launch_marks`.
+
+    Already flat in the summary; copied by name so a summary without the
+    reading (an older run, or a mod predating the export) yields None for
+    every column rather than a missing key, like `tech_mark_columns`.
+    """
+    marks = summary.get("launch_marks") or {}
+    return {column: marks.get(column) for column in LAUNCH_COLUMNS}
+
+
 def open_events(events_path: Path):
     """Text handle over `events.jsonl`, or its gzipped copy off the ledger branch."""
     if events_path.suffix == ".gz":
@@ -1462,6 +1598,12 @@ def entry_from(summary: dict) -> dict:
         # turns before the science ones, so this is the clock that usually runs
         # out first. See `culture_marks`.
         **culture_mark_columns(summary),
+        # ⭐ THE SPACE RACE, PER GAME: `spaceport_turn`, `launches_completed`,
+        # `last_launch_turn`, read to the LAST board rather than a fixed mark.
+        # Emperor games that reach t200 lay a Spaceport and complete 1–3 of the
+        # four launches before a rival wins at t213–228; this is how far the
+        # seat got. See `launch_marks`.
+        **launch_mark_columns(summary),
     }
 
 
@@ -2112,6 +2254,20 @@ def tech_cell(attempt: dict, mark: int = 150) -> str:
     return f"{cell(ours)}/{cell(rival)}"
 
 
+def launch_cell(attempt: dict) -> str:
+    """`n/4` launches with the Spaceport and last-launch turns; `—` when the
+    run predates the export (`launches_completed` None)."""
+    done = attempt.get("launches_completed")
+    if done is None:
+        return "—"
+    text = f"{done}/{len(SPACE_RACE_STAGES)}"
+    if attempt.get("spaceport_turn") is not None:
+        text += f" port t{attempt['spaceport_turn']}"
+    if attempt.get("last_launch_turn") is not None:
+        text += f" last t{attempt['last_launch_turn']}"
+    return text
+
+
 def victory_board(state: dict) -> list[tuple[int, str | None, dict]]:
     """Every victory condition, and the date each was first beaten per rung.
 
@@ -2516,9 +2672,20 @@ def markdown_for(state: dict) -> str:
             "the first board of turn 150 (`tech_marks`); `—` when the run never",
             "reached it or predates the state export.",
             "",
+            "`launches` is the space race as of the run's LAST board",
+            "(`launch_marks`): launches completed out of four (Earth Satellite,",
+            "Moon Landing, Mars Colony, Exoplanet Expedition), then the turn the",
+            "first finished Spaceport appeared (`port`) and the turn the latest",
+            "launch first showed (`last`), each omitted when it never happened;",
+            "`—` when the run predates the `science_projects` export. Emperor",
+            "games that reach t200 lay a Spaceport and complete one to three",
+            "launches before a rival wins at t213–228, and until this column",
+            "the row could not tell that seat from one that never left the",
+            "ground.",
+            "",
             "| run | difficulty | playing for | configured | outcome | turns | score "
-            "| techs@150 (ours/rival) | ended |",
-            "|---|---|---|---|---|---|---|---|---|",
+            "| techs@150 (ours/rival) | launches | ended |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
         # ⚠ THE NEWEST FORTY BY THE CLOCK, NOT THE LAST FORTY APPENDED. The
         # published record interleaves two live seats and is topped up by
@@ -2538,6 +2705,7 @@ def markdown_for(state: dict) -> str:
                 f"| {'yes' if a['configured'] else 'NO'} | {outcome} "
                 f"| {cell(a.get('turns'))} | {cell(a.get('score'))} "
                 f"| {tech_cell(a)} "
+                f"| {launch_cell(a)} "
                 f"| {cell(a.get('utc'))} |")
         lines.append("")
     return "\n".join(lines)

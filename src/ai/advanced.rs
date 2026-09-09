@@ -4769,6 +4769,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    amani_follows_suzerainty: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     builder_workforce_recovery: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -4919,6 +4921,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
+    /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
+    culture_threat_early: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     culture_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -5579,6 +5585,10 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    magnus_follows_settlers: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    liang_follows_builders: bool,
     /// `modernize-before-spending` (default on): upgrade the standing army
     /// BEFORE the discretionary purchase pass, at the moments that matter.
     ///
@@ -5837,6 +5847,10 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    reyna_follows_revenue: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    pingala_follows_research: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -6819,6 +6833,7 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
+mod governor_dividends;
 mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -6848,6 +6863,8 @@ mod gold_and_cards;
 /// income the empire is short. Two opt-in genes; see
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
+
+mod production_compounding;
 
 /// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
 /// move before the capital is founded. One opt-in gene; see
@@ -7625,6 +7642,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amani_follows_suzerainty: false,
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
             anvil: false,
@@ -7654,6 +7672,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,
             detour_keeps_the_site_worth: false,
@@ -7749,6 +7768,8 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            magnus_follows_settlers: false,
+            liang_follows_builders: false,
             modernize_before_spending: false,
             objective_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
@@ -7774,6 +7795,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reyna_follows_revenue: false,
+            pingala_follows_research: false,
             research_building_catchup: false,
             research_building_catchup_2: false,
             route_block_is_a_wait: false,
@@ -12574,9 +12597,10 @@ impl AdvancedAi {
     /// passes can fill an idle city with an Envoy district, Aerodrome, or
     /// another unrelated one-off. The ordinary Advanced production reserve is
     /// intentionally later in the turn; this narrow early pass exists only
-    /// for an explicit Science target and preserves the same cheapest-rung
-    /// ordering in every city that already owns a Campus.
-    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize) {
+    /// for an explicit Science target. The cheapest owed research rung competes
+    /// with legal industrial buildings so the production foundation can win
+    /// this reservation too; unrelated construction remains excluded.
+    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         for cid in g.player_city_ids(pid) {
             if !g.cities[&cid].queue.is_empty() {
                 continue;
@@ -12584,7 +12608,13 @@ impl AdvancedAi {
             let Some(building) = Self::first_owed_campus_building(g, pid, cid) else {
                 continue;
             };
-            let item = Item::Building { building };
+            let item = self.research_or_industrial_foundation(
+                g,
+                pid,
+                cid,
+                Item::Building { building },
+                plan,
+            );
             if !g.can_produce(pid, cid, &item)
                 || g.apply(
                     pid,
@@ -12601,7 +12631,7 @@ impl AdvancedAi {
                 let city_name = g.cities[&cid].name.clone();
                 think!(self.journal(), Research, Decision,
                     "{} reserves {} for the Science lane", city_name, Self::plain_item(&item);
-                    "the Campus chain is owed before ancillary production claims this idle queue");
+                    "research and its industrial foundation precede ancillary production in this idle queue");
             }
         }
     }
@@ -16023,6 +16053,16 @@ impl AdvancedAi {
         } else if denied_partner {
             return -1_000.0;
         }
+        // `culture-threat-early`: passage is the one thing a proposal can
+        // ask of us that finances a rival's culture finish; a threat's
+        // offer of it is refused outright. See `advanced/culture_strategy.rs`.
+        if deal.open_borders
+            && !deal.peace
+            && self.culture_threat_early
+            && self.culture_trade_threats(g, pid).contains(&partner)
+        {
+            return -1_000.0;
+        }
         if deal.open_borders {
             value += match plan.strategy {
                 GrandStrategy::Culture => 70.0,
@@ -16112,7 +16152,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.item == "open_borders"
                         && deal.direction == "buy"
@@ -16140,7 +16180,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.category == "great_work"
                         && deal.direction == "buy"
@@ -16169,7 +16209,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
                         && deal.my_value >= 2.0
@@ -16194,7 +16234,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .max_by(|left, right| {
                     self.base
                         .deal_objective(left)
@@ -18037,6 +18077,13 @@ impl AdvancedAi {
         // reserved; trade resumes immediately when the appointment ends.
         if self.war_plan.is_none() {
             self.strategic_bilateral_trade(g, pid, denied_trade_partner, plan.strategy);
+        }
+        // `culture-threat-early`: a culture threat is denounced. See
+        // `advanced/culture_strategy.rs`.
+        if let Some(rival) = self.culture_threat_denunciation(g, pid) {
+            think!(self.journal(), Diplomacy, Decision,
+                   "Denouncing {}", g.players[rival].civ;
+                   "their tourism is a culture threat");
         }
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See
@@ -24655,15 +24702,21 @@ impl AdvancedAi {
             }
             // An explicit Science target makes the same contract as the
             // opt-in reserve: once a city has paid for a Campus, finish its
-            // cheapest owed Campus-family building before the generic scorer
-            // can spend the queue on a Theater Square or another unrelated
+            // cheapest owed Campus-family building or a higher-valued industrial
+            // foundation before spending the queue on a Theater Square or another unrelated
             // item. Adaptive seats still need the independently screenable
             // gene; only a named Science lane gets this invariant for free.
             if committed.is_none() && (self.first_research_building_reserve || science_specialized)
             {
                 let owed = Self::first_owed_campus_building(g, pid, cid);
                 if let Some(building) = owed {
-                    let item = Item::Building { building };
+                    let item = self.research_or_industrial_foundation(
+                        g,
+                        pid,
+                        cid,
+                        Item::Building { building },
+                        plan,
+                    );
                     if g.can_produce(pid, cid, &item)
                         && g.apply(
                             pid,
@@ -24728,6 +24781,33 @@ impl AdvancedAi {
                                 "the promoted baseline repair was unreachable in strategic production; {} Amenities short",
                                 shortfall);
                         }
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
+            // A named lane compounds a repayable industrial foundation
+            // before discretionary Spies, extra districts and projects. The
+            // preceding survival, research, growth and income reservations
+            // retain priority, and existing commitments are never displaced.
+            if committed.is_none() {
+                if let Some(item) = self.profitable_industrial_foundation(g, pid, cid, plan) {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} invests in {}", city_name, Self::plain_item(&item);
+                                "the industrial foundation can repay its remaining production cost before the clock");
+                        }
+                        counts.add_item(g, &item);
                         self.clear_idle_production_streak(cid);
                         continue;
                     }
@@ -26936,15 +27016,29 @@ impl AdvancedAi {
                             .is_some_and(|family| family.as_str() == "industrial_zone")
                         && Self::city_holds_district_family(g, city, "industrial_zone")
                     {
-                        INDUSTRIAL_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
-                            + self.regional_production_reach(
-                                g,
-                                pid,
-                                city,
-                                building,
-                                spec,
-                                plan.strategy,
-                            )
+                        let regional = self.regional_production_reach(
+                            g,
+                            pid,
+                            city,
+                            building,
+                            spec,
+                            plan.strategy,
+                        );
+                        if self.active_victory_target(g).is_some() {
+                            (INDUSTRIAL_BUILDING_DEBT + regional)
+                                * self.industrial_investment_horizon(
+                                    g,
+                                    pid,
+                                    cid,
+                                    item,
+                                    spec,
+                                    regional,
+                                    plan.strategy,
+                                )
+                        } else {
+                            INDUSTRIAL_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
+                                + regional
+                        }
                     } else {
                         0.0
                     };
@@ -39544,6 +39638,7 @@ impl AdvancedAi {
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
+        self.relocate_governors_for_dividends(g, pid, &plan);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured
@@ -39654,7 +39749,7 @@ impl AdvancedAi {
                 // The named research chain owns an idle Campus city before
                 // ancillary reservations such as Envoy infrastructure, so a
                 // one-off district cannot hide the Library/University debt.
-                self.reserve_targeted_research_buildings(g, pid);
+                self.reserve_targeted_research_buildings(g, pid, &plan);
             }
             // Reserve one reachable diplomatic stage before baseline queues fill.
 
