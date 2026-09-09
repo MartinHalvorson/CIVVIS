@@ -128,9 +128,12 @@ fn an_invalidated_pair_does_not_send_only_half_of_the_walk() {
     assert!(ai.builder_support.contains_key(&builder));
     let start = game.units[&guard].pos;
     game.units.get_mut(&builder).unwrap().moves_left = 0.0;
-    assert_eq!(ai.builder_support_step(&mut game, 0, builder), None);
+    assert_eq!(ai.builder_support_step(&mut game, 0, builder), Some(false));
     assert_eq!(game.units[&guard].pos, start);
-    assert!(ai.builder_support.is_empty());
+    assert_eq!(ai.builder_support[&builder].destination, start);
+    assert!(ai.guard_is_reserved_for_civilian(guard));
+    ai.advanced_military_step_with_decline(&mut game, 0, guard, &strategy(), true);
+    assert_eq!(game.units[&guard].pos, game.units[&builder].pos);
 }
 
 #[test]
@@ -172,4 +175,30 @@ fn fresh_host_id_mapping_discards_old_frame_reservations() {
     ]));
     assert!(ai.builder_support.is_empty());
     assert!(!ai.guard_is_reserved_for_civilian(guard));
+}
+
+#[test]
+fn two_pairs_reserve_distinct_end_tiles() {
+    let (mut game, mut ai, builder, guard, _) = fixture();
+    let second = game.spawn_test_unit("builder", 0, (5, 4));
+    let second_guard = game.spawn_test_unit("warrior", 0, (5, 4));
+    game.units.get_mut(&second).unwrap().moves_left = 1.0;
+    let shared_refuge = (4, 5);
+    for pos in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+        if ![(2, 5), (5, 5), (5, 4), (6, 5), shared_refuge].contains(&pos) {
+            game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+        }
+    }
+    ai.plan_builder_support(&game, 0);
+    let first_plan = ai.builder_support[&builder];
+    let second_plan = ai.builder_support[&second];
+    assert_eq!(first_plan.destination, shared_refuge);
+    assert_ne!(
+        first_plan.destination, second_plan.destination,
+        "two civilians cannot promise to occupy the same end tile"
+    );
+    ai.builder_support_step(&mut game, 0, builder);
+    ai.builder_support_step(&mut game, 0, second);
+    assert_eq!(game.units[&builder].pos, game.units[&guard].pos);
+    assert_eq!(game.units[&second].pos, game.units[&second_guard].pos);
 }

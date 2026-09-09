@@ -74,6 +74,10 @@ impl AdvancedAi {
                     g.reachable(guard).into_iter().chain([current]).collect();
                 for &destination in &destinations {
                     if !reachable.contains(&destination)
+                        || self
+                            .builder_support
+                            .values()
+                            .any(|support| support.destination == destination)
                         || g.map
                             .get(destination)
                             .is_none_or(|tile| g.rules.is_water(tile))
@@ -149,6 +153,23 @@ impl AdvancedAi {
     ) -> Option<bool> {
         let support = *self.builder_support.get(&builder)?;
         let Some(actions) = Self::builder_support_actions(g, pid, builder, support) else {
+            // A failed joint walk must not release the guard and recreate
+            // the very abandonment this reservation prevents. If the pair
+            // can still hold safely, keep both at their observed position.
+            if let Some(current) = g.units.get(&builder).map(|unit| unit.pos) {
+                self.builder_support.insert(
+                    builder,
+                    BuilderSupport {
+                        destination: current,
+                        ..support
+                    },
+                );
+                if self.builder_support_protects(g, pid, builder, current) {
+                    think!(self.journal(), Expansion, Detail, "Builder and guard hold together";
+                           "their shared walk no longer fits; the guard stays reserved at {current:?}"; current);
+                    return Some(false);
+                }
+            }
             self.builder_support.remove(&builder);
             return None;
         };
