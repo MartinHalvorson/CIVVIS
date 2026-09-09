@@ -767,6 +767,26 @@ def culture_marks(events_path: Path) -> dict | None:
     `None` when no `state` frame carried our own `foreign_tourists` at all --
     a mod predating that export, which is silence rather than an empire no
     tourist ever visited.
+
+    ⚠⚠ IT MEASURES A PARTIAL FIELD, AND IN THE LENIENT DIRECTION. The control
+    mod seats `rivals` from `PlayerManager.GetAliveMajorIDs()` filtered by
+    `diplomacy:HasMet(otherId)` (`CivvisControlAgent.lua:7097-7099`), so an
+    unmet major is absent from the frame entirely. Both halves of the reading
+    are affected and both understate the danger: `rival_percent` cannot see a
+    leader we have not met, and the bar in its denominator is missing that
+    leader's staycationers, which makes the rivals we CAN see look closer than
+    they are only if the unmet one held the highest domestic count -- otherwise
+    the whole race reads quieter than it is.
+
+    This is the same limitation the abandon rule was found to have on its own
+    field, where the median run had met 3 of 5 rivals at t150 and one had met
+    just 1. The row already carries `met`, so a reading is auditable against
+    the size of the field it saw: a low `rival_culture_at_150` beside a low
+    `met` is not evidence of a quiet culture race.
+
+    There is no fix inside this reader -- the numbers for an unmet civ never
+    crossed the bridge, by design, because the mirror must not contain
+    knowledge the seat has not earned.
     """
     marks: dict = {}
     seen_state = False
@@ -1582,6 +1602,16 @@ def entry_from(summary: dict) -> dict:
         "city_two_turn": summary.get("city_two_turn"),
         "cities_at_60": summary.get("cities_at_60"),
         "rival_best": summary.get("rival_best"),
+        # ⚠ HOW MANY RIVALS THE ROW'S OTHER NUMBERS COULD SEE. The control mod
+        # seats `rivals` only from majors this seat has MET
+        # (`CivvisControlAgent.lua:7097-7099`), so `rival_best`,
+        # `rival_techs_at_*` and `rival_culture_at_*` are all readings of a
+        # partial field -- the abandon rule was measured taking the median run's
+        # 3 of 5 at t150, with one run seeing 1. The climb has written `met` on
+        # the summary since the beginning and no column carried it, so the size
+        # of the field a row saw could only be recovered from events.jsonl. A
+        # quiet rival number beside a low `met` is not evidence of a quiet race.
+        "met": summary.get("met"),
         "lead": (summary["last_score"] - summary["rival_best"]
                  if summary.get("last_score") is not None
                  and summary.get("rival_best") is not None else None),

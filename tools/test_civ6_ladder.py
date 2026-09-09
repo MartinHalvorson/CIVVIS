@@ -2673,3 +2673,80 @@ class TheAttritionTableCountsGamesNotSegments(unittest.TestCase):
                            if rows[-1].get("reason") == "killed")
         self.assertGreater(killed_rows, killed_games * 2,
                            "most `killed` rows are restarts, not killed games")
+
+
+class TheCultureClockSeesOnlyTheRivalsWeHaveMet(unittest.TestCase):
+    """⚠⚠ `culture_marks` measures a PARTIAL FIELD, in the lenient direction.
+
+    The control mod seats `rivals` from `PlayerManager.GetAliveMajorIDs()`
+    filtered by `diplomacy:HasMet(otherId)`
+    (`CivvisControlAgent.lua:7097-7099`), so an unmet major is absent from the
+    frame and invisible to this reading. The same limitation the abandon rule
+    was found to have: median 3 of 5 rivals met at t150. There is no fix inside
+    the reader, so the caveat has to be written down where a reader will find
+    it, and pinned so it cannot be deleted as prose.
+    """
+
+    def test_the_reader_says_it_reads_only_met_rivals(self):
+        source = (Path(__file__).resolve().parent / "civ6_ladder.py").read_text(
+            encoding="utf-8")
+        doc = civ6_ladder.culture_marks.__doc__ or ""
+        self.assertIn("PARTIAL FIELD", doc)
+        self.assertIn("HasMet", doc, "name the accessor that does the filtering")
+        self.assertIn("met", doc, "point at the column that sizes the field")
+        # The citation is the repository's rule for a claim about the live game.
+        self.assertIn("CivvisControlAgent.lua:7097-7099", source)
+
+    def test_an_unmet_leader_is_absent_rather_than_zero(self):
+        """The shape of the leniency: the frame simply has fewer seats, so the
+        reading is of the field it saw and never of a leader it did not."""
+        with TemporaryDirectory() as tmp:
+            events = Path(tmp) / "events.jsonl"
+            # Two rivals met; a third, stronger one has not been met and so is
+            # not in `rivals` at all.
+            events.write_text(json.dumps({
+                "kind": "state", "turn": 150, "frame": 0,
+                "foreign_tourists": 10, "domestic_tourists": 20,
+                "rivals": [{"foreign_tourists": 30, "domestic_tourists": 5},
+                           {"foreign_tourists": 25, "domestic_tourists": 8}],
+            }) + "\n", encoding="utf-8")
+            seen = civ6_ladder.culture_marks(events)[150]
+        # Rival one clears max(ours 20, other rival 8) = 20 → 150%.
+        self.assertEqual(seen["rival_percent"], 150.0)
+        self.assertEqual(seen["rival_tourists"], 30)
+        # And the row's own `met` column is what tells a reader the field was
+        # small; the mark itself cannot know.
+        entry = civ6_ladder.entry_from({"tag": "civvis-m", "met": 2,
+                                        "culture_marks": {150: seen}})
+        self.assertEqual(entry["met"], 2)
+        self.assertEqual(entry["rival_culture_at_150"], 150.0)
+
+
+class TheRowSaysHowBigTheFieldWas(unittest.TestCase):
+    """`met` is on the row, so every rival number beside it is auditable.
+
+    The climb has written `met` on the summary since the beginning and no
+    column carried it, so the size of the field a row's `rival_best`,
+    `rival_techs_at_*` and `rival_culture_at_*` could see was recoverable only
+    from events.jsonl.
+    """
+
+    def test_the_column_rides_the_entry(self):
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-f", "last_turn": 150, "met": 3, "rival_best": 210,
+        })
+        self.assertEqual(entry["met"], 3)
+
+    def test_a_summary_that_never_said_records_none(self):
+        entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        self.assertIsNone(entry["met"])
+
+    def test_the_climb_writes_what_this_column_reads(self):
+        """Two files, one field: the climb's summary key and this column have to
+        be the same name or the column is silently always None."""
+        climb = (Path(__file__).resolve().parent / "civ6_civvis_climb.py").read_text(
+            encoding="utf-8")
+        ladder = (Path(__file__).resolve().parent / "civ6_ladder.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"met": (last_turn or {}).get("met")', climb)
+        self.assertIn('"met": summary.get("met")', ladder)
