@@ -2147,6 +2147,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "magnus-follows-settlers", field: "magnus_follows_settlers", kind: Kind::OptIn, enable: AdvancedAi::enable_magnus_follows_settlers, disable: AdvancedAi::disable_magnus_follows_settlers },
     Gene { tag: "pingala-follows-research", field: "pingala_follows_research", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_follows_research, disable: AdvancedAi::disable_pingala_follows_research },
     Gene { tag: "reyna-follows-revenue", field: "reyna_follows_revenue", kind: Kind::OptIn, enable: AdvancedAi::enable_reyna_follows_revenue, disable: AdvancedAi::disable_reyna_follows_revenue },
+    // The culture defence armed at 30 percent of the victory bar instead of
+    // 50, no sale of any kind to the threatening rival, and a denunciation.
+    // The Emperor ladder lost most games to a rival culture finish at
+    // t155-208, one with the 50-percent defence in place. See
+    // `advanced/culture_strategy.rs`.
+    Gene { tag: "culture-threat-early", field: "culture_threat_early", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_threat_early, disable: AdvancedAi::disable_culture_threat_early },
     // Retain hostile sightings for civilians and a land escort about to embark.
     Gene { tag: "hostile-memory-2", field: "hostile_memory_2", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_2, disable: AdvancedAi::disable_hostile_memory_2 },
     // ---- append: a-b ------------------------------------------------
@@ -2163,19 +2169,27 @@ pub const GENES: &[Gene] = &[
 //
 // Source: docs/gene_ledger.json (the same tool writes both); `genes.py check` holds them
 // together; this reporting-only publication retains `DEPLOYMENT_GENOME`.
-// Each selected tag's available latest-three `BATCH_COLUMNS` are weighted by
-// completed total player seats and average strictly above +3 wins/10k; one higher-average version ships per family.
+// Each tag's available latest-three `BATCH_COLUMNS`, weighted by completed
+// total player seats, decide it with hysteresis against the previous published
+// selection: off turns on strictly above +3 wins/10k, on turns off strictly
+// below -3; one higher-average version ships per family.
 
 /// The policy that supplies every `default_on` below.
 pub(super) const DEPLOYMENT_POLICY: &str = "operator-retained-selection";
 
-/// The screenable genes whose completed-total-seat-weighted average is strictly
-/// above +3 wins per 10,000 total seats over available latest-three batch
-/// readings; every other screenable gene is off. One higher-average version ships per family.
+/// The screenable genes selected with hysteresis from their completed-total-
+/// seat-weighted average over available latest-three batch readings: a gene
+/// that was off turned on strictly above +3 wins per 10,000 total seats, a gene
+/// that was on stayed on unless strictly below -3 (`rules.hysteresis_held` in
+/// the ledger names the kept ones); every other screenable gene is off. One
+/// higher-average version ships per family.
 #[rustfmt::skip]
 pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
+    "age-closer",
+    "air-surge-2",
     "amenity-district-path",
     "amenity-project-preemption-2",
+    "army-target-weighs-enemy",
     "barbarian-bargain",
     "barbarian-scouts-are-scouts",
     "barbarian-settler-capture",
@@ -2184,6 +2198,7 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "boost-wait-research-2",
     "boosted-bargain-first-2",
     "border-parity-3",
+    "bounded-recovery",
     "builder-barbarian-safety",
     "builder-supply-floor",
     "buildings-before-projects",
@@ -2194,14 +2209,19 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "city-target-meets-the-map",
     "civilian-out-of-reach",
     "coalition-before-war-3",
+    "come-ashore",
     "competition-victory-points",
     "connect-the-luxury",
     "contested-land-first",
     "conversion-majority-alarm",
     "coordinated-finish",
+    "culture-building-debt",
+    "culture-floor",
+    "deals-at-the-ceiling",
     "defensible-sites",
     "detour-keeps-the-site-worth",
     "district-planning",
+    "domination-city-count",
     "early-archers",
     "early-contact-window",
     "early-project-restraint",
@@ -2221,18 +2241,25 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "gold-income-floor",
     "government-ladder-2",
     "great-person-housing",
+    "growth-to-settle",
     "holy-site-where-the-threat-is",
+    "idle-faith-patronage",
     "industrial-chain-debt",
     "lane-great-people",
+    "lane-policy-deck",
+    "lane-release-when-hopeless",
     "lane-space-race",
     "lane-votes-its-favor",
     "loyalty-rate-alarm",
     "maintenance-aware-deck",
     "missionary-last-charge-explores-2",
+    "native-emergency-purchase",
     "naval-recon",
     "naval-threat-triage",
     "never-an-empty-queue",
+    "no-free-passage",
     "opening-warrior-recon-2",
+    "order-retry",
     "pantheon-board",
     "pass-picket",
     "price-the-suzerainty",
@@ -2241,6 +2268,7 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "quest-production",
     "quest-trade-route",
     "rapid-city-expansion-2",
+    "religion-sues-peace",
     "religious-veto-defence",
     "safest-stand",
     "science-building-first",
@@ -2251,6 +2279,7 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "settler-backlog-brake",
     "settler-guard-holds-2",
     "settler-never-idles",
+    "settler-site-gate",
     "settler-target-floor",
     "settler-target-hysteresis-2",
     "settler-walk-deadline",
@@ -2266,6 +2295,8 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
     "unchosen-war-keeps-the-lane",
     "unit-cost-efficiency",
     "unit-objective-memory",
+    "veterans-withdraw-early",
+    "walls-after-districts",
     "war-needs-a-treasury",
     "war-policy-via-board",
     "wide-map-capacity",
@@ -2275,7 +2306,8 @@ pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
 ];
 
 /// No manual on overrides: every deployed gene meets the published
-/// completed-total-seat-weighted latest-three average-above-+3 criterion.
+/// completed-total-seat-weighted latest-three criterion — above +3 to turn
+/// on, not below -3 to stay on.
 #[rustfmt::skip]
 pub(super) const OPERATOR_DEFAULT_ON: &[&str] = &[
 ];
@@ -2552,21 +2584,21 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "amenity-district-path", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(9), wins_prior_10k: Some(17), win_diff_pp: Some(0.220736), posterior_pp: Some(11.500915), posterior_se_pp: Some(8.515459), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.343, win_z: 0.778, share_delta_pp: 0.086, share_z: 0.944, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "amenity-project-preemption", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(26), wins_prior_10k: Some(-34), win_diff_pp: Some(-0.037946), posterior_pp: Some(-0.579866), posterior_se_pp: Some(12.814024), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.515, win_z: 1.347, share_delta_pp: 0.062, share_z: 0.787, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "apostle-promotion-by-role", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(12), wins_prior_10k: Some(16), win_diff_pp: Some(0.133468), posterior_pp: Some(6.102099), posterior_se_pp: Some(10.821961), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.488, win_z: 1.11, share_delta_pp: 0.009, share_z: 0.1, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "army-target-weighs-enemy", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-1), wins_prior_10k: Some(18), win_diff_pp: Some(0.098436), posterior_pp: Some(4.708189), posterior_se_pp: Some(10.494744), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.026, win_z: -0.058, share_delta_pp: -0.071, share_z: -0.77, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "army-target-weighs-enemy", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-1), wins_prior_10k: Some(18), win_diff_pp: Some(0.098436), posterior_pp: Some(4.708189), posterior_se_pp: Some(10.494744), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.026, win_z: -0.058, share_delta_pp: -0.071, share_z: -0.77, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "barbarian-bargain", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(22), wins_prior_10k: Some(10), win_diff_pp: Some(0.322761), posterior_pp: Some(16.41034), posterior_se_pp: Some(10.942339), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.879, win_z: 2.013, share_delta_pp: 0.131, share_z: 1.474, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "barbarian-ranged-answer", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-2), wins_prior_10k: Some(17), win_diff_pp: Some(0.194468), posterior_pp: Some(10.931114), posterior_se_pp: Some(10.506421), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.095, win_z: -0.216, share_delta_pp: -0.008, share_z: -0.093, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "barbarian-scouts-are-scouts", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(1), wins_prior_10k: Some(12), win_diff_pp: Some(0.542033), posterior_pp: Some(29.535753), posterior_se_pp: Some(11.143814), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.037, win_z: 0.085, share_delta_pp: 0.131, share_z: 1.443, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "blind-objective-strength", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-23), wins_prior_10k: Some(0), win_diff_pp: Some(0.185599), posterior_pp: Some(10.786338), posterior_se_pp: Some(10.431471), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.458, win_z: -1.197, share_delta_pp: 0.042, share_z: 0.546, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "blind-objective-units", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(2), wins_prior_10k: Some(0), win_diff_pp: Some(0.009017), posterior_pp: Some(0.293538), posterior_se_pp: Some(8.178949), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.031, win_z: 0.083, share_delta_pp: -0.095, share_z: -1.209, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "bounded-recovery", verdict: Verdict::Helps, default_on: false, wins_last_10k: Some(23), wins_prior_10k: Some(29), win_diff_pp: Some(0.602307), posterior_pp: Some(31.029126), posterior_se_pp: Some(8.476105), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.904, win_z: 2.094, share_delta_pp: 0.296, share_z: 3.353, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "bounded-recovery", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(23), wins_prior_10k: Some(29), win_diff_pp: Some(0.602307), posterior_pp: Some(31.029126), posterior_se_pp: Some(8.476105), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.904, win_z: 2.094, share_delta_pp: 0.296, share_z: 3.353, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "builder-barbarian-safety", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(13), wins_prior_10k: Some(-10), win_diff_pp: Some(0.077422), posterior_pp: Some(3.322829), posterior_se_pp: Some(10.068339), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.255, win_z: 0.67, share_delta_pp: 0.023, share_z: 0.295, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "buildings-before-projects", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(13), wins_prior_10k: Some(61), win_diff_pp: Some(0.567693), posterior_pp: Some(28.304902), posterior_se_pp: Some(11.64753), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.534, win_z: 1.214, share_delta_pp: 0.059, share_z: 0.654, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "camp-party", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(28), wins_prior_10k: Some(-15), win_diff_pp: Some(0.398999), posterior_pp: Some(22.420326), posterior_se_pp: Some(12.741517), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.566, win_z: 1.481, share_delta_pp: 0.059, share_z: 0.746, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "campus-adjacency-threshold", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(21), wins_prior_10k: Some(-18), win_diff_pp: Some(-0.007025), posterior_pp: Some(0.159571), posterior_se_pp: Some(19.440709), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.425, win_z: 1.115, share_delta_pp: 0.016, share_z: 0.208, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "come-ashore", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-3), wins_prior_10k: Some(5), win_diff_pp: Some(0.124668), posterior_pp: Some(7.026062), posterior_se_pp: Some(8.597676), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.102, win_z: -0.232, share_delta_pp: -0.035, share_z: -0.381, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "come-ashore", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-3), wins_prior_10k: Some(5), win_diff_pp: Some(0.124668), posterior_pp: Some(7.026062), posterior_se_pp: Some(8.597676), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.102, win_z: -0.232, share_delta_pp: -0.035, share_z: -0.381, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "competition-victory-points", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(35), wins_prior_10k: Some(0), win_diff_pp: Some(0.309119), posterior_pp: Some(15.760591), posterior_se_pp: Some(17.698531), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.702, win_z: 1.841, share_delta_pp: 0.037, share_z: 0.463, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "coordinated-finish", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(0), wins_prior_10k: None, win_diff_pp: Some(-0.008735), posterior_pp: Some(-0.436761), posterior_se_pp: Some(19.047677), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.009, win_z: -0.023, share_delta_pp: 0.074, share_z: 0.943, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "culture-building-debt", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(15), wins_prior_10k: Some(24), win_diff_pp: Some(0.486116), posterior_pp: Some(25.813208), posterior_se_pp: Some(12.82409), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.58, win_z: 1.328, share_delta_pp: 0.087, share_z: 0.957, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "culture-building-debt", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(15), wins_prior_10k: Some(24), win_diff_pp: Some(0.486116), posterior_pp: Some(25.813208), posterior_se_pp: Some(12.82409), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.58, win_z: 1.328, share_delta_pp: 0.087, share_z: 0.957, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "district-coverage", verdict: Verdict::Helps, default_on: false, wins_last_10k: Some(14), wins_prior_10k: Some(-22), win_diff_pp: Some(0.008266), posterior_pp: Some(0.19452), posterior_se_pp: Some(10.3006), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.28, win_z: 0.736, share_delta_pp: 0.166, share_z: 2.158, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "district-planning", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(12), wins_prior_10k: None, win_diff_pp: Some(0.244584), posterior_pp: Some(12.229214), posterior_se_pp: Some(18.957561), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.245, win_z: 0.645, share_delta_pp: 0.145, share_z: 1.843, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "early-contact-window", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(17), wins_prior_10k: Some(2), win_diff_pp: Some(0.169393), posterior_pp: Some(7.701146), posterior_se_pp: Some(12.097581), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.337, win_z: 0.877, share_delta_pp: 0.091, share_z: 1.164, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
@@ -2579,10 +2611,10 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "holy-lane-parity", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(5), wins_prior_10k: Some(19), win_diff_pp: Some(0.623541), posterior_pp: Some(32.349037), posterior_se_pp: Some(19.66726), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.185, win_z: 0.421, share_delta_pp: -0.184, share_z: -1.997, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "holy-site-where-the-threat-is", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(19), wins_prior_10k: Some(-19), win_diff_pp: Some(-0.031224), posterior_pp: Some(-1.100691), posterior_se_pp: Some(19.032158), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.391, win_z: 1.034, share_delta_pp: -0.088, share_z: -1.141, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "housing-research", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-5), wins_prior_10k: Some(-17), win_diff_pp: Some(-0.009393), posterior_pp: Some(0.465459), posterior_se_pp: Some(11.264612), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.107, win_z: -0.282, share_delta_pp: -0.004, share_z: -0.048, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "idle-faith-patronage", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-1), wins_prior_10k: Some(39), win_diff_pp: Some(0.505304), posterior_pp: Some(25.778142), posterior_se_pp: Some(7.31643), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.056, win_z: -0.127, share_delta_pp: 0.148, share_z: 1.622, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "idle-faith-patronage", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-1), wins_prior_10k: Some(39), win_diff_pp: Some(0.505304), posterior_pp: Some(25.778142), posterior_se_pp: Some(7.31643), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.056, win_z: -0.127, share_delta_pp: 0.148, share_z: 1.622, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-culture-spending", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(9), wins_prior_10k: Some(8), win_diff_pp: Some(0.172513), posterior_pp: Some(8.564803), posterior_se_pp: Some(12.159394), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.187, win_z: 0.486, share_delta_pp: -0.01, share_z: -0.13, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-great-people", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(33), wins_prior_10k: Some(-3), win_diff_pp: Some(0.262286), posterior_pp: Some(13.24308), posterior_se_pp: Some(17.90329), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.66, win_z: 1.717, share_delta_pp: 0.1, share_z: 1.261, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "lane-policy-deck", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(29), wins_prior_10k: Some(0), win_diff_pp: Some(0.264627), posterior_pp: Some(12.799771), posterior_se_pp: Some(14.670107), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.592, win_z: 1.554, share_delta_pp: 0.083, share_z: 1.067, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "lane-policy-deck", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(29), wins_prior_10k: Some(0), win_diff_pp: Some(0.264627), posterior_pp: Some(12.799771), posterior_se_pp: Some(14.670107), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.592, win_z: 1.554, share_delta_pp: 0.083, share_z: 1.067, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-space-race", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-12), wins_prior_10k: Some(11), win_diff_pp: Some(0.010148), posterior_pp: Some(1.30902), posterior_se_pp: Some(12.141457), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.239, win_z: -0.632, share_delta_pp: -0.104, share_z: -1.317, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "loyalty-rate-alarm", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(5), wins_prior_10k: Some(38), win_diff_pp: Some(0.752269), posterior_pp: Some(39.929305), posterior_se_pp: Some(9.323774), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.207, win_z: 0.473, share_delta_pp: 0.188, share_z: 2.083, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "maintenance-aware-deck", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(61), wins_prior_10k: None, win_diff_pp: Some(1.229909), posterior_pp: Some(61.49546), posterior_se_pp: Some(19.045342), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.23, win_z: 3.229, share_delta_pp: 0.341, share_z: 4.381, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
@@ -2599,7 +2631,7 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "recon-replacement", verdict: Verdict::Helps, default_on: false, wins_last_10k: Some(36), wins_prior_10k: Some(30), win_diff_pp: Some(0.956553), posterior_pp: Some(50.640837), posterior_se_pp: Some(10.654421), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.454, win_z: 3.362, share_delta_pp: 0.418, share_z: 4.632, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "recorded-tactical-step", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(11), wins_prior_10k: Some(18), win_diff_pp: Some(0.321794), posterior_pp: Some(16.717609), posterior_se_pp: Some(8.50066), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.444, win_z: 1.021, share_delta_pp: 0.084, share_z: 0.936, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "relief-targets-the-siege", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(18), wins_prior_10k: Some(6), win_diff_pp: Some(0.191188), posterior_pp: Some(9.598962), posterior_se_pp: Some(8.511735), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.71, win_z: 1.628, share_delta_pp: 0.013, share_z: 0.138, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "religion-sues-peace", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(5), wins_prior_10k: Some(-18), win_diff_pp: Some(0.120977), posterior_pp: Some(6.548389), posterior_se_pp: Some(8.778382), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.091, win_z: 0.238, share_delta_pp: -0.006, share_z: -0.074, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "religion-sues-peace", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(5), wins_prior_10k: Some(-18), win_diff_pp: Some(0.120977), posterior_pp: Some(6.548389), posterior_se_pp: Some(8.778382), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.091, win_z: 0.238, share_delta_pp: -0.006, share_z: -0.074, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "religious-defence-scales", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(12), wins_prior_10k: Some(-8), win_diff_pp: Some(0.01249), posterior_pp: Some(-0.269738), posterior_se_pp: Some(12.17978), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.238, win_z: 0.619, share_delta_pp: -0.063, share_z: -0.802, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "religious-units-heal-first", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(5), wins_prior_10k: Some(12), win_diff_pp: Some(0.177982), posterior_pp: Some(9.256103), posterior_se_pp: Some(11.985282), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.105, win_z: 0.274, share_delta_pp: 0.009, share_z: 0.109, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "research-tier-premium", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(29), wins_prior_10k: Some(-6), win_diff_pp: Some(0.191249), posterior_pp: Some(9.651653), posterior_se_pp: Some(17.243946), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.575, win_z: 1.503, share_delta_pp: 0.079, share_z: 1.01, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
