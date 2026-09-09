@@ -44862,10 +44862,8 @@ fn the_move_refusal_break_gene_off_records_and_bars_nothing() {
     assert!(!ai.base.move_refusal_blocked(&g, uid));
 }
 
-/// The Settler half: a frozen Settler does not merely bend its route — its
-/// destination is retired through the same dead-site machinery a watchdog
-/// arrival uses, so the chooser must pick a site the refused approach does
-/// not serve.
+/// A city site that is itself the refused tile has no alternate approach.
+/// It is deferred until the host refusal expires.
 #[test]
 fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
     let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
@@ -44883,11 +44881,7 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
         .into_iter()
         .find(|pos| *pos != here)
         .expect("a neighboring tile");
-    let target = g
-        .wdisk(here, 5)
-        .into_iter()
-        .find(|pos| g.wdist(*pos, here) >= 4)
-        .expect("a distant destination");
+    let target = step; // The unavailable tile is itself the city site.
     ai.settler_targets.insert(settler, target);
     ai.base
         .move_refusal_blocks
@@ -47199,4 +47193,25 @@ fn live_science_peace_offer_keeps_the_war_and_threats_until_host_acceptance() {
     science.advanced_diplomacy(&mut game, 0, &plan);
     assert!(!game.is_at_war(0, 1));
     assert!(!science.peace_offers.contains(&1));
+}
+
+#[test]
+fn scout_first_opening_registry_toggles_both_governors() {
+    let gene = crate::ai::GENES
+        .iter()
+        .find(|gene| gene.tag == "scout-first-opening")
+        .unwrap();
+    assert!(gene.opt_in());
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
+    assert!(!AdvancedAi::legacy().scout_first_opening);
+    ai.disable_recon_replacement();
+    (gene.enable)(&mut ai);
+    assert!(ai.scout_first_opening);
+    assert!(ai.base.scout_first_opening);
+    assert!(!ai.base.recon_replacement);
+    (gene.disable)(&mut ai);
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
 }

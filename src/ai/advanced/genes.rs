@@ -2140,6 +2140,8 @@ pub const GENES: &[Gene] = &[
     // read +0.42 techs at t150 (z +5.6) and -0.48 pp wins on the 2026-09-08
     // screen: more techs, the wrong ones. See `advanced/boost_research.rs`.
     Gene { tag: "boost-first-research-2", field: "boost_first_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_first_research_2, disable: AdvancedAi::disable_boost_first_research_2 },
+    // One safe first-slot Scout, independent of later recon replacement.
+    Gene { tag: "scout-first-opening", field: "scout_first_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_scout_first_opening, disable: AdvancedAi::disable_scout_first_opening },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

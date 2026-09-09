@@ -1713,6 +1713,8 @@ impl SettlementAtlas {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TurnStartHostile {
     id: u32,
+    host_key: i64,
+    owner: usize,
     pos: Pos,
     /// Tiles the unit can enter next turn: its movement, rounded up.
     capture_reach: i32,
@@ -3265,6 +3267,8 @@ pub struct AdvancedAi {
     /// ordinary ranking fill the opening. The baseline governor owns the
     /// choice; this flag makes it a screenable AdvancedAI gene.
     pub capital_settler_after_completion: bool,
+    /// Build one opening Scout when the capital is safe and lacks recon.
+    pub scout_first_opening: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -6867,6 +6871,7 @@ mod wonder_sites;
 
 mod science_endgame;
 mod science_victory_drive;
+mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
@@ -6901,6 +6906,8 @@ pub(super) mod rapid_city_expansion;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// Route around a host-refused step before discarding its city destination.
+mod settler_route_recovery;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -7544,6 +7551,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             land_grab: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -7902,6 +7910,8 @@ impl AdvancedAi {
             }
             self.turn_start_hostiles.push(TurnStartHostile {
                 id: unit.id,
+                host_key: hostile_memory_key(g, unit),
+                owner: unit.owner,
                 pos: unit.pos,
                 capture_reach: spec.moves.ceil() as i32,
                 strength: crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
@@ -29095,7 +29105,10 @@ impl AdvancedAi {
     /// still makes progress; if none exists, hold and let the target search
     /// reconsider rather than donating the settler to the threat.
     fn settler_step_toward_safe(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
-        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
+        let Some(waypoint) = self.settler_refusal_waypoint(g, uid, target) else {
+            return false;
+        };
+        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, waypoint)
     }
 
     /// Move either a Settler or the military leader of its linked formation
@@ -38820,19 +38833,13 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
-        // `live-move-refusal-break`: a Settler whose step the host has proved
-        // refused (see `BasicAi::judge_move_refusals`) does not merely bend
-        // its route — its destination goes through the same dead-site
-        // machinery a watchdog arrival uses, so the target chooser must pick
-        // a site the frozen approach does not serve. Bending alone can walk
-        // the same unreachable site from another angle for the whole bar.
+        // A host-refused step first asks for a detour. Only sites with no
+        // remaining route are deferred, and only for the refusal's lifetime.
         self.retire_frozen_settler_targets(g);
     }
 
-    /// `live-move-refusal-break`'s Settler half: a destination whose approach
-    /// the host has proved refused is set aside through the dead-site
-    /// machinery, exactly as a watchdog arrival is, so the target chooser
-    /// must pick a site the frozen approach does not serve.
+    /// Retain reachable city sites across replans; a remembered refusal must
+    /// not retire every new target for thirty turns without attempting it.
     fn retire_frozen_settler_targets(&mut self, g: &Game) {
         if !self.live_move_refusal_break {
             return;
@@ -38841,20 +38848,25 @@ impl AdvancedAi {
             .settler_targets
             .keys()
             .copied()
-            .filter(|uid| self.base.move_refusal_blocked(g, *uid))
+            .filter(|uid| {
+                self.base.move_refusal_blocked(g, *uid)
+                    && self
+                        .settler_refusal_waypoint(g, *uid, self.settler_targets[uid])
+                        .is_none()
+            })
             .collect();
         for uid in frozen {
             let Some(target) = self.settler_targets.remove(&uid) else {
                 continue;
             };
             self.settler_relaxed_targets.remove(&uid);
-            self.settler_dead_sites.entry(uid).or_default().insert(
-                target,
-                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-            );
+            self.settler_dead_sites
+                .entry(uid)
+                .or_default()
+                .insert(target, self.base.move_refusal_blocks[&uid].1);
             think!(self.journal(), Expansion, Detail,
                    "Settler retires a destination the host will not walk it toward";
-                   "its issued step was refused on consecutive turns without the unit \
+                   "no route avoids the step refused on consecutive turns without the unit \
                     moving, so {target:?} is set aside and a fresh site is chosen";
                    target);
         }
