@@ -4101,6 +4101,22 @@ impl AdvancedAi {
         self.culture_threat_early = false;
     }
 
+    /// Rank met majors by science and alliance feasibility, lead with the
+    /// declared friendship, take the Research Alliance the moment it is
+    /// legal, pay a premium for the first route to that ally while its level
+    /// still climbs, and want the international-route science card. See
+    /// `advanced/research_alliance.rs`. Opt-in gene
+    /// `research-alliance-first`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_research_alliance_first(&mut self) {
+        self.research_alliance_first = true;
+    }
+
+    /// The twin of `enable_research_alliance_first`.
+    pub fn disable_research_alliance_first(&mut self) {
+        self.research_alliance_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

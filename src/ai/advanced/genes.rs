@@ -2162,6 +2162,14 @@ pub const GENES: &[Gene] = &[
     // Version two also withdraws healthy units exposed to a nominal lethal
     // shot from one recently observed gun; v1 remains the deployed control.
     Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
+    // Rank met majors by science and alliance feasibility, lead with the
+    // declared friendship, take the Research Alliance the moment it is legal,
+    // pay a premium for the first route to that ally while its level still
+    // climbs, and want the international-route science card. At Emperor and
+    // above every rival yield carries a +16..+32 percent handicap; an
+    // alliance's shared tech boosts and its level-three 10 percent of the
+    // ally's science do not. See `advanced/research_alliance.rs`.
+    Gene { tag: "research-alliance-first", field: "research_alliance_first", kind: Kind::OptIn, enable: AdvancedAi::enable_research_alliance_first, disable: AdvancedAi::disable_research_alliance_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

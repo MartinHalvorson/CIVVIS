@@ -5859,6 +5859,16 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Rank met majors by science and alliance feasibility, lead with the
+    /// declared friendship, take the Research Alliance the moment it is
+    /// legal, pay a premium for the first route to that ally while its level
+    /// is still climbing, and want the international-route science card.
+    /// Opt-in gene `research-alliance-first`; see
+    /// `advanced/research_alliance.rs`.
+    research_alliance_first: bool,
+    /// Who the alliance desk has already asked, and when. Present only while
+    /// `research_alliance_first` is on; see `advanced/research_alliance.rs`.
+    research_alliance: Option<ResearchAllianceDesk>,
     /// Opt-in governor relocation; see `governor_dividends`.
     reyna_follows_revenue: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
@@ -6977,6 +6987,11 @@ pub mod commitments;
 /// reach without a melee unit beside it. Opt-in gene `wounded-out-of-reach`.
 /// See `advanced/wounded_out_of_reach.rs`.
 mod wounded_out_of_reach;
+/// The alliance an Emperor handicap cannot deny us: rank met majors by
+/// science, lead with the declared friendship, take the Research Alliance,
+/// and feed its level with routes. Opt-in gene `research-alliance-first`.
+mod research_alliance;
+use research_alliance::ResearchAllianceDesk;
 
 impl AdvancedAi {
     /// Production Advanced: the confirmed live-policy and retained
@@ -7847,6 +7862,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            research_alliance_first: false,
+            research_alliance: None,
             reyna_follows_revenue: false,
             pingala_follows_research: false,
             research_building_catchup: false,
@@ -15639,6 +15656,14 @@ impl AdvancedAi {
         let culture_defense_cards = self.culture_defense_cards(g, pid);
         desired.retain(|card| !culture_defense_cards.contains(card));
         desired.splice(0..0, culture_defense_cards.iter().copied());
+        // `research-alliance-first`: while such an alliance stands, the
+        // international-route science card is wanted ahead of the plan's
+        // ordinary portfolio — the routes that raise the alliance level are
+        // international by construction. Empty off. See
+        // `advanced/research_alliance.rs`.
+        let research_alliance_cards = self.research_alliance_cards(g, pid);
+        desired.retain(|card| !research_alliance_cards.contains(card));
+        desired.splice(0..0, research_alliance_cards.iter().copied());
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -18153,6 +18178,12 @@ impl AdvancedAi {
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
         self.coalition_alliance_step(g, pid);
+        // `research-alliance-first`: the friendship, then the Research
+        // Alliance, with the best science partner we can actually reach —
+        // ahead of the stock twelve-turn cadence, which would otherwise take
+        // the alliance slot for the plan's own kind. See
+        // `advanced/research_alliance.rs`.
+        self.research_alliance_step(g, pid);
         self.propose_strategic_alliance(g, pid, plan, denied_partner);
         // Relationship mechanics must be part of a strategic AI turn too.
         // Send one mission to the best non-hostile major, preferring the
@@ -33624,6 +33655,10 @@ impl AdvancedAi {
                 value += 18.0;
             }
         }
+        // `research-alliance-first`: the first route to an ally still short
+        // of the level that shares science, priced by what that level is
+        // worth. Zero off. See `advanced/research_alliance.rs`.
+        value += self.research_alliance_route_premium(g, pid, city.owner);
         let objective = self
             .victory_target
             .map(VictoryTarget::strategy)

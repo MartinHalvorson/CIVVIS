@@ -177,6 +177,14 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version \| Total versions |
+|---|---|---|---:|
+| `research-alliance-first` | off (unmeasured) | Rank met majors by science and alliance feasibility, lead with the declared friendship, take the Research Alliance the moment it is legal, pay a premium for the first route to that ally while its level still climbs, and want the international-route science card. | 1 \| 1 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:
