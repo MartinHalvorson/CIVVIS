@@ -350,7 +350,7 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('emit("emergency_defender_preserved", {', source)
         self.assertIn('return true, "finishing_defender_preserved";', source)
         self.assertLess(
-            source.index('if immediateThreat and finishingDefender then'),
+            source.index('if not cfg.CivvisDecides and immediateThreat and finishingDefender then'),
             source.index('civvisBuild[cityId] = resolved;'),
             "the finishing defender must be preserved before the next-build memo can replace it",
         )
