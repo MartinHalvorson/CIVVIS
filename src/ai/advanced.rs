@@ -7264,6 +7264,7 @@ impl AdvancedAi {
     /// different unit than it did last turn.
     pub fn forget_unit_memory(&mut self) {
         self.base.forget_unit_memory();
+        self.battle_planner_recovering.clear();
         // A missing previous board can also mean that a new live game is
         // starting. Do not carry a city's old idle debt into that game.
         self.idle_production_streak.clear();
@@ -7303,6 +7304,14 @@ impl AdvancedAi {
     /// wander and what makes the livelock detector unreachable in the Civ 6 bridge.
     pub fn remap_unit_memory(&mut self, map: &BTreeMap<u32, u32>) {
         self.base.remap_unit_memory(map);
+        // Recovery follows the host unit through a fresh-board rebuild. An
+        // old native id can now belong to a healthy survivor, while a missing
+        // mapping means the recovering unit is no longer on the host board.
+        self.battle_planner_recovering = self
+            .battle_planner_recovering
+            .iter()
+            .filter_map(|uid| map.get(uid).copied())
+            .collect();
         let remap = |old: &BTreeMap<u32, Pos>| -> BTreeMap<u32, Pos> {
             old.iter()
                 .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
