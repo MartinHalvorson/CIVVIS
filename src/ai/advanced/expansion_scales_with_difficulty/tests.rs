@@ -40,7 +40,14 @@ fn the_gene_is_registered_opt_in_and_ships_off_with_twin_toggles() {
 fn the_level_is_the_distance_above_prince_and_the_target_is_the_band_plus_it() {
     // `data/difficulties.json` orders Settler 0 through Deity 7, Prince 3.
     let seen: Vec<(usize, usize, usize)> = [
-        "settler", "chieftain", "warlord", "prince", "king", "emperor", "immortal", "deity",
+        "settler",
+        "chieftain",
+        "warlord",
+        "prince",
+        "king",
+        "emperor",
+        "immortal",
+        "deity",
     ]
     .into_iter()
     .map(|rung| {
@@ -51,12 +58,12 @@ fn the_level_is_the_distance_above_prince_and_the_target_is_the_band_plus_it() {
     assert_eq!(
         seen,
         vec![
-            (0, 5, 7), // Settler   — below Prince, the measured band exactly
-            (0, 5, 7), // Chieftain
-            (0, 5, 7), // Warlord
-            (0, 5, 7), // Prince    — the unhandicapped reference rung
-            (1, 6, 8), // King      — the rung the 4-6 corpus was measured on
-            (2, 7, 9), // Emperor   — rivals at +16% yields and a free Settler
+            (0, 5, 7),  // Settler   — below Prince, the measured band exactly
+            (0, 5, 7),  // Chieftain
+            (0, 5, 7),  // Warlord
+            (0, 5, 7),  // Prince    — the unhandicapped reference rung
+            (1, 6, 8),  // King      — the rung the 4-6 corpus was measured on
+            (2, 7, 9),  // Emperor   — rivals at +16% yields and a free Settler
             (3, 8, 10), // Immortal
             (4, 9, 10), // Deity    — WIDE_CAP holds the second target at ten
         ],
@@ -100,7 +107,10 @@ fn the_pace_ramps_to_the_rung_target_then_on_to_the_second_target() {
     let band = AdvancedAi::expansion_band_turn(&g);
     let deadline = ai.expansion_deadline_turn(&g);
     let horizon = ai.expansion_cadence_horizon(&g);
-    assert!(band < deadline && deadline < horizon, "two ordered horizons");
+    assert!(
+        band < deadline && deadline < horizon,
+        "two ordered horizons"
+    );
     assert_eq!(horizon, 100, "turn 100 of the ladder's 250-turn clock");
 
     g.turn = 0;
@@ -193,7 +203,11 @@ fn the_wide_pipeline_counts_founded_cities_and_stops_at_two_slots() {
         "the city target stays the hard cap"
     );
     g.turn = 101;
-    assert_eq!(ai.expansion_wide_pipeline(&g, 9, 1, 0), None, "past horizon");
+    assert_eq!(
+        ai.expansion_wide_pipeline(&g, 9, 1, 0),
+        None,
+        "past horizon"
+    );
 }
 
 #[test]
