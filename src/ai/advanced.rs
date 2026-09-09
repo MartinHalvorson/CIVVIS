@@ -4919,6 +4919,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
+    /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
+    culture_threat_early: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     culture_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -7652,6 +7656,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,
             detour_keeps_the_site_worth: false,
@@ -16021,6 +16026,16 @@ impl AdvancedAi {
         } else if denied_partner {
             return -1_000.0;
         }
+        // `culture-threat-early`: passage is the one thing a proposal can
+        // ask of us that finances a rival's culture finish; a threat's
+        // offer of it is refused outright. See `advanced/culture_strategy.rs`.
+        if deal.open_borders
+            && !deal.peace
+            && self.culture_threat_early
+            && self.culture_trade_threats(g, pid).contains(&partner)
+        {
+            return -1_000.0;
+        }
         if deal.open_borders {
             value += match plan.strategy {
                 GrandStrategy::Culture => 70.0,
@@ -16110,7 +16125,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.item == "open_borders"
                         && deal.direction == "buy"
@@ -16138,7 +16153,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.category == "great_work"
                         && deal.direction == "buy"
@@ -16167,7 +16182,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
                         && deal.my_value >= 2.0
@@ -16192,7 +16207,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .max_by(|left, right| {
                     self.base
                         .deal_objective(left)
@@ -18035,6 +18050,13 @@ impl AdvancedAi {
         // reserved; trade resumes immediately when the appointment ends.
         if self.war_plan.is_none() {
             self.strategic_bilateral_trade(g, pid, denied_trade_partner, plan.strategy);
+        }
+        // `culture-threat-early`: a culture threat is denounced. See
+        // `advanced/culture_strategy.rs`.
+        if let Some(rival) = self.culture_threat_denunciation(g, pid) {
+            think!(self.journal(), Diplomacy, Decision,
+                   "Denouncing {}", g.players[rival].civ;
+                   "their tourism is a culture threat");
         }
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See

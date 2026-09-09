@@ -2142,6 +2142,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "boost-first-research-2", field: "boost_first_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_first_research_2, disable: AdvancedAi::disable_boost_first_research_2 },
     // One safe first-slot Scout, independent of later recon replacement.
     Gene { tag: "scout-first-opening", field: "scout_first_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_scout_first_opening, disable: AdvancedAi::disable_scout_first_opening },
+    // The culture defence armed at 30 percent of the victory bar instead of
+    // 50, no sale of any kind to the threatening rival, and a denunciation.
+    // The Emperor ladder lost most games to a rival culture finish at
+    // t155-208, one with the 50-percent defence in place. See
+    // `advanced/culture_strategy.rs`.
+    Gene { tag: "culture-threat-early", field: "culture_threat_early", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_threat_early, disable: AdvancedAi::disable_culture_threat_early },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
