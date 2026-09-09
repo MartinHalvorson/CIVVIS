@@ -1045,6 +1045,43 @@ fn doomed_shooters(
 }
 
 impl AdvancedAi {
+    /// Apply the selected survival policy to a live bridge finishing volley.
+    /// The bridge commits these actions before `take_turn`, so the ordinary
+    /// battle planner cannot protect their strikers afterwards. Recheck the
+    /// whole resulting board: a later friendly kill can remove an earlier
+    /// striker's reply threat. Off, neither the actions nor the board are read.
+    pub fn live_finishing_actions_survive<'a>(
+        &self,
+        before: &Game,
+        pid: usize,
+        actions: impl IntoIterator<Item = &'a Action>,
+    ) -> bool {
+        if !self.doomed_blow_veto && !self.doomed_blow_veto_2 {
+            return true;
+        }
+        let mut after = before.speculative_clone();
+        let mut strikers = BTreeSet::new();
+        for action in actions {
+            if after.apply(pid, action).is_err() {
+                return false;
+            }
+            if let Action::Attack { unit, .. } | Action::Ranged { unit, .. } = action {
+                strikers.insert(*unit);
+            }
+        }
+        let mut field = DangerField::with_reach(&after, pid, self.strike_reach);
+        strikers.into_iter().all(|uid| {
+            after.units.get(&uid).is_some_and(|unit| {
+                let incoming = field.danger(unit.pos, uid);
+                let started_healthy = before
+                    .units
+                    .get(&uid)
+                    .is_some_and(|unit| unit.hp >= WOUNDED_STRIKER_HP);
+                incoming < f64::from(unit.hp) && (started_healthy || incoming <= NO_DANGER)
+            })
+        })
+    }
+
     /// Whether the battle plan has already ordered this unit this turn, so
     /// the per-unit ladder leaves it where the plan put it.
     pub(super) fn battle_planner_claims(&self, uid: u32) -> bool {
