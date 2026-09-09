@@ -175,6 +175,7 @@ impl AdvancedAi {
     /// to a tile and the spy has to be posted to a city.
     pub(crate) fn science_denial_pad(g: &Game, pid: usize, rival: usize) -> Option<(u32, Pos)> {
         let explored = &g.players[pid].explored;
+        let _memo = g.query_memo();
         g.player_city_ids(rival)
             .into_iter()
             .filter_map(|cid| {
@@ -299,24 +300,22 @@ impl AdvancedAi {
 
     // ---- Rung 2: espionage ------------------------------------------------
 
+    /// The launch cities of every threat: the spy pass reads this once a turn
+    /// rather than per candidate city, because the threat model walks every
+    /// rival's cities. Empty when the gene is off.
+    pub(crate) fn science_denial_pad_cities(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
+        self.science_threats(g, pid)
+            .into_iter()
+            .filter_map(|threat| threat.pad)
+            .map(|(cid, _)| cid)
+            .collect()
+    }
+
     /// Rung 2: what a spy posting to `cid` is worth beyond the stock table.
     /// Only a threat's launch city earns it, so a Spaceport belonging to a
     /// rival that is not racing is still valued exactly as before.
-    pub(crate) fn science_denial_spy_assignment_bonus(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-    ) -> i32 {
-        if !self.science_threat_denial {
-            return 0;
-        }
-        let pads_wanted = self
-            .science_threats(g, pid)
-            .into_iter()
-            .filter_map(|threat| threat.pad)
-            .any(|(pad_city, _)| pad_city == cid);
-        if pads_wanted {
+    pub(crate) fn science_denial_spy_assignment_bonus(pads: &BTreeSet<u32>, cid: u32) -> i32 {
+        if pads.contains(&cid) {
             DENIAL_SPY_ASSIGN_PRIORITY
         } else {
             0
@@ -329,16 +328,11 @@ impl AdvancedAi {
     /// so it is the mission this rung sends. Every other mission, and every
     /// city that is not a threat's, scores exactly as before.
     pub(crate) fn science_denial_spy_mission_bonus(
-        &self,
-        g: &Game,
-        pid: usize,
+        threats: &BTreeSet<usize>,
         city_owner: usize,
         mission: &str,
     ) -> f64 {
-        if !self.science_threat_denial || mission != "disrupt_rocketry" {
-            return 0.0;
-        }
-        if self.science_threat_seats(g, pid).contains(&city_owner) {
+        if mission == "disrupt_rocketry" && threats.contains(&city_owner) {
             DENIAL_SPY_MISSION_PRIORITY
         } else {
             0.0
@@ -419,10 +413,7 @@ impl AdvancedAi {
             return None;
         }
         let (target, pad) = self.science_denial_raid_pad(g, pid)?;
-        if !self
-            .science_denial_raid_party(g, pid, pad)
-            .contains(&uid)
-        {
+        if !self.science_denial_raid_party(g, pid, pad).contains(&uid) {
             return None;
         }
         let here = g.units[&uid].pos;
@@ -434,9 +425,21 @@ impl AdvancedAi {
                    "Pillaging the Spaceport of {}", g.players[target].civ;
                    "a pillaged pad runs no space project until it is repaired";
                    pad);
-            return Some(g.apply(pid, &Action::Pillage { unit: uid }).is_ok());
+            let pillaged = g.apply(pid, &Action::Pillage { unit: uid }).is_ok();
+            if pillaged {
+                // The seat's own record of the rung, beside `denial_wars`, so
+                // a screen row can say whether the raid ever reached a pad
+                // rather than only whether the gene was on.
+                *g.players[pid]
+                    .counters
+                    .entry("denial_pillages".to_string())
+                    .or_insert(0) += 1;
+            }
+            return Some(pillaged);
         }
-        let next = g.route_step(uid, pad, 0).filter(|next| g.can_move(uid, *next))?;
+        let next = g
+            .route_step(uid, pad, 0)
+            .filter(|next| g.can_move(uid, *next))?;
         think!(self.journal(), Military, Decision,
                "{} marches on the Spaceport of {}", crate::reasoning::plain(&g.units[&uid].kind), g.players[target].civ;
                "{} tiles from the pad", g.wdist(here, pad);

@@ -361,55 +361,98 @@ fn the_threats_pad_is_the_spy_posting_and_the_disruption_outranks_the_boost() {
     let (pad_city, _) = give_pad(&mut g, 1);
     let bystander = g.player_city_ids(2)[0];
 
+    let pads = ai.science_denial_pad_cities(&g, 0);
+    let seats = ai.science_threat_seats(&g, 0);
+    assert_eq!(pads, BTreeSet::from([pad_city]));
+    assert_eq!(seats, BTreeSet::from([1]));
     assert_eq!(
-        ai.science_denial_spy_assignment_bonus(&g, 0, pad_city),
+        AdvancedAi::science_denial_spy_assignment_bonus(&pads, pad_city),
         DENIAL_SPY_ASSIGN_PRIORITY
     );
-    assert_eq!(ai.science_denial_spy_assignment_bonus(&g, 0, bystander), 0);
     assert_eq!(
-        AdvancedAi::new().science_denial_spy_assignment_bonus(&g, 0, pad_city),
-        0,
+        AdvancedAi::science_denial_spy_assignment_bonus(&pads, bystander),
+        0
+    );
+    assert_eq!(
+        AdvancedAi::new().science_denial_pad_cities(&g, 0),
+        BTreeSet::new(),
         "off, the stock assignment table decides"
     );
 
     assert_eq!(
-        ai.science_denial_spy_mission_bonus(&g, 0, 1, "disrupt_rocketry"),
+        AdvancedAi::science_denial_spy_mission_bonus(&seats, 1, "disrupt_rocketry"),
         DENIAL_SPY_MISSION_PRIORITY
     );
     assert_eq!(
-        ai.science_denial_spy_mission_bonus(&g, 0, 1, "steal_tech_boost"),
+        AdvancedAi::science_denial_spy_mission_bonus(&seats, 1, "steal_tech_boost"),
         0.0,
         "only the launch sabotage is promoted"
     );
     assert_eq!(
-        ai.science_denial_spy_mission_bonus(&g, 0, 2, "disrupt_rocketry"),
+        AdvancedAi::science_denial_spy_mission_bonus(&seats, 2, "disrupt_rocketry"),
         0.0,
         "a Spaceport that is not racing is an ordinary target"
     );
     assert_eq!(
-        AdvancedAi::new().science_denial_spy_mission_bonus(&g, 0, 1, "disrupt_rocketry"),
-        0.0
+        AdvancedAi::science_denial_spy_mission_bonus(&BTreeSet::new(), 1, "disrupt_rocketry"),
+        0.0,
+        "off, the threat set is empty and the bonus is nothing"
     );
 }
 
 /// The bonus has to survive the success-chance multiplication the spy pass
-/// applies, or promoting it changes nothing. Base chances are 0.20 for
-/// `disrupt_rocketry` and 0.35 for `steal_tech_boost` (`spy_mission_spec`);
-/// the stock Science values are 290 and 320.
+/// applies, or promoting it changes nothing. The chances come from the engine
+/// (`spy_success_chance`), not from this test; the two stock values are the
+/// Science rows of the table in `advanced_spies`.
 #[test]
 fn the_disruption_bonus_clears_the_success_chance_gap() {
-    const DISRUPT_CHANCE: f64 = 0.20;
-    const BOOST_CHANCE: f64 = 0.35;
+    /// `(GrandStrategy::Science, "disrupt_rocketry")` in `advanced_spies`.
     const STOCK_DISRUPT: f64 = 290.0;
+    /// `(GrandStrategy::Science, "steal_tech_boost")` in `advanced_spies`.
     const STOCK_BOOST: f64 = 320.0;
+
+    let mut g = board();
+    let (pad_city, pad) = give_pad(&mut g, 1);
+    g.spies.insert(
+        1,
+        crate::game::Spy {
+            id: 1,
+            owner: 0,
+            level: 1,
+            promotions: BTreeSet::new(),
+            city: Some(pad_city),
+            ready_turn: 0,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        },
+    );
+    let chance = |kind: &str| {
+        g.spy_success_chance(
+            1,
+            &crate::game::SpyMission {
+                kind: kind.to_string(),
+                city: pad_city,
+                target: pad,
+                started: g.turn,
+                ends: g.turn,
+            },
+        )
+    };
+    let disrupt = chance("disrupt_rocketry");
+    let boost = chance("steal_tech_boost");
     assert!(
-        STOCK_DISRUPT * DISRUPT_CHANCE < STOCK_BOOST * BOOST_CHANCE,
+        disrupt > 0.0 && disrupt < boost,
+        "the launch sabotage is the harder mission ({disrupt} against {boost})"
+    );
+    assert!(
+        STOCK_DISRUPT * disrupt < STOCK_BOOST * boost,
         "the stock table never selects the disruption"
     );
     assert!(
-        (STOCK_DISRUPT + DENIAL_SPY_MISSION_PRIORITY) * DISRUPT_CHANCE
-            > STOCK_BOOST * BOOST_CHANCE,
-        "the denial bonus has to outweigh the halved success chance"
+        (STOCK_DISRUPT + DENIAL_SPY_MISSION_PRIORITY) * disrupt > STOCK_BOOST * boost,
+        "the denial bonus has to outweigh the lower success chance"
     );
 }
 
@@ -476,12 +519,14 @@ fn the_raid_pillages_the_pad_it_stands_on_and_marches_to_it_otherwise() {
         "a soldier on the pad pillages it"
     );
     assert!(g.map.get(pad).unwrap().pillaged);
+    assert_eq!(
+        g.players[0].counters.get("denial_pillages"),
+        Some(&1),
+        "the rung records that it reached a pad, so a screen row can see it"
+    );
 
     // A pillaged pad is finished work: the raid stands down.
-    assert_eq!(
-        ai.science_denial_raid_step(&mut g, 0, stander, &plan),
-        None
-    );
+    assert_eq!(ai.science_denial_raid_step(&mut g, 0, stander, &plan), None);
 
     // Repaired, a soldier off the pad marches on it.
     g.map.tiles.get_mut(&pad).unwrap().pillaged = false;
@@ -491,9 +536,7 @@ fn the_raid_pillages_the_pad_it_stands_on_and_marches_to_it_otherwise() {
         .into_iter()
         .find(|pos| {
             g.wdist(*pos, pad) == 3
-                && g.map
-                    .get(*pos)
-                    .is_some_and(|tile| !g.rules.is_water(tile))
+                && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
                 && g.city_at(*pos).is_none()
         })
         .expect("the fixture has a tile three steps from the pad");
@@ -600,7 +643,10 @@ fn the_denial_war_opens_only_inside_the_horizon_and_behind_our_own_finish() {
     // war is declared for has nowhere to go.
     bank_space_progress(&mut g, 0, ours, 0.0);
     assert!(ai.science_denial_war_admissible(&g, 0, &threat));
-    let padless = ScienceThreat { pad: None, ..threat };
+    let padless = ScienceThreat {
+        pad: None,
+        ..threat
+    };
     assert!(!ai.science_denial_war_admissible(&g, 0, &padless));
 
     // Already at war is rung 3's business, not rung 4's.
@@ -763,11 +809,7 @@ fn off_no_entry_point_reads_the_board() {
     assert!(off.science_threat_seats(&g, 0).is_empty());
     assert!(off.science_denial_deal_allowed(&passage_sale(1), &BTreeSet::from([1])));
     assert!(!off.science_denial_refuses_alliance(&BTreeSet::from([1]), 1));
-    assert_eq!(off.science_denial_spy_assignment_bonus(&g, 0, 1), 0);
-    assert_eq!(
-        off.science_denial_spy_mission_bonus(&g, 0, 1, "disrupt_rocketry"),
-        0.0
-    );
+    assert!(off.science_denial_pad_cities(&g, 0).is_empty());
     assert_eq!(off.science_denial_raid_step(&mut g, 0, uid, &plan), None);
     assert!(!off.science_denial_war_diplomacy(&mut g, 0));
     assert_eq!(off.science_threat_denunciation(&mut g, 0), None);
@@ -775,4 +817,3 @@ fn off_no_entry_point_reads_the_board() {
     assert!(off.peace_offers.is_empty());
     assert_eq!(GrandStrategy::Science, GrandStrategy::Science);
 }
-

@@ -22666,6 +22666,12 @@ impl AdvancedAi {
 
     fn advanced_spies(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.spy_orders_until.retain(|_, until| *until > g.turn);
+        // `science-threat-denial`: the threat model walks every rival's
+        // cities, so it is read once for the whole pass rather than per
+        // candidate city or per candidate mission. Both are empty when the
+        // gene is off. See `advanced/science_threat_denial.rs`.
+        let denial_pads = self.science_denial_pad_cities(g, pid);
+        let denial_seats = self.science_threat_seats(g, pid);
         let ids: Vec<u32> = g
             .spies
             .values()
@@ -22887,7 +22893,7 @@ impl AdvancedAi {
                         // city, at our threshold rather than at Mars. Zero
                         // when the gene is off. See
                         // `advanced/science_threat_denial.rs`.
-                        + self.science_denial_spy_mission_bonus(g, pid, defender, mission);
+                        + Self::science_denial_spy_mission_bonus(&denial_seats, defender, mission);
                         Some((
                             strategic * g.spy_success_chance(*spy, &active),
                             mission,
@@ -22915,15 +22921,11 @@ impl AdvancedAi {
                 .filter_map(|action| match action {
                     Action::AssignSpy { city, .. } if g.cities[city].owner != pid => {
                         let target = &g.cities[city];
-                        // `science-threat-denial`: the pad that is actually
-                        // going to launch is the posting. Zero when the gene
-                        // is off. See `advanced/science_threat_denial.rs`.
-                        let strategic = self.science_denial_spy_assignment_bonus(g, pid, *city)
-                            + if plan.target_player == Some(target.owner) {
-                                180
-                            } else {
-                                0
-                            } + match plan.strategy {
+                        let strategic = if plan.target_player == Some(target.owner) {
+                            180
+                        } else {
+                            0
+                        } + match plan.strategy {
                             GrandStrategy::Science => {
                                 i32::from(target.districts.contains_key(crate::name!("campus")))
                                     * 90
@@ -22958,7 +22960,12 @@ impl AdvancedAi {
                             strategic
                                 + target.pop * 8
                                 + target.districts.len() as i32 * 14
-                                + target.wonders.len() as i32 * 24,
+                                + target.wonders.len() as i32 * 24
+                                // `science-threat-denial`: the pad that is
+                                // actually going to launch is the posting.
+                                // Zero when the gene is off. See
+                                // `advanced/science_threat_denial.rs`.
+                                + Self::science_denial_spy_assignment_bonus(&denial_pads, *city),
                             std::cmp::Reverse(*city),
                             action,
                         ))

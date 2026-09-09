@@ -830,6 +830,14 @@ struct Row {
     /// nothing — these say whether it fired.
     #[serde(default)]
     raid_wars: i64,
+    /// The `science-threat-denial` gene's wars opened for a rival's launch
+    /// pad (`denial_wars`) and the pads its raid actually pillaged
+    /// (`denial_pillages`). The two expensive rungs of that gene, so a row
+    /// says whether either ever reached the board.
+    #[serde(default)]
+    denial_wars: i64,
+    #[serde(default)]
+    denial_pillages: i64,
     /// The `city-campaign` gene's plans drawn, wars found open under a plan,
     /// and planned cities taken, and the `campaign-pillage` gene's pillages
     /// (`campaign:*`, 2026-08-24).
@@ -2100,6 +2108,8 @@ fn row_for_seat(
         military: game.military_power(seat),
         civ: game.players[seat].civ.clone(),
         raid_wars: counter("raid_wars"),
+        denial_wars: counter("denial_wars"),
+        denial_pillages: counter("denial_pillages"),
         campaign_plans: counter("campaign:planned"),
         campaign_wars: counter("campaign:declared"),
         campaign_captures: counter("campaign:taken"),
@@ -6321,6 +6331,8 @@ mod tests {
             military: 0.0,
             civ: String::new(),
             raid_wars: 0,
+            denial_wars: 0,
+            denial_pillages: 0,
             campaign_plans: 0,
             campaign_wars: 0,
             campaign_captures: 0,
