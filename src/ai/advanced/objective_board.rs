@@ -70,8 +70,8 @@
 //!   board runs for every major seat.
 //! - **The record.** One "Military/Strategy" line a turn lists the top rows
 //!   and the census counts rows, forces, reassignments and rows left short;
-//!   [`AdvancedAi::requisitions`] publishes the shortfall per kind for a
-//!   production consumer (the next change — nothing reads it yet).
+//!   [`AdvancedAi::requisitions`] publishes the shortfall per kind, which
+//!   `war_policy.rs` reads for the declaration and the peace term.
 //!
 //! Priced on the arena first (`docs/DOCTRINE_ARENA.md`, "The gate for a
 //! tactical gene"); the whole-game screen is the no-harm check. See
@@ -360,8 +360,7 @@ pub struct Requisition {
     pub by_turn: Option<u32>,
     /// Our city nearest the row.
     pub city: Option<u32>,
-    /// What the row still lacks, by kind and strength — the consumer reads
-    /// the unit kind off this. See `advanced/requisitions.rs`.
+    /// What the row still lacks, by kind and strength.
     pub unmet: ForceNeed,
     /// What the forces serving the row already hold.
     pub have: ForceNeed,
@@ -1720,60 +1719,6 @@ impl AdvancedAi {
                 label: row.label.clone(),
             });
         }
-        // `requisitions`: the Deter row has no requirement for the allocation
-        // (the Reserve stands at its tile), but it is the parity gap
-        // `border_parity` used to fill on its own — with that gene the board
-        // is the single source, so the gap becomes a requisition at the
-        // contact city: the strength to `DETER_POWER_RATIO` of the rival's
-        // power, never more than `requisitions::DETER_REQUISITION_MAX`
-        // bodies. Nothing here runs with the gene off.
-        if self.requisitions {
-            if let Some(row) = rows.iter().find(|row| row.kind == ObjectiveKind::Deter) {
-                let our_cities: Vec<(u32, Pos)> = g
-                    .player_city_ids(pid)
-                    .into_iter()
-                    .map(|cid| (cid, g.cities[&cid].pos))
-                    .collect();
-                if let Some((rival, contact)) = self.deter_target(g, pid, &our_cities) {
-                    let ours = g.military_power(pid).max(1.0);
-                    let theirs = g.military_power(rival);
-                    let gap = (DETER_POWER_RATIO * theirs - ours).max(0.0);
-                    if gap > 0.0 {
-                        let mut have = ForceNeed::default();
-                        for force in forces
-                            .iter()
-                            .filter(|force| force.objective_key == ObjectiveKey::Reserve)
-                        {
-                            let part = have_of(force, &facts);
-                            have.strength += part.strength;
-                            have.melee += part.melee;
-                            have.ranged += part.ranged;
-                            have.siege += part.siege;
-                            have.bodies += part.bodies;
-                        }
-                        let count = ((gap / average_body.max(1.0)).ceil() as usize)
-                            .clamp(1, super::requisitions::DETER_REQUISITION_MAX);
-                        requisitions.push(Requisition {
-                            kind: ObjectiveKind::Deter,
-                            count,
-                            by_turn: None,
-                            city: Some(contact),
-                            unmet: ForceNeed {
-                                strength: gap,
-                                melee: 0,
-                                ranged: 0,
-                                siege: 0,
-                                bodies: 0,
-                            },
-                            have,
-                            sea_only: false,
-                            label: row.label.clone(),
-                        });
-                    }
-                }
-            }
-        }
-
         // The census and the record.
         self.census.board_rows += rows.len() as u32;
         self.census.board_forces += forces.len() as u32;

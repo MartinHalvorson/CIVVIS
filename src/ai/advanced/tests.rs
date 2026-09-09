@@ -41434,7 +41434,6 @@ fn version_two_genes_are_opt_in_and_turn_version_one_off() {
         "settler-guard-holds",
         "campus-adjacency-threshold",
         "holy-site-where-the-threat-is",
-        "naval-recon",
         "settler-target-hysteresis",
         "district-coverage",
         "power-the-laboratory",
@@ -41455,7 +41454,6 @@ fn version_two_genes_are_opt_in_and_turn_version_one_off() {
                 ai.holy_site_where_the_threat_is,
                 ai.holy_site_where_the_threat_is_2,
             ),
-            (ai.base.naval_recon, ai.base.naval_recon_2),
             (ai.settler_target_hysteresis, ai.settler_target_hysteresis_2),
             (ai.base.district_coverage, ai.base.district_coverage_2),
             (ai.power_the_laboratory, ai.power_the_laboratory_2),
@@ -41492,8 +41490,8 @@ fn version_two_genes_are_opt_in_and_turn_version_one_off() {
 }
 
 /// `naval-recon-3` is a separate, screenable land-first treatment. It
-/// replaces both earlier versions, so its one peacetime Galley cannot inherit
-/// v2's unconditional second-hull opening or preempt a missing land scout.
+/// replaces version 1, so its one peacetime Galley cannot preempt a missing
+/// land scout.
 #[test]
 fn naval_recon_three_is_opt_in_and_turns_prior_versions_off() {
     let v3 = GENES
@@ -41503,41 +41501,17 @@ fn naval_recon_three_is_opt_in_and_turns_prior_versions_off() {
     assert!(v3.opt_in() && v3.screenable() && !v3.live());
 
     let mut ai = AdvancedAi::new();
-    assert!(
-        (
-            ai.base.naval_recon,
-            ai.base.naval_recon_2,
-            ai.base.naval_recon_3
-        ) == (true, false, false)
-    );
-    ai.enable_naval_recon_2();
-    assert_eq!(
-        (
-            ai.base.naval_recon,
-            ai.base.naval_recon_2,
-            ai.base.naval_recon_3
-        ),
-        (false, true, false),
-        "v2 has one version active"
-    );
+    assert!((ai.base.naval_recon, ai.base.naval_recon_3) == (true, false));
     ai.enable_naval_recon_3();
     assert_eq!(
-        (
-            ai.base.naval_recon,
-            ai.base.naval_recon_2,
-            ai.base.naval_recon_3
-        ),
-        (false, false, true),
-        "v3 replaces both prior versions"
+        (ai.base.naval_recon, ai.base.naval_recon_3),
+        (false, true),
+        "v3 replaces version 1"
     );
     ai.disable_naval_recon_3();
     assert_eq!(
-        (
-            ai.base.naval_recon,
-            ai.base.naval_recon_2,
-            ai.base.naval_recon_3
-        ),
-        (false, false, false),
+        (ai.base.naval_recon, ai.base.naval_recon_3),
+        (false, false),
         "v3 remains independently reversible"
     );
 }
@@ -42851,91 +42825,6 @@ fn the_city_target_is_capped_by_the_sites_the_map_can_seat() {
     // No origins is no room, and no want is no work.
     assert_eq!(ai.map_settlement_room(&game, 0, &[], 16), 0);
     assert_eq!(ai.map_settlement_room(&game, 0, &[home], 0), 0);
-}
-
-/// ★★★★ AN APPOINTED OBJECTIVE IS A PERMANENT EXEMPTION FROM PEACE. The
-/// shipped fatigue clause is written `!appointed_objective && fatigued`, so a
-/// campaign that never lands keeps the empire at war for the rest of the
-/// game. Live King seat `civvis-20260826T112920Z`: 172 of 248 turns at war
-/// behind one objective appointed at turn 100 and never taken. See
-/// `AdvancedAi::peace_when_war_does_not_pay`.
-#[test]
-fn a_war_that_takes_nothing_and_cannot_be_paid_for_sues_for_peace() {
-    let (mut game, _second, their_capital) = timed_war_fixture(7);
-    // The rival needs a second city: white peace is not offered to an empire
-    // down to its last one.
-    let their_position = game.cities[&their_capital].pos;
-    found_nearby_test_city(&mut game, 1, their_position);
-    game.at_war.insert((0, 1));
-    game.at_war.insert((1, 0));
-    game.turn = 140;
-    // The live shape: a treasury that has been empty for fifty turns.
-    game.players[0].gold = 0.0;
-    game.players[0].gold_per_turn = -11.0;
-
-    // A plan with an APPOINTED objective — the case the shipped clause
-    // exempts from peace forever.
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Conquest,
-        target_player: Some(1),
-        target_city: Some(their_capital),
-        threatened_city: None,
-        desired_cities: 6,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-
-    // `appointed_objective` reads the war PLAN in its exploit phase, not the
-    // strategic plan's target city: that is the exemption under test.
-    let appointed = |game: &Game| {
-        timed_plan(
-            game,
-            their_capital,
-            crate::name!("bronze_working"),
-            crate::name!("swordsman"),
-            None,
-            None,
-            WarPhase::Exploit,
-        )
-    };
-
-    let mut shipped = AdvancedAi::new();
-    shipped.war_plan = Some(appointed(&game));
-    shipped.major_war_since = Some(game.turn - 40);
-    shipped.last_campaign_progress = game.turn - 40;
-    let mut untouched = game.clone();
-    shipped.advanced_diplomacy(&mut untouched, 0, &plan);
-    assert!(
-        !shipped.peace_offers.contains(&1),
-        "the shipped desk exempts an appointed objective from the fatigue clause"
-    );
-
-    let mut ai = AdvancedAi::new();
-    ai.enable_peace_when_war_does_not_pay();
-    ai.war_plan = Some(appointed(&game));
-    ai.major_war_since = Some(game.turn - 40);
-    ai.last_campaign_progress = game.turn - 40;
-    let mut treated = game.clone();
-    ai.advanced_diplomacy(&mut treated, 0, &plan);
-    assert!(
-        ai.peace_offers.contains(&1),
-        "a forty-turn war that has taken nothing out of an empty treasury sues for peace"
-    );
-
-    // A campaign that is actually progressing keeps its war.
-    let mut moving = AdvancedAi::new();
-    moving.enable_peace_when_war_does_not_pay();
-    moving.war_plan = Some(appointed(&game));
-    moving.major_war_since = Some(game.turn - 40);
-    moving.last_campaign_progress = game.turn;
-    let mut solvent = game.clone();
-    solvent.players[0].gold = 600.0;
-    solvent.players[0].gold_per_turn = 12.0;
-    moving.advanced_diplomacy(&mut solvent, 0, &plan);
-    assert!(
-        !moving.peace_offers.contains(&1),
-        "a paid-for campaign that is still landing blows is not interrupted"
-    );
 }
 
 /// ★★★★ THE LANE IS ASSIGNED, THE BALLOT IS SIZED BY THE WEATHER. The

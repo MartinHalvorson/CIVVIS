@@ -947,12 +947,6 @@ pub struct StrategyCensus {
     pub board_forces: u32,
     pub board_reassignments: u32,
     pub board_short_rows: u32,
-    /// `requisitions`: units started for a requisition, units bought, and
-    /// open requisitions no city could build for, summed over turns. See
-    /// `advanced/requisitions.rs`.
-    pub requisition_items: u32,
-    pub requisition_purchases: u32,
-    pub requisition_unserved: u32,
     /// `war-policy-via-board`: declarations the board's Siege bill held,
     /// and peace offers its term made. See `advanced/war_policy.rs`.
     pub war_policy_declarations_held: u32,
@@ -1048,9 +1042,6 @@ impl StrategyCensus {
         self.board_forces += other.board_forces;
         self.board_reassignments += other.board_reassignments;
         self.board_short_rows += other.board_short_rows;
-        self.requisition_items += other.requisition_items;
-        self.requisition_purchases += other.requisition_purchases;
-        self.requisition_unserved += other.requisition_unserved;
         self.war_policy_declarations_held += other.war_policy_declarations_held;
         self.war_policy_peace_offers += other.war_policy_peace_offers;
         self.expansion += other.expansion;
@@ -4967,11 +4958,6 @@ pub struct AdvancedAi {
     /// combat hooks off. One family version plays at a time. Opt-in gene
     /// `chase-every-boost-2`; see `advanced/chase_every_boost.rs`.
     chase_every_boost_2: bool,
-    /// Version 2 of `coalition-before-war`: make one strike-time joint-war
-    /// invitation to a credible partner, with only directly useful military
-    /// alliance and enemy-client Envoy setup.
-    /// Opt-in gene `coalition-before-war-2`; see `advanced/coalition.rs`.
-    coalition_before_war_2: bool,
     /// Version 3 of `coalition-before-war`: ally only with a neighbouring
     /// major already fighting our intended target. That proven second front
     /// supplies the military alliance's immediate combat bonus without a
@@ -5897,18 +5883,6 @@ pub struct AdvancedAi {
     /// exactly version one's. One family version plays at a time. Opt-in gene
     /// `recovery-reads-the-war-2`.
     recovery_reads_the_war_2: bool,
-    /// The Objective Board's shortfall reaches production and the treasury:
-    /// an idle city starts the unit a short row asks for (the best worth per
-    /// hammer of its kind, not the strongest), Gold buys the top one above
-    /// the reserve, the parity and bleeding-city defenders come from the
-    /// board's Deter and Defend rows, and `desired_military` is the board's
-    /// summed need while the land army is under it. Inert without
-    /// `objective_board`. Opt-in gene `requisitions`; see
-    /// `advanced/requisitions.rs`.
-    requisitions: bool,
-    /// This turn's requisition purchases: the one-a-turn rule and the
-    /// census. See `requisitions`.
-    requisitions_served: RefCell<requisitions::Served>,
     /// Units a siege has reserved as its taker: excluded from every other
     /// blow and move, and readable by a joint planner through
     /// `unit_is_reserved`. Empty with `siege-train` off. See
@@ -5965,25 +5939,6 @@ pub struct AdvancedAi {
     /// followed the score leader's religion, paying that rival two points
     /// each. This gene stops the spending; it cannot buy the score back.
     religion_race_is_closed: bool,
-    /// Sue for peace when the war has taken nothing and the treasury is
-    /// paying for it.
-    ///
-    /// ★★★★ AN APPOINTED OBJECTIVE IS A PERMANENT EXEMPTION FROM PEACE. The
-    /// peace desk's fatigue clause -- twenty-four turns of war and twelve
-    /// without campaign progress -- is written `!appointed_objective && ...`,
-    /// so a campaign that never lands keeps the empire at war for the rest of
-    /// the game. Live King seat `civvis-20260826T112920Z`, 2026-08-26: at war
-    /// with the Maori for 172 of 248 turns, one objective appointed at turn
-    /// 100 and never taken, an air surge appointed against a THIRD empire at
-    /// turn 103 while the treasury held nothing. All four peace requests the
-    /// seat did make were accepted -- it simply stopped asking.
-    ///
-    /// This adds the fatigue clause back without the exemption, behind two
-    /// further conditions: the empire cannot carry the war financially
-    /// (`treasury_can_carry_a_war`), or the objective has stood untouched for
-    /// [`PEACE_STALL_TURNS`]. A campaign that is actually progressing is
-    /// untouched, because `last_campaign_progress` moves when it does.
-    peace_when_war_does_not_pay: bool,
     /// The production queue pays the Envoy a city-state has promised for the
     /// unit or district family its quest names. Opt-in gene
     /// `quest-production`; see `advanced/city_state_quests.rs`.
@@ -6489,13 +6444,6 @@ const LANE_LOST_SHARE: f64 = 0.34;
 /// is roughly the march-and-siege length of one campaign at Online speed.
 const WAR_SOLVENCY_TURNS: f64 = 25.0;
 
-/// Standard turns without campaign progress after which
-/// `peace-when-the-war-does-not-pay` treats an appointed objective as a
-/// standing order nobody is executing. The shipped `fatigued` clause already
-/// waits twelve; this is the second, longer clock that overrides the
-/// appointment itself rather than deferring to it.
-const PEACE_STALL_TURNS: u32 = 30;
-
 /// The distance two counted settlement sites must stand apart before
 /// `city-target-meets-the-map` seats both. The scanner already refuses any
 /// plot within three tiles of a founded city (`city_exclusion`), so four is
@@ -6810,9 +6758,6 @@ mod siege_train;
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
 /// `advanced/objective_board.rs`.
 pub mod objective_board;
-/// The board's shortfall reaches production and the treasury. Opt-in gene
-/// `requisitions`.
-mod requisitions;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -7696,7 +7641,6 @@ impl AdvancedAi {
             doomed_blow_veto_2: false,
             chase_every_boost: false,
             chase_every_boost_2: false,
-            coalition_before_war_2: false,
             coalition_before_war_3: false,
             city_campaign_2: false,
             campus_through_expansion: false,
@@ -7818,13 +7762,10 @@ impl AdvancedAi {
             research_building_catchup_2: false,
             route_block_is_a_wait: false,
             recovery_reads_the_war_2: false,
-            requisitions: false,
-            requisitions_served: RefCell::new(requisitions::Served::default()),
             reserved_units: BTreeSet::new(),
             rapid_city_expansion_2: false,
             relief_column_marches: false,
             religion_race_is_closed: false,
-            peace_when_war_does_not_pay: false,
             quest_production: false,
             quest_trade_route: false,
             quest_boost: false,
@@ -14787,9 +14728,8 @@ impl AdvancedAi {
         !self.war_needs_a_treasury || self.treasury_can_carry_a_war(g, pid)
     }
 
-    /// The reserve question itself, with no gene attached: two genes ask it,
-    /// `war-needs-a-treasury` before declaring and
-    /// `peace-when-the-war-does-not-pay` before suing.
+    /// The reserve question itself, with no gene attached:
+    /// `war-needs-a-treasury` asks it before declaring.
     fn treasury_can_carry_a_war(&self, g: &Game, pid: usize) -> bool {
         let reserve = 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
         let gold = g.players[pid].gold;
@@ -18233,16 +18173,6 @@ impl AdvancedAi {
                         && fatigued
                         && !one_war_presses
                         && g.player_city_ids(*other).len() > 1)
-                    // See `peace_when_war_does_not_pay`: the same fatigue
-                    // clause, without the appointed-objective exemption that
-                    // kept the live King seat at war for 172 of 248 turns.
-                    || (self.peace_when_war_does_not_pay
-                        && fatigued
-                        && !one_war_presses
-                        && g.player_city_ids(*other).len() > 1
-                        && (!self.treasury_can_carry_a_war(g, pid)
-                            || g.turn.saturating_sub(self.last_campaign_progress)
-                                >= g.standard_duration(PEACE_STALL_TURNS)))
                     || envoy_reclaim.is_some()
                     || one_war_peace.is_some()
                     || science_defensive_peace)
@@ -19118,23 +19048,6 @@ impl AdvancedAi {
                 .base
                 .besieged_city_item(g, pid, city_id)
                 .or_else(|| self.native_emergency_item(g, pid, city_id))
-                // `requisitions`: a bleeding city's unit is its Defend row's
-                // requisition; the wall answer stands. See
-                // `advanced/requisitions.rs`.
-                .map(|item| match item {
-                    Item::Unit { .. } => self
-                        .requisition_item_for_city(
-                            g,
-                            pid,
-                            city_id,
-                            &[
-                                objective_board::ObjectiveKind::Defend,
-                                objective_board::ObjectiveKind::Relieve,
-                            ],
-                        )
-                        .unwrap_or(item),
-                    other => other,
-                })
             else {
                 continue;
             };
@@ -19532,27 +19445,10 @@ impl AdvancedAi {
         }) {
             return false;
         }
-        let defender = if self.requisitions_on() {
-            // `requisitions`: the Deter row's requisition names the city and
-            // the unit; without one the board sees no gap to pre-empt for.
-            // See `advanced/requisitions.rs`.
-            if self.deter_requisition_city() != Some(contact) {
-                return false;
-            }
-            match self.requisition_item_for_city(
-                g,
-                pid,
-                contact,
-                &[objective_board::ObjectiveKind::Deter],
-            ) {
-                Some(Item::Unit { unit }) => Some(unit.as_str().to_string()),
-                _ => None,
-            }
-        } else {
-            self.base
-                .best_military(g, pid, contact, Some(true))
-                .or_else(|| self.base.best_military(g, pid, contact, Some(false)))
-        };
+        let defender = self
+            .base
+            .best_military(g, pid, contact, Some(true))
+            .or_else(|| self.base.best_military(g, pid, contact, Some(false)));
         let Some(unit) = defender else {
             return false;
         };
@@ -19591,10 +19487,7 @@ impl AdvancedAi {
         if self.emergency_city_defense_purchase(g, pid, plan) {
             return true;
         }
-        // `requisitions`: the Deter row's requisition is the parity gap, and
-        // the board is the single source; the purchase runs below, once the
-        // reserve is known. See `advanced/requisitions.rs`.
-        if !self.requisitions_on() && self.border_parity_purchase(g, pid) {
+        if self.border_parity_purchase(g, pid) {
             return true;
         }
         if self.border_parity_3_purchase(g, pid) {
@@ -19626,13 +19519,6 @@ impl AdvancedAi {
         // while a city of ours is threatened or bleeding. `stock` comes back
         // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.reserve_for_the_threatened_city(g, pid, plan, reserve);
-        // `requisitions`: the highest-ranked open requisition the treasury
-        // covers above the reserve, one a turn, right behind the emergency
-        // defence. Exact no-op with the gene off. See
-        // `advanced/requisitions.rs`.
-        if self.requisition_purchase(g, pid, reserve).is_some() {
-            return true;
-        }
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -24417,10 +24303,6 @@ impl AdvancedAi {
             self.expansion_census.dispatch_calls += 1;
         }
         let mut counts = self.counts(g, pid);
-        // `requisitions`: the board assessed for this turn before its
-        // shortfall is read below; exact no-op with the gene off. See
-        // `advanced/requisitions.rs`.
-        self.requisitions_before_production(g, pid, plan);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
@@ -24583,30 +24465,6 @@ impl AdvancedAi {
                     }
                 }
             }
-            // `requisitions`: the Objective Board's shortfall is a reserve
-            // item ahead of every economic one — the row's nearest idle city
-            // starts the best worth-per-hammer unit of the kind the row
-            // lacks. Exact no-op with the gene off. See
-            // `advanced/requisitions.rs`.
-            if committed.is_none() {
-                if let Some(order) = self.requisition_production_item(g, pid, cid) {
-                    let item = Item::Unit { unit: order.unit };
-                    if g.apply(
-                        pid,
-                        &Action::Produce {
-                            city: cid,
-                            item: item.clone(),
-                        },
-                    )
-                    .is_ok()
-                    {
-                        self.requisition_started(g, &order);
-                        counts.add_item(g, &item);
-                        self.clear_idle_production_streak(cid);
-                        continue;
-                    }
-                }
-            }
             // The first usable empty trade slot is an income-producing asset,
             // not an ordinary low-value unit bid. Once immediate local defence
             // is covered, reserve it in a city that can start a safe route now.
@@ -24658,9 +24516,7 @@ impl AdvancedAi {
             // civvis-20260829T074813Z never bought under version one — at
             // t60 the seat read 0.72 of France with 158 Gold, at t90 0.55
             // with 90 — and Russia took Ostia at t102 at 81 against 208.
-            // `requisitions`: the Deter row's requisition is this gap at
-            // this city; the block above already served it.
-            if committed.is_none() && self.border_parity_2 && !self.requisitions_on() {
+            if committed.is_none() && self.border_parity_2 {
                 if let Some((_, _, _, contact)) = self.border_parity_target(g, pid) {
                     if contact == cid {
                         let defender = self
@@ -26391,11 +26247,6 @@ impl AdvancedAi {
         let land_military = counts
             .military
             .saturating_sub(counts.naval + counts.aircraft);
-        // `requisitions`: the board's summed need sizes the army while the
-        // land military is under it; `desired_military` otherwise, and with
-        // the gene off. See `advanced/requisitions.rs`.
-        let desired_military =
-            self.requisition_army_target(g, pid, desired_military, land_military);
         // Keep empty-city scoring consistent with
         // `redirect_repeatable_projects_for_force_gap`. That pass pauses an
         // existing district race when a war plan is short of land units, but

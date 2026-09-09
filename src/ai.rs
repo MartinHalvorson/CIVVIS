@@ -2476,12 +2476,6 @@ pub struct BasicAi {
     /// controllers; on for the live bridge and the native repair bundle. See
     /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
     pub(crate) naval_recon: bool,
-    /// Version 2 of `naval_recon`: two peacetime eyes instead of one while
-    /// unseen water remains. One Galley charted one coast and died; the
-    /// second hull is the other direction, and the arm is rebuilt on loss
-    /// exactly as before. Implies version 1; its enable turns version 1 off.
-    /// Opt-in gene `naval-recon-2`.
-    pub(crate) naval_recon_2: bool,
     /// Version 3 of `naval_recon`: retain one peacetime eye, but yield its
     /// idle production reservation to a simultaneously missing land scout.
     /// The wartime second-eye exception is unchanged. Opt-in gene
@@ -4953,7 +4947,6 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             recon_replacement: false,
             naval_recon: false,
-            naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
             camp_party: false,
@@ -5407,7 +5400,6 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             recon_replacement: false,
             naval_recon: false,
-            naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
             camp_party: false,
@@ -10128,9 +10120,9 @@ impl BasicAi {
     /// major naval war, retain a second eye so the fighting ship cannot make
     /// the unexplored world disappear from production's priorities.
     /// See `naval_recon`.
-    /// Any version of the naval eye. See `naval_recon_2` and `naval_recon_3`.
+    /// Any version of the naval eye. See `naval_recon_3`.
     pub(crate) fn naval_recon_on(&self) -> bool {
-        self.naval_recon || self.naval_recon_2 || self.naval_recon_3
+        self.naval_recon || self.naval_recon_3
     }
 
     /// Whether the sea arm needs its wartime redundancy. Keep this separate
@@ -10200,9 +10192,6 @@ impl BasicAi {
         let major_naval_war = self.naval_recon_major_war(g, pid);
         let arm_target = if major_naval_war {
             NAVAL_RECON_WARTIME_ARM_MAX
-        } else if self.naval_recon_2 {
-            // See `naval_recon_2`: a second peacetime eye.
-            2
         } else {
             1
         };
