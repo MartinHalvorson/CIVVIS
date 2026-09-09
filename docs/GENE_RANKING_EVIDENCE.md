@@ -186,6 +186,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `boost-planner` | off (unmeasured) | Plan the next six technologies' and four civics' boosts: classify each trigger by what it costs the plan and turn the cheap ones into at most three deadlined side objectives, each a share-of-value premium on the one production or Builder choice that fires it. | 1 \| 1 |
 | `early-conquest-opening` | off (unmeasured) | Take a small neighbour's city in the opening: a met rival's known city within twelve tiles of the capital, the capital's production reserved for three shooters and two melee bodies ahead of the second Settler, the war declared once the force is assembled and the bill covered, and no strike-force body ending its move beside unseen ground. | 1 \| 1 |
 | `expansion-scales-with-difficulty` | off (unmeasured) | Scale the opening city target, the opening deadline, the Settler cadence and the expansion cards with the difficulty rung: the measured 4-6 band is a King-level reading and every rung above it widens the rival field. | 1 \| 1 |
+| `science-denial-war` | off (unmeasured) | The pad raid and the bounded war that opens it, on top of the base denial. | 1 \| 1 |
+| `science-threat-denial` | off (unmeasured) | Deny a rival the science victory rather than only race it: the diplomatic refusals, the denunciation and one spy's disruption of the launch pad. | 1 \| 1 |
 
 ## Removed from the code
 

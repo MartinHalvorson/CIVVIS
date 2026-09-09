@@ -4150,6 +4150,36 @@ impl AdvancedAi {
         self.expansion_scales_with_difficulty = false;
     }
 
+    /// Deny a rival the science victory rather than only race it: the
+    /// diplomatic refusals, the denunciation and one spy's disruption of the
+    /// launch pad. See `advanced/science_threat_denial.rs`. Opt-in gene
+    /// `science-threat-denial`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_threat_denial(&mut self) {
+        self.science_threat_denial = true;
+    }
+
+    /// The twin of `enable_science_threat_denial`. The war rung's own flag
+    /// is left as it is; it is inert without this one.
+    pub fn disable_science_threat_denial(&mut self) {
+        self.science_threat_denial = false;
+    }
+
+    /// The pad raid and the bounded war that opens it, on top of the base
+    /// denial. Opt-in gene `science-denial-war`; it REQUIRES
+    /// `science-threat-denial` and arms it, so the tag fires on its own and a
+    /// seat that drew the war without the base still plays the whole ladder.
+    /// See `advanced/science_threat_denial.rs`.
+    pub fn enable_science_denial_war(&mut self) {
+        self.science_threat_denial = true;
+        self.science_denial_war = true;
+    }
+
+    /// The twin of `enable_science_denial_war`: the base stays as it was.
+    pub fn disable_science_denial_war(&mut self) {
+        self.science_denial_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

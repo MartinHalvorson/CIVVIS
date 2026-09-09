@@ -4948,6 +4948,8 @@ pub struct AdvancedAi {
     /// been released, and this game has had its one attempt. `false`
     /// whenever the gene is off.
     conquest_closed: bool,
+    /// The denial war `science_threat_denial` opened and has not yet closed.
+    denial_war: Option<science_threat_denial::DenialWar>,
     /// Arm the culture defence at 30 percent of the victory bar instead of
     /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
     /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
@@ -6063,6 +6065,21 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// Deny a rival the science victory rather than only race it: no new
+    /// alliance, no passage and no Great Work sold to a science threat, a
+    /// denunciation of the most pressing one, and one spy posted to its
+    /// launch city to disrupt the pad. Opt-in gene `science-threat-denial`;
+    /// see `advanced/science_threat_denial.rs`.
+    science_threat_denial: bool,
+    /// The two expensive rungs of the denial, priced apart from the base
+    /// because the first probe of all four as one tag opened 13 wars for 2
+    /// pillaged pads: a two-soldier raid that pillages the threat's pad while
+    /// we are at war, and — inside `DENIAL_WAR_LAUNCH_HORIZON` of their
+    /// finish, outside it for our own, and with the pad route-reachable —
+    /// the cheapest legal war opened for that raid and closed when it has
+    /// paid. Opt-in gene `science-denial-war`, which requires and arms
+    /// `science_threat_denial`; see `advanced/science_threat_denial.rs`.
+    science_denial_war: bool,
     /// The safe-step guard's last resort never prices the tile the unit is
     /// standing on. When a Settler's route step is over
     /// `SETTLER_STEP_RISK_LIMIT`, `settlement_unit_step_toward_safe` looks
@@ -6952,6 +6969,7 @@ mod wonder_clearance;
 mod wonder_sites;
 
 mod science_endgame;
+mod science_threat_denial;
 mod science_victory_drive;
 mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
@@ -7775,6 +7793,7 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             conquest_opening: None,
             conquest_closed: false,
+            denial_war: None,
             culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,
@@ -7924,6 +7943,8 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            science_threat_denial: false,
+            science_denial_war: false,
             standing_still_is_a_risk: false,
             strike_reach: false,
             safest_stand: false,
@@ -16292,12 +16313,19 @@ impl AdvancedAi {
             .map(VictoryTarget::strategy)
             .unwrap_or(strategy);
         let culture_threats = self.culture_trade_threats(g, pid);
+        // `science-threat-denial`: passage and Great Works are the two
+        // sales that pay a rival's space race. Empty when the gene is off.
+        // See `advanced/science_threat_denial.rs`.
+        let science_threats = self.science_threat_seats(g, pid);
         if objective == GrandStrategy::Culture && g.turn % 6 == pid as u32 % 6 {
             let best = g
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
+                .filter(|deal| {
+                    self.culture_deal_allowed(deal, &culture_threats)
+                        && self.science_denial_deal_allowed(deal, &science_threats)
+                })
                 .filter(|deal| {
                     deal.item == "open_borders"
                         && deal.direction == "buy"
@@ -16325,7 +16353,10 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
+                .filter(|deal| {
+                    self.culture_deal_allowed(deal, &culture_threats)
+                        && self.science_denial_deal_allowed(deal, &science_threats)
+                })
                 .filter(|deal| {
                     deal.category == "great_work"
                         && deal.direction == "buy"
@@ -16354,7 +16385,10 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
+                .filter(|deal| {
+                    self.culture_deal_allowed(deal, &culture_threats)
+                        && self.science_denial_deal_allowed(deal, &science_threats)
+                })
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
                         && deal.my_value >= 2.0
@@ -16371,7 +16405,7 @@ impl AdvancedAi {
             }
             return;
         }
-        if culture_threats.is_empty() {
+        if culture_threats.is_empty() && science_threats.is_empty() {
             self.base
                 .bilateral_trade_excluding(g, pid, excluded_partner);
         } else if !self.base.minor && !self.base.barb && g.turn % 6 == pid as u32 % 6 {
@@ -16379,7 +16413,10 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
+                .filter(|deal| {
+                    self.culture_deal_allowed(deal, &culture_threats)
+                        && self.science_denial_deal_allowed(deal, &science_threats)
+                })
                 .max_by(|left, right| {
                     self.base
                         .deal_objective(left)
@@ -16425,6 +16462,9 @@ impl AdvancedAi {
         if kind == "research" && g.tree_effect(pid, "research_agreements") <= 0.0 {
             return;
         }
+        // Empty when `science-threat-denial` is off, so the partner filter
+        // below is unchanged.
+        let science_threats = self.science_threat_seats(g, pid);
         if g.players[pid]
             .alliances
             .values()
@@ -16465,6 +16505,11 @@ impl AdvancedAi {
                         .unwrap_or(0.0)
                         < 75.0
                     && self.rival_victory_pressure(g, other.id).progress < 82
+                    // `science-threat-denial`: a research agreement hands a
+                    // science threat the yield it is winning with, and any
+                    // alliance makes the denial war illegal for its whole
+                    // term. See `advanced/science_threat_denial.rs`.
+                    && !self.science_denial_refuses_alliance(&science_threats, other.id)
             })
             .max_by(|left, right| {
                 let score = |other: usize| {
@@ -18230,6 +18275,13 @@ impl AdvancedAi {
                    "Denouncing {}", g.players[rival].civ;
                    "their tourism is a culture threat");
         }
+        // `science-threat-denial`: a science threat is denounced, on the
+        // same primitive. See `advanced/science_threat_denial.rs`.
+        if let Some(rival) = self.science_threat_denunciation(g, pid) {
+            think!(self.journal(), Diplomacy, Decision,
+                   "Denouncing {}", g.players[rival].civ;
+                   "their space race is a science threat");
+        }
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
@@ -18464,6 +18516,13 @@ impl AdvancedAi {
             )
         {
             self.base.levy_city_state_military(g, pid, true);
+        }
+        // `science-threat-denial`: close a denial war that has pillaged the
+        // pad, or open one on a threat about to finish. A declaration here is
+        // the turn's one declaration. See
+        // `advanced/science_threat_denial.rs`.
+        if self.science_denial_war_diplomacy(g, pid) {
+            return;
         }
         // See `opportunistic_war`: close a raid that has paid, or open one on
         // a prize the board exposes this turn. A declaration here is the
@@ -22702,6 +22761,12 @@ impl AdvancedAi {
 
     fn advanced_spies(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.spy_orders_until.retain(|_, until| *until > g.turn);
+        // `science-threat-denial`: the threat model walks every rival's
+        // cities, so it is read once for the whole pass rather than per
+        // candidate city or per candidate mission. Both are empty when the
+        // gene is off. See `advanced/science_threat_denial.rs`.
+        let denial_pads = self.science_denial_pad_cities(g, pid);
+        let denial_seats = self.science_threat_seats(g, pid);
         let ids: Vec<u32> = g
             .spies
             .values()
@@ -22915,7 +22980,15 @@ impl AdvancedAi {
                             90.0
                         } else {
                             0.0
-                        };
+                        }
+                        // `science-threat-denial`: `disrupt_rocketry` is the
+                        // model's launch sabotage — it pillages the pad and
+                        // zeroes the city's spaceport-project progress — so
+                        // it outranks every other operation in a threat's
+                        // city, at our threshold rather than at Mars. Zero
+                        // when the gene is off. See
+                        // `advanced/science_threat_denial.rs`.
+                        + Self::science_denial_spy_mission_bonus(&denial_seats, defender, mission);
                         Some((
                             strategic * g.spy_success_chance(*spy, &active),
                             mission,
@@ -22982,7 +23055,19 @@ impl AdvancedAi {
                             strategic
                                 + target.pop * 8
                                 + target.districts.len() as i32 * 14
-                                + target.wonders.len() as i32 * 24,
+                                + target.wonders.len() as i32 * 24
+                                // `science-threat-denial`: the pad that is
+                                // actually going to launch is the posting,
+                                // for one spy. Zero when the gene is off or
+                                // a spy of ours is already bound there. See
+                                // `advanced/science_threat_denial.rs`.
+                                + Self::science_denial_spy_assignment_bonus(
+                                    g,
+                                    pid,
+                                    spy_id,
+                                    &denial_pads,
+                                    *city,
+                                ),
                             std::cmp::Reverse(*city),
                             action,
                         ))
@@ -22992,7 +23077,19 @@ impl AdvancedAi {
                 .max_by_key(|(score, city, _)| (*score, *city))
                 .map(|(_, _, action)| action);
             if let Some(action) = assignment {
-                let _ = g.apply(pid, action);
+                let posted = g.apply(pid, action).is_ok();
+                // `science-threat-denial`: the seat's record of a posting to
+                // a threat's pad, so a screen row can say the espionage rung
+                // reached the board. Never taken when the gene is off, since
+                // `denial_pads` is empty then.
+                if posted
+                    && matches!(action, Action::AssignSpy { city, .. } if denial_pads.contains(city))
+                {
+                    *g.players[pid]
+                        .counters
+                        .entry("denial_spy_posts".to_string())
+                        .or_insert(0) += 1;
+                }
                 self.spy_orders_until.insert(
                     spy_id,
                     g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
@@ -37333,6 +37430,12 @@ impl AdvancedAi {
                 .pursue_capturable_civilian(g, pid, uid, decline_settlers)
         {
             return true;
+        }
+        // `science-threat-denial`: the pad raid. It runs ahead of the
+        // opportunistic raid because it is the objective a war was declared
+        // for. See `advanced/science_threat_denial.rs`.
+        if let Some(acted) = self.science_denial_raid_step(g, pid, uid, plan) {
+            return acted;
         }
         // See `opportunistic_war`: during a raid, pillage under our feet or
         // walk to the nearest prize. The adjacent capture above already took

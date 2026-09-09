@@ -830,6 +830,20 @@ struct Row {
     /// nothing — these say whether it fired.
     #[serde(default)]
     raid_wars: i64,
+    /// The science-denial rungs: `science-threat-denial`'s denunciations of
+    /// a science threat (`denial_denunciations`) and spy postings to a
+    /// threat's launch city (`denial_spy_posts`); `science-denial-war`'s
+    /// wars opened for a rival's pad (`denial_wars`) and the pads its raid
+    /// actually pillaged (`denial_pillages`). One counter per rung that
+    /// reaches the board, so a row says which of them ever did.
+    #[serde(default)]
+    denial_denunciations: i64,
+    #[serde(default)]
+    denial_spy_posts: i64,
+    #[serde(default)]
+    denial_wars: i64,
+    #[serde(default)]
+    denial_pillages: i64,
     /// The `city-campaign` gene's plans drawn, wars found open under a plan,
     /// and planned cities taken, and the `campaign-pillage` gene's pillages
     /// (`campaign:*`, 2026-08-24).
@@ -2100,6 +2114,10 @@ fn row_for_seat(
         military: game.military_power(seat),
         civ: game.players[seat].civ.clone(),
         raid_wars: counter("raid_wars"),
+        denial_denunciations: counter("denial_denunciations"),
+        denial_spy_posts: counter("denial_spy_posts"),
+        denial_wars: counter("denial_wars"),
+        denial_pillages: counter("denial_pillages"),
         campaign_plans: counter("campaign:planned"),
         campaign_wars: counter("campaign:declared"),
         campaign_captures: counter("campaign:taken"),
@@ -6387,6 +6405,10 @@ mod tests {
             military: 0.0,
             civ: String::new(),
             raid_wars: 0,
+            denial_denunciations: 0,
+            denial_spy_posts: 0,
+            denial_wars: 0,
+            denial_pillages: 0,
             campaign_plans: 0,
             campaign_wars: 0,
             campaign_captures: 0,
