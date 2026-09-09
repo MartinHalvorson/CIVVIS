@@ -13231,10 +13231,11 @@ fn host_state_step_list_is_the_recorded_order() {
             "human_seat",
             "map_script",
             "refused_site_blocks",
+            "policy_choices",
             "identity",
         ]
     );
-    assert_eq!(sync(HostPhase::Empire), ["identity"]);
+    assert_eq!(sync(HostPhase::Empire), ["policy_choices", "identity"]);
 
     // ⚠ `host_gold` sits either side of `host_maintenance` depending on the
     // pass. Both orders are what shipped, and neither helper reads what the
