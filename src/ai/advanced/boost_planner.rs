@@ -696,14 +696,20 @@ impl AdvancedAi {
         raw: f64,
         plan: &super::StrategicPlan,
     ) -> f64 {
-        if !self.boost_planner || self.boost_planner_stands_down(g, pid, Some((cid, plan))) {
+        if !self.boost_planner {
             return 0.0;
         }
-        let matched = self
-            .boost_side_objectives(g, pid)
-            .into_iter()
-            .any(|objective| Self::boost_item_satisfies(g, &objective.action, item));
-        Self::boost_premium_on(raw, matched)
+        // The match is tested first: it is a scan of at most three objectives,
+        // where the stand-down reaches the vision frame and the science
+        // drive's launch city. This runs for every candidate item in every
+        // city, every turn.
+        if !self.boost_planner_names(g, pid, |action| Self::boost_item_satisfies(g, action, item)) {
+            return 0.0;
+        }
+        if self.boost_planner_stands_down(g, pid, Some((cid, plan))) {
+            return 0.0;
+        }
+        Self::boost_premium_on(raw)
     }
 
     /// The premium a live side objective pays on a Builder job.
@@ -726,14 +732,15 @@ impl AdvancedAi {
         else {
             return 0.0;
         };
+        if !self.boost_planner_names(g, pid, |action| {
+            Self::boost_tile_satisfies(g, action, pos, improvement)
+        }) {
+            return 0.0;
+        }
         if self.boost_planner_stands_down(g, pid, None) {
             return 0.0;
         }
-        let matched = self
-            .boost_side_objectives(g, pid)
-            .into_iter()
-            .any(|objective| Self::boost_tile_satisfies(g, &objective.action, pos, improvement));
-        Self::boost_premium_on(value, matched)
+        Self::boost_premium_on(value)
     }
 
     /// The premium a live coastal-city objective pays on a settle site.
@@ -744,30 +751,45 @@ impl AdvancedAi {
         pos: Pos,
         value: f64,
     ) -> f64 {
-        if !self.boost_planner || self.boost_planner_stands_down(g, pid, None) {
+        if !self.boost_planner {
+            return 0.0;
+        }
+        if !self.boost_planner_names(g, pid, |action| *action == BoostAction::CoastalCity) {
             return 0.0;
         }
         let coastal = g
             .nbrs(pos)
             .iter()
             .any(|nb| g.map.get(*nb).is_some_and(|tile| g.rules.is_water(tile)));
-        let matched = coastal
-            && self
-                .boost_side_objectives(g, pid)
-                .iter()
-                .any(|objective| objective.action == BoostAction::CoastalCity);
-        Self::boost_premium_on(value, matched)
-    }
-
-    /// [`BOOST_PREMIUM_PCT`] of the candidate's own positive value, or
-    /// nothing. A share rather than a sum: it can re-order two choices the
-    /// planner already rated within 15 % of each other and can do nothing
-    /// else — in particular it can never lift a choice the planner priced at
-    /// or below zero.
-    fn boost_premium_on(value: f64, matched: bool) -> f64 {
-        if !matched {
+        if !coastal || self.boost_planner_stands_down(g, pid, None) {
             return 0.0;
         }
+        Self::boost_premium_on(value)
+    }
+
+    /// Does any live side objective name this decision? The frame is read in
+    /// place rather than cloned: every premium seam asks this question for
+    /// every candidate it prices.
+    fn boost_planner_names(
+        &self,
+        g: &Game,
+        pid: usize,
+        names: impl Fn(&BoostAction) -> bool,
+    ) -> bool {
+        self.boost_planner_refresh(g, pid);
+        self.boost_planner_frame
+            .borrow()
+            .objectives
+            .iter()
+            .any(|objective| names(&objective.action))
+    }
+
+    /// [`BOOST_PREMIUM_PCT`] of the candidate's own positive value. A share
+    /// rather than a sum: it can re-order two choices the planner already
+    /// rated within 15 % of each other and can do nothing else — in
+    /// particular it can never lift a choice the planner priced at or below
+    /// zero.
+    fn boost_premium_on(value: f64) -> f64 {
         value.max(0.0) * BOOST_PREMIUM_PCT / 100.0
     }
 
