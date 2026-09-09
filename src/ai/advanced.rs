@@ -2038,19 +2038,20 @@ pub struct AdvancedAi {
     /// result on resampling.
     pub settler_price: f64,
     /// How much better a candidate must be before a city abandons what it is
-    /// already building. **1.0 by default, which disables preemption entirely
-    /// and reproduces the shipped behaviour exactly.**
+    /// already building. **1.0 by default: adaptive controllers disable
+    /// preemption; named victory governors use a 25% improvement margin.**
+    /// Values above 1.0 explicitly configure the margin for either governor.
+    /// See `marginal_usefulness::production_review_margin`.
     ///
-    /// `advanced_production` skips any city whose queue is non-empty, so
-    /// `production_value` is consulted only on an idle city — this agent never
-    /// reconsiders a build once started. `expansion_funnel` measured what that
+    /// Historically `advanced_production` skipped non-empty queues, so
+    /// `production_value` was consulted only on an idle city. `expansion_funnel` measured what that
     /// costs: over 48 seats, on **25.8% of all seat-turns** the empire was
     /// short of its own planned city target, permitted a settler, had a
     /// reachable site, and every city was mid-build. The genuine valuation
     /// loss — a free city choosing something else — is only **2.6%**.
     ///
-    /// The plan above this re-assesses every 5 turns (`plan_stale`); the queue
-    /// underneath re-assesses never. Switching is close to free here because
+    /// The plan above this re-assesses every 5 turns (`plan_stale`); the
+    /// historical queue governor never re-assessed. Switching is close to free here because
     /// `City::production_progress` banks a paused build by item key, which is
     /// the Civ 6 rule and the reason a strong human switches to a settler
     /// routinely.
