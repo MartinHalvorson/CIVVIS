@@ -128,11 +128,6 @@
         16,
         26
       ],
-      "boost-wait-research": [
-        -1,
-        -14,
-        -27
-      ],
       "boost-wait-research-2": [
         2,
         50,
@@ -378,11 +373,6 @@
         5,
         1
       ],
-      "contested-suzerainty-brake": [
-        -5,
-        -56,
-        -11
-      ],
       "conversion-majority-alarm": [
         0,
         51,
@@ -462,6 +452,11 @@
         -10,
         59,
         10
+      ],
+      "district-planning-2": [
+        11,
+        -70,
+        -16
       ],
       "district-planning-3": [
         -3,
@@ -638,11 +633,6 @@
         -1,
         -6
       ],
-      "gold-for-the-young-city": [
-        -14,
-        16,
-        -16
-      ],
       "gold-income-floor": [
         -5,
         21,
@@ -707,6 +697,11 @@
         -15,
         13,
         6
+      ],
+      "improvement-housing-value": [
+        -30,
+        -10,
+        -11
       ],
       "industrial-chain-debt": [
         9,
@@ -853,6 +848,11 @@
         11,
         -6
       ],
+      "opening-warrior-recon": [
+        -36,
+        13,
+        -38
+      ],
       "opening-warrior-recon-2": [
         28,
         16,
@@ -937,6 +937,11 @@
         -9,
         -15,
         -26
+      ],
+      "rapid-city-expansion": [
+        -133,
+        -209,
+        -120
       ],
       "rapid-city-expansion-2": [
         105,
@@ -1108,6 +1113,16 @@
         1,
         16
       ],
+      "settler-screen": [
+        -18,
+        -5,
+        -26
+      ],
+      "settler-second-look": [
+        -11,
+        -27,
+        -13
+      ],
       "settler-site-gate": [
         -5,
         41,
@@ -1238,11 +1253,6 @@
         -18,
         -3
       ],
-      "treasury-at-work": [
-        -22,
-        -8,
-        -4
-      ],
       "treasury-at-work-2": [
         55,
         65,
@@ -1360,7 +1370,6 @@
       "blind-objective-units": "off",
       "boost-first-research": "off",
       "boost-unlock-research": "on",
-      "boost-wait-research": "off",
       "boost-wait-research-2": "on",
       "boosted-bargain-first": "off",
       "boosted-bargain-first-2": "off",
@@ -1410,7 +1419,6 @@
       "congress-counter-leader": "off",
       "connect-the-luxury": "on",
       "contested-land-first": "on",
-      "contested-suzerainty-brake": "off",
       "conversion-majority-alarm": "on",
       "conversion-majority-alarm-2": "off",
       "coordinated-finish": "off",
@@ -1427,6 +1435,7 @@
       "district-coverage": "off",
       "district-coverage-2": "off",
       "district-planning": "on",
+      "district-planning-2": "off",
       "district-planning-3": "off",
       "domination-city-count": "off",
       "doomed-blow-veto": "off",
@@ -1462,7 +1471,6 @@
       "founder-temple": "off",
       "frontier-massing-alarm": "off",
       "garrison-under-fire": "off",
-      "gold-for-the-young-city": "off",
       "gold-income-floor": "on",
       "government-capacity-fallback": "off",
       "government-ladder": "off",
@@ -1476,6 +1484,7 @@
       "hostile-memory": "off",
       "housing-research": "off",
       "idle-faith-patronage": "off",
+      "improvement-housing-value": "off",
       "industrial-chain-debt": "on",
       "island-exploration": "off",
       "lane-culture-spending": "off",
@@ -1505,6 +1514,7 @@
       "one-launch-pad": "on",
       "one-shot-recovery": "on",
       "one-war-at-a-time": "off",
+      "opening-warrior-recon": "off",
       "opening-warrior-recon-2": "on",
       "opportunistic-war": "off",
       "order-retry": "off",
@@ -1522,6 +1532,7 @@
       "quest-production": "on",
       "quest-trade-route": "off",
       "raid-pillage-prizes": "off",
+      "rapid-city-expansion": "remove",
       "rapid-city-expansion-2": "on",
       "recon-replacement": "off",
       "recorded-tactical-step": "off",
@@ -1556,6 +1567,8 @@
       "settler-guard-holds": "off",
       "settler-guard-holds-2": "on",
       "settler-never-idles": "on",
+      "settler-screen": "off",
+      "settler-second-look": "remove",
       "settler-site-gate": "off",
       "settler-target-floor": "on",
       "settler-target-hysteresis": "off",
@@ -1582,7 +1595,6 @@
       "swap-rotation-2": "off",
       "threatened-city-reserve": "off",
       "trade-route-network": "off",
-      "treasury-at-work": "off",
       "treasury-at-work-2": "on",
       "unchosen-war-keeps-the-lane": "on",
       "unit-cost-efficiency": "on",
@@ -1743,17 +1755,6 @@
           "battle-planner-3": null
         }
       },
-      "boost-wait-research": {
-        "rule_on": [
-          "boost-wait-research-2"
-        ],
-        "head": null,
-        "ships": "boost-wait-research-2",
-        "versions": {
-          "boost-wait-research": null,
-          "boost-wait-research-2": null
-        }
-      },
       "boosted-bargain-first": {
         "rule_on": [
           "boosted-bargain-first-2"
@@ -1900,6 +1901,7 @@
         "ships": "district-planning",
         "versions": {
           "district-planning": 0.244584,
+          "district-planning-2": null,
           "district-planning-3": null
         }
       },
@@ -2031,6 +2033,17 @@
           "never-an-empty-queue-3": null
         }
       },
+      "opening-warrior-recon": {
+        "rule_on": [
+          "opening-warrior-recon-2"
+        ],
+        "head": null,
+        "ships": "opening-warrior-recon-2",
+        "versions": {
+          "opening-warrior-recon": null,
+          "opening-warrior-recon-2": null
+        }
+      },
       "power-the-laboratory": {
         "rule_on": [],
         "head": "power-the-laboratory",
@@ -2038,6 +2051,17 @@
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
+        }
+      },
+      "rapid-city-expansion": {
+        "rule_on": [
+          "rapid-city-expansion-2"
+        ],
+        "head": null,
+        "ships": "rapid-city-expansion-2",
+        "versions": {
+          "rapid-city-expansion": null,
+          "rapid-city-expansion-2": null
         }
       },
       "recovery-reads-the-war": {
@@ -2129,17 +2153,6 @@
         "versions": {
           "trade-building-before-bankruptcy": null,
           "trade-building-before-bankruptcy-2": null
-        }
-      },
-      "treasury-at-work": {
-        "rule_on": [
-          "treasury-at-work-2"
-        ],
-        "head": null,
-        "ships": "treasury-at-work-2",
-        "versions": {
-          "treasury-at-work": null,
-          "treasury-at-work-2": null
         }
       },
       "wonder-adjacent-sites": {
@@ -2449,7 +2462,7 @@
         "complete_seats": 13938,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy), so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake, which left the code on 2026-09-08 as bottom-of-the-ranking removals (dominated versions whose siblings ship as the family head, or singletons at P(>0) <= 8%), so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     },
     {
       "path": "docs/gene_screens/2026-09-08-standard-continuous-2460-total-seats-20260908-unified-current-build.json",
@@ -2486,7 +2499,7 @@
         "complete_seats": 2460,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy), so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake, which left the code on 2026-09-08 as bottom-of-the-ranking removals (dominated versions whose siblings ship as the family head, or singletons at P(>0) <= 8%), so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     },
     {
       "path": "docs/gene_screens/2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json",
@@ -2530,7 +2543,7 @@
         "complete_seats": 18768,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy), so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake, which left the code on 2026-09-08 as bottom-of-the-ranking removals (dominated versions whose siblings ship as the family head, or singletons at P(>0) <= 8%), so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     }
   ],
   "counts": {
@@ -2563,7 +2576,7 @@
         "win_z": 4.063,
         "share_delta_pp": 0.523,
         "share_z": 5.915,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3013,7 +3026,7 @@
         "win_z": 2.094,
         "share_delta_pp": 0.296,
         "share_z": 3.353,
-        "read": "helps * \u00b7 share helps *",
+        "read": "helps * · share helps *",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3643,7 +3656,7 @@
         "win_z": 2.017,
         "share_delta_pp": 0.197,
         "share_z": 2.463,
-        "read": "helps * \u00b7 share helps *",
+        "read": "helps * · share helps *",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3778,7 +3791,7 @@
         "win_z": 3.464,
         "share_delta_pp": 0.375,
         "share_z": 4.121,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4228,7 +4241,7 @@
         "win_z": 3.229,
         "share_delta_pp": 0.341,
         "share_z": 4.381,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4408,7 +4421,7 @@
         "win_z": 3.564,
         "share_delta_pp": 0.482,
         "share_z": 5.452,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4588,7 +4601,7 @@
         "win_z": 2.907,
         "share_delta_pp": 0.337,
         "share_z": 4.293,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4678,7 +4691,7 @@
         "win_z": 3.94,
         "share_delta_pp": 0.407,
         "share_z": 4.569,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4723,7 +4736,7 @@
         "win_z": 3.362,
         "share_delta_pp": 0.418,
         "share_z": 4.632,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -5668,7 +5681,7 @@
         "win_z": 4.325,
         "share_delta_pp": 1.141,
         "share_z": 12.467,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -5803,7 +5816,7 @@
         "win_z": 5.21,
         "share_delta_pp": 0.577,
         "share_z": 6.468,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {

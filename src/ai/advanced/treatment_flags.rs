@@ -2410,28 +2410,11 @@ impl AdvancedAi {
         self.chase_every_boost_2 = false;
     }
 
-    /// Take a node the empire would finish before its own eureka lands after
-    /// that eureka, not before it. The engine credits a boost mid-research
-    /// onto a node still being worked, and never onto one already finished, so
-    /// only a short node loses its discount outright. See [`AdvancedAi::boost_research_value`]. Opt-in gene
-    /// `boost-wait-research`. Filed above the markers: the append-point check
-    /// reads a method line's first identifier.
-    pub fn enable_boost_wait_research(&mut self) {
-        self.boost_wait_research = true;
-        self.boost_wait_research_2 = false;
-    }
-
-    /// The twin of `enable_boost_wait_research`.
-    pub fn disable_boost_wait_research(&mut self) {
-        self.boost_wait_research = false;
-    }
-
     /// Wait only on a two-turn node whose final boost trigger is already at
     /// the front of an owned city queue, using the boost as a light tie-break.
     /// Opt-in gene `boost-wait-research-2`.
     pub fn enable_boost_wait_research_2(&mut self) {
         self.boost_wait_research_2 = true;
-        self.boost_wait_research = false;
     }
 
     /// The twin of `enable_boost_wait_research_2`.
@@ -2570,20 +2553,6 @@ impl AdvancedAi {
     /// The twin of `enable_build_what_cards_boost`.
     pub fn disable_build_what_cards_boost(&mut self) {
         self.build_what_cards_boost = false;
-    }
-
-    /// Pay a Gold purchase premium in a city producing less than the empire's
-    /// best city, proportional to the deficit. Opt-in gene
-    /// `gold-for-the-young-city`; see `advanced/gold_and_cards.rs`. Filed
-    /// above the markers: the append-point check reads a method line's first
-    /// identifier.
-    pub fn enable_gold_for_the_young_city(&mut self) {
-        self.gold_for_the_young_city = true;
-    }
-
-    /// The twin of `enable_gold_for_the_young_city`.
-    pub fn disable_gold_for_the_young_city(&mut self) {
-        self.gold_for_the_young_city = false;
     }
 
     /// Version one buys Walls or a land defender for a city struck within four
@@ -3028,17 +2997,6 @@ impl AdvancedAi {
     /// The twin of `enable_escort_patience_runs_out`.
     pub fn disable_escort_patience_runs_out(&mut self) {
         self.escort_patience_runs_out = false;
-    }
-
-    /// Keep one emergency defender and ten turns of deficit in the bank,
-    /// not 250 + 75 Gold a city. See `treasury_at_work`.
-    pub fn enable_treasury_at_work(&mut self) {
-        self.treasury_at_work = true;
-    }
-
-    /// The twin of `enable_treasury_at_work`.
-    pub fn disable_treasury_at_work(&mut self) {
-        self.treasury_at_work = false;
     }
 
     /// The working reserve, and the first Builder or a missing Monument
@@ -4096,19 +4054,6 @@ impl AdvancedAi {
     /// The twin of `enable_standing_still_is_a_risk`.
     pub fn disable_standing_still_is_a_risk(&mut self) {
         self.standing_still_is_a_risk = false;
-    }
-
-    /// Stop paying for a city-state race this seat cannot hold: the leading
-    /// rival is a major we are at war with and is level or ahead, or the seat
-    /// has already sunk `CONTESTED_ENVOY_STACK_CAP` envoys and a rival is
-    /// within one. See [`Self::contested_suzerainty_brake`].
-    pub fn enable_contested_suzerainty_brake(&mut self) {
-        self.contested_suzerainty_brake = true;
-    }
-
-    /// The twin of `enable_contested_suzerainty_brake`.
-    pub fn disable_contested_suzerainty_brake(&mut self) {
-        self.contested_suzerainty_brake = false;
     }
 
     /// A threat detour refuses a fallback worth less than

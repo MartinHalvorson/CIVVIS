@@ -812,26 +812,6 @@ const SUZERAIN_PRIZE: i64 = 180;
 /// narrow suzerainty remains more valuable than this cap.
 const UNCONTESTED_POST_TIER_ENVOY_PENALTY: i64 = 300;
 
-/// The contested twin of [`UNCONTESTED_POST_TIER_ENVOY_PENALTY`], and the same
-/// magnitude for the same reason: it must sit below every ordinary alignment
-/// score (`(12 + 15) * 10 = 270`) so a fresh city-state or an available 1/3/6
-/// tier takes the envoy instead, and it must leave a clearly negative score so
-/// `bank_envoys` can retain the envoy when nothing better exists.
-///
-/// ⚠ The penalty above says a city-state within one envoy of a rival
-/// "deliberately does not qualify: defending a narrow suzerainty remains more
-/// valuable than this cap". That assumption is what
-/// [`AdvancedAi::contested_suzerainty_brake`] revisits against a live run: the
-/// narrow suzerainty was defended seven times, cost twenty-seven envoys, and
-/// was lost anyway to the rival the seat was already at war with.
-const CONTESTED_RACE_ENVOY_PENALTY: i64 = 300;
-
-/// How many envoys the seat may sink into a city-state a rival major is still
-/// level with before [`AdvancedAi::contested_suzerainty_brake`] stops paying
-/// for the race. Six is `bank_envoys`' own post-tier step, so the contested
-/// brake and the uncontested one release at the same stack.
-const CONTESTED_ENVOY_STACK_CAP: i64 = 6;
-
 /// Keep a small, spendable Envoy reserve for the city-states exploration will
 /// uncover. First contact supplies one Envoy at the city-state, so six held
 /// tokens can still make three ordinary three-Envoy suzerainty bids. Above
@@ -4896,10 +4876,6 @@ pub struct AdvancedAi {
     /// flat credit. Opt-in gene `boost-first-research`; see
     /// `advanced/boost_research.rs`.
     boost_first_research: bool,
-    /// A node the empire would finish before the eureka it is still owed can
-    /// land waits its turn. Opt-in gene `boost-wait-research`; see
-    /// `advanced/boost_research.rs`.
-    boost_wait_research: bool,
     /// Version two waits only when the final trigger is already at the front
     /// of an owned city queue and the node would finish inside a much shorter
     /// window. Opt-in gene `boost-wait-research-2`; see
@@ -4962,51 +4938,6 @@ pub struct AdvancedAi {
     culture_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
     culture_building_catchup_2: bool,
-    /// ★★★★ TWENTY-SEVEN ENVOYS INTO A RACE THE SEAT WAS ALWAYS GOING TO
-    /// LOSE, AND THE PRIZE CAME BACK AS AN ARMY. The envoy scorer prices the
-    /// NEXT envoy toward a suzerainty ([`SUZERAIN_PRIZE`] over the envoys
-    /// still needed) and never prices the stock already sunk into the race,
-    /// nor whether the seat can hold what it buys. Against a rival with equal
-    /// envoy income every bid buys the suzerainty only until that rival's next
-    /// envoy, so the seat pays again, and again.
-    ///
-    /// Measured on live run `civvis-20260902T205532Z`, Bologna:
-    ///
-    /// | turn | 44 | 88 | 111 | 125 | 136 | 156 | 164 |
-    /// |------|----|----|-----|-----|-----|-----|-----|
-    /// | our envoys | 1 | 7 | 11 | 17 | 24 | 27 | 27 |
-    /// | suzerain | rival | **us** | us | us | us | us | **Arabia** |
-    ///
-    /// Suzerainty came back to us on t111, t112, t121, t125, t131, t134 and
-    /// t136 — **seven re-takes** — and was lost for good on t164 when Arabia
-    /// reached 28. [`Game::envoy_yields`] suspends every type bonus from a
-    /// city-state at war with the seat, and a Suzerain levies its city-state
-    /// into its own wars, so all twenty-seven envoys stopped paying the turn
-    /// Arabia took it. The war with Arabia had begun on **t139**: the seat
-    /// spent its 25th, 26th and 27th envoy there while already at war with the
-    /// very rival it was bidding against.
-    ///
-    /// ⚠ There is no exit afterwards. `Game::do_make_peace` refuses a
-    /// bilateral peace with a levied city-state — *"a city-state's derived war
-    /// must be settled by its Suzerain"* — so the stake stays dead for the
-    /// rest of the major war. The only lever is not building the stake.
-    ///
-    /// `bank_envoys` already brakes the UNCONTESTED overstack
-    /// (`already_secure && mine >= 6`), and deliberately exempts a city-state
-    /// within one envoy of a rival on the grounds that defending a narrow
-    /// suzerainty is worth more than the cap. This is the contested half that
-    /// exemption leaves open: `already_secure` is false exactly when a rival
-    /// is level, which is when the next envoy is likeliest to be matched and
-    /// lost.
-    ///
-    /// With this on, the ordinary post-tier penalty also applies to a race the
-    /// seat cannot hold — when the leading rival is a major we are AT WAR with
-    /// and is level or ahead, or when the seat has already sunk
-    /// [`CONTESTED_ENVOY_STACK_CAP`] envoys and a rival is within one. Nothing
-    /// is refused: every other term still prices the envoy, and an uncontested
-    /// city-state with a real 1/3/6 tier to buy wins it instead. Off
-    /// everywhere by default; opt-in gene `contested-suzerainty-brake`.
-    contested_suzerainty_brake: bool,
     /// A threat detour must keep most of the site's worth. See
     /// `SETTLER_DETOUR_VALUE_FLOOR` for the live measurement: the median
     /// detour improves on the site it leaves, but a quarter of them give up
@@ -5616,10 +5547,6 @@ pub struct AdvancedAi {
     /// it is untouched: this only ever raises capacity, and that guard
     /// already refuses a lateral or a downgrade.
     government_capacity_fallback: bool,
-    /// A Gold purchase in a city producing less than the empire's best city
-    /// earns a premium proportional to the deficit. Opt-in gene
-    /// `gold-for-the-young-city`; see `advanced/gold_and_cards.rs`.
-    gold_for_the_young_city: bool,
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
@@ -6375,12 +6302,10 @@ pub struct AdvancedAi {
     /// `advanced/yield_floors.rs`.
     yield_floor_frame: RefCell<yield_floors::YieldFloorFrame>,
     /// The purchase reserve is one emergency defender plus ten turns of any
-    /// recurring deficit, not `250 + 75` Gold per city. Opt-in gene
-    /// `treasury-at-work`; see `advanced/gold_and_cards.rs`.
-    treasury_at_work: bool,
-    /// `treasury_at_work`, and one under-bought compounding asset — the
-    /// empire's first Builder, then a Monument where a city has none — is
-    /// bought ahead of the purchase argmax. Opt-in gene `treasury-at-work-2`.
+    /// recurring deficit, not `250 + 75` Gold per city, and one under-bought
+    /// compounding asset — the empire's first Builder, then a Monument where
+    /// a city has none — is bought ahead of the purchase argmax. Opt-in gene
+    /// `treasury-at-work-2`; see `advanced/gold_and_cards.rs`.
     treasury_at_work_2: bool,
     /// Do not start a war the treasury cannot pay for.
     ///
@@ -6972,9 +6897,9 @@ mod island_expansion;
 mod order_retry;
 
 /// `buy-what-cards-cannot-boost`, `build-what-cards-boost`,
-/// `gold-for-the-young-city`, `native-emergency-purchase`: which currency
-/// pays for an item, from the operator's Gold-versus-production heuristic.
-/// Four opt-in genes; see `advanced/gold_and_cards.rs`.
+/// `native-emergency-purchase`: which currency pays for an item, from the
+/// operator's Gold-versus-production heuristic. Opt-in genes; see
+/// `advanced/gold_and_cards.rs`.
 mod gold_and_cards;
 
 /// `culture-floor` and `gold-income-floor`: the Amphitheatre out from under
@@ -7777,7 +7702,6 @@ impl AdvancedAi {
             age_closer: false,
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
-            boost_wait_research: false,
             boost_wait_research_2: false,
             boost_unlock_research: false,
             buy_what_cards_cannot_boost: false,
@@ -7788,7 +7712,6 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             culture_building_catchup: false,
             culture_building_catchup_2: false,
-            contested_suzerainty_brake: false,
             detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
             doomed_blow_veto_2: false,
@@ -7879,7 +7802,6 @@ impl AdvancedAi {
             gold_income_floor: false,
             government_ladder_2: false,
             government_capacity_fallback: false,
-            gold_for_the_young_city: false,
             growth_to_settle: false,
             guru_heals_the_corps_2: false,
             holy_site_where_the_threat_is_2: false,
@@ -7973,7 +7895,6 @@ impl AdvancedAi {
             walls_after_districts: false,
             threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
-            treasury_at_work: false,
             treasury_at_work_2: false,
             war_needs_a_treasury: false,
             upgrade_the_garrison: false,
@@ -18721,26 +18642,6 @@ impl AdvancedAi {
                     };
                     let already_secure = g.suzerain_of(minor.id) == Some(pid) && mine > rival + 1;
                     let overfunded_uncontested = self.bank_envoys && already_secure && mine >= 6;
-                    // `contested-suzerainty-brake`: the two shapes of a race
-                    // this seat cannot hold. The brake above sees only the
-                    // UNCONTESTED overstack, because `already_secure` is false
-                    // exactly when a rival is level — which is when the next
-                    // envoy is likeliest to be matched and lost. See
-                    // `AdvancedAi::contested_suzerainty_brake`.
-                    let leader_at_war = rival > 0
-                        && g.players
-                            .iter()
-                            .filter(|p| !p.is_minor && !p.is_barbarian && p.id != pid)
-                            .filter(|p| g.envoys_at(p.id, minor.id) == rival)
-                            .any(|p| g.is_at_war(pid, p.id));
-                    // The belligerent clause needs a rival that could actually
-                    // HOLD the prize and levy it: `mine.max(3)` is the engine's
-                    // own suzerainty floor (`3_i64.max(rival + 1)` above), so a
-                    // fresh city-state where an enemy happens to hold one envoy
-                    // is still worth opening for its 1/3/6 tier.
-                    let contested_race = self.contested_suzerainty_brake
-                        && ((rival >= mine.max(3) && leader_at_war)
-                            || (mine >= CONTESTED_ENVOY_STACK_CAP && rival + 1 >= mine));
                     let shared_from_partner = g.suzerain_of(minor.id).is_some_and(|leader| {
                         leader != pid
                             && g.alliance_with(pid, leader).is_some_and(|alliance| {
@@ -18798,8 +18699,6 @@ impl AdvancedAi {
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
-                        } else if contested_race {
-                            CONTESTED_RACE_ENVOY_PENALTY
                         } else {
                             already_secure as i64 * 80
                         }
@@ -18826,11 +18725,6 @@ impl AdvancedAi {
                                                     + coalition
                                                     + across)
                                                     * needed
-                                        } else {
-                                            0
-                                        }
-                                        - if contested_race {
-                                            CONTESTED_RACE_ENVOY_PENALTY
                                         } else {
                                             0
                                         }
@@ -19689,11 +19583,10 @@ impl AdvancedAi {
         } else {
             reserve
         };
-        // `treasury-at-work`: the reserve is what one emergency costs plus
+        // `treasury-at-work-2`: the reserve is what one emergency costs plus
         // what a deficit would drain before it can be corrected, not a flat
         // sum that grows with every city founded. `stock` comes back
-        // unchanged while both versions are off. See
-        // `advanced/gold_and_cards.rs`.
+        // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.working_treasury_reserve(g, pid, reserve);
         // `threatened-city-reserve`: never below one emergency defender
         // while a city of ours is threatened or bleeding. `stock` comes back
@@ -20062,9 +19955,9 @@ impl AdvancedAi {
         if matches!(item, Item::Unit { .. }) && production_score < 120.0 {
             return None;
         }
-        // `treasury-at-work`: a treasury at work stays solvent — a unit
+        // `treasury-at-work-2`: a treasury at work stays solvent — a unit
         // whose upkeep would take the recurring budget below zero is not
-        // bought. Always true while the family is off.
+        // bought. Always true while the gene is off.
         if !self.treasury_purchase_stays_solvent(g, pid, item) {
             return None;
         }
@@ -20088,9 +19981,6 @@ impl AdvancedAi {
         };
         let positional = purchase_basis * (7.0 + turns.max(1.0));
         let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30 * card;
-        // `gold_for_the_young_city`: the same money buys more turns where
-        // the Production is not. Exactly 1.0 with the gene off.
-        let score = score * self.young_city_premium(g, pid, city);
         (score >= 120.0).then_some(score)
     }
 
