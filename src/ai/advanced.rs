@@ -6857,6 +6857,8 @@ mod order_retry;
 /// `advanced/gold_and_cards.rs`.
 mod gold_and_cards;
 
+mod industrial_district;
+
 /// `culture-floor` and `gold-income-floor`: the Amphitheatre out from under
 /// the Great Work veto and the Theatre Square priced while culture trails
 /// the field; Markets, Lighthouses and the Commercial Hub priced by the
@@ -27629,6 +27631,7 @@ impl AdvancedAi {
                     + self.culture_floor_district_bonus(g, pid, family)
                     + self.gold_floor_district_bonus(g, pid, family, district_count, city_count)
                     + self.science_drive_production_bonus(g, pid, cid, item)
+                    + self.industrial_district_path_value(g, pid, cid, district, *pos, pricing_lane)
                     // `encampment-seals-the-pass`: 0.0 with the gene off and
                     // for every other family. See `advanced/chokepoints.rs`.
                     + self.encampment_seal_bonus(g, pid, family.as_str(), *pos)
