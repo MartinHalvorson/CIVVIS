@@ -217,21 +217,41 @@ if not haveScreen() then pcall(function() include(NAME); end); end
 -- city; NEAR_INITIATOR offers OUR city and NO_MANS offers mutual disclosure.
 local firstMeetChoice = nil;
 local firstMeetAnswered = false;
+local dialogueObserved = false;
+local dialogueChoice = nil;
+local dialogueCallback = nil;
+local dialogueAnswered = false;
 if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
     local stockApply = ApplyStatement;
     ApplyStatement = function(handler, statementType, subType, toPlayer, statement)
         firstMeetChoice = nil;
         firstMeetAnswered = false;
+        dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
         stockApply(handler, statementType, subType, toPlayer, statement);
-        if type(statementType) ~= "string" or not string.find(statementType, "^FIRST_MEET_") then
-            return;
-        end
+        local firstMeet = type(statementType) == "string"
+            and string.find(statementType, "^FIRST_MEET_") ~= nil;
         local parsed = handler.ExtractStatement(handler, statementType, subType,
             statement.FromPlayer, GetStatementMood(statement.FromPlayer, statement.FromPlayerMood),
             statement.Initiator);
         local localPlayer = Game.GetLocalPlayer();
         local otherPlayer = statement.FromPlayer == localPlayer and toPlayer or statement.FromPlayer;
         handler.RemoveInvalidSelections(parsed, localPlayer, otherPlayer);
+        if not firstMeet then
+            -- Match the displayed, enabled options and their own callback.
+            -- Prefer answering a request to leaving it pending via EXIT.
+            -- This preserves the existing conservative decline policy.
+            dialogueObserved = true;
+            local rank = { CHOICE_NEGATIVE = 3, CHOICE_IGNORE = 2, CHOICE_EXIT = 1 };
+            local best = 0;
+            for _, selection in ipairs(parsed.Selections or {}) do
+                local score = rank[selection.Key] or 0;
+                if not selection.IsDisabled and score > best then
+                    dialogueChoice, best = selection.Key, score;
+                end
+            end
+            dialogueCallback = handler.OnSelectionButtonClicked;
+            return;
+        end
         for _, selection in ipairs(parsed.Selections or {}) do
             if not selection.IsDisabled then
                 -- Greeting their nearby scout reveals nothing; the follow-up
@@ -436,6 +456,19 @@ end
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
 local function endScreen(attempt)
+    if NAME == "DiplomacyActionView" and dialogueChoice ~= nil
+            and not dialogueAnswered and type(dialogueCallback) == "function" then
+        local choice, callback = dialogueChoice, dialogueCallback;
+        dialogueAnswered = true;
+        local ok = pcall(function() callback(choice); end);
+        -- A callback may synchronously replace this statement. Do not mark
+        -- the replacement answered, or close it on its predecessor's tick.
+        if not ok and dialogueCallback == callback and dialogueChoice == choice then
+            dialogueAnswered = false;
+        end
+        report("diplomacy_choice", string.format(',"choice":"%s","sent":%s', choice, tostring(ok)));
+        return ok;
+    end
     if NAME == "DiplomacyActionView" and firstMeetChoice ~= nil then
         if not firstMeetAnswered then
             -- Clear the flag before dispatch: AddResponse can synchronously
@@ -615,6 +648,7 @@ local function endScreen(attempt)
 	-- cannot turn an unrelated action-view screen into a response.
 	if NAME == "DiplomacyActionView"
 			and (attempt or 1) >= 2 and (attempt or 1) <= 3
+			and not dialogueObserved
 			and type(OnSelectConversationDiplomacyStatement) == "function"
 			and ms_ActiveSessionID ~= nil
 			and pcall(function()
@@ -676,25 +710,29 @@ local function endScreen(attempt)
 	-- shipped handler answers with `DiplomacyManager.AddResponse(session, player,
 	-- "NEGATIVE")` under `CHOICE_NEGATIVE`, and an answered request does not return.
 	-- `CHOICE_IGNORE` is the same shape via "RESPONSE_IGNORE".
-	if (attempt or 1) <= 14 and type(OnSelectConversationDiplomacyStatement) == "function"
+	if (attempt or 1) <= 14 and not dialogueObserved
+			and type(OnSelectConversationDiplomacyStatement) == "function"
 			and pcall(function()
 				OnSelectConversationDiplomacyStatement("CHOICE_NEGATIVE");
 			end) then
 		return true;
 	end
-	if (attempt or 1) <= 15 and type(OnSelectConversationDiplomacyStatement) == "function"
+	if (attempt or 1) <= 15 and not dialogueObserved
+			and type(OnSelectConversationDiplomacyStatement) == "function"
 			and pcall(function()
 				OnSelectConversationDiplomacyStatement("CHOICE_IGNORE");
 			end) then
 		return true;
 	end
-	if (attempt or 1) <= 16 and type(OnSelectConversationDiplomacyStatement) == "function"
+	if (attempt or 1) <= 16 and not dialogueObserved
+			and type(OnSelectConversationDiplomacyStatement) == "function"
 			and pcall(function()
 				OnSelectConversationDiplomacyStatement("CHOICE_EXIT");
 			end) then
 		return true;
 	end
-	if (attempt or 1) <= 18 and type(OnSelectInitialDiplomacyStatement) == "function"
+	if (attempt or 1) <= 18 and not dialogueObserved
+			and type(OnSelectInitialDiplomacyStatement) == "function"
 			and pcall(function()
 				OnSelectInitialDiplomacyStatement("CHOICE_EXIT");
 			end) then
@@ -785,6 +823,7 @@ else
 	local function resetShownAttemptState()
         firstMeetChoice = nil;
         firstMeetAnswered = false;
+        dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
 		showing = false;
 		controllerPulseSeconds = 0;
 		remaining = 0;
@@ -1030,9 +1069,11 @@ else
 		-- it on the next ready frame, including a follow-up invitation arriving
 		-- during the previous response's timer or a stale 30-second back-off.
 		-- Keep the deal ownership hold above and the native fade gate below.
-		local firstMeetReady = NAME == "DiplomacyActionView"
-			and firstMeetChoice ~= nil and not firstMeetAnswered;
-		if remaining > 0 and not firstMeetReady then return; end
+		local responseReady = NAME == "DiplomacyActionView"
+			and ((firstMeetChoice ~= nil and not firstMeetAnswered)
+                or (dialogueChoice ~= nil and not dialogueAnswered
+                    and type(dialogueCallback) == "function"));
+		if remaining > 0 and not responseReady then return; end
 		if civvisDealView and not dealForceClose
 				and not dialogueReady() then
 			-- Keep the elapsed screen time for telemetry, but do not consume a
