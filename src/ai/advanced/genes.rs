@@ -2134,6 +2134,12 @@ pub const GENES: &[Gene] = &[
     // Reprice all strikers after each friendly kill; only a sequence whose
     // surviving enemy replies spare every striker can become the final plan.
     Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
+    // Version two of `boost-first-research`: the discount scale as a tie-break
+    // in the research argmax, among candidates within `BOOST_TIEBREAK_BAND` of
+    // the ordinary winner and only after every forced goal has stood down. v1
+    // read +0.42 techs at t150 (z +5.6) and -0.48 pp wins on the 2026-09-08
+    // screen: more techs, the wrong ones. See `advanced/boost_research.rs`.
+    Gene { tag: "boost-first-research-2", field: "boost_first_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_first_research_2, disable: AdvancedAi::disable_boost_first_research_2 },
     Gene { tag: "amani-follows-suzerainty", field: "amani_follows_suzerainty", kind: Kind::OptIn, enable: AdvancedAi::enable_amani_follows_suzerainty, disable: AdvancedAi::disable_amani_follows_suzerainty },
     Gene { tag: "liang-follows-builders", field: "liang_follows_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_liang_follows_builders, disable: AdvancedAi::disable_liang_follows_builders },
     Gene { tag: "magnus-follows-settlers", field: "magnus_follows_settlers", kind: Kind::OptIn, enable: AdvancedAi::enable_magnus_follows_settlers, disable: AdvancedAi::disable_magnus_follows_settlers },

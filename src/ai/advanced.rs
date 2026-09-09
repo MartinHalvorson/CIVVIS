@@ -4851,6 +4851,14 @@ pub struct AdvancedAi {
     /// flat credit. Opt-in gene `boost-first-research`; see
     /// `advanced/boost_research.rs`.
     boost_first_research: bool,
+    /// A boost in hand breaks ties among comparable research candidates only,
+    /// after every forced lane goal has stood down. Version two of
+    /// `boost-first-research`: the same discount scale, applied in the argmax
+    /// to a boosted node whose unscaled score is within
+    /// `BOOST_TIEBREAK_BAND` of the ordinary winner's, never inside
+    /// `tech_value` / `civic_value` and never over a beeline step. Opt-in
+    /// gene `boost-first-research-2`; see `advanced/boost_research.rs`.
+    boost_first_research_2: bool,
     /// Version two waits only when the final trigger is already at the front
     /// of an owned city queue and the node would finish inside a much shorter
     /// window. Opt-in gene `boost-wait-research-2`; see
@@ -7641,6 +7649,7 @@ impl AdvancedAi {
             age_closer: false,
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
+            boost_first_research_2: false,
             boost_wait_research_2: false,
             boost_unlock_research: false,
             buy_what_cards_cannot_boost: false,
@@ -13948,12 +13957,25 @@ impl AdvancedAi {
             // V1 above can replace a forced goal merely because a side node
             // is cheap. V2 enters only here, after `goal_pick` is absent, and
             // may replace the ordinary fallback only with a one-turn boosted
-            // node of nearly equal board value.
+            // node of nearly equal board value. `boost-first-research-2` sits
+            // behind it at the same seam: the boost-in-hand scale as a
+            // tie-break among comparable candidates, never over a forced
+            // goal. See `advanced/boost_research.rs`.
             let pick = if let Some(goal_pick) = goal_pick {
                 Some(goal_pick)
             } else {
                 fallback_pick.map(|ordinary| {
                     self.boosted_bargain_tech_2(g, pid, plan.strategy, &available, &ordinary)
+                        .or_else(|| {
+                            self.boost_tiebreak_pick(
+                                g,
+                                pid,
+                                plan.strategy,
+                                &available,
+                                &ordinary,
+                                true,
+                            )
+                        })
                         .unwrap_or(ordinary)
                 })
             };
@@ -14097,6 +14119,9 @@ impl AdvancedAi {
                     })
                     .cloned()
             });
+            // The civic half of the `boost-first-research-2` tie-break, at
+            // the same seam: after the forced goal, over the ordinary argmax.
+            // See `advanced/boost_research.rs`.
             let pick = goal_pick.or_else(|| {
                 available
                     .iter()
@@ -14107,6 +14132,17 @@ impl AdvancedAi {
                             .then_with(|| b.cmp(a))
                     })
                     .cloned()
+                    .map(|ordinary| {
+                        self.boost_tiebreak_pick(
+                            g,
+                            pid,
+                            plan.strategy,
+                            &available,
+                            &ordinary,
+                            false,
+                        )
+                        .unwrap_or(ordinary)
+                    })
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
