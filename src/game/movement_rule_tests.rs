@@ -339,21 +339,34 @@ fn enemy_zone_of_control_on_a_friends_tile_is_a_dead_end() {
     );
 }
 
-/// Only our own units may be crossed. Everybody else's block the step itself,
-/// at peace and at war alike.
+/// Native run civvis-20260909T055408Z, turns 9 and 12: a Roman warrior
+/// crosses a neutral city-state warrior, then finishes on the next tile.
+/// Peaceful occupancy blocks arrival, while war blocks the crossing itself.
 #[test]
-fn foreign_units_still_block_the_step_itself() {
+fn peaceful_units_allow_transit_but_hostile_units_block_it() {
     let (mut g, start, _) = plain_board(6106);
     let (middle, beyond) = straight_line(&g, start);
     let mover = g.spawn_unit("warrior", 0, start);
     let foreign = g.spawn_unit("warrior", 1, middle);
     g.begin_turn(0);
 
-    assert!(
-        !g.can_pass(mover, start, middle),
-        "a rival's unit is not somewhere we may walk through at peace"
-    );
-    assert!(!g.reachable(mover).contains(&beyond));
+    assert!(g.can_pass(mover, start, middle));
+    assert!(!g.can_move(mover, middle));
+    assert!(!g.can_stop(mover, middle));
+    assert!(!g.reachable(mover).contains(&middle));
+    assert_eq!(g.path_to(mover, beyond), Some(vec![middle, beyond]));
+    g.apply(
+        0,
+        &Action::MoveTo {
+            unit: mover,
+            to: beyond,
+        },
+    )
+    .expect("peace permits transit through the neutral warrior");
+    assert_eq!(g.units[&mover].pos, beyond);
+    assert_eq!(g.units[&foreign].pos, middle);
+    g.relocate(mover, start);
+    g.units.get_mut(&mover).unwrap().moves_left = 2.0;
 
     g.at_war.insert(pair(0, 1));
     assert!(
@@ -685,4 +698,39 @@ fn the_pass_through_destination_answers_only_when_our_own_are_in_the_way() {
         None,
         "a foreign unit blocks the step itself; walking through it is not on offer"
     );
+}
+
+/// Transit must not turn a one-point move into an illegal occupied arrival.
+#[test]
+fn peaceful_transit_requires_movement_to_leave_and_preserves_closed_borders() {
+    let (mut g, start, _) = plain_board(61061);
+    let (middle, beyond) = straight_line(&g, start);
+    let mover = g.spawn_unit("warrior", 0, start);
+    g.spawn_unit("warrior", 1, middle);
+    g.begin_turn(0);
+    g.units.get_mut(&mover).unwrap().moves_left = 1.0;
+    assert!(!g.reachable(mover).contains(&middle));
+    assert!(!g.reachable(mover).contains(&beyond));
+    g.units.get_mut(&mover).unwrap().moves_left = 2.0;
+    assert_eq!(g.path_to(mover, beyond), Some(vec![middle, beyond]));
+    g.closed_borders.insert(middle);
+    assert!(!g.can_pass(mover, start, middle));
+}
+
+/// The neutral unit must not hide an enemy occupant on the same plot.
+#[test]
+fn peaceful_transit_does_not_mask_a_hostile_occupant() {
+    let (mut g, start, _) = plain_board(61062);
+    let (middle, _) = straight_line(&g, start);
+    let mover = g.spawn_unit("warrior", 0, start);
+    g.spawn_unit("warrior", 1, middle);
+    let hostile = g.spawn_unit("warrior", 0, middle);
+    // Add a third owner using an existing player value for this controlled board.
+    let mut player = g.players[1].clone();
+    player.id = 2;
+    g.players.push(player);
+    g.units.get_mut(&hostile).unwrap().owner = 2;
+    g.at_war.insert(pair(0, 2));
+    g.begin_turn(0);
+    assert!(!g.can_pass(mover, start, middle));
 }

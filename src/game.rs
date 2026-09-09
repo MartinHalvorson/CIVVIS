@@ -26380,8 +26380,8 @@ impl Game {
     /// Whether this unit may cross `pos` on its way somewhere else.
     ///
     /// Weaker than [`Game::can_enter`] by exactly one rule: a tile held by one
-    /// of this unit's own units on the same stacking layer may be walked
-    /// through, and may not be finished on.
+    /// of this unit's own units on the same stacking layer, or a peaceful
+    /// foreign unit, may be crossed without permitting an occupied arrival.
     pub(crate) fn can_pass(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         self.entry_at(uid, from, pos, false) != Entry::Blocked
     }
@@ -26441,7 +26441,16 @@ impl Game {
             }
             let o = &self.units[oid];
             if o.owner != u.owner {
-                continue; // a foreign unit blocks the step itself, not the layer
+                let ospec = &self.rules.units[o.kind];
+                // Peace permits crossing, not ending on the foreign unit.
+                // Preserve the independent aircraft and religious layers.
+                if !self.is_at_war(u.owner, o.owner)
+                    && ospec.domain.as_deref() != Some("air")
+                    && (spec.class == "religious") == (ospec.class == "religious")
+                {
+                    return false;
+                }
+                continue;
             }
             if self.shares_stacking_layer(spec, &self.rules.units[o.kind]) {
                 return false;
@@ -26475,8 +26484,9 @@ impl Game {
     ///
     /// Everything else a step has to satisfy binds identically at every hex of
     /// a path — terrain, cliffs, rivers, borders, zone of control, hostile
-    /// cities, and every foreign unit — because none of that moves out of the
-    /// way.
+    /// cities, and hostile units. Peaceful foreign occupancy permits transit
+    /// but still blocks arrival; see the official Civ VI manual, page 72, and
+    /// the recorded neutral-warrior passage in `movement_rule_tests`.
     ///
     /// `through_units` drops occupancy altogether and nothing the rules decide
     /// sets it. It exists for the question somebody watching asks about a unit
@@ -26599,10 +26609,15 @@ impl Game {
                 if (spec.class == "religious") != (ospec.class == "religious") {
                     continue;
                 }
-                if ospec.class == "military" || spec.class != "military" {
-                    return Entry::Blocked;
-                }
                 if !self.is_at_war(u.owner, o.owner) {
+                    // Official Civ VI manual p72: passage is legal with enough
+                    // movement to leave. Native run 20260909T055408Z t9/t12
+                    // crosses a neutral city-state warrior in exactly this way.
+                    // Keep scanning: a hostile occupant can still block transit.
+                    stacked = true;
+                    continue;
+                }
+                if ospec.class == "military" || spec.class != "military" {
                     return Entry::Blocked;
                 }
             } else if self.shares_stacking_layer(spec, ospec) {
