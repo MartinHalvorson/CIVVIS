@@ -32,6 +32,13 @@ ladder or bench. See [Why nothing caught it](#why-nothing-caught-it).
 
 ## The rules
 
+The [official Civilization VI manual, page 72](https://downloads.2kgames.com/civilization/vi/manuals/eu/CIV_VI_25TH_ONLINE_MANUAL_ENG.pdf)
+describes passage when a unit has enough movement to complete its move.
+Native run `civvis-20260909T055408Z`, turns 9 and 12, supplies the neutral
+case: Roman warrior `196608` crosses `(51,37)`, occupied by city-state warrior
+`131073`, and immediately continues to `(52,38)`. Ending on the occupied
+intermediate tile remains forbidden.
+
 | Rule | Where it lives | Pinned by |
 |---|---|---|
 | A unit may **cross** a tile held by its own unit of the same stacking layer | `Game::entry_at` → `Entry::Pass` | `a_unit_passes_through_its_own_military_with_movement_to_spare` |
@@ -39,7 +46,7 @@ ladder or bench. See [Why nothing caught it](#why-nothing-caught-it).
 | Crossing needs the Movement to leave again; a crossing with nothing left is not a move | `Game::flow_past`, `Game::path_to` | `passing_through_needs_the_movement_to_get_out` |
 | The one-free-step allowance never lands a unit on its own | `Game::can_pay_step` + `can_stop` | `the_first_free_step_never_lands_on_a_friend` |
 | Entering enemy zone of control ends movement, so a friendly tile inside one is a dead end and not a crossing | `Game::formation_enters_enemy_zoc` | `enemy_zone_of_control_on_a_friends_tile_is_a_dead_end` |
-| Every **foreign** unit blocks the step itself — other civilizations, allies, city-states — except the capture cases | `Game::entry_at` → `Entry::Blocked` | `foreign_units_still_block_the_step_itself` |
+| A peaceful foreign unit permits crossing but not an occupied arrival; hostile units still block transit except for capture cases | `Game::entry_at`, `Game::can_stop` | `peaceful_units_allow_transit_but_hostile_units_block_it`, `peaceful_transit_requires_movement_to_leave_and_preserves_closed_borders`, `peaceful_transit_does_not_mask_a_hostile_occupant` |
 | Layers: land military, naval military, civilian, support, religious, air (a slot, not a layer). Two units contend only within one layer | `Game::shares_stacking_layer` | `the_stacking_layers_decide_who_crosses_whom` |
 | A walk never leaves two of one player's units contending for a tile, however it ends | `Game::do_move_to` | `a_walk_never_leaves_two_units_stacked` |
 | Two adjacent friendly units of one layer may **swap**, and both pay the entry cost of the tile they take | `Game::do_swap` | `adjacent_friendly_units_swap_and_both_pay_the_step` and the three refusals beside it |

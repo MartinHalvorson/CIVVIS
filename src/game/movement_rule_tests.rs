@@ -579,8 +579,8 @@ fn the_threat_reading_still_passes_everything() {
         "a threat envelope reads through whatever is parked in the way, ours or theirs"
     );
     assert!(
-        !g.reachable(mover).contains(&beyond),
-        "and it is a reading, never a permission: a rival's unit still blocks the march"
+        !g.reachable(mover).contains(&middle),
+        "the threat envelope includes occupied tiles that are not legal arrivals"
     );
 }
 
@@ -671,7 +671,7 @@ fn the_controller_files_a_column_through_a_defile() {
 /// ordinary march, or it stops being a pass-through and becomes a second,
 /// quieter mover competing with the router.
 #[test]
-fn the_pass_through_destination_answers_only_when_our_own_are_in_the_way() {
+fn the_pass_through_destination_answers_for_own_and_peaceful_units() {
     let (mut g, start, _) = plain_board(6601);
     let (middle, beyond) = straight_line(&g, start);
     let mover = g.spawn_unit("warrior", 0, start);
@@ -690,13 +690,18 @@ fn the_pass_through_destination_answers_only_when_our_own_are_in_the_way() {
         "with one of ours in the way the answer is the tile past it"
     );
 
-    // A rival's unit is not a crossing, so there is nothing to answer.
     g.remove_unit(friend);
     g.spawn_unit("warrior", 1, middle);
     assert_eq!(
         g.pass_through_destination(mover, beyond, 0),
+        Some(beyond),
+        "the controller also crosses a peaceful foreign unit"
+    );
+    g.at_war.insert(pair(0, 1));
+    assert_eq!(
+        g.pass_through_destination(mover, beyond, 0),
         None,
-        "a foreign unit blocks the step itself; walking through it is not on offer"
+        "a hostile unit still blocks the crossing"
     );
 }
 
