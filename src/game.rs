@@ -28024,6 +28024,28 @@ impl Game {
                 // identical and hands `path_to` a different walk to a
                 // destination under a zone of control.
                 let score = arrival.remaining();
+                // ⭐ THE SKIP ABOVE IS AN ARITHMETIC ARGUMENT, SO CHECK IT.
+                // The guard at the top of this body drops an arrival whose tile
+                // already holds `rem` or better, on the grounds that no arrival
+                // can carry more movement than the tile it came from:
+                // `unit_step_cost` ends `cost.max(0.0)`, `rem > 0` is guaranteed
+                // above, `(rem - cost).max(0.0) <= rem`, `.min(capped_moves_at)`
+                // only lowers it, and both `FloodArrival::arrival` impls keep
+                // that value or zero it for a zone of control. Nothing in the
+                // suite tested that chain -- it held by reading, and a later
+                // change to any link would silently turn the skip into a
+                // wrong answer that only a paired A/B would notice.
+                //
+                // `[profile.ci]` sets `debug-assertions = true` precisely so
+                // guards like this run in the build that gates a merge, so this
+                // is a real check on every one of the ~3,200 tests and costs
+                // nothing in `release`.
+                debug_assert!(
+                    score <= rem,
+                    "movement arrival at {n:?} kept {score} of the {rem} it \
+                     came from: a step granted movement, which makes the \
+                     unimprovable-arrival skip above unsound"
+                );
                 if !scratch.movement_seen[index] || score > scratch.movement_score[index] {
                     if !scratch.movement_seen[index] {
                         scratch.movement_seen[index] = true;
