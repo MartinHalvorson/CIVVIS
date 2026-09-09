@@ -33,6 +33,12 @@ On the exact event prefix ending at the first turn-114 state, both untouched
 on stdin; the journal prices the project at 47 in the Expansion plan. This is
 an earlier decision that the building-only correction does not address.
 
+This historical baseline is not current main: untouched `8cfc5ca75` already
+chooses the Industrial Zone at (58, 26), worth 78, on the same prefix. The
+district experiment chooses the same item at the same location, worth 107.
+That replay demonstrates a changed valuation, not an improved decision
+relative to the current baseline.
+
 ## Initial economic probe of #3267
 
 [Probe source](production-scaling-probe-2026-09-09.rs),
@@ -69,10 +75,10 @@ censoring and must not be pooled as though every seed reached them. The four
 games, not the 24 interacting seats, are the independent experimental units.
 This is far from a measured 10× gain and too small for a strength claim.
 
-## Proposed earlier investment
+## Rejected earlier-investment candidate
 
 The Industrial Zone scorer prices adjacency but omits the first production
-building it unlocks. The new named-lane term values that already-researched
+building it unlocks. The experimental named-lane term valued that already-researched
 first building's projected net production after paying its cost and waiting
 for both construction steps. Future returns are discounted by half; the
 existing district score still owns the district's direct adjacency valuation.
@@ -82,4 +88,60 @@ post-district construction rate, and never spends current overflow twice.
 Locked, already-built, nonproductive, second-tier and incompatible buildings
 supply no credit. If there is insufficient time for positive net production,
 there is no premium. Adaptive controllers retain their existing valuation.
-Validation of this proposed change is still in progress.
+The implementation and five passing focused tests are preserved in commit
+`d4b778813`; the combined candidate is `127929515`. The final change removes
+the candidate from the controller because the economic comparison below does
+not support promoting it.
+
+## District-only experiment
+
+The identical four seeds compare untouched `8cfc5ca75` against its district
+term in `d4b778813`, before incorporating #3267. All runs completed.
+
+| Turn-100 metric | Control | District term | Change |
+| --- | --- | --- | --- |
+| Production/turn | 98.73 | 97.90 | −0.8% |
+| Science/turn | 64.64 | 60.33 | −6.7% |
+| Culture/turn | 43.55 | 42.31 | −2.9% |
+| Integrated production rate | 5491.93 | 5527.54 | +0.6% |
+
+These results do not justify promoting the district term. A separate matched
+comparison against `f8124494d`, which includes #3267, tests whether actually
+reserving the follow-on Workshop changes that conclusion. It uses the same
+exploratory seeds, not independent confirmation seeds.
+
+Raw rows: [district control](production-scaling-probe-2026-09-09-district-control.csv),
+[district treatment](production-scaling-probe-2026-09-09-district.csv).
+
+## Combined experiment and decision
+
+All four seeds completed for untouched `f8124494d` (including #3267) and
+`127929515` (the same main plus the district term). At turn 100 all 24 matching
+seats remain available:
+
+| Metric | Current-main control | Combined treatment | Change |
+| --- | --- | --- | --- |
+| Production/turn | 99.37 | 100.34 | +1.0% |
+| Science/turn | 63.49 | 60.32 | −5.0% |
+| Culture/turn | 44.27 | 39.42 | −11.0% |
+| Integrated production rate | 5523.99 | 5629.18 | +1.9% |
+
+Production changes per game are +4.0%, +2.5%, +9.4%, and −10.9%; culture
+falls in all four games. This small development sample establishes neither
+statistical significance nor live-game strength. It supplies no convincing
+reason to accept the candidate's production/science/culture tradeoff.
+
+**Decision: reject the additional district bonus.** Keep #3267; this PR's final
+production controller matches its `f8124494d` baseline. The saved experiment
+can inform future work without silently promoting an unsuccessful heuristic.
+
+Raw rows: [combined control](production-scaling-probe-2026-09-09-combined-control.csv),
+[combined treatment](production-scaling-probe-2026-09-09-combined.csv).
+The [manifest](production-scaling-probe-2026-09-09-manifest.json) records source
+and executable hashes and exact revisions for both district experiments.
+
+The next production investigation should measure worked production tiles,
+Builder charges and delivery time before trying another global score bonus.
+Existing Builder-floor and first-Builder experiments already exist in the
+controller; any new candidate should compare against them explicitly. No 10×
+improvement has been demonstrated.
