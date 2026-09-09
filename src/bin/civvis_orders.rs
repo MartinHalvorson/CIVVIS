@@ -3361,9 +3361,10 @@ fn finish_live_war_units_excluding(
     excluded: &std::collections::BTreeSet<u32>,
     ai: &civvis::ai::AdvancedAi,
 ) -> WarFinishingVolley {
+    let withdrawing = ai.live_wounded_unit_reservations(planned_game, pid);
     let mapped: std::collections::BTreeMap<u32, i64> = mapped
         .iter()
-        .filter(|(uid, _)| !excluded.contains(uid))
+        .filter(|(uid, _)| !excluded.contains(uid) && !withdrawing.contains(uid))
         .map(|(uid, civ6)| (*uid, *civ6))
         .collect();
     let mapped = &mapped;
@@ -11062,6 +11063,31 @@ mod tests {
             });
         }
         civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0)
+    }
+
+    #[test]
+    fn finishing_volley_respects_selected_wounded_withdrawals() {
+        let mut mirror = finishing_survival_field(true, false);
+        let uid = mirror.uid_of[&101];
+        mirror.game.units.get_mut(&uid).unwrap().hp = 40;
+        let mut off = mirror.game.clone();
+        assert_eq!(
+            finish_live_war_units(&mut off, 0, &mirror.civ6_of).targets,
+            1
+        );
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_wounded_out_of_reach();
+        let mut on = mirror.game.clone();
+        let volley = finish_live_war_units_excluding(
+            &mut on,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert!(volley.actions.is_empty());
+        assert_eq!(on.units[&uid].hp, 40);
+        assert_eq!(on.units[&uid].pos, mirror.game.units[&uid].pos);
     }
 
     #[test]

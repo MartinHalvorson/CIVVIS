@@ -35615,9 +35615,10 @@ impl AdvancedAi {
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
+        reserved: &BTreeSet<u32>,
     ) -> usize {
         let actions = g.legal_actions_within(pid, ActionFamilies::UNITS);
-        let mut spent = BTreeSet::new();
+        let mut spent = reserved.clone();
         let mut kills = 0usize;
         loop {
             let best = actions
@@ -38775,6 +38776,7 @@ impl AdvancedAi {
         // predecessors and do not run beside it. Either version of the
         // family; version two adds the positions plan inside. See
         // `advanced/battle_planner.rs`.
+        let mut withdrawn = BTreeSet::new();
         if self.battle_planner_on() {
             if self.plan_battle(g, pid, plan) {
                 self.rebuild_force_groups(g, pid, plan);
@@ -38782,7 +38784,10 @@ impl AdvancedAi {
             }
             self.fire_plan_orders = fire_plan::FirePlan::default();
         } else {
-            if self.victory_planning && self.prioritize_immediate_kills(g, pid, plan) > 0 {
+            withdrawn = self.withdraw_before_kill_prepass(g, pid, plan);
+            let killed = self.victory_planning
+                && self.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0;
+            if killed || !withdrawn.is_empty() {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
@@ -38801,7 +38806,11 @@ impl AdvancedAi {
         // with the gene off. See `advanced/chokepoints.rs`.
         self.chokepoint_gate_plan(g, pid);
         let mut ids = g.player_unit_ids(pid);
-        ids.retain(|uid| !settled_first.contains(uid) && Some(*uid) != opening_recon_warrior);
+        ids.retain(|uid| {
+            !settled_first.contains(uid)
+                && Some(*uid) != opening_recon_warrior
+                && !withdrawn.contains(uid)
+        });
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
             let spec = &g.rules.units[u.kind];
