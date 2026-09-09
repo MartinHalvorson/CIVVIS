@@ -182,15 +182,45 @@ Breadth is not the missing thing. **Commitment with a deadline** is.
 ```sh
 target/ci/gene_screen --games 12 --jobs 4 --genes boost-planner --p-on 0.5 \
   --difficulty emperor --rivals firaxis-mix --handicap rivals --rival-chairs 3 \
-  --out docs/gene_screens/fires/2026-09-09-boost-planner.json
+  --out docs/gene_screens/fires/2026-09-09-boost-planner.jsonl
+target/ci/gene_screen --analyze docs/gene_screens/fires/2026-09-09-boost-planner.jsonl \
+  --json docs/gene_screens/fires/2026-09-09-boost-planner.json
 ```
 
-<!-- PROBE RESULT -->
+The rows are `docs/gene_screens/fires/2026-09-09-boost-planner.jsonl`; the
+analysis (`gene_screen --analyze <rows> --json <out>`) is
+`docs/gene_screens/fires/2026-09-09-boost-planner.json`. Twelve games, 36
+measured seats of 72 chairs (14 on, 22 off), seeds 26081900..26081911,
+majors at Emperor with the rung's bonuses given only to the three
+`firaxis-mix` rival chairs.
+
+| Column | Δ (seats on − seats off) | z |
+|---|---:|---:|
+| win | **+14.9 ± 12.9 pp** (28.6 % on, 13.6 % off) | +1.16 |
+| score share | **−2.26 ± 1.78 pp** | −1.27 |
+| techs @ standard t150 | **−0.97 ± 1.21** | −0.80 |
+| techs @ end | −3.72 ± 4.82 | −0.77 |
+| science / turn | −17.91 ± 54.09 | −0.33 |
+| games finished | −5.09 ± 5.27 pp | −0.97 |
+
+Read honestly: **nothing here is resolved** (`read: "~"`, and the row's own
+`win_resolves_pp` is 36.1 against a Δ of 14.9), and the two columns the gene
+exists to move — `science_pace` and `techs_end` — are **negative**, not
+positive. On 36 seats that is well inside noise in both directions, but it is
+not encouraging, and it is the opposite sign from the mechanism's story. The
+probe's only job was met: every statistic is non-zero, so the gene fires
+(`tools/gene_fires.py --max 0` exits 0, 279 of 279 genes shown to fire).
+
+The screen does **not** export a `boost_totals` column, so the direct
+measurement this gene wants — the share of researched nodes that arrived
+boosted, on against off — is not available from the artifact. That is the
+first thing a reviewer should add if this gene is taken further: the win and
+share columns cannot distinguish "the plan did not fire" from "the plan fired
+and did not pay", and `science_pace` at 36 seats cannot either.
 
 A twelve-game probe is not a measurement (`docs/GENE_SCREEN.md`, *"A probe's
-win Δ is not a measurement of the gene"*); it exists to show the gene fires at
-all, which is the precondition `tools/gene_fires.py --max 0` enforces. Pricing
-belongs to the continuous screen.
+win Δ is not a measurement of the gene"*). Pricing belongs to the continuous
+screen.
 
 ## Gaps and open questions
 
