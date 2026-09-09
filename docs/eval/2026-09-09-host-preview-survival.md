@@ -47,7 +47,8 @@ the controller's inserted escort rows and restores those tests.
 The existing full bridge decision test now also verifies that the emitted
 JSON carries the selected policy exactly once. All 156 bridge tests pass,
 including host acknowledgment, stale acknowledgment and refusal attribution
-controls. The full Rust suite passes: 3,221 tests, zero failures, 49 ignored.
+controls. After merging current main, the full Rust suite passes: 3,237 tests, zero
+failures, 50 ignored.
 
 The historical t140 replay uses one binary for default, v1 and v2. All three
 native outputs still propose Scout 2359303's ATTACK at 31,42, retaining the
