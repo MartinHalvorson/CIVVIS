@@ -1103,6 +1103,8 @@ impl AdvancedAi {
         if !self.battle_planner_on() {
             return false;
         }
+        self.battle_planner_ordered = self.withdraw_before_kill_prepass(g, pid, plan);
+        let withdrew = !self.battle_planner_ordered.is_empty();
         self.battle_planner_recovering.retain(|uid| {
             g.units
                 .get(uid)
@@ -1150,13 +1152,13 @@ impl AdvancedAi {
         // The caller's own rebuild after a strike is the version-one
         // contract and stands.
         if self.positions_plan_on() {
-            if struck {
+            if struck || withdrew {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
             self.plan_positions(g, pid, &mut field, &armed);
         }
-        struck
+        struck || withdrew
     }
 
     /// The kill plan alone — the ordered blows the search chose, before any
@@ -1368,6 +1370,7 @@ impl AdvancedAi {
                 || unit.moves_left <= 0.0
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
                 || self.battle_planner_recovering.contains(&uid)
+                || self.battle_planner_ordered.contains(&uid)
                 || self.guard_is_bound_to_any_settler(uid)
                 // `battle-planner-3`: the siege's taker is not the plan's.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
