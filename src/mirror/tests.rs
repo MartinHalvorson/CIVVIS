@@ -13697,3 +13697,84 @@ fn a_hostiles_attacks_remaining_reaches_the_planted_unit_on_both_paths() {
         "rebuild without the key: unchanged"
     );
 }
+
+#[test]
+fn native_policy_choices_replace_temporary_restrictions_without_affecting_rivals() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 208,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+    }]);
+    let rules = crate::rules::Rules::embedded();
+    let mut state = StateSnapshot {
+        turn: 208,
+        government: Some("GOVERNMENT_COMMUNISM".into()),
+        civics: rules
+            .civics
+            .keys()
+            .map(|name| format!("CIVIC_{}", name.as_str().to_ascii_uppercase()))
+            .collect(),
+        ..StateSnapshot::default()
+    };
+    let new_deal = Name::new("new_deal");
+    let legacy = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    assert!(legacy.game.available_policies(0).contains(&new_deal));
+    state.available_policies = Some(vec![
+        "POLICY_COLLECTIVIZATION".into(),
+        "POLICY_HOST_ONLY_UNKNOWN".into(),
+    ]);
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    assert!(!mirror.game.available_policies(0).contains(&new_deal));
+    assert!(mirror
+        .game
+        .available_policies(0)
+        .contains(&Name::new("collectivization")));
+    assert!(mirror
+        .game
+        .apply(0, &crate::game::Action::SlotPolicy { policy: new_deal })
+        .is_err());
+    mirror.game.players[1].civics = mirror.game.players[0].civics.clone();
+    assert!(
+        mirror.game.available_policies(1).contains(&new_deal),
+        "native slate belongs only to the mirrored seat"
+    );
+
+    state.turn += 1;
+    state.government = Some("GOVERNMENT_DEMOCRACY".into());
+    state.available_policies = Some(vec!["POLICY_NEW_DEAL".into()]);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        mirror.game.available_policies(0).contains(&new_deal),
+        "government change must release the old restriction"
+    );
+    assert!(mirror
+        .game
+        .apply(0, &crate::game::Action::SlotPolicy { policy: new_deal })
+        .is_ok());
+
+    state.turn += 1;
+    state.available_policies = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        mirror.game.available_policies(0).is_empty(),
+        "empty host slate must not fall back to local eligibility"
+    );
+    state.turn += 1;
+    state.available_policies = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        mirror.game.available_policies(0).contains(&new_deal),
+        "unknown legacy observation must not retain a stale ban"
+    );
+}
+
+#[test]
+fn native_policy_choices_deserialize_unknown_and_empty_distinctly() {
+    let absent: StateSnapshot = serde_json::from_str(r#"{"turn":1}"#).unwrap();
+    let empty: StateSnapshot =
+        serde_json::from_str(r#"{"turn":1,"available_policies":[]}"#).unwrap();
+    assert_eq!(absent.available_policies, None);
+    assert_eq!(empty.available_policies, Some(vec![]));
+}
