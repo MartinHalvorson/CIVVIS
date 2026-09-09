@@ -47212,6 +47212,7 @@ fn scout_first_opening_registry_toggles_both_governors() {
     assert!(!ai.scout_first_opening);
     assert!(!ai.base.scout_first_opening);
     assert!(!AdvancedAi::legacy().scout_first_opening);
+    ai.disable_recon_replacement();
     (gene.enable)(&mut ai);
     assert!(ai.scout_first_opening);
     assert!(ai.base.scout_first_opening);
