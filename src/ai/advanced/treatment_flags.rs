@@ -1407,6 +1407,18 @@ impl AdvancedAi {
         self.base.land_grab = false;
     }
 
+    /// Reserve the safe capital's first build for its first Scout.
+    pub fn enable_scout_first_opening(&mut self) {
+        self.scout_first_opening = true;
+        self.base.scout_first_opening = true;
+    }
+
+    /// Restore the configured opening without changing its progress.
+    pub fn disable_scout_first_opening(&mut self) {
+        self.scout_first_opening = false;
+        self.base.scout_first_opening = false;
+    }
+
     /// After its current production completes, let a population-two capital
     /// start the next legal Settler before ordinary production ranking. The
     /// baseline governor retains the city-target, site, and emergency gates.

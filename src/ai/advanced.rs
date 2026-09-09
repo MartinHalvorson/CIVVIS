@@ -3265,6 +3265,8 @@ pub struct AdvancedAi {
     /// ordinary ranking fill the opening. The baseline governor owns the
     /// choice; this flag makes it a screenable AdvancedAI gene.
     pub capital_settler_after_completion: bool,
+    /// Build one opening Scout when the capital is safe and lacks recon.
+    pub scout_first_opening: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -7544,6 +7546,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             land_grab: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
