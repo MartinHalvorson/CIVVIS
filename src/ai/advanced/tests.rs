@@ -44862,10 +44862,8 @@ fn the_move_refusal_break_gene_off_records_and_bars_nothing() {
     assert!(!ai.base.move_refusal_blocked(&g, uid));
 }
 
-/// The Settler half: a frozen Settler does not merely bend its route — its
-/// destination is retired through the same dead-site machinery a watchdog
-/// arrival uses, so the chooser must pick a site the refused approach does
-/// not serve.
+/// A city site that is itself the refused tile has no alternate approach.
+/// It is deferred until the host refusal expires.
 #[test]
 fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
     let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
@@ -44883,11 +44881,7 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
         .into_iter()
         .find(|pos| *pos != here)
         .expect("a neighboring tile");
-    let target = g
-        .wdisk(here, 5)
-        .into_iter()
-        .find(|pos| g.wdist(*pos, here) >= 4)
-        .expect("a distant destination");
+    let target = step; // The unavailable tile is itself the city site.
     ai.settler_targets.insert(settler, target);
     ai.base
         .move_refusal_blocks

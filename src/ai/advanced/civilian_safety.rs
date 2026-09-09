@@ -991,8 +991,11 @@ impl AdvancedAi {
         if reach.is_empty() && !self.live_settler_capture_lessons {
             return self.settler_step_toward_safe_with_guards(g, pid, uid, target);
         }
+        let Some(waypoint) = self.settler_refusal_waypoint(g, uid, target) else {
+            return false;
+        };
         let Some(next) = g
-            .route_step(uid, target, 0)
+            .route_step(uid, waypoint, 0)
             .filter(|next| g.can_move(uid, *next))
         else {
             return self.settler_step_toward_safe_with_guards(g, pid, uid, target);
