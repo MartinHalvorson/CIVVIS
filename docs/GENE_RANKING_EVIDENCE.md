@@ -193,6 +193,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `doomed-blow-veto-2` | off (unmeasured) | Price survival after the complete friendly strike sequence. | 1 \| 2 |
 | `expansion-best-idle-city` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `expansion-best-idle-city-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `hostile-memory-2` | off (unmeasured) | Version two retains civilian memory and prices a land escort's embarkation. | 1 \| 2 |
 | `liang-follows-builders` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `magnus-follows-settlers` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `pingala-follows-research` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
