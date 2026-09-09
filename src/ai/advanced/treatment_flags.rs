@@ -197,11 +197,23 @@ impl AdvancedAi {
     /// cannot be met by land at all. See [`AdvancedAi::early_contact_window`].
     pub fn enable_early_contact_window(&mut self) {
         self.early_contact_window = true;
+        self.early_contact_window_2 = false;
     }
 
     /// The twin of `enable_early_contact_window`.
     pub fn disable_early_contact_window(&mut self) {
         self.early_contact_window = false;
+    }
+
+    /// Spread early Scouts across nearby land frontiers until first major
+    /// contact, retaining the original city-state production incentive.
+    pub fn enable_early_contact_window_2(&mut self) {
+        self.early_contact_window_2 = true;
+        self.early_contact_window = false;
+    }
+
+    pub fn disable_early_contact_window_2(&mut self) {
+        self.early_contact_window_2 = false;
     }
 
     /// Reserve a city to build whatever unblocks an earned Great Person,

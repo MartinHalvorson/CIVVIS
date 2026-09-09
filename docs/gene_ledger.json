@@ -2052,6 +2052,17 @@
           "doomed-blow-veto-2": null
         }
       },
+      "early-contact-window": {
+        "rule_on": [
+          "early-contact-window"
+        ],
+        "head": "early-contact-window",
+        "ships": "early-contact-window",
+        "versions": {
+          "early-contact-window": 0.169393,
+          "early-contact-window-2": null
+        }
+      },
       "early-project-restraint": {
         "rule_on": [
           "early-project-restraint-2"
