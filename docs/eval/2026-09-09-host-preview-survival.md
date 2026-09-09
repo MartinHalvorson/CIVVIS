@@ -25,8 +25,11 @@ Lines 1773–1776 read `pAttacker:GetDamage()`, `pAttacker:GetMaxDamage()`, and
 `m_combatResults[CombatResultParameters.ATTACKER][CombatResultParameters.DAMAGE_TO]`
 to display the attacker's resulting health. The guard uses those same readings.
 
+The controller acknowledges consumption with `combat_policy_applied`; the
+bridge verifies that event rather than assuming the policy arrived.
 A refusal emits `strike_survival_refused` with unit, target, HP and preview,
-and the ordinary refusal reason `lethal_host_preview`. It does not request
+and the ordinary refusal reason `lethal_host_preview`, which the bridge
+postcondition checker also reads. It does not request
 combat or record a strike as issued. Unit rows keep their ordinary `ATTACK`
 or `RANGE_ATTACK` verbs. Unselected behavior and gene defaults are unchanged.
 
@@ -42,8 +45,23 @@ identity regression; consuming the metadata in the original list preserves
 the controller's inserted escort rows and restores those tests.
 
 The existing full bridge decision test now also verifies that the emitted
-JSON carries the selected policy exactly once; it passes. Full Rust and
-historical transport/replay validation are pending.
+JSON carries the selected policy exactly once. All 156 bridge tests pass,
+including host acknowledgment, stale acknowledgment and refusal attribution
+controls. The full Rust suite passes: 3,221 tests, zero failures, 49 ignored.
+
+The historical t140 replay uses one binary for default, v1 and v2. All three
+native outputs still propose Scout 2359303's ATTACK at 31,42, retaining the
+known model mismatch. The outputs pass unchanged through `civ6_brain`'s
+five-field adapter and `write_turn` into SQLite, then the actual Lua controller
+runs those scout rows and policy metadata against a fake host returning the
+recorded 1-dealt/100-taken preview. Default requests the fatal strike once;
+v1 and v2 request it zero times, acknowledge the policy and name the refusal.
+
+Replay binary SHA-256: `39847e443fea4d18f4c78b998cf8796b7f558b3ba60629d9d5f691468773b94b`. The source is based on
+`4b500a6db376542fd68d68aa104cf3815010e1ce` with the subsequently tested acknowledgment/refusal-checker
+changes; exact source hashes and all native JSON, transport rows and controller
+results are retained under the local evidence directory
+`010354-turn140-host-preview-survival/`. No running host database was modified.
 
 These are deterministic regression controls against recorded host evidence,
 not a counterfactual host execution or a measured win-rate improvement. The

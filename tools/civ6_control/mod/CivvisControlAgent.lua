@@ -16894,6 +16894,12 @@ local function applyOrders(player, pid, turn, rows)
 		row._civvis_survival_guard = survival and row.kind == "unit"
 			and (row.verb == "ATTACK" or row.verb == "RANGE_ATTACK");
 	end
+	if survival then
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "DOOMED_BLOW_VETO",
+		});
+	end
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
