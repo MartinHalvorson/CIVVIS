@@ -59,3 +59,55 @@ endScreen(2)
 assert(#sent == before + 1 and sent[#sent] == "CHOICE_POSITIVE")
 assert(stockCalls == 10, "stock rendering must still run for every statement")
 print("first-contact privacy: 10 statement cases passed")
+
+-- Exercise the real update loop: decisions bypass the reading/retry timer,
+-- but cannot run through the native fade or a controller-owned deal hold.
+local update, sessionListener
+local fading = false
+local exits = 0
+sent = {}
+CivvisControlConfig = { DialogueSeconds = 2, Play = false }
+ContextPtr = {
+    GetID = function() return "DiplomacyActionView" end,
+    IsHidden = function() return false end,
+    SetUpdate = function(_, callback) update = callback end,
+}
+Controls = { BlackFadeAnim = { IsStopped = function() return not fading end } }
+LuaEvents = { CivvisDealSession = { Add = function(callback) sessionListener = callback end } }
+Automation = { Log = function() end }
+include = function() end
+CloseFocusedState = function() exits = exits + 1 end
+ApplyStatement = function() end
+DefaultHandlers.ApplyStatement = ApplyStatement
+assert(loadfile(here .. "/CivvisControlAutoClose.lua"))()
+assert(update and sessionListener)
+statement("FIRST_MEET_NEAR_RECIPIENT", "LOC_DIPLO_CHOICE_FIRST_MEET_NEAR_RECIPIENT_POSITIVE")
+fading = true
+update(0.01)
+assert(#sent == 0, "never answer during the native fade")
+fading = false
+update(0.01)
+assert(#sent == 1 and sent[1] == "CHOICE_POSITIVE", "answer on the first ready frame")
+update(0.01)
+assert(#sent == 1, "do not resubmit while waiting for the next statement")
+statement("FIRST_MEET_VISIT_RECIPIENT", "LOC_DIPLO_CHOICE_FIRST_MEET_VISIT")
+update(0.01)
+assert(#sent == 2 and sent[2] == "CHOICE_POSITIVE", "follow-up hospitality bypasses the old timer")
+statement("FIRST_MEET_NEAR_INITIATOR", "LOC_DIPLO_CHOICE_FIRST_MEET_NEAR_INITIATOR_POSITIVE")
+sessionListener(1, true, 1)
+update(0.01)
+assert(#sent == 2, "owned deal holds still take priority")
+sessionListener(1, false, 0)
+update(0.01)
+assert(#sent == 3 and sent[3] == "CHOICE_EXIT", "privacy exit is equally prompt")
+statement("EMBASSY", "UNKNOWN")
+update(0.01)
+assert(exits == 0 and #sent == 3, "other dialogues retain their normal timer")
+-- A new statement must not inherit a stuck screen's thirty-second back-off.
+for _ = 1, 20 do update(2) end
+local beforeBackoff = #sent
+statement("FIRST_MEET_VISIT_RECIPIENT", "LOC_DIPLO_CHOICE_FIRST_MEET_VISIT")
+update(0.01)
+assert(#sent == beforeBackoff + 1 and sent[#sent] == "CHOICE_POSITIVE",
+    "new hospitality bypasses a previous screen's retry back-off")
+print("first-contact timing: fade, follow-up, duplicate, hold, privacy, ordinary-dialogue and back-off checks passed")
