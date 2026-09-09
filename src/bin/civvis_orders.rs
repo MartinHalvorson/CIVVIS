@@ -3157,6 +3157,7 @@ struct WarFinishingVolley {
     actions: Vec<Action>,
     reserves: usize,
     survival_rejections: usize,
+    roll_rejections: usize,
 }
 
 #[derive(Clone)]
@@ -3314,6 +3315,39 @@ fn live_finishing_candidates(
     candidates
 }
 
+/// A lower-roll estimate from the exported board, before any simulated
+/// damage weakens the defender. The bridge's RNG is unrelated to Firaxis's:
+/// one lucky native kill cannot prove that a live volley finishes its target.
+/// This bounds native roll uncertainty, not differences in the host's rules.
+fn live_finishing_damage_floor(
+    game: &civvis::game::Game,
+    pid: usize,
+    target: u32,
+    candidate: &FinishingCandidate,
+) -> Option<i32> {
+    let mut approach = game.clone();
+    for action in &candidate.simulation {
+        let strengths = match action {
+            Action::Move { .. } => {
+                approach.apply(pid, action).ok()?;
+                continue;
+            }
+            Action::Attack { unit, .. } => approach.melee_exchange_strengths(*unit, target),
+            Action::Ranged {
+                unit,
+                target: position,
+            } => approach.ranged_strike_strengths(*unit, target, *position),
+            _ => return None,
+        }?;
+        // Match `game::damage` at its lowest 0.8 roll, before rounding and
+        // clamping. Scaling its already-clamped mean would turn a guaranteed
+        // 100-damage blow into an incorrect 80-damage floor.
+        let damage = 30.0 * ((strengths.0 - strengths.1) / 25.0).exp() * 0.8;
+        return Some((damage.round() as i32).clamp(1, 100));
+    }
+    None
+}
+
 /// Finish exposed wounded enemies before their attackers receive campaign moves.
 ///
 /// The old live-only repair rewrote every wounded barbarian to 100 HP on the
@@ -3430,13 +3464,20 @@ fn finish_live_war_units_excluding(
             result.survival_rejections += 1;
             continue;
         }
-        // A reserve is issued only if the host leaves the target alive. Price
-        // its own attack on the original board where that defender still
-        // exists, before the modelled primary kill removes it below.
-        let backup = if chosen.len() == 1 {
+        // Price each contribution against the original defender's health:
+        // sampled earlier damage must not inflate later blows. A reserve can
+        // cover a shortfall even when several primary attackers were chosen.
+        let primary_floor = chosen.iter().try_fold(0i32, |sum, candidate| {
+            Some(sum + live_finishing_damage_floor(planned_game, pid, target, candidate)?)
+        });
+        let needs_reserve = chosen.len() == 1
+            || primary_floor.is_none_or(|damage| damage < planned_game.units[&target].hp);
+        // The host issues a reserve only if the target remains alive. Check
+        // its survival on the original board where that defender still exists.
+        let backup = if needs_reserve {
             initial
                 .iter()
-                .filter(|candidate| candidate.unit != chosen[0].unit)
+                .filter(|candidate| !chosen.iter().any(|primary| primary.unit == candidate.unit))
                 .find(|candidate| {
                     let safe =
                         ai.live_finishing_actions_survive(planned_game, pid, &candidate.simulation);
@@ -3448,6 +3489,16 @@ fn finish_live_war_units_excluding(
         } else {
             None
         };
+        let damage_floor = primary_floor.and_then(|sum| match backup {
+            Some(candidate) => {
+                Some(sum + live_finishing_damage_floor(planned_game, pid, target, candidate)?)
+            }
+            None => Some(sum),
+        });
+        if damage_floor.is_none_or(|damage| damage < planned_game.units[&target].hp) {
+            result.roll_rejections += 1;
+            continue;
+        }
 
         for candidate in &chosen {
             let mut legal = true;
@@ -3468,9 +3519,8 @@ fn finish_live_war_units_excluding(
         }
         result.targets += 1;
 
-        // One predicted attack plus one available attacker is the exact shape
-        // the old durability rewrite was trying to preserve. Keep the reserve
-        // explicit instead of making the target look healthy to every scorer.
+        // Keep the conditional reserve explicit rather than rewriting the
+        // target's health or pretending its attack already landed.
         if let Some(backup) = backup {
             if !committed.contains(&backup.unit) {
                 if let Some(unit) = planned_game.units.get_mut(&backup.unit) {
@@ -3900,6 +3950,12 @@ fn decide(
             mirror_state.game.trade_capacity(0),
             mirror_state.game.active_routes(0),
             pre_traders.join("; ")
+        ));
+    }
+    if war_finishers.roll_rejections > 0 {
+        note_bits.push(format!(
+            "war_unit_finishing_roll_rejections={}",
+            war_finishers.roll_rejections
         ));
     }
     if war_finishers.survival_rejections > 0 {
@@ -11066,6 +11122,43 @@ mod tests {
     }
 
     #[test]
+    fn one_native_damage_roll_does_not_prove_a_live_finishing_kill() {
+        let mirror = finishing_survival_field(false, false);
+        let uid = mirror.uid_of[&101];
+        let target = mirror.foreign_uid_of[&200];
+        let mut found = false;
+        for hp in 20..60 {
+            let mut game = mirror.game.clone();
+            game.units.get_mut(&uid).unwrap().hp = 100;
+            game.units.get_mut(&target).unwrap().hp = hp;
+            let (attack, defense) = game.melee_exchange_strengths(uid, target).unwrap();
+            let low_damage = (civvis::game::expected_damage(attack, defense) * 0.8)
+                .round()
+                .clamp(1.0, 100.0) as i32;
+            let candidates = live_finishing_candidates(
+                &game,
+                0,
+                target,
+                &mirror.civ6_of,
+                &std::collections::BTreeSet::new(),
+            );
+            if low_damage >= hp || !candidates.iter().any(|candidate| candidate.kills) {
+                continue;
+            }
+            found = true;
+            let volley = finish_live_war_units(&mut game, 0, &mirror.civ6_of);
+            assert_eq!(volley.targets, 0,
+                "a sampled kill cannot reserve the lone attacker when a lower damage roll leaves the target alive");
+            assert!(volley.actions.is_empty());
+            break;
+        }
+        assert!(
+            found,
+            "the fixture must include a sampled kill that a lower roll does not finish"
+        );
+    }
+
+    #[test]
     fn finishing_volley_respects_selected_wounded_withdrawals() {
         let mut mirror = finishing_survival_field(true, false);
         let uid = mirror.uid_of[&101];
@@ -11204,11 +11297,12 @@ mod tests {
         let mut old = mirror.game.clone();
         let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
         assert!(old_volley.actions.len() > 1);
-        assert_eq!(old_volley.reserves, 0);
+        assert_eq!(old_volley.reserves, 1);
+        let primary = &old_volley.actions[..old_volley.actions.len() - old_volley.reserves];
         let mut ai = civvis::ai::AdvancedAi::new();
         ai.enable_doomed_blow_veto_2();
         assert!(!ai.live_finishing_actions_survive(&mirror.game, 0, &old_volley.actions[..1]));
-        assert!(ai.live_finishing_actions_survive(&mirror.game, 0, &old_volley.actions));
+        assert!(ai.live_finishing_actions_survive(&mirror.game, 0, primary));
         let mut planned = mirror.game.clone();
         let volley = finish_live_war_units_excluding(
             &mut planned,
