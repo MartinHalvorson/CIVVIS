@@ -9456,7 +9456,13 @@ impl Game {
         let Some(family) = self.rules.buildings[building.as_name()].district else {
             return true;
         };
-        if family == "city_center" {
+        // An interned `Name` against a literal derefs the interning registry and
+        // does a real `str` comparison every call (`impl PartialEq<str> for
+        // Name`); `name!()` makes it the id compare it should be. This function
+        // is the largest single self time in the batch profile, 6.8%, and it is
+        // re-entered once per building by the regional-yield and city-power
+        // sweeps.
+        if family == crate::name!("city_center") {
             return true;
         }
         let wanted = self.district_family(family);

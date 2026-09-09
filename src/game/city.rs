@@ -265,14 +265,28 @@ impl Game {
         district == family || self.district_family(district) == self.district_family(family)
     }
 
+    /// `district_is_family` with the family's own family already resolved.
+    ///
+    /// ⭐ THE ONE THE CITY LOOPS WANT. `district_is_family` resolves BOTH sides,
+    /// so a sweep over a city's districts walked the replacement chain for the
+    /// same `family` once per district it looked at -- and
+    /// `building_district_is_active`, which does hoist it, is the hottest self
+    /// time in the batch profile at 6.8%. Same answer: when
+    /// `district == family` the two chains end at the same name anyway, so the
+    /// cheap identity test is kept only as the short-circuit it already was.
+    fn district_has_resolved_family(&self, district: Name, family: Name, wanted: Name) -> bool {
+        district == family || self.district_family(district) == wanted
+    }
+
     pub fn city_has_district_family(&self, city: &City, family: impl AsName) -> bool {
         let family = family.as_name();
-        if family == "city_center" {
+        if family == crate::name!("city_center") {
             return true;
         }
+        let wanted = self.district_family(family);
         city.districts
             .keys()
-            .any(|district| self.district_is_family(district, family))
+            .any(|district| self.district_has_resolved_family(*district, family, wanted))
     }
 
     /// The districts Civilization VI counts as *specialty* — the ones the
@@ -319,11 +333,12 @@ impl Game {
 
     pub(super) fn city_has_active_district_family(&self, city: &City, family: impl AsName) -> bool {
         let family = family.as_name();
-        if family == "city_center" {
+        if family == crate::name!("city_center") {
             return true;
         }
+        let wanted = self.district_family(family);
         city.districts.iter().any(|(district, position)| {
-            self.district_is_family(district, family)
+            self.district_has_resolved_family(*district, family, wanted)
                 && self.district_is_active(city, district, *position)
         })
     }
@@ -376,8 +391,10 @@ impl Game {
         city: &City,
         family: impl AsName,
     ) -> Option<Pos> {
+        let family = family.as_name();
+        let wanted = self.district_family(family);
         city.districts.iter().find_map(|(district, position)| {
-            self.district_is_family(district, family)
+            self.district_has_resolved_family(*district, family, wanted)
                 .then_some(*position)
         })
     }
@@ -387,8 +404,10 @@ impl Game {
         city: &City,
         family: impl AsName,
     ) -> Option<Pos> {
+        let family = family.as_name();
+        let wanted = self.district_family(family);
         city.districts.iter().find_map(|(district, position)| {
-            (self.district_is_family(district, family)
+            (self.district_has_resolved_family(*district, family, wanted)
                 && self.district_is_active(city, district, *position))
             .then_some(*position)
         })
