@@ -417,14 +417,18 @@ class TheRowCarriesTheResearchGap(unittest.TestCase):
             "utc": "2026-09-08T10:00:00Z", "reason": "killed",
             "techs_at_150": 31, "rival_techs_at_150": 47}]})
         self.assertIn("| techs@150 (ours/rival) |", markdown)
-        self.assertIn("| 180 | 400 | 31/47 | 2026-09-08T10:00:00Z |", markdown)
+        self.assertIn("| 180 | 400 | 31/47 | — | 2026-09-08T10:00:00Z |", markdown)
 
 
 class TheHarnessAttritionIsOnThePage(unittest.TestCase):
-    """61% of September's Emperor games ended `killed` or `operator_retired`:
-    the harness, not the game, decided the record. The census makes that
-    visible per day, and stays byte-stable so the snapshot test does not go
-    stale overnight."""
+    """How games ended, per day, visible on the page and byte-stable so the
+    snapshot test does not go stale overnight.
+
+    ⚠ The "61% of September's Emperor games ended `killed` or
+    `operator_retired`" headline this class was written for was an artifact of
+    counting attempt ROWS: 74% of the `killed` rows were park restarts of games
+    that went on to end some other way. See
+    `TheAttritionTableCountsGamesNotSegments`."""
 
     @staticmethod
     def _attempt(utc: str, reason: str | None, won: bool = False) -> dict:
@@ -472,10 +476,16 @@ class TheHarnessAttritionIsOnThePage(unittest.TestCase):
         markdown = civ6_ladder.markdown_for({"wins": {}, "attempts": attempts})
         self.assertIn("## How the harness ended games, per day (last 14 days)",
                       markdown)
+        # `games` and `restarts` replaced `total`: one row here is one GAME,
+        # and a parked game's restarts are counted beside its ending rather
+        # than inside it. See `TheAttritionTableCountsGamesNotSegments`.
         self.assertIn("| day | killed | operator_retired | abandoned | stopped "
-                      "| game exited | timeout | other | total | won |", markdown)
-        self.assertIn("| 2026-09-07 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |", markdown)
-        self.assertIn("| 2026-09-08 | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 2 | 0 |", markdown)
+                      "| game exited | timeout | other | games | restarts | won |",
+                      markdown)
+        self.assertIn("| 2026-09-07 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |",
+                      markdown)
+        self.assertIn("| 2026-09-08 | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 2 | 0 | 0 |",
+                      markdown)
         self.assertLess(markdown.index("How the harness ended games"),
                         markdown.index("## Every attempt"))
 
@@ -2369,6 +2379,177 @@ class TheRowCarriesTheCultureClock(unittest.TestCase):
                 set(civ6_ladder.culture_marks(events)))
 
 
+class TheRowCarriesTheSpaceRace(unittest.TestCase):
+    """`launch_marks` reads the space race to the run's LAST board: the first
+    finished Spaceport, the launches completed of four, and the turn the
+    latest one first showed.
+
+    Emperor games that reach t200 lay a Spaceport and complete one to three
+    launches before a rival wins at t213–228, and the row could not tell that
+    seat from one that never left the ground. `science_projects` and every
+    city's district list already cross the bridge; nothing new is exported."""
+
+    @staticmethod
+    def _events(path: Path, records: list[dict]) -> Path:
+        path.write_text("".join(json.dumps(r) + "\n" for r in records),
+                        encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _state(turn: int, projects: list, spaceport=None, frame: int = 0):
+        districts = []
+        if spaceport is not None:
+            districts.append({"type": "DISTRICT_SPACEPORT",
+                              "complete": spaceport})
+        return {"kind": "state", "turn": turn, "frame": frame,
+                "science_projects": projects,
+                "cities": [{"name": "Rome", "districts": [
+                    {"type": "DISTRICT_CAMPUS", "complete": True},
+                    *districts]}]}
+
+    def test_the_last_board_decides_and_first_sightings_date_it(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                # A Spaceport under construction is a plot type, not a launch
+                # pad: it must not date the district.
+                self._state(198, [], spaceport=False),
+                self._state(201, [], spaceport=True),
+                self._state(209, ["PROJECT_LAUNCH_EARTH_SATELLITE"],
+                            spaceport=True),
+                # A mid-turn combat frame repeats the board; the turn is what
+                # is dated, so it changes nothing.
+                self._state(209, ["PROJECT_LAUNCH_EARTH_SATELLITE"],
+                            spaceport=True, frame=1),
+                self._state(219, ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                  "PROJECT_LAUNCH_MOON_LANDING"],
+                            spaceport=True),
+                self._state(226, ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                  "PROJECT_LAUNCH_MOON_LANDING"],
+                            spaceport=True),
+            ])
+            marks = civ6_ladder.launch_marks(events)
+        self.assertEqual(marks, {"spaceport_turn": 201,
+                                 "launches_completed": 2,
+                                 "last_launch_turn": 219})
+
+    def test_a_spaceport_and_no_launch_is_zero_with_a_turn(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                self._state(150, []),
+                self._state(204, ["PROJECT_MANHATTAN_PROJECT"],
+                            spaceport=True),
+            ])
+            marks = civ6_ladder.launch_marks(events)
+        # Manhattan is a nuclear milestone in the same list, not a launch.
+        self.assertEqual(marks, {"spaceport_turn": 204,
+                                 "launches_completed": 0,
+                                 "last_launch_turn": None})
+
+    def test_the_base_game_mars_parts_count_once_and_only_whole(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                self._state(220, ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                  "PROJECT_LAUNCH_MOON_LANDING",
+                                  "PROJECT_LAUNCH_MARS_REACTOR",
+                                  "PROJECT_LAUNCH_MARS_HABITATION"],
+                            spaceport=True),
+            ])
+            self.assertEqual(
+                civ6_ladder.launch_marks(events)["launches_completed"], 2)
+            events = self._events(Path(tmp) / "events.jsonl", [
+                self._state(230, ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                  "PROJECT_LAUNCH_MOON_LANDING",
+                                  "PROJECT_LAUNCH_MARS_REACTOR",
+                                  "PROJECT_LAUNCH_MARS_HABITATION",
+                                  "PROJECT_LAUNCH_MARS_HYDROPONICS"],
+                            spaceport=True),
+            ])
+            self.assertEqual(
+                civ6_ladder.launch_marks(events)["launches_completed"], 3)
+            # Gathering Storm's single base is the same stage.
+            events = self._events(Path(tmp) / "events.jsonl", [
+                self._state(230, ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                  "PROJECT_LAUNCH_MOON_LANDING",
+                                  "PROJECT_LAUNCH_MARS_BASE",
+                                  "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"],
+                            spaceport=True),
+            ])
+            marks = civ6_ladder.launch_marks(events)
+        self.assertEqual(marks["launches_completed"], 4)
+        self.assertEqual(marks["last_launch_turn"], 230)
+
+    def test_an_older_district_export_without_complete_is_taken_at_its_word(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "state", "turn": 190, "science_projects": [],
+                 "cities": [{"districts": [{"type": "DISTRICT_SPACEPORT"}]}]},
+            ])
+            marks = civ6_ladder.launch_marks(events)
+        self.assertEqual(marks["spaceport_turn"], 190)
+
+    def test_a_mod_that_never_exported_projects_is_silence(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "state", "turn": 220, "techs": ["a"], "rivals": [],
+                 "cities": [{"districts": [{"type": "DISTRICT_SPACEPORT",
+                                            "complete": True}]}]},
+                {"kind": "turn", "turn": 221, "score": 10},
+            ])
+            self.assertIsNone(civ6_ladder.launch_marks(events))
+
+    def test_the_three_columns_ride_the_entry(self):
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-s", "difficulty": "DIFFICULTY_EMPEROR",
+            "configured": True, "last_turn": 226, "last_score": 470,
+            "launch_marks": {"spaceport_turn": 201, "launches_completed": 2,
+                             "last_launch_turn": 219},
+        })
+        self.assertEqual(entry["spaceport_turn"], 201)
+        self.assertEqual(entry["launches_completed"], 2)
+        self.assertEqual(entry["last_launch_turn"], 219)
+        self.assertEqual(civ6_ladder.launch_cell(entry),
+                         "2/4 port t201 last t219")
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-s",
+            "launch_marks": {"spaceport_turn": None, "launches_completed": 0,
+                             "last_launch_turn": None},
+        })
+        self.assertEqual(entry["launches_completed"], 0)
+        self.assertEqual(civ6_ladder.launch_cell(entry), "0/4")
+
+    def test_a_summary_without_marks_records_none(self):
+        entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        for key in ("spaceport_turn", "launches_completed",
+                    "last_launch_turn"):
+            self.assertIsNone(entry[key], key)
+        self.assertEqual(civ6_ladder.launch_cell(entry), "—")
+
+    def test_the_markdown_carries_the_column(self):
+        state = {"wins": {}, "attempts": [civ6_ladder.entry_from({
+            "tag": "civvis-s", "difficulty": "DIFFICULTY_EMPEROR",
+            "configured": True, "last_turn": 226, "last_score": 470,
+            "utc": "2026-09-03T11:02:11Z",
+            "launch_marks": {"spaceport_turn": 201, "launches_completed": 2,
+                             "last_launch_turn": 219},
+        })]}
+        markdown = civ6_ladder.markdown_for(state)
+        self.assertIn("| techs@150 (ours/rival) | launches | ended |", markdown)
+        self.assertIn("| 226 | 470 | — | 2/4 port t201 last t219 |", markdown)
+        self.assertIn("`launches` is the space race", markdown)
+
+    def test_every_path_that_writes_a_summary_carries_it(self):
+        """Including the shutdown hook: `killed` and `operator_retired` end
+        most Emperor games, and the space race is only visible in the ones
+        that ran deep enough to be worth ending that way."""
+        ladder = (Path(__file__).resolve().parent / "civ6_ladder.py").read_text(
+            encoding="utf-8")
+        play = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn("**launch_mark_columns(summary)", ladder)
+        self.assertEqual(play.count('summary["launch_marks"] = launches'), 2)
+        self.assertIn('partial["launch_marks"] = launches', play)
+
+
 # ⚠⚠ AT THE END, AND IT HAS TO STAY THERE. This guard used to sit two thirds
 # of the way up the file. Run under `unittest discover` -- which is what CI
 # does -- the module is imported, the guard never fires, and every class is
@@ -2379,3 +2560,116 @@ class TheRowCarriesTheCultureClock(unittest.TestCase):
 # a green that had tested neither.
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheAttritionTableCountsGamesNotSegments(unittest.TestCase):
+    """A parked game reloaded from its autosave writes a ledger row per
+    segment, and the table counted rows.
+
+    The parked segment ends `killed`, then `<tag>-cont1` plays on and ends
+    however the game really ended, so every restart landed in the `killed`
+    column. Measured on the committed ledger: 119 `killed` rows against 31
+    `killed` games, 74% of them restarts, which made the harness look like the
+    largest single ending of the record when per game it is the smallest of the
+    five.
+    """
+
+    @staticmethod
+    def _attempt(tag: str, utc: str, reason: str, **extra) -> dict:
+        return {"tag": tag, "utc": utc, "reason": reason, **extra}
+
+    def test_a_resumed_game_is_counted_once_under_its_final_ending(self):
+        attempts = [
+            self._attempt("civvis-A", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-A-cont1", "2026-09-08T02:00:00Z", "killed"),
+            self._attempt("civvis-A-cont2", "2026-09-08T03:00:00Z", "stopped"),
+        ]
+        census = civ6_ladder.attrition_census(attempts)
+        self.assertEqual(len(census), 1, "one game, one day")
+        (day, counts), = census
+        self.assertEqual(day, "2026-09-08")
+        self.assertEqual(counts["stopped"], 1, "the game ended stopped")
+        self.assertEqual(counts["killed"], 0,
+                         "the two parked segments are restarts, not endings")
+        self.assertEqual(counts["restarts"], 2, "and they stay visible")
+
+    def test_a_game_killed_for_good_still_counts_as_killed(self):
+        """The fix must not hide a real kill: a game whose LAST segment was
+        killed is a killed game."""
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-B", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-B-cont1", "2026-09-08T02:00:00Z", "killed"),
+        ])
+        (_, counts), = census
+        self.assertEqual(counts["killed"], 1)
+        self.assertEqual(counts["restarts"], 1)
+
+    def test_ten_segments_sort_by_number_not_by_text(self):
+        """`-cont10` is the tenth segment, not the second: sorting the tags as
+        strings would put it before `-cont2` and read the wrong ending."""
+        attempts = [self._attempt("civvis-C", "2026-09-08T00:00:00Z", "killed")]
+        attempts += [self._attempt(f"civvis-C-cont{n}", f"2026-09-08T0{n%10}:00:00Z",
+                                   "killed") for n in range(1, 10)]
+        attempts.append(self._attempt("civvis-C-cont10", "2026-09-08T12:00:00Z",
+                                      "abandoned"))
+        (_, counts), = civ6_ladder.attrition_census(attempts)
+        self.assertEqual(counts["abandoned"], 1, "the tenth segment ended it")
+        self.assertEqual(counts["killed"], 0)
+        self.assertEqual(counts["restarts"], 10)
+
+    def test_a_win_belongs_to_the_game_not_to_a_segment(self):
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-D", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-D-cont1", "2026-09-08T04:00:00Z", "stopped",
+                          won=True),
+        ])
+        (_, counts), = census
+        self.assertEqual(counts["won"], 1)
+        self.assertEqual(counts["stopped"], 1)
+
+    def test_a_game_is_dated_by_the_segment_that_ended_it(self):
+        """A game that started before midnight and ended after it belongs to
+        the day it ENDED, so a day's endings and its restarts agree."""
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-E", "2026-09-07T23:30:00Z", "killed"),
+            self._attempt("civvis-E-cont1", "2026-09-08T00:30:00Z", "stopped"),
+        ])
+        self.assertEqual([day for day, _ in census], ["2026-09-08"])
+
+    def test_unresumed_games_are_untouched(self):
+        """The ordinary case, and the one the old counting got right."""
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-F", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-G", "2026-09-08T02:00:00Z", "abandoned"),
+            self._attempt("civvis-H", "2026-09-08T03:00:00Z", "stopped"),
+        ])
+        (_, counts), = census
+        self.assertEqual((counts["killed"], counts["abandoned"], counts["stopped"]),
+                         (1, 1, 1))
+        self.assertEqual(counts["restarts"], 0)
+
+    def test_the_grouping_agrees_with_the_climbs_own_stem(self):
+        """⚠ TWO SPELLINGS OF ONE RULE. `civ6_civvis_climb.screen_stem` strips
+        the same suffix so a live screen's arm belongs to the game; if the two
+        ever disagree, a game would be split here and pooled there."""
+        import civ6_civvis_climb as climb
+        for tag in ("civvis-20260909T001600Z",
+                    "civvis-20260909T001600Z-cont1",
+                    "civvis-20260909T001600Z-cont12",
+                    "civvis-cont-not-a-suffix",
+                    "civvis-cont1-cont2"):
+            self.assertEqual(civ6_ladder.game_tag(tag), climb.screen_stem(tag), tag)
+
+    def test_the_committed_ledger_reads_the_measured_numbers(self):
+        """The claim in the docstring, against the record it was measured on."""
+        if not civ6_ladder.DATA.is_file():
+            self.skipTest("no published snapshot yet")
+        attempts = json.loads(civ6_ladder.DATA.read_text())["attempts"]
+        games = civ6_ladder.games_from_attempts(attempts)
+        self.assertLess(len(games), len(attempts),
+                        "the committed ledger holds resumed games")
+        killed_rows = sum(1 for a in attempts if a.get("reason") == "killed")
+        killed_games = sum(1 for rows in games
+                           if rows[-1].get("reason") == "killed")
+        self.assertGreater(killed_rows, killed_games * 2,
+                           "most `killed` rows are restarts, not killed games")

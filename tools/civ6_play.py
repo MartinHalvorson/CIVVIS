@@ -3636,6 +3636,14 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
         if culture:
             summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         revisions = civ6_ladder.decider_revisions(run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
@@ -3903,6 +3911,9 @@ def _play(args: argparse.Namespace) -> int:
             culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
             if culture:
                 partial["culture_marks"] = culture
+            launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+            if launches:
+                partial["launch_marks"] = launches
         except Exception:  # noqa: BLE001 - best-effort evidence at exit
             pass
         try:
@@ -4646,6 +4657,14 @@ def _play(args: argparse.Namespace) -> int:
         culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
         if culture:
             summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log

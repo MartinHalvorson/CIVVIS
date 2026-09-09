@@ -48,7 +48,7 @@ How much of the controller the genome instrument can vary at all.
 genes"; this is the denominator that direction is measured against.
 
 - Capability toggles on the controller: **299**
-- Reachable as a gene `gene_screen` can vary: **268**
+- Reachable as a gene `gene_screen` can vary: **273**
 - Measured by at least one screen: **72**
 - Resolved by the ledger (helps or hurts): **16**
 - **Unreachable by any screen: 41**
@@ -73,16 +73,16 @@ Unreachable:
 
 ## Live ladder
 
-- Attempts recorded: **911**
-- Configured attempts: **789**
-- Terminal outcomes: **359**
+- Attempts recorded: **921**
+- Configured attempts: **795**
+- Terminal outcomes: **361**
 - Configured wins: **24**
-- Latest ledger entry: **2026-09-08T22:26:27Z**
+- Latest ledger entry: **2026-09-09T01:34:00Z**
 
 - Attempts that ran the full clock: **209**, median score **547**, best **1606**
-- Graded against the best rival: **465 configured attempts**; rival bar median **720**, our lead median **-204**, best **+759**, ahead in **47**
-- Lost to a rival's victory before the clock: **148** (diplomatic 61, culture 53, technology 28, religious 5, conquest 1), of which **17** while our own score was the highest on the board
-- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 221), diplomatic 202–247 (median 235), religious 75–233 (median 170), technology 182–246 (median 227)
+- Graded against the best rival: **471 configured attempts**; rival bar median **720**, our lead median **-207**, best **+759**, ahead in **47**
+- Lost to a rival's victory before the clock: **150** (diplomatic 61, culture 54, technology 29, religious 5, conquest 1), of which **17** while our own score was the highest on the board
+- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 221), diplomatic 202–247 (median 235), religious 75–233 (median 170), technology 182–246 (median 226)
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this

@@ -4769,6 +4769,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    amani_follows_suzerainty: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     builder_workforce_recovery: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -5583,6 +5585,10 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    magnus_follows_settlers: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    liang_follows_builders: bool,
     /// `modernize-before-spending` (default on): upgrade the standing army
     /// BEFORE the discretionary purchase pass, at the moments that matter.
     ///
@@ -5841,6 +5847,10 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    reyna_follows_revenue: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    pingala_follows_research: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -6823,6 +6833,7 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
+mod governor_dividends;
 mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -6910,6 +6921,8 @@ pub(super) mod rapid_city_expansion;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// Route around a host-refused step before discarding its city destination.
+mod settler_route_recovery;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -7627,6 +7640,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amani_follows_suzerainty: false,
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
             anvil: false,
@@ -7752,6 +7766,8 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            magnus_follows_settlers: false,
+            liang_follows_builders: false,
             modernize_before_spending: false,
             objective_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
@@ -7777,6 +7793,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reyna_follows_revenue: false,
+            pingala_follows_research: false,
             research_building_catchup: false,
             research_building_catchup_2: false,
             route_block_is_a_wait: false,
@@ -29125,7 +29143,10 @@ impl AdvancedAi {
     /// still makes progress; if none exists, hold and let the target search
     /// reconsider rather than donating the settler to the threat.
     fn settler_step_toward_safe(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
-        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
+        let Some(waypoint) = self.settler_refusal_waypoint(g, uid, target) else {
+            return false;
+        };
+        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, waypoint)
     }
 
     /// Move either a Settler or the military leader of its linked formation
@@ -38850,19 +38871,13 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
-        // `live-move-refusal-break`: a Settler whose step the host has proved
-        // refused (see `BasicAi::judge_move_refusals`) does not merely bend
-        // its route — its destination goes through the same dead-site
-        // machinery a watchdog arrival uses, so the target chooser must pick
-        // a site the frozen approach does not serve. Bending alone can walk
-        // the same unreachable site from another angle for the whole bar.
+        // A host-refused step first asks for a detour. Only sites with no
+        // remaining route are deferred, and only for the refusal's lifetime.
         self.retire_frozen_settler_targets(g);
     }
 
-    /// `live-move-refusal-break`'s Settler half: a destination whose approach
-    /// the host has proved refused is set aside through the dead-site
-    /// machinery, exactly as a watchdog arrival is, so the target chooser
-    /// must pick a site the frozen approach does not serve.
+    /// Retain reachable city sites across replans; a remembered refusal must
+    /// not retire every new target for thirty turns without attempting it.
     fn retire_frozen_settler_targets(&mut self, g: &Game) {
         if !self.live_move_refusal_break {
             return;
@@ -38871,20 +38886,25 @@ impl AdvancedAi {
             .settler_targets
             .keys()
             .copied()
-            .filter(|uid| self.base.move_refusal_blocked(g, *uid))
+            .filter(|uid| {
+                self.base.move_refusal_blocked(g, *uid)
+                    && self
+                        .settler_refusal_waypoint(g, *uid, self.settler_targets[uid])
+                        .is_none()
+            })
             .collect();
         for uid in frozen {
             let Some(target) = self.settler_targets.remove(&uid) else {
                 continue;
             };
             self.settler_relaxed_targets.remove(&uid);
-            self.settler_dead_sites.entry(uid).or_default().insert(
-                target,
-                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-            );
+            self.settler_dead_sites
+                .entry(uid)
+                .or_default()
+                .insert(target, self.base.move_refusal_blocks[&uid].1);
             think!(self.journal(), Expansion, Detail,
                    "Settler retires a destination the host will not walk it toward";
-                   "its issued step was refused on consecutive turns without the unit \
+                   "no route avoids the step refused on consecutive turns without the unit \
                     moving, so {target:?} is set aside and a fresh site is chosen";
                    target);
         }
@@ -39562,6 +39582,7 @@ impl AdvancedAi {
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
+        self.relocate_governors_for_dividends(g, pid, &plan);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured
