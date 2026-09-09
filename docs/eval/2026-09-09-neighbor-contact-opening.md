@@ -73,3 +73,22 @@ The raw routing observations and their summary are retained beside this note.
 The revised standard family firing screen separately uses twelve full Emperor
 games at seeds 91091013..91091024. Neither diagnostic is a ledger source, and a
 small firing probe alone must not select a deployment default.
+
+## Fixed 128-map routing confirmation
+
+The unchanged routing revision completed the registered seeds 91096001..91096128
+(768 seats per arm). Every map and seat is present in the retained raw CSV.
+
+| Metric | V1 | Routing V2 | V2 minus V1, paired-map bootstrap 95% interval |
+|---|---:|---:|---:|
+| First contact, capped at 31 | 19.691 | 19.741 | +0.049 [-0.126, +0.228] turns |
+| Major contacts by t30 | 1.180 | 1.203 | +0.023 [-0.010, +0.057] |
+| Explored tiles by t30 | 248.874 | 248.802 | -0.072 [-1.656, +1.582] |
+| Maximum simultaneously alive Scouts by t30 | 1.092 | 1.109 | +0.017 [-0.004, +0.040] |
+
+646/768 v1 seats met a major by t30, versus 652/768 v2 seats. Fifty-four seats
+made contact earlier, 661 were unchanged, and 53 later. The same paired-map
+bootstrap method applies. This larger confirmation does not establish earlier
+contact or improved exploration; the small routing sample's apparent tile-coverage
+gain did not persist. The routing gene remains an experimental opt-in, with no
+deployment promotion and no claim of improved win rate or discovery speed.
