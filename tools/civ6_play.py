@@ -1116,6 +1116,26 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
     return macos_window.focus_game(GAME_PROCESS)
 
 
+def maintain_game_focus(interval: float, last_focus: float, *,
+                        place: bool = False) -> float:
+    """Periodic upkeep only; explicit setup/recovery can still use the GUI.
+
+    Touch ~/.civvis-shared-desktop to leave other apps in front during play.
+    The marker is read live, so removing it restores unattended upkeep without
+    restarting the game. Background progress also depends on Civ VI's own
+    ThrottleWhileInactive setting; this switch cannot change engine behavior.
+    """
+    now = time.monotonic()
+    if interval <= 0 or now - last_focus < interval:
+        return last_focus
+    if (Path.home() / ".civvis-shared-desktop").exists() or screen_locked():
+        return last_focus
+    focus_game()
+    if place:
+        place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+    return now
+
+
 def click_at(px: int, py: int) -> None:
     return macos_window.click_at(px, py)
 
@@ -3400,14 +3420,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
                 time.sleep(2.0)
                 brain = start_brain()
             now = time.monotonic()
-            # Civ VI advances frames at a crawl while another app owns the
-            # desktop.  The attach mode has no pixel work, so a light periodic
-            # activation is enough to retain the normal player's foreground
-            # guarantee without disturbing an operator's recording pipeline.
-            if (not screen_locked()
-                    and now - last_focus >= max(1.0, args.focus_every)):
-                focus_game()
-                last_focus = now
+            last_focus = maintain_game_focus(args.focus_every, last_focus)
             if env.game_pids():
                 core_missing_since = None
             elif core_missing_since is None:
@@ -4274,10 +4287,8 @@ def _play(args: argparse.Namespace) -> int:
         return 5
     print("in a configured game; the agent holds the seat from here")
 
-    # Hold the foreground for the whole game. Anything else taking focus --
-    # a browser, another agent's automation -- throttles the game to almost no
-    # frames, and the turn loop runs off game-core events, so the run stops
-    # without a single log line saying why.
+    # Unattended upkeep is optional on a shared desktop. Keep processing
+    # retirement and game events even when periodic GUI upkeep is disabled.
     last_focus = [0.0]
     session_was_locked = [False]
     retire_flow = {
@@ -4336,14 +4347,9 @@ def _play(args: argparse.Namespace) -> int:
 
     def keep_foreground() -> None:
         process_operator_retirement()
-        now = time.monotonic()
-        if now - last_focus[0] < args.focus_every:
-            return
-        last_focus[0] = now
-        focus_game()
-        # Safe here and only here: the game is in play, so there is no menu
-        # being read off the screen for a resize to invalidate.
-        place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+        last_focus[0] = maintain_game_focus(
+            args.focus_every, last_focus[0], place=True,
+        )
 
     # ⚠ THE POLL INTERVAL IS THE OUTBOUND LEG OF THE DECISION LOOP. With CIVVIS
     # deciding, the mod holds its turn open until orders arrive, and orders cannot
@@ -5105,7 +5111,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lock-wait", type=float, default=0.0,
                     help="seconds to wait for another run to finish")
     ap.add_argument("--focus-every", type=float, default=15.0,
-                    help="seconds between raising the game window (0 disables)")
+                    help="seconds between raising the game window (0 disables); "
+                         "~/.civvis-shared-desktop also disables periodic raising "
+                         "and placement live; setup/recovery may still use the GUI")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(raw_argv)
     global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
