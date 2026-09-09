@@ -47937,7 +47937,6 @@ fn military_withdrawal_does_not_use_the_civilian_terrain_fallback() {
     );
 }
 
-
 #[test]
 fn remembered_threat_ties_do_not_trade_this_turns_healing_for_a_better_healing_tile() {
     let (mut g, front, city, barbarian) = wounded_out_of_reach_board(91_629).unwrap();
