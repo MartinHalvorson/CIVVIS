@@ -31,7 +31,9 @@ this firing projection. Their actual observation history stays intact, and a
 different remembered gun still counts. The final control initially caught a
 regression here: the projection retained the simulated casualty and withdrew a
 ship that could finish its only threat. The corrected forecast permits that shot.
-No deployment selection changes, and civilian capture calculations are unchanged.
+The firing projection is used by military withdrawal. The shared visibility
+correction also affects civilian decisions that previously used hidden native
+units; no deployment selection changes.
 
 The native observation also lacked a tile-visibility check: `unit_visible_to`
 checks stealth detection and returns true for an ordinary non-stealth unit even
@@ -46,19 +48,20 @@ unit's move, promotions, or line of sight. It repairs remembered firing coverage
 for the existing withdrawal triggers; it does not add remembered damage totals
 to the roll-top trigger for otherwise healthy melee units.
 
-The initial combined full suite passed 3,378 tests with 50 ignored, and the
-changed-line formatting/clippy gate passed. Six targeted controls now cover
-wounded ship withdrawal, both memory versions, off/unseen/expired/future/peace
-and melee-only controls, hidden-position independence through the observer,
-never-seen units, and the only-threat shot. Final validation follows the shot
-forecast correction.
+The final full suite passed 3,379 tests with 50 ignored. Changed-line
+formatting and clippy passed. Six focused controls cover wounded ship withdrawal,
+both memory versions, off/unseen/expired/future/peace and melee-only conditions,
+hidden-position independence through the observer, never-seen units, and the
+only-threat shot. The shot control also verifies that a different remembered
+gun remains a threat and that actual sighting history is retained.
 
-A same-binary persistent replay of the recorded encounter leaves the Galley
-holding when withdrawal is explicitly withheld; the repaired deployed policy
-moves through (62,7), (63,7), (64,7), and (65,7). Evidence and exact source/binary
-hashes are retained in `025914-shore-cannon-repaired/provenance.json` under the
-local tactical evidence directory. This pre-final-control binary was built from
-`c6fba0ba0`; the final revision is replayed again before shipping.
+The final same-binary persistent replay covers both arms over the observed
+encounter: withholding withdrawal leaves the Galley holding, while the repaired
+deployed policy moves through (62,7), (63,7), (64,7), and (65,7). Source
+`856b0ab0d76124c1d97418fdbe3a25f5e4bb758a` and exact binary hashes are retained in
+`025914-shore-cannon-final/provenance.json` under the local tactical evidence
+directory. The earlier `025914-shore-cannon-repaired` result is retained with
+its own pre-final-control source stamp for comparison.
 
 A fixed-observation replay is not a counterfactual host game or proof of
 improved wins.
