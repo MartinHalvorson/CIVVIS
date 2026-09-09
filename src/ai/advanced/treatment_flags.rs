@@ -4158,6 +4158,18 @@ impl AdvancedAi {
     /// exposed unit. See `battle_planner`.
     pub fn enable_doomed_blow_veto(&mut self) {
         self.doomed_blow_veto = true;
+        self.doomed_blow_veto_2 = false;
+    }
+
+    /// Price survival after the complete friendly strike sequence.
+    pub fn enable_doomed_blow_veto_2(&mut self) {
+        self.doomed_blow_veto = false;
+        self.doomed_blow_veto_2 = true;
+    }
+
+    /// Disable version two without enabling another family version.
+    pub fn disable_doomed_blow_veto_2(&mut self) {
+        self.doomed_blow_veto_2 = false;
     }
 
     /// The twin of `enable_doomed_blow_veto`.

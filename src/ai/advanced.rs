@@ -5048,6 +5048,9 @@ pub struct AdvancedAi {
     /// against its hit points — is rotated instead of left to the ladder to
     /// attack. Opt-in gene; see `advanced/battle_planner.rs`.
     doomed_blow_veto: bool,
+    /// `doomed-blow-veto-2`: require every planned striker to survive the
+    /// replies remaining after the complete friendly sequence. Opt-in.
+    doomed_blow_veto_2: bool,
     /// Hunt every Eureka and Inspiration: the union of the boost-aware
     /// research, builder and production habits, over every trigger the engine
     /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
@@ -7880,6 +7883,7 @@ impl AdvancedAi {
             contested_suzerainty_brake: false,
             detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
+            doomed_blow_veto_2: false,
             chase_every_boost: false,
             chase_every_boost_2: false,
             coalition_before_war_2: false,

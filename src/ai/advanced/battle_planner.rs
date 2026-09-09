@@ -743,6 +743,11 @@ struct BeamState {
     /// Targets a melee blow has landed on: no ranged blow follows it there.
     melee_on: u32,
     score: f64,
+    /// Version two reprices every striker when a later blow removes a reply.
+    /// Each stand records the shooter, its end tile and HP after melee return.
+    reply_stands: Vec<(usize, Pos, f64)>,
+    reply_cost: f64,
+    survives: bool,
 }
 
 impl BeamState {
@@ -755,6 +760,9 @@ impl BeamState {
             killed: 0,
             melee_on: 0,
             score: 0.0,
+            reply_stands: Vec::new(),
+            reply_cost: 0.0,
+            survives: true,
         }
     }
 
@@ -777,6 +785,7 @@ impl BeamState {
         shooters: &[Shooter],
         targets: &[Target],
         field: &mut DangerField,
+        survival_after_sequence: bool,
     ) -> Option<BeamState> {
         let shooter = &shooters[candidate.shooter];
         let target = &targets[candidate.target];
@@ -815,7 +824,7 @@ impl BeamState {
             if returned >= f64::from(shooter.hp) {
                 // The host's word that the attacker dies is a veto, whatever
                 // the kill is worth (`battle-planner-3`).
-                if candidate.host.is_some() {
+                if candidate.host.is_some() || survival_after_sequence {
                     return None;
                 }
                 // The return kills the attacker: only for a kill worth more
@@ -841,7 +850,7 @@ impl BeamState {
             candidate.from
         };
         let mut danger = 0.0;
-        if !dies {
+        if !dies && !survival_after_sequence {
             let dead = Self::dead_of(killed, targets);
             danger = field.danger_without(
                 end,
@@ -857,7 +866,9 @@ impl BeamState {
         }
         // A wounded unit strikes only to finish, only from safety, and
         // never as a trade of itself.
-        if shooter.hp < WOUNDED_STRIKER_HP && (dies || !(kill && danger <= NO_DANGER)) {
+        if shooter.hp < WOUNDED_STRIKER_HP
+            && (dies || !(kill && (survival_after_sequence || danger <= NO_DANGER)))
+        {
             return None;
         }
         let mut next = self.clone();
@@ -872,12 +883,39 @@ impl BeamState {
             next.melee_on |= target_bit;
         }
         next.score = self.score + gain - cost;
+        if survival_after_sequence {
+            next.reply_stands
+                .push((candidate.shooter, end, f64::from(shooter.hp) - returned));
+            next.reply_cost = 0.0;
+            next.survives = true;
+            let dead = Self::dead_of(killed, targets);
+            for (index, tile, hp) in &next.reply_stands {
+                let striker = &shooters[*index];
+                let incoming =
+                    field.danger_without(*tile, striker.uid, hp.floor().max(1.0) as i32, &dead);
+                let lethal = incoming >= *hp;
+                next.survives &=
+                    !lethal && (striker.hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER);
+                next.reply_cost += if lethal {
+                    death_value(striker.cost)
+                } else {
+                    DANGER_WEIGHT * loss_value(incoming, striker.cost)
+                };
+            }
+            // A later kill can remove an earlier striker's only reply. Keep
+            // that unfinished combination in the beam and refund its old
+            // exposure price; only a surviving terminal plan can be selected.
+            next.score += self.reply_cost - next.reply_cost;
+        }
         Some(next)
     }
 
     /// The sequence's worth once it stops: its running score less the
     /// penalty for every target it left low with a finisher still to spare.
     fn terminal(&self, shooters: &[Shooter], targets: &[Target], candidates: &[Candidate]) -> f64 {
+        if !self.survives {
+            return f64::NEG_INFINITY;
+        }
         let mut score = self.score;
         for (index, target) in targets.iter().enumerate() {
             let bit = 1u32 << index;
@@ -908,6 +946,7 @@ fn search_kill_sequence(
     targets: &[Target],
     candidates: &[Candidate],
     field: &mut DangerField,
+    survival_after_sequence: bool,
 ) -> (Vec<usize>, f64) {
     let mut beam = vec![BeamState::empty(targets.len())];
     let mut best: (Vec<usize>, f64) = (Vec::new(), 0.0);
@@ -915,7 +954,14 @@ fn search_kill_sequence(
         let mut next: Vec<BeamState> = Vec::new();
         for state in &beam {
             for (index, candidate) in candidates.iter().enumerate() {
-                if let Some(extended) = state.extend(index, candidate, shooters, targets, field) {
+                if let Some(extended) = state.extend(
+                    index,
+                    candidate,
+                    shooters,
+                    targets,
+                    field,
+                    survival_after_sequence,
+                ) {
                     next.push(extended);
                 }
             }
@@ -1027,15 +1073,8 @@ impl AdvancedAi {
                 "a unit stopped by our zone of control keeps its movement for the blow; \
                  the danger field, the rotation and the slots read that reach");
         }
-        let (blows, armed, wanted, doomed) = self.kill_sequence_in(g, pid, &mut field);
+        let (blows, armed, wanted, mut doomed) = self.kill_sequence_in(g, pid, &mut field);
         self.battle_planner_wanted_previews = wanted;
-        self.census.battle_plan_doomed += doomed.len() as u32;
-        if !doomed.is_empty() {
-            think!(self.journal(), Military, Decision,
-                "Battle plan: {} unit(s) have no blow they would survive", doomed.len();
-                "return damage plus the danger at every stand reaches their hit points; \
-                 the rotation takes them as exposed and the ladder leaves them alone");
-        }
         let mut struck = false;
         let mut strikers = BTreeSet::new();
         if !blows.is_empty() {
@@ -1050,6 +1089,16 @@ impl AdvancedAi {
         }
         if struck {
             field = DangerField::with_reach(g, pid, self.strike_reach);
+        }
+        if self.doomed_blow_veto_2 {
+            doomed.retain(|uid| !strikers.contains(uid));
+        }
+        self.census.battle_plan_doomed += doomed.len() as u32;
+        if !doomed.is_empty() {
+            think!(self.journal(), Military, Decision,
+                "Battle plan: {} unit(s) have no blow they would survive", doomed.len();
+                "return damage plus the danger at every stand reaches their hit points; \
+                 the rotation takes them as exposed and the ladder leaves them alone");
         }
         let rotations = self.rotate_wounded(g, pid, &mut field, &strikers, &doomed);
         self.census.battle_plan_rotations += rotations;
@@ -1142,7 +1191,7 @@ impl AdvancedAi {
         if candidates.is_empty() {
             return (Vec::new(), armed, Vec::new(), BTreeSet::new());
         }
-        let doomed = if self.doomed_blow_veto {
+        let doomed = if self.doomed_blow_veto || self.doomed_blow_veto_2 {
             doomed_shooters(&shooters, &targets, &candidates, field)
         } else {
             BTreeSet::new()
@@ -1152,10 +1201,16 @@ impl AdvancedAi {
         // Rotation runs after the selected blows have been applied. A veto
         // must therefore reach the search itself, before a profitable trade
         // can spend a unit whose every strike was judged unsurvivable.
-        if !doomed.is_empty() {
+        if self.doomed_blow_veto && !doomed.is_empty() {
             candidates.retain(|candidate| !doomed.contains(&shooters[candidate.shooter].uid));
         }
-        let (sequence, score) = search_kill_sequence(&shooters, &targets, &candidates, field);
+        let (sequence, score) = search_kill_sequence(
+            &shooters,
+            &targets,
+            &candidates,
+            field,
+            self.doomed_blow_veto_2,
+        );
         if score <= 0.0 || sequence.is_empty() {
             return (Vec::new(), armed, wanted, doomed);
         }
@@ -1568,7 +1623,94 @@ impl AdvancedAi {
                 }
             }
         }
+        if self.doomed_blow_veto_2 {
+            loop {
+                let (rejected, surviving_kills) =
+                    self.rejected_strikers_in_sequence(g, pid, plan, &verified);
+                if rejected.is_empty() {
+                    kills = surviving_kills;
+                    break;
+                }
+                let before = verified.len();
+                verified.retain(|blow| !rejected.contains(&blow.unit));
+                dropped += (before - verified.len()) as u32;
+            }
+        }
         (verified, kills, dropped)
+    }
+
+    /// Replay only retained blows. Removing a rejected rescuer may expose
+    /// an earlier striker, so the caller repeats until the sequence is
+    /// stable. Independent safe shots remain available throughout.
+    fn rejected_strikers_in_sequence(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        blows: &[Blow],
+    ) -> (BTreeSet<u32>, u32) {
+        let mut rejected = BTreeSet::new();
+        let mut kills = 0;
+        if blows.is_empty() {
+            return (rejected, kills);
+        }
+        let mut after = g.speculative_clone();
+        for blow in blows {
+            let Some(unit) = after.units.get(&blow.unit) else {
+                rejected.insert(blow.unit);
+                continue;
+            };
+            if unit.pos != blow.from
+                && (after
+                    .apply(
+                        pid,
+                        &Action::MoveTo {
+                            unit: blow.unit,
+                            to: blow.from,
+                        },
+                    )
+                    .is_err()
+                    || after
+                        .units
+                        .get(&blow.unit)
+                        .is_none_or(|unit| unit.pos != blow.from))
+            {
+                rejected.insert(blow.unit);
+                continue;
+            }
+            let action = if blow.ranged {
+                Action::Ranged {
+                    unit: blow.unit,
+                    target: blow.target,
+                }
+            } else {
+                Action::Attack {
+                    unit: blow.unit,
+                    target: blow.target,
+                }
+            };
+            let (result, applied) =
+                Self::tactical_attack_result_in(&mut after, pid, blow.unit, &action, plan);
+            if matches!(applied, AppliedAttack::Applied)
+                && (result.eliminates_enemy_unit || result.value >= 0.0)
+            {
+                kills += u32::from(result.eliminates_enemy_unit);
+            } else {
+                rejected.insert(blow.unit);
+            }
+        }
+        let mut field = DangerField::with_reach(&after, pid, self.strike_reach);
+        for blow in blows {
+            let survives = after.units.get(&blow.unit).is_some_and(|unit| {
+                let incoming = field.danger(unit.pos, unit.id);
+                incoming < f64::from(unit.hp)
+                    && (g.units[&blow.unit].hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER)
+            });
+            if !survives {
+                rejected.insert(blow.unit);
+            }
+        }
+        (rejected, kills)
     }
 
     /// Land the verified blows on the real board, in order, each mover
@@ -4076,5 +4218,221 @@ mod tests {
         assert_eq!(g.units[&ours].pos, at(10, 4));
         assert_eq!(g.units[&ours].hp, 50);
         assert!(ai.battle_planner_claims(ours));
+    }
+    #[test]
+    fn survival_version_two_is_opt_in_and_excludes_version_one() {
+        super::super::test_support::opt_in_off_in_both_controllers("doomed-blow-veto-2", |ai| {
+            ai.doomed_blow_veto_2
+        });
+        let mut ai = version_two();
+        ai.enable_doomed_blow_veto();
+        ai.enable_doomed_blow_veto_2();
+        assert!(ai.doomed_blow_veto_2 && !ai.doomed_blow_veto);
+        ai.enable_doomed_blow_veto();
+        assert!(ai.doomed_blow_veto && !ai.doomed_blow_veto_2);
+        ai.enable_doomed_blow_veto_2();
+        ai.disable_doomed_blow_veto_2();
+        assert!(!ai.doomed_blow_veto && !ai.doomed_blow_veto_2);
+    }
+
+    #[test]
+    fn a_later_friendly_kill_can_rescue_an_earlier_striker_in_the_same_plan() {
+        let mut g = open_field();
+        let first = g.spawn_unit("archer", 0, at(10, 4));
+        let second = g.spawn_unit("archer", 0, at(10, 5));
+        let enemy_first = g.spawn_unit("crossbowman", 1, at(11, 4));
+        let enemy_second = g.spawn_unit("crossbowman", 1, at(11, 5));
+        for uid in [first, second] {
+            wound(&mut g, uid, 50);
+        }
+        for uid in [enemy_first, enemy_second] {
+            wound(&mut g, uid, 1);
+        }
+        let (mut shooters, mut targets, mut candidates) =
+            previewed_finisher(&g, first, enemy_first, true);
+        let (more_shooters, more_targets, mut more_candidates) =
+            previewed_finisher(&g, second, enemy_second, true);
+        shooters.extend(more_shooters);
+        targets.extend(more_targets);
+        more_candidates[0].shooter = 1;
+        more_candidates[0].target = 1;
+        candidates.extend(more_candidates);
+        let mut field = DangerField::with_reach(&g, 0, true);
+        assert_eq!(
+            doomed_shooters(&shooters, &targets, &candidates, &mut field),
+            BTreeSet::from([first, second])
+        );
+        let empty = BeamState::empty(targets.len());
+        let partial = empty
+            .extend(0, &candidates[0], &shooters, &targets, &mut field, true)
+            .unwrap();
+        assert!(
+            !partial.survives,
+            "the other crossbow still has a lethal reply"
+        );
+        assert!(!partial
+            .terminal(&shooters, &targets, &candidates)
+            .is_finite());
+        let complete = partial
+            .extend(1, &candidates[1], &shooters, &targets, &mut field, true)
+            .unwrap();
+        assert!(complete.survives, "both retaliators have now been removed");
+        assert!(
+            complete.score > partial.score + targets[1].kill_value,
+            "removing the reply refunds the earlier exposure penalty"
+        );
+        let (sequence, _) =
+            search_kill_sequence(&shooters, &targets, &candidates, &mut field, true);
+        assert_eq!(
+            sequence.len(),
+            2,
+            "the safe combination must remain discoverable"
+        );
+        let (incomplete, _) =
+            search_kill_sequence(&shooters, &targets, &candidates[..1], &mut field, true);
+        assert!(
+            incomplete.is_empty(),
+            "a stranded unsafe prefix is never a final plan"
+        );
+    }
+
+    #[test]
+    fn survival_version_two_keeps_a_profitable_direct_sacrifice_out_of_the_battle_pass() {
+        let mut g = open_field();
+        g.found_city_for(0, at(10, 4), Some("Refuge".to_string()));
+        let ours = g.spawn_unit("warrior", 0, at(10, 4));
+        let victim = g.spawn_unit("modern_armor", 1, at(11, 4));
+        wound(&mut g, ours, 50);
+        wound(&mut g, victim, 1);
+        assert!(!version_two().kill_sequence(&g, 0).is_empty());
+        let mut ai = version_two();
+        ai.enable_doomed_blow_veto_2();
+        assert!(ai.kill_sequence(&g, 0).is_empty());
+        let plan = conquest(&g);
+        ai.plan_battle(&mut g, 0, &plan);
+        assert_eq!(g.units[&ours].hp, 50);
+        assert!(g.units.contains_key(&victim));
+        assert!(ai.battle_planner_claims(ours));
+    }
+
+    #[test]
+    fn dropping_the_rescuing_strike_cannot_leave_an_unsafe_verified_prefix() {
+        let mut g = open_field();
+        let first = g.spawn_unit("archer", 0, at(10, 4));
+        let second = g.spawn_unit("archer", 0, at(10, 5));
+        let enemy_first = g.spawn_unit("crossbowman", 1, at(11, 4));
+        let enemy_second = g.spawn_unit("crossbowman", 1, at(11, 5));
+        for uid in [first, second] {
+            wound(&mut g, uid, 50);
+        }
+        for uid in [enemy_first, enemy_second] {
+            wound(&mut g, uid, 1);
+        }
+        let blows: Vec<Blow> = [(first, enemy_first), (second, enemy_second)]
+            .into_iter()
+            .map(|(ours, enemy)| Blow {
+                unit: ours,
+                from: g.units[&ours].pos,
+                target: g.units[&enemy].pos,
+                defender: enemy,
+                ranged: true,
+                expected: 100.0,
+                finishes: true,
+            })
+            .collect();
+        let mut ai = version_two();
+        ai.enable_strike_reach();
+        ai.enable_doomed_blow_veto_2();
+        let plan = conquest(&g);
+        assert_eq!(ai.verify_blows(&g, 0, &plan, &blows).0.len(), 2);
+        g.units.get_mut(&second).unwrap().attacks_left = 0;
+        let (verified, kills, dropped) = ai.verify_blows(&g, 0, &plan, &blows);
+        assert!(
+            verified.is_empty(),
+            "the first strike depended on the rejected second strike"
+        );
+        assert_eq!(kills, 0);
+        assert_eq!(dropped, 2);
+        ai.disable_doomed_blow_veto_2();
+        assert_eq!(
+            ai.verify_blows(&g, 0, &plan, &blows).0.len(),
+            1,
+            "the old verifier keeps the unsafe prefix"
+        );
+    }
+    #[test]
+    fn an_independent_safe_shot_survives_rejection_of_an_unsafe_combination() {
+        let mut g = open_field();
+        let first = g.spawn_unit("archer", 0, at(10, 4));
+        let second = g.spawn_unit("archer", 0, at(10, 5));
+        let independent = g.spawn_unit("archer", 0, at(3, 3));
+        let enemy_first = g.spawn_unit("crossbowman", 1, at(11, 4));
+        let enemy_second = g.spawn_unit("crossbowman", 1, at(11, 5));
+        let distant = g.spawn_unit("warrior", 1, at(4, 3));
+        for uid in [first, second] {
+            wound(&mut g, uid, 50);
+        }
+        for uid in [enemy_first, enemy_second, distant] {
+            wound(&mut g, uid, 1);
+        }
+        g.units.get_mut(&second).unwrap().attacks_left = 0;
+        let blows: Vec<Blow> = [
+            (first, enemy_first),
+            (second, enemy_second),
+            (independent, distant),
+        ]
+        .into_iter()
+        .map(|(ours, enemy)| Blow {
+            unit: ours,
+            from: g.units[&ours].pos,
+            target: g.units[&enemy].pos,
+            defender: enemy,
+            ranged: true,
+            expected: 100.0,
+            finishes: true,
+        })
+        .collect();
+        let mut ai = version_two();
+        ai.enable_strike_reach();
+        ai.enable_doomed_blow_veto_2();
+        let plan = conquest(&g);
+        let (verified, kills, dropped) = ai.verify_blows(&g, 0, &plan, &blows);
+        assert_eq!(
+            verified.iter().map(|blow| blow.unit).collect::<Vec<_>>(),
+            vec![independent]
+        );
+        assert_eq!(kills, 1);
+        assert_eq!(dropped, 2);
+    }
+
+    #[test]
+    fn a_safe_alternative_does_not_license_a_more_valuable_fatal_strike() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("archer", 0, at(10, 4));
+        let valuable = g.spawn_unit("warrior", 1, at(11, 4));
+        let retaliator = g.spawn_unit("crossbowman", 1, at(10, 5));
+        wound(&mut g, ours, 50);
+        wound(&mut g, valuable, 1);
+        wound(&mut g, retaliator, 1);
+        let (shooters, mut targets, mut candidates) = previewed_finisher(&g, ours, valuable, true);
+        targets[0].kill_value = 1000.0;
+        let (_, more_targets, mut more_candidates) = previewed_finisher(&g, ours, retaliator, true);
+        more_candidates[0].target = 1;
+        targets.extend(more_targets);
+        candidates.extend(more_candidates);
+        let mut field = DangerField::with_reach(&g, 0, true);
+        assert!(
+            doomed_shooters(&shooters, &targets, &candidates, &mut field).is_empty(),
+            "the whole-shooter veto allows this unit because one choice survives"
+        );
+        assert_eq!(
+            search_kill_sequence(&shooters, &targets, &candidates, &mut field, false).0,
+            vec![0]
+        );
+        assert_eq!(
+            search_kill_sequence(&shooters, &targets, &candidates, &mut field, true).0,
+            vec![1],
+            "version two must select the survivable alternative"
+        );
     }
 }
