@@ -557,7 +557,11 @@ local function survey()
 		map = try(function() return MapConfiguration.GetScript(); end, "?"),
 		size = typeName(GameInfo.Maps,
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
-		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+		-- The running game can retain 250 even after SetMaxTurns(650) updates
+		-- the configuration. WorldRankings.lua:1053 reads this native API for
+		-- the actual horizon. Unknown stays unknown instead of reporting the
+		-- requested cap as though the engine had accepted it.
+		max_turns = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		-- ★★★ WHICH OPTIONAL GAME MODES ARE ON, read from inside the game.
 		-- Exactly the `victories` argument below, and it went the same way: the
 		-- modes are the one setting on the Create Game screen that PERSISTS
@@ -19371,7 +19375,7 @@ local function ensureStarted()
 		emit("turn_limit", {
 			asked = cfg.MaxTurns,
 			config = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
-			game = try(function() return Game.GetMaxTurns(); end, -1),
+			game = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		});
 	end
 
