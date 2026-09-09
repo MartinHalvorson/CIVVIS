@@ -94,10 +94,10 @@ fn sign_test(wins: usize, losses: usize) -> f64 {
 /// trust one distributional assumption on its own.
 fn paired_t(differences: &[f64]) -> (f64, f64, f64, f64) {
     let n = differences.len();
-    if n < 2 {
-        return (0.0, 0.0, 0.0, 1.0);
-    }
     let mean = differences.iter().sum::<f64>() / n as f64;
+    if n < 2 {
+        return (mean, f64::NAN, f64::NAN, f64::NAN);
+    }
     let variance = differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
     let stderr = (variance / n as f64).sqrt();
     if stderr <= 0.0 {
@@ -344,9 +344,19 @@ fn main() {
     print_unit_lifetimes(&name_b, played.iter().map(|row| &row.b));
     println!();
     println!("paired material swing, {name_a} less {name_b}, one number per seed:");
-    println!("  mean                 {mean:+.2} +/- {stderr:.2} (standard error)");
+    if played.len() >= 2 {
+        println!("  mean                 {mean:+.2} +/- {stderr:.2} (standard error)");
+    } else if played.len() == 1 {
+        println!("  mean                 {mean:+.2} (standard error unavailable: one seed)");
+    } else {
+        println!("  mean                 unavailable: no played seeds");
+    }
     println!("  seeds better/worse/tied  {wins} / {losses} / {ties}");
-    println!("  paired t             t = {t:.3}, p = {p_t:.4}");
+    if played.len() >= 2 {
+        println!("  paired t             t = {t:.3}, p = {p_t:.4}");
+    } else {
+        println!("  paired t             unavailable: fewer than two played seeds");
+    }
     println!("  sign test            p = {p_sign:.4}");
 
     if diverged == 0 {
@@ -355,5 +365,34 @@ fn main() {
             "NO DIVERGENCE. The two agents played identically on every seed, so this \
              run measured nothing about either. Fix the treatment before reading the p."
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paired_t;
+
+    #[test]
+    fn one_seed_keeps_its_material_result_without_claiming_uncertainty() {
+        for swing in [-2140.0, 0.0, 740.0] {
+            let (mean, stderr, t, p) = paired_t(&[swing]);
+            assert_eq!(mean, swing);
+            assert!(stderr.is_nan() && t.is_nan() && p.is_nan());
+        }
+    }
+
+    #[test]
+    fn no_played_seeds_have_no_material_estimate() {
+        let (mean, stderr, t, p) = paired_t(&[]);
+        assert!(mean.is_nan() && stderr.is_nan() && t.is_nan() && p.is_nan());
+    }
+
+    #[test]
+    fn multiple_seeds_keep_the_existing_paired_estimate() {
+        let (mean, stderr, t, p) = paired_t(&[100.0, 300.0]);
+        assert_eq!(mean, 200.0);
+        assert_eq!(stderr, 100.0);
+        assert_eq!(t, 2.0);
+        assert!((p - 0.0455).abs() < 0.0001);
     }
 }
