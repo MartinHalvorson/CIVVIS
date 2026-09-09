@@ -197,6 +197,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `hostile-memory-2` | off (unmeasured) | Version two retains civilian memory and prices a land escort's embarkation. | 1 \| 2 |
 | `liang-follows-builders` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `magnus-follows-settlers` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
+| `opportunistic-war-2` | off (unmeasured) | Price only prizes with a short route after declaration. | 1 \| 2 |
 | `pass-picket-2` | off (unmeasured) | Hold a pass against a visible approaching Settler before exploring. | 1 \| 2 |
 | `pingala-follows-research` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `research-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
@@ -205,6 +206,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `scout-first-opening` | off (unmeasured) | Reserve the safe capital's first build for its first Scout. | 1 \| 1 |
 | `trade-building-before-bankruptcy` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `trade-building-before-bankruptcy-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `wounded-out-of-reach-2` | off (unmeasured) | Version two retains the original withdrawal and also considers a nominal lethal shot from a recently observed gun. | 1 \| 2 |
 
 ## Removed from the code
 

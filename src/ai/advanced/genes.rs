@@ -603,6 +603,8 @@ pub const GENES: &[Gene] = &[
     // Settler or Builder, a cluster of unpillaged tiles — taken by movement
     // and closed by peace; see `AdvancedAi::opportunistic_war`.
     Gene { tag: "opportunistic-war", field: "opportunistic_war", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war, disable: AdvancedAi::disable_opportunistic_war },
+    // V2 rejects prizes without a short post-declaration route.
+    Gene { tag: "opportunistic-war-2", field: "opportunistic_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war_2, disable: AdvancedAi::disable_opportunistic_war_2 },
     // The pillage half of the raid, priced apart: inert unless the row
     // above is on. See `AdvancedAi::raid_pillage_prizes`.
     Gene { tag: "raid-pillage-prizes", field: "raid_pillage_prizes", kind: Kind::OptIn, enable: AdvancedAi::enable_raid_pillage_prizes, disable: AdvancedAi::disable_raid_pillage_prizes },
@@ -2157,6 +2159,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-threat-early", field: "culture_threat_early", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_threat_early, disable: AdvancedAi::disable_culture_threat_early },
     // Retain hostile sightings for civilians and a land escort about to embark.
     Gene { tag: "hostile-memory-2", field: "hostile_memory_2", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_2, disable: AdvancedAi::disable_hostile_memory_2 },
+    // Version two also withdraws healthy units exposed to a nominal lethal
+    // shot from one recently observed gun; v1 remains the deployed control.
+    Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2180,6 +2180,15 @@
           "never-an-empty-queue-3": null
         }
       },
+      "opportunistic-war": {
+        "rule_on": [],
+        "head": "opportunistic-war",
+        "ships": null,
+        "versions": {
+          "opportunistic-war": 0.904992,
+          "opportunistic-war-2": null
+        }
+      },
       "pass-picket": {
         "rule_on": [
           "pass-picket"
@@ -2289,6 +2298,17 @@
         "versions": {
           "wonder-ring-recon": null,
           "wonder-ring-recon-2": null
+        }
+      },
+      "wounded-out-of-reach": {
+        "rule_on": [
+          "wounded-out-of-reach"
+        ],
+        "head": null,
+        "ships": "wounded-out-of-reach",
+        "versions": {
+          "wounded-out-of-reach": null,
+          "wounded-out-of-reach-2": null
         }
       }
     },
