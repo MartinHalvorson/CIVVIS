@@ -41,9 +41,9 @@ size will not be increased to obtain a favourable sign; at 18 seats per gene
 the win column resolves only a delta of roughly 45 pp at 80% power, so the
 readings below are directional at best and an inconclusive result is the
 expected outcome. Two workers per probe, four workers total, so the host
-stays usable. Build: `cargo build --release --features developer-tools
---bin gene_screen` from a clean worktree at the commit named in the
-provenance block, so `tools/genes.py` accepts the source stamp.
+stays usable. Build from a clean worktree at the commit named in the
+provenance block, so `tools/genes.py` accepts the source stamp:
+`cargo build --release --features developer-tools --bin gene_screen`.
 
 Command per gene:
 
