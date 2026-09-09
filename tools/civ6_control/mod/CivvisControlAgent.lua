@@ -18704,34 +18704,16 @@ local function tick()
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
-		-- ★★★★★ THE BALLOT IS CAST WHEN THE POPUP ASKS, NOT WHEN THE BLOCKER
-		-- APPEARS. `voteWorldCongress` below is also called from the blocker
-		-- ladder, and that call has never registered a vote: `wc_vote` says
-		-- `spent 760` at t201 of civvis-20260816T184500Z and Favor reads
-		-- 822→829→836 across it; `wc_outcome` shows our selection on every
-		-- resolution as the core's default `option 1, votes 1` — the free vote
-		-- cast FOR the diplomatic leader. The shipped screen votes from inside
-		-- the WorldCongressPopup in stage 1; the autoclose shim standing in
-		-- front of that popup raises `LuaEvents.CivvisCongressBallot` right
-		-- before its `OnAccept`, and this is the handler. Registered once, from
-		-- inside `tick` because `voteWorldCongress` is nested here (a file-scope
-		-- local would cross the 200-register ceiling); the flag hangs off
-		-- `envoyTally` for the same reason. `source` on the event tells the two
-		-- call sites apart in the ledger; the popup one is the one that counts.
-		-- ⚠⚠ AND THE FIRST POPUP-MOMENT ATTEMPT NEVER FIRED EITHER: batch-9
-		-- game civvis-20260816T223457Z has no `source:"popup"` row at all —
-		-- the shim's WorldCongressPopup ladder runs its `OnPass` rung, not the
-		-- `OnAccept` one the event was raised in. Two triggers now, either of
-		-- which casts once per turn: the game core's own
-		-- `Events.WorldCongressStage1(playerID)` — the very event the shipped
-		-- popup opens on, i.e. the earliest moment a person could vote — and
-		-- the shim's ballot event, now raised from the rung that runs.
-		-- `castBallot` is shared; `envoyTally.ballot_turn` is the once-per-turn
-		-- latch and is only set when something was cast, so a trigger that
-		-- arrives before the resolutions are readable does not spend the turn.
-		-- The blocker path below defers to these and only falls back a forfeit
-		-- cycle later. Every ballot reports its trigger, the core's `Stage`,
-		-- and Favor before, so the next `wc_outcome` says which moment took.
+		-- Submit from the popup's voting callback, after its setup, matching
+		-- WorldCongressPopup.lua:2222-2271. WorldCongressStage1 announces the
+		-- stage; it is not proof that a player-operation ballot can land yet.
+		-- In civvis-20260909T043723Z-cont1, stage1 requested 3/12/13/14 votes
+		-- on turns 134/154/174/194, but every review recorded one. The early
+		-- request also latched ballot_turn, blocking the later popup callback.
+		-- Keep stage1 observable without submitting there. A popup with no
+		-- readable resolutions leaves the latch open for a later callback; the
+		-- bounded blocker fallback remains available if the popup never calls.
+		-- Only the later native review proves count, option, and target landed.
 		local function castBallot(trigger)
 			local ballotPlayer, ballotPid = localPlayer();
 			if ballotPlayer == nil then return; end
@@ -18783,7 +18765,12 @@ local function tick()
 			end);
 			local hookedStage = pcall(function()
 				Events.WorldCongressStage1.Add(function(playerID)
-					if tonumber(playerID) == pid then castBallot("stage1"); end
+					if tonumber(playerID) == pid then
+						emit("wc_vote", {
+							turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+							source = "stage1", cast = 0, spent = 0, why = "awaiting_popup",
+						});
+					end
 				end);
 			end);
 			emit("wc_ballot_hooked", { turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
@@ -19224,15 +19211,15 @@ local function tick()
 								and seen.voted_turn ~= turn then
 							-- ⚠ THE BLOCKER IS SEEN BEFORE THE SESSION IS OPEN FOR
 							-- VOTING (its ballot never registered; see `castBallot`
-							-- above), so it defers: if the stage-1/popup ballot has
+							-- above), so it defers: if the popup ballot has
 							-- cast this turn there is nothing to do, and otherwise
-							-- it waits one forfeit cycle for those triggers before
+							-- it waits one forfeit cycle for that callback before
 							-- falling back to the old vote-and-submit, so a session
 							-- that neither trigger reaches still ends.
 							if envoyTally.ballot_turn == turn then
 								seen.voted_turn = turn;
 								emit("wc_vote", { turn = turn, cast = 0, spent = 0,
-								                  why = "cast_at_stage1", source = "blocker" });
+								                  why = "cast_at_popup", source = "blocker" });
 							elseif seen.forfeits >= 2 then
 								seen.voted_turn = turn;
 								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
@@ -19246,7 +19233,7 @@ local function tick()
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						-- ⚠⚠⚠ ONE BLOCKER MUST NOT BE FORCED PAST YET. The congress session
 						-- defers its ballot by one forfeit cycle on purpose (the vote arm just
-						-- above): forfeit 1 waits for the stage-1/popup ballot to land, and only
+						-- above): forfeit 1 waits for the popup ballot to land, and only
 						-- forfeit 2 falls back to vote-and-submit. Forcing the turn at forfeit 1
 						-- ends it before either can happen, so the session is dismissed unvoted
 						-- every time -- and this seat plays for a DIPLOMATIC victory, where those
