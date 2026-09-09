@@ -59,9 +59,11 @@
 //!    finish, the cheapest legal war is declared for the sake of rung 3 —
 //!    subject to the war-affordability gates that already exist
 //!    (`war-needs-a-treasury` through `war_is_affordable`,
-//!    `one-war-at-a-time` through `one_war_holds_declaration`). Peace is
-//!    offered as soon as the pad is pillaged, or after
-//!    [`DENIAL_WAR_MAX_TURNS`], whichever comes first.
+//!    `one-war-at-a-time` through `one_war_holds_declaration`) and to the
+//!    raid being able to *reach* the pad at all
+//!    ([`AdvancedAi::science_denial_raid_can_reach`]). Peace is offered as
+//!    soon as the pad is pillaged, or after [`DENIAL_WAR_MAX_TURNS`],
+//!    whichever comes first.
 //!
 //! Off by default: opt-in registry row `science-threat-denial`. With the flag
 //! off every entry point below returns before it reads the board, so the
