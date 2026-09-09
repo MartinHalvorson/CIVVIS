@@ -47215,3 +47215,55 @@ fn scout_first_opening_registry_toggles_both_governors() {
     assert!(!ai.scout_first_opening);
     assert!(!ai.base.scout_first_opening);
 }
+
+fn remembered_shore_gun_fixture() -> (Game, AdvancedAi, u32, Pos) {
+    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_623).expect("barbarian fixture");
+    let gun_at = far_side_of(&g, front, refuge).expect("shore opposite refuge");
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != refuge && tile.pos != gun_at {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let ours = g.spawn_test_unit("galley", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 31;
+    let gun = g.spawn_test_unit("field_cannon", barbarian, gun_at);
+    g.turn = 134;
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(gun as i64)), "the gun must actually have been seen");
+    g.remove_unit(gun);
+    g.turn = 136;
+    (g, ai, ours, gun_at)
+}
+
+#[test]
+fn a_wounded_galley_leaves_a_remembered_shore_guns_reach() {
+    let (mut g, ai, ours, gun_at) = remembered_shore_gun_fixture();
+    let before = g.units[&ours].pos;
+    assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "a remembered land gun still threatens a wounded ship on water");
+    assert!(g.wdist(g.units[&ours].pos, gun_at) > g.wdist(before, gun_at),
+        "if the unseen gun's entire projection cannot be escaped, increase separation");
+    assert_eq!(g.units[&ours].hp, 31);
+}
+
+#[test]
+fn a_shore_gun_without_an_in_scope_memory_does_not_move_the_ship() {
+    let (g, ai, ours, _) = remembered_shore_gun_fixture();
+    for mode in ["gene-off", "memory-off", "unseen", "expired"] {
+        let mut policy = ai.clone();
+        let mut board = g.clone();
+        match mode {
+            "gene-off" => policy.disable_wounded_out_of_reach(),
+            "memory-off" => policy.disable_hostile_memory(),
+            "unseen" => policy.hostile_last_seen.clear(),
+            "expired" => board.turn = 139,
+            _ => unreachable!(),
+        }
+        let before = board.units[&ours].pos;
+        assert_eq!(policy.wounded_out_of_reach_step(&mut board, 0, ours), None, "{mode}");
+        assert_eq!(board.units[&ours].pos, before, "{mode}");
+    }
+}
