@@ -2134,6 +2134,11 @@ pub const GENES: &[Gene] = &[
     // Reprice all strikers after each friendly kill; only a sequence whose
     // surviving enemy replies spare every striker can become the final plan.
     Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
+    Gene { tag: "amani-follows-suzerainty", field: "amani_follows_suzerainty", kind: Kind::OptIn, enable: AdvancedAi::enable_amani_follows_suzerainty, disable: AdvancedAi::disable_amani_follows_suzerainty },
+    Gene { tag: "liang-follows-builders", field: "liang_follows_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_liang_follows_builders, disable: AdvancedAi::disable_liang_follows_builders },
+    Gene { tag: "magnus-follows-settlers", field: "magnus_follows_settlers", kind: Kind::OptIn, enable: AdvancedAi::enable_magnus_follows_settlers, disable: AdvancedAi::disable_magnus_follows_settlers },
+    Gene { tag: "pingala-follows-research", field: "pingala_follows_research", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_follows_research, disable: AdvancedAi::disable_pingala_follows_research },
+    Gene { tag: "reyna-follows-revenue", field: "reyna_follows_revenue", kind: Kind::OptIn, enable: AdvancedAi::enable_reyna_follows_revenue, disable: AdvancedAi::disable_reyna_follows_revenue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

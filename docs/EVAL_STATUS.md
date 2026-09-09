@@ -48,7 +48,7 @@ How much of the controller the genome instrument can vary at all.
 genes"; this is the denominator that direction is measured against.
 
 - Capability toggles on the controller: **296**
-- Reachable as a gene `gene_screen` can vary: **265**
+- Reachable as a gene `gene_screen` can vary: **270**
 - Measured by at least one screen: **72**
 - Resolved by the ledger (helps or hurts): **16**
 - **Unreachable by any screen: 41**

@@ -183,6 +183,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `amani-follows-suzerainty` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `builder-workforce-recovery` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `builder-workforce-recovery-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 | `campus-before-halfway` | off (unmeasured) | `campus-before-halfway` (OptIn): a Science seat's Campus keeps the lane's 170-point arm before the halfway clock instead of pricing at zero, and past the half-empire coverage cliff the Campus keeps asking in any city of `CAMPUS_EVERY_CITY_POP_FLOOR` (four) — the floor the 2026-08-19 repair named and left as a literal `false`. | 1 \| 1 |
@@ -192,8 +193,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `envoy-building-dividends` | off (unmeasured) | Price affordable 1/3/6 building packages independently of suzerainty. | 1 \| 1 |
 | `expansion-best-idle-city` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `expansion-best-idle-city-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `liang-follows-builders` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
+| `magnus-follows-settlers` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
+| `pingala-follows-research` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `research-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `research-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `reyna-follows-revenue` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `trade-building-before-bankruptcy` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `trade-building-before-bankruptcy-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 
