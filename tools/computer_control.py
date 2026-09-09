@@ -373,6 +373,13 @@ def modal_census() -> "list[dict]":
     return found
 
 
+def is_civ6_crash_alert(modal: dict) -> bool:
+    """The macOS alert observed covering the turn-114 recovery on 2026-09-09."""
+    return modal.get("owner") == "UserNotificationCenter" and bool(re.search(
+        r'\bcivilization vi["”]?\s+quit unexpectedly\b',
+        modal.get("text") or "", re.IGNORECASE))
+
+
 def choose_dismissal(modal: dict) -> "str | None":
     """The button to press for this modal, or None to leave it alone.
 
@@ -384,6 +391,9 @@ def choose_dismissal(modal: dict) -> "str | None":
     if spec is None:
         return None
     buttons = modal.get("buttons") or []
+    if is_civ6_crash_alert(modal):
+        # Reopen starts a second, unowned game. Ignore only closes this report.
+        return "Ignore" if "Ignore" in buttons else None
     for name in spec["safe_buttons"]:
         if name in buttons:
             return name
@@ -396,9 +406,11 @@ def choose_dismissal(modal: dict) -> "str | None":
     return None
 
 
-def dismiss_modals() -> "list[dict]":
+def dismiss_modals(*, civ6_crashes_only: bool = False) -> "list[dict]":
     report = []
     for modal in modal_census():
+        if civ6_crashes_only and not is_civ6_crash_alert(modal):
+            continue
         button = choose_dismissal(modal)
         entry = dict(modal, action=button or "left alone")
         if button:
