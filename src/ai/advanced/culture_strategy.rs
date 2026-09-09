@@ -2,7 +2,7 @@
 //! defense refuses to finance a rival's finish and raises a reachable bar.
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
-use crate::game::{Action, ActionFamilies, Game, Item, QuickDeal};
+use crate::game::{Game, Item, QuickDeal};
 use std::collections::BTreeSet;
 
 /// Version one prepares at half the culture-victory bar. The Emperor ladder
@@ -73,28 +73,18 @@ impl AdvancedAi {
     /// The denouncement starts the Formal War clock the war desk already
     /// reads (`preferred_war_opening`) and costs the rival the friendship and
     /// alliance routes to our market. One per turn, the most pressing rival
-    /// first; the engine's own legality (met, at peace, not friends or
-    /// allied, not already denounced) is read from the diplomacy family
-    /// rather than assumed. Returns the denounced rival.
+    /// first, on the primitive [`AdvancedAi::denounce_most_pressing`] that
+    /// `science-threat-denial` shares: the engine's own legality (met, at
+    /// peace, not friends or allied, not already denounced) is read from the
+    /// diplomacy family rather than assumed. Returns the denounced rival.
     pub(super) fn culture_threat_denunciation(&self, g: &mut Game, pid: usize) -> Option<usize> {
         if !self.culture_threat_early {
             return None;
         }
-        let threats = self.culture_trade_threats(g, pid);
-        if threats.is_empty() {
-            return None;
-        }
         let pressures = self.rival_culture_pressures(g);
-        let legal = g.legal_actions_within(pid, ActionFamilies::DIPLOMACY);
-        let mut candidates: Vec<usize> = threats
-            .into_iter()
-            .filter(|rival| legal.contains(&Action::Denounce { player: *rival }))
-            .collect();
-        candidates.sort_by_key(|rival| (-pressures.get(rival).copied().unwrap_or(0), *rival));
-        let rival = *candidates.first()?;
-        g.apply(pid, &Action::Denounce { player: rival })
-            .is_ok()
-            .then_some(rival)
+        let mut ranked: Vec<usize> = self.culture_trade_threats(g, pid).into_iter().collect();
+        ranked.sort_by_key(|rival| (-pressures.get(rival).copied().unwrap_or(0), *rival));
+        Self::denounce_most_pressing(g, pid, &ranked)
     }
 
     /// Late tourism defense is useful even when someone else holds the

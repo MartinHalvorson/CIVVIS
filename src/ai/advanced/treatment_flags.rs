@@ -4101,6 +4101,21 @@ impl AdvancedAi {
         self.culture_threat_early = false;
     }
 
+    /// Deny a rival the science victory rather than only race it: the
+    /// diplomatic refusals and the denunciation, the espionage disruption of
+    /// the launch pad, the two-soldier pillage raid on it, and the bounded
+    /// war that opens the raid. See `advanced/science_threat_denial.rs`.
+    /// Opt-in gene `science-threat-denial`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_science_threat_denial(&mut self) {
+        self.science_threat_denial = true;
+    }
+
+    /// The twin of `enable_science_threat_denial`.
+    pub fn disable_science_threat_denial(&mut self) {
+        self.science_threat_denial = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2162,6 +2162,16 @@ pub const GENES: &[Gene] = &[
     // Version two also withdraws healthy units exposed to a nominal lethal
     // shot from one recently observed gun; v1 remains the deployed control.
     Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
+    // Deny a rival the science victory instead of only racing it: no
+    // alliance, passage or Great Work to a science threat and a
+    // denunciation; the launch pad disrupted by espionage; a two-soldier
+    // raid that pillages the pad at war; and the cheapest legal war opened
+    // for that raid when the threat is inside DENIAL_WAR_LAUNCH_HORIZON of
+    // finishing and we are not. At Emperor the rivals finish the space race
+    // at t213-228 while we stand at one to three of four launches; the
+    // Immortal and Deity handicaps make speeding our own launch insufficient
+    // on its own. See `advanced/science_threat_denial.rs`.
+    Gene { tag: "science-threat-denial", field: "science_threat_denial", kind: Kind::OptIn, enable: AdvancedAi::enable_science_threat_denial, disable: AdvancedAi::disable_science_threat_denial },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
