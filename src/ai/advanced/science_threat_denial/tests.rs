@@ -50,9 +50,17 @@ fn declare_war(g: &mut Game, a: usize, b: usize) {
     g.at_war.insert((b, a));
 }
 
+/// Rungs 1 and 2: `science-threat-denial` alone.
 fn denier() -> AdvancedAi {
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.enable_science_threat_denial();
+    ai
+}
+
+/// Rungs 1 to 4: `science-denial-war`, which arms the base.
+fn warrior() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_science_denial_war();
     ai
 }
 
@@ -120,6 +128,29 @@ fn passage_sale(partner: usize) -> QuickDeal {
 #[test]
 fn the_gene_is_opt_in_and_ships_off_in_both_controllers() {
     opt_in_off_in_both_controllers("science-threat-denial", |ai| ai.science_threat_denial);
+    opt_in_off_in_both_controllers("science-denial-war", |ai| ai.science_denial_war);
+}
+
+/// The war tag requires the base and arms it, so a seat that drew the war
+/// without the base plays the whole ladder; turning the war off leaves the
+/// base as it was, and turning the base off leaves the war inert.
+#[test]
+fn the_war_tag_arms_the_base_and_is_inert_without_it() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_science_denial_war();
+    assert!(ai.science_threat_denial && ai.science_denial_war);
+    assert!(ai.science_denial_war_active());
+    ai.disable_science_denial_war();
+    assert!(ai.science_threat_denial, "the base stays on");
+    assert!(!ai.science_denial_war_active());
+
+    ai.enable_science_denial_war();
+    ai.disable_science_threat_denial();
+    assert!(ai.science_denial_war, "the war flag is left as it was");
+    assert!(
+        !ai.science_denial_war_active(),
+        "the war rung is inert without the base"
+    );
 }
 
 // ---- the threat model ----------------------------------------------------
@@ -339,6 +370,36 @@ fn the_most_pressing_threat_is_denounced_once_a_turn() {
 }
 
 #[test]
+fn an_ally_is_never_denounced_and_the_next_threat_is_taken_instead() {
+    let mut g = board();
+    let ai = denier();
+    give_pad(&mut g, 1);
+    give_pad(&mut g, 2);
+    // Seat 1 is the more pressing threat and our ally.
+    g.players[1]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    let alliance = crate::game::AllianceState {
+        kind: "research".to_string(),
+        points: 0.0,
+        level: 1,
+        ends: g.turn + 30,
+    };
+    g.players[0].alliances.insert(1, alliance.clone());
+    g.players[1].alliances.insert(0, alliance);
+    assert_eq!(
+        ai.science_threat_denunciation(&mut g, 0),
+        Some(2),
+        "the ally is left out of the ranking; the next threat is denounced"
+    );
+    assert!(
+        g.alliance_with(0, 1).is_some(),
+        "an existing alliance is never broken by rung 1"
+    );
+    assert!(!g.players[0].denounced_until.contains_key(&1));
+}
+
+#[test]
 fn a_friend_is_never_denounced() {
     let mut g = board();
     let ai = denier();
@@ -366,11 +427,11 @@ fn the_threats_pad_is_the_spy_posting_and_the_disruption_outranks_the_boost() {
     assert_eq!(pads, BTreeSet::from([pad_city]));
     assert_eq!(seats, BTreeSet::from([1]));
     assert_eq!(
-        AdvancedAi::science_denial_spy_assignment_bonus(&pads, pad_city),
+        AdvancedAi::science_denial_spy_assignment_bonus(&g, 0, 1, &pads, pad_city),
         DENIAL_SPY_ASSIGN_PRIORITY
     );
     assert_eq!(
-        AdvancedAi::science_denial_spy_assignment_bonus(&pads, bystander),
+        AdvancedAi::science_denial_spy_assignment_bonus(&g, 0, 1, &pads, bystander),
         0
     );
     assert_eq!(
@@ -397,6 +458,55 @@ fn the_threats_pad_is_the_spy_posting_and_the_disruption_outranks_the_boost() {
         AdvancedAi::science_denial_spy_mission_bonus(&BTreeSet::new(), 1, "disrupt_rocketry"),
         0.0,
         "off, the threat set is empty and the bonus is nothing"
+    );
+}
+
+/// One pad takes one spy. A second spy of ours already in, or ordered to,
+/// the threat's launch city withholds the posting bonus from every other
+/// spy, so the rest of the network keeps the stock table; the spy that holds
+/// the posting still reads its own bonus.
+#[test]
+fn one_spy_per_pad_and_the_rest_keep_the_stock_table() {
+    let mut g = board();
+    let ai = denier();
+    let (pad_city, _) = give_pad(&mut g, 1);
+    let pads = ai.science_denial_pad_cities(&g, 0);
+    let spy = |id: u32, city: Option<u32>| crate::game::Spy {
+        id,
+        owner: 0,
+        level: 1,
+        promotions: BTreeSet::new(),
+        city,
+        ready_turn: g.turn + 3,
+        mission: None,
+        sources_city: None,
+        sources_until: 0,
+        captured_by: None,
+    };
+    g.spies.insert(1, spy(1, None));
+    g.spies.insert(2, spy(2, None));
+    assert_eq!(
+        AdvancedAi::science_denial_spy_assignment_bonus(&g, 0, 2, &pads, pad_city),
+        DENIAL_SPY_ASSIGN_PRIORITY,
+        "nobody is bound to the pad yet"
+    );
+    // Spy 1 is ordered there: on its way, not yet arrived.
+    g.spies.get_mut(&1).unwrap().city = Some(pad_city);
+    assert_eq!(
+        AdvancedAi::science_denial_spy_assignment_bonus(&g, 0, 2, &pads, pad_city),
+        0,
+        "a spy already on its way withholds the posting from the rest"
+    );
+    assert_eq!(
+        AdvancedAi::science_denial_spy_assignment_bonus(&g, 0, 1, &pads, pad_city),
+        DENIAL_SPY_ASSIGN_PRIORITY,
+        "the spy that holds the posting still reads its own bonus"
+    );
+    // Somebody else's spy in that city binds nothing of ours.
+    g.spies.get_mut(&1).unwrap().owner = 2;
+    assert_eq!(
+        AdvancedAi::science_denial_spy_assignment_bonus(&g, 0, 2, &pads, pad_city),
+        DENIAL_SPY_ASSIGN_PRIORITY
     );
 }
 
@@ -472,7 +582,7 @@ fn raid_board() -> (Game, Pos) {
 #[test]
 fn the_raid_party_is_two_soldiers_and_never_a_lone_garrison() {
     let (mut g, pad) = raid_board();
-    let ai = denier();
+    let ai = warrior();
     let ring: Vec<Pos> = g
         .wdisk(pad, 2)
         .into_iter()
@@ -509,7 +619,7 @@ fn the_raid_party_is_two_soldiers_and_never_a_lone_garrison() {
 #[test]
 fn the_raid_pillages_the_pad_it_stands_on_and_marches_to_it_otherwise() {
     let (mut g, pad) = raid_board();
-    let mut ai = denier();
+    let mut ai = warrior();
     let plan = plan();
 
     let stander = g.spawn_test_unit("warrior", 0, pad);
@@ -552,7 +662,7 @@ fn the_raid_pillages_the_pad_it_stands_on_and_marches_to_it_otherwise() {
 }
 
 #[test]
-fn the_raid_needs_the_war_and_the_gene() {
+fn the_raid_needs_the_war_and_the_war_tag() {
     let (mut g, pad) = raid_board();
     let plan = plan();
     let uid = g.spawn_test_unit("warrior", 0, pad);
@@ -565,7 +675,15 @@ fn the_raid_needs_the_war_and_the_gene() {
     );
     assert!(!g.map.get(pad).unwrap().pillaged);
 
-    let mut ai = denier();
+    let mut base = denier();
+    assert_eq!(
+        base.science_denial_raid_step(&mut g, 0, uid, &plan),
+        None,
+        "the base tag alone never raids: rung 3 is `science-denial-war`"
+    );
+    assert!(!g.map.get(pad).unwrap().pillaged);
+
+    let mut ai = warrior();
     g.at_war.clear();
     assert_eq!(
         ai.science_denial_raid_step(&mut g, 0, uid, &plan),
@@ -597,17 +715,22 @@ fn bank_space_progress(g: &mut Game, pid: usize, cid: u32, fraction: f64) {
 fn the_projection_reads_the_launch_city_and_shortens_as_the_race_is_banked() {
     let mut g = board();
     let cid = g.player_city_ids(1)[0];
-    let cold = AdvancedAi::science_denial_turns_to_finish(&g, 1)
+    let cold = AdvancedAi::science_denial_turns_to_finish(&g, 1, cid)
         .expect("a seat with a launch city can be projected");
+    assert_eq!(
+        AdvancedAi::science_denial_turns_to_finish(&g, 1, g.player_city_ids(0)[0]),
+        None,
+        "a city that is not theirs projects nothing"
+    );
     bank_space_progress(&mut g, 1, cid, 0.9);
-    let warm = AdvancedAi::science_denial_turns_to_finish(&g, 1).unwrap();
+    let warm = AdvancedAi::science_denial_turns_to_finish(&g, 1, cid).unwrap();
     assert!(
         warm < cold && warm >= 0.0,
         "banked production shortens the projection ({warm} vs {cold})"
     );
     bank_space_progress(&mut g, 1, cid, 1.0);
     assert_eq!(
-        AdvancedAi::science_denial_turns_to_finish(&g, 1),
+        AdvancedAi::science_denial_turns_to_finish(&g, 1, cid),
         Some(0.0),
         "every project paid for is a finish this turn"
     );
@@ -616,7 +739,7 @@ fn the_projection_reads_the_launch_city_and_shortens_as_the_race_is_banked() {
 #[test]
 fn the_denial_war_opens_only_inside_the_horizon_and_behind_our_own_finish() {
     let mut g = board();
-    let ai = denier();
+    let ai = warrior();
     give_pad(&mut g, 1);
     let theirs = g.player_city_ids(1)[0];
     let ours = g.player_city_ids(0)[0];
@@ -639,6 +762,26 @@ fn the_denial_war_opens_only_inside_the_horizon_and_behind_our_own_finish() {
         "we finish no later than they do; the production is worth more than the war"
     );
 
+    // Our own finish near: inside the horizon ourselves, even behind them,
+    // the last project keeps its production.
+    bank_space_progress(&mut g, 1, theirs, 1.0);
+    bank_space_progress(&mut g, 0, ours, 0.0);
+    let horizon = g.standard_duration(DENIAL_WAR_LAUNCH_HORIZON) as f64;
+    let far = AdvancedAi::science_denial_turns_to_finish(&g, 0, ours).unwrap();
+    assert!(far > horizon, "the fixture seat is decades out ({far})");
+    assert!(ai.science_denial_war_admissible(&g, 0, &threat));
+    bank_space_progress(&mut g, 0, ours, 0.995);
+    let near = AdvancedAi::science_denial_turns_to_finish(&g, 0, ours).unwrap();
+    assert!(
+        near <= horizon && near > 0.0,
+        "the fixture seat is now inside the horizon ({near})"
+    );
+    assert!(
+        !ai.science_denial_war_admissible(&g, 0, &threat),
+        "inside DENIAL_WAR_LAUNCH_HORIZON of our own launch, no war"
+    );
+    bank_space_progress(&mut g, 1, theirs, 0.99);
+
     // A threat whose pad we cannot see is not a war target — the raid the
     // war is declared for has nowhere to go.
     bank_space_progress(&mut g, 0, ours, 0.0);
@@ -657,7 +800,7 @@ fn the_denial_war_opens_only_inside_the_horizon_and_behind_our_own_finish() {
 #[test]
 fn the_declaration_waits_for_the_formal_war_clock_and_then_opens() {
     let mut g = board();
-    let mut ai = denier();
+    let mut ai = warrior();
     let (_, pad) = give_pad(&mut g, 1);
     let launch = g.player_city_ids(1)[0];
     bank_space_progress(&mut g, 1, launch, 1.0);
@@ -717,9 +860,37 @@ fn war_ready_board(ai: &mut AdvancedAi) -> (Game, Pos) {
     (g, pad)
 }
 
+/// The base tag alone never declares: a threat about to finish, the clock
+/// run, an army beside the pad — and `science-threat-denial` on its own
+/// spends nothing but the denunciation.
+#[test]
+fn the_base_tag_alone_never_declares_a_war() {
+    let mut ai = warrior();
+    let (mut g, pad) = war_ready_board(&mut ai);
+    let staging = g
+        .wdisk(pad, 2)
+        .into_iter()
+        .find(|pos| {
+            g.wdist(*pos, pad) == 2
+                && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+                && g.city_at(*pos).is_none()
+        })
+        .expect("the fixture has a staging tile beside the pad");
+    g.spawn_test_unit("warrior", 0, staging);
+    g.spawn_test_unit("warrior", 0, staging);
+    let mut base = denier();
+    assert!(!base.science_denial_war_diplomacy(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+    assert_eq!(base.denial_war, None);
+    assert_eq!(g.players[0].counters.get("denial_wars"), None);
+    // The same board and the war tag: the declaration opens.
+    assert!(ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(g.is_at_war(0, 1));
+}
+
 #[test]
 fn no_war_is_declared_for_a_pad_no_soldier_can_walk_to() {
-    let mut ai = denier();
+    let mut ai = warrior();
     let (mut g, pad) = war_ready_board(&mut ai);
 
     // No army at all: the declaration would buy grievances and no denial.
@@ -743,7 +914,7 @@ fn no_war_is_declared_for_a_pad_no_soldier_can_walk_to() {
 
 #[test]
 fn the_denial_war_is_refused_by_the_existing_war_gates() {
-    let mut ai = denier();
+    let mut ai = warrior();
     let (mut g, _) = war_ready_board(&mut ai);
     let home = g.cities[&g.player_city_ids(0)[0]].pos;
     g.spawn_test_unit("warrior", 0, home);
@@ -771,7 +942,7 @@ fn the_denial_war_is_refused_by_the_existing_war_gates() {
 #[test]
 fn the_denial_war_closes_when_the_pad_is_pillaged() {
     let mut g = board();
-    let mut ai = denier();
+    let mut ai = warrior();
     let (_, pad) = give_pad(&mut g, 1);
     declare_war(&mut g, 0, 1);
     ai.denial_war = Some(DenialWar {
@@ -802,7 +973,7 @@ fn the_denial_war_closes_when_the_pad_is_pillaged() {
 #[test]
 fn the_denial_war_closes_when_it_has_run_its_course() {
     let mut g = board();
-    let mut ai = denier();
+    let mut ai = warrior();
     let (_, pad) = give_pad(&mut g, 1);
     declare_war(&mut g, 0, 1);
     ai.denial_war = Some(DenialWar {
@@ -818,7 +989,7 @@ fn the_denial_war_closes_when_it_has_run_its_course() {
 #[test]
 fn a_concluded_denial_war_is_forgotten_and_the_gene_off_clears_it() {
     let mut g = board();
-    let mut ai = denier();
+    let mut ai = warrior();
     let (_, pad) = give_pad(&mut g, 1);
     ai.denial_war = Some(DenialWar {
         target: 1,
@@ -834,9 +1005,19 @@ fn a_concluded_denial_war_is_forgotten_and_the_gene_off_clears_it() {
         declared: g.turn,
         pad,
     });
+    ai.disable_science_denial_war();
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    assert_eq!(ai.denial_war, None, "the war tag off, the layer holds no state");
+
+    ai.enable_science_denial_war();
+    ai.denial_war = Some(DenialWar {
+        target: 1,
+        declared: g.turn,
+        pad,
+    });
     ai.disable_science_threat_denial();
     assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
-    assert_eq!(ai.denial_war, None, "off, the layer holds no state");
+    assert_eq!(ai.denial_war, None, "the base off, the war rung is inert too");
 }
 
 // ---- the off path --------------------------------------------------------

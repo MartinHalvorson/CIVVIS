@@ -2169,16 +2169,21 @@ pub const GENES: &[Gene] = &[
     // with the rung. Appended above the markers, so a running screen keeps its
     // positional genome. See `advanced/expansion_scales_with_difficulty.rs`.
     Gene { tag: "expansion-scales-with-difficulty", field: "expansion_scales_with_difficulty", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_scales_with_difficulty, disable: AdvancedAi::disable_expansion_scales_with_difficulty },
-    // Deny a rival the science victory instead of only racing it: no
-    // alliance, passage or Great Work to a science threat and a
-    // denunciation; the launch pad disrupted by espionage; a two-soldier
-    // raid that pillages the pad at war; and the cheapest legal war opened
-    // for that raid when the threat is inside DENIAL_WAR_LAUNCH_HORIZON of
-    // finishing and we are not. At Emperor the rivals finish the space race
-    // at t213-228 while we stand at one to three of four launches; the
-    // Immortal and Deity handicaps make speeding our own launch insufficient
-    // on its own. See `advanced/science_threat_denial.rs`.
+    // Deny a rival the science victory instead of only racing it, rungs 1-2:
+    // no new alliance, passage or Great Work to a science threat and a
+    // denunciation; one spy posted to the threat's launch city to disrupt
+    // the pad. At Emperor the rivals finish the space race at t213-228 while
+    // we stand at one to three of four launches; the Immortal and Deity
+    // handicaps make speeding our own launch insufficient on its own. See
+    // `advanced/science_threat_denial.rs`.
     Gene { tag: "science-threat-denial", field: "science_threat_denial", kind: Kind::OptIn, enable: AdvancedAi::enable_science_threat_denial, disable: AdvancedAi::disable_science_threat_denial },
+    // Rungs 3-4 of the denial, priced apart: a two-soldier raid that
+    // pillages the pad at war, and the cheapest legal war opened for that
+    // raid when the threat is inside DENIAL_WAR_LAUNCH_HORIZON of finishing,
+    // we are outside it, and a soldier can walk to the pad. Requires and
+    // arms `science-threat-denial`. The first probe of all four rungs as one
+    // tag opened 13 wars for 2 pillaged pads (2026-09-09).
+    Gene { tag: "science-denial-war", field: "science_denial_war", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_war, disable: AdvancedAi::disable_science_denial_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

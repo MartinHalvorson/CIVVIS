@@ -6040,15 +6040,21 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
-    /// Deny a rival the science victory rather than only race it: no
-    /// alliance or passage or Great Work to a science threat and a
-    /// denunciation, the launch pad disrupted by espionage, a two-soldier
-    /// raid that pillages the pad while we are at war, and — inside
-    /// `DENIAL_WAR_LAUNCH_HORIZON` of their finish and behind our own — the
-    /// cheapest legal war opened for that raid and closed when it has paid.
-    /// Opt-in gene `science-threat-denial`; see
-    /// `advanced/science_threat_denial.rs`.
+    /// Deny a rival the science victory rather than only race it: no new
+    /// alliance, no passage and no Great Work sold to a science threat, a
+    /// denunciation of the most pressing one, and one spy posted to its
+    /// launch city to disrupt the pad. Opt-in gene `science-threat-denial`;
+    /// see `advanced/science_threat_denial.rs`.
     science_threat_denial: bool,
+    /// The two expensive rungs of the denial, priced apart from the base
+    /// because the first probe of all four as one tag opened 13 wars for 2
+    /// pillaged pads: a two-soldier raid that pillages the threat's pad while
+    /// we are at war, and — inside `DENIAL_WAR_LAUNCH_HORIZON` of their
+    /// finish, outside it for our own, and with the pad route-reachable —
+    /// the cheapest legal war opened for that raid and closed when it has
+    /// paid. Opt-in gene `science-denial-war`, which requires and arms
+    /// `science_threat_denial`; see `advanced/science_threat_denial.rs`.
+    science_denial_war: bool,
     /// The safe-step guard's last resort never prices the tile the unit is
     /// standing on. When a Settler's route step is over
     /// `SETTLER_STEP_RISK_LIMIT`, `settlement_unit_step_toward_safe` looks
@@ -7897,6 +7903,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             science_threat_denial: false,
+            science_denial_war: false,
             standing_still_is_a_risk: false,
             strike_reach: false,
             safest_stand: false,
@@ -22998,10 +23005,17 @@ impl AdvancedAi {
                                 + target.districts.len() as i32 * 14
                                 + target.wonders.len() as i32 * 24
                                 // `science-threat-denial`: the pad that is
-                                // actually going to launch is the posting.
-                                // Zero when the gene is off. See
+                                // actually going to launch is the posting,
+                                // for one spy. Zero when the gene is off or
+                                // a spy of ours is already bound there. See
                                 // `advanced/science_threat_denial.rs`.
-                                + Self::science_denial_spy_assignment_bonus(&denial_pads, *city),
+                                + Self::science_denial_spy_assignment_bonus(
+                                    g,
+                                    pid,
+                                    spy_id,
+                                    &denial_pads,
+                                    *city,
+                                ),
                             std::cmp::Reverse(*city),
                             action,
                         ))

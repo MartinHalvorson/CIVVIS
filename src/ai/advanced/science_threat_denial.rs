@@ -31,14 +31,29 @@
 //!   a t213 finish is visible long before the first pad.
 //!
 //! Against the threats, in escalating order, each rung its own constant and
-//! its own journal line:
+//! its own journal line. The rungs are two opt-in tags: `science-threat-denial`
+//! is rungs 1 and 2 — the diplomatic refusals and the espionage, neither of
+//! which costs a unit or a grievance — and `science-denial-war` is rungs 3
+//! and 4, the raid and the war that opens it. The war tag REQUIRES the base:
+//! `enable_science_denial_war` arms both flags, so the tag fires on its own in
+//! a screen, and the raid and the war read
+//! [`AdvancedAi::science_denial_war_active`], which is both flags together.
+//! The two are priced apart because the first probe of the four rungs as one
+//! tag opened 13 wars for 2 pillaged pads and went −3.9 pp on wins
+//! (`docs/eval/2026-09-09-science-threat-denial.md`): the war rung was the
+//! whole of the cost and one sixth of the effect.
 //!
 //! 1. **Diplomacy.** No research agreement and no alliance of any kind with a
 //!    threat, no sale of passage and no sale of a Great Work to one, and the
 //!    most pressing threat is denounced once per turn (the same primitive
 //!    `culture-threat-early` uses, [`AdvancedAi::denounce_most_pressing`]).
 //!    A denouncement costs them the friendship and alliance routes to our
-//!    market and starts the Formal War clock rung 4 reads.
+//!    market and starts the Formal War clock rung 4 reads. An EXISTING
+//!    alliance is never touched: the alliance filter only refuses a new one
+//!    (`propose_strategic_alliance` already skips a standing ally), and an
+//!    allied threat is left out of the denunciation ranking — the engine's
+//!    `do_denounce` refuses an ally anyway, and a refused apply would spend
+//!    the turn's one denunciation on nothing.
 //! 2. **Espionage.** The model's launch-denial mission is `disrupt_rocketry`:
 //!    it is gated on the `spaceport` district family, it pillages the pad and
 //!    it zeroes the city's spaceport-project progress (`Game`'s
@@ -47,16 +62,22 @@
 //!    to the threat's launch city ([`DENIAL_SPY_ASSIGN_PRIORITY`]) and the
 //!    disruption run from it ahead of every other operation
 //!    ([`DENIAL_SPY_MISSION_PRIORITY`]), at our own threat threshold rather
-//!    than at Mars.
-//! 3. **Raid.** While we are at war with a threat, the
+//!    than at Mars. ONE spy per pad: the posting bonus is withheld once any
+//!    spy of ours is in or on its way to that city, so the rest of the
+//!    network keeps the stock table, and both bonuses are zero the turn the
+//!    rival stops being a threat, which releases the spy to the stock table
+//!    too. The engine only lists `disrupt_rocketry` against an active pad, so
+//!    a pad already pillaged is never disrupted twice.
+//! 3. **Raid** (`science-denial-war`). While we are at war with a threat, the
 //!    [`DENIAL_RAID_SIZE`] nearest mobile soldiers within
 //!    [`DENIAL_RAID_REACH`] of the pad walk onto it and pillage it. A pillaged
 //!    Spaceport cannot run a project until it is repaired. The party never
 //!    includes the lone garrison of one of our cities — the existing floor
 //!    `opportunistic_war` uses for the same question.
-//! 4. **War.** When a threat is inside [`DENIAL_WAR_LAUNCH_HORIZON`] standard
-//!    turns of finishing and we are not inside a shorter horizon of our own
-//!    finish, the cheapest legal war is declared for the sake of rung 3 —
+//! 4. **War** (`science-denial-war`). When a threat is inside
+//!    [`DENIAL_WAR_LAUNCH_HORIZON`] standard turns of finishing, and our own
+//!    finish is neither sooner than theirs nor inside that same horizon, the
+//!    cheapest legal war is declared for the sake of rung 3 —
 //!    subject to the war-affordability gates that already exist
 //!    (`war-needs-a-treasury` through `war_is_affordable`,
 //!    `one-war-at-a-time` through `one_war_holds_declaration`) and to the
@@ -65,9 +86,21 @@
 //!    soon as the pad is pillaged, or after [`DENIAL_WAR_MAX_TURNS`],
 //!    whichever comes first.
 //!
-//! Off by default: opt-in registry row `science-threat-denial`. With the flag
-//! off every entry point below returns before it reads the board, so the
-//! controller is byte-identical to the one without the gene.
+//! Off by default: opt-in registry rows `science-threat-denial` and
+//! `science-denial-war`. With the base flag off every entry point below
+//! returns before it reads the board, so the controller is byte-identical to
+//! the one without the gene; with the war flag off, rungs 3 and 4 are.
+//!
+//! What the threat model reads, and how far past the fog it reaches: the
+//! pad is a tile in `players[pid].explored`; landed projects, the
+//! expedition's distance and the technology count are the public victory
+//! and score screens, which `rival_victory_pressure` reads the same way. The
+//! one reach past what a player could see is rung 4's projection
+//! ([`AdvancedAi::science_denial_turns_to_finish`]): it prices the remaining
+//! projects at the explored pad city's own production and banked progress,
+//! which a real player only learns from a spy posted there. It is confined
+//! to that city — no other city of the rival is read — and it is the same
+//! reach `science_project_build_turns` has on our own cities.
 
 use std::collections::BTreeSet;
 
@@ -112,7 +145,9 @@ pub(crate) const DENIAL_RAID_REACH: i32 = 8;
 
 /// A threat inside this many standard turns of finishing is worth a war. It
 /// is deliberately longer than the war itself: the declaration, the march and
-/// the pillage all have to land before the last project completes.
+/// the pillage all have to land before the last project completes. The same
+/// horizon guards our own finish: a seat this close to launching keeps its
+/// production for the last project rather than a war.
 pub(crate) const DENIAL_WAR_LAUNCH_HORIZON: u32 = 40;
 
 /// Peace is offered once a denial war is this old however it has gone. A war
@@ -176,6 +211,13 @@ impl AdvancedAi {
     /// planning, and a science victory that can actually be won.
     fn science_denial_active(&self, g: &Game) -> bool {
         self.science_threat_denial && self.victory_planning && g.victory_conditions.science
+    }
+
+    /// Whether the raid and the war run: `science-denial-war` requires
+    /// `science-threat-denial`, so this is both flags together. The threat
+    /// model's own guards are read where the rungs read the threats.
+    pub(crate) fn science_denial_war_active(&self) -> bool {
+        self.science_threat_denial && self.science_denial_war
     }
 
     /// The Spaceport city of `rival` we would aim at: the one whose pad we
@@ -298,11 +340,17 @@ impl AdvancedAi {
 
     /// Rung 1: denounce the most pressing threat, once per turn. Returns the
     /// denounced rival for the caller's journal line.
+    ///
+    /// A threat we are allied with is left out of the ranking. The engine
+    /// refuses to denounce an ally (`do_denounce`), so the alliance could not
+    /// be broken here in any case; leaving it in would only spend the turn's
+    /// one denunciation on a refused apply.
     pub(crate) fn science_threat_denunciation(&self, g: &mut Game, pid: usize) -> Option<usize> {
         let ranked: Vec<usize> = self
             .science_threats(g, pid)
             .into_iter()
             .map(|threat| threat.rival)
+            .filter(|rival| g.alliance_with(pid, *rival).is_none())
             .collect();
         Self::denounce_most_pressing(g, pid, &ranked)
     }
@@ -320,14 +368,33 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// Rung 2: what a spy posting to `cid` is worth beyond the stock table.
+    /// Rung 2: what posting `spy` to `cid` is worth beyond the stock table.
     /// Only a threat's launch city earns it, so a Spaceport belonging to a
-    /// rival that is not racing is still valued exactly as before.
-    pub(crate) fn science_denial_spy_assignment_bonus(pads: &BTreeSet<u32>, cid: u32) -> i32 {
-        if pads.contains(&cid) {
-            DENIAL_SPY_ASSIGN_PRIORITY
-        } else {
+    /// rival that is not racing is still valued exactly as before — and only
+    /// while no other spy of ours is already in or on its way to that city.
+    /// The engine sets `Spy::city` to the destination the turn the order is
+    /// given, so one read covers both the posted and the travelling agent,
+    /// and the spy pass mutates the board between spies, so a second idle
+    /// spy the same turn already sees the first's order. One pad takes one
+    /// spy; the rest of the network keeps the stock table.
+    pub(crate) fn science_denial_spy_assignment_bonus(
+        g: &Game,
+        pid: usize,
+        spy: u32,
+        pads: &BTreeSet<u32>,
+        cid: u32,
+    ) -> i32 {
+        if !pads.contains(&cid) {
+            return 0;
+        }
+        let posted = g
+            .spies
+            .values()
+            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid));
+        if posted {
             0
+        } else {
+            DENIAL_SPY_ASSIGN_PRIORITY
         }
     }
 
@@ -444,7 +511,7 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<bool> {
-        if !self.science_threat_denial {
+        if !self.science_denial_war_active() {
             return None;
         }
         let unit = g.units.get(&uid)?;
@@ -507,18 +574,27 @@ impl AdvancedAi {
 
     // ---- Rung 4: the war --------------------------------------------------
 
-    /// Standard turns we project `pid` needs to finish the science victory,
-    /// `None` when the race has not begun or cannot be projected.
+    /// Turns we project `pid` needs to finish the science victory from
+    /// `launch`, its Spaceport city, `None` when it cannot be projected.
     ///
-    /// The projects still to build are priced at the launch city's own rate
-    /// with [`AdvancedAi::science_project_build_turns`], the helper the
-    /// science drive already uses to rank its own pads; the expedition's
-    /// flight is priced at the distance left over the speed the engine
-    /// reports ([`Game::exoplanet_speed`]). With no launch city on the board
-    /// nothing can be projected, and this reads the same public
-    /// victory-screen shape `rival_victory_pressure` does.
-    pub(crate) fn science_denial_turns_to_finish(g: &Game, pid: usize) -> Option<f64> {
-        let launch = Self::science_drive_pick_launch_city(g, pid)?;
+    /// The projects still to build are priced at `launch`'s own rate with
+    /// [`AdvancedAi::science_project_build_turns`], the helper the science
+    /// drive already uses to rank its own pads; the expedition's flight is
+    /// priced at the distance left over the speed the engine reports
+    /// ([`Game::exoplanet_speed`]).
+    ///
+    /// What this reads past the fog, stated rather than assumed: the landed
+    /// projects and the expedition's distance are the public victory screen,
+    /// the same shape `rival_victory_pressure` reads; the city's production
+    /// and its banked project progress are not — a real player learns them
+    /// from a spy posted there. The reach is confined to the one city whose
+    /// pad we have explored (the caller passes `ScienceThreat::pad`'s city
+    /// for a rival), and no other city of theirs is read. There is no
+    /// fog-honest production estimate in the controller to replace it with.
+    pub(crate) fn science_denial_turns_to_finish(g: &Game, pid: usize, launch: u32) -> Option<f64> {
+        if g.cities.get(&launch).is_none_or(|city| city.owner != pid) {
+            return None;
+        }
         let completed = &g.players[pid].science_projects;
         let mut turns = 0.0;
         for project in SPACE_PROJECTS {
@@ -552,23 +628,30 @@ impl AdvancedAi {
     }
 
     /// Whether a war on `threat` is admissible this turn: it is not already
-    /// ours to fight, it is inside [`DENIAL_WAR_LAUNCH_HORIZON`] of finishing,
-    /// we are not inside a shorter horizon of our own finish, and the two
-    /// existing war gates admit it.
+    /// ours to fight, its explored pad projects a finish inside
+    /// [`DENIAL_WAR_LAUNCH_HORIZON`], our own finish is neither sooner than
+    /// theirs nor inside that same horizon, and the two existing war gates
+    /// admit it.
     fn science_denial_war_admissible(&self, g: &Game, pid: usize, threat: &ScienceThreat) -> bool {
-        if g.is_at_war(pid, threat.rival) || threat.pad.is_none() {
+        if g.is_at_war(pid, threat.rival) {
             return false;
         }
+        let Some((pad_city, _)) = threat.pad else {
+            return false;
+        };
         let horizon = g.standard_duration(DENIAL_WAR_LAUNCH_HORIZON) as f64;
-        let Some(theirs) = Self::science_denial_turns_to_finish(g, threat.rival) else {
+        let Some(theirs) = Self::science_denial_turns_to_finish(g, threat.rival, pad_city) else {
             return false;
         };
         if theirs > horizon {
             return false;
         }
-        // Our own finish first: a war we would win the game before fighting
-        // costs production the last project needs.
-        if Self::science_denial_turns_to_finish(g, pid).is_some_and(|ours| ours < theirs) {
+        // Our own finish first, and our own finish near: a war we would win
+        // the game before fighting, or one declared inside the horizon of our
+        // own launch, costs the production the last project needs.
+        let ours = Self::science_drive_pick_launch_city(g, pid)
+            .and_then(|launch| Self::science_denial_turns_to_finish(g, pid, launch));
+        if ours.is_some_and(|ours| ours < theirs || ours <= horizon) {
             return false;
         }
         self.war_is_affordable(g, pid) && !self.one_war_holds_declaration(g, pid, threat.rival)
@@ -578,7 +661,7 @@ impl AdvancedAi {
     /// `true` when a declaration was made this turn, so the caller's other
     /// roads to war stand down — the turn has one declaration.
     pub(crate) fn science_denial_war_diplomacy(&mut self, g: &mut Game, pid: usize) -> bool {
-        if !self.science_threat_denial {
+        if !self.science_denial_war_active() {
             self.denial_war = None;
             return false;
         }
