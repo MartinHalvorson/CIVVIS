@@ -15,9 +15,19 @@
     "withholdable_live_count": 38
   },
   "genome_coverage": {
+<<<<<<< HEAD
     "capability_toggles": 306,
     "measured_by_a_screen": 72,
     "reachable_as_a_gene": 275,
+||||||| de4d654c
+    "capability_toggles": 312,
+    "measured_by_a_screen": 73,
+    "reachable_as_a_gene": 281,
+=======
+    "capability_toggles": 308,
+    "measured_by_a_screen": 73,
+    "reachable_as_a_gene": 277,
+>>>>>>> origin/main
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 41,
     "unreachable_toggles": [
