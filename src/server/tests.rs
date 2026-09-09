@@ -6703,8 +6703,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
             "gold",
             "military",
             "nukes",
-            "wonders",
             "suzerain",
+            "wonders",
             "score",
         ];
         let mut cursor = 0;
@@ -6753,8 +6753,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
             "gold",
             "military",
             "nukes",
-            "wonders",
             "suzerain",
+            "wonders",
             "score",
         ];
         let mut cursor = 0;
