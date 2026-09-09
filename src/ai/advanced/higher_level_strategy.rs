@@ -273,7 +273,6 @@ impl AdvancedAi {
                 || plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
                 || self.base.barbarian_local_alarm_for_controller(g, pid, cid)
-                || self.requisition_production_item(g, pid, cid).is_some()
             {
                 continue;
             }

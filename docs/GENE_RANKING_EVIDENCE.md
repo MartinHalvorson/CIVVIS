@@ -209,6 +209,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `wonder-prereq-reach` | +29 | 16.96% | 16.38% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `guru-heals-the-corps` | +24 | 16.91% | 16.43% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `siege-is-progress` | +23 | 16.89% | 16.44% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `coalition-before-war-2` | +22 | 16.88% | 16.63% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `district-lookahead-settle` | +11 | 16.77% | 16.56% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `endgame-war-runway` | +11 | 16.77% | 16.56% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `camp-reach` | +10 | 16.77% | 16.56% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
@@ -256,6 +257,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `builder-worked-tile-priority` | -32 | 16.35% | 16.99% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `escort-unstick-2` | -33 | 16.34% | 16.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `settle-plan-ahead` | -33 | 16.34% | 16.99% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `naval-recon-2` | -34 | 16.33% | 16.73% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `siege-role` | -39 | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `research-floor-holds` | -40 | 16.27% | 17.07% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `builder-reward-survey` | -46 | 16.21% | 17.13% | `2026-08-24-standard-continuous-38160-total-seats.json` |
@@ -263,6 +265,8 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `garrison-walls` | -54 | 16.12% | 17.21% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `loyalty-policy-defence` | -54 | 16.13% | 17.20% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `contact-posture` | -60 | 16.06% | 17.27% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `requisitions` | -66 | 16.01% | 16.89% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
+| `peace-when-the-war-does-not-pay` | -70 | 15.97% | 16.90% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `governor-victory-lanes` | -110 | 15.57% | 17.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
@@ -317,6 +321,8 @@ The observations below remain useful, but they do not implement the deployment r
 **Four research-planning genes joined that historical record under the same explicit criterion.** At 38,160 seats, `chain-tech-lookahead` read **-0.531591 pp**, `research-floor-holds` **-0.564379 pp**, `research-grants-first` **-0.181882 pp**, and `science-payback-horizon` **-0.232622 pp**. All were off-default, and their fields, flags, registry rows, probes, and focused tests left the code on 2026-08-24. Their screen rows remain in the ranking's **Removed from the code** table so the cull is auditable without keeping their runtime branches alive.
 
 **`solvency-first-trade-slot-2` left the code on 2026-09-01 under the batch rule, and it is the only one of the ledger's six `remove` decisions that did.** Its three batch columns read **-33, -50, -49** at the cull (and **-61, -33, -50** under the 5,424-seat batch then in flight as PR #2939) -- below the rule's -10 bar in every window it was ever priced, with the version-1 head `solvency-first-trade-slot` at **+108/+111/+136** carrying the family. Its field, toggles, registry row, gated branches and fires probe left the code; the reservation and Trader-step arms were restored to version one's shape exactly. The other five `remove` rows did NOT leave: `rapid-city-expansion` is deliberately retained while the live seat's force-on arm (`~/.civvis-live-force-on`) is running it, and `boost-wait-research`, `opening-warrior-recon`, `settler-factory-coordination` and `skip-the-prophet-race` were re-priced out of `remove` (newest windows -8, +4, +7 and +2) by the in-flight batch -- exactly the "screen in flight or unmerged" check the rule below this note prescribes, and the mechanism that made #2266's cull wrong. They stay in the code, `off`.
+
+**Four war genes left the code on 2026-09-08 (PR #3258), one under each of the three removal routes.** `requisitions` is the batch rule's own `remove` verdict: its three batch columns read **-29, -72, -17**, below the -10 bar in every window it was priced (rank 265, P(>0) 0.6%, Diff -1.36 pp); its module `src/ai/advanced/requisitions.rs`, field, toggles, registry row, census counters, the Deter-row requisition in `objective_board.rs` and every gated branch in production, gold spending, the parity pre-emption and the army target left the code, each restored to the gene-off shape exactly, while its sibling `objective-board` and `war-policy-via-board` (which reads the board's own `requisitions()` shortfall) are untouched. `peace-when-the-war-does-not-pay` is the standing directive that the bottom of the table leaves the code: rank 259, P(>0) 2.0%, Diff -0.94 pp, columns -22/+5/-17, on the `standard` instrument the agent is screened on. `coalition-before-war-2` (rank 251, Diff -0.71 pp, -19/-47/+3) and `naval-recon-2` (rank 255, Diff -0.81 pp, -15/-26/-5) are the version-policy drops -- a family keeps at most three versions and `tools/genes.py versions` named each as its family's version to drop; `coalition-before-war`, `coalition-before-war-3` (ships on), `naval-recon` (Repair, ships on) and `naval-recon-3` stay. The three report-only display batches that priced them carry a recorded `reporting_batches[].unverified` exception, as #2944 did, so their rows are retained as history in the ranking's **Removed from the code** table.
 
 *The legacy share axis already showed the disagreement.* P10 priced this gene at win z **+2.46** and score-share z **-15.92** -- a recorded `conflict`. The later standard win reading was z -15.37, within half a sigma of that legacy share reading. This is evidence for publishing both axes, not a rule that either axis may silently rewrite a default.
 

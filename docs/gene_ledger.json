@@ -323,11 +323,6 @@
         -6,
         -12
       ],
-      "coalition-before-war-2": [
-        -19,
-        -47,
-        3
-      ],
       "coalition-before-war-3": [
         6,
         10,
@@ -808,11 +803,6 @@
         11,
         23
       ],
-      "naval-recon-2": [
-        -15,
-        -26,
-        -5
-      ],
       "naval-recon-3": [
         -8,
         26,
@@ -897,11 +887,6 @@
         13,
         42,
         4
-      ],
-      "peace-when-the-war-does-not-pay": [
-        -22,
-        5,
-        -17
       ],
       "peacetime-deterrence": [
         12,
@@ -1017,11 +1002,6 @@
         5,
         56,
         39
-      ],
-      "requisitions": [
-        -29,
-        -72,
-        -17
       ],
       "research-tier-premium": [
         15,
@@ -1429,7 +1409,6 @@
       "civilian-out-of-reach": "off",
       "close-as-a-body": "on",
       "coalition-before-war": "off",
-      "coalition-before-war-2": "off",
       "coalition-before-war-3": "on",
       "coastal-city-sites": "off",
       "coastal-city-sites-2": "off",
@@ -1526,7 +1505,6 @@
       "native-emergency-purchase": "off",
       "native-emergency-purchase-2": "off",
       "naval-recon": "on",
-      "naval-recon-2": "off",
       "naval-recon-3": "on",
       "naval-threat-triage": "off",
       "never-an-empty-queue": "on",
@@ -1544,7 +1522,6 @@
       "overseas-settlement": "off",
       "pantheon-board": "off",
       "pass-picket": "on",
-      "peace-when-the-war-does-not-pay": "off",
       "peacetime-deterrence": "off",
       "power-the-laboratory": "off",
       "power-the-laboratory-2": "off",
@@ -1568,7 +1545,6 @@
       "religious-defence-scales": "off",
       "religious-units-heal-first": "off",
       "religious-veto-defence": "on",
-      "requisitions": "remove",
       "research-tier-premium": "off",
       "rival-suzerainty-alarm": "off",
       "route-block-is-a-wait": "off",
@@ -1877,7 +1853,6 @@
         "ships": "coalition-before-war-3",
         "versions": {
           "coalition-before-war": null,
-          "coalition-before-war-2": null,
           "coalition-before-war-3": null
         }
       },
@@ -2052,7 +2027,6 @@
         "ships": "naval-recon",
         "versions": {
           "naval-recon": -0.045836,
-          "naval-recon-2": null,
           "naval-recon-3": null
         }
       },
@@ -2507,7 +2481,8 @@
         "target_seats": 60000,
         "complete_seats": 13938,
         "partial": true
-      }
+      },
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price requisitions (left the code on 2026-09-08 under the batch rule, below -10 in every window it was ever priced), peace-when-the-war-does-not-pay (the bottom of the table, removed under the standing directive), and coalition-before-war-2 and naval-recon-2 (third-best family versions dropped under the three-version policy), so their rows are retained as history, not as sources of runtime defaults."
     },
     {
       "path": "docs/gene_screens/2026-09-08-standard-continuous-2460-total-seats-20260908-unified-current-build.json",
@@ -2543,7 +2518,8 @@
         "target_seats": 91500,
         "complete_seats": 2460,
         "partial": true
-      }
+      },
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price requisitions (left the code on 2026-09-08 under the batch rule, below -10 in every window it was ever priced), peace-when-the-war-does-not-pay (the bottom of the table, removed under the standing directive), and coalition-before-war-2 and naval-recon-2 (third-best family versions dropped under the three-version policy), so their rows are retained as history, not as sources of runtime defaults."
     },
     {
       "path": "docs/gene_screens/2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json",
@@ -2586,7 +2562,8 @@
         "target_seats": 60000,
         "complete_seats": 18768,
         "partial": true
-      }
+      },
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price requisitions (left the code on 2026-09-08 under the batch rule, below -10 in every window it was ever priced), peace-when-the-war-does-not-pay (the bottom of the table, removed under the standing directive), and coalition-before-war-2 and naval-recon-2 (third-best family versions dropped under the three-version policy), so their rows are retained as history, not as sources of runtime defaults."
     }
   ],
   "counts": {

@@ -485,26 +485,11 @@ impl AdvancedAi {
         self.holy_site_where_the_threat_is_2 = false;
     }
 
-    /// Two peacetime naval eyes instead of one while unseen water remains, so
-    /// the second coast is charted while the first Galley is still out.
-    ///
-    /// Version 2 of `naval_recon`; one version of a family plays, so this
-    /// turns version 1 off. Opt-in gene `naval-recon-2`. See `BasicAi::naval_recon_2`.
-    pub fn enable_naval_recon_2(&mut self) {
-        self.base.naval_recon = false;
-        self.base.naval_recon_2 = true;
-    }
-
-    pub fn disable_naval_recon_2(&mut self) {
-        self.base.naval_recon_2 = false;
-    }
-
     /// Version 3 of `naval-recon`: let a simultaneously missing land scout
     /// take the idle queue before the one peacetime sea scout. One version per
     /// family is active in a screen.
     pub fn enable_naval_recon_3(&mut self) {
         self.base.naval_recon = false;
-        self.base.naval_recon_2 = false;
         self.base.naval_recon_3 = true;
     }
 
@@ -2415,7 +2400,6 @@ impl AdvancedAi {
     /// first identifier.
     pub fn enable_coalition_before_war(&mut self) {
         self.coalition_before_war = true;
-        self.coalition_before_war_2 = false;
         self.coalition_before_war_3 = false;
     }
 
@@ -3038,17 +3022,6 @@ impl AdvancedAi {
     /// The twin of `enable_lane_release_when_hopeless`.
     pub fn disable_lane_release_when_hopeless(&mut self) {
         self.lane_release_when_hopeless = false;
-    }
-
-    /// Sue for peace when a war has taken nothing and cannot be paid for. See
-    /// `peace_when_war_does_not_pay`.
-    pub fn enable_peace_when_war_does_not_pay(&mut self) {
-        self.peace_when_war_does_not_pay = true;
-    }
-
-    /// The twin of `enable_peace_when_war_does_not_pay`.
-    pub fn disable_peace_when_war_does_not_pay(&mut self) {
-        self.peace_when_war_does_not_pay = false;
     }
 
     /// Refuse a war the treasury cannot pay for. See `war_needs_a_treasury`.
@@ -3890,24 +3863,6 @@ impl AdvancedAi {
         self.never_an_empty_queue_3 = false;
     }
 
-    /// At the ready strike, invite one credible neighbour to a joint war and
-    /// wait no more than one turn. Credible means the target is close to a
-    /// victory or the partner has the grievance and combined power that make
-    /// the Basic controller accept. Before the strike it asks that partner
-    /// only for a military alliance and spends Envoy score only to unseat the
-    /// target from a nearby client; it never retries. Opt-in gene
-    /// `coalition-before-war-2`.
-    pub fn enable_coalition_before_war_2(&mut self) {
-        self.coalition_before_war_2 = true;
-        self.coalition_before_war = false;
-        self.coalition_before_war_3 = false;
-    }
-
-    /// The twin of `enable_coalition_before_war_2`.
-    pub fn disable_coalition_before_war_2(&mut self) {
-        self.coalition_before_war_2 = false;
-    }
-
     /// Recruit only a target neighbour already fighting it. The accepted
     /// military alliance makes that real second front an immediate combat
     /// bonus when we declare; this version neither diverts Envoys nor holds
@@ -3916,7 +3871,6 @@ impl AdvancedAi {
     pub fn enable_coalition_before_war_3(&mut self) {
         self.coalition_before_war_3 = true;
         self.coalition_before_war = false;
-        self.coalition_before_war_2 = false;
     }
 
     /// The twin of `enable_coalition_before_war_3`.
@@ -4072,17 +4026,6 @@ impl AdvancedAi {
     /// The twin of `enable_objective_board`.
     pub fn disable_objective_board(&mut self) {
         self.objective_board = false;
-    }
-
-    /// `requisitions`: the Objective Board's shortfall reaches production
-    /// and the treasury. See `advanced/requisitions.rs`.
-    pub fn enable_requisitions(&mut self) {
-        self.requisitions = true;
-    }
-
-    /// The twin of `enable_requisitions`.
-    pub fn disable_requisitions(&mut self) {
-        self.requisitions = false;
     }
 
     /// `war-policy-via-board`: target feasibility, the declaration and the

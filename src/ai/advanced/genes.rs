@@ -1119,10 +1119,6 @@ pub const GENES: &[Gene] = &[
     // family draw is biased toward the best version and the ledger ships the
     // best by pooled Diff. See `AdvancedAi::enable_holy_site_where_the_threat_is_2`.
     Gene { tag: "holy-site-where-the-threat-is-2", field: "holy_site_where_the_threat_is_2", kind: Kind::OptIn, enable: AdvancedAi::enable_holy_site_where_the_threat_is_2, disable: AdvancedAi::disable_holy_site_where_the_threat_is_2 },
-    // Version 2 of `naval-recon` (2026-08-24): one gated delta on version 1; the
-    // family draw is biased toward the best version and the ledger ships the
-    // best by pooled Diff. See `AdvancedAi::enable_naval_recon_2`.
-    Gene { tag: "naval-recon-2", field: "naval_recon_2", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_recon_2, disable: AdvancedAi::disable_naval_recon_2 },
     // Version 2 of `power-the-laboratory` (2026-08-24): one gated delta on version 1; the
     // family draw is biased toward the best version and the ledger ships the
     // best by pooled Diff. See `AdvancedAi::enable_power_the_laboratory_2`.
@@ -1477,14 +1473,6 @@ pub const GENES: &[Gene] = &[
     // amenity penalty of 18 across nine cities. This asks the same reserve
     // question one turn earlier, where the answer can still prevent the war.
     Gene { tag: "war-needs-a-treasury", field: "war_needs_a_treasury", kind: Kind::OptIn, enable: AdvancedAi::enable_war_needs_a_treasury, disable: AdvancedAi::disable_war_needs_a_treasury },
-    // The peace desk's fatigue clause is written `!appointed_objective &&
-    // fatigued && ...`, so an appointed campaign that never lands is a
-    // permanent exemption from peace. Live King seat
-    // `civvis-20260826T112920Z`, 2026-08-26: 172 of 248 turns at war with the
-    // Maori behind one objective appointed at turn 100 and never taken, while
-    // an air surge stood appointed against a third empire at a zero treasury.
-    // Every peace the seat did ask for -- four of four -- was accepted.
-    Gene { tag: "peace-when-the-war-does-not-pay", field: "peace_when_war_does_not_pay", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_when_war_does_not_pay, disable: AdvancedAi::disable_peace_when_war_does_not_pay },
     // `assess` sizes the city target from a land census and never asks
     // whether that many sites exist; every settler gate downstream reads the
     // target. Live King seat `civvis-20260826T112920Z`, 2026-08-26: target
@@ -1955,10 +1943,6 @@ pub const GENES: &[Gene] = &[
     // on the top of the roll, remembers raiders in the fog, and screens shooters.
     // See `advanced/wounded_out_of_reach.rs`.
     Gene { tag: "wounded-out-of-reach", field: "wounded_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach, disable: AdvancedAi::disable_wounded_out_of_reach },
-    // Version 2 of `coalition-before-war`: court only a credible military
-    // partner, spend Envoys only to flip the target's client, and make one
-    // joint-war invitation at the ready strike.
-    Gene { tag: "coalition-before-war-2", field: "coalition_before_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_coalition_before_war_2, disable: AdvancedAi::disable_coalition_before_war_2 },
     // Version 3 asks only a neighbour already fighting the planned target
     // for a military alliance: a proven second front and an immediate combat
     // bonus, without a speculative joint-war offer or declaration delay.
@@ -2067,17 +2051,6 @@ pub const GENES: &[Gene] = &[
     // objective left the second threatened city with nothing. Priced on the
     // arena first. See `advanced/objective_board.rs`.
     Gene { tag: "objective-board", field: "objective_board", kind: Kind::OptIn, enable: AdvancedAi::enable_objective_board, disable: AdvancedAi::disable_objective_board },
-    // The Objective Board's shortfall reaches production and the treasury:
-    // an idle city starts the unit a short row asks for — the kind the row
-    // lacks (siege, ranged, melee; a shooter for a city, cavalry for a
-    // Destroy falling due), the best WORTH PER HAMMER of that kind rather
-    // than `best_military`'s strongest — Gold buys the top requisition above
-    // the reserve, `border_parity_*` and the bleeding city's defender take
-    // their city and unit from the board's Deter and Defend rows, and
-    // `desired_military` is the board's summed need while the land army is
-    // under it. Inert without `objective-board` (no board to read). Whole-
-    // game no-harm screen beside the board. See `advanced/requisitions.rs`.
-    Gene { tag: "requisitions", field: "requisitions", kind: Kind::OptIn, enable: AdvancedAi::enable_requisitions, disable: AdvancedAi::disable_requisitions },
     // Who may be a target, when a war is declared and when peace is sued
     // for, read off the Objective Board's own requirements in place of
     // empire-wide power ratios: a rival whose nearest city's Siege bill is
@@ -2434,7 +2407,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("civilian-out-of-reach", [Some(4), Some(-9), Some(7)]),
     ("close-as-a-body", [Some(11), Some(49), Some(-25)]),
     ("coalition-before-war", [Some(0), Some(-6), Some(-12)]),
-    ("coalition-before-war-2", [Some(-19), Some(-47), Some(3)]),
     ("coalition-before-war-3", [Some(6), Some(10), Some(1)]),
     ("coastal-city-sites", [Some(2), Some(-43), Some(0)]),
     ("coastal-city-sites-2", [Some(-14), Some(58), Some(-7)]),
@@ -2531,7 +2503,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("native-emergency-purchase", [Some(-12), Some(73), Some(0)]),
     ("native-emergency-purchase-2", [Some(-6), Some(-12), Some(2)]),
     ("naval-recon", [Some(19), Some(11), Some(23)]),
-    ("naval-recon-2", [Some(-15), Some(-26), Some(-5)]),
     ("naval-recon-3", [Some(-8), Some(26), Some(11)]),
     ("naval-threat-triage", [Some(-6), Some(-17), Some(16)]),
     ("never-an-empty-queue", [Some(-6), Some(22), Some(17)]),
@@ -2549,7 +2520,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("overseas-settlement", [Some(8), Some(-33), Some(-8)]),
     ("pantheon-board", [Some(8), Some(-9), Some(9)]),
     ("pass-picket", [Some(13), Some(42), Some(4)]),
-    ("peace-when-the-war-does-not-pay", [Some(-22), Some(5), Some(-17)]),
     ("peacetime-deterrence", [Some(12), Some(-1), Some(-8)]),
     ("power-the-laboratory", [Some(21), Some(-28), Some(-14)]),
     ("power-the-laboratory-2", [Some(-11), Some(-1), Some(-4)]),
@@ -2573,7 +2543,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("religious-defence-scales", [Some(7), Some(-23), Some(-18)]),
     ("religious-units-heal-first", [Some(10), Some(-47), Some(-9)]),
     ("religious-veto-defence", [Some(5), Some(56), Some(39)]),
-    ("requisitions", [Some(-29), Some(-72), Some(-17)]),
     ("research-tier-premium", [Some(15), Some(6), Some(-11)]),
     ("rival-suzerainty-alarm", [Some(-4), Some(-32), Some(4)]),
     ("route-block-is-a-wait", [Some(-24), Some(35), Some(6)]),
