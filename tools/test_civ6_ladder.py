@@ -307,9 +307,6 @@ class OpeningTempoTests(unittest.TestCase):
         self.assertIsNone(civ6_ladder.opening_tempo_problem(thin, 30))
         self.assertIsNone(civ6_ladder.opening_tempo_problem([{"turns": 250}] * 40, 30))
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TheRowCarriesTheResearchGap(unittest.TestCase):
     """`tech_marks` reads our tech count and the best rival's at t100 and
@@ -2203,3 +2200,182 @@ class AStoppedRunIsMarkedOnTheLedgerRow(unittest.TestCase):
             "tag": "civvis-y", "reason": "abandoned", "last_turn": 150,
         })
         self.assertIsNone(row["partial"])
+
+
+class TheRowCarriesTheCultureClock(unittest.TestCase):
+    """`culture_marks` reads the culture victory's own two counters at t100 and
+    t150, and scores every contender against the bar it does not itself set.
+
+    The Emperor record's rival victories are majority culture and they land
+    ~30 turns before the science ones, so this is usually the clock that runs
+    out first. Every number was already crossing the bridge and no ladder
+    column carried any of it."""
+
+    @staticmethod
+    def _events(path: Path, records: list[dict]) -> Path:
+        path.write_text("".join(json.dumps(r) + "\n" for r in records),
+                        encoding="utf-8")
+        return path
+
+    def test_each_rival_is_scored_against_a_bar_it_does_not_set(self):
+        """The engine's rule, and the one a global maximum would get wrong.
+
+        Rival B draws FEWER tourists than rival A (50 against 90) yet stands
+        closer to the victory, because its own 80 staycationers do not shield
+        it: B must clear only our 40, while A must clear B's 80. A single
+        board-wide bar would rank A ahead and read B at 62.5%.
+        """
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                # Before the mark: must not be read for it.
+                {"kind": "state", "turn": 99, "frame": 0,
+                 "foreign_tourists": 1, "domestic_tourists": 1,
+                 "rivals": [{"foreign_tourists": 999,
+                             "domestic_tourists": 1}]},
+                {"kind": "state", "turn": 100, "frame": 0,
+                 "foreign_tourists": 30, "domestic_tourists": 40,
+                 "rivals": [{"foreign_tourists": 90, "domestic_tourists": 10},
+                            {"foreign_tourists": 50, "domestic_tourists": 80}]},
+                # A later frame of the SAME turn must not overwrite the mark.
+                {"kind": "state", "turn": 100, "frame": 1,
+                 "foreign_tourists": 31, "domestic_tourists": 41,
+                 "rivals": [{"foreign_tourists": 91,
+                             "domestic_tourists": 11}]},
+            ])
+            marks = civ6_ladder.culture_marks(events)
+        self.assertEqual(marks[100], {
+            "tourists": 30,
+            "domestic": 40,
+            "rival_tourists": 90,
+            # B: 100 * 50 / 40 = 125.0, ahead of A's 100 * 90 / 80 = 112.5.
+            "rival_percent": 125.0,
+            # Ours against the best rival bar: 100 * 30 / 80.
+            "percent": 37.5,
+        })
+        # t150 was never reached, so it is absent rather than zeroed.
+        self.assertNotIn(150, marks)
+
+    def test_an_unaskable_host_reads_as_unknown_not_as_zero(self):
+        """`-1` is the mod's `try` fallback and NaN is an older export.
+
+        A culture bar of zero says nobody can win, which is the opposite of
+        nobody asked; both have to read as None.
+        """
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "state", "turn": 100, "frame": 0,
+                 "foreign_tourists": -1, "domestic_tourists": -1,
+                 "rivals": [{"foreign_tourists": -1, "domestic_tourists": -1},
+                            {"foreign_tourists": 12}]},
+            ])
+            marks = civ6_ladder.culture_marks(events)
+        self.assertEqual(marks[100], {
+            "tourists": None,
+            "domestic": None,
+            "rival_tourists": 12,
+            # The one readable rival has no readable bar anywhere on the board.
+            "rival_percent": None,
+            "percent": None,
+        })
+
+    def test_no_staycationers_anywhere_is_a_race_not_yet_started(self):
+        """The mod's own fallback: `(against > 0) and (100 * t / against) or 0`."""
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "state", "turn": 100, "frame": 0,
+                 "foreign_tourists": 0, "domestic_tourists": 0,
+                 "rivals": [{"foreign_tourists": 5, "domestic_tourists": 0}]},
+            ])
+            marks = civ6_ladder.culture_marks(events)
+        self.assertEqual(marks[100]["rival_percent"], 0.0)
+        self.assertEqual(marks[100]["percent"], 0.0)
+
+    def test_a_mark_turn_with_no_frame_reads_the_next_one(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "state", "turn": 101, "foreign_tourists": 10,
+                 "domestic_tourists": 20,
+                 "rivals": [{"foreign_tourists": 40,
+                             "domestic_tourists": 5}]},
+            ])
+            marks = civ6_ladder.culture_marks(events)
+        self.assertEqual(marks[100]["rival_percent"], 200.0)
+
+    def test_a_mod_that_never_exported_tourism_is_silence(self):
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "state", "turn": 120, "techs": ["a"], "rivals": []},
+                {"kind": "turn", "turn": 121, "score": 10},
+            ])
+            self.assertIsNone(civ6_ladder.culture_marks(events))
+
+    def test_the_four_columns_ride_the_entry(self):
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-c", "difficulty": "DIFFICULTY_EMPEROR",
+            "configured": True, "last_turn": 208, "last_score": 400,
+            "culture_marks": {
+                100: {"rival_percent": 41.5, "domestic": 12},
+                150: {"rival_percent": 88.0, "domestic": 30},
+            },
+        })
+        self.assertEqual(entry["rival_culture_at_100"], 41.5)
+        self.assertEqual(entry["domestic_tourists_at_100"], 12)
+        self.assertEqual(entry["rival_culture_at_150"], 88.0)
+        self.assertEqual(entry["domestic_tourists_at_150"], 30)
+        # Read back from JSON the marks are keyed by string; same answer.
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-c",
+            "culture_marks": {"150": {"rival_percent": 88.0,
+                                      "domestic": 30}},
+        })
+        self.assertEqual(entry["rival_culture_at_150"], 88.0)
+        self.assertIsNone(entry["rival_culture_at_100"])
+        self.assertIsNone(entry["domestic_tourists_at_100"])
+
+    def test_a_summary_without_marks_records_none(self):
+        entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        for key in ("rival_culture_at_100", "domestic_tourists_at_100",
+                    "rival_culture_at_150", "domestic_tourists_at_150"):
+            self.assertIsNone(entry[key], key)
+
+    def test_every_path_that_writes_a_summary_carries_it(self):
+        """Including the shutdown hook: `killed` ends most Emperor games, so a
+        column written only by the finished path would miss the majority of
+        the record."""
+        ladder = (Path(__file__).resolve().parent / "civ6_ladder.py").read_text(
+            encoding="utf-8")
+        play = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn("**culture_mark_columns(summary)", ladder)
+        self.assertIn('columns[f"rival_culture_at_{mark}"]', ladder)
+        self.assertEqual(play.count('summary["culture_marks"] = culture'), 2)
+        self.assertIn('partial["culture_marks"] = culture', play)
+
+    def test_the_marks_share_a_frame_with_the_tech_marks(self):
+        """One board, three readings: `boost_totals`, `tech_marks` and this
+        read the same first frame at or after each mark, so a row's research
+        gap and culture gap describe the same turn."""
+        self.assertEqual(civ6_ladder.BOOST_MARK_TURNS, (100, 150))
+        with TemporaryDirectory() as tmp:
+            events = self._events(Path(tmp) / "events.jsonl", [
+                {"kind": "state", "turn": 100, "frame": 0,
+                 "techs": ["TECH_MINING"],
+                 "foreign_tourists": 8, "domestic_tourists": 4,
+                 "rivals": [{"techs": 9, "foreign_tourists": 20,
+                             "domestic_tourists": 2}]},
+            ])
+            self.assertEqual(
+                set(civ6_ladder.tech_marks(events)),
+                set(civ6_ladder.culture_marks(events)))
+
+
+# ⚠⚠ AT THE END, AND IT HAS TO STAY THERE. This guard used to sit two thirds
+# of the way up the file. Run under `unittest discover` -- which is what CI
+# does -- the module is imported, the guard never fires, and every class is
+# collected; run DIRECTLY as `python3 tools/test_civ6_ladder.py` it called
+# `unittest.main()` before the remaining classes had been defined, exited on
+# their behalf, and reported `Ran 21 tests ... OK` for a file that holds 170.
+# A local validation of the research-gap and culture-clock rows was therefore
+# a green that had tested neither.
+if __name__ == "__main__":
+    unittest.main()
