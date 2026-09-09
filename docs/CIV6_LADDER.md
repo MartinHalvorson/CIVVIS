@@ -115,45 +115,56 @@ same row.
 the first board of turn 150 (`tech_marks`); `—` when the run never
 reached it or predates the state export.
 
-| run | difficulty | playing for | configured | outcome | turns | score | techs@150 (ours/rival) | ended |
-|---|---|---|---|---|---|---|---|---|
-| `civvis-20260903T090934Z-cont1` | Emperor | science | yes | operator_retired | 107 | 221 | — | 2026-09-03T09:30:30Z |
-| `civvis-20260903T093105Z` | Emperor | science | yes | operator_retired | 56 | 89 | — | 2026-09-03T09:39:12Z |
-| `civvis-20260903T094322Z` | Emperor | — | NO | killed | 40 | 84 | — | 2026-09-03T09:55:36Z |
-| `civvis-20260903T094322Z-cont1` | Emperor | — | NO | killed | 40 | 84 | — | 2026-09-03T10:03:09Z |
-| `civvis-20260903T094322Z-cont2` | Emperor | — | NO | killed | 40 | 79 | — | 2026-09-03T10:11:42Z |
-| `civvis-20260903T094322Z-cont3` | Emperor | — | NO | killed | 40 | 79 | — | 2026-09-03T10:20:15Z |
-| `civvis-20260903T094322Z-cont4` | Emperor | — | NO | killed | 40 | 79 | — | 2026-09-03T10:28:50Z |
-| `civvis-20260903T094322Z-cont5` | Emperor | science | yes | rival victory | 226 | 470 | — | 2026-09-03T11:02:11Z |
-| `civvis-20260903T110637Z` | Emperor | science | yes | defeat | 100 | 152 | — | 2026-09-03T11:20:08Z |
-| `civvis-20260903T112440Z` | Emperor | — | NO | killed | 40 | 68 | — | 2026-09-03T11:36:01Z |
-| `civvis-20260903T112440Z-cont1` | Emperor | — | NO | killed | 40 | 68 | — | 2026-09-03T11:43:33Z |
-| `civvis-20260903T112440Z-cont2` | Emperor | — | NO | killed | 40 | 68 | — | 2026-09-03T11:51:05Z |
-| `civvis-20260903T112440Z-cont3` | Emperor | science | yes | operator_retired | 60 | 93 | — | 2026-09-03T11:55:51Z |
-| `civvis-20260903T120009Z` | Emperor | science | yes | operator_retired | 113 | 214 | — | 2026-09-03T12:18:06Z |
-| `civvis-20260903T122231Z` | Emperor | science | yes | rival victory | 234 | 405 | — | 2026-09-03T13:07:40Z |
-| `civvis-20260903T131248Z` | Emperor | science | yes | rival victory | 206 | 648 | — | 2026-09-03T13:55:15Z |
-| `civvis-20260903T135954Z` | Emperor | — | NO | killed | 40 | 76 | — | 2026-09-03T14:12:57Z |
-| `civvis-20260903T135954Z-cont1` | Emperor | — | NO | killed | 40 | 76 | — | 2026-09-03T14:17:55Z |
-| `civvis-20260903T135954Z-cont2` | Emperor | science | yes | stalled: turn 46 has not advanced for 480s while events kept arriving | 46 | 87 | — | 2026-09-03T15:40:11Z |
-| `civvis-20260904T054835Z-capture-free-1` | Emperor | science | yes | operator_retired | 33 | 36 | — | 2026-09-04T05:50:45Z |
-| `civvis-20260904T055102Z-capture-free-1` | Emperor | science | yes | operator_retired | 42 | 119 | — | 2026-09-04T06:00:45Z |
-| `civvis-20260904T060105Z-capture-free-1` | Emperor | science | yes | rival victory | 219 | 560 | — | 2026-09-04T06:43:12Z |
-| `civvis-20260908T164553Z` | Emperor | science | yes | rival victory | 198 | 304 | — | 2026-09-08T17:32:42Z |
-| `civvis-20260908T173748Z` | Emperor | science | yes | rival victory | 208 | 491 | 45/60 | 2026-09-08T18:04:48Z |
-| `civvis-20260908T181447Z` | Emperor | — | NO | killed | 116 | 385 | — | 2026-09-08T18:34:18Z |
-| `civvis-20260908T181447Z-cont1` | Emperor | science | yes | rival victory | 155 | 567 | 46/58 | 2026-09-08T18:48:17Z |
-| `civvis-20260908T184849Z` | Emperor | — | NO | killed | 74 | 147 | — | 2026-09-08T18:58:55Z |
-| `civvis-20260908T184849Z-cont1` | Emperor | science | yes | rival victory | 177 | 458 | 40/49 | 2026-09-08T19:18:46Z |
-| `civvis-20260908T191919Z` | Emperor | — | NO | killed | 184 | 548 | 44/50 | 2026-09-08T19:54:05Z |
-| `civvis-20260908T191919Z-cont1` | Emperor | — | NO | killed | 184 | 548 | 57/70 | 2026-09-08T20:00:37Z |
-| `civvis-20260908T191919Z-cont2` | Emperor | — | NO | killed | 184 | 548 | 56/68 | 2026-09-08T20:10:20Z |
-| `civvis-20260908T191919Z-cont3` | Emperor | — | NO | killed | 201 | 604 | 54/64 | 2026-09-08T20:27:54Z |
-| `civvis-20260908T191919Z-cont4` | Emperor | science | yes | rival victory | 213 | 549 | 61/74 | 2026-09-08T20:37:24Z |
-| `civvis-20260908T204713Z` | Emperor | — | NO | killed | 36 | 68 | — | 2026-09-08T20:53:34Z |
-| `civvis-20260908T204713Z-cont1` | Emperor | — | NO | killed | 147 | 443 | — | 2026-09-08T21:17:22Z |
-| `civvis-20260908T204713Z-cont2` | Emperor | science | yes | rival victory | 177 | 540 | 41/54 | 2026-09-08T21:26:58Z |
-| `civvis-20260908T212728Z` | Emperor | — | NO | killed | 109 | 350 | — | 2026-09-08T21:43:04Z |
-| `civvis-20260908T212728Z-cont1` | Emperor | — | NO | killed | 109 | 350 | — | 2026-09-08T21:47:40Z |
-| `civvis-20260908T212728Z-cont2` | Emperor | — | NO | killed | 108 | 345 | — | 2026-09-08T21:52:10Z |
-| `civvis-20260908T212728Z-cont3` | Emperor | science | yes | rival victory | 228 | 829 | 42/50 | 2026-09-08T22:26:27Z |
+`launches` is the space race as of the run's LAST board
+(`launch_marks`): launches completed out of four (Earth Satellite,
+Moon Landing, Mars Colony, Exoplanet Expedition), then the turn the
+first finished Spaceport appeared (`port`) and the turn the latest
+launch first showed (`last`), each omitted when it never happened;
+`—` when the run predates the `science_projects` export. Emperor
+games that reach t200 lay a Spaceport and complete one to three
+launches before a rival wins at t213–228, and until this column
+the row could not tell that seat from one that never left the
+ground.
+
+| run | difficulty | playing for | configured | outcome | turns | score | techs@150 (ours/rival) | launches | ended |
+|---|---|---|---|---|---|---|---|---|---|
+| `civvis-20260903T090934Z-cont1` | Emperor | science | yes | operator_retired | 107 | 221 | — | — | 2026-09-03T09:30:30Z |
+| `civvis-20260903T093105Z` | Emperor | science | yes | operator_retired | 56 | 89 | — | — | 2026-09-03T09:39:12Z |
+| `civvis-20260903T094322Z` | Emperor | — | NO | killed | 40 | 84 | — | — | 2026-09-03T09:55:36Z |
+| `civvis-20260903T094322Z-cont1` | Emperor | — | NO | killed | 40 | 84 | — | — | 2026-09-03T10:03:09Z |
+| `civvis-20260903T094322Z-cont2` | Emperor | — | NO | killed | 40 | 79 | — | — | 2026-09-03T10:11:42Z |
+| `civvis-20260903T094322Z-cont3` | Emperor | — | NO | killed | 40 | 79 | — | — | 2026-09-03T10:20:15Z |
+| `civvis-20260903T094322Z-cont4` | Emperor | — | NO | killed | 40 | 79 | — | — | 2026-09-03T10:28:50Z |
+| `civvis-20260903T094322Z-cont5` | Emperor | science | yes | rival victory | 226 | 470 | — | — | 2026-09-03T11:02:11Z |
+| `civvis-20260903T110637Z` | Emperor | science | yes | defeat | 100 | 152 | — | — | 2026-09-03T11:20:08Z |
+| `civvis-20260903T112440Z` | Emperor | — | NO | killed | 40 | 68 | — | — | 2026-09-03T11:36:01Z |
+| `civvis-20260903T112440Z-cont1` | Emperor | — | NO | killed | 40 | 68 | — | — | 2026-09-03T11:43:33Z |
+| `civvis-20260903T112440Z-cont2` | Emperor | — | NO | killed | 40 | 68 | — | — | 2026-09-03T11:51:05Z |
+| `civvis-20260903T112440Z-cont3` | Emperor | science | yes | operator_retired | 60 | 93 | — | — | 2026-09-03T11:55:51Z |
+| `civvis-20260903T120009Z` | Emperor | science | yes | operator_retired | 113 | 214 | — | — | 2026-09-03T12:18:06Z |
+| `civvis-20260903T122231Z` | Emperor | science | yes | rival victory | 234 | 405 | — | — | 2026-09-03T13:07:40Z |
+| `civvis-20260903T131248Z` | Emperor | science | yes | rival victory | 206 | 648 | — | — | 2026-09-03T13:55:15Z |
+| `civvis-20260903T135954Z` | Emperor | — | NO | killed | 40 | 76 | — | — | 2026-09-03T14:12:57Z |
+| `civvis-20260903T135954Z-cont1` | Emperor | — | NO | killed | 40 | 76 | — | — | 2026-09-03T14:17:55Z |
+| `civvis-20260903T135954Z-cont2` | Emperor | science | yes | stalled: turn 46 has not advanced for 480s while events kept arriving | 46 | 87 | — | — | 2026-09-03T15:40:11Z |
+| `civvis-20260904T054835Z-capture-free-1` | Emperor | science | yes | operator_retired | 33 | 36 | — | — | 2026-09-04T05:50:45Z |
+| `civvis-20260904T055102Z-capture-free-1` | Emperor | science | yes | operator_retired | 42 | 119 | — | — | 2026-09-04T06:00:45Z |
+| `civvis-20260904T060105Z-capture-free-1` | Emperor | science | yes | rival victory | 219 | 560 | — | — | 2026-09-04T06:43:12Z |
+| `civvis-20260908T164553Z` | Emperor | science | yes | rival victory | 198 | 304 | — | — | 2026-09-08T17:32:42Z |
+| `civvis-20260908T173748Z` | Emperor | science | yes | rival victory | 208 | 491 | 45/60 | — | 2026-09-08T18:04:48Z |
+| `civvis-20260908T181447Z` | Emperor | — | NO | killed | 116 | 385 | — | — | 2026-09-08T18:34:18Z |
+| `civvis-20260908T181447Z-cont1` | Emperor | science | yes | rival victory | 155 | 567 | 46/58 | — | 2026-09-08T18:48:17Z |
+| `civvis-20260908T184849Z` | Emperor | — | NO | killed | 74 | 147 | — | — | 2026-09-08T18:58:55Z |
+| `civvis-20260908T184849Z-cont1` | Emperor | science | yes | rival victory | 177 | 458 | 40/49 | — | 2026-09-08T19:18:46Z |
+| `civvis-20260908T191919Z` | Emperor | — | NO | killed | 184 | 548 | 44/50 | — | 2026-09-08T19:54:05Z |
+| `civvis-20260908T191919Z-cont1` | Emperor | — | NO | killed | 184 | 548 | 57/70 | — | 2026-09-08T20:00:37Z |
+| `civvis-20260908T191919Z-cont2` | Emperor | — | NO | killed | 184 | 548 | 56/68 | — | 2026-09-08T20:10:20Z |
+| `civvis-20260908T191919Z-cont3` | Emperor | — | NO | killed | 201 | 604 | 54/64 | — | 2026-09-08T20:27:54Z |
+| `civvis-20260908T191919Z-cont4` | Emperor | science | yes | rival victory | 213 | 549 | 61/74 | — | 2026-09-08T20:37:24Z |
+| `civvis-20260908T204713Z` | Emperor | — | NO | killed | 36 | 68 | — | — | 2026-09-08T20:53:34Z |
+| `civvis-20260908T204713Z-cont1` | Emperor | — | NO | killed | 147 | 443 | — | — | 2026-09-08T21:17:22Z |
+| `civvis-20260908T204713Z-cont2` | Emperor | science | yes | rival victory | 177 | 540 | 41/54 | — | 2026-09-08T21:26:58Z |
+| `civvis-20260908T212728Z` | Emperor | — | NO | killed | 109 | 350 | — | — | 2026-09-08T21:43:04Z |
+| `civvis-20260908T212728Z-cont1` | Emperor | — | NO | killed | 109 | 350 | — | — | 2026-09-08T21:47:40Z |
+| `civvis-20260908T212728Z-cont2` | Emperor | — | NO | killed | 108 | 345 | — | — | 2026-09-08T21:52:10Z |
+| `civvis-20260908T212728Z-cont3` | Emperor | science | yes | rival victory | 228 | 829 | 42/50 | — | 2026-09-08T22:26:27Z |
