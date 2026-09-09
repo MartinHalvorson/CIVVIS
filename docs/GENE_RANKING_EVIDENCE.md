@@ -184,7 +184,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `expansion-scales-with-difficulty` | off (unmeasured) | Scale the opening city target, the opening deadline, the Settler cadence and the expansion cards with the difficulty rung: the measured 4-6 band is a King-level reading and every rung above it widens the rival field. | 1 \| 1 |
-| `science-threat-denial` | off (unmeasured) | Deny a rival the science victory rather than only race it: the diplomatic refusals and the denunciation, the espionage disruption of the launch pad, the two-soldier pillage raid on it, and the bounded war that opens the raid. | 1 \| 1 |
+| `science-denial-war` | off (unmeasured) | The pad raid and the bounded war that opens it, on top of the base denial. | 1 \| 1 |
+| `science-threat-denial` | off (unmeasured) | Deny a rival the science victory rather than only race it: the diplomatic refusals, the denunciation and one spy's disruption of the launch pad. | 1 \| 1 |
 
 ## Removed from the code
 

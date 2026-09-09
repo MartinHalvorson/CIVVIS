@@ -1007,7 +1007,10 @@ fn a_concluded_denial_war_is_forgotten_and_the_gene_off_clears_it() {
     });
     ai.disable_science_denial_war();
     assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
-    assert_eq!(ai.denial_war, None, "the war tag off, the layer holds no state");
+    assert_eq!(
+        ai.denial_war, None,
+        "the war tag off, the layer holds no state"
+    );
 
     ai.enable_science_denial_war();
     ai.denial_war = Some(DenialWar {
@@ -1017,7 +1020,10 @@ fn a_concluded_denial_war_is_forgotten_and_the_gene_off_clears_it() {
     });
     ai.disable_science_threat_denial();
     assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
-    assert_eq!(ai.denial_war, None, "the base off, the war rung is inert too");
+    assert_eq!(
+        ai.denial_war, None,
+        "the base off, the war rung is inert too"
+    );
 }
 
 // ---- the off path --------------------------------------------------------
