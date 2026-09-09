@@ -1399,6 +1399,24 @@ pub struct QueryCache {
     lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
     lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<Name>>>>,
     housed_works: std::cell::RefCell<Option<HousedWorksByPlayer>>,
+    /// Every established National Park this player holds, as
+    /// `(host city, its four tiles)`.
+    ///
+    /// ★★★ A PER-PLAYER ANSWER DERIVED ONCE PER CITY.
+    /// `city_local_amenities_uncached` asks
+    /// `established_national_parks(city.owner)` for the city it is deriving
+    /// Amenities for, so a player with ten cities computed the same empire-wide
+    /// answer ten times. Each derivation walks every owned tile of every one of
+    /// that player's cities looking for the `national_park` improvement, and
+    /// then expands a disk or a fixed rhombus around each tile it finds.
+    ///
+    /// ⭐ The EMPTY case is both the expensive one and the common one: a player
+    /// with no parks still pays the whole owned-tile sweep and gets an empty
+    /// `Vec` for it, so memoizing saves the most where there is nothing to
+    /// find. Keyed by player, because that is the scope it is computed over
+    /// rather than the scope it is read at -- the same reason the three entries
+    /// above it are keyed that way.
+    national_parks: std::cell::RefCell<Option<BTreeMap<usize, Vec<(u32, [Pos; 4])>>>>,
     // A city-state's patron, which is a poll of every major's effective envoy
     // count. Deciding whether a step crosses a hostile border asks it, so a
     // route search asks it of the same city-state at every tile it considers.
@@ -1630,6 +1648,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
             *self.game.query_memo.housed_works.borrow_mut() = None;
+            *self.game.query_memo.national_parks.borrow_mut() = None;
             *self.game.query_memo.suzerain.borrow_mut() = None;
             *self.game.query_memo.gw_slots.borrow_mut() = None;
             *self.game.query_memo.gw_housing.borrow_mut() = None;
