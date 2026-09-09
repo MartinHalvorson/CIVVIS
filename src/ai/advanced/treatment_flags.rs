@@ -2062,7 +2062,6 @@ impl AdvancedAi {
         self.pass_picket_2 = false;
     }
 
-
     /// Convert the first six Standard-speed turns after a surprise war is
     /// declared against us into a bounded defensive mobilization. Off
     /// everywhere by default; opt-in gene `surprise-war-mobilization`. Filed
