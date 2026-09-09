@@ -2165,6 +2165,12 @@ pub const GENES: &[Gene] = &[
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
+    // Take a small neighbour's city in the opening. The live seat has never
+    // won at Emperor: rivals there take +16% on every yield and a free
+    // Settler an era, our combat trades at 0.45 kills per loss, and 234 of
+    // 304 unit deaths had no visible threat. See
+    // `advanced/early_conquest.rs`.
+    Gene { tag: "early-conquest-opening", field: "early_conquest_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_early_conquest_opening, disable: AdvancedAi::disable_early_conquest_opening },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------

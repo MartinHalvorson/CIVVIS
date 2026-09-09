@@ -243,7 +243,11 @@ impl AdvancedAi {
     /// treatment toggles make the versions exclusive, but spelling the family
     /// predicate here keeps every consumer of the plan on the same contract.
     fn city_campaign_active(&self) -> bool {
-        self.city_campaign || self.city_campaign_2
+        // `early-conquest-opening` hands its declared campaign to this module
+        // by writing the plan directly, so the plan readers below — which are
+        // what `assess` consults — must accept it. Exactly the shipped
+        // predicate with that gene off. See `advanced/early_conquest.rs`.
+        self.city_campaign || self.city_campaign_2 || self.early_conquest_opening
     }
 
     /// Whether a plan stands to read: the gene is on, the rival is alive and
@@ -619,6 +623,13 @@ impl AdvancedAi {
     /// plan never launched (and hold off the next for the cooldown), and
     /// draw or refresh one while at peace.
     pub(crate) fn maintain_city_campaign(&mut self, g: &mut Game, pid: usize) {
+        // `early-conquest-opening`: while the opening's own war is under way
+        // it owns the plan outright — it has already written this turn's
+        // objective and does its own bookkeeping. Exactly `false` with that
+        // gene off. See `advanced/early_conquest.rs`.
+        if self.conquest_owns_the_campaign() {
+            return;
+        }
         if !self.city_campaign_active() {
             self.campaign = None;
             return;

@@ -4104,6 +4104,21 @@ impl AdvancedAi {
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
+    /// Take a small neighbour's city in the opening: a met rival's known
+    /// city within twelve tiles of the capital, the capital's production
+    /// reserved for three shooters and two melee bodies ahead of the second
+    /// Settler, the war declared once the force is assembled and the bill
+    /// covered, and no strike-force body ending its move beside unseen
+    /// ground. See `advanced/early_conquest.rs`. Opt-in gene
+    /// `early-conquest-opening`; off in production, opted into by name.
+    pub fn enable_early_conquest_opening(&mut self) {
+        self.early_conquest_opening = true;
+    }
+
+    /// The twin of `enable_early_conquest_opening`.
+    pub fn disable_early_conquest_opening(&mut self) {
+        self.early_conquest_opening = false;
+    }
 
     // ---- append: g-k ------------------------------------------------
 
