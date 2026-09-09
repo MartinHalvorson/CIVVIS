@@ -79,25 +79,17 @@ ring-3 mountain nest enters the plan only when the buy actually clears.
   river: the support must have a positive marginal Industrial adjacency on
   the city's current planning board.
 
-## Version 2: `district-planning-2` — buys that actually fire
+## Version 2: `district-planning-2` — removed 2026-09-08
 
-Version 1's buy never fired on the live seat: no recorded live game holds a
-single `buy_plot` order, because the spender demanded 200 Gold of surplus
-above the whole strategy reserve before it would even price a plot, and the
-live treasury (typically 200–450 Gold against a 300–400 reserve) never got
-there. Replaying Emperor game `civvis-20260901T132005Z` at t40/t44: the plan
-named the adjacency-4 Campus plot at score ~905 against the 120 floor, every
-inner gate passed, and the headroom rule alone refused the buy — the game
-then placed three campuses at adjacency ≤ 1 beside that ground.
-
-Version 2 changes only the plan's own buy:
-
-- **Affordability**: a plot the plan prices may spend into the reserve, but
-  never below half of it (`bank ≥ reserve/2 + cost` instead of
-  `bank ≥ reserve + 200 + cost`). Unplanned surplus plots keep the old rule.
-- **Bars**: raw adjacency 2 (was 3) with an edge of 1 (was 2) over the best
-  owned site. The 120-Gold-scale score floor still arbitrates, so cheap
-  ground with a real edge clears and expensive marginal ground does not.
-
-One version plays per seat; the screen prices the `v2 − v1` contrast
-directly.
+Version 2 let the plan's own buy spend into the reserve (never below half of
+it), lowered the purchase bars to adjacency 2 / edge 1, and in a Science lane
+priced a workable five-plus-Science tile — or the one border hex that opened
+it — as a strategic asset. It was written against the observation that
+version 1's buy never fired on the live seat (no recorded live game held a
+`buy_plot` order; Emperor game `civvis-20260901T132005Z` at t40/t44 priced the
+adjacency-4 Campus plot at ~905 against the 120 floor and the 200-Gold
+headroom rule alone refused it). It screened at rank 248 (+11/−70, pooled
+Diff −0.68 pp) and left the code under the gene version policy (three
+versions at most; `python3 tools/genes.py versions` named it the family's
+third-best). Its rows stay in the ranking's **Removed from the code** table.
+Version 3 below keeps the funding-timing half of the idea.

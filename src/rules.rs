@@ -3293,9 +3293,9 @@ impl Rules {
         if let Some(f) = &t.feature {
             c += self.features[f].move_cost;
         }
-        if t.road > 0 && !terrain.water {
-            c = 1.0; // every route flattens terrain to at most 1 MP
-        }
+        // This is terrain cost only. Route discounts require a connection
+        // from the origin and are applied by Game::unit_step_cost. Flattening
+        // this tile alone underprices entry onto a road from off-road.
         c
     }
 }

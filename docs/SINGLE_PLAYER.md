@@ -26,7 +26,7 @@ order, and the End Turn button is the thing that says it:
 
 1. Something demands an answer (a captured city's fate, a proposed deal, a
    World Congress vote, an age dedication).
-2. Something is unchosen (research, civic, production, a policy, a pantheon).
+2. Something is unchosen (research, civic, production, a government, a policy).
 3. Something is unmoved (a unit that still has movement and no standing order).
 4. Nothing is waiting — the button turns green and says **Next Turn**.
 
@@ -51,16 +51,17 @@ key — walks them.
 | 2 | A rival has proposed a deal | accept / reject in Diplomacy |
 | 3 | The World Congress is voting | vote buttons in Government |
 | 4 | A new age needs its dedication | dedication buttons in Government |
-| 5 | A pantheon may be founded | Religion panel |
-| 6 | A policy slot is empty | Government panel |
+| 5 | No government is adopted and one is available | Government panel |
+| 6 | A policy slot is empty and a legal card fits | Government panel |
 | 7 | No research is selected | Science card / tech tree |
 | 8 | No civic is selected | Culture card / civics tree |
 | 9 | A city is producing nothing | city screen ▸ Build |
 | 10 | A unit has moves and no orders | select the unit; move, fortify, skip or sleep |
 
-Blockers 1–4 and 7–10 are engine-legal actions the client can already resolve;
-5 and 6 arrive with the panels that resolve them, and a blocker is never shown
-before the UI that answers it exists. A blocker is skippable — `Shift`+`1`,
+Government and policy prompts open the existing Government panel. They use
+engine-legal actions, so an empty slot with no compatible card does not block
+the turn. Pantheons remain clickable standing notifications in the Religion
+panel. A blocker is skippable — `Shift`+`1`,
 or shift-clicking the button, ends the turn regardless — because a rule that
 cannot be overridden becomes a trap the first time a player disagrees with it.
 
@@ -178,17 +179,17 @@ had no hook for at all: research was a `<select>` in a settings drawer. The
 ring is the fraction of the current study that is done, so a glance at the bar
 answers "how far into this tech am I" without opening anything.
 
-**What the played seat does *not* take from Civilization VI is the
-laboratory's instrument.** #2275 took Civ 6's judgement whole: the standings
-masthead and the arena rail went behind the launch bar's ☗ and the command
-deck folded away. That is right for the game Civ 6 is and wrong for what this
-one is — the standings and the arena's figures are this client's own
-instrument, and a game here is played next to them. So a played world opens
-with the masthead across the sky under the yield strip, the launch bar and
-the hooks *under* the masthead, the arena rail down the right under the
-hooks, and the deck open on the left with the setup, the auto-play controls
-and every setting in it — Start new game first, then who plays the seat and
-for how long.
+**A played world opens on the map.** Rankings (☗) opens the standings and
+arena statistics; the menu opens the command deck with setup, saved games,
+auto-play and display settings. End Turn, unit orders, research and the
+launch bar stay on the map. A watched simulation keeps its reports visible.
+This follows the shipped `Base/Assets/UI/InGame.xml:52`, where
+`WorldRankings` starts with `Hidden="1"`.
+
+Explicit layout choices are remembered. The old rankings preference was
+also written during initialization, so its default "open" could not be told
+apart from a person's choice. The new rankings preference starts fresh and
+is written only on a toggle. The deck's existing explicit preference survives.
 
 **The turn is played from the corner.** End Turn stands in
 `ActionPanel.xml`'s bottom-right corner, and above it the corner says what

@@ -76,6 +76,35 @@ CivvisPolicy = {
 	attempt_turn = -1,
 	pending = nil,
 };
+-- Match GovernmentScreen_Expansion2.lua:IsPolicyAvailable. Unlocked is not
+-- sufficient: government exclusives and Congress bans can still reject a card.
+CivvisPolicy.isAvailable = function(culture, hash)
+	local ok, value = pcall(function()
+		local banned = culture:IsPolicyBanned(hash);
+		local slottable = culture:CanPolicyBeSlotted(hash);
+		local obsolete = culture:IsPolicyObsolete(hash);
+		if type(banned) ~= "boolean" or type(slottable) ~= "boolean"
+				or type(obsolete) ~= "boolean" then return nil; end
+		return not banned and slottable and not obsolete;
+	end);
+	if ok then return value; end
+	return nil;
+end;
+CivvisPolicy.availableNames = function(culture)
+	local ok, names = pcall(function()
+		local result = {};
+		for card in GameInfo.Policies() do
+			local available = CivvisPolicy.isAvailable(culture, card.Hash);
+			-- An incomplete observation is unknown, not an empty legal slate.
+			if available == nil then return nil; end
+			if available then result[#result + 1] = card.PolicyType; end
+		end
+		table.sort(result);
+		return result;
+	end);
+	if ok then return names; end
+	return nil;
+end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -528,7 +557,11 @@ local function survey()
 		map = try(function() return MapConfiguration.GetScript(); end, "?"),
 		size = typeName(GameInfo.Maps,
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
-		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+		-- The running game can retain 250 even after SetMaxTurns(650) updates
+		-- the configuration. WorldRankings.lua:1053 reads this native API for
+		-- the actual horizon. Unknown stays unknown instead of reporting the
+		-- requested cap as though the engine had accepted it.
+		max_turns = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		-- ★★★ WHICH OPTIONAL GAME MODES ARE ON, read from inside the game.
 		-- Exactly the `victories` argument below, and it went the same way: the
 		-- modes are the one setting on the Create Game screen that PERSISTS
@@ -2915,22 +2948,6 @@ end
 
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
-	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
-	-- expansion gate is ~190 lines earlier in the ladder — which is exactly how
-	-- settlers came to outrank soldiers in a war that was being lost.
-	local atWar, ourStrength, enemyStrength, strongestMet = warPressure();
-	local losingWar = atWar and enemyStrength > ourStrength;
-	-- ★★★★★ ANSWER WITH CIVVIS'S CHOICE WHEN IT HAS ONE.
-	--
-	-- The end-turn production prompt must be answered or the turn never ends, so this
-	-- ladder cannot simply be switched off on a CIVVIS run — but it does not have to
-	-- INVENT an answer when CIVVIS has already given one for this city. Anything below
-	-- runs only when CIVVIS said nothing about this city this turn, or when what it
-	-- asked for cannot be started.
-	--
-	-- ⚠ `playable` is defined below and still gates it, so a CIVVIS item the engine
-	-- will not accept falls through to the ladder exactly as before. This changes WHO
-	-- decides, never whether the prompt gets answered.
 	local wanted = nil;
 	if cfg.CivvisDecides then
 		local cityId = try(function() return city:GetID(); end);
@@ -2987,6 +3004,30 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		refused[name] = true;
 		return nil, productionFailureReasons(results);
 	end
+
+	-- A direct choice or deferred lease belongs to CivVis. If it cannot run,
+	-- ask CivVis again through a bounded production frame; never invent a build.
+	if wanted ~= nil then
+		local alreadyRefused = refused[wanted];
+		local row, reasons = playable(wanted);
+		if row ~= nil then return wanted, row, "civvis"; end
+		-- Preserve the host refusal so the next exported board can explain it.
+		if not alreadyRefused and reasons ~= nil and #reasons > 0 then
+			emit("civvis_build_unplayable", {
+				turn = turn,
+				city = try(function() return city:GetID(); end, -1),
+				item = tostring(wanted),
+				reasons = reasons,
+			});
+		end
+	end
+	if cfg.CivvisDecides then return nil, nil, nil; end
+
+	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
+	-- expansion gate is ~190 lines earlier in the ladder — which is exactly how
+	-- settlers came to outrank soldiers in a war that was being lost.
+	local atWar, ourStrength, enemyStrength, strongestMet = warPressure();
+	local losingWar = atWar and enemyStrength > ourStrength;
 
 	local ladder = {};
 	-- Era-proof land forces. The old fixed Warrior/Spearman/Swordsman list becomes
@@ -3551,38 +3592,6 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- what changed is that it is now the last line rather than the fourth.
 	ladder[#ladder + 1] = { "UNIT_BUILDER", "floor" };
 
-	-- CIVVIS FIRST. Its choice for this city, this turn, gated by the same `playable`
-	-- the ladder uses — so an item the engine will not start still falls through to
-	-- the ladder below and the prompt is still answered. Reported with its own reason
-	-- so the `build` events say which program decided, and the production fraction in
-	-- `civ6_civvis_status.py` can be read honestly.
-	if wanted ~= nil then
-		local row, reasons = playable(wanted);
-		if row ~= nil then return wanted, row, "civvis"; end
-		-- ★★★★★ SAY WHAT CIVVIS ASKED FOR AND COULD NOT HAVE.
-		--
-		-- When `playable` refuses CIVVIS's choice the ladder silently takes the turn,
-		-- and until now NOTHING recorded what the choice was. The `build` event says
-		-- the ladder decided; it cannot say what it overrode.
-		--
-		-- That is the whole of the open question. On run civvis-20260801T065721Z only
-		-- **16 of 97 builds** were CIVVIS's -- floor 21, develop 20, grow 10, improve
-		-- 9, expand 8 -- and no telemetry anywhere could name a single item CIVVIS
-		-- wanted instead. The same anonymity around `no_params` hid one district for
-		-- an entire project until the refusal carried its verb.
-		--
-		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
-		-- field named `kind` is overwritten before the line is written. That already
-		-- cost this file one blind instrument.
-		if not refused[wanted] and reasons ~= nil and #reasons > 0 then
-			emit("civvis_build_unplayable", {
-				turn = turn,
-				city = try(function() return city:GetID(); end, -1),
-				item = tostring(wanted),
-				reasons = reasons,
-			});
-		end
-	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
 		if row ~= nil then return entry[1], row, entry[2]; end
@@ -8446,6 +8455,7 @@ local function exportState(player, pid, turn, frame)
 		religions = religions,
 		prophet_pending = prophet_pending,
 		policies = policies,
+		available_policies = CivvisPolicy.availableNames(pcult),
 		policy_slots = policy_slots,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
@@ -10299,8 +10309,17 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	local session = trade.sessions[other];
 	if session == nil then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
-	local sessionID = type(kVariants) == "table" and kVariants.SessionID or nil;
-	if session.sessionID == nil and sessionID ~= nil then session.sessionID = sessionID; end
+	-- Firaxis dispatches by StatementType and separates a MAKE_DEAL opening
+	-- acknowledgement from evaluation (DiplomacyActionView.lua:2547-2559,
+	-- 2757-2761). A greeting or another session must not consume this offer.
+	if type(kVariants) ~= "table" then return; end
+	local sessionID = kVariants.SessionID;
+	if sessionID == nil or (session.sessionID ~= nil and session.sessionID ~= sessionID) then return; end
+	local statementType = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementType);
+	end, nil);
+	if statementType ~= "MAKE_DEAL" then return; end
+	if session.sessionID == nil then session.sessionID = sessionID; end
 	if not session.sent then
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
@@ -10314,7 +10333,14 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
-	local dealAction = type(kVariants) == "table" and kVariants.DealAction or nil;
+	local dealAction = kVariants.DealAction;
+	if dealAction == nil then return; end
+	local opening = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementSubType) == "NONE"
+			and (kVariants.ResponseType == DiplomacyResponseTypes.INITIAL
+				or kVariants.ResponseType == DiplomacyResponseTypes.ACKNOWLEDGE);
+	end, false);
+	if opening then return; end
 	trade.unanswered = 0;
 	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
 		session = session.sessionID or -1, deal_action = tostring(dealAction) });
@@ -10799,6 +10825,26 @@ CivvisLedger.refuseWarStarter = function(actor, subject, verb, x, y, turn)
 		end, -1),
 	});
 	return "would_declare_war:" .. table.concat(names, ",");
+end;
+
+-- A selected native survival gene can disagree with Firaxis's damage model.
+-- Honor a fresh, known-lethal host preview at issue time, including after a
+-- queued approach. Base/Assets/UI/Panels/UnitPanel.lua:3924 uses
+-- CombatManager.SimulateAttackInto for this preview; :1774 reads the unit's
+-- GetMaxDamage. An unavailable result adds no new veto.
+CivvisLedger.refuseLethalPreview = function(unit, subject, verb, x, y, turn, row)
+	if row._civvis_survival_guard ~= true then return nil; end
+	local preview = CivvisLedger.preview(unit, verb, x, y);
+	local damage = preview and tonumber(preview.damage_to_attacker);
+	local wounds = tonumber(try(function() return unit:GetDamage(); end, nil));
+	local maximum = tonumber(try(function() return unit:GetMaxDamage(); end, nil));
+	if damage == nil or wounds == nil or maximum == nil
+			or damage < maximum - wounds then return nil; end
+	emit("strike_survival_refused", {
+		turn = turn, unit = subject, verb = verb, x = x, y = y,
+		hp = maximum - wounds, preview = preview,
+	});
+	return "lethal_host_preview";
 end;
 
 -- Called from `applyOrder` before a strike is requested: emit the preview and
@@ -12325,6 +12371,25 @@ local function applyOrder(player, pid, row, turn)
 	--
 	-- Policy cards are not marginal here -- already measured as mattering
 	-- (p=0.0023).
+	-- RequestChangeGovernment is asynchronous. Ordering it first does not make
+	-- the new slot indices observable in this tick. Do not clear the old deck
+	-- until the requested government is read back; a fresh turn releases an
+	-- unconfirmed request so a refused transition cannot block policies forever.
+	if (kind == "policy_deck" or kind == "policy") and CivvisPolicy.government_pending ~= nil then
+		local pending = CivvisPolicy.government_pending;
+		local current = try(function() return player:GetCulture():GetCurrentGovernment(); end, -1);
+		if current == pending.index or turn > pending.turn then
+			CivvisPolicy.government_pending = nil;
+		else
+			local desired = {};
+			for name in string.gmatch(verb, "[^,]+") do desired[#desired + 1] = name; end
+			emit(kind == "policy_deck" and "policy_deck_deferred" or "policy_deferred", {
+				turn = turn, desired = desired, why = "government_change_pending",
+				government = pending.name, requested_turn = pending.turn,
+			});
+			return false, "policy_government_pending";
+		end
+	end
 	if kind == "policy_deck" then
 		local culture = try(function() return player:GetCulture(); end);
 		if culture == nil then return false, "no_culture"; end
@@ -12337,6 +12402,9 @@ local function applyOrder(player, pid, row, turn)
 			end
 			if not try(function() return culture:IsPolicyUnlocked(card.Hash); end, false) then
 				return false, "locked_" .. resolved;
+			end
+			if CivvisPolicy.isAvailable(culture, card.Hash) == false then
+				return false, "unavailable_" .. resolved;
 			end
 			if not seen[card.Index] then
 				desired[#desired + 1] = card;
@@ -12627,11 +12695,14 @@ local function applyOrder(player, pid, row, turn)
 		if try(function() return culture:GetCurrentGovernment(); end, -1) == row2.Index then
 			return false, "already_" .. resolved;
 		end
-		local ok = pcall(function() culture:RequestChangeGovernment(row2.Hash); end);
+		local ok, accepted = pcall(function() return culture:RequestChangeGovernment(row2.Hash); end);
+		if ok and accepted ~= false then
+			CivvisPolicy.government_pending = { index = row2.Index, name = resolved, turn = turn };
+		end
 		-- Tell the game the prompt has been dealt with either way, or it re-raises
 		-- the blocker every turn.
 		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
-		return ok, ok and resolved or "throw";
+		return ok and accepted ~= false, not ok and "throw" or (accepted == false and "government_rejected" or resolved);
 	end
 
 	-- CIVVIS names the dedication it selected; the host operation accepts the
@@ -12937,6 +13008,12 @@ local function applyOrder(player, pid, row, turn)
 		local currentTurns = tonumber(try(function()
 			return city:GetBuildQueue():GetTurnsLeft();
 		end, -1)) or -1;
+		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
+			cityWarThreat(player, pid, city);
+		local wallRadius = cfg.EmergencyWallRadius or 3;
+		local immediateThreat = maxWallDamage ~= nil and maxWallDamage <= 0
+			and ((damage ~= nil and damage > 0)
+				or (nearestEnemy ~= nil and nearestEnemy <= wallRadius));
 		-- An opening Settler is a commitment, not a provisional queue suggestion.
 		-- CIVVIS receives a fresh board every turn and can otherwise replace it
 		-- with a newly preferred Scout before either item completes.  The live
@@ -12945,17 +13022,45 @@ local function applyOrder(player, pid, row, turn)
 		-- only the current city count released the queue on that exact frame and
 		-- replaced it with the deferred opening Warrior.  Remember a Settler that
 		-- was already protected in the one-city opening, and release that exact
-		-- city lock only after its host queue changes away from Settler.  A later
+		-- city lock after its host queue changes away from Settler. A later
 		-- two-city Settler never acquires the lock, so ordinary replacement stays
 		-- available once the opening pipeline has actually completed.
+		-- A production commitment must not veto the governor's response to a
+		-- blocked expansion. In civvis-20260908T235216Z it refused Warriors
+		-- on turns 33-39 while three Settlers walked and Rome took 179 damage.
+		-- Preserve a small opening pipeline, but release it for actual defense,
+		-- an immediate siege, or a backlog of two already-built Settlers.
+		local walkingSettlers = 0;
+		eachUnit(player, function(unit)
+			local unitRow = GameInfo.Units[unit:GetUnitType()];
+			if unitRow ~= nil and unitRow.UnitType == "UNIT_SETTLER" then
+				walkingSettlers = walkingSettlers + 1;
+			end
+		end);
+		local requestedUnit = row2.Kind == "KIND_UNIT" and GameInfo.Units[resolved] or nil;
+		local requestedDefense = resolved == "BUILDING_WALLS"
+			or (requestedUnit ~= nil
+				and requestedUnit.PromotionClass ~= "PROMOTION_CLASS_RECON"
+				and ((requestedUnit.Combat or 0) > 0
+					or (requestedUnit.RangedCombat or 0) > 0
+					or (requestedUnit.Bombard or 0) > 0));
+		local releaseOpening = immediateThreat or requestedDefense or walkingSettlers >= 2;
+		if releaseOpening then CivvisOpeningSettlerLocks[cityId] = nil; end
 		local currentOpening = current;
 		local settlerRow = GameInfo.Types["UNIT_SETTLER"];
 		if currentOpening ~= 0 and settlerRow ~= nil
 				and currentOpening == settlerRow.Hash then
 			local cityCount = 0;
 			eachCity(player, function() cityCount = cityCount + 1; end);
-			if cityCount == 1 then CivvisOpeningSettlerLocks[cityId] = true; end
-			if resolved ~= "UNIT_SETTLER"
+			if releaseOpening and resolved ~= "UNIT_SETTLER" then
+				emit("opening_settler_released", {
+					turn = turn, city = cityId, requested = resolved,
+					walking_settlers = walkingSettlers, defense = requestedDefense,
+					immediate_threat = immediateThreat == true,
+				});
+			end
+			if cityCount == 1 and not releaseOpening then CivvisOpeningSettlerLocks[cityId] = true; end
+			if resolved ~= "UNIT_SETTLER" and not releaseOpening
 					and (cityCount == 1 or CivvisOpeningSettlerLocks[cityId]) then
 				emit("opening_settler_preserved", {
 					turn = turn, city = cityId, requested = resolved,
@@ -12997,12 +13102,6 @@ local function applyOrder(player, pid, row, turn)
 		-- fourteen tiles away is not. `EmergencyWallRadius` is a knob so this is
 		-- tunable and can be withheld -- set it very large to restore the old
 		-- unbounded behaviour exactly.
-		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
-			cityWarThreat(player, pid, city);
-		local wallRadius = cfg.EmergencyWallRadius or 3;
-		local immediateThreat = maxWallDamage ~= nil and maxWallDamage <= 0
-			and ((damage ~= nil and damage > 0)
-				or (nearestEnemy ~= nil and nearestEnemy <= wallRadius));
 		local currentUnit = current ~= 0 and try(function()
 			return GameInfo.Units[current];
 		end) or nil;
@@ -13016,7 +13115,10 @@ local function applyOrder(player, pid, row, turn)
 		-- Archer with four-turn Walls let the attacker take Ostia before either
 		-- defense existed.  Returning here keeps both the current queue and the
 		-- fallback's remembered build untouched for the finishing turn.
-		if immediateThreat and finishingDefender then
+		-- CivVis already ranks local siege responses (besieged_city_item).
+		-- In its mode the bridge validates and actuates that decision; it
+		-- must not silently preserve or substitute a different build.
+		if not cfg.CivvisDecides and immediateThreat and finishingDefender then
 			emit("emergency_defender_preserved", {
 				turn = turn, city = cityId, requested = resolved,
 				current = currentUnit.UnitType or tostring(current),
@@ -13029,13 +13131,18 @@ local function applyOrder(player, pid, row, turn)
 		end
 		civvisBuild[cityId] = resolved;
 		local emergencyWall = false;
-		if resolved ~= "BUILDING_WALLS"
+		if not cfg.CivvisDecides and resolved ~= "BUILDING_WALLS"
 				and immediateThreat then
 			local wall = GameInfo.Types["BUILDING_WALLS"];
 			local wallCanOk, wallCan = false, false;
 			if wall ~= nil then
 				wallCanOk, wallCan = pcall(function()
-					return city:GetBuildQueue():CanProduce(wall.Hash, false, true);
+					local queue = city:GetBuildQueue();
+					-- ProductionPanel.lua:2026,2037-2038 first excludes unavailable
+					-- buildings, then asks whether a listed building can start.
+					-- The second predicate alone admitted Walls before Masonry.
+					return queue:CanProduce(wall.Hash, true) == true
+						and queue:CanProduce(wall.Hash, false, true) == true;
 				end);
 			end
 			if wallCanOk and wallCan == true then
@@ -13077,7 +13184,11 @@ local function applyOrder(player, pid, row, turn)
 		-- throw; the live Library loop showed that the engine can reject the build
 		-- while the bridge reports it applied on every turn.
 		local canOk, canStart, results = pcall(function()
-			return city:GetBuildQueue():CanProduce(row2.Hash, false, true);
+			local queue = city:GetBuildQueue();
+			if queue:CanProduce(row2.Hash, true) ~= true then
+				return false;
+			end
+			return queue:CanProduce(row2.Hash, false, true);
 		end);
 		if not canOk or canStart ~= true then
 			local refused = refusedByCity[cityId];
@@ -13100,7 +13211,7 @@ local function applyOrder(player, pid, row, turn)
 		if ok and verb == "UNIT_SETTLER" then
 			local cityCount = 0;
 			eachCity(player, function() cityCount = cityCount + 1; end);
-			if cityCount == 1 then CivvisOpeningSettlerLocks[cityId] = true; end
+			if cityCount == 1 and not releaseOpening then CivvisOpeningSettlerLocks[cityId] = true; end
 		end
 		return ok, ok and (emergencyWall and "BUILDING_WALLS" or verb) or "throw";
 	end
@@ -13698,6 +13809,8 @@ local function applyOrder(player, pid, row, turn)
 					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
 				end
 				if verb == "ATTACK" then
+					local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+					if survivalRefusal ~= nil then return false, survivalRefusal; end
 					CivvisLedger.strike(unit, subject, verb, x, y, turn);
 				end
 			end
@@ -13814,6 +13927,8 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+			if survivalRefusal ~= nil then return false, survivalRefusal; end
 			CivvisLedger.strike(unit, subject, verb, x, y, turn);
 			local accepted = operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params);
 			if not accepted then
@@ -14505,61 +14620,13 @@ CivvisSelectCongressLeader = function(candidates)
 	return leader, leaderPoints, leaderScore;
 end
 
--- ★★★★ THE ASK IS PRICED AGAINST BOTH TABLES THE HOST MIGHT CHARGE.
---
--- Every multi-vote ballot this seat ever sent saturated the bank the host's
--- own `GetVotesandFavorCost` table said it could afford — 14/16/18/20 votes
--- across civvis-20260819T004405Z, 13 at t162 of T175125Z — and all 17 were
--- refused whole while all 95 one-vote ballots registered. That table is the
--- ONLINE curve: the k-th extra vote costs 4k, cumulative `2n(n-1)`. The
--- Standard curve the game was written against charges 10k, cumulative
--- `5n(n-1)` — the same 780-for-13-votes this file's own #2039 comment quotes
--- from the shipped ladder. A core that CHARGES Standard while the accessor
--- REPORTS Online refuses every ask this seat has ever made as unaffordable,
--- and none of the 112 verdict rows can tell, because no ballot ever asked a
--- count small enough to fit both tables. So cap the ask by both: when the
--- theory is wrong this asks fewer votes than the bank affords on a ballot
--- that today registers ONE, which cannot lose a vote we are getting; when it
--- is right, the first session past the cap finally registers a bank. The
--- verdict's `budget` field carries both walks so the session that decides it
--- is attributable.
---
--- ★★★★★ 2026-08-23: THE PROBE CAME BACK AND THE THEORY IS DEAD.
---
--- #2108 pre-registered its own falsifier -- "watch the first
--- `wc_ballot_verdict` with `asked = 3`; `recorded 1` kills the affordability
--- theory too" -- and then nobody read it. Read now, over every run under
--- `~/civvis-civ6-runs/control/`: **802 verdict rows, 139 multi-vote asks, 0
--- registered.** Twenty-three of those are the three-vote probe, across nine
--- separate post-#2108 runs, and every one recorded ONE. Three votes cost 12
--- Favor on the Online table and 30 on the Standard one against banks of
--- 169-427, with `MaxVotes` 9-15 and this walk's own budget reading host 9-15
--- and standard 6-9 -- affordable on BOTH tables at once, which
--- is the exact ask no ballot had ever made when the theory was written. A
--- core charging Standard while reporting Online would have honoured it.
---
--- Fourteen of the thirty-one probe ballots were cast with
--- `in_congress_segment = true`, from inside `TURNSEG_WORLDCONGRESS_*`, so
--- the moment theory is dead beside it. And the option is NOT what is being
--- refused: `option_asked == option_recorded` on 82.8% of one-vote rows and
--- 73.4% of multi-vote rows, so the ballot registers and only its COUNT is
--- clamped.
---
--- The dual-table cap below is therefore known to be answering a question
--- with a settled negative answer. It is kept, not removed, for the reason
--- its own paragraph gives: when the theory is wrong the cap asks fewer votes
--- on a ballot that registers one either way, so removing it would change no
--- outcome and would only churn a file that cannot be tested without a live
--- game. What is NOT kept is the impression that the question is open.
---
--- ⚠ What remains is host-side and unreachable from this file. The run that
--- would settle it is a single live game with the popup driven by hand for
--- one resolution -- a human clicking two votes -- next to an agent ballot
--- asking two on the same seat, comparing `wc_outcome`. That needs the live
--- harness, which is under an operator halt; do not start one to answer this.
---
--- Exposed for the offline Lua regression. Must remain a bare global -- another
--- file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+-- Price the request against the host table and the conservative Standard
+-- table. This existing budgeting policy is independent of ballot verification.
+-- Historical count-only `registered` totals did not establish that options or
+-- targets matched, and therefore cannot prove that only vote counts failed.
+-- Later live readbacks include both successful multi-vote counts and wrong
+-- single-vote options. Diagnose the full selection before changing submission.
+-- Exposed for offline regression; a bare global avoids the chunk-local limit.
 CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	local bank = tonumber(favor) or 0;
 	local cap = tonumber(maxVotes) or 1;
@@ -14580,6 +14647,31 @@ CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	local votes = (host < standard) and host or standard;
 	return votes, host, standard;
 end
+
+-- A ballot is verified against all three native selection fields, not just
+-- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
+-- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
+-- A matching free-vote count previously concealed the opposite option in
+-- civvis-20260909T003711Z at turn 161. Missing target evidence is unknown,
+-- never a successful match. Exported globally to stay below the chunk limit.
+CivvisCongressBallotVerdict = function(ask, observed)
+	ask = type(ask) == "table" and ask or {};
+	observed = type(observed) == "table" and observed or {};
+	local asked, recorded = tonumber(ask.votes), tonumber(observed.votes);
+	local optionAsked, optionRecorded = tonumber(ask.option), tonumber(observed.option);
+	local targetAsked = ask.target ~= nil and tostring(ask.target) or nil;
+	local targetRecorded = observed.target ~= nil and tostring(observed.target) or nil;
+	local countMatches = asked ~= nil and asked > 0 and recorded == asked;
+	local optionMatches = (optionAsked == 1 or optionAsked == 2)
+		and optionRecorded == optionAsked;
+	local targetMatches = targetAsked ~= nil and targetRecorded == targetAsked;
+	return {
+		registered = countMatches and optionMatches and targetMatches,
+		count_matches = countMatches, option_matches = optionMatches,
+		target_matches = targetMatches,
+		target_asked = targetAsked, target_recorded = targetRecorded,
+	};
+end;
 
 -- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
 --
@@ -16050,10 +16142,23 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 				return true, "path";
 			end
 		end
-		local baseMoves = tonumber(try(function()
-			local definition = GameInfo.Units[threat.unit:GetUnitType()];
-			return definition ~= nil and definition.BaseMoves;
-		end, nil)) or 2;
+		local definition = try(function()
+			return GameInfo.Units[threat.unit:GetUnitType()];
+		end, nil);
+		-- A distance fallback is not a naval path. In the native 20260909T064545Z
+		-- t29 export, a galley caused a land Settler to flee toward a hidden warrior.
+		-- Keep a positive host path above, and preserve city/district transitions
+		-- (including canals), water captures, and unavailable terrain information.
+		if definition ~= nil and definition.Domain == "DOMAIN_SEA" then
+			local plot = try(function() return Map.GetPlot(x, y); end, nil);
+			local water = try(function() return plot:IsWater(); end, nil);
+			local city = try(function() return plot:IsCity(); end, nil);
+			local district = tonumber(try(function() return plot:GetDistrictType(); end, nil));
+			if water == false and city == false and district ~= nil and district < 0 then
+				return false, "naval_land";
+			end
+		end
+		local baseMoves = tonumber(definition ~= nil and definition.BaseMoves) or 2;
 		local distance = tonumber(try(function()
 			return Map.GetPlotDistance(x, y, threat.x, threat.y);
 		end, -1)) or -1;
@@ -16722,6 +16827,7 @@ CivvisFrames.reset = function()
 	-- again on every later tick of the turn (blockers, end-turn retries),
 	-- and the sweep must not run on each of them.
 	CivvisFrames.settled = false;
+	CivvisFrames.productionRepairs = 0;
 end;
 
 -- Called from CivvisLedger.strike for every strike issued, opening or queued.
@@ -16778,8 +16884,8 @@ end;
 
 -- Open the next frame: export the board again, stamped, and re-arm the
 -- handshake so `settleTurn` waits for this frame's answer.
-CivvisFrames.begin = function(player, pid, turn)
-	local reason = CivvisFrames.why() or "strike";
+CivvisFrames.begin = function(player, pid, turn, requestedReason)
+	local reason = requestedReason or CivvisFrames.why() or "strike";
 	CivvisFrames.current = CivvisFrames.current + 1;
 	CivvisFrames.reason = reason;
 	CivvisFrames.settled = false;
@@ -16802,7 +16908,34 @@ CivvisFrames.begin = function(player, pid, turn)
 	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
 end;
 
+-- A city can finish or appear after the opening board, including while a unit
+-- blocker masks its production prompt. Export all empty queues together after
+-- orders settle. Two repair frames per turn bound a persistent refusal without
+-- handing the production decision to the harness.
+CivvisFrames.repairProduction = function(player, pid, turn)
+	if not cfg.CivvisDecides or (CivvisFrames.productionRepairs or 0) >= 2 then return false; end
+	local empty = 0;
+	eachCity(player, function(city)
+		local current = try(function() return city:GetBuildQueue():GetCurrentProductionTypeHash(); end);
+		if current == 0 then empty = empty + 1; end
+	end);
+	if empty == 0 then return false; end
+	CivvisFrames.productionRepairs = (CivvisFrames.productionRepairs or 0) + 1;
+	CivvisFrames.begin(player, pid, turn, "production");
+	return true;
+end;
+
 local function applyOrders(player, pid, turn, rows)
+	-- Consume only the recognized batch directive. Attach the policy to the
+	-- rows themselves so delayed strikes retain it without global frame state.
+	local survival = false;
+	for i = #rows, 1, -1 do
+		local row = rows[i];
+		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
+			survival = true;
+			table.remove(rows, i);
+		end
+	end
 	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
 	-- Per kind, beside the per-turn totals: how many orders of each kind were
@@ -16845,6 +16978,16 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdActiveFireCivilianLegs(pid, turn, rows);
+	for _, row in ipairs(rows) do
+		row._civvis_survival_guard = survival and row.kind == "unit"
+			and (row.verb == "ATTACK" or row.verb == "RANGE_ATTACK");
+	end
+	if survival then
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "DOOMED_BLOW_VETO",
+		});
+	end
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -17037,6 +17180,8 @@ local function applyOrders(player, pid, turn, rows)
 	-- correctly, and `data/governments.json` matches `Government_SlotCounts` for
 	-- all 13 governments — checked before touching anything, because the obvious
 	-- read is that the deck chooser is broken and it is not.
+	-- Request order alone is insufficient: the policy handler also waits for
+	-- the asynchronous government change to become observable before clearing cards.
 	for index, row in ipairs(rows) do
 		if not ordered[index] and tostring(row.kind or "") == "government" then
 			runOrder(index, row);
@@ -17543,8 +17688,12 @@ local function beginTurn(player, pid, turn)
 						local votes = tonumber(sel.Votes) or 0;
 						local option = tonumber(sel.OptionChosen) or 0;
 						if option == 1 then a = a + votes; else b = b + votes; end
-						voters[#voters + 1] = { player = who, option = option, votes = votes };
-						if who == pid then ours = { option = option, votes = votes }; end
+						local target = sel.ResolutionTarget;
+						voters[#voters + 1] = { player = who, option = option, votes = votes,
+							target = target };
+						if who == pid then
+							ours = { option = option, votes = votes, target = target };
+						end
 					end
 				end
 				local won = a > b and 1 or (b > a and 2 or 0);
@@ -17626,10 +17775,17 @@ local function beginTurn(player, pid, turn)
 				if type(ask) == "table" and type(r.ours) == "table" then
 					local recorded = tonumber(r.ours.votes) or 0;
 					local asked = tonumber(ask.votes) or 0;
+					local verdict = CivvisCongressBallotVerdict(ask, r.ours);
 					emit("wc_ballot_verdict", {
-						turn = turn, resolution = r.type,
+						turn = turn, resolution = r.type, verification_version = 2,
 						asked = asked, recorded = recorded,
-						registered = recorded >= asked,
+						registered = verdict.registered,
+						count_matches = verdict.count_matches,
+						option_matches = verdict.option_matches,
+						target_matches = verdict.target_matches,
+						target_asked = verdict.target_asked,
+						target_recorded = verdict.target_recorded,
+						selection_asked = ask.selection,
 						option_asked = ask.option, option_recorded = r.ours.option,
 						favor_at_ballot = envoyTally.ballot_favor_now,
 						favor_entering_congress = envoyTally.ballot_favor_entering,
@@ -17637,6 +17793,9 @@ local function beginTurn(player, pid, turn)
 						max_votes = envoyTally.ballot_max_votes,
 						costs = envoyTally.ballot_costs,
 						votes_sent = (type(envoyTally.ballot_sent) == "table")
+							and envoyTally.ballot_sent[r.type] or nil,
+						-- Legacy votes_sent counts operation calls, not votes.
+						request_calls = (type(envoyTally.ballot_sent) == "table")
 							and envoyTally.ballot_sent[r.type] or nil,
 						-- Both affordability walks behind the ask (host table
 						-- and Standard-priced), so the session that finally
@@ -17864,7 +18023,8 @@ local function settleTurn(player, pid, turn, playFallback)
 			-- frame in time is not asked again this turn.
 			CivvisFrames.strikes = 0;
 			CivvisFrames.revealed = 0;
-			CivvisFrames.current = CivvisFrames.max();
+			CivvisFrames.current = math.max(CivvisFrames.current, CivvisFrames.max());
+			CivvisFrames.productionRepairs = 2;
 			emit("combat_frame_timeout", { turn = turn, frame = frame, polls = awaiting.polls,
 			                               reason = CivvisFrames.reason });
 			return true;
@@ -18111,9 +18271,20 @@ function CivvisBoard.movementNotYetRestored(player, turn)
 	return true;
 end
 
+-- Submission is not acceptance: the host may still be settling a movement.
+CivvisQueue.requestEndTurn = function(turn, parameters)
+	CivvisQueue.endTurnRetryTurn = turn;
+	if parameters == nil then
+		UI.RequestAction(ActionTypes.ACTION_ENDTURN);
+	else
+		UI.RequestAction(ActionTypes.ACTION_ENDTURN, parameters);
+	end
+end;
+
 local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
+	CivvisQueue.controllerTicks = (CivvisQueue.controllerTicks or 0) + 1;
 	local ok, err = pcall(function()
 		-- ★★★★ RETIRE, WHICH IS HOW A QUIT GAME GETS A RESULT AT ALL.
 		--
@@ -18521,39 +18692,9 @@ local function tick()
 					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
 					params[PlayerOperations.PARAM_RESOLUTION_OPTION] = option;
 					params[PlayerOperations.PARAM_RESOLUTION_SELECTION] = selection - 1;
-					-- ★★★★★ NINETY-FIVE OF NINETY-FIVE ONE-VOTE BALLOTS REGISTER.
-					-- SEVENTEEN OF SEVENTEEN MULTI-VOTE BALLOTS DO NOT.
-					--
-					-- 112 `wc_ballot_verdict` rows over four runs, and the split
-					-- is perfect in both directions: no ballot asking one vote
-					-- was ever refused, and no ballot asking more than one was
-					-- ever recorded above one. It does not depend on the moment
-					-- (one-vote ballots register from the `stage1` trigger and
-					-- from the `popup` trigger alike), on the option (both
-					-- register and flip as asked), or on affordability -- run
-					-- `civvis-20260818T175125Z` t162 asked thirteen votes at a
-					-- charged 312 Favor holding 352, inside `MaxVotes = 13`, and
-					-- the host recorded one.
-					--
-					-- Every explanation the mod controls is now eliminated:
-					-- parameters match the shipped `OnAccept` exactly, both
-					-- triggers fire, the option registers, the budget is not the
-					-- difference (#2039: `favor_entering_congress` equals
-					-- `GetFavor` on every row), and the ask is affordable and
-					-- within the cap. What is left is the count parameter
-					-- itself: `PARAM_WORLD_CONGRESS_VOTES > 1` is never honoured
-					-- through this path.
-					--
-					-- #2045 tried one vote per operation, repeated, on the theory
-					-- that the core might accumulate them. The experiment came
-					-- back on run civvis-20260819T004405Z: `votes_sent 20,
-					-- recorded 1` on every multi-vote session — the operation
-					-- SETS the seat's ballot rather than adding to it, so a
-					-- repeat leaves the LAST write's single vote standing. Back
-					-- to one operation carrying the whole count, exactly as the
-					-- shipped `OnAccept` sends it; what changed instead is the
-					-- count itself, now priced by `CivvisCongressVoteBudget`
-					-- against both tables the host might charge.
+					-- Match the shipped OnAccept request: one operation carries the
+					-- complete vote count. A successful pcall records a request,
+					-- not acceptance; GetReview verifies the complete selection.
 					local sent = pcall(function()
 						UI.RequestPlayerOperation(pid,
 							PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
@@ -18565,7 +18706,8 @@ local function tick()
 					-- review can be compared with it rather than trusted. `pcall`
 					-- reports only that the call did not raise; the host's own
 					-- `PlayerSelections` is the only thing that reports a vote.
-					envoyTally.ballot_ask[rtype] = { votes = votes, option = option };
+					envoyTally.ballot_ask[rtype] = { votes = votes, option = option,
+						selection = selection - 1, target = targets[selection] };
 				end
 			end
 			pcall(function()
@@ -18575,34 +18717,16 @@ local function tick()
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
-		-- ★★★★★ THE BALLOT IS CAST WHEN THE POPUP ASKS, NOT WHEN THE BLOCKER
-		-- APPEARS. `voteWorldCongress` below is also called from the blocker
-		-- ladder, and that call has never registered a vote: `wc_vote` says
-		-- `spent 760` at t201 of civvis-20260816T184500Z and Favor reads
-		-- 822→829→836 across it; `wc_outcome` shows our selection on every
-		-- resolution as the core's default `option 1, votes 1` — the free vote
-		-- cast FOR the diplomatic leader. The shipped screen votes from inside
-		-- the WorldCongressPopup in stage 1; the autoclose shim standing in
-		-- front of that popup raises `LuaEvents.CivvisCongressBallot` right
-		-- before its `OnAccept`, and this is the handler. Registered once, from
-		-- inside `tick` because `voteWorldCongress` is nested here (a file-scope
-		-- local would cross the 200-register ceiling); the flag hangs off
-		-- `envoyTally` for the same reason. `source` on the event tells the two
-		-- call sites apart in the ledger; the popup one is the one that counts.
-		-- ⚠⚠ AND THE FIRST POPUP-MOMENT ATTEMPT NEVER FIRED EITHER: batch-9
-		-- game civvis-20260816T223457Z has no `source:"popup"` row at all —
-		-- the shim's WorldCongressPopup ladder runs its `OnPass` rung, not the
-		-- `OnAccept` one the event was raised in. Two triggers now, either of
-		-- which casts once per turn: the game core's own
-		-- `Events.WorldCongressStage1(playerID)` — the very event the shipped
-		-- popup opens on, i.e. the earliest moment a person could vote — and
-		-- the shim's ballot event, now raised from the rung that runs.
-		-- `castBallot` is shared; `envoyTally.ballot_turn` is the once-per-turn
-		-- latch and is only set when something was cast, so a trigger that
-		-- arrives before the resolutions are readable does not spend the turn.
-		-- The blocker path below defers to these and only falls back a forfeit
-		-- cycle later. Every ballot reports its trigger, the core's `Stage`,
-		-- and Favor before, so the next `wc_outcome` says which moment took.
+		-- Submit from the popup's voting callback, after its setup, matching
+		-- WorldCongressPopup.lua:2222-2271. WorldCongressStage1 announces the
+		-- stage; it is not proof that a player-operation ballot can land yet.
+		-- In civvis-20260909T043723Z-cont1, stage1 requested 3/12/13/14 votes
+		-- on turns 134/154/174/194, but every review recorded one. The early
+		-- request also latched ballot_turn, blocking the later popup callback.
+		-- Keep stage1 observable without submitting there. A popup with no
+		-- readable resolutions leaves the latch open for a later callback; the
+		-- bounded blocker fallback remains available if the popup never calls.
+		-- Only the later native review proves count, option, and target landed.
 		local function castBallot(trigger)
 			local ballotPlayer, ballotPid = localPlayer();
 			if ballotPlayer == nil then return; end
@@ -18632,25 +18756,10 @@ local function tick()
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
-			-- ★★★★★ `spent` IS WHAT THE BALLOT ASKED FOR. IT IS NOT WHAT WAS TAKEN.
-			--
-			-- `voteWorldCongress` returns its own model of the stake: it walks
-			-- the host's cost table, decrements a local bank, and adds the
-			-- charge for every vote it requested. The host charges for the
-			-- votes it RECORDS, and it has never recorded more than one --
-			-- 139 of 139 multi-vote asks came back `recorded 1` across the
-			-- whole `wc_ballot_verdict` corpus. So every `spent` above zero
-			-- this ledger has ever carried is Favor that never moved, and the
-			-- reader had to join two sessions of `wc_ballot_verdict` to find
-			-- that out.
-			--
-			-- `favor_before` was already read here; reading the bank back
-			-- costs one more accessor and makes the row self-describing.
-			-- ⚠ A player operation is queued, not applied inline, so a real
-			-- charge may land after this read: treat `favor_after` as a lower
-			-- bound on what was taken, and `wc_ballot_verdict.favor_now` at
-			-- the next review as the settled figure. The two together are
-			-- still strictly more than `spent` alone, which is a forecast.
+			-- `spent` is the modeled request cost, not a confirmed charge.
+			-- Player operations are queued: the immediate Favor read can precede
+			-- a charge. The subsequent review verifies count, option, and target;
+			-- its Favor read supplies the later balance without inventing a cost.
 			local after = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
 			                  favor_asked = spent,
@@ -18669,7 +18778,12 @@ local function tick()
 			end);
 			local hookedStage = pcall(function()
 				Events.WorldCongressStage1.Add(function(playerID)
-					if tonumber(playerID) == pid then castBallot("stage1"); end
+					if tonumber(playerID) == pid then
+						emit("wc_vote", {
+							turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+							source = "stage1", cast = 0, spent = 0, why = "awaiting_popup",
+						});
+					end
 				end);
 			end);
 			emit("wc_ballot_hooked", { turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
@@ -18712,6 +18826,10 @@ local function tick()
 			return;
 		end
 
+		if cfg.CivvisDecides and CivvisFrames.repairProduction(player, pid, turn) then
+			return;
+		end
+
 		-- Answer whatever the game says it is waiting on, then end the turn
 		-- anyway.
 		--
@@ -18727,8 +18845,12 @@ local function tick()
 		local blocker = currentBlocker(pid);
 		local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
 		local same_pass_forced = false;
+		local congressBallotPending = false;
 		if blocker ~= nil and blocker ~= none then
 			local name = blockerName(blocker);
+			congressBallotPending = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
+				and envoyTally.ballot_turn ~= turn
+				and (softSeen[name] == nil or softSeen[name].voted_turn ~= turn);
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
@@ -18812,7 +18934,7 @@ local function tick()
 						                    forfeit = 0, forced = true, same_pass = true });
 						same_pass_forced = true;
 						pcall(function()
-							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							CivvisQueue.requestEndTurn(turn,
 							                 { REASON = "UserForced" });
 						end);
 					end
@@ -18855,7 +18977,7 @@ local function tick()
 							                    forfeit = 0, forced = true, same_pass = true });
 							same_pass_forced = true;
 							pcall(function()
-								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								CivvisQueue.requestEndTurn(turn,
 								                 { REASON = "UserForced" });
 							end);
 						else
@@ -18943,7 +19065,7 @@ local function tick()
 						                    forfeit = 0, forced = true, same_pass = true });
 						same_pass_forced = true;
 						pcall(function()
-							UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+							CivvisQueue.requestEndTurn(turn,
 							                 { REASON = "UserForced" });
 						end);
 					end
@@ -19106,15 +19228,15 @@ local function tick()
 								and seen.voted_turn ~= turn then
 							-- ⚠ THE BLOCKER IS SEEN BEFORE THE SESSION IS OPEN FOR
 							-- VOTING (its ballot never registered; see `castBallot`
-							-- above), so it defers: if the stage-1/popup ballot has
+							-- above), so it defers: if the popup ballot has
 							-- cast this turn there is nothing to do, and otherwise
-							-- it waits one forfeit cycle for those triggers before
+							-- it waits one forfeit cycle for that callback before
 							-- falling back to the old vote-and-submit, so a session
 							-- that neither trigger reaches still ends.
 							if envoyTally.ballot_turn == turn then
 								seen.voted_turn = turn;
 								emit("wc_vote", { turn = turn, cast = 0, spent = 0,
-								                  why = "cast_at_stage1", source = "blocker" });
+								                  why = "cast_at_popup", source = "blocker" });
 							elseif seen.forfeits >= 2 then
 								seen.voted_turn = turn;
 								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
@@ -19128,7 +19250,7 @@ local function tick()
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						-- ⚠⚠⚠ ONE BLOCKER MUST NOT BE FORCED PAST YET. The congress session
 						-- defers its ballot by one forfeit cycle on purpose (the vote arm just
-						-- above): forfeit 1 waits for the stage-1/popup ballot to land, and only
+						-- above): forfeit 1 waits for the popup ballot to land, and only
 						-- forfeit 2 falls back to vote-and-submit. Forcing the turn at forfeit 1
 						-- ends it before either can happen, so the session is dismissed unvoted
 						-- every time -- and this seat plays for a DIPLOMATIC victory, where those
@@ -19137,7 +19259,13 @@ local function tick()
 						-- like any other and is forced with the rest.
 						local holdForVote = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 							and seen.voted_turn ~= turn;
-						local dropped = dismissBlocker(pid, blocker);
+						congressBallotPending = holdForVote;
+						-- Native run 20260909T061606Z t56 dismissed the session
+						-- while waiting for its popup and advanced with default votes.
+						-- Holding only UserForced was insufficient: keep both the
+						-- notification and the ordinary end-turn request pending.
+						local dropped = false;
+						if not holdForVote then dropped = dismissBlocker(pid, blocker); end
 						emit("dismissed", { turn = turn, blocker = name,
 						                    dismissed = dropped, attempts = attempts,
 						                    answered = answered, parked = parked,
@@ -19171,7 +19299,7 @@ local function tick()
 						-- to park.
 						if not holdForVote then
 							pcall(function()
-								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								CivvisQueue.requestEndTurn(turn,
 								                 { REASON = "UserForced" });
 							end);
 						end
@@ -19193,7 +19321,7 @@ local function tick()
 			-- Only if the same blocker has survived a whole turn's worth of
 			-- attempts is the notification dropped, and that is reported as the
 			-- forfeit it is.
-			if attempts >= (cfg.MaxBlockedAttempts or 40) then
+			if attempts >= (cfg.MaxBlockedAttempts or 40) and not congressBallotPending then
 				local dropped = dismissBlocker(pid, blocker);
 				emit("dismissed", { turn = turn, blocker = name,
 				                    dismissed = dropped, attempts = attempts });
@@ -19201,12 +19329,12 @@ local function tick()
 			end
 		end
 
-		if not same_pass_forced then
+		if not same_pass_forced and not congressBallotPending then
 			pcall(function()
 				if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
 					UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
 				end
-				UI.RequestAction(ActionTypes.ACTION_ENDTURN);
+				CivvisQueue.requestEndTurn(turn);
 			end);
 		end
 	end);
@@ -19257,7 +19385,7 @@ local function ensureStarted()
 		emit("turn_limit", {
 			asked = cfg.MaxTurns,
 			config = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
-			game = try(function() return Game.GetMaxTurns(); end, -1),
+			game = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		});
 	end
 
@@ -19323,17 +19451,46 @@ local function onEndTurnBlockingChanged()
 	tick();
 end
 
--- The host says one of our units finished moving or its operation ended.
--- If that unit has queued follow-ups, this is the moment to issue the next
--- one — undivided, like `EndTurnBlockingChanged`, because a board whose only
--- remaining work is a queued strike publishes almost nothing on its own.
+-- The stock UnitPanel.lua:2424,2431 consumes these completion events.
+-- A requested end turn can be refused while the final movement settles, after
+-- our queue has drained. Retry on that completion without waiting for another
+-- divided game-core publish. Only requests from this turn qualify.
 CivvisQueue.onUnitSettled = function(player, unitId)
-	if CivvisQueue.count <= 0 then return; end
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
-	if CivvisQueue.noteUnitEvent(pid, player, unitId) then
+	if pid == nil or pid < 0 or player ~= pid then return; end
+	local ready = CivvisQueue.noteUnitEvent(pid, player, unitId);
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local retry = turn >= 0 and CivvisQueue.endTurnRetryTurn == turn;
+	if ready or retry then
 		ensureStarted();
+		if retry and not ready then
+			emit("turn_retry_settled", { turn = turn, unit = unitId });
+		end
 		tick();
 	end
+end;
+
+-- TopPanel has a visible UI clock even when Game Core stops publishing.
+-- Observe normal ticks first; only a quiet interval needs a fallback wakeup.
+-- `tick` retains every existing ownership, turn, order and reentrancy guard.
+CivvisQueue.onUiPulse = function()
+	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
+	local serial = CivvisQueue.controllerTicks or 0;
+	if CivvisQueue.lastUiTick ~= serial then
+		CivvisQueue.lastUiTick = serial;
+		return;
+	end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 then return; end
+	ensureStarted();
+	emit("controller_wake", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		active = try(function() return Players[pid]:IsTurnActive(); end, false),
+		frame = awaiting.frame or 0,
+		pending = CivvisQueue.pendingCount(),
+	});
+	tick();
+	CivvisQueue.lastUiTick = CivvisQueue.controllerTicks or 0;
 end;
 
 local function onTeamVictory(team, victoryType, eventID)
@@ -19532,6 +19689,7 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
+	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse); end);
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		GameCoreEventPublishComplete = onGameCoreTick,

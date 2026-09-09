@@ -416,8 +416,8 @@ def _ladder_distance_lines(ladder: dict[str, Any]) -> list[str]:
         )
         return lines
     lines.append(
-        f"- Graded against the best rival: **{ladder['graded']}** of "
-        f"{ladder['full_length']} finished attempts; rival bar median "
+        f"- Graded against the best rival: **{ladder['graded']} configured attempts**; "
+        "rival bar median "
         f"**{ladder['rival_bar_median']:.0f}**, our lead median "
         f"**{ladder['lead_median']:+.0f}**, best **{ladder['lead_best']:+.0f}**, "
         f"ahead in **{ladder['ahead']}**"

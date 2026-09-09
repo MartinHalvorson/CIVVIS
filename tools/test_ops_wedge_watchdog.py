@@ -452,7 +452,8 @@ class AnUnownedRunIsStillReported(unittest.TestCase):
             self.assertNotIn(verb, branch,
                              "the unowned branch must never signal the game")
 
-    def _run_branch(self, *, age_s: int, reported_at: int = 0) -> str:
+    def _run_branch(self, *, age_s: int, reported_at: int = 0,
+                    summary: str | None = None, summary_age_s: int = 0) -> str:
         if shutil.which("zsh") is None:
             self.skipTest("zsh is needed here")
         source = self._source()
@@ -466,6 +467,11 @@ class AnUnownedRunIsStillReported(unittest.TestCase):
             events.write_text('{"kind":"state"}\n')
             stamp = time.time() - age_s
             os.utime(events, (stamp, stamp))
+            if summary is not None:
+                receipt = events.with_name("summary.json")
+                receipt.write_text(summary)
+                summary_stamp = time.time() - summary_age_s
+                os.utime(receipt, (summary_stamp, summary_stamp))
             script = (f'RUNS={runs}\ntag=civvis-test\n'
                       f'UNOWNED_SILENCE_S=120\n'
                       f'UNOWNED_REPORT_EVERY_S=300\n'
@@ -479,6 +485,25 @@ class AnUnownedRunIsStillReported(unittest.TestCase):
         out = self._run_branch(age_s=900)
         self.assertIn("WEDGE UNATTENDED", out)
         self.assertIn("civvis-test", out)
+
+    def test_a_confirmed_stopped_run_is_not_an_unattended_stall(self):
+        receipt = '{"tag":"civvis-test","game_stopped":true,"reason":"stopped"}'
+        self.assertEqual(self._run_branch(age_s=900, summary=receipt).strip(), "")
+
+    def test_uncertain_stop_receipts_keep_the_stall_diagnosis(self):
+        for receipt in ('{', 'null', '[]', '{}',
+                        '{"tag":"other-run","game_stopped":true}',
+                        '{"tag":"civvis-test","game_stopped":false}',
+                        '{"tag":"civvis-test","game_stopped":"true"}',
+                        '{"tag":"civvis-test","reason":"stopped"}'):
+            with self.subTest(receipt=receipt):
+                self.assertIn("WEDGE UNATTENDED",
+                              self._run_branch(age_s=900, summary=receipt))
+
+    def test_events_after_a_stop_receipt_keep_the_stall_diagnosis(self):
+        receipt = '{"tag":"civvis-test","game_stopped":true}'
+        self.assertIn("WEDGE UNATTENDED", self._run_branch(
+            age_s=900, summary=receipt, summary_age_s=1800))
 
     def test_a_live_unowned_run_says_nothing(self):
         """A run that is merely unowned is not news; only a silent one is."""

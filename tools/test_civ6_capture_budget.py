@@ -159,8 +159,7 @@ class OnlyThePixelPathIsRationed(unittest.TestCase):
         self.assertIn("if needs_pixels and not allowed:", source)
 
     def test_the_attempt_is_timed_from_before_the_photograph(self):
-        """Both captures are the attempt; timing only the click would call a
-        23.5 s ask cheap."""
+        """Time capture as part of the rescue, not just the click."""
         source = self._source()
         # Scope to the handler: `screenshot(` is called from the setup code too.
         block = source[source.index('elif kind in ("autoclose_desktop", "autoclose_stuck"):'):
@@ -194,7 +193,8 @@ class OnlyThePixelPathIsRationed(unittest.TestCase):
         """A capture the host cannot take is 11 s either way; do not spend it
         just because the screen has a capture-free dismissal."""
         source = self._source()
-        self.assertIn("if allowed:\n                screenshot(shot)", source)
+        self.assertIn("if allowed and not needs_pixels:\n                screenshot(shot)", source)
+        self.assertIn("dismiss_visually_confirmed_popup(diagnostic_path=shot)", source)
         self.assertIn("not photographed ({budget_note})", source)
 
 

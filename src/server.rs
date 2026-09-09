@@ -2131,6 +2131,15 @@ impl Session {
         }
     }
 
+    /// Loading through the game menu restores who controls the saved world.
+    /// The exhibition currently on screen must not turn a human save into an
+    /// AI simulation. Command-line checkpoint resumes keep their explicit
+    /// launch mode through `from_game` instead.
+    pub fn from_saved_game(mut params: Params, game: Game) -> Session {
+        params.spectate = game.human_seats.is_empty();
+        Self::from_game(params, game)
+    }
+
     /// Restore an interrupted match and rebuild only the AIs' transient plans.
     /// The serialized game retains the authoritative RNG and world state.
     pub fn from_game(mut params: Params, game: Game) -> Session {
@@ -4555,6 +4564,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let Some(name) = parsed["name"].as_str() else {
                 let mut session = lock_or_recover(&sh.session);
                 let result = crate::routes::load_uploaded(&mut session, &parsed);
+                if result.is_ok() {
+                    sh.current_seed.store(session.game.seed, Ordering::Relaxed);
+                    sh.adopt_live_params(&session.params);
+                    if let Some(queued) = session.take_resumed_next_game_params() {
+                        *lock_or_recover(&sh.next_game_params) = Some(queued);
+                    }
+                }
                 let mut out = session.state();
                 out["error"] = match result {
                     Ok(()) => Value::Null,
@@ -4596,7 +4612,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     }
                     let mut session = lock_or_recover(&sh.session);
                     let params = session.params.clone();
-                    *session = Session::from_game(params, game);
+                    *session = Session::from_saved_game(params, game);
                     sh.current_seed.store(session.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&session.params);
                     if let Some(queued) = session.take_resumed_next_game_params() {

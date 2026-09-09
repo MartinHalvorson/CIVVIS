@@ -13,7 +13,7 @@
 //! and the presence alarm that admits the barbarian seat to the enemy list
 //! at all (`barbarian_presence_at_home_inner`). Each measured the camp's
 //! distance from OUR cities only. Likewise the envoy scorer's place term
-//! (`flip-nearby-city-states`) and the alliance partner score
+//! (`flip-nearby-city-states`, since removed) and the alliance partner score
 //! (`propose_strategic_alliance`) read a city-state's or a major's place
 //! against our own cities: the one ACROSS a rival — the front that rival
 //! cannot cover while facing us — scored nothing for being there. The

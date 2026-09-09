@@ -458,6 +458,94 @@ local retried = applyOrder(player, PID, governorRow, 8)
 check("unassigned governor retries next turn", retried, true)
 check("next-turn governor request is submitted", #host.governor_requests, 2)
 
+-- A completed final move must wake a previously requested end turn even
+-- after all queued follow-ups were drained. No game-core publish is required.
+local settledTickCalls = 0
+for i = 1, 20 do
+    local name = debug.getupvalue(queue.onUnitSettled, i)
+    if name == "tick" then
+        debug.setupvalue(queue.onUnitSettled, i, function() settledTickCalls = settledTickCalls + 1 end)
+    elseif name == "ensureStarted" then
+        debug.setupvalue(queue.onUnitSettled, i, function() end)
+    elseif name == nil then break end
+end
+queue.count = 0
+local requested = {}
+UI.RequestAction = function(...)
+    local action, parameters = ...
+    requested[#requested + 1] = { action = action, parameters = parameters, argc = select("#", ...) }
+end
+ActionTypes = { ACTION_ENDTURN = "end_turn" }
+local parameters = { REASON = "UserForced" }
+queue.requestEndTurn(7, parameters)
+check("end-turn submission arms settlement retry", queue.endTurnRetryTurn, 7)
+check("end-turn action reaches host", requested[1].action, "end_turn")
+check("forced request parameters survive", requested[1].parameters, parameters)
+queue.requestEndTurn(7)
+check("ordinary request keeps the single-argument host signature", requested[2].argc, 1)
+queue.onUnitSettled(PID, 10)
+check("final settled move retries requested turn with empty queue", settledTickCalls, 1)
+queue.onUnitSettled(PID + 1, 10)
+check("rival movement cannot retry our turn", settledTickCalls, 1)
+queue.endTurnRetryTurn = 6
+queue.onUnitSettled(PID, 10)
+check("old-turn request cannot trigger a new-turn tick", settledTickCalls, 1)
+queue.endTurnRetryTurn = nil
+queue.onUnitSettled(PID, 10)
+check("movement before any end-turn request adds no tick", settledTickCalls, 1)
+queue.count = 1
+queue.pending[10] = { ready = false }
+queue.onUnitSettled(PID, 10)
+check("queued follow-up still ticks without an end-turn request", settledTickCalls, 2)
+check("queued follow-up is marked ready", queue.pending[10].ready, true)
+
+-- The visible HUD can wake the actual controller entry point even when no
+-- game-core or unit-completion callback arrives. Normal ticks suppress it.
+local pulseCalls = 0
+local pulseCfg = { CivvisDecides = true }
+local pulseUpvalues = {}
+for i = 1, 30 do
+    local name = debug.getupvalue(queue.onUiPulse, i)
+    if name == nil then break end
+    pulseUpvalues[name] = i
+    if name == "tick" then
+        debug.setupvalue(queue.onUiPulse, i, function()
+            pulseCalls = pulseCalls + 1
+            queue.controllerTicks = (queue.controllerTicks or 0) + 1
+        end)
+    elseif name == "cfg" then
+        debug.setupvalue(queue.onUiPulse, i, pulseCfg)
+    end
+end
+queue.controllerTicks = 5; queue.lastUiTick = nil
+queue.onUiPulse()
+check("first pulse observes normal controller activity", pulseCalls, 0)
+queue.controllerTicks = 6
+queue.onUiPulse()
+check("normal controller activity suppresses fallback", pulseCalls, 0)
+queue.onUiPulse()
+check("quiet interval wakes controller without game-core events", pulseCalls, 1)
+queue.onUiPulse()
+check("continued quiet intervals remain recoverable", pulseCalls, 2)
+pulseCfg.Play = false
+queue.onUiPulse()
+check("disabled play prevents fallback", pulseCalls, 2)
+pulseCfg.Play = true; pulseCfg.CivvisDecides = false
+queue.onUiPulse()
+check("standalone harness has no CivVis heartbeat", pulseCalls, 2)
+pulseCfg.CivvisDecides = true
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.inTick, true)
+queue.onUiPulse()
+check("reentrant pulse cannot wake controller", pulseCalls, 2)
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.inTick, false)
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, true)
+queue.onUiPulse()
+check("finished game cannot be woken", pulseCalls, 2)
+debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, false)
+Game.GetLocalPlayer = function() return -1 end
+queue.onUiPulse()
+check("no local seat cannot be woken", pulseCalls, 2)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)

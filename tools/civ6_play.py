@@ -2206,6 +2206,28 @@ def _observed_label_points(path: Path, label: str,
     return points
 
 
+def dismiss_connection_issue(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Acknowledge the observed 2K connection notice before reading a menu."""
+    titles = _observed_label_points(path, "Connection Issue", bounds)
+    if len(titles) != 1:
+        return False
+    bodies = _observed_label_points(
+        path, "A connection to Civilization VI could not be established.", bounds)
+    buttons = _observed_label_points(path, "OK", bounds)
+    if len(bodies) != 1 or len(buttons) != 1:
+        return False
+    title, body, button = titles[0], bodies[0], buttons[0]
+    x, y, w, h = bounds
+    if not (x + w * .25 <= title[0] <= x + w * .75
+            and y + h * .2 <= title[1] <= y + h * .8
+            and title[1] < body[1] < button[1] <= title[1] + h * .3
+            and abs(button[0] - title[0]) <= w * .15):
+        return False
+    click_at(*button)
+    print("[startup] acknowledged the visible 2K connection issue", flush=True)
+    return True
+
+
 def _main_menu_point(path: Path, bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
     """Read the Single Player row center instead of assuming a window-height ratio."""
     return _observed_label_point(path, "Single Player", bounds)
@@ -2488,6 +2510,9 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             # miss into minutes of setup latency.
             screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)
             point = _main_menu_point(menushot, bounds)
+            if point is None and dismiss_connection_issue(menushot, bounds):
+                time.sleep(.5)
+                return None  # The polling reader takes a fresh menu frame.
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
@@ -2767,6 +2792,11 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         screenshot(menu)
         target = _observed_label_point(menu, "Load Game", bounds)
         menu_point = _main_menu_point(menu, bounds)
+        if target is None and menu_point is None and dismiss_connection_issue(menu, bounds):
+            time.sleep(.5)
+            screenshot(menu)
+            target = _observed_label_point(menu, "Load Game", bounds)
+            menu_point = _main_menu_point(menu, bounds)
         if target is None and menu_point is not None:
             click_at(*menu_point)
             time.sleep(2.5)
@@ -2967,7 +2997,7 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     return True
 
 
-def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
+def dismiss_visually_confirmed_popup(*, diagnostic_path: Path | None = None) -> tuple[bool, str]:
     """Click one safe target only when the current pixels prove a modal exists."""
     rect = game_window()
     if rect is None:
@@ -2976,6 +3006,11 @@ def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
     time.sleep(0.25)
     try:
         window, scale = popup_clear.capture(rect)
+        if diagnostic_path is not None:
+            try:
+                window.save(diagnostic_path)
+            except OSError as error:
+                print(f"[popup] could not save diagnostic frame: {error}", file=sys.stderr)
         surface, targets, _dark = popup_clear.classify(window)
     except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
         # A pre-authorized ScreenCaptureKit request can still yield no image while
@@ -3590,6 +3625,25 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         boosts = civ6_ladder.boost_totals(run_dir / "events.jsonl")
         if boosts:
             summary["boosts"] = boosts
+        marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
+        if marks:
+            summary["tech_marks"] = marks
+        # And the culture clock beside it: the leading rival's share of the
+        # culture victory and the staycationer bar we set against it, from the
+        # same frame. The Emperor record's rival victories are majority culture
+        # and land ~30 turns earlier than the science ones. Absent when the run
+        # never reached t100 or predates the tourism export.
+        culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+        if culture:
+            summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         revisions = civ6_ladder.decider_revisions(run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
@@ -3843,6 +3897,25 @@ def _play(args: argparse.Namespace) -> int:
         if path.exists():
             return
         partial = partial_summary(args.tag, config, state)
+        # ⭐ A KILLED RUN STILL MEASURED ITS RESEARCH. `killed` and
+        # `operator_retired` end most Emperor games (61% in September), so a
+        # tech-gap column written only by the finished path would miss the
+        # majority of the record. The marks come from events.jsonl, which is
+        # on disk before this runs; anything that goes wrong reading it is
+        # swallowed, because this is a shutdown hook.
+        try:
+            import civ6_ladder
+            marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
+            if marks:
+                partial["tech_marks"] = marks
+            culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+            if culture:
+                partial["culture_marks"] = culture
+            launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+            if launches:
+                partial["launch_marks"] = launches
+        except Exception:  # noqa: BLE001 - best-effort evidence at exit
+            pass
         try:
             path.write_text(json.dumps(partial, indent=2, sort_keys=True))
         except OSError:
@@ -3965,16 +4038,9 @@ def _play(args: argparse.Namespace) -> int:
                 "requested desktop help after"
                 if kind == "autoclose_desktop" else "gave up after"
             )
-            # ★★★★★ ASK THE 0.02 s QUESTION BEFORE SPENDING THE 23.5 s ANSWER.
-            #
-            # This branch is two native captures -- the diagnostic photograph
-            # and the classifier's own frame -- on the same thread that reads
-            # the mod's event log, so the game waits for both. While
-            # `systemstatusd` spins, each one runs its guard out and fails:
-            # measured 11.02 s apiece on this host on 2026-09-02, and the
-            # `autoclose_desktop -> next event` gap was 23.5 s to within a
-            # tenth of a second, 23 times, in one 31-minute game -- 30 % of it.
-            # Run civvis-20260902T095330Z paid 25.8 min of its 68.6.
+            # Capture availability is cheap to check. The visual rescue saves
+            # and classifies the same game-window frame: a separate diagnostic
+            # capture used to double the timeout cost on a degraded host.
             #
             # The budget still spends one real attempt per screen per minute so
             # a genuinely stuck leader screen is rescued (see the module for why
@@ -4005,17 +4071,17 @@ def _play(args: argparse.Namespace) -> int:
             if needs_pixels and not allowed:
                 # The event is already in events.jsonl -- `record` writes it
                 # before this chain runs -- so returning here loses no history,
-                # only the two captures.
+                # only the capture.
                 print(f"[{kind}] {screen} {reason} {event.get('attempts')} "
                       f"attempts; {budget_note}")
                 return
             shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
             attempt_started = time.monotonic()
-            if allowed:
+            if allowed and not needs_pixels:
                 screenshot(shot)
             print(f"[{kind}] {screen} {reason} "
                   f"{event.get('attempts')} attempts; "
-                  + (f"photographed to {shot} ({budget_note})" if allowed
+                  + (f"diagnostic path {shot} ({budget_note})" if allowed
                      else f"not photographed ({budget_note})"))
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
@@ -4036,7 +4102,7 @@ def _play(args: argparse.Namespace) -> int:
                         "WorldCongressBetweenTurns", "GreatWorkShowcase",
                         "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
-                ok, how = dismiss_visually_confirmed_popup()
+                ok, how = dismiss_visually_confirmed_popup(diagnostic_path=shot)
                 # ★ THE PREFLIGHT IS A PREDICTION; THIS IS THE ANSWER.
                 # `capture_pause_reason()` says "systemstatusd is spinning"
                 # whenever that daemon is busy, and measured on this host the
@@ -4575,6 +4641,30 @@ def _play(args: argparse.Namespace) -> int:
         boosts = civ6_ladder.boost_totals(run_dir / "events.jsonl")
         if boosts:
             summary["boosts"] = boosts
+        # The research gap at t100 and t150: our completed techs against the
+        # best rival's, from the first state frame of each mark. The deep-game
+        # reviews kept finding 12–33 techs behind the leader and the row could
+        # not show it. Absent when the run never reached t100 or exported no
+        # state, so an old run reads as silence.
+        marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
+        if marks:
+            summary["tech_marks"] = marks
+        # And the culture clock beside it: the leading rival's share of the
+        # culture victory and the staycationer bar we set against it, from the
+        # same frame. The Emperor record's rival victories are majority culture
+        # and land ~30 turns earlier than the science ones. Absent when the run
+        # never reached t100 or predates the tourism export.
+        culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+        if culture:
+            summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log

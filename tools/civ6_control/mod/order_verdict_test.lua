@@ -38,6 +38,7 @@ local EXPORTS = {
 	CivvisApplyOrder = true, CivvisVerify = true,
 }
 -- Real tables the agent indexes with real keys.
+CivvisControlConfig = { Play = true, CivvisDecides = false, EmergencyWallRadius = 3 }
 local LOG = {}
 Automation = { Log = function(line) LOG[#LOG + 1] = line end }
 UnitOperationTypes = { PARAM_X = "x", PARAM_Y = "y" }
@@ -56,6 +57,7 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	if k == "Units" then
 		return setmetatable({}, { __index = function(_, name)
 			if name == "UNIT_SETTLER" then return { UnitType = name, Combat = 0, RangedCombat = 0 } end
+			if name == "UNIT_SCOUT" then return { UnitType = name, Combat = 10, PromotionClass = "PROMOTION_CLASS_RECON" } end
 			if name == "UNIT_ARCHER" then return { UnitType = name, Combat = 15, RangedCombat = 25 } end
 			return { UnitType = name, Combat = 20, RangedCombat = 0 }
 		end })
@@ -65,6 +67,7 @@ end })
 GameInfo.Types = {
 	UNIT_SETTLER = { Hash = 101, Kind = "KIND_UNIT" },
 	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },
+	UNIT_ARCHER = { Hash = 103, Kind = "KIND_UNIT" },
 }
 GameInfo.CommemorationTypes = {
 	[17] = { CommemorationType = "COMMEMORATION_INFRASTRUCTURE" },
@@ -76,6 +79,7 @@ CityOperationTypes = {
 	PARAM_INSERT_MODE = "insert_mode",
 	PARAM_QUEUE_DESTINATION_LOCATION = "queue_destination",
 	PARAM_UNIT_TYPE = "unit_type",
+	PARAM_BUILDING_TYPE = "building_type",
 }
 setmetatable(_G, { __index = function(_, k)
 	if EXPORTS[k] then return rawget(_G, k) end
@@ -107,7 +111,11 @@ local function cityObject(c)
 		GetBuildQueue = function()
 			return {
 				GetCurrentProductionTypeHash = function() return c.current or 0 end,
-				CanProduce = function() return true end,
+				GetTurnsLeft = function() return c.turns or -1 end,
+				CanProduce = function(_, hash, exclusion)
+					if exclusion then return not (c.excluded and c.excluded[hash]) end
+					return not (c.unstartable and c.unstartable[hash])
+				end,
 				HasBeenPlaced = function() return false end,
 			}
 		end,
@@ -145,8 +153,8 @@ CityManager = {
 	RequestOperation = function(city, op, params)
 		local c = host.cities[city:GetID()]
 		host.cityOps[#host.cityOps + 1] = { city = city:GetID(), op = op,
-			item = params[CityOperationTypes.PARAM_UNIT_TYPE] }
-		if c ~= nil then c.current = params[CityOperationTypes.PARAM_UNIT_TYPE] end
+			item = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) }
+		if c ~= nil then c.current = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) end
 	end,
 }
 function host.arrive(id)
@@ -420,6 +428,119 @@ check("started pipeline survives the first founding", startedPipelineHeld, false
 check("started pipeline names the refusal", startedPipelineWhy,
 	"opening_settler_in_progress")
 check("started pipeline remains queued", host.cities[42].current, 101)
+
+-- An explicit military response must reach the host even with a protected
+-- opening Settler, including after founding the first expansion city.
+local defended, defenseWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 16)
+check("opening defense reaches host", defended, true)
+check("opening defense names its build", defenseWhy, "UNIT_ARCHER")
+check("opening defense replaces settler", host.cities[42].current, 103)
+
+-- Reproduce the stalled one-city opening: two live Settlers are already
+-- waiting for routes. The bridge must let the governor stop a third queue.
+host.cities[43] = nil
+host.cities[42].current = 101
+host.units[501] = { id = 501, kind = "UNIT_SETTLER", x = 5, y = 5, moves = 2 }
+host.units[502] = { id = 502, kind = "UNIT_SETTLER", x = 6, y = 6, moves = 2 }
+local backlog, backlogWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 17)
+check("settler backlog releases queue", backlog, true)
+check("backlog replacement names its build", backlogWhy, "UNIT_SCOUT")
+check("backlog replacement reaches host", host.cities[42].current, 102)
+
+-- A single walking Settler still permits the quiet second expansion pipeline.
+host.units[502] = nil
+host.cities[42].current = 101
+local smallPipeline, smallWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 18)
+check("small quiet pipeline stays committed", smallPipeline, false)
+check("small quiet pipeline refusal", smallWhy, "opening_settler_in_progress")
+
+-- Host siege evidence also releases the lock when CivVis requested an
+-- economic item; the emergency path must be reachable before the lock return.
+DefenseTypes = { DISTRICT_GARRISON = 1, DISTRICT_OUTER = 2 }
+Map.GetPlot = function() return {} end
+CityManager.GetDistrictAt = function()
+	return {
+		GetDefenseStrength = function() return 13 end,
+		GetDamage = function(_, kind) return kind == 1 and 179 or 0 end,
+		GetMaxDamage = function(_, kind) return kind == 1 and 200 or 0 end,
+	}
+end
+local siege, siegeWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_SCOUT" }, 19)
+check("damaged capital releases opening lock", siege, true)
+check("unavailable walls preserve CivVis request", siegeWhy, "UNIT_SCOUT")
+check("siege request reaches host", host.cities[42].current, 102)
+
+-- Native production lists and start-now checks are separate. Walls before
+-- Masonry are excluded even when the second predicate alone says true.
+GameInfo.Types.BUILDING_WALLS = { Hash = 104, Type = "BUILDING_WALLS", Kind = "KIND_BUILDING" }
+GameInfo.Buildings = { BUILDING_WALLS = { IsWonder = false } }
+host.cities[42].current = 101
+host.cities[42].excluded = { [104] = true }
+local preMasonry, preMasonryWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 20)
+check("unresearched walls do not replace defense", preMasonry, true)
+check("unresearched walls keep requested defense", preMasonryWhy, "UNIT_ARCHER")
+check("requested defense reaches host before Masonry", host.cities[42].current, 103)
+
+-- A listed but disabled wall is equally ineligible.
+host.cities[42].excluded = nil
+host.cities[42].unstartable = { [104] = true }
+host.cities[42].current = 101
+local disabled, disabledWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 21)
+check("disabled walls keep requested defense", disabled, true)
+check("disabled walls name requested defense", disabledWhy, "UNIT_ARCHER")
+check("disabled walls do not reach host", host.cities[42].current, 103)
+
+-- Once both native predicates admit the wall, the existing emergency works.
+host.cities[42].unstartable = nil
+host.cities[42].current = 101
+local wall, wallWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 22)
+check("eligible emergency walls start", wall, true)
+check("eligible emergency names wall", wallWhy, "BUILDING_WALLS")
+check("eligible emergency wall reaches host", host.cities[42].current, 104)
+
+-- An explicitly requested excluded item must not receive applied credit.
+host.cities[42].current = 103
+host.cities[42].excluded = { [104] = true }
+local beforeExcluded = #host.cityOps
+local excluded, excludedWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "BUILDING_WALLS" }, 23)
+check("excluded explicit build refused", excluded, false)
+check("excluded explicit build reason", excludedWhy, "cannot_start_BUILDING_WALLS")
+check("excluded explicit build never reaches host", #host.cityOps, beforeExcluded)
+
+-- CivVis owns the siege decision in its mode, even when Walls are legal.
+CivvisControlConfig.CivvisDecides = true
+host.cities[42].excluded = nil
+host.cities[42].current = 101
+local civvisDefense, civvisDefenseWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 24)
+check("CivVis siege choice is accepted", civvisDefense, true)
+check("CivVis siege choice is not replaced by Walls", civvisDefenseWhy, "UNIT_ARCHER")
+check("CivVis siege choice reaches host", host.cities[42].current, 103)
+
+-- The bridge also cannot silently keep a finishing defender when CivVis
+-- explicitly chooses Walls. The legacy standalone controller may retain it.
+host.cities[42].turns = 1
+local civvisWalls, civvisWallsWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "BUILDING_WALLS" }, 25)
+check("CivVis can replace a finishing defender", civvisWalls, true)
+check("CivVis chosen wall is respected", civvisWallsWhy, "BUILDING_WALLS")
+check("CivVis chosen wall reaches host", host.cities[42].current, 104)
+
+CivvisControlConfig.CivvisDecides = false
+host.cities[42].current = 103
+local legacyDefender, legacyDefenderWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "BUILDING_WALLS" }, 26)
+check("standalone controller preserves finishing defender", legacyDefender, true)
+check("standalone preservation reason", legacyDefenderWhy, "finishing_defender_preserved")
+check("standalone finishing defender remains queued", host.cities[42].current, 103)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))

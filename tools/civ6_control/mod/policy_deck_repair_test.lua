@@ -97,7 +97,12 @@ local slotRows = {
 	[7] = { GovernmentSlotType = "SLOT_DIPLOMATIC" },
 	[8] = { GovernmentSlotType = "SLOT_WILDCARD" },
 }
-GameInfo = setmetatable({ Policies = policyRows, GovernmentSlots = slotRows }, {
+GameInfo = setmetatable({ Policies = policyRows, GovernmentSlots = slotRows,
+	Governments = {
+		GOVERNMENT_COMMUNISM = { Index = 1, Hash = 201 },
+		GOVERNMENT_DEMOCRACY = { Index = 2, Hash = 202 },
+	},
+}, {
 	__index = function(_, key)
 		if key == "UnitOperations" or key == "UnitCommands" then
 			return setmetatable({}, { __index = function(_, name) return { Hash = name } end })
@@ -124,10 +129,23 @@ local function copy(list)
 end
 
 local culture = {}
+host.government = 1
+function culture:GetCurrentGovernment() return host.government end
+function culture:CanChangeGovernmentAtAll() return true end
+function culture:IsGovernmentUnlocked() return true end
+function culture:SetGovernmentChangeConsidered() end
+function culture:RequestChangeGovernment(hash)
+	if host.governmentReject then return false end
+	if host.governmentThrow then error("government request failed") end
+	if host.governmentSync then host.government = hash - 200 end
+	return true
+end
 function culture:GetNumPolicySlots() return 8 end
-function culture:GetSlotType(i) return i + 1 end
+function culture:GetSlotType(i) return host.slotTypes and host.slotTypes[i + 1] or i + 1 end
 function culture:GetSlotPolicy(i) return host.slots[i + 1] or -1 end
 function culture:IsPolicyUnlocked() return true end
+function culture:IsPolicyBanned(hash) return host.banned == hash end
+function culture:CanPolicyBeSlotted(hash) return host.unavailable ~= hash end
 function culture:IsPolicyObsolete() return false end
 function culture:RequestPolicyChanges(clearList, addList)
 	host.calls[#host.calls + 1] = { clear = copy(clearList), add = copy(addList) }
@@ -165,6 +183,19 @@ local desired = table.concat({
 	"POLICY_PUBLIC_WORKS", "POLICY_CRYPTOGRAPHY", "POLICY_RATIONALISM",
 }, ",")
 local order = { kind = "policy_deck", verb = desired }
+
+host.unavailable = policyRows.POLICY_NEW_DEAL.Hash
+local rejected, refusal = applyOrder(player, 0, order, 99)
+assert(not rejected and refusal == "unavailable_POLICY_NEW_DEAL",
+	"an unlocked but government-exclusive card must be rejected")
+assert(#host.calls == 0 and host.slots[5] == policyRows.POLICY_LIBERALISM.Index,
+	"refusing an unavailable card must preserve the entire existing deck")
+host.unavailable = nil
+host.banned = policyRows.POLICY_NEW_DEAL.Hash
+rejected, refusal = applyOrder(player, 0, order, 99)
+assert(not rejected and refusal == "unavailable_POLICY_NEW_DEAL" and #host.calls == 0,
+	"a Congress-banned card must not start a policy transaction")
+host.banned = nil
 
 local ok, reason = applyOrder(player, 0, order, 100)
 assert(ok and reason == "policy_deck", "initial deck request failed: " .. tostring(reason))
@@ -206,4 +237,59 @@ assert(request:find('"slot":4', 1, true) ~= nil
 	and request:find('"current":"POLICY_LIBERALISM"', 1, true) ~= nil,
 	"repair telemetry did not include the per-slot readback context")
 
-realPrint("ok   policy deck partial apply is deferred, diagnosed, and repaired")
+-- A successful request is not a readback: the core still reports Communism.
+local government = { kind = "government", verb = "GOVERNMENT_DEMOCRACY" }
+local changed = { kind = "policy_deck", verb = desired:gsub("POLICY_NEW_DEAL", "POLICY_LIBERALISM") }
+ok, reason = applyOrder(player, 0, government, 102)
+assert(ok and host.government == 1, "fixture must leave the government request asynchronous")
+local before = #host.calls
+ok, reason = applyOrder(player, 0, changed, 102)
+assert(not ok and reason == "policy_government_pending", "deck must wait for government readback")
+assert(#host.calls == before and host.slots[5] == policyRows.POLICY_NEW_DEAL.Index,
+	"pending government must preserve the old deck without a clear transaction")
+ok, reason = applyOrder(player, 0, { kind = "policy", verb = "POLICY_LIBERALISM" }, 102)
+assert(not ok and reason == "policy_government_pending", "single-card path must also wait")
+local deferred = lastEvent("policy_deck_deferred")
+assert(deferred:find('"why":"government_change_pending"', 1, true), "record an attributable deferral")
+
+-- Simulate the core applying the government and moving typed slot indices.
+host.government = 2
+host.slotTypes = { 4, 2, 3, 1, 5, 6, 7, 8 }
+host.slots[1], host.slots[4] = host.slots[4], host.slots[1]
+ok, reason = applyOrder(player, 0, changed, 102)
+assert(ok and #host.calls == before + 1, "readback must release the same-turn deck")
+for slot, hash in pairs(host.calls[#host.calls].add) do
+	local slotType = slotRows[host.slotTypes[slot + 1]].GovernmentSlotType
+	for _, card in pairs(policyRows) do
+		if type(card) == "table" and card.Hash == hash then
+			assert(slotType == "SLOT_WILDCARD" or slotType == card.GovernmentSlotType,
+				"transaction must use the new native slot indices")
+		end
+	end
+end
+
+-- A request that never lands expires on the next fresh turn, not forever.
+ok = applyOrder(player, 0, { kind = "government", verb = "GOVERNMENT_COMMUNISM" }, 104)
+assert(ok)
+ok, reason = applyOrder(player, 0, order, 104)
+assert(not ok and reason == "policy_government_pending")
+ok, reason = applyOrder(player, 0, order, 105)
+assert(reason ~= "policy_government_pending", "unconfirmed old request must not poison a fresh turn")
+
+host.governmentReject = true
+ok, reason = applyOrder(player, 0, { kind = "government", verb = "GOVERNMENT_COMMUNISM" }, 106)
+assert(not ok and reason == "government_rejected", "explicit native rejection is not success")
+ok, reason = applyOrder(player, 0, changed, 106)
+assert(reason ~= "policy_government_pending", "rejected request must not create a pending transition")
+host.governmentReject = false
+host.governmentThrow = true
+ok, reason = applyOrder(player, 0, { kind = "government", verb = "GOVERNMENT_COMMUNISM" }, 107)
+assert(not ok and reason == "throw")
+host.governmentThrow = false
+host.governmentSync = true
+ok = applyOrder(player, 0, { kind = "government", verb = "GOVERNMENT_COMMUNISM" }, 108)
+assert(ok and host.government == 1)
+ok, reason = applyOrder(player, 0, changed, 108)
+assert(reason ~= "policy_government_pending", "synchronous native readback needs no artificial delay")
+
+realPrint("ok   policy repairs and government transitions preserve native slot ordering")

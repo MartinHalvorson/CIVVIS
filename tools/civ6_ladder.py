@@ -53,10 +53,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -425,18 +426,20 @@ def combat_totals(events_path: Path) -> dict | None:
             kind = event.get("kind")
             if kind == "seat" and isinstance(event.get("local_player"), int):
                 local_player = event["local_player"]
-            if kind in ("combat", "unit_lost", "city_occupation", "order_verified",
+            if kind in ("combat", "unit_lost", "city_lost", "city_occupation", "order_verified",
                         "order_failed", "host_move", "move_noop", "move_fallback"):
                 events.append(event)
             elif kind == "state":
                 # The first frame of each turn is the board a death turn began
-                # on (`civ6_tactics_ledger._states`); only our units' hit
-                # points are read from it, so the frame is kept slim.
+                # on. Preserve the treasury and visible threats used to
+                # classify roster disappearances as well as unit health.
                 units = event.get("units")
                 events.append({
                     "kind": "state",
                     "turn": event.get("turn"),
                     "frame": event.get("frame"),
+                    "gold": event.get("gold"),
+                    "hostiles": event.get("hostiles"),
                     "units": [
                         {key: unit.get(key) for key in ("id", "kind", "x", "y", "hp", "combat", "ranged")}
                         for unit in (units if isinstance(units, list) else [])
@@ -457,6 +460,7 @@ def combat_totals(events_path: Path) -> dict | None:
         "cities_taken": combat["cities_taken"],
         "cities_lost": combat["cities_lost"],
         "military_units_gone": roster["military_units_gone"],
+        "military_removal_context": roster["context_at_last_sight"],
         # How many of those the seat saw coming; see
         # `civ6_tactics_ledger.SALVAGEABLE_HP`.
         "lost_when_salvageable": roster["lost_when_salvageable"],
@@ -551,6 +555,418 @@ def _boost_counts(techs: list, civics: list, boosted_techs: set,
         "civics_inspired_share": (
             round(civics_inspired / len(adopted), 4) if adopted else None),
     }
+
+
+def _rival_tech_count(rival: dict) -> int | None:
+    """One rival's completed-tech count from a `state` frame, or None.
+
+    The host exports rivals two ways: `techs_researched` is the World Rankings
+    counter (what `victory_races` renders), `techs` the older loop count, and
+    either is `-1` when the host could not read the seat that frame. A list
+    is a name export and counts by length. Same preference order as
+    `civ6_mirror_check`: the authoritative counter first, the loop count only
+    when it is missing.
+    """
+    for key in ("techs_researched", "techs"):
+        value = rival.get(key)
+        if isinstance(value, list):
+            return len(value)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    return None
+
+
+def tech_marks(events_path: Path) -> dict | None:
+    """How many techs we and the best rival had completed at t100 and t150:
+    ``{100: {"techs": n, "rival_techs": m}, 150: {...}}``, a mark absent when
+    the run never reached it and a count None when that frame did not say.
+
+    ⭐ THE RESEARCH GAP, PER GAME. Every deep game the ledger has reviewed
+    ended 12–33 techs behind the leader (`docs/CIV6_LADDER.md`, the
+    forts-not-science finding), but the row carried only a final score, so
+    the gap could be read only by opening each run's `events.jsonl`. Two
+    marks are enough to see the pace and where it is lost, and they match
+    `boost_totals`' `at_t100` / `at_t150` so the two readings share a frame.
+
+    The reading is the FIRST `state` frame whose turn is >= the mark — the
+    opening board of that turn, before the seat acted (docs/LIVE_TACTICS.md
+    §8; a later frame of the same turn repeats the board with our own moves
+    on it). "At or after" rather than "exactly" because a frame can be
+    missing on the mark turn itself; a run stopped before the mark reads
+    nothing rather than its last board. Our count is the length of the
+    `techs` list, the rival's the maximum over rivals with a readable count
+    (`_rival_tech_count`), so an unreadable seat lowers the field rather than
+    turning it into -1.
+
+    `None` when no `state` frame carries a `techs` list — a mod predating the
+    state export, not an empire with no research.
+    """
+    marks: dict = {}
+    seen_state = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "state":
+                continue
+            if not isinstance(event.get("techs"), list):
+                continue
+            seen_state = True
+            turn = event.get("turn")
+            if not isinstance(turn, int):
+                continue
+            for mark in BOOST_MARK_TURNS:
+                if turn >= mark and mark not in marks:
+                    rivals = [_rival_tech_count(r)
+                              for r in event.get("rivals") or []
+                              if isinstance(r, dict)]
+                    known = [n for n in rivals if n is not None]
+                    marks[mark] = {
+                        "techs": sum(1 for t in event["techs"]
+                                     if isinstance(t, str)),
+                        "rival_techs": max(known) if known else None,
+                    }
+            if len(marks) == len(BOOST_MARK_TURNS):
+                break
+    return marks if seen_state else None
+
+
+def tech_mark_columns(summary: dict) -> dict:
+    """The four flat ledger columns from a summary's `tech_marks`.
+
+    Flat on the row rather than nested so a spreadsheet, `jq` or the markdown
+    can read them without knowing the shape; None for every mark a run never
+    reached or never recorded. `tech_marks` keys survive JSON as strings, so
+    both spellings are accepted.
+    """
+    marks = summary.get("tech_marks") or {}
+    columns = {}
+    for mark in BOOST_MARK_TURNS:
+        at = marks.get(mark) or marks.get(str(mark)) or {}
+        columns[f"techs_at_{mark}"] = at.get("techs")
+        columns[f"rival_techs_at_{mark}"] = at.get("rival_techs")
+    return columns
+
+
+def _readable_metric(value) -> int | None:
+    """One host metric as a count, or None when the host could not be asked.
+
+    The control mod wraps every accessor in `try(...)` and falls back to `-1`;
+    an older mod omits the key entirely and the mirror substitutes NaN. Both
+    mean "unknown", and both have to read as unknown rather than as zero --
+    a culture bar of zero says nobody can win, which is the opposite of
+    "nobody asked". Bools are rejected because `True` is an `int` in Python
+    and no host metric is a flag.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or value < 0:  # NaN, or the mod's -1 fallback
+        return None
+    return int(value)
+
+
+def _culture_race(ours: dict, rivals: list) -> dict:
+    """The culture victory's standings from one `state` frame.
+
+    Civilization VI's culture victory is won when a player's VISITING tourists
+    (`GetCulture():GetTouristsTo()`) clear the highest DOMESTIC tourist count
+    -- staycationers -- among everyone else. So each contender is measured
+    against a bar it does not itself set, exactly as the control mod computes
+    it for its congress ballots:
+
+        CivvisControlAgent.lua:18377-18388
+            local against = ourDom;
+            for _, other in ipairs(candidates) do
+              if other.id ~= c.id and (other.domestic or 0) > against then
+                against = other.domestic or 0;
+              end
+            end
+            local culture = (against > 0) and (100 * tourists / against) or 0;
+
+    Returned: our own two counters, the leading rival's visiting tourists, and
+    both sides' progress as a percentage of the bar each must clear. A value is
+    None when the frame could not say -- never zero, which would read as a race
+    nobody is running.
+    """
+    our_tourists = _readable_metric(ours.get("foreign_tourists"))
+    our_domestic = _readable_metric(ours.get("domestic_tourists"))
+    seats = [
+        (_readable_metric(rival.get("foreign_tourists")),
+         _readable_metric(rival.get("domestic_tourists")))
+        for rival in rivals
+        if isinstance(rival, dict)
+    ]
+    rival_domestics = [domestic for _, domestic in seats if domestic is not None]
+    rival_tourists = [tourists for tourists, _ in seats if tourists is not None]
+
+    def progress(tourists: int | None, bar: int | None) -> float | None:
+        if tourists is None or bar is None:
+            return None
+        if bar <= 0:
+            # The mod's own fallback: with no staycationers anywhere there is
+            # no bar to clear yet, so the race has not started.
+            return 0.0
+        return round(100 * tourists / bar, 2)
+
+    # The bar a rival must clear excludes only its OWN staycationers, so it is
+    # the best of ours and every other rival's.
+    rival_percents = []
+    for index, (tourists, _) in enumerate(seats):
+        if tourists is None:
+            continue
+        others = [domestic
+                  for other, (_, domestic) in enumerate(seats)
+                  if other != index and domestic is not None]
+        bar = max([value for value in (our_domestic, *others) if value is not None],
+                  default=None)
+        percent = progress(tourists, bar)
+        if percent is not None:
+            rival_percents.append(percent)
+
+    return {
+        # Ours: the tourists we have drawn, and the bar we set for every rival.
+        "tourists": our_tourists,
+        "domestic": our_domestic,
+        # Theirs: the strongest visiting-tourist count on the board, and the
+        # closest any rival stands to the culture victory.
+        "rival_tourists": max(rival_tourists) if rival_tourists else None,
+        "rival_percent": max(rival_percents) if rival_percents else None,
+        # Our own standing in the same race, against the best rival bar.
+        "percent": progress(
+            our_tourists,
+            max(rival_domestics) if rival_domestics else None),
+    }
+
+
+def culture_marks(events_path: Path) -> dict | None:
+    """The culture race at t100 and t150, the shape `tech_marks` uses.
+
+    ``{100: {"tourists": n, "domestic": n, "rival_tourists": n,
+    "rival_percent": p, "percent": p}, 150: {...}}``; a mark is absent when the
+    run never reached it.
+
+    ⭐ WHY THIS ROW EXISTS. The Emperor record's rival victories are majority
+    CULTURE and they land EARLY -- t155 at the earliest against t182+ for the
+    science rivals -- so the culture clock, not the tech clock, is what ends
+    most of these games first. Every number needed to see it coming already
+    crossed the bridge (`StateSnapshot::foreign_tourists`,
+    `StateRival::domestic_tourists`) and reached the mirror, and not one ladder
+    column carried any of it: the gap could be read only by reopening each
+    run's `events.jsonl`. Two marks are enough to see the pace, and they share
+    a frame with `tech_marks` and `boost_totals` so the three readings describe
+    the same board.
+
+    The reading is the FIRST `state` frame whose turn is >= the mark, matching
+    `tech_marks`: the opening board of that turn, before the seat acted.
+
+    `None` when no `state` frame carried our own `foreign_tourists` at all --
+    a mod predating that export, which is silence rather than an empire no
+    tourist ever visited.
+
+    ⚠⚠ IT MEASURES A PARTIAL FIELD, AND IN THE LENIENT DIRECTION. The control
+    mod seats `rivals` from `PlayerManager.GetAliveMajorIDs()` filtered by
+    `diplomacy:HasMet(otherId)` (`CivvisControlAgent.lua:7097-7099`), so an
+    unmet major is absent from the frame entirely. Both halves of the reading
+    are affected and both understate the danger: `rival_percent` cannot see a
+    leader we have not met, and the bar in its denominator is missing that
+    leader's staycationers, which makes the rivals we CAN see look closer than
+    they are only if the unmet one held the highest domestic count -- otherwise
+    the whole race reads quieter than it is.
+
+    This is the same limitation the abandon rule was found to have on its own
+    field, where the median run had met 3 of 5 rivals at t150 and one had met
+    just 1. The row already carries `met`, so a reading is auditable against
+    the size of the field it saw: a low `rival_culture_at_150` beside a low
+    `met` is not evidence of a quiet culture race.
+
+    There is no fix inside this reader -- the numbers for an unmet civ never
+    crossed the bridge, by design, because the mirror must not contain
+    knowledge the seat has not earned.
+    """
+    marks: dict = {}
+    seen_state = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "state":
+                continue
+            if "foreign_tourists" not in event:
+                continue
+            seen_state = True
+            turn = event.get("turn")
+            if not isinstance(turn, int):
+                continue
+            for mark in BOOST_MARK_TURNS:
+                if turn >= mark and mark not in marks:
+                    marks[mark] = _culture_race(
+                        event, event.get("rivals") or [])
+            if len(marks) == len(BOOST_MARK_TURNS):
+                break
+    return marks if seen_state else None
+
+
+def culture_mark_columns(summary: dict) -> dict:
+    """The four flat ledger columns from a summary's `culture_marks`.
+
+    The leading rival's share of the culture victory and the staycationer bar
+    we set against it, per mark: numerator and denominator of the race that
+    ends most of these games. Flat for the same reason `tech_mark_columns` is,
+    and both key spellings are accepted because JSON keys survive as strings.
+    """
+    marks = summary.get("culture_marks") or {}
+    columns = {}
+    for mark in BOOST_MARK_TURNS:
+        at = marks.get(mark) or marks.get(str(mark)) or {}
+        columns[f"rival_culture_at_{mark}"] = at.get("rival_percent")
+        columns[f"domestic_tourists_at_{mark}"] = at.get("domestic")
+    return columns
+
+
+#: The space race's four launches in order, spelled as the control mod exports
+#: a completed one in `science_projects` (`CivvisControlAgent.lua`, the
+#: `scienceProjects` loop: `PlayerStats:GetNumProjectsAdvanced(index) > 0`,
+#: the World Rankings science screen's own test). Base Civilization VI splits
+#: the Mars Colony into three parts; Gathering Storm replaces them with one
+#: `PROJECT_LAUNCH_MARS_BASE`. A stage is complete when EVERY spelling in its
+#: set has crossed, so the three-part Mars counts once and only when whole,
+#: and the Gathering Storm base counts on its own.
+SPACE_RACE_STAGES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("earth_satellite", frozenset({"PROJECT_LAUNCH_EARTH_SATELLITE"})),
+    ("moon_landing", frozenset({"PROJECT_LAUNCH_MOON_LANDING"})),
+    ("mars_colony", frozenset({"PROJECT_LAUNCH_MARS_BASE"})),
+    ("exoplanet_expedition",
+     frozenset({"PROJECT_LAUNCH_EXOPLANET_EXPEDITION"})),
+)
+#: The base-game Mars Colony: all three parts, or the expansion's single base.
+MARS_COLONY_PARTS = frozenset({
+    "PROJECT_LAUNCH_MARS_REACTOR",
+    "PROJECT_LAUNCH_MARS_HABITATION",
+    "PROJECT_LAUNCH_MARS_HYDROPONICS",
+})
+SPACEPORT = "DISTRICT_SPACEPORT"
+
+
+def _stages_completed(projects: list) -> set[str]:
+    """Which of the four launches a `science_projects` list says are done."""
+    done = {p for p in projects if isinstance(p, str)}
+    stages = set()
+    for name, spellings in SPACE_RACE_STAGES:
+        if spellings <= done or (name == "mars_colony"
+                                 and MARS_COLONY_PARTS <= done):
+            stages.add(name)
+    return stages
+
+
+def _has_spaceport(event: dict) -> bool:
+    """Whether any of our cities holds a FINISHED Spaceport on this board.
+
+    `cities[].districts[].type` is the plot's district type, which is set the
+    turn the district is placed; `complete` is `District:IsComplete()`. An
+    older export without `complete` is taken at its word.
+    """
+    for city in event.get("cities") or []:
+        if not isinstance(city, dict):
+            continue
+        for district in city.get("districts") or []:
+            if (isinstance(district, dict)
+                    and district.get("type") == SPACEPORT
+                    and district.get("complete") is not False):
+                return True
+    return False
+
+
+def launch_marks(events_path: Path) -> dict | None:
+    """The space race as of the LAST `state` frame: ``{"spaceport_turn": t,
+    "launches_completed": n, "last_launch_turn": t}``.
+
+    ⭐ WHY THIS ROW EXISTS. Emperor games that reach t200 build a Spaceport
+    and complete one to three of the four launches before a rival wins at
+    t213–228, and the row recorded nothing about it: a `rival victory` at
+    t226 with 470 score read the same whether the seat was two launches from
+    winning or had never laid the district. `science_projects` and every
+    city's district list already cross the bridge on every board
+    (`CivvisControlAgent.lua`, `scienceProjects`); this reads them and adds
+    no export.
+
+    Unlike `tech_marks` and `culture_marks`, which read a fixed turn, the
+    race is read to the END of the run -- the question is how far the seat
+    got, not where it stood at t150. `spaceport_turn` is the first frame
+    whose board carries a finished Spaceport; `launches_completed` the
+    number of the four stages done on the last board (Earth Satellite, Moon
+    Landing, Mars Colony, Exoplanet Expedition; the base game's three Mars
+    parts count as one stage once all three are done); `last_launch_turn`
+    the turn the most recent of those stages first appeared. Each turn None
+    when it never happened. A stage completes during a turn, so the first
+    board that shows it is the NEXT turn's opening frame: the turn recorded
+    is when the ledger could first see it.
+
+    `None` when no `state` frame carried a `science_projects` list -- a mod
+    predating that export, not an empire that never launched.
+    """
+    seen_state = False
+    spaceport_turn = None
+    first_seen: dict[str, int] = {}
+    completed: set[str] = set()
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "state":
+                continue
+            projects = event.get("science_projects")
+            if not isinstance(projects, list):
+                continue
+            seen_state = True
+            turn = event.get("turn")
+            if not isinstance(turn, int):
+                continue
+            if spaceport_turn is None and _has_spaceport(event):
+                spaceport_turn = turn
+            # The LAST board decides what counts; the first sighting of each
+            # stage dates it. A project cannot un-complete, so the last frame's
+            # set is the union of everything seen -- read from the frame anyway
+            # so a corrupt earlier line cannot inflate the count.
+            completed = _stages_completed(projects)
+            for stage in completed:
+                first_seen.setdefault(stage, turn)
+    if not seen_state:
+        return None
+    dated = [first_seen[s] for s in completed if s in first_seen]
+    return {
+        "spaceport_turn": spaceport_turn,
+        "launches_completed": len(completed),
+        "last_launch_turn": max(dated) if dated else None,
+    }
+
+
+LAUNCH_COLUMNS = ("spaceport_turn", "launches_completed", "last_launch_turn")
+
+
+def launch_mark_columns(summary: dict) -> dict:
+    """The three flat ledger columns from a summary's `launch_marks`.
+
+    Already flat in the summary; copied by name so a summary without the
+    reading (an older run, or a mod predating the export) yields None for
+    every column rather than a missing key, like `tech_mark_columns`.
+    """
+    marks = summary.get("launch_marks") or {}
+    return {column: marks.get(column) for column in LAUNCH_COLUMNS}
 
 
 def open_events(events_path: Path):
@@ -1080,6 +1496,11 @@ def victory_type(summary: dict) -> str | None:
 
 def entry_from(summary: dict) -> dict:
     return {
+        # Preserve the observations and full treatment identity after raw run
+        # pruning. A continuation's race remains explicitly segment-scoped.
+        **{key: summary[key] for key in ("race", "boosts", "game_id", "seat",
+                                       "genome_treatments", "max_turns",
+                                       "seed_probe", "seed_request") if key in summary},
         "tag": summary.get("tag"),
         "utc": summary.get("finished_utc") or datetime.now(timezone.utc)
             .strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1181,9 +1602,38 @@ def entry_from(summary: dict) -> dict:
         "city_two_turn": summary.get("city_two_turn"),
         "cities_at_60": summary.get("cities_at_60"),
         "rival_best": summary.get("rival_best"),
+        # ⚠ HOW MANY RIVALS THE ROW'S OTHER NUMBERS COULD SEE. The control mod
+        # seats `rivals` only from majors this seat has MET
+        # (`CivvisControlAgent.lua:7097-7099`), so `rival_best`,
+        # `rival_techs_at_*` and `rival_culture_at_*` are all readings of a
+        # partial field -- the abandon rule was measured taking the median run's
+        # 3 of 5 at t150, with one run seeing 1. The climb has written `met` on
+        # the summary since the beginning and no column carried it, so the size
+        # of the field a row saw could only be recovered from events.jsonl. A
+        # quiet rival number beside a low `met` is not evidence of a quiet race.
+        "met": summary.get("met"),
         "lead": (summary["last_score"] - summary["rival_best"]
                  if summary.get("last_score") is not None
                  and summary.get("rival_best") is not None else None),
+        # ⭐ THE RESEARCH GAP, PER GAME: `techs_at_100`, `rival_techs_at_100`,
+        # `techs_at_150`, `rival_techs_at_150`. The score lead above is the
+        # symptom; this is the cause the deep-game reviews kept finding (12–33
+        # techs behind the leader), on the row so a screen can read it without
+        # reopening events.jsonl. See `tech_marks`; None on a run that never
+        # reached the mark or whose mod predates the state export.
+        **tech_mark_columns(summary),
+        # ⭐ THE CULTURE CLOCK, PER GAME: `rival_culture_at_100`,
+        # `domestic_tourists_at_100` and the same pair at 150. The Emperor
+        # record's rival victories are majority culture and they arrive ~30
+        # turns before the science ones, so this is the clock that usually runs
+        # out first. See `culture_marks`.
+        **culture_mark_columns(summary),
+        # ⭐ THE SPACE RACE, PER GAME: `spaceport_turn`, `launches_completed`,
+        # `last_launch_turn`, read to the LAST board rather than a fixed mark.
+        # Emperor games that reach t200 lay a Spaceport and complete 1–3 of the
+        # four launches before a rival wins at t213–228; this is how far the
+        # seat got. See `launch_marks`.
+        **launch_mark_columns(summary),
     }
 
 
@@ -1337,6 +1787,12 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
         ledger = live_ledger_for(summary_path.parent.parent)
     summary = with_bridge_health(json.loads(summary_path.read_text()),
                                  summary_path)
+    from civ6_race_audit import event_path, game_key, race_totals
+    summary = dict(summary)
+    summary.setdefault("game_id", game_key(summary))
+    evidence = event_path(summary_path.parent)
+    if "race" not in summary and evidence is not None:
+        summary["race"] = race_totals(evidence)
     # Load INSIDE the lock. Reading first and locking second would reintroduce
     # exactly the lost update the lock exists to prevent.
     with ledger_lock(ledger):
@@ -1819,6 +2275,29 @@ def cell(value) -> str:
     return "—" if value is None or value == "" else str(value)
 
 
+def tech_cell(attempt: dict, mark: int = 150) -> str:
+    """`ours/rival` at the mark, either half `—` when unknown; `—` for neither."""
+    ours = attempt.get(f"techs_at_{mark}")
+    rival = attempt.get(f"rival_techs_at_{mark}")
+    if ours is None and rival is None:
+        return "—"
+    return f"{cell(ours)}/{cell(rival)}"
+
+
+def launch_cell(attempt: dict) -> str:
+    """`n/4` launches with the Spaceport and last-launch turns; `—` when the
+    run predates the export (`launches_completed` None)."""
+    done = attempt.get("launches_completed")
+    if done is None:
+        return "—"
+    text = f"{done}/{len(SPACE_RACE_STAGES)}"
+    if attempt.get("spaceport_turn") is not None:
+        text += f" port t{attempt['spaceport_turn']}"
+    if attempt.get("last_launch_turn") is not None:
+        text += f" last t{attempt['last_launch_turn']}"
+    return text
+
+
 def victory_board(state: dict) -> list[tuple[int, str | None, dict]]:
     """Every victory condition, and the date each was first beaten per rung.
 
@@ -1977,6 +2456,105 @@ def victory_census(attempts: list) -> list[tuple[int, str | None, int]]:
                   key=lambda row: (-row[2], row[0]))
 
 
+#: The `reason` buckets the attrition table counts; anything else is `other`.
+ATTRITION_REASONS = ("killed", "operator_retired", "abandoned", "stopped",
+                     "game exited", "timeout")
+ATTRITION_DAYS = 14
+
+
+def game_tag(tag: str | None) -> str:
+    """One GAME's tag, with any `-contN` continuation suffix removed.
+
+    A parked game is reloaded from its autosave under `<tag>-contN` and played
+    on, and each segment writes its own ledger row. The segments are one game:
+    the arm a live screen dealt belongs to it (`civ6_civvis_climb.screen_stem`
+    strips the same suffix for exactly that reason), and so does its ending.
+    """
+    return re.sub(r"-cont\d+$", "", tag or "")
+
+
+def _continuation_index(tag: str | None) -> int:
+    """Which segment of its game a tag is: 0 for the first, N for `-contN`."""
+    found = re.search(r"-cont(\d+)$", tag or "")
+    return int(found.group(1)) if found else 0
+
+
+def games_from_attempts(attempts: list) -> list[list[dict]]:
+    """The attempt rows grouped into games, each game's segments in order.
+
+    Games are ordered by their final segment's `utc` so the caller can read
+    them chronologically; a group whose rows carry no `utc` sorts first.
+    """
+    groups: dict[str, list[dict]] = {}
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        groups.setdefault(game_tag(attempt.get("tag")), []).append(attempt)
+    games = [sorted(rows, key=lambda row: _continuation_index(row.get("tag")))
+             for rows in groups.values()]
+    return sorted(games, key=lambda rows: rows[-1].get("utc") or "")
+
+
+def attrition_census(attempts: list, days: int = ATTRITION_DAYS
+                     ) -> list[tuple[str, dict]]:
+    """How the harness ended GAMES, per UTC day, over the newest `days` days:
+    ``[(day, {reason: count, ..., "other": n, "won": n, "restarts": n}), ...]``
+    oldest first.
+
+    ⭐ THE HARNESS DECIDES FAR LESS OF THE RECORD THAN THIS TABLE USED TO SAY,
+    AND THE TABLE WAS THE REASON NOBODY KNEW. It counted attempt ROWS, and a
+    parked game reloaded from its autosave writes one row per segment: the
+    parked segment ends `killed`, then `<tag>-cont1` plays on and ends however
+    the game really ended. Measured over the committed ledger's 911 rows:
+
+        killed rows        119
+        killed GAMES        31   — 88 of the 119, 74%, were restarts
+
+    So `killed` was the second-largest bucket in a table read as "the harness
+    ended most of these games", and per game it is the fifth: 408 `stopped`,
+    242 `abandoned`, 66 `game exited`, 39 `operator_retired`, 31 `killed` over
+    831 games. A measurement saying the harness ruins the record has to be the
+    measurement's fault first.
+
+    Each game is counted once, under its FINAL segment's reason and day —
+    the row that says how the game actually ended. The restarts are real
+    harness cost and stay visible in their own column rather than being folded
+    into an ending they did not produce.
+
+    `won` is carried beside the buckets because a won game also ends
+    `stopped`, and a day of stops is either a bad day or a good one.
+
+    The window is anchored on the NEWEST game's day, not the clock: the
+    markdown is regenerated by a test that requires byte equality with the
+    committed copy, and a wall-clock window would make that test go stale
+    overnight with no change to the record.
+    """
+    games = games_from_attempts(attempts)
+    dated = [(rows[-1].get("utc") or "", rows) for rows in games]
+    days_seen = sorted({utc[:10] for utc, _ in dated if len(utc) >= 10})
+    if not days_seen:
+        return []
+    newest = datetime.strptime(days_seen[-1], "%Y-%m-%d")
+    since = (newest - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    table: dict[str, dict] = {}
+    for utc, rows in dated:
+        day = utc[:10]
+        if len(day) < 10 or day < since:
+            continue
+        row = table.setdefault(
+            day, {reason: 0 for reason in ATTRITION_REASONS}
+            | {"other": 0, "won": 0, "restarts": 0})
+        ending = rows[-1]
+        reason = ending.get("reason")
+        row[reason if reason in ATTRITION_REASONS else "other"] += 1
+        row["restarts"] += len(rows) - 1
+        # A win is the game's, not a segment's: a game resumed and then won
+        # counts once, and a segment that ended parked never claims one.
+        if any(segment.get("won") for segment in rows):
+            row["won"] += 1
+    return sorted(table.items())
+
+
 def markdown_for(state: dict) -> str:
     wins = state["wins"]
     attempts = state["attempts"]
@@ -2064,13 +2642,53 @@ def markdown_for(state: dict) -> str:
                   + "; the rest stalled, exited, or were stopped before one.",
                   ""]
 
+    attrition = attrition_census(attempts)
+    if attrition:
+        lines += [
+            f"## How the harness ended games, per day (last {ATTRITION_DAYS} days)",
+            "",
+            "GAMES by the recorded `reason` of the row that ended them, per UTC",
+            "day, over the fourteen days ending on the newest game. `killed` is",
+            "the wedge watchdog or the supervisor stopping a parked game;",
+            "`operator_retired` a human ending it; `abandoned` the harness's own",
+            "early-stop policy; `stopped` the game reaching its end — a win ends",
+            "`stopped` too, so `won` is carried beside it. When the first two",
+            "columns carry most of a day, the harness decided the record, not",
+            "the game.",
+            "",
+            "⚠ ONE GAME IS ONE ROW HERE, WHICH IT WAS NOT BEFORE. A parked game",
+            "reloaded from its autosave writes a ledger row per segment: the",
+            "parked segment ends `killed`, then `<tag>-cont1` plays on and ends",
+            "however the game really ended. Counting rows put every restart in",
+            "the `killed` column — 119 rows against 31 games on the committed",
+            "ledger, 74% of them restarts — and made this table read as though",
+            "the harness ended most of the record when per game it is the",
+            "smallest ending of the five. The restarts are real harness cost, so",
+            "they keep their own column instead of being folded into an ending",
+            "they did not produce.",
+            "",
+            "| day | " + " | ".join(ATTRITION_REASONS)
+            + " | other | games | restarts | won |",
+            "|---|" + "---|" * (len(ATTRITION_REASONS) + 4),
+        ]
+        for day, counts in attrition:
+            total = sum(counts[reason] for reason in ATTRITION_REASONS) + counts["other"]
+            lines.append(
+                f"| {day} | "
+                + " | ".join(str(counts[reason]) for reason in ATTRITION_REASONS)
+                + f" | {counts['other']} | {total} | {counts['restarts']}"
+                f" | {counts['won']} |")
+        lines.append("")
+
     if attempts:
         lines += [
             "## Every attempt",
             "",
             "`outcome` is what the game did, not what the harness saw last.",
             "`defeat` means this controller was eliminated and the game said so;",
-            "`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;",
+            "`rival victory` means another team completed a victory condition.",
+            "Without a recorded victory or elimination, `stopped`, `stalled` and",
+            "`timeout` describe how the harness ended the run, not a game outcome;",
             "`abandoned` means the harness stopped under a recorded early-stop",
             "policy: either five turns below a measured expected-win floor, or",
             "five post-turn-100 turns below the configured leader score ratio",
@@ -2080,8 +2698,24 @@ def markdown_for(state: dict) -> str:
             "compare anything, and until `defeat` existed here the two were the",
             "same row.",
             "",
-            "| run | difficulty | playing for | configured | outcome | turns | score | ended |",
-            "|---|---|---|---|---|---|---|---|",
+            "`techs@150` is our completed-tech count against the best rival's at",
+            "the first board of turn 150 (`tech_marks`); `—` when the run never",
+            "reached it or predates the state export.",
+            "",
+            "`launches` is the space race as of the run's LAST board",
+            "(`launch_marks`): launches completed out of four (Earth Satellite,",
+            "Moon Landing, Mars Colony, Exoplanet Expedition), then the turn the",
+            "first finished Spaceport appeared (`port`) and the turn the latest",
+            "launch first showed (`last`), each omitted when it never happened;",
+            "`—` when the run predates the `science_projects` export. Emperor",
+            "games that reach t200 lay a Spaceport and complete one to three",
+            "launches before a rival wins at t213–228, and until this column",
+            "the row could not tell that seat from one that never left the",
+            "ground.",
+            "",
+            "| run | difficulty | playing for | configured | outcome | turns | score "
+            "| techs@150 (ours/rival) | launches | ended |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
         # ⚠ THE NEWEST FORTY BY THE CLOCK, NOT THE LAST FORTY APPENDED. The
         # published record interleaves two live seats and is topped up by
@@ -2091,6 +2725,8 @@ def markdown_for(state: dict) -> str:
         for a in sorted(attempts, key=lambda row: row.get("utc") or "")[-40:]:
             outcome = ("win" if a["won"]
                        else "defeat" if a.get("defeat")
+                       else "rival victory" if a.get("victory") is not None
+                            and a.get("won") is False
                        else cell(a.get("reason")))
             difficulty = NAMES.get(a.get("difficulty"), a.get("difficulty"))
             lines.append(
@@ -2098,6 +2734,8 @@ def markdown_for(state: dict) -> str:
                 f"| {cell(a.get('victory_target'))} "
                 f"| {'yes' if a['configured'] else 'NO'} | {outcome} "
                 f"| {cell(a.get('turns'))} | {cell(a.get('score'))} "
+                f"| {tech_cell(a)} "
+                f"| {launch_cell(a)} "
                 f"| {cell(a.get('utc'))} |")
         lines.append("")
     return "\n".join(lines)

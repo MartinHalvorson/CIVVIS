@@ -312,6 +312,8 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
+mod movement_risk;
+mod scout_first;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
@@ -372,17 +374,6 @@ const HOST_SETTLER_MIN_POP: f64 = 2.0;
 /// grab's `pick_item` window closes this far before the turn limit instead of
 /// at the genome's `settler_stop_turn`. See `BasicAi::land_grab`.
 const LAND_GRAB_SETTLE_HORIZON: u32 = 18;
-
-/// The rapid-expansion gene keeps this many Settlers in the shared pipeline
-/// before the empire's city count starts widening it further. Three walkers
-/// lets the first city seed the t25/t50 expansion wave without turning the
-/// target itself into an unbounded production order.
-pub(crate) const RAPID_EXPANSION_PIPELINE_BASE: usize = 3;
-
-/// Every two founded cities add one rapid-expansion pipeline seat. The
-/// ordinary land grab widens every three cities; this gene opens the next wave
-/// one city sooner so nearby safe sites are claimed before rivals take them.
-pub(crate) const RAPID_EXPANSION_PIPELINE_CITY_DIVISOR: usize = 2;
 
 /// One coordinated force as an observer sees it: what it is, where it is
 /// going, and how ready it is to fight when it gets there.
@@ -2062,6 +2053,59 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 /// without converting it to a second shared slice allocation.
 type CoveredTiles = (std::sync::Arc<AttackEnvelopes>, std::sync::Arc<Vec<Pos>>);
 
+/// The three route priorities used by a recovering unit. They are immutable
+/// while a board and hostile-envelope table are unchanged, so frontier clones
+/// can share one full-map scan instead of repeating it per unit.
+#[derive(Debug, PartialEq, Eq)]
+struct SafeHealingTargets {
+    cities: HashSet<Pos>,
+    friendly_tiles: HashSet<Pos>,
+    neutral_tiles: HashSet<Pos>,
+}
+
+/// A cache slot that a clone does NOT inherit.
+///
+/// ⚠⚠ Every other `Arc<Mutex<..>>` cache on `BasicAi` is keyed by CONTENT --
+/// `covered_tiles_cache` by the envelope `Arc`'s identity, `envelope_board` by
+/// `attack_envelope_fingerprint` -- so sharing it with a cloned AI is safe. The
+/// safe-healing entry is keyed by `Game`'s monotonic COUNTERS, which answer "did
+/// this board change since I looked" and cannot answer "are these two boards the
+/// same": two siblings that each took one write carry the same counter
+/// (`sibling_clones_share_a_healing_stamp_so_the_cache_may_not_cross_boards`
+/// pins exactly that). Resetting on clone keeps the counter key sound, and costs
+/// only the first scan on a branched board.
+struct FreshOnClone<T>(std::sync::Mutex<Option<T>>);
+
+// Derived `Default` would demand `T: Default`, which a cache entry has no
+// meaningful empty value for; the slot's empty value is `None`.
+impl<T> Default for FreshOnClone<T> {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl<T> Clone for FreshOnClone<T> {
+    fn clone(&self) -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl<T> FreshOnClone<T> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<T>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// A safe-healing scan together with every input that selects its tiles.
+struct SafeHealingTargetCache {
+    pid: usize,
+    stamp: (u64, u64, u64, u64),
+    envelopes: std::sync::Arc<AttackEnvelopes>,
+    targets: std::sync::Arc<SafeHealingTargets>,
+}
+
 /// One enemy's envelope, with the key that says when it may be reused.
 ///
 /// ★★★★★ THE BOARD KEY IS TOO COARSE AND THAT IS MOST OF THE COST. The
@@ -2267,7 +2311,8 @@ pub struct BasicAi {
     /// entry fee is paid and the winnings are discarded. This flag closes the
     /// reservation too, so the empire never opens the tab.
     ///
-    /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race`.
+    /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race-2`
+    /// and by `religion-race-is-closed`.
     pub(crate) skip_prophet_race: bool,
     /// Open the Great Prophet race on purpose: while this is set, the empire's
     /// FIRST Holy Site outranks every lane district in `pick_item`, so the
@@ -2277,7 +2322,7 @@ pub struct BasicAi {
     /// below is unchanged: a second Holy Site waits for a religion.
     ///
     /// Set per turn from `AdvancedAi::take_turn_inner` by the gene
-    /// `enter-the-prophet-race`, and only while `prophet_race_open_for` holds.
+    /// `enter-the-prophet-race-2`, and only while `prophet_race_open_for` holds.
     pub(crate) enter_prophet_race: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
@@ -2656,6 +2701,10 @@ pub struct BasicAi {
     /// Every tile any hostile envelope covers, unioned once and kept against
     /// the exact envelope table it was built from. See [`Self::covered_tiles`].
     covered_tiles_cache: std::sync::Arc<std::sync::Mutex<Option<CoveredTiles>>>,
+    /// Safe recovery destinations, reused across this seat's own recovering
+    /// units while the board state and hostile-envelope table stay identical.
+    /// NOT inherited by a cloned AI -- see `FreshOnClone`.
+    safe_healing_targets_cache: FreshOnClone<SafeHealingTargetCache>,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -2975,6 +3024,8 @@ pub struct BasicAi {
     /// lives here because `projected_counter_damage` does. Opt-in gene
     /// `defend-where-you-stand`; see `advanced/engine_pricing.rs`.
     pub(crate) defend_where_you_stand: bool,
+    /// Frozen historical movement; false for every current controller.
+    pub(crate) legacy_movement: bool,
     /// ★ THE BARBARIANS HUNT THE RELIGIOUS CORPS TOO. A Missionary beside a
     /// city it is converting stands still for three turns at zero movement,
     /// and in Civilization VI a raider that reaches it condemns it. Here the
@@ -3097,20 +3148,10 @@ pub struct BasicAi {
     /// constructors and the frozen anchor keep the one-at-a-time gate and the
     /// gene. See `pick_item` and `AdvancedAi::land_grab`.
     pub(crate) land_grab: bool,
-    /// The native rapid-city-expansion gene's half of the baseline governor.
-    ///
-    /// It is deliberately distinct from `land_grab`: that bridge-only policy
-    /// prices an unconstrained Firaxis board, while this screenable native gene
-    /// drives a settler-first opening, a faster shared pipeline, the legal
-    /// population floor, the founding pantheon, and the same late settlement
-    /// horizon. `AdvancedAi` owns the target and the safe-site-to-conquest
-    /// handoff; this flag keeps the governor that actually queues Settlers in
-    /// step with it.
-    pub(crate) rapid_city_expansion: bool,
     /// The baseline-governor half of `rapid-city-expansion-2`.
     ///
-    /// Unlike version one, this never rewrites the opening book, pantheon, or
-    /// site ranking. It reserves the capital's next empty production choice,
+    /// Unlike the culled version one, this never rewrites the opening book,
+    /// pantheon, or site ranking. It reserves the capital's next empty production choice,
     /// uses the measured opening-band pipeline, and keeps the legal
     /// population and payback gates in step with the strategic controller.
     pub(crate) rapid_city_expansion_2: bool,
@@ -3121,6 +3162,8 @@ pub struct BasicAi {
     /// emergency choices remain authoritative. Set through
     /// `AdvancedAi::enable_capital_settler_after_completion`.
     pub(crate) capital_settler_after_completion: bool,
+    /// Independent first-slot exploration experiment.
+    pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -4939,6 +4982,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -4957,6 +5001,7 @@ impl BasicAi {
             contested_land_first: false,
             exchange_is_the_engines: false,
             defend_where_you_stand: false,
+            legacy_movement: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -4982,9 +5027,9 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
-            rapid_city_expansion: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -5020,20 +5065,8 @@ impl BasicAi {
         self.land_grab = true;
     }
 
-    /// Enable the baseline half of the native rapid-city-expansion gene.
-    pub(crate) fn enable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion_2 = false;
-        self.rapid_city_expansion = true;
-    }
-
-    /// Disable the baseline half of the native rapid-city-expansion gene.
-    pub(crate) fn disable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion = false;
-    }
-
     /// Enable the baseline half of the selective rapid-expansion rewrite.
     pub(crate) fn enable_rapid_city_expansion_2(&mut self) {
-        self.rapid_city_expansion = false;
         self.rapid_city_expansion_2 = true;
     }
 
@@ -5403,6 +5436,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -5421,6 +5455,7 @@ impl BasicAi {
             contested_land_first: false,
             exchange_is_the_engines: false,
             defend_where_you_stand: false,
+            legacy_movement: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -5446,9 +5481,9 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
-            rapid_city_expansion: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -6198,9 +6233,10 @@ impl BasicAi {
         position: Pos,
         envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> bool {
-        envelopes
-            .iter()
-            .any(|(enemy_id, reach)| reach.contains(&position) && g.units.contains_key(enemy_id))
+        Self::movement_hazard_damage(g, pid, position) > 0.0
+            || envelopes.iter().any(|(enemy_id, reach)| {
+                reach.contains(&position) && g.units.contains_key(enemy_id)
+            })
             || g.cities
                 .values()
                 .any(|city| Self::city_centre_strikes(g, pid, city, position))
@@ -6239,15 +6275,20 @@ impl BasicAi {
         // or Encampment damage that district, not the formation stationed in
         // it. That makes a friendly city a genuine safe refuge even while the
         // enemy can still bombard its walls.
+        let hazard = IncomingDamage::default().with(Self::movement_hazard_damage(g, pid, position));
         let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
         if garrisoned {
-            return IncomingDamage::default();
+            return hazard;
         }
         if !Self::anything_can_reach(g, pid, position, envelopes) {
             return IncomingDamage::default();
         }
         let mut defender = unit.clone();
         defender.pos = position;
+        if position != unit.pos {
+            defender.fortified = false;
+            defender.fortify_turns = 0;
+        }
         let defense = effective_strength(
             g.unit_strength(&defender, true) + g.tile_defense_bonus(position),
             defender.hp,
@@ -6300,7 +6341,10 @@ impl BasicAi {
                 })
                 .fold(IncomingDamage::default(), IncomingDamage::with)
         };
-        unit_damage.merge(city_damage).merge(encampment_damage)
+        unit_damage
+            .merge(city_damage)
+            .merge(encampment_damage)
+            .merge(hazard)
     }
 
     /// The largest single blow anything the controller can see would land on
@@ -6433,29 +6477,36 @@ impl BasicAi {
             .collect()
     }
 
-    fn safe_healing_step(
+    /// Every route target [`Self::safe_healing_step`] would select before it
+    /// asks the moving unit for a path.
+    ///
+    /// ★★★★ THE KEY COVERS EVERY READ, NOT JUST THE OBVIOUS MAP. The exact
+    /// hostile-envelope `Arc` protects coverage, while
+    /// `Game::healing_target_stamp` changes for every map, city, player, or
+    /// diplomacy input used below. The cache entry retains that `Arc`, so
+    /// pointer identity cannot be recycled under a live entry. This is one
+    /// immutable full-map scan per shared frontier board rather than one per
+    /// recovering unit.
+    fn safe_healing_targets(
         &self,
         g: &Game,
         pid: usize,
-        uid: u32,
         envelopes: &std::sync::Arc<AttackEnvelopes>,
-    ) -> Option<Pos> {
-        // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
-        // and it used to price every tile with `evacuation_tile` — a defender
-        // strength, every covering enemy's attack strength, and a scan of
-        // every hostile city with `is_at_war` per city — 3,404 times per unit
-        // on a 74×46 map. That was half the simulator after #2059. The scan
-        // only keeps a tile whose incoming damage is exactly zero, and
-        // `evacuation_incoming_damage` is zero precisely when the tile is a
-        // garrison district or lies outside every enemy envelope AND out of
-        // strike range of every hostile walled city and encampment (each
-        // covering source contributes at least the clamp's floor of one).
-        // So the safety test is a set lookup, computed once, and the tile
-        // loop pays only for its heal-rate read — under a query-memo scope, so
-        // `suzerain_of` is answered once per minor, not once per tile.
-        let _memo = g.query_memo();
+    ) -> std::sync::Arc<SafeHealingTargets> {
+        let stamp = g.healing_target_stamp();
+        let slot = self.safe_healing_targets_cache.lock();
+        if let Some(cached) = slot.as_ref() {
+            if cached.pid == pid
+                && cached.stamp == stamp
+                && std::sync::Arc::ptr_eq(&cached.envelopes, envelopes)
+            {
+                return std::sync::Arc::clone(&cached.targets);
+            }
+        }
+        drop(slot);
+
         let covered = self.covered_tiles(envelopes);
-        let strike_sources: Vec<Pos> = Self::district_strike_sources(g, pid);
+        let strike_sources = Self::district_strike_sources(g, pid);
         let struck = |position: Pos| {
             strike_sources.iter().any(|source| {
                 g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position)
@@ -6493,9 +6544,46 @@ impl BasicAi {
                 neutral_tiles.insert(position);
             }
         }
-        g.route_step_to_any(uid, &cities)
-            .or_else(|| g.route_step_to_any(uid, &friendly_tiles))
-            .or_else(|| g.route_step_to_any(uid, &neutral_tiles))
+        let targets = std::sync::Arc::new(SafeHealingTargets {
+            cities,
+            friendly_tiles,
+            neutral_tiles,
+        });
+        let mut slot = self.safe_healing_targets_cache.lock();
+        *slot = Some(SafeHealingTargetCache {
+            pid,
+            stamp,
+            envelopes: std::sync::Arc::clone(envelopes),
+            targets: std::sync::Arc::clone(&targets),
+        });
+        targets
+    }
+
+    fn safe_healing_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        envelopes: &std::sync::Arc<AttackEnvelopes>,
+    ) -> Option<Pos> {
+        // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
+        // and it used to price every tile with `evacuation_tile` — a defender
+        // strength, every covering enemy's attack strength, and a scan of
+        // every hostile city with `is_at_war` per city — 3,404 times per unit
+        // on a 74×46 map. That was half the simulator after #2059. The scan
+        // only keeps a tile whose incoming damage is exactly zero, and
+        // `evacuation_incoming_damage` is zero precisely when the tile is a
+        // garrison district or lies outside every enemy envelope AND out of
+        // strike range of every hostile walled city and encampment (each
+        // covering source contributes at least the clamp's floor of one).
+        // So the safety test is a set lookup, computed once, and the tile
+        // loop pays only for its heal-rate read — under a query-memo scope, so
+        // `suzerain_of` is answered once per minor, not once per tile.
+        let _memo = g.query_memo();
+        let targets = self.safe_healing_targets(g, pid, envelopes);
+        g.route_step_to_any(uid, &targets.cities)
+            .or_else(|| g.route_step_to_any(uid, &targets.friendly_tiles))
+            .or_else(|| g.route_step_to_any(uid, &targets.neutral_tiles))
             .filter(|next| g.can_move(uid, *next))
     }
 
@@ -7816,7 +7904,7 @@ impl BasicAi {
             // free Settler in the capital and Fertility Rites a free Builder,
             // and Divine Spark — the shipped first choice, taken in 40 of 40
             // recorded live runs — pays nothing until a district stands.
-            let prefix: &[&str] = if self.expansion_pantheon || self.rapid_city_expansion {
+            let prefix: &[&str] = if self.expansion_pantheon {
                 &[
                     "religious_settlements",
                     "fertility_rites",
@@ -9233,6 +9321,11 @@ impl BasicAi {
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
+            // Reserve the first slot before population-two Settler genes can
+            // claim it. Successful production consumes exactly one book slot.
+            if self.play_scout_first_opening(g, pid, *cid) {
+                continue;
+            }
             // The normal production picker sits after the scripted opening
             // book. Let `capital-settler-after-completion` reserve the first
             // newly empty capital queue once it reaches population two,
@@ -9339,10 +9432,7 @@ impl BasicAi {
                     // fifth build. Frozen controllers retain their genes.
                     let missing_opening_recon =
                         self.book_pos == 0 && self.recon_is_the_missing_arm(g, pid);
-                    let rapid_opening_settler = self.rapid_city_expansion && self.book_pos == 0;
-                    let gene = if rapid_opening_settler {
-                        3.0 // OPENING_MENU[3] is Settler.
-                    } else if missing_opening_recon {
+                    let gene = if missing_opening_recon {
                         0.0 // OPENING_MENU[0] is Scout.
                     } else {
                         [self.w.open0, self.w.open1, self.w.open2, self.w.open3][self.book_pos]
@@ -9353,16 +9443,6 @@ impl BasicAi {
                         continue; // "pass" gene: fall back to evaluation
                     }
                     let name = OPENING_MENU[i];
-                    // The rapid gene's opening is one committed Settler, not
-                    // four book slots spent on a Warrior, Builder, and
-                    // Monument before the capital can start city two. If
-                    // population one refuses it, the pending-book path starts
-                    // it the instant the legal population floor is reached;
-                    // ending the book prevents a duplicate scripted Settler
-                    // from serialising the same opening.
-                    if rapid_opening_settler {
-                        self.book_pos = 4;
-                    }
                     if name == "settler" && !self.has_practical_settle_site(g, pid) {
                         continue;
                     }
@@ -9371,7 +9451,7 @@ impl BasicAi {
                     // the next slot plays now, and the Settler takes the queue
                     // the turn the city grows.
                     if name == "settler"
-                        && (self.opening_settler_waits || self.rapid_city_expansion)
+                        && self.opening_settler_waits
                         && (g.cities[cid].pop as f64) < HOST_SETTLER_MIN_POP
                     {
                         self.book_settler_pending = true;
@@ -10850,13 +10930,41 @@ impl BasicAi {
                         "lagrange_laser_station" | "terrestrial_laser_station"
                     )
             })
-            .map(|(project, _)| Item::Project { project: *project })
-            .filter(|item| g.can_produce(pid, cid, item))
-            .min_by(|left, right| {
-                g.item_cost_for_city(pid, cid, left)
-                    .total_cmp(&g.item_cost_for_city(pid, cid, right))
-                    .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
+            .filter_map(|(project, spec)| {
+                let item = Item::Project { project: *project };
+                if !g.can_produce(pid, cid, &item) {
+                    return None;
+                }
+                // These yields accrue each turn as a percentage of Production,
+                // not only on completion. A cheap loyalty project cannot repair
+                // a deficit, and must not win an alphabetical tie over research.
+                let gold = spec.ongoing_yields.get("gold").copied().unwrap_or(0.0);
+                let output = spec
+                    .ongoing_yields
+                    .iter()
+                    .map(|(yield_type, value)| {
+                        let weight = match yield_type.as_str() {
+                            "production" => 5.0,
+                            "food" | "gold" => 3.0,
+                            "science" | "culture" => 2.0,
+                            _ => 1.0,
+                        };
+                        value.max(0.0) * weight
+                    })
+                    .sum::<f64>();
+                let cost = g.item_cost_for_city(pid, cid, &item);
+                let points = spec.completion_gpp.values().sum::<f64>() / cost.max(1.0);
+                Some((gold, output, points, cost, *project, item))
             })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.total_cmp(&right.1))
+                    .then_with(|| left.2.total_cmp(&right.2))
+                    .then_with(|| right.3.total_cmp(&left.3))
+                    .then_with(|| right.4.cmp(&left.4))
+            })
+            .map(|(_, _, _, _, _, item)| item)
     }
 
     fn minor_district_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
@@ -11732,10 +11840,7 @@ impl BasicAi {
             // same width for the strategic governor.
             let seats_short =
                 (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
-            let pipeline = if self.rapid_city_expansion && seats_short > 0 {
-                (RAPID_EXPANSION_PIPELINE_BASE + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
-                    .min(seats_short)
-            } else if self.rapid_city_expansion_2 && seats_short > 0 {
+            let pipeline = if self.rapid_city_expansion_2 && seats_short > 0 {
                 advanced::rapid_city_expansion::pipeline_width(
                     g,
                     n_cities + seats_short,
@@ -11772,10 +11877,7 @@ impl BasicAi {
             // Civilization VI starts a Settler at population 2, and the live
             // genome's 2.456 held a food-poor capital at one city for forty
             // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop
-                || self.rapid_city_expansion
-                || self.rapid_city_expansion_2
-            {
+            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion_2 {
                 self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
             } else {
                 self.w.settler_min_pop
@@ -11784,7 +11886,7 @@ impl BasicAi {
             // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
             // REPAY, not until the genome's turn. See `land_grab`.
             let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || ((self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
+                || ((self.land_grab || self.rapid_city_expansion_2)
                     && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
@@ -11972,7 +12074,7 @@ impl BasicAi {
                 *weight *= 1.0 - depth * (have / total);
             }
         }
-        // `enter-the-prophet-race`: the empire's first Holy Site goes to the
+        // `enter-the-prophet-race-2`: the empire's first Holy Site goes to the
         // front while the race is open. The reservation below still limits
         // the empire to one site before a religion exists, and the unlock
         // check still waits for Astrology.
@@ -12000,7 +12102,7 @@ impl BasicAi {
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         for (family, _) in dpri {
             if family == "holy_site" && g.players[pid].religion.is_none() {
-                // `skip-the-prophet-race`: never open the tab. See the flag's
+                // `skip-the-prophet-race-2`: never open the tab. See the flag's
                 // doc comment — gating the prize without gating this costs
                 // strictly more than either pure choice.
                 if self.skip_prophet_race {
@@ -12589,7 +12691,6 @@ impl BasicAi {
         }
         let upos = g.units[&uid].pos;
         let u = &g.units[&uid];
-        let my_def = effective_strength(g.unit_strength(u, true), u.hp);
         let prefer_dry = self.come_ashore && g.rules.units[u.kind].domain.as_deref() != Some("sea");
         let doctrine = Self::unit_doctrine(g, uid);
         let (preferred_range, progress, threat_caution) = match doctrine {
@@ -12615,6 +12716,8 @@ impl BasicAi {
         } else {
             Vec::new()
         };
+        let movement_risk =
+            (!self.legacy_movement).then(|| self.movement_risk_frame(g, pid, uid, target));
         let score = |g: &Game, tile: Pos| -> f64 {
             let depth_error = (g.wdist(tile, target) - preferred_range).abs();
             let mut s = -3.0 * progress * depth_error as f64;
@@ -12627,12 +12730,13 @@ impl BasicAi {
                     }
                     if o.owner == pid && *oid != uid {
                         adjacent_support += 1;
-                    } else if enemy_ids.contains(&o.owner) {
-                        let att = effective_strength(g.unit_strength(o, false), o.hp);
+                    } else if self.legacy_movement && enemy_ids.contains(&o.owner) {
+                        let attack = effective_strength(g.unit_strength(o, false), o.hp);
+                        let defense = effective_strength(g.unit_strength(u, true), u.hp);
                         s -= self.w.mv_threat
                             * threat_caution
                             * 30.0
-                            * ((att - my_def) / 25.0).exp();
+                            * ((attack - defense) / 25.0).exp();
                     }
                 }
             }
@@ -12641,6 +12745,9 @@ impl BasicAi {
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
+            if let Some(risk) = &movement_risk {
+                s += risk.score(g, pid, uid, tile, self.w.mv_threat * threat_caution);
+            }
             // ⭐ The score above has no terrain term at all, and open water is
             // doubly attractive because of it: a sea tile is usually the
             // geometrically shorter road to an objective across a bay, AND it
@@ -12953,6 +13060,9 @@ impl BasicAi {
     /// movement points the generic mover enters it and immediately routes
     /// back out, repeating the same round trip every turn.
     fn settler_step_toward(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
+        if let Some(acted) = self.risk_aware_route_step(g, pid, uid, target, 0) {
+            return acted;
+        }
         if let Some(next) = g
             .route_step(uid, target, 0)
             .filter(|next| g.can_move(uid, *next))
@@ -12974,6 +13084,9 @@ impl BasicAi {
         target: Pos,
         stop_range: i32,
     ) -> bool {
+        if let Some(acted) = self.risk_aware_route_step(g, pid, uid, target, stop_range) {
+            return acted;
+        }
         let cur = g.units[&uid].pos;
         if g.wdist(cur, target) <= stop_range {
             return false;
@@ -13227,23 +13340,7 @@ impl BasicAi {
                 (pos, score)
             })
             .collect();
-        if self.rapid_city_expansion {
-            // The first phase is a land race for easy cities, not a search
-            // for the prettiest distant capital site.  A four-to-six tile
-            // seat that can be founded this wave compounds sooner than a
-            // slightly richer eight-tile seat that leaves the next city idle.
-            // Value remains the deterministic tiebreak among equally quick
-            // sites; once no nearby seat remains, the normal global fallback
-            // below still lets the empire cross the remaining frontier.
-            candidates.sort_by(|a, b| {
-                g.wdist(from, a.0)
-                    .cmp(&g.wdist(from, b.0))
-                    .then_with(|| b.1.partial_cmp(&a.1).unwrap())
-                    .then(a.0.cmp(&b.0))
-            });
-        } else {
-            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
-        }
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         Self::first_reachable_settle_site(g, uid, &candidates)
     }
 
@@ -13299,18 +13396,10 @@ impl BasicAi {
             // Shipbuilding stranded settlers whose only site was farther than
             // the local radius on the same landmass.
             let global = self.best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height);
-            if self.rapid_city_expansion {
-                // Settle the closest easy ring completely before spending a
-                // wave walking toward a harder site.  `global` is only a
-                // fallback when that ring is truly empty, not an override for
-                // a higher-yield distant tile.
-                local.or(global)
-            } else {
-                match (local, global) {
-                    (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
-                    (Some(local), _) => Some(local),
-                    (None, global) => global,
-                }
+            match (local, global) {
+                (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
+                (Some(local), _) => Some(local),
+                (None, global) => global,
             }
             .map(|(target, _)| {
                 self.settler_targets.insert(uid, target);
@@ -22202,6 +22291,150 @@ mod tests {
         );
     }
 
+    /// ⚠⚠ THE STAMP CANNOT TELL TWO DIVERGENT BOARDS APART, WHICH IS WHY THE
+    /// CACHE MUST NOT BE SHARED ACROSS THEM.
+    ///
+    /// `Tiles::epoch` documents "two reads of the same epoch saw the same map".
+    /// That holds for one map's history and NOT across clones: two siblings that
+    /// each take one write carry the same counter and different content, as this
+    /// pins. `healing_target_stamp` is built from four such counters.
+    ///
+    /// So the safe-healing entry is deliberately **per AI instance and reset on
+    /// clone** (see `FreshOnClone`). A shared entry keyed on these counters could
+    /// hand one board's target sets to another board that merely happens to have
+    /// taken the same number of writes.
+    #[test]
+    fn sibling_clones_share_a_healing_stamp_so_the_cache_may_not_cross_boards() {
+        let game = Game::new_full(3, 24, 16, 91_485, 120, 1, false);
+        let mut a = game.clone();
+        let mut b = game.clone();
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().take(2).collect();
+        // One mutable open each, on DIFFERENT tiles: same counter, different map.
+        a.map.tiles.get_mut(&positions[0]);
+        b.map.tiles.get_mut(&positions[1]);
+        assert_eq!(
+            a.healing_target_stamp(),
+            b.healing_target_stamp(),
+            "these boards differ; if the stamp ever starts distinguishing them, \
+             the FreshOnClone reset below may be relaxed"
+        );
+        // And the reset is what keeps that harmless: a cloned AI starts empty.
+        let ai = BasicAi::new();
+        let envelopes = std::sync::Arc::new(Vec::new());
+        let first = ai.safe_healing_targets(&a, 0, &envelopes);
+        let cloned_ai = ai.clone();
+        assert!(
+            !std::sync::Arc::ptr_eq(&first, &cloned_ai.safe_healing_targets(&b, 0, &envelopes)),
+            "a cloned AI must not answer board B from board A's entry"
+        );
+    }
+
+    /// The target scan is deliberately shared by the cloned boards a frontier
+    /// planner creates, but no state it reads may cross that boundary stale.
+    #[test]
+    fn safe_healing_targets_share_clones_and_refresh_every_board_input() {
+        let mut game = Game::new_full(3, 24, 16, 91_485, 120, 1, false);
+        for pid in [0, 1] {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each major begins with a settler");
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("found the fixture capital");
+        }
+        assert!(game.at_war.insert((0, 1)), "the fixture begins at peace");
+        let hostile_city = game
+            .cities
+            .values()
+            .find(|city| city.owner == 1)
+            .map(|city| city.id)
+            .expect("the second major begins with a city");
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("the fixture seats one city-state");
+        // Keep the identical table on every board below. That makes every
+        // refresh prove the board stamp rather than merely a new envelope.
+        let envelopes = std::sync::Arc::new(Vec::new());
+        let ai = BasicAi::new();
+        let first = ai.safe_healing_targets(&game, 0, &envelopes);
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &ai.safe_healing_targets(&game, 0, &envelopes)
+        ));
+        let clone = game.clone();
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &ai.safe_healing_targets(&clone, 0, &envelopes)
+        ));
+
+        let assert_refresh = |label: &str, board: &Game| {
+            let before = ai.safe_healing_targets(&game, 0, &envelopes);
+            let warm = ai.safe_healing_targets(board, 0, &envelopes);
+            assert!(
+                !std::sync::Arc::ptr_eq(&before, &warm),
+                "{label}: the changed board reused the original target set"
+            );
+            let cold = BasicAi::new().safe_healing_targets(board, 0, &envelopes);
+            assert_eq!(
+                warm.as_ref(),
+                cold.as_ref(),
+                "{label}: the warm cache differs from a fresh scan"
+            );
+        };
+
+        let mut map_changed = game.clone();
+        let owned_tile = map_changed
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                map_changed.city_at(*position).is_none()
+                    && map_changed.map.tiles[position].owner_city == Some(hostile_city)
+            })
+            .expect("the hostile capital owns at least one non-centre tile");
+        map_changed
+            .map
+            .tiles
+            .get_mut(&owned_tile)
+            .unwrap()
+            .owner_city = None;
+        assert_refresh("tile ownership", &map_changed);
+
+        let mut city_changed = game.clone();
+        city_changed.cities.get_mut(&hostile_city).unwrap().wall_hp += 1;
+        assert_refresh("city strike state", &city_changed);
+
+        let mut player_changed = game.clone();
+        player_changed
+            .players
+            .get_mut(0)
+            .unwrap()
+            .envoys
+            .push((minor, 3));
+        assert_refresh("suzerain input", &player_changed);
+
+        let mut diplomacy_changed = game.clone();
+        assert!(
+            diplomacy_changed.at_war.insert((0, 2)),
+            "the added war must change diplomacy"
+        );
+        assert_refresh("war ledger", &diplomacy_changed);
+
+        let different_envelopes = std::sync::Arc::new(Vec::new());
+        let original = ai.safe_healing_targets(&game, 0, &envelopes);
+        let different = ai.safe_healing_targets(&game, 0, &different_envelopes);
+        assert!(
+            !std::sync::Arc::ptr_eq(&original, &different),
+            "a different hostile coverage table reused its target set"
+        );
+    }
+
     /// The pool and the largest blow are different questions, and the pool
     /// answers the survival one wrongly in both directions: three Warriors
     /// that cannot kill anything add up to a lethal tile, while the single
@@ -24057,7 +24290,7 @@ mod tests {
     }
 
     #[test]
-    fn scout_explores_while_strong_assault_unit_attacks() {
+    fn scout_avoids_damage_while_strong_assault_unit_attacks() {
         let mut g = Game::new_full(2, 24, 16, 38, 30, 0, false);
         g.at_war.insert((0, 1));
         let (enemy_pos, scout_pos, assault_pos, hidden) = g
@@ -24108,10 +24341,15 @@ mod tests {
 
         let mut ai = BasicAi::new();
         assert!(ai.military_step(&mut g, 0, scout));
-        assert!(matches!(
-            g.log.last(),
-            Some((0, Action::Move { unit, to })) if *unit == scout && *to == hidden
-        ));
+        assert!(matches!(g.log.last(), Some((0, Action::Move { unit, .. })) if *unit == scout));
+        let envelopes = ai.enemy_attack_envelopes(&g, 0);
+        let selected =
+            BasicAi::incoming_damage(&g, 0, scout, g.units[&scout].pos, &envelopes).total;
+        let exposed = BasicAi::incoming_damage(&g, 0, scout, hidden, &envelopes).total;
+        assert!(
+            selected <= exposed,
+            "exploration must not override a safer route"
+        );
         assert!(g.units.contains_key(&enemy));
 
         assert!(
@@ -27759,3 +27997,6 @@ mod attack_envelope_key_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod recovery_project_tests;

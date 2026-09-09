@@ -17,12 +17,18 @@
 //! screens are marked `legacy` in `docs/gene_ledger.json`: history retained
 //! as evidence beside the batch rule's answer.
 //!
-//! ★★★★ THE CURRENT DEPLOYMENT SELECTION (operator, 2026-09-02). A screenable
-//! gene is on exactly when the completed-player-seat-weighted average of its
-//! unrounded on-versus-baseline `win_delta_pp` readings from its latest three
-//! reporting batches is strictly greater than +3 wins per 10,000 player seats.
-//! A gene with fewer than three readings uses every available reading; every
-//! other screenable gene is off. The chosen tags are written as
+//! ★★★★ THE CURRENT DEPLOYMENT SELECTION (operator, 2026-09-02; hysteresis
+//! 2026-09-09). A screenable gene's reading is the completed-player-seat-
+//! weighted average of its unrounded on-versus-baseline `win_delta_pp`
+//! readings from its latest three reporting batches, in wins per 10,000
+//! player seats; a gene with fewer than three readings uses every available
+//! one. A gene that was off in the previous published selection turns on only
+//! when that average is strictly greater than +3; a gene that was on stays on
+//! unless it is strictly below −3, so one batch's bounce cannot flip a
+//! default (#3236 flipped 32 defaults off from a single batch; the ledger's
+//! `rules.hysteresis_held` names the genes kept on by the band, and
+//! `rules.prior_deployment_genome` the selection it read). Every other
+//! screenable gene is off. The chosen tags are written as
 //! `DEPLOYMENT_GENOME`, one version per family.
 //!
 //! The three displayed batch columns and the historical `batch_rule` remain
@@ -250,7 +256,8 @@ pub fn deployment_policy() -> &'static str {
 
 /// Whether a tag is in the explicit deployment genome: its available latest
 /// three on-versus-baseline readings have a completed-seat-weighted average
-/// strictly above +3 wins per 10,000 player seats.
+/// strictly above +3 wins per 10,000 player seats, or it was already on and
+/// that average is not strictly below −3 (the hysteresis band).
 pub fn deployment_default_on(tag: &str) -> bool {
     table::DEPLOYMENT_GENOME.contains(&tag)
 }
@@ -1238,14 +1245,18 @@ mod tests {
             );
         }
 
-        assert!(deployed.contains(&"siege-is-progress-3"));
-        assert!(!deployed.contains(&"siege-is-progress-2"));
-
+        // Reporting batches may reselect the shipped member. Pin each arm
+        // explicitly when checking that its inactive sibling is omitted.
         for (forced, winner, loser) in [
+            (
+                "siege-is-progress-3",
+                "siege-is-progress-3",
+                "siege-is-progress-2",
+            ),
             ("air-surge-2", "air-surge-2", "air-surge"),
             (
-                "district-planning-2",
-                "district-planning-2",
+                "district-planning-3",
+                "district-planning-3",
                 "district-planning",
             ),
             ("battle-planner-2", "battle-planner-2", "battle-planner"),

@@ -188,7 +188,7 @@ function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
     : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
-  return ["gamemode", "humanplayers", "civ6-status", ...world, "startera", "gamespeed",
+  return ["gamemode", "humanplayers", "civ6-status", "leader", "difficulty", ...world, "startera", "gamespeed",
     "victory-options", "tactics-options", "saves-group"];
 }
 // Compose the pass in the live DOM. Moving the real controls (rather than
@@ -6380,22 +6380,37 @@ async function boot() {
     bootBusy = false;
   }
 }
+// A turn request includes the rivals' moves. Keep the human controls from
+// submitting another action against the old turn while that request runs.
+let turnAdvancePending = false;
 async function send(action) {
-  if (SPEC) return;
-  if (["attack", "ranged", "theological_attack"].includes(action.type) && action.unit !== undefined)
-    pendingStrike = { id: action.unit, to: action.target };
-  render(await fetchJSON("/action", { method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({action}) }));
-  // A unit that has spent itself hands the turn to the closest unvisited one,
-  // so an action pass works through nearby groups before returning to a unit
-  // the player already considered. Anything else — a half-move, a city order
-  // — leaves the selection be.
-  if (action.unit !== undefined && state && !SPEC && !gameFinished(state) &&
-      (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
-    advanceToNextActionUnit(true);
-  } else {
+  if (SPEC || turnAdvancePending) return;
+  const advancing = action.type === "end_turn";
+  if (advancing) {
+    turnAdvancePending = true;
     drawTurnLoop();
+  }
+  try {
+    if (["attack", "ranged", "theological_attack"].includes(action.type) && action.unit !== undefined)
+      pendingStrike = { id: action.unit, to: action.target };
+    render(await fetchJSON("/action", { method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action}) }));
+    // A unit that has spent itself hands the turn to the closest unvisited one,
+    // so an action pass works through nearby groups before returning to a unit
+    // the player already considered. Anything else — a half-move, a city order
+    // — leaves the selection be.
+    if (action.unit !== undefined && state && !SPEC && !gameFinished(state) &&
+        (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
+      advanceToNextActionUnit(true);
+    } else {
+      drawTurnLoop();
+    }
+  } finally {
+    if (advancing) {
+      turnAdvancePending = false;
+      drawTurnLoop();
+    }
   }
 }
 
@@ -25265,22 +25280,17 @@ function drawWorldTracker() {
 
 // ------------------------------------------------------------- the rankings
 //
-// The standings masthead and the arena rail are the laboratory's instrument,
-// and both seats open with them on screen. Civ 6 keeps its Rankings report
-// behind a button (`InGame.xml`: `<LuaContext ID="WorldRankings" Hidden="1"/>`)
-// and #2275 followed it; over a simulation that hid the very thing being
-// watched, so ☗ is now a way to fold the report away rather than the only way
-// to reach it.
-//
-// One report and one class. A played game's answer is kept — a person who
-// folds it away to see more map has said something — and it is kept under a
-// key of its own, which may never be `civvis-map-overlays-v1`.
-const SOLO_RANKINGS_KEY = "civvis-solo-rankings-v1";
+// A human game opens on the map, with the standings and arena statistics
+// available from Rankings. Firaxis uses the same default in
+// Base/Assets/UI/InGame.xml:52 (WorldRankings Hidden="1"). Spectators keep
+// their reports. The old key was written by initialization, even when nobody
+// chose a layout, so it cannot distinguish a preference from the old default.
+const SOLO_RANKINGS_KEY = "civvis-solo-rankings-v2";
 let rankingsReportOpen = false;
-function toggleRankingsReport(open) {
+function toggleRankingsReport(open, persist = true) {
   rankingsReportOpen = open === undefined ? !rankingsReportOpen : !!open;
   document.body.classList.toggle("rankings-open", rankingsReportOpen);
-  if (playingSolo()) {
+  if (persist && playingSolo()) {
     try { localStorage.setItem(SOLO_RANKINGS_KEY, rankingsReportOpen ? "1" : "0"); }
     catch (_) {}
   }
@@ -25291,21 +25301,20 @@ function toggleRankingsReport(open) {
   refitMapAreaToChrome();
   if (state) drawPlayerHud();
 }
-// The played seat's kept answer, read once per page. Default **open**: the
-// standings and the arena rail are what this client is for, and a played game
-// that hid them by default made the arrangement look like it had deleted them.
+// Only a deliberate toggle is a saved preference. Settling the initial layout
+// must not write one, otherwise a future default cannot reach returning users.
 let soloRankingsSettled = false;
 function settleSoloRankings() {
   if (soloRankingsSettled) return;
   soloRankingsSettled = true;
   let chosen = null;
   try { chosen = localStorage.getItem(SOLO_RANKINGS_KEY); } catch (_) {}
-  toggleRankingsReport(chosen !== "0");
+  toggleRankingsReport(chosen === "1", false);
 }
 
-// The deck holds every setting, End Turn and the transport, so both seats open
-// with it. A person who folds it away has said what they want, so that choice
-// is kept and never overridden on a later world.
+// The map already holds the turn controls. Keep setup and simulator tools in
+// the deck, opened from the menu when needed. Unlike the old rankings key,
+// this preference was only written by a person, so existing choices survive.
 const SOLO_DECK_CHOICE_KEY = "civvis-solo-deck-v1";
 let soloDeckSettled = false;
 function settleSoloDeck() {
@@ -25313,7 +25322,7 @@ function settleSoloDeck() {
   soloDeckSettled = true;
   let chosen = null;
   try { chosen = localStorage.getItem(SOLO_DECK_CHOICE_KEY); } catch (_) {}
-  togglePanel(chosen === "closed", false);
+  togglePanel(chosen !== "open", false);
 }
 
 function drawSoloHud() {
@@ -31710,6 +31719,16 @@ function turnBlockers() {
       button: "Choose dedication", hint: `${titleCase(me.age || "new")} age`,
       detail: `A ${titleCase(me.age || "new")} age has begun and wants its dedication.`,
       act: () => focusSection("govsec")});
+  if (!watchingBattlefield() && !me.government && legal("government").length)
+    out.push({kind: "government", icon: "⚿", tone: "action", label: "Choose a government",
+      button: "Choose government",
+      detail: "Adopt a government to unlock its policy slots.", act: () => openEmpire("government")});
+  // The engine offers slot_policy only when the card fits without replacing
+  // another card. An empty slot with no compatible card must not gate a turn.
+  if (!watchingBattlefield() && emptyPolicySlots() > 0 && legal("slot_policy").length)
+    out.push({kind: "policy", icon: "⚿", tone: "action", label: "Fill your policy slots",
+      button: "Choose policies", hint: `${emptyPolicySlots()} empty`,
+      detail: "Choose cards for your government's empty slots.", act: () => openEmpire("government")});
   if (!me.research && legal("research").length)
     out.push({kind: "research", icon: "⌬", tone: "action", label: "Choose research",
       button: "Choose research",
@@ -31759,11 +31778,6 @@ function standingNotices() {
   if (empire && me.prophet_pending)
     out.push({kind: "prophet", icon: "☼", tone: "good", topic: "prophet",
       label: "A Great Prophet awaits", detail: "Found a religion with them."});
-  const slots = Object.values(me.policy_slots || {}).reduce((a, b) => a + b, 0);
-  if (empire && slots > (me.policies || []).length && legal("slot_policy").length)
-    out.push({kind: "policy", icon: "⚿", tone: "good", topic: "policy",
-      label: "An empty policy slot",
-      detail: `${slots - me.policies.length} card slot(s) unfilled.`});
   if (empire && me.governor_titles_available > 0)
     out.push({kind: "governor", icon: "♜", tone: "good", topic: "governor",
       label: "A Governor title is unspent",
@@ -31880,7 +31894,8 @@ function drawTurnButton() {
   // from the only lit control on the screen.
   const over = gameFinished(state);
   const eliminated = state.players[0] && state.players[0].alive === false;
-  button.disabled = over || eliminated || autoplaying;
+  button.disabled = over || eliminated || autoplaying || turnAdvancePending;
+  button.setAttribute("aria-busy", String(turnAdvancePending));
   // Auto-play holds the seat. Say so on the button rather than leaving a lit
   // control that quietly does nothing while an agent plays.
   if (autoplaying && !over && !eliminated) {
@@ -31897,6 +31912,12 @@ function drawTurnButton() {
     button.title = eliminated && !over
       ? "Your last city is gone. Start a new game from Game setup."
       : "This world has reached its result. Start a new game from Game setup.";
+    return;
+  }
+  if (turnAdvancePending) {
+    button.classList.remove("blocked");
+    button.innerHTML = `Please wait<span class="endturn-hint">The other civilizations are taking their turns</span>`;
+    button.title = "Your next turn will be ready when the other civilizations finish.";
     return;
   }
   // The capture modal disables the button outright; leave that alone.
@@ -31965,6 +31986,10 @@ function actionOptionsFor(next) {
           (has ? ", boosted" : "")});
     }).join("") + actionMore(names.length, `openTree(${JSON.stringify(tree)})`,
       science ? "Technology tree" : "Civics tree");
+  }
+  if (kind === "government" || kind === "policy") {
+    return actionMore(0, `openEmpire("government")`,
+      kind === "government" ? "Choose government" : "Choose policy cards");
   }
   if (kind.startsWith("produce:")) {
     const cityId = Number(kind.slice("produce:".length));
@@ -32066,6 +32091,8 @@ function paintActionCorner() {
     eyebrow = "This game";
     title = eliminated && !over ? "Your civilization has fallen" : "The game is over";
     sub = "Start another from the deck.";
+  } else if (turnAdvancePending) {
+    eyebrow = "Turn in progress"; title = "Please wait"; sub = "The other civilizations are taking their turns.";
   } else if (next) {
     title = `${next.icon} ${escapeAttr(next.label)}`; sub = next.detail || "";
   } else {
@@ -32077,12 +32104,12 @@ function paintActionCorner() {
   if (headHtml !== actionHeadHtml) { actionHeadHtml = headHtml; head.innerHTML = headHtml; }
   // Rebuilt only when it reads differently: this runs after every action, and
   // a list that is re-laid-out under the pointer loses its scroll and its hover.
-  const list = next && !autoplaying && !over && !eliminated ? actionOptionsFor(next) : "";
+  const list = next && !autoplaying && !turnAdvancePending && !over && !eliminated ? actionOptionsFor(next) : "";
   if (list !== actionOptionsHtml) { actionOptionsHtml = list; options.innerHTML = list; }
   publishSoloHeight(panel, "--solo-action-height");
 }
 function advanceTurn(force = false) {
-  if (!state || SPEC) return;
+  if (!state || SPEC || turnAdvancePending) return;
   // The seat is on loan while auto-play runs; taking it back mid-turn would
   // race a batch the agent is already playing.
   if (autoplaying) return;
@@ -32125,8 +32152,8 @@ function togglePanel(force, persist = true) {
   if (persist) {
     try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
     catch (_) {}
-    // A played game opens with the deck, so the only way this runs there is
-    // that somebody asked for it one way or the other. Keep that answer:
+    // Persisting this in a played game means somebody toggled the deck.
+    // Keep that answer:
     // `settleSoloDeck` must not overrule it next world.
     if (document.body.classList.contains("civ6-frame")) {
       try { localStorage.setItem(SOLO_DECK_CHOICE_KEY, hide ? "closed" : "open"); }
