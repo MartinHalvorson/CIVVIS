@@ -3947,6 +3947,9 @@ pub struct AdvancedAi {
     /// once nothing is left in reach. Off everywhere by default; opt-in gene
     /// `opportunistic-war`. See `advanced/opportunistic_war.rs`.
     pub opportunistic_war: bool,
+    /// Version two checks post-declaration route feasibility and length
+    /// before counting prizes toward a war. Independently screened from v1.
+    pub opportunistic_war_2: bool,
     /// The pillage half of `opportunistic_war`: count a neighbour's unpillaged
     /// improvements and districts within reach as prizes, and walk raiding
     /// soldiers to them. Off, a raid is priced on civilians alone. Its own
@@ -7614,6 +7617,7 @@ impl AdvancedAi {
             early_contact_window: false,
             great_person_housing: false,
             opportunistic_war: false,
+            opportunistic_war_2: false,
             raid_pillage_prizes: false,
             raid_war: None,
             air_surge: false,

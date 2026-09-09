@@ -602,6 +602,8 @@ pub const GENES: &[Gene] = &[
     // Settler or Builder, a cluster of unpillaged tiles — taken by movement
     // and closed by peace; see `AdvancedAi::opportunistic_war`.
     Gene { tag: "opportunistic-war", field: "opportunistic_war", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war, disable: AdvancedAi::disable_opportunistic_war },
+    // V2 rejects prizes without a short post-declaration route.
+    Gene { tag: "opportunistic-war-2", field: "opportunistic_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war_2, disable: AdvancedAi::disable_opportunistic_war_2 },
     // The pillage half of the raid, priced apart: inert unless the row
     // above is on. See `AdvancedAi::raid_pillage_prizes`.
     Gene { tag: "raid-pillage-prizes", field: "raid_pillage_prizes", kind: Kind::OptIn, enable: AdvancedAi::enable_raid_pillage_prizes, disable: AdvancedAi::disable_raid_pillage_prizes },
