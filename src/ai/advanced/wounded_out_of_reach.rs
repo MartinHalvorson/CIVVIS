@@ -34,7 +34,7 @@
 //! then the nearest own city. Byte-identical with the gene off: the step
 //! returns `None` before reading the board.
 
-use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
+use super::civilian_safety::{BarbarianReach, HOSTILE_MEMORY_TURNS, REACH_SCAN_RADIUS};
 use super::AdvancedAi;
 use crate::ai::{AttackEnvelopes, BasicAi, COMBAT_ROLL_MAX};
 use crate::game::{Action, ActionFamilies, Game};
@@ -42,6 +42,7 @@ use crate::reasoning::plain;
 use crate::think;
 use crate::Pos;
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 /// `withdraw_hp`: the line the controller's own recovery uses. Kept as a
 /// constant here so this step reads the same line the recovery does without
@@ -56,6 +57,9 @@ struct Refuge {
     clear: bool,
     /// The roll-top total of everything visible that reaches it.
     incoming: f64,
+    /// Nonpositive distance to the nearest remembered firing envelope's edge.
+    /// When none of the reachable tiles escapes it, less negative is better.
+    remembered_clearance: i32,
     /// A City Center or Encampment: the blow lands on the district.
     garrison: bool,
     /// A friendly melee unit stands beside it, no farther from the nearest
@@ -64,6 +68,21 @@ struct Refuge {
     screened: bool,
     healing: i32,
     city_distance: i32,
+}
+
+/// A last-seen ranged unit can fire across a shoreline. The civilian capture
+/// envelope answers where it can stand, which misses that danger on water.
+/// These projections contain only observed positions and static unit rules.
+struct RememberedRangedReach(Vec<(Pos, i32)>);
+
+impl RememberedRangedReach {
+    fn margin(&self, g: &Game, pos: Pos) -> i32 {
+        self.0
+            .iter()
+            .map(|(from, radius)| g.wdist(*from, pos) - radius)
+            .min()
+            .unwrap_or(i32::MAX)
+    }
 }
 
 impl AdvancedAi {
@@ -101,7 +120,18 @@ impl AdvancedAi {
         let envelopes = self.base.enemy_attack_envelopes(g, pid);
         let raiders = self.barbarian_reach(g, pid, here, REACH_SCAN_RADIUS);
         let threats = Self::threat_positions(g, &envelopes);
-        let holding = self.refuge_at(g, pid, uid, here, &envelopes, &raiders, &threats, shooter);
+        let remembered_fire = self.remembered_ranged_reach(g, pid);
+        let holding = self.refuge_at(
+            g,
+            pid,
+            uid,
+            here,
+            &envelopes,
+            &raiders,
+            &remembered_fire,
+            &threats,
+            shooter,
+        );
         if holding.clear {
             return None;
         }
@@ -125,7 +155,19 @@ impl AdvancedAi {
             .reachable(uid)
             .into_iter()
             .filter(|pos| *pos != here && g.can_stop(uid, *pos))
-            .map(|pos| self.refuge_at(g, pid, uid, pos, &envelopes, &raiders, &threats, shooter))
+            .map(|pos| {
+                self.refuge_at(
+                    g,
+                    pid,
+                    uid,
+                    pos,
+                    &envelopes,
+                    &raiders,
+                    &remembered_fire,
+                    &threats,
+                    shooter,
+                )
+            })
             .max_by(Self::refuge_cmp);
         match best {
             Some(best) if Self::refuge_cmp(&best, &holding).is_gt() => {
@@ -200,13 +242,15 @@ impl AdvancedAi {
         pos: Pos,
         envelopes: &AttackEnvelopes,
         raiders: &BarbarianReach,
+        remembered_fire: &RememberedRangedReach,
         threats: &[Pos],
         shooter: bool,
     ) -> Refuge {
         let garrison = g.city_at(pos).is_some() || g.encampment_at(pos).is_some();
         let incoming =
             BasicAi::incoming_damage(g, pid, uid, pos, envelopes).total * COMBAT_ROLL_MAX;
-        let clear = incoming <= 1e-9 && !raiders.covers(g, pos);
+        let remembered_margin = remembered_fire.margin(g, pos);
+        let clear = incoming <= 1e-9 && !raiders.covers(g, pos) && remembered_margin > 0;
         let city_distance = g
             .cities
             .values()
@@ -218,6 +262,7 @@ impl AdvancedAi {
             pos,
             clear,
             incoming,
+            remembered_clearance: remembered_margin.min(0),
             garrison,
             screened: shooter && Self::shooter_screened(g, pid, pos, threats, raiders),
             healing: g.healing_location(pid, pos).rate(),
@@ -232,6 +277,7 @@ impl AdvancedAi {
             .then_with(|| right.incoming.total_cmp(&left.incoming))
             .then(left.garrison.cmp(&right.garrison))
             .then(left.screened.cmp(&right.screened))
+            .then(left.remembered_clearance.cmp(&right.remembered_clearance))
             .then(left.healing.cmp(&right.healing))
             .then(right.city_distance.cmp(&left.city_distance))
             .then_with(|| right.pos.cmp(&left.pos))
@@ -263,9 +309,59 @@ impl AdvancedAi {
                 let after = survivor.pos;
                 let envelopes = self.base.enemy_attack_envelopes(&future, pid);
                 !BasicAi::anything_can_reach(&future, pid, after, &envelopes)
+                    && self
+                        .remembered_ranged_reach(&future, pid)
+                        .margin(&future, after)
+                        > 0
                     && !self
                         .barbarian_reach(&future, pid, after, REACH_SCAN_RADIUS)
                         .covers(&future, after)
             })
+    }
+    /// Keep the capture memory's four-turn lifetime and one extra hex of
+    /// uncertainty per elapsed turn, then add the gun's firing range. Do not
+    /// read a hidden unit's current position, HP, or promotions. Visible units
+    /// are handled by exact attack envelopes rather than counted twice here.
+    fn remembered_ranged_reach(&self, g: &Game, pid: usize) -> RememberedRangedReach {
+        if !(self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons) {
+            return RememberedRangedReach(Vec::new());
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        let current: BTreeSet<i64> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.sees(&visible, unit.pos)
+                    && g.unit_visible_to(unit.id, pid)
+            })
+            .map(|unit| super::hostile_memory_key(g, unit))
+            .collect();
+        let projections = self
+            .hostile_last_seen
+            .iter()
+            .filter_map(|(key, record)| {
+                if current.contains(key)
+                    || record.when > g.turn
+                    || g.turn - record.when > HOSTILE_MEMORY_TURNS
+                    || record.owner >= g.players.len()
+                    || record.owner == pid
+                    || !g.is_at_war(pid, record.owner)
+                {
+                    return None;
+                }
+                let spec = &g.rules.units[record.kind];
+                if spec.class != "military"
+                    || !spec.has_ranged_attack()
+                    || spec.domain.as_deref() == Some("air")
+                {
+                    return None;
+                }
+                let radius = spec.moves.ceil() as i32 + (g.turn - record.when) as i32 + spec.range;
+                Some((record.pos, radius.max(1)))
+            })
+            .collect();
+        RememberedRangedReach(projections)
     }
 }

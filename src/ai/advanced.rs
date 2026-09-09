@@ -7916,9 +7916,11 @@ impl AdvancedAi {
         }
         self.turn_start_hostiles_turn = Some(g.turn);
         self.turn_start_hostiles.clear();
+        let visible = g.player_vision_frame(pid);
         for unit in g.units.values() {
             if unit.owner == pid
                 || !g.is_at_war(pid, unit.owner)
+                || !g.sees(&visible, unit.pos)
                 || !g.unit_visible_to(unit.id, pid)
             {
                 continue;
@@ -7961,9 +7963,13 @@ impl AdvancedAi {
         self.hostile_last_seen.retain(|_, record| {
             record.when <= g.turn && g.turn - record.when <= civilian_safety::HOSTILE_MEMORY_TURNS
         });
+        // `unit_visible_to` checks stealth detection, not tile visibility.
+        // The native board also contains ordinary enemies still in the fog.
+        let visible = g.player_vision_frame(pid);
         for unit in g.units.values() {
             if unit.owner == pid
                 || !g.is_at_war(pid, unit.owner)
+                || !g.sees(&visible, unit.pos)
                 || !g.unit_visible_to(unit.id, pid)
             {
                 continue;
