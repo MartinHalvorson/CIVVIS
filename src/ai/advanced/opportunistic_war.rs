@@ -359,7 +359,7 @@ impl AdvancedAi {
     /// The best raid on the table this turn, if any clears the bar.
     pub(crate) fn raid_opportunity(&self, g: &Game, pid: usize) -> Option<RaidOpportunity> {
         if self.active_victory_target(g) == Some(VictoryTarget::Science)
-            || !self.opportunistic_war
+            || !(self.opportunistic_war || self.opportunistic_war_2)
             || self.raid_war.is_some()
             || g.turn < g.standard_duration(RAID_MIN_TURN)
             || g.turn < self.peace_until
@@ -391,28 +391,31 @@ impl AdvancedAi {
                 continue;
             }
             let mut prizes = self.raid_prizes_against(g, pid, target, &strikers);
-            // Distance is only a cheap candidate filter. Check the route on
-            // the board AFTER the declaration, where the target's closed
-            // borders permit entry and its civilians can be captured.
-            if prizes.iter().map(|prize| prize.value()).sum::<f64>() + 1e-9 < RAID_WAR_MIN_VALUE {
-                continue;
+            if self.opportunistic_war_2 {
+                // Distance is only a cheap candidate filter. Check the route on
+                // the board AFTER the declaration, where the target's closed
+                // borders permit entry and its civilians can be captured.
+                if prizes.iter().map(|prize| prize.value()).sum::<f64>() + 1e-9 < RAID_WAR_MIN_VALUE
+                {
+                    continue;
+                }
+                let Some(opening) = self.raid_opening(g, pid, target) else {
+                    continue;
+                };
+                let mut raid_board = g.speculative_clone();
+                if raid_board.apply(pid, &opening).is_err() {
+                    continue;
+                }
+                prizes.retain(|prize| {
+                    strikers.iter().any(|striker| {
+                        (!matches!(prize, RaidPrize::Pillage { .. }) || !striker.lone_garrison)
+                            && g.wdist(striker.pos, prize.pos()) <= striker.reach
+                            && raid_board
+                                .route_distance(striker.uid, prize.pos(), 0)
+                                .is_some_and(|steps| steps <= striker.reach as usize)
+                    })
+                });
             }
-            let Some(opening) = self.raid_opening(g, pid, target) else {
-                continue;
-            };
-            let mut raid_board = g.speculative_clone();
-            if raid_board.apply(pid, &opening).is_err() {
-                continue;
-            }
-            prizes.retain(|prize| {
-                strikers.iter().any(|striker| {
-                    (!matches!(prize, RaidPrize::Pillage { .. }) || !striker.lone_garrison)
-                        && g.wdist(striker.pos, prize.pos()) <= striker.reach
-                        && raid_board
-                            .route_distance(striker.uid, prize.pos(), 0)
-                            .is_some_and(|steps| steps <= striker.reach as usize)
-                })
-            });
             if !Self::raid_prizes_can_challenge_score_leader(g.score(pid), g.score(target), &prizes)
             {
                 continue;
@@ -469,7 +472,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
-        if !self.opportunistic_war {
+        if !(self.opportunistic_war || self.opportunistic_war_2) {
             self.raid_war = None;
             return false;
         }
@@ -644,7 +647,7 @@ impl AdvancedAi {
         decline_settlers: bool,
     ) -> Option<bool> {
         let raid = self.raid_war.clone()?;
-        if !self.opportunistic_war || !g.is_at_war(pid, raid.target) {
+        if !(self.opportunistic_war || self.opportunistic_war_2) || !g.is_at_war(pid, raid.target) {
             return None;
         }
         let unit = g.units.get(&uid)?.clone();

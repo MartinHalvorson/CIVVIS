@@ -162,7 +162,7 @@ fn science_target_does_not_open_an_opportunistic_raid() {
 fn mountains_between_the_army_and_prizes_do_not_justify_a_war() {
     let mut game = pillage_raid_board();
     let mut ai = AdvancedAi::new();
-    ai.enable_opportunistic_war();
+    ai.enable_opportunistic_war_2();
     ai.enable_raid_pillage_prizes();
     assert!(ai.raid_opportunity(&game, 0).is_some());
     let warrior = game.player_unit_ids(0)[0];
@@ -174,14 +174,20 @@ fn mountains_between_the_army_and_prizes_do_not_justify_a_war() {
     let prizes = ai.raid_prizes_against(&game, 0, 1, &ai.raid_strikers(&game, 0));
     assert!(prizes.iter().map(|prize| prize.value()).sum::<f64>() >= super::RAID_WAR_MIN_VALUE);
     assert!(ai.raid_opportunity(&game, 0).is_none());
+    ai.enable_opportunistic_war();
+    assert!(
+        ai.raid_opportunity(&game, 0).is_some(),
+        "v1 retains its measured distance-only behavior"
+    );
     assert!(!game.is_at_war(0, 1));
 }
 
 #[test]
 fn hypothetical_raid_opens_closed_borders_without_changing_the_real_board() {
-    let game = pillage_raid_board();
+    let mut game = pillage_raid_board();
+    game.players[1].civics.insert(crate::name!("early_empire"));
     let mut ai = AdvancedAi::new();
-    ai.enable_opportunistic_war();
+    ai.enable_opportunistic_war_2();
     ai.enable_raid_pillage_prizes();
     let warrior = game.player_unit_ids(0)[0];
     let prizes = ai.raid_prizes_against(&game, 0, 1, &ai.raid_strikers(&game, 0));
@@ -204,7 +210,7 @@ fn hypothetical_raid_opens_closed_borders_without_changing_the_real_board() {
 fn a_visible_settler_behind_an_impassable_ring_is_not_a_war_opportunity() {
     let mut game = pillage_raid_board();
     let mut ai = AdvancedAi::new();
-    ai.enable_opportunistic_war();
+    ai.enable_opportunistic_war_2();
     let warrior = game.player_unit_ids(0)[0];
     let here = game.units[&warrior].pos;
     let position = game
@@ -249,4 +255,23 @@ fn a_visible_settler_behind_an_impassable_ring_is_not_a_war_opportunity() {
     let prizes = ai.raid_prizes_against(&game, 0, 1, &ai.raid_strikers(&game, 0));
     assert!(matches!(prizes.as_slice(), [RaidPrize::Settler { .. }]));
     assert!(ai.raid_opportunity(&game, 0).is_none());
+}
+
+#[test]
+fn raid_versions_are_independent_and_mutually_exclusive() {
+    use super::super::test_support::opt_in_off_in_both_controllers;
+    opt_in_off_in_both_controllers("opportunistic-war-2", |ai| ai.opportunistic_war_2);
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    assert!(ai.opportunistic_war);
+    assert!(!ai.opportunistic_war_2);
+    ai.enable_opportunistic_war_2();
+    assert!(!ai.opportunistic_war);
+    assert!(ai.opportunistic_war_2);
+    ai.disable_opportunistic_war();
+    assert!(ai.opportunistic_war_2, "disabling v1 preserves v2");
+    ai.enable_opportunistic_war();
+    assert!(!ai.opportunistic_war_2);
+    ai.disable_opportunistic_war_2();
+    assert!(ai.opportunistic_war, "disabling v2 preserves v1");
 }

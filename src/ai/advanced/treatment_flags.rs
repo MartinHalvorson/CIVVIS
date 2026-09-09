@@ -225,12 +225,29 @@ impl AdvancedAi {
     /// [`AdvancedAi::opportunistic_war`]. Opt-in gene.
     pub fn enable_opportunistic_war(&mut self) {
         self.opportunistic_war = true;
+        self.opportunistic_war_2 = false;
     }
 
     /// The twin of `enable_opportunistic_war`.
     pub fn disable_opportunistic_war(&mut self) {
         self.opportunistic_war = false;
-        self.raid_war = None;
+        if !self.opportunistic_war_2 {
+            self.raid_war = None;
+        }
+    }
+
+    /// Price only prizes with a short route after declaration. Version two
+    /// of `opportunistic-war`; selecting either version clears its sibling.
+    pub fn enable_opportunistic_war_2(&mut self) {
+        self.opportunistic_war_2 = true;
+        self.opportunistic_war = false;
+    }
+
+    pub fn disable_opportunistic_war_2(&mut self) {
+        self.opportunistic_war_2 = false;
+        if !self.opportunistic_war {
+            self.raid_war = None;
+        }
     }
 
     /// Count a neighbour's unpillaged improvements within reach as raid prizes
