@@ -2038,3 +2038,34 @@ This is a deliberate shared Basic/Advanced controller change, including
 `0x7646_cfed_dde2_cf37`** across the five profiles — coincidentally the same
 stream v34 recorded before v35 introduced the one-era lock. The shipped
 ruleset fingerprint remains at v33's `fnv1a64:e69039571d195263`.
+
+
+## v37 (2026-09-09) — terrain cost when entering a road from off-road
+
+This deliberately corrects shared engine movement, including `advanced_v1`;
+no planning gene or legacy-controller configuration is changed. `Rules::move_cost`
+previously flattened every roaded destination to one movement point before
+`Game::unit_step_cost` could check whether the origin also had a road. A unit
+entering a roaded hill from off-road therefore received a route benefit without
+a connected route. Terrain pricing now retains the hill and feature costs;
+the existing two-endpoint route check applies the road discount. Amphibious
+removes the river penalty before route pricing, so its exemption cannot
+subsequently overwrite a valid route discount.
+
+In host run `civvis-20260909T052021Z`, Pikeman 2818080 began turn 105 at (53,24)
+with 48 HP and two movement points. The planner ordered a retreat through the
+roaded hill at (52,23) to (51,23). The host spent the allowance on the hill and
+the unit died there. The baseline native probe left one movement point after
+that first step; the corrected probe leaves zero and removes (51,23) from the
+reachable set. Replaying the same observed frames then selects the reachable
+(52,25) refuge. This proves the movement-budget correction and changed order,
+not survival in an alternative host game.
+
+The existing five-profile fingerprint probe reproduces v36 exactly on the
+baseline: **19,113 decisions and `0x7646_cfed_dde2_cf37`**. Two independent runs
+of the corrected engine agree on **19,620 decisions and
+`0x4657_4d87_b9c1_7640`**. This re-pin records the intentional shared movement
+change rather than hiding an accidental gene leak. Native outcome comparisons
+across this boundary must account for the changed engine rules. Focused tests
+cover off-road entry at all five route levels, actual movement exhaustion,
+connected-road pricing, bridges, and Amphibious crossings.
