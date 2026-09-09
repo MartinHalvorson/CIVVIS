@@ -363,7 +363,12 @@ impl AdvancedAi {
             return Self::boost_improvement_class(g, pid, improvement, TileRequirement::Any);
         }
         if let Some(improvement) = trigger.strip_prefix("improvement_on_resource:") {
-            return Self::boost_improvement_class(g, pid, improvement, TileRequirement::AnyResource);
+            return Self::boost_improvement_class(
+                g,
+                pid,
+                improvement,
+                TileRequirement::AnyResource,
+            );
         }
         if let Some(resource) = trigger.strip_prefix("improve_resource:") {
             let Some(spec) = g.rules.resources.get(resource) else {
@@ -523,7 +528,8 @@ impl AdvancedAi {
                 if g.turn >= step.deadline {
                     continue;
                 }
-                if let Some(objective) = self.boost_objective_for(g, pid, step.node, techs, step.deadline)
+                if let Some(objective) =
+                    self.boost_objective_for(g, pid, step.node, techs, step.deadline)
                 {
                     found.push(objective);
                 }
@@ -548,7 +554,11 @@ impl AdvancedAi {
         {
             return None;
         }
-        let specs = if techs { &g.rules.techs } else { &g.rules.civics };
+        let specs = if techs {
+            &g.rules.techs
+        } else {
+            &g.rules.civics
+        };
         let spec = specs.get(node.as_str())?;
         let boost = spec.boost.as_ref()?;
         let BoostTriggerClass::Cheap(action) = self.boost_trigger_class(g, pid, boost) else {
@@ -566,7 +576,10 @@ impl AdvancedAi {
 
     /// The research at stake decides which objectives the cap keeps; the name
     /// and the tree break ties so the choice is deterministic.
-    fn boost_by_payout(left: &BoostSideObjective, right: &BoostSideObjective) -> std::cmp::Ordering {
+    fn boost_by_payout(
+        left: &BoostSideObjective,
+        right: &BoostSideObjective,
+    ) -> std::cmp::Ordering {
         right
             .payout
             .total_cmp(&left.payout)
@@ -605,13 +618,8 @@ impl AdvancedAi {
         let mut kept: Vec<BoostSideObjective> = Vec::new();
         let mut dropped: Vec<BoostSideObjective> = Vec::new();
         for standing in carried {
-            match self.boost_objective_for(
-                g,
-                pid,
-                standing.node,
-                standing.techs,
-                standing.deadline,
-            ) {
+            match self.boost_objective_for(g, pid, standing.node, standing.techs, standing.deadline)
+            {
                 Some(fresh) if g.turn <= standing.deadline => kept.push(fresh),
                 _ => dropped.push(standing),
             }
@@ -739,11 +747,10 @@ impl AdvancedAi {
         if !self.boost_planner || self.boost_planner_stands_down(g, pid, None) {
             return 0.0;
         }
-        let coastal = g.nbrs(pos).iter().any(|nb| {
-            g.map
-                .get(*nb)
-                .is_some_and(|tile| g.rules.is_water(tile))
-        });
+        let coastal = g
+            .nbrs(pos)
+            .iter()
+            .any(|nb| g.map.get(*nb).is_some_and(|tile| g.rules.is_water(tile)));
         let matched = coastal
             && self
                 .boost_side_objectives(g, pid)
@@ -779,7 +786,11 @@ impl AdvancedAi {
 
     /// Does putting `improvement` on `pos` advance this objective?
     fn boost_tile_satisfies(g: &Game, action: &BoostAction, pos: Pos, improvement: &str) -> bool {
-        let BoostAction::Improvement { improvement: want, on } = action else {
+        let BoostAction::Improvement {
+            improvement: want,
+            on,
+        } = action
+        else {
             return false;
         };
         if want != improvement {

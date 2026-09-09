@@ -14088,14 +14088,8 @@ impl AdvancedAi {
             // full price. `None` with the gene off. See
             // `advanced/boost_planner.rs`.
             let pick = pick.map(|chosen| {
-                match self.boost_planner_defer_pick(
-                    g,
-                    pid,
-                    &available,
-                    &chosen,
-                    forced_goal,
-                    true,
-                ) {
+                match self.boost_planner_defer_pick(g, pid, &available, &chosen, forced_goal, true)
+                {
                     Some(deferral) => {
                         think!(self.journal(), Research, Decision,
                                "Deferring {} for its boost", plain(chosen.as_str());
@@ -14282,14 +14276,8 @@ impl AdvancedAi {
             // full price. `None` with the gene off. See
             // `advanced/boost_planner.rs`.
             let pick = pick.map(|chosen| {
-                match self.boost_planner_defer_pick(
-                    g,
-                    pid,
-                    &available,
-                    &chosen,
-                    forced_goal,
-                    false,
-                ) {
+                match self.boost_planner_defer_pick(g, pid, &available, &chosen, forced_goal, false)
+                {
                     Some(deferral) => {
                         think!(self.journal(), Research, Decision,
                                "Deferring {} for its boost", plain(chosen.as_str());

@@ -389,7 +389,10 @@ fn strategic_spending_and_the_untouchable_triggers_never_become_objectives() {
         };
         let class = armed().boost_trigger_class(&game, 0, boost);
         if let BoostTriggerClass::Cheap(_) = class {
-            panic!("{node} ({}) is cheap on an empty opening board", boost.trigger);
+            panic!(
+                "{node} ({}) is cheap on an empty opening board",
+                boost.trigger
+            );
         }
     }
 }
@@ -458,7 +461,8 @@ fn a_committed_objective_stands_until_its_deadline_and_then_expires() {
     game.turn = 13;
     let live = ai.boost_side_objectives(&game, 0);
     assert!(
-        live.iter().any(|objective| objective.node == name!("machinery")),
+        live.iter()
+            .any(|objective| objective.node == name!("machinery")),
         "on its deadline turn the commitment still stands"
     );
 
@@ -667,7 +671,10 @@ fn fast_research_board(seed: u64) -> (Game, Name) {
     let ordinary = game
         .available_techs(0)
         .into_iter()
-        .min_by(|a, b| game.tech_cost(a.as_str()).total_cmp(&game.tech_cost(b.as_str())))
+        .min_by(|a, b| {
+            game.tech_cost(a.as_str())
+                .total_cmp(&game.tech_cost(b.as_str()))
+        })
         .expect("the tree offers a node");
     assert!(
         game.tech_cost(ordinary.as_str()) / rate <= BOOST_DEFER_TURNS,
@@ -818,7 +825,13 @@ fn the_deferral_replacement_must_stay_on_the_lanes_own_beeline() {
 
     // With a forced lane goal, the replacement leads to that goal or there is
     // no deferral: the lane loses order, never progress.
-    for goal in ["mining", "pottery", "animal_husbandry", "currency", "writing"] {
+    for goal in [
+        "mining",
+        "pottery",
+        "animal_husbandry",
+        "currency",
+        "writing",
+    ] {
         if let Some(deferral) =
             ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, Some(goal), true)
         {
@@ -907,4 +920,3 @@ fn off_every_entry_point_returns_before_reading_anything() {
     // Nothing was memoised either: the flag is checked before the frame.
     assert_eq!(plain_ai.boost_planner_frame.borrow().stamp, None);
 }
-
