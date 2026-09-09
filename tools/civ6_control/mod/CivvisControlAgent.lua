@@ -6871,6 +6871,10 @@ local function exportState(player, pid, turn, frame)
 					and individualRow.GreatPersonIndividualType or nil, classType));
 			local activationPlots = CivvisGreatPersonActivationPlots(
 				unit, gp, pid, gwSurvey, openPlots);
+			-- Export the same spending policy to civvis_orders, whose explicit
+			-- activation/movement orders otherwise bypass the fallback driver.
+			local spaceTargets = CivvisSpaceBoost.forUnit(player, unit, turn);
+			activationPlots = CivvisSpaceBoost.filterPlots(player, spaceTargets, activationPlots);
 			greatPerson = {
 				individual = individualRow ~= nil
 					and individualRow.GreatPersonIndividualType or nil,
@@ -6891,6 +6895,8 @@ local function exportState(player, pid, turn, frame)
 					and individualRow.ActionRequiresCityGreatWorkObjectType or nil,
 				charges = try(function() return gp:GetActionCharges(); end, 0),
 				can_activate = try(function()
+					if not CivvisSpaceBoost.cityKey(player, spaceTargets,
+							unit:GetX(), unit:GetY()) then return false; end
 					return UnitManager.CanStartCommand(
 						unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"], nil, {});
 				end, false),
@@ -13502,6 +13508,10 @@ local function applyOrder(player, pid, row, turn)
 		local unit = liveUnit(pid, subject);
 		if unit == nil then return false, "unit_gone:" .. tostring(subject); end
 		if verb == "ACTIVATE_GREAT_PERSON" then
+			local spaceTargets = CivvisSpaceBoost.forUnit(player, unit, turn);
+			local spaceCity = CivvisSpaceBoost.cityKey(player, spaceTargets,
+				unit:GetX(), unit:GetY());
+			if not spaceCity then return false, "reserved_space_boost"; end
 			local activated = commandUnit(
 				unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]);
 			if not activated then
@@ -13511,6 +13521,9 @@ local function applyOrder(player, pid, row, turn)
 					x = try(function() return unit:GetX(); end, -1),
 					y = try(function() return unit:GetY(); end, -1),
 				});
+			end
+			if activated and spaceTargets ~= nil then
+				CivvisSpaceBoost.spent[spaceCity] = turn;
 			end
 			return activated, verb;
 		end
@@ -14719,6 +14732,86 @@ local function gpName(gp)
 	return individual or "GP_INDIVIDUAL_UNKNOWN", class or "GP_CLASS_UNKNOWN";
 end
 
+-- Finite grants are attached to the district's CITY, so both activation and
+-- movement must inspect that city's current project. Shipped GreatPeople_
+-- Engineers.xml:39,70 and GreatPeople_Scientists.xml:47,87 identify these two
+-- charge consumers; Goddard/von Braun/Kwolek grant permanent modifiers instead.
+CivvisSpaceBoost = { spent = {} };
+CivvisSpaceBoost.finite = function(individual)
+	return individual == "GREAT_PERSON_INDIVIDUAL_SERGEI_KOROLEV"
+		or individual == "GREAT_PERSON_INDIVIDUAL_CARL_SAGAN";
+end
+CivvisSpaceBoost.targets = function(player, individual, turn)
+	if not CivvisSpaceBoost.finite(individual) then return nil; end
+	local charges = 0;
+	try(function()
+		for _, other in player:GetUnits():Members() do
+			local person = greatPersonOf(other);
+			if person ~= nil and CivvisSpaceBoost.finite(gpName(person)) then
+				charges = charges + math.max(0, person:GetActionCharges());
+			end
+		end
+	end);
+	local exoplanet = try(function()
+		return GameInfo.Projects["PROJECT_LAUNCH_EXOPLANET_EXPEDITION"];
+	end, nil);
+	local launched = exoplanet ~= nil and try(function()
+		return player:GetStats():GetNumProjectsAdvanced(exoplanet.Index) > 0;
+	end, false);
+	local cities = {};
+	try(function()
+		for _, city in player:GetCities():Members() do
+			local queue = city:GetBuildQueue();
+			local row = GameInfo.Projects[queue:GetCurrentProductionTypeHash()];
+			local project = row and row.ProjectType;
+			local late = project == "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+				or (launched and (project == "PROJECT_ORBITAL_LASER"
+					or project == "PROJECT_TERRESTRIAL_LASER"))
+				or ((exoplanet == nil or charges > 1) and (
+					project == "PROJECT_LAUNCH_MARS_BASE"
+					or project == "PROJECT_LAUNCH_MARS_REACTOR"
+					or project == "PROJECT_LAUNCH_MARS_HABITATION"
+					or project == "PROJECT_LAUNCH_MARS_HYDROPONICS"));
+			-- Keep the last charge for Exoplanet even while its technology is
+			-- locked. Early launches can finish during that research wait.
+			-- Never spend a charge on a project completing naturally next turn.
+			local turns = row and try(function()
+				return queue:GetTurnsLeft(row.ProjectType);
+			end, -1) or -1;
+			local key = tostring(city:GetOwner()) .. ":" .. tostring(city:GetID());
+			if late and (turns < 0 or turns > 1)
+					and CivvisSpaceBoost.spent[key] ~= turn then
+				cities[city:GetID()] = key;
+			end
+		end
+	end);
+	return cities;
+end
+CivvisSpaceBoost.cityKey = function(player, targets, x, y)
+	if targets == nil then return true; end
+	return try(function()
+		local city = Cities.GetPlotPurchaseCity(Map.GetPlot(x, y));
+		if city == nil or city:GetOwner() ~= player:GetID() then return nil; end
+		return targets[city:GetID()];
+	end, nil);
+end
+
+CivvisSpaceBoost.forUnit = function(player, unit, turn)
+	local gp = greatPersonOf(unit);
+	if gp == nil then return nil; end
+	return CivvisSpaceBoost.targets(player, gpName(gp), turn);
+end
+CivvisSpaceBoost.filterPlots = function(player, targets, plots)
+	if targets == nil then return plots; end
+	local eligible = {};
+	for _, plot in ipairs(plots) do
+		if CivvisSpaceBoost.cityKey(player, targets, plot.x, plot.y) then
+			eligible[#eligible + 1] = plot;
+		end
+	end
+	return eligible;
+end
+
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "retired" | "idle", or nil when the unit is not a Great Person this code
 -- should touch.
@@ -14766,13 +14859,17 @@ local function orderGreatPerson(player, unit, id, turn)
 		end
 		return "idle";
 	end
-	-- 1. If the engine will take Activate here and now, press it.
+	local spaceTargets = CivvisSpaceBoost.targets(player, individual, turn);
+	local spaceCity = CivvisSpaceBoost.cityKey(player, spaceTargets,
+		unit:GetX(), unit:GetY());
+	-- 1. If the engine will take Activate here and the project is worth it, press it.
 	-- UnitRemovedFromMap is the host's completion witness for this command;
 	-- retain the turn BEFORE requesting it because a host event may fire
 	-- synchronously inside commandUnit.
 	local activationKey = tostring(id);
 	CivvisLedger.expected_gp_activation[activationKey] = turn;
-	if commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
+	if spaceCity and commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
+		if spaceTargets ~= nil then CivvisSpaceBoost.spent[spaceCity] = turn; end
 		gpPending[id] = nil;
 		emit("gp", { turn = turn, unit = id, individual = individual,
 			class = class, action = "activated",
@@ -14839,7 +14936,9 @@ local function orderGreatPerson(player, unit, id, turn)
 				-- no tile worth reaching: marching is motion without progress,
 				-- and the mirror's needs machinery — not this walk — is what
 				-- builds capacity. Fall through to the idle report instead.
-				if rank < 2 and (slotCount == nil or slotCount > 0) then
+				if rank < 2 and (slotCount == nil or slotCount > 0)
+						and CivvisSpaceBoost.cityKey(player, spaceTargets,
+							plot:GetX(), plot:GetY()) then
 					local px, py = plot:GetX(), plot:GetY();
 					if activationReachable(px, py) ~= false then
 						local d = try(function()
@@ -14887,7 +14986,7 @@ local function orderGreatPerson(player, unit, id, turn)
 	if before == nil or (turn - before) >= 25 then
 		gpIdleReported[id] = turn;
 		emit("gp", { turn = turn, unit = id, individual = individual,
-			class = class, action = "idle",
+			class = class, action = spaceTargets ~= nil and "reserved_space_boost" or "idle",
 			empty_slots = slotCount,
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1) });
