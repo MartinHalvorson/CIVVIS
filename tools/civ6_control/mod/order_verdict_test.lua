@@ -78,6 +78,7 @@ CityOperationTypes = {
 	PARAM_INSERT_MODE = "insert_mode",
 	PARAM_QUEUE_DESTINATION_LOCATION = "queue_destination",
 	PARAM_UNIT_TYPE = "unit_type",
+	PARAM_BUILDING_TYPE = "building_type",
 }
 setmetatable(_G, { __index = function(_, k)
 	if EXPORTS[k] then return rawget(_G, k) end
@@ -109,7 +110,10 @@ local function cityObject(c)
 		GetBuildQueue = function()
 			return {
 				GetCurrentProductionTypeHash = function() return c.current or 0 end,
-				CanProduce = function() return true end,
+				CanProduce = function(_, hash, exclusion)
+					if exclusion then return not (c.excluded and c.excluded[hash]) end
+					return not (c.unstartable and c.unstartable[hash])
+				end,
 				HasBeenPlaced = function() return false end,
 			}
 		end,
@@ -147,8 +151,8 @@ CityManager = {
 	RequestOperation = function(city, op, params)
 		local c = host.cities[city:GetID()]
 		host.cityOps[#host.cityOps + 1] = { city = city:GetID(), op = op,
-			item = params[CityOperationTypes.PARAM_UNIT_TYPE] }
-		if c ~= nil then c.current = params[CityOperationTypes.PARAM_UNIT_TYPE] end
+			item = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) }
+		if c ~= nil then c.current = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) end
 	end,
 }
 function host.arrive(id)
@@ -467,6 +471,47 @@ local siege, siegeWhy = applyOrder(player, PID,
 check("damaged capital releases opening lock", siege, true)
 check("unavailable walls preserve CivVis request", siegeWhy, "UNIT_SCOUT")
 check("siege request reaches host", host.cities[42].current, 102)
+
+-- Native production lists and start-now checks are separate. Walls before
+-- Masonry are excluded even when the second predicate alone says true.
+GameInfo.Types.BUILDING_WALLS = { Hash = 104, Type = "BUILDING_WALLS", Kind = "KIND_BUILDING" }
+GameInfo.Buildings = { BUILDING_WALLS = { IsWonder = false } }
+host.cities[42].current = 101
+host.cities[42].excluded = { [104] = true }
+local preMasonry, preMasonryWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 20)
+check("unresearched walls do not replace defense", preMasonry, true)
+check("unresearched walls keep requested defense", preMasonryWhy, "UNIT_ARCHER")
+check("requested defense reaches host before Masonry", host.cities[42].current, 103)
+
+-- A listed but disabled wall is equally ineligible.
+host.cities[42].excluded = nil
+host.cities[42].unstartable = { [104] = true }
+host.cities[42].current = 101
+local disabled, disabledWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 21)
+check("disabled walls keep requested defense", disabled, true)
+check("disabled walls name requested defense", disabledWhy, "UNIT_ARCHER")
+check("disabled walls do not reach host", host.cities[42].current, 103)
+
+-- Once both native predicates admit the wall, the existing emergency works.
+host.cities[42].unstartable = nil
+host.cities[42].current = 101
+local wall, wallWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 22)
+check("eligible emergency walls start", wall, true)
+check("eligible emergency names wall", wallWhy, "BUILDING_WALLS")
+check("eligible emergency wall reaches host", host.cities[42].current, 104)
+
+-- An explicitly requested excluded item must not receive applied credit.
+host.cities[42].current = 103
+host.cities[42].excluded = { [104] = true }
+local beforeExcluded = #host.cityOps
+local excluded, excludedWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "BUILDING_WALLS" }, 23)
+check("excluded explicit build refused", excluded, false)
+check("excluded explicit build reason", excludedWhy, "cannot_start_BUILDING_WALLS")
+check("excluded explicit build never reaches host", #host.cityOps, beforeExcluded)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))
