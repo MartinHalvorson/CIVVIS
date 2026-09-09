@@ -1611,16 +1611,6 @@ impl AdvancedAi {
         self.barbarian_scouts_are_scouts = false;
     }
 
-    /// Skip a space race or Manhattan Project that cannot finish before the
-    /// turn limit ends the game. See `score_horizon`.
-    pub fn enable_score_horizon(&mut self) {
-        self.score_horizon = true;
-    }
-
-    pub fn disable_score_horizon(&mut self) {
-        self.score_horizon = false;
-    }
-
     /// Price a wonder's effects in the victory lane's currency and build the
     /// ones that lane needs. See `AdvancedAi::strategic_wonder_value`.
     pub fn enable_strategic_wonders(&mut self) {
@@ -1769,8 +1759,7 @@ impl AdvancedAi {
     /// Science seat throughout the space race: the pad count, the city a launch
     /// project may claim and the city a pad may be sited in all read the race
     /// rather than an explicitly assigned target, and the pass opens at all.
-    /// `score_horizon` still refuses a race that cannot finish. See
-    /// `advanced/victory_lane.rs`. Off everywhere by default; opt-in gene
+    /// See `advanced/victory_lane.rs`. Off everywhere by default; opt-in gene
     /// `lane-space-race`.
     pub fn enable_lane_space_race(&mut self) {
         self.lane_space_race = true;
@@ -1972,21 +1961,6 @@ impl AdvancedAi {
     /// The twin of `enable_one_war_at_a_time`.
     pub fn disable_one_war_at_a_time(&mut self) {
         self.one_war_at_a_time = false;
-    }
-
-    /// Add a city-state's proximity and hostile suzerain to the envoy score,
-    /// amortised over envoys the flip needs. A city-state's place enters the
-    /// envoy score: up to ninety for one on our border, two hundred more when
-    /// its sitting suzerain is at war with us, amortised over the envoys the
-    /// flip still needs. [`AdvancedAi::flip_nearby_city_states`]. Opt-in gene
-    /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
-    pub fn enable_flip_nearby_city_states(&mut self) {
-        self.flip_nearby_city_states = true;
-    }
-
-    /// The twin of `enable_flip_nearby_city_states`.
-    pub fn disable_flip_nearby_city_states(&mut self) {
-        self.flip_nearby_city_states = false;
     }
 
     /// Appraise weaker neighbours, plan to take one to three holdable cities
@@ -2344,20 +2318,6 @@ impl AdvancedAi {
     /// The twin of `enable_wounded_out_of_reach`.
     pub fn disable_wounded_out_of_reach(&mut self) {
         self.wounded_out_of_reach = false;
-    }
-
-    /// A Builder chops woods, rainforest or marsh into the Settler, district
-    /// or wonder at the front of the owning city's queue, priced as a one-off
-    /// lump against the per-turn jobs. See
-    /// [`AdvancedAi::chop_into_the_queue_value`]. Opt-in gene
-    /// `chop-into-the-queue`.
-    pub fn enable_chop_into_the_queue(&mut self) {
-        self.chop_into_the_queue = true;
-    }
-
-    /// The twin of `enable_chop_into_the_queue`.
-    pub fn disable_chop_into_the_queue(&mut self) {
-        self.chop_into_the_queue = false;
     }
 
     /// An improvement that completes an unresearched technology's or civic's
@@ -2754,26 +2714,13 @@ impl AdvancedAi {
 
     /// Price a settle site the way the engine pays it beside a natural
     /// wonder: the wonder's projected yields on every neighbouring work tile
-    /// and a capped credit for the amenity, appeal, Holy Site adjacency and
-    /// era score no yield table shows. Opt-in gene `wonder-adjacent-sites`;
-    /// see `advanced/wonder_sites.rs`.
-    pub fn enable_wonder_adjacent_sites(&mut self) {
-        self.wonder_adjacent_sites = true;
-    }
-
-    /// The twin of `enable_wonder_adjacent_sites`.
-    pub fn disable_wonder_adjacent_sites(&mut self) {
-        self.wonder_adjacent_sites = false;
-    }
-
-    /// The projection plus a small flat credit per wonder tile in the
-    /// footprint, capped at a river's worth.
+    /// plus a small flat credit per wonder tile in the footprint, capped at a
+    /// river's worth.
     ///
-    /// Version 2 of `wonder_adjacent_sites`; one version of a family plays, so
-    /// this turns version 1 off. Opt-in gene `wonder-adjacent-sites-2`. See
-    /// `AdvancedAi::wonder_adjacent_sites_2`.
+    /// Version 2 of `wonder-adjacent-sites`; version 1 left the code on
+    /// 2026-09-09. Opt-in gene `wonder-adjacent-sites-2`. See
+    /// `AdvancedAi::wonder_adjacent_sites_2` and `advanced/wonder_sites.rs`.
     pub fn enable_wonder_adjacent_sites_2(&mut self) {
-        self.wonder_adjacent_sites = false;
         self.wonder_adjacent_sites_2 = true;
     }
 
@@ -2981,19 +2928,6 @@ impl AdvancedAi {
     /// The twin of `enable_science_building_first`.
     pub fn disable_science_building_first(&mut self) {
         self.science_building_first = false;
-    }
-
-    /// `AdvancedAi::skip_the_prophet_race`; opt-in gene
-    /// `skip-the-prophet-race`. Filed above the markers with the other
-    /// toggles, because the append-point check reads a line's first
-    /// identifier and every one of these starts `pub`.
-    pub fn enable_skip_the_prophet_race(&mut self) {
-        self.skip_the_prophet_race = true;
-    }
-
-    /// The twin of `enable_skip_the_prophet_race`.
-    pub fn disable_skip_the_prophet_race(&mut self) {
-        self.skip_the_prophet_race = false;
     }
 
     /// Cap the city target at the sites the map can actually seat. See
@@ -3384,22 +3318,6 @@ impl AdvancedAi {
     /// The twin of `enable_settler_never_idles`.
     pub fn disable_settler_never_idles(&mut self) {
         self.settler_never_idles = false;
-    }
-
-    /// Enter the secondary Great Prophet race for eligible lanes: Astrology
-    /// after the opening techs, the empire's first Holy Site at the front of
-    /// the district order, the Prophet priced as a lane great person, and
-    /// `pursue_religion` for the prize. An explicit Science lane stays on its
-    /// pure beeline. See `enter_the_prophet_race`.
-    pub fn enable_enter_the_prophet_race(&mut self) {
-        self.enter_the_prophet_race_2 = false;
-        self.enter_the_prophet_race = true;
-    }
-
-    /// The twin of `enable_enter_the_prophet_race`.
-    pub fn disable_enter_the_prophet_race(&mut self) {
-        self.enter_the_prophet_race = false;
-        self.base.enter_prophet_race = false;
     }
 
     /// The host's barbarian scouts capture civilians, so a barbarian recon unit counts in every capture-reach model.
@@ -3810,11 +3728,10 @@ impl AdvancedAi {
         self.industrial_chain_debt = false;
     }
 
-    /// Version 2 of `skip-the-prophet-race`: retain version 1's published
-    /// behavior, but screen the narrower last-call decision independently.
-    /// One version per family is active in a screen.
+    /// Version 2 of `skip-the-prophet-race`: leave the Prophet race only at
+    /// the narrower last call. Version 1's unconditional withdrawal left the
+    /// code on 2026-09-09. See `AdvancedAi::skip_the_prophet_race_2`.
     pub fn enable_skip_the_prophet_race_2(&mut self) {
-        self.skip_the_prophet_race = false;
         self.skip_the_prophet_race_2 = true;
     }
 
@@ -4026,11 +3943,13 @@ impl AdvancedAi {
 
     /// Enter the secondary Great Prophet race only when the board-aware
     /// religious-opening rank admits this seat: two cities, a real Holy Site
-    /// path, and one of the remaining global slots. The entry fee and prize
-    /// still move together. Version 2 of `enter-the-prophet-race`; enabling it
-    /// selects this family version.
+    /// path, and one of the remaining global slots. Astrology after the
+    /// opening techs, the empire's first Holy Site at the front of the
+    /// district order, the Prophet priced as a lane great person, and
+    /// `pursue_religion` for the prize; an explicit Science lane stays on its
+    /// pure beeline. Version 2 of `enter-the-prophet-race`; version 1 left
+    /// the code on 2026-09-09. See `enter_the_prophet_race_2`.
     pub fn enable_enter_the_prophet_race_2(&mut self) {
-        self.enter_the_prophet_race = false;
         self.enter_the_prophet_race_2 = true;
     }
 
