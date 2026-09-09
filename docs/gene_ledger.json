@@ -1798,7 +1798,8 @@
         "ships": "boosted-bargain-first-2",
         "versions": {
           "boosted-bargain-first": null,
-          "boosted-bargain-first-2": null
+          "boosted-bargain-first-2": null,
+          "boosted-bargain-first-3": null
         }
       },
       "border-parity": {

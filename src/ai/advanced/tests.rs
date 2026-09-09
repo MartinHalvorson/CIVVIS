@@ -1661,6 +1661,7 @@ fn boosted_bargain_versions_are_registered_reversible_and_exclusive() {
     for (tag, field) in [
         ("boosted-bargain-first", "boosted_bargain_first"),
         ("boosted-bargain-first-2", "boosted_bargain_first_2"),
+        ("boosted-bargain-first-3", "boosted_bargain_first_3"),
     ] {
         assert!(
             GENES
@@ -1685,6 +1686,14 @@ fn boosted_bargain_versions_are_registered_reversible_and_exclusive() {
     ai.enable_boosted_bargain_first_2();
     ai.disable_boosted_bargain_first_2();
     assert!(!ai.boosted_bargain_first_2);
+    ai.enable_boosted_bargain_first_2();
+    ai.enable_boosted_bargain_first_3();
+    assert!(!ai.boosted_bargain_first && !ai.boosted_bargain_first_2 && ai.boosted_bargain_first_3);
+    ai.enable_boosted_bargain_first();
+    assert!(ai.boosted_bargain_first && !ai.boosted_bargain_first_3);
+    ai.enable_boosted_bargain_first_3();
+    ai.disable_boosted_bargain_first_3();
+    assert!(!ai.boosted_bargain_first_3);
 }
 
 /// Version one reads price alone and interrupts Seasteads for boosted Mining.
@@ -1774,6 +1783,214 @@ fn boosted_bargain_v2_breaks_only_a_close_unforced_fallback() {
         game.players[0].research.as_deref(),
         Some("animal_husbandry"),
         "the one-turn close-value Eureka breaks the fallback tie"
+    );
+}
+
+/// `boosted-bargain-first-3` ships off in both constructors and, off, the
+/// mechanism returns nothing on a board where it would otherwise fire.
+#[test]
+fn boosted_bargain_v3_ships_off_and_is_inert_off() {
+    assert!(!AdvancedAi::new().boosted_bargain_first_3);
+    assert!(!AdvancedAi::legacy().boosted_bargain_first_3);
+    let (mut game, city, _) = empire_with_a_capital(71_123);
+    game.at_war.clear();
+    game.cities.get_mut(&city).expect("capital").pop = 60;
+    game.players[0]
+        .techs
+        .retain(|tech| tech != &crate::name!("mining"));
+    game.players[0].boosted_techs.insert(crate::name!("mining"));
+    game.players[0].research = None;
+    game.turn = game.max_turns / 2;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let available = BasicAi::era_window_techs(&game, 0);
+    let off = AdvancedAi::new();
+    assert_eq!(
+        off.boosted_bargain_tech_3(&game, 0, &plan, &available, None, None),
+        None
+    );
+    let mut plain_game = game.clone();
+    AdvancedAi::new().advanced_research(&mut plain_game, 0, &plan);
+    let mut v3_off = AdvancedAi::new();
+    v3_off.enable_boosted_bargain_first_3();
+    v3_off.disable_boosted_bargain_first_3();
+    v3_off.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research, plain_game.players[0].research,
+        "enabled then disabled, the pick is the plain pick"
+    );
+}
+
+/// On a peaceful board with boosted Mining one turn from done, v1 interrupts
+/// the Diplomacy beeline (its pace), v2 refuses (its discipline), and v3
+/// interrupts too: one turn buys a whole technology.
+#[test]
+fn boosted_bargain_v3_takes_the_one_turn_bargain_v1_takes_and_v2_refuses() {
+    let (mut game, city, _) = empire_with_a_capital(71_124);
+    game.at_war.clear();
+    game.cities.get_mut(&city).expect("capital").pop = 60;
+    game.players[0]
+        .techs
+        .retain(|tech| tech != &crate::name!("mining"));
+    game.players[0].boosted_techs.insert(crate::name!("mining"));
+    game.players[0].research = None;
+    game.turn = game.max_turns / 2;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let science: f64 = game
+        .player_city_ids(0)
+        .into_iter()
+        .map(|cid| game.city_yields(cid).science)
+        .sum();
+    let remaining =
+        game.tech_cost("mining") * (1.0 - AdvancedAi::boost_frac(&game, "mining", true));
+    assert!(
+        remaining <= science,
+        "fixture: boosted Mining ({remaining:.0}) finishes within one turn of {science:.0} science"
+    );
+
+    let mut v1_game = game.clone();
+    let mut v1 = AdvancedAi::new();
+    v1.enable_boosted_bargain_first();
+    v1.advanced_research(&mut v1_game, 0, &plan);
+    assert_eq!(v1_game.players[0].research.as_deref(), Some("mining"));
+
+    let mut v2_game = game.clone();
+    let mut v2 = AdvancedAi::new();
+    v2.enable_boosted_bargain_first_2();
+    v2.advanced_research(&mut v2_game, 0, &plan);
+    assert_ne!(v2_game.players[0].research.as_deref(), Some("mining"));
+
+    let mut v3 = AdvancedAi::new();
+    v3.enable_boosted_bargain_first_3();
+    assert!(v3.boosted_bargain_first_3 && !v3.boosted_bargain_first && !v3.boosted_bargain_first_2);
+    v3.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("mining"),
+        "v3 interrupts the beeline for a one-turn Eureka"
+    );
+}
+
+/// The v3 vetoes, each on the board of the test above: a major at war, a war
+/// plan's stand-in (a threatened city), a Recovery plan, a lane target legal
+/// within three turns, and a bargain two turns from done. Each returns the
+/// lane's own step; lifting the veto returns the bargain.
+#[test]
+fn boosted_bargain_v3_refuses_under_pressure_or_when_the_lane_is_landing() {
+    let (mut game, city, _) = empire_with_a_capital(71_125);
+    game.at_war.clear();
+    game.cities.get_mut(&city).expect("capital").pop = 60;
+    game.players[0]
+        .techs
+        .retain(|tech| tech != &crate::name!("mining"));
+    game.players[0].boosted_techs.insert(crate::name!("mining"));
+    game.players[0].research = None;
+    game.turn = game.max_turns / 2;
+    let peaceful = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let available = BasicAi::era_window_techs(&game, 0);
+    let mut v3 = AdvancedAi::new();
+    v3.enable_boosted_bargain_first_3();
+    let mining = Some(crate::name!("mining"));
+    assert_eq!(
+        v3.boosted_bargain_tech_3(&game, 0, &peaceful, &available, Some("seasteads"), None),
+        mining,
+        "fixture: the bargain stands on the peaceful board"
+    );
+
+    // A war with a living major.
+    let mut war_game = game.clone();
+    war_game.at_war.insert((0, 1));
+    assert_eq!(
+        v3.boosted_bargain_tech_3(&war_game, 0, &peaceful, &available, None, None),
+        None
+    );
+    war_game.players[0].research = None;
+    v3.advanced_research(&mut war_game, 0, &peaceful);
+    assert_ne!(war_game.players[0].research.as_deref(), Some("mining"));
+
+    // A defence posture: a threatened city.
+    let threatened = StrategicPlan {
+        threatened_city: Some(city),
+        ..peaceful
+    };
+    assert_eq!(
+        v3.boosted_bargain_tech_3(&game, 0, &threatened, &available, None, None),
+        None
+    );
+
+    // A Recovery plan.
+    let recovery = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..peaceful
+    };
+    assert_eq!(
+        v3.boosted_bargain_tech_3(&game, 0, &recovery, &available, None, None),
+        None
+    );
+
+    // The lane target is legal and within three turns of done: the beeline
+    // lands its node instead. Any cheap available node stands in for it.
+    let near = available
+        .iter()
+        .find(|tech| tech.as_str() != "mining")
+        .expect("another available node");
+    let science: f64 = game
+        .player_city_ids(0)
+        .into_iter()
+        .map(|cid| game.city_yields(cid).science)
+        .sum();
+    assert!(v3.beeline_step_cost(&game, 0, near.as_str(), true) <= science * 3.0);
+    assert_eq!(
+        v3.boosted_bargain_tech_3(&game, 0, &peaceful, &available, Some(near.as_str()), None),
+        None
+    );
+
+    // Two turns from done is v1's bargain, not v3's.
+    let mut slow_game = game.clone();
+    slow_game.cities.get_mut(&city).expect("capital").pop = 24;
+    let slow_science: f64 = slow_game
+        .player_city_ids(0)
+        .into_iter()
+        .map(|cid| slow_game.city_yields(cid).science)
+        .sum();
+    let remaining =
+        slow_game.tech_cost("mining") * (1.0 - AdvancedAi::boost_frac(&slow_game, "mining", true));
+    assert!(
+        remaining > slow_science && remaining <= slow_science * 2.0,
+        "fixture: {remaining:.0} against {slow_science:.0} science is a two-turn bargain"
+    );
+    assert_eq!(
+        v3.boosted_bargain_tech_3(&slow_game, 0, &peaceful, &available, None, None),
+        None
+    );
+    let mut v1 = AdvancedAi::new();
+    v1.enable_boosted_bargain_first();
+    assert_eq!(
+        v1.boosted_bargain_tech(&slow_game, 0, &available),
+        Some("mining")
     );
 }
 

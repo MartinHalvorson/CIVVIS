@@ -185,6 +185,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `boosted-bargain-first-3` | off (unmeasured) | `boosted-bargain-first-3`: a one-turn boosted technology may interrupt a peaceful lane beeline that is not about to land its target; the other versions stand down. | 2 \| 3 |
 | `builder-workforce-recovery` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `builder-workforce-recovery-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 | `campus-before-halfway` | off (unmeasured) | `campus-before-halfway` (OptIn): a Science seat's Campus keeps the lane's 170-point arm before the halfway clock instead of pricing at zero, and past the half-empire coverage cliff the Campus keeps asking in any city of `CAMPUS_EVERY_CITY_POP_FLOOR` (four) — the floor the 2026-08-19 repair named and left as a literal `false`. | 1 \| 1 |

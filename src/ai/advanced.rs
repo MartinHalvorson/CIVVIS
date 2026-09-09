@@ -364,6 +364,27 @@ const BOOSTED_BARGAIN_TURNS: f64 = 2.0;
 /// value before its Eureka breaks the tie.
 const BOOSTED_BARGAIN_V2_TURNS: f64 = 1.0;
 const BOOSTED_BARGAIN_V2_VALUE_FLOOR: f64 = 0.90;
+/// `boosted-bargain-first-3`: the 13,938-seat screen of 2026-09-08 priced
+/// the two earlier versions at opposite corners. V1 (a two-turn bargain that
+/// interrupts every lane beeline) researched **+0.33 techs by standard turn
+/// 150 (z +4.5)** — one of the best research-pace genes in the pool — and
+/// lost **−0.80 pp** of wins (batch columns −17/−10/−9). V2 (asked only once
+/// every forced goal stands down) won **+0.47 pp** (+16/−1/+5) and researched
+/// **−0.17 techs (z −2.7)**, slower than off. The pace came from the
+/// interruption; the losses came from interrupting a lane that was under
+/// pressure. V3 keeps the interruption and prices it: the bargain must finish
+/// within `BOOSTED_BARGAIN_V3_TURNS` of the cities' science, so the beeline
+/// is delayed by exactly one turn and gets a whole technology for it.
+const BOOSTED_BARGAIN_V3_TURNS: f64 = 1.0;
+/// `boosted-bargain-first-3`: no interruption when the lane's own target is
+/// already legal and within this many turns of done — the beeline is about
+/// to land a victory-chain, Harbor or Great Person node, and a one-turn
+/// delay there is the whole margin at t182–224 where Emperor games are lost.
+const BOOSTED_BARGAIN_V3_LANE_NEAR_TURNS: f64 = 3.0;
+/// `boosted-bargain-first-3`: on the fallback path (no forced goal at all)
+/// the bargain must keep this share of the ordinary winner's `tech_value`,
+/// the v2 floor that stops "discounted" meaning "unwanted".
+const BOOSTED_BARGAIN_V3_VALUE_FLOOR: f64 = 0.90;
 /// `cheapest-wonder-first`: a wonder within this many turns of done, in a
 /// city producing at least `CHEAPEST_WONDER_CITY_SHARE` of the empire's
 /// best, is a bargain the race opens for. Eight live King games ignored 17
@@ -4904,6 +4925,13 @@ pub struct AdvancedAi {
     /// boosted technology within one turn may break a close ordinary fallback
     /// decision. See `boosted_bargain_tech_2`.
     boosted_bargain_first_2: bool,
+    /// `boosted-bargain-first-3`: a one-turn boosted technology interrupts a
+    /// peaceful lane beeline that is not about to land its target. Vetoed at
+    /// war, under a war plan, in Recovery, with a threatened city, or when the
+    /// lane target is legal within `BOOSTED_BARGAIN_V3_LANE_NEAR_TURNS`;
+    /// the pick is the highest `tech_value` bargain, and the fallback path is
+    /// asked as v2 asks it. See `boosted_bargain_tech_3`.
+    boosted_bargain_first_3: bool,
     /// `border-parity`: in peacetime, once a met major's city stands within
     /// `BORDER_PARITY_CONTACT_RADIUS` of ours, keep the seat's military power
     /// at `BORDER_PARITY_RATIO` of the strongest such neighbour's by buying
@@ -7865,6 +7893,7 @@ impl AdvancedAi {
             border_parity_3: false,
             boosted_bargain_first: false,
             boosted_bargain_first_2: false,
+            boosted_bargain_first_3: false,
             border_parity: false,
             age_closer: false,
             builder_avoid: BTreeMap::new(),
@@ -14031,6 +14060,14 @@ impl AdvancedAi {
             let science_harbor_goal = self.science_harbor_research_goal(g, pid, objective);
             let luxury_goal = self.unconnected_luxury_tech(g, pid);
             let bargain_goal = self.boosted_bargain_tech(g, pid, &available);
+            // `boosted-bargain-first-3`: the lane goals the bargain would
+            // displace, in the order the match below ranks them, so the
+            // veto can see whether the beeline is about to land its node.
+            let lane_target: Option<&str> = science_harbor_goal
+                .or(science_victory_goal)
+                .or(great_person_goal.as_deref());
+            let bargain_goal_3 =
+                self.boosted_bargain_tech_3(g, pid, plan, &available, lane_target, None);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
                 && (objective != GrandStrategy::Science
                     || self.barbarian_research_is_urgent(g, pid))
@@ -14123,6 +14160,11 @@ impl AdvancedAi {
                 // the beeline walks past it every turn. Behind the luxury
                 // connection (an amenity for four cities), ahead of the lane.
                 _ if bargain_goal.is_some() => bargain_goal,
+                // `boosted-bargain-first-3`: the same slot as v1 — behind
+                // every war, barbarian, religion and luxury contract — but a
+                // one-turn finish only, on a peaceful seat whose lane is not
+                // about to land its target. See `boosted_bargain_tech_3`.
+                _ if bargain_goal_3.is_some() => bargain_goal_3.as_deref(),
                 _ if science_harbor_goal.is_some() => science_harbor_goal,
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
@@ -14211,6 +14253,16 @@ impl AdvancedAi {
             } else {
                 fallback_pick.map(|ordinary| {
                     self.boosted_bargain_tech_2(g, pid, plan.strategy, &available, &ordinary)
+                        .or_else(|| {
+                            self.boosted_bargain_tech_3(
+                                g,
+                                pid,
+                                plan,
+                                &available,
+                                None,
+                                Some(&ordinary),
+                            )
+                        })
                         .unwrap_or(ordinary)
                 })
             };
@@ -14783,6 +14835,97 @@ impl AdvancedAi {
                 (remaining <= science * BOOSTED_BARGAIN_V2_TURNS
                     && self.tech_value(g, pid, &tech, strategy) + f64::EPSILON >= value_floor)
                     .then(|| (self.tech_value(g, pid, &tech, strategy), remaining, tech))
+            })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.total_cmp(&left.1))
+                    .then_with(|| right.2.cmp(&left.2))
+            })
+            .map(|(_, _, tech)| tech)
+    }
+
+    /// `boosted-bargain-first-3`: the highest-value already-boosted available
+    /// technology that finishes within `BOOSTED_BARGAIN_V3_TURNS` of the
+    /// cities' science, or `None` — with the gene off, without such a
+    /// bargain, or under any of the vetoes below.
+    ///
+    /// Two callers. `advanced_research` asks first in v1's slot of the forced
+    /// goal ladder with `lane_target` set to the lane goal the bargain would
+    /// displace (`ordinary` unset): that is v1's source of research pace
+    /// (+0.33 techs at standard t150 on the 2026-09-08 screen), bought here
+    /// for exactly one turn of delay instead of v1's two. It asks again on
+    /// the fallback path with `ordinary` set to the plain `tech_value` winner
+    /// (`lane_target` unset), where the bargain must keep
+    /// `BOOSTED_BARGAIN_V3_VALUE_FLOOR` of that winner's value — v2's rule.
+    ///
+    /// The vetoes are v2's discipline (+0.47 pp wins where v1 lost −0.80 pp)
+    /// written as conditions instead of as a position: no interruption while
+    /// the seat is at war with a living major, holds a war plan, plans
+    /// `Recovery`, or names a threatened city; and none while `lane_target`
+    /// is itself legal and within `BOOSTED_BARGAIN_V3_LANE_NEAR_TURNS` of
+    /// done, because then the beeline is on its final step toward a
+    /// victory-chain, Harbor or Great Person node and the turn is the lane's.
+    /// Among bargains the pick is the highest `tech_value`, then the cheaper,
+    /// then the earlier name — not v1's cheapest, which bought whatever was
+    /// on sale.
+    fn boosted_bargain_tech_3(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        available: &[Name],
+        lane_target: Option<&str>,
+        ordinary: Option<&Name>,
+    ) -> Option<Name> {
+        if !self.boosted_bargain_first_3 {
+            return None;
+        }
+        let player = &g.players[pid];
+        let at_war = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        });
+        if at_war
+            || self.war_plan.is_some()
+            || plan.strategy == GrandStrategy::Recovery
+            || plan.threatened_city.is_some()
+        {
+            return None;
+        }
+        let science = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.city_yields(cid).science)
+            .sum::<f64>()
+            .max(1.0);
+        if let Some(target) = lane_target {
+            let landing = available.iter().any(|tech| tech.as_str() == target)
+                && self.beeline_step_cost(g, pid, target, true)
+                    <= science * BOOSTED_BARGAIN_V3_LANE_NEAR_TURNS;
+            if landing {
+                return None;
+            }
+        }
+        let value_floor = ordinary
+            .map(|ordinary| {
+                self.tech_value(g, pid, ordinary, plan.strategy) * BOOSTED_BARGAIN_V3_VALUE_FLOOR
+            })
+            .unwrap_or(f64::NEG_INFINITY);
+        available
+            .iter()
+            .cloned()
+            .filter(|tech| player.boosted_techs.contains(tech))
+            .filter_map(|tech| {
+                let remaining =
+                    g.tech_cost(tech.as_str()) * (1.0 - Self::boost_frac(g, &tech, true));
+                let value = self.tech_value(g, pid, &tech, plan.strategy);
+                (remaining <= science * BOOSTED_BARGAIN_V3_TURNS
+                    && value + f64::EPSILON >= value_floor)
+                    .then_some((value, remaining, tech))
             })
             .max_by(|left, right| {
                 left.0

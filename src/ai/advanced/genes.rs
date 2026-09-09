@@ -2232,6 +2232,9 @@ pub const GENES: &[Gene] = &[
     // Reprice all strikers after each friendly kill; only a sequence whose
     // surviving enemy replies spare every striker can become the final plan.
     Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
+    // A one-turn boosted technology interrupts a peaceful lane beeline that is
+    // not about to land its target; see `boosted_bargain_tech_3`.
+    Gene { tag: "boosted-bargain-first-3", field: "boosted_bargain_first_3", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first_3, disable: AdvancedAi::disable_boosted_bargain_first_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
