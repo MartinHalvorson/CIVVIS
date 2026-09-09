@@ -436,35 +436,23 @@ WOUNDED_HP = 45
 def evacuation_section(
     events: list[dict[str, Any]], local_player: int | None
 ) -> dict[str, Any] | None:
-    """Whether the seat's evacuations happen, from the run's own events.
+    """Observed movement before combat deaths, not proof of failed execution.
 
-    Measured on the 32 ledger runs of 2026-08-30..09-01 that reached turn
-    100: 461 of our units died in combat, 408 of them to barbarians; 352
-    were at or below 50 HP when the killing blow landed and 334 had been
-    hit on an earlier turn and left in reach. The order on the death turn
-    was, in most cases, a `MOVE_TO` — and 383 of the 461 made no host move
-    on the turn before they died. The decision to leave was taken; the leg
-    the host accepted never happened. That is the shape this section
-    counts, so a run can say whether the mod-side answer
-    (`CivvisBoard.moveNoop` / `move_fallback`) changed it.
+    The historical ``deaths_after_unexecuted_move`` key is retained for ladder
+    consumers. It counts victims ordered to move on the death turn or the one
+    before with no subsequent observed position change before death. A later
+    move supersedes an older failed attempt. Both host movement events and
+    consecutive exported positions provide progress evidence; missing movement
+    telemetry alone cannot establish that an order never executed.
 
-    - ``deaths``: our units killed by a unit.
-    - ``deaths_wounded_at_turn_start``: of those, at or below `WOUNDED_HP`
-      on the first frame of the turn they died — the recovery line had
-      already been crossed when the turn began.
-    - ``deaths_after_unexecuted_move``: of those, ordered `MOVE_TO` on the
-      death turn or the one before with no host move on that turn.
-    - ``move_noop`` / ``move_fallback``: the mod's same-pass answers, with
-      the host's reasons.
-
-    `None` when the run has no `combat` event at all (a mod that predates
-    the ledger), which is a different statement from a run with no deaths.
+    Wounded-at-turn-start uses the first frame. No combat telemetry returns
+    ``None``, distinct from a recording with no deaths.
     """
     if not any(event.get("kind") == "combat" for event in events):
         return None
     states = _states(events)
-    deaths: list[tuple[int, int]] = []
-    for event in events:
+    deaths: list[tuple[int, int, int]] = []
+    for index, event in enumerate(events):
         if event.get("kind") != "combat":
             continue
         attacker = event.get("attacker") or {}
@@ -478,12 +466,13 @@ def evacuation_section(
             and isinstance(defender.get("id"), int)
             and isinstance(event.get("turn"), int)
         ):
-            deaths.append((defender["id"], event["turn"]))
+            deaths.append((defender["id"], event["turn"], index))
     move_orders: set[tuple[int, int]] = set()
-    host_moves: set[tuple[int, int]] = set()
+    progress: dict[int, list[tuple[int, int, int]]] = collections.defaultdict(list)
+    previous_positions: dict[int, tuple[int, tuple[int, int]]] = {}
     noop_reasons: collections.Counter = collections.Counter()
     fallback_reasons: collections.Counter = collections.Counter()
-    for event in events:
+    for index, event in enumerate(events):
         kind = event.get("kind")
         turn = event.get("turn")
         if not isinstance(turn, int):
@@ -494,21 +483,36 @@ def evacuation_section(
             ):
                 move_orders.add((event["subject"], turn))
         elif kind == "host_move" and isinstance(event.get("unit"), int):
-            host_moves.add((event["unit"], turn))
+            before = (event.get("from_x"), event.get("from_y"))
+            after = (event.get("x"), event.get("y"))
+            if before != after and all(isinstance(v, int) for v in (*before, *after)):
+                progress[event["unit"]].append((turn, turn, index))
+        elif kind == "state":
+            for uid, unit in _own_units(event).items():
+                position = (unit.get("x"), unit.get("y"))
+                if not all(isinstance(v, int) for v in position):
+                    continue
+                if uid in previous_positions:
+                    previous_turn, previous_position = previous_positions[uid]
+                    if previous_position != position:
+                        progress[uid].append((previous_turn, turn, index))
+                previous_positions[uid] = (turn, position)
         elif kind == "move_noop":
             noop_reasons[str(event.get("why") or "unknown")] += 1
         elif kind == "move_fallback":
             fallback_reasons[str(event.get("why") or "unknown")] += 1
     wounded = 0
     unexecuted = 0
-    for uid, turn in deaths:
+    for uid, turn, death_index in deaths:
         board = states.get(turn)
         if board is not None:
             hp = _own_units(board).get(uid, {}).get("hp")
             if isinstance(hp, (int, float)) and hp <= WOUNDED_HP:
                 wounded += 1
-        if any(
-            (uid, t) in move_orders and (uid, t) not in host_moves for t in (turn, turn - 1)
+        ordered_turns = [t for t in (turn - 1, turn) if (uid, t) in move_orders]
+        if ordered_turns and not any(
+            min(ordered_turns) <= from_turn <= moved_turn <= turn and index < death_index
+            for from_turn, moved_turn, index in progress[uid]
         ):
             unexecuted += 1
     return {
@@ -1217,8 +1221,8 @@ def render(report: dict[str, Any]) -> str:
         lines.append(
             f"           {evacuation['deaths']} of ours killed by a unit: "
             f"{evacuation['deaths_wounded_at_turn_start']} began that turn at or below "
-            f"{WOUNDED_HP} hp, {evacuation['deaths_after_unexecuted_move']} had a MOVE_TO that "
-            f"never executed on that turn or the one before; host answered "
+            f"{WOUNDED_HP} hp, {evacuation['deaths_after_unexecuted_move']} had a MOVE_TO "
+            f"on that turn or the one before with no subsequent observed movement before death; host answered "
             f"{evacuation['move_noop']} no-op legs with {evacuation['move_fallback']} fallback steps"
         )
     roster = report["roster"]

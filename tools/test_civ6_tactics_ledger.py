@@ -317,6 +317,32 @@ class EvacuationTest(unittest.TestCase):
         self.assertEqual(section["move_fallback"], 1)
         self.assertEqual(section["move_fallback_reasons"], {"zoc": 1})
 
+    def test_later_retreat_supersedes_previous_turn_without_movement(self) -> None:
+        events = self._events()
+        death = next(i for i, e in enumerate(events) if e.get("kind") == "combat")
+        events.insert(death, {"kind": "host_move", "turn": 10, "unit": 1,
+                              "from_x": 2, "from_y": 2, "x": 3, "y": 2})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 0)
+
+    def test_exported_progress_counts_without_a_host_move_event(self) -> None:
+        events = self._events()
+        death = next(i for i, e in enumerate(events) if e.get("kind") == "combat")
+        events.insert(death, {"kind": "state", "turn": 10, "frame": 1,
+                              "units": [_unit(1, "UNIT_WARRIOR", 3, 2, hp=40)]})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 0)
+
+    def test_progress_before_the_order_turn_does_not_clear_the_failure(self) -> None:
+        events = self._events()
+        events.insert(1, {"kind": "state", "turn": 8, "frame": 0,
+                          "units": [_unit(1, "UNIT_WARRIOR", 1, 2, hp=40)]})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 1)
+
+    def test_movement_after_death_cannot_explain_the_retreat(self) -> None:
+        events = self._events()
+        events.append({"kind": "host_move", "turn": 10, "unit": 1,
+                       "from_x": 2, "from_y": 2, "x": 3, "y": 2})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 1)
+
     def test_a_mod_with_no_combat_events_says_nothing(self) -> None:
         self.assertIsNone(ledger.evacuation_section([{"kind": "seat", "local_player": 0}], 0))
 
@@ -327,7 +353,7 @@ class EvacuationTest(unittest.TestCase):
             text = ledger.render(report) if hasattr(ledger, "render") else ""
         self.assertEqual(report["evacuation"]["deaths_after_unexecuted_move"], 1)
         if text:
-            self.assertIn("never executed", text)
+            self.assertIn("no subsequent observed movement before death", text)
 
 
 class CityOccupationTest(unittest.TestCase):
