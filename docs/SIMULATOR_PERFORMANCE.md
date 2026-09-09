@@ -82,6 +82,44 @@ short version is that the globe runs `Sphere::distance` and `arc_is_clear`, whic
 the batch never executes, and the three absolute readings in
 `docs/speed_ledger.json` had to be superseded rather than relabelled.
 
+### Two rejections, both measured slower and both closed
+
+Neither of these shipped. Both were the profile's own suggestions, both are
+bit-exact, both passed the full suite, and both are **resolved slowdowns** —
+which is why the paired harness exists.
+
+| change | median of 15 pairs | resolves | outcome |
+| --- | ---: | ---: | --- |
+| `crate::name!("city_center")` in place of `Name == "city_center"` at the three district-family early-outs, plus resolving the family lazily once per sweep | **+0.70%** | ±0.31% | closed |
+| the three science-lane `\|\|` chains asking `raced_target()` before `space_race_lane` | **+0.28%** | ±0.17% | closed |
+
+**Why the interned comparison lost.** `Name == "literal"` goes through `impl
+PartialEq<str> for Name`, which the profile counted as a registry deref plus a
+`memcmp` — but the registry entry carries a `head` byte and the strings are
+short, so that comparison is already cheap. `crate::name!()` is a per-call-site
+`static OnceLock<Name>`, so every evaluation pays an atomic acquire load and a
+branch. Swapping one cheap thing for another cheap thing left the added
+`Option<Name>` and `get_or_insert_with` closure of the lazy resolution as the
+net effect.
+
+This **corroborates the standing row in "Largest remaining opportunities"**,
+which already records the full effect-map conversion as "exact but a 0.3% CPU
+loss". The profile's suggestion to sweep the roughly 977 `Name == "literal"`
+sites in the five hot files as a broad low-risk win is now measured, at three
+of those sites, as a loss. Do not take that sweep without pairing it.
+
+**Why the lane reorder lost.** `space_race_lane` short-circuits on the
+`lane_space_race` field before it reaches `victory_focus`, so it is only
+expensive when that gene is on; and `raced_target()` returns `None` in the
+common case, so asking it first does not skip anything. The reorder saves the
+empire sweep only for a seat already racing Science, and pays one extra field
+read on every seat that is not. In this workload the second case dominates.
+
+⚠ The lesson both share: **"expensive predicate first in an `&&`/`||`" is a
+smell, not a finding.** Two of the three reorderings tried today lost, and the
+one that won (#3283, −0.55%) won by a twentieth of its estimate. Only the change
+that removed *work* rather than reordering it — the flood skip — paid.
+
 ### Method notes worth keeping
 
 - **15 pairs at 120 turns resolves about ±0.35%** on a quiet `mbp-m5-max-128`.
