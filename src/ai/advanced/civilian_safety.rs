@@ -317,6 +317,31 @@ impl AdvancedAi {
         around: Pos,
         radius: i32,
     ) -> BarbarianReach {
+        self.raider_reach(g, pid, around, radius, true)
+    }
+
+    /// Military units use terrain-aware reach for an observed raider. The
+    /// host's geometric capture fallback applies to civilian destinations;
+    /// borrowing it here makes shooters retreat through mountain barriers.
+    /// Unseen enemies still use the same last-sighting projection.
+    pub(super) fn military_raider_reach(
+        &self,
+        g: &Game,
+        pid: usize,
+        around: Pos,
+        radius: i32,
+    ) -> BarbarianReach {
+        self.raider_reach(g, pid, around, radius, false)
+    }
+
+    fn raider_reach(
+        &self,
+        g: &Game,
+        pid: usize,
+        around: Pos,
+        radius: i32,
+        civilian_capture_floor: bool,
+    ) -> BarbarianReach {
         let mut raiders = Vec::new();
         // Native/evaluator boards preserve their screened barbarian-only
         // answer. The live host has proved that the same capture rule applies
@@ -384,7 +409,7 @@ impl AdvancedAi {
                     })
                     .collect()
             };
-            if is_live_scout {
+            if civilian_capture_floor && is_live_scout {
                 // `threat_reach` is the exact movement flood and remains the
                 // source of truth for every native/evaluator unit. On the
                 // live seat, however, the host's conservative scout guard
@@ -397,7 +422,10 @@ impl AdvancedAi {
                         .into_iter()
                         .filter(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))),
                 );
-            } else if self.live_settler_capture_lessons && domain != Some("sea") && spec.moves > 0.0
+            } else if civilian_capture_floor
+                && self.live_settler_capture_lessons
+                && domain != Some("sea")
+                && spec.moves > 0.0
             {
                 // The host bridge has one deliberately conservative fallback
                 // that the native movement flood cannot reproduce: when
