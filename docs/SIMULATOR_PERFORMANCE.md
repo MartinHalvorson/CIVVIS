@@ -5,6 +5,99 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-09-09: the flood paid for arrivals it threw away (−4.30%)
+
+A call-tree profile of the real batch workload — `gene_screen --games 6
+--turns 250`, release binary, `/usr/bin/sample` over a 150s window, 114,225
+samples — put four families at the top. Three were acted on, and the results
+are a lesson in how far a self-time share is from a saving.
+
+### The one that paid: `relax_movement_into`
+
+`relax_movement_into` ran `passable`, `unit_step_cost`, `capped_moves_at` and
+the zone-of-control walk for **every** neighbour, and only then applied the
+improvement test. Every interior tile is reached from all six of its neighbours
+and re-pushed on each improvement, so much of that work was computed and
+discarded — and `in_enemy_zoc_for`, the expensive part, visits all six
+neighbours of the arrival, every unit standing on them, and a
+`zone_of_control` effect lookup per neighbour. Measured under
+`approach_reach ← strike_reach_of ← movement_risk_frame_for_group`:
+`in_enemy_zoc_for` 2.0%/4.7% self, `defensible_district_owner_at` 1.1%/2.6%,
+`entry_at_neighbor` 1.8%/2.9%, the family 7.5–15.0% inclusive depending on how
+much fighting the sample caught.
+
+The guard is an arithmetic proof rather than a heuristic. `unit_step_cost` ends
+`cost.max(0.0)` and asserts "a step never grants movement"; `rem > 0` is already
+guaranteed; `(rem - cost).max(0.0) ≤ rem`; `.min(capped_moves_at(..))` only
+lowers it; and both `FloodArrival::arrival` implementations either keep the value
+or zero it for a zone of control. So `score ≤ rem` unconditionally, and a tile
+already holding `rem` or better can never lose the strict `>` test. Skipping
+there writes nothing the test would have written and pushes nothing it would
+have pushed, so the LIFO order, the `nbrs` order and the strict `>` that decide
+which parent `path_to` returns are untouched — the same argument the sibling BFS
+already makes for its own early skip.
+
+| | gate shape, 15 pairs, 120t, `--shape flat` |
+| --- | ---: |
+| baseline | 159.71s user CPU / 1800 turns = 0.088726 s/turn |
+| candidate | 152.41s user CPU / 1800 turns = 0.084673 s/turn |
+| **median** | **−4.30%** per completed turn |
+| spread | IQR 1.71pp, resolves ±0.65% |
+| pooled / whole game | −4.57% / −4.57% |
+
+Same game on all 15 pairs.
+
+### The one that did not: a loop-invariant city-state predicate
+
+`regional_building_effects_uncached` asked
+`grants_city_state_unique_bonus(city.owner, "Mexico City")` once per building of
+every city, expensive-side-first in an `&&` so the cheap district test could
+never short-circuit it. The profile put that predicate at **7.2% self**, the
+largest single self-time entry under `regional_building_effects` (15.6%
+inclusive), and the expected saving was 5–9%.
+
+**It measured −0.55%.** The reason is the shape of the function, not the shape of
+the loop: its first line returns early when that city-state was never drawn into
+the game, and the 7.2% was aggregate across all twelve call sites of the
+predicate. **Mexico City is in none of the gate's five seeds.**
+
+| workload | median | resolves | verdict |
+| --- | ---: | ---: | --- |
+| gate seeds, 120t | −0.23% | ±0.34% | inside its own resolution |
+| seed 900011, 250t, Mexico City present | −0.56% | ±0.29% | resolved |
+| seed 900022, 250t, Mexico City present | −0.55% | ±0.16% | resolved |
+
+⚠ **A city-state's code is only reachable when the seed draws that city-state.**
+A five-seed gate cannot see the expensive branch of any
+`grants_city_state_unique_bonus` call whose city-state it never rolls. Attribute
+by call tree *and* by reachability.
+
+### The instrument was pointed at the wrong world
+
+Both readings above were taken with `--shape flat`, and that flag is new. Until
+today neither `speed_ab.py` nor `profile_civvis.py` passed a topology, so both
+measured `civvis simulate`'s default `MapTopology::Planet` while `gene_screen`
+plays `MapTopology::default()` = `Flat`. See the section on it further down; the
+short version is that the globe runs `Sphere::distance` and `arc_is_clear`, which
+the batch never executes, and the three absolute readings in
+`docs/speed_ledger.json` had to be superseded rather than relabelled.
+
+### Method notes worth keeping
+
+- **15 pairs at 120 turns resolves about ±0.35%** on a quiet `mbp-m5-max-128`.
+  The same 15 pairs with a `cargo test` running alongside resolved only ±1.91%
+  and wasted the run — the median survives contention, the spread does not.
+- **Cost that scales with cities and buildings needs 250 turns.** At the gate's
+  120 the empire is too small to show it, which is how a change that pays −0.55%
+  at 250t read −0.23% and unresolvable at 120t.
+- **An eager hoist can be a pessimization.** Resolving a district family once
+  before a city sweep, rather than lazily on first need, measured **+0.96% —
+  slower** — because a city with no districts, or one whose first district is the
+  family asked about, previously walked no chain at all. `speed_ab.py`'s own
+  docstring already records this shape ("a hoisted allocation measured as an
+  improvement was a 10x pessimization once counted properly"); it is easy to
+  repeat.
+
 ## 2026-08-23: the 9% BTreeSet row was never the attack envelopes
 
 The section below ranks *"the next target is `AttackEnvelopes = Vec<(u32,
