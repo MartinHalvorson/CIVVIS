@@ -2162,6 +2162,15 @@ pub const GENES: &[Gene] = &[
     // Version two also withdraws healthy units exposed to a nominal lethal
     // shot from one recently observed gun; v1 remains the deployed control.
     Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
+    // A short, deadlined plan for the Eurekas and Inspirations the beeline is
+    // about to walk past: the next six technologies and four civics, a trigger
+    // cost table, and at most three cheap side objectives carrying the turn
+    // they expire, each a share-of-value premium on the one production or
+    // Builder choice that fires it. The live ladder triggers 13-40 percent of
+    // tech boosts and 0-26 percent of civic boosts, and `chase-every-boost-2`
+    // shows that pricing every reachable trigger instead measures negative.
+    // See `advanced/boost_planner.rs`.
+    Gene { tag: "boost-planner", field: "boost_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner, disable: AdvancedAi::disable_boost_planner },
     // Take a small neighbour's city in the opening. The live seat has never
     // won at Emperor: rivals there take +16% on every yield and a free
     // Settler an era, our combat trades at 0.45 kills per loss, and 234 of

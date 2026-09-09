@@ -2340,6 +2340,15 @@ struct Seats<'a> {
     techs_150: Option<Vec<f64>>,
     techs_end: Option<Vec<f64>>,
     science_end: Option<Vec<f64>>,
+    /// ⭐ Boosted share, in points: of the techs this seat researched, the
+    /// percentage that arrived with a Eureka in hand (`techs_boosted /
+    /// techs_researched`), and of its civics the percentage that arrived
+    /// inspired. The direct read of a boost gene — the one that says whether
+    /// its plan fired, which win and pace cannot. `Some` only when the rows
+    /// carry the census (written since 2026-09-01); an older file reads all
+    /// zeros, which is no measurement.
+    techs_boosted_share: Option<Vec<f64>>,
+    civics_inspired_share: Option<Vec<f64>>,
 }
 
 impl<'a> Seats<'a> {
@@ -2396,6 +2405,21 @@ impl<'a> Seats<'a> {
             .iter()
             .any(|row| row.techs > 0)
             .then(|| rows.iter().map(|row| row.techs as f64).collect());
+        // A share is a measurement only where some row has a denominator;
+        // a seat that researched nothing reads zero, as it does for the
+        // commitment ratios above.
+        let share_of = |part: &dyn Fn(&Row) -> (i64, i64)| -> Option<Vec<f64>> {
+            rows.iter().any(|row| part(row).1 > 0).then(|| {
+                rows.iter()
+                    .map(|row| {
+                        let (numerator, denominator) = part(row);
+                        100.0 * ratio(numerator, denominator)
+                    })
+                    .collect()
+            })
+        };
+        let techs_boosted_share = share_of(&|row| (row.techs_boosted, row.techs_researched));
+        let civics_inspired_share = share_of(&|row| (row.civics_inspired, row.civics_adopted));
         Seats {
             rows,
             columns,
@@ -2408,6 +2432,8 @@ impl<'a> Seats<'a> {
             techs_150,
             techs_end,
             science_end,
+            techs_boosted_share,
+            civics_inspired_share,
         }
     }
 
@@ -2580,6 +2606,12 @@ struct GeneEstimate {
     techs_150: Option<(f64, f64)>,
     techs_end: Option<(f64, f64)>,
     science_end: Option<(f64, f64)>,
+    /// ⭐ Boosted share: on−off Δ, in points, of the share of researched
+    /// techs that arrived boosted and of adopted civics that arrived
+    /// inspired, from the same contrast. `None` when the rows predate the
+    /// census.
+    techs_boosted_share: Option<(f64, f64)>,
+    civics_inspired_share: Option<(f64, f64)>,
 }
 
 impl GeneEstimate {
@@ -2668,6 +2700,8 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
                 techs_150: pace(&seats.techs_150),
                 techs_end: pace(&seats.techs_end),
                 science_end: pace(&seats.science_end),
+                techs_boosted_share: pace(&seats.techs_boosted_share),
+                civics_inspired_share: pace(&seats.civics_inspired_share),
             }
         })
         .collect();
@@ -3775,6 +3809,33 @@ fn print_table(header: &Header, rows: &[Row]) {
              mark on this batch's clock (`SCIENCE_PACE_STANDARD_TURN`)"
         );
     }
+    // ⭐ Boosted share, only for rows that carry the census: the genes that
+    // most change how much of the tree a seat researched with a boost in
+    // hand — the read that says whether a boost gene's plan fired at all.
+    if genes.iter().any(|e| e.techs_boosted_share.is_some()) {
+        println!(
+            "\n{:<28} {:>14} {:>7}  {:>14} {:>7}",
+            "boosted share", "techs boostedΔ", "z", "civics inspiredΔ", "z"
+        );
+        let mut by_share: Vec<&GeneEstimate> = genes.iter().collect();
+        by_share.sort_by(|a, b| {
+            pace_abs_z(a.techs_boosted_share)
+                .total_cmp(&pace_abs_z(b.techs_boosted_share))
+                .reverse()
+        });
+        for e in by_share {
+            println!(
+                "{:<28} {}  {}",
+                e.tag,
+                pace_cell(e.techs_boosted_share),
+                pace_cell(e.civics_inspired_share)
+            );
+        }
+        println!(
+            "boosted share cells are seats-on minus seats-off in points of the seat's researched \
+             techs (adopted civics) that arrived boosted, ± one clustered standard error, then z"
+        );
+    }
     println!(
         "\n`*` = |z|≥2 (a screen flag, ~1 in 22 by chance); `**` = past the family-wise bar; the read \
          column names the win Δ first and the score-share Δ when it says more. `~` = unresolved at \
@@ -4097,6 +4158,11 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 "science_pace": pace_json(e.techs_150, e.n_on, e.n_off),
                 "techs_end": pace_json(e.techs_end, e.n_on, e.n_off),
                 "science_end": pace_json(e.science_end, e.n_on, e.n_off),
+                // ⭐ Boosted share: on − off Δ in points of the researched
+                // techs (adopted civics) that arrived boosted; null for a
+                // file whose rows predate the census, never a Δ of zero.
+                "techs_boosted_share_pp": pace_json(e.techs_boosted_share, e.n_on, e.n_off),
+                "civics_inspired_share_pp": pace_json(e.civics_inspired_share, e.n_on, e.n_off),
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
@@ -6834,6 +6900,11 @@ mod tests {
             );
             assert_eq!(e.science_end, None);
             assert_eq!(
+                (e.techs_boosted_share, e.civics_inspired_share),
+                (None, None),
+                "no fixture row researched anything: a share of nothing is no measurement"
+            );
+            assert_eq!(
                 pace_json(e.techs_150, e.n_on, e.n_off),
                 serde_json::Value::Null
             );
@@ -6851,6 +6922,52 @@ mod tests {
     /// clustered contrast the win column uses: seats with the gene on knowing
     /// four more techs at the mark read +4.00, on the same arms the win
     /// column counts, and the JSON block carries exactly that.
+    /// The boosted share is the on − off Δ, in points, of the seat's own
+    /// ratio `techs_boosted / techs_researched` (and the civic pair), from
+    /// the same clustered contrast: seats on arriving boosted at half their
+    /// techs against a quarter off read +25.00, a seat that researched
+    /// nothing reads zero rather than dividing by it, and the JSON block
+    /// carries exactly that under `techs_boosted_share_pp`.
+    #[test]
+    fn boosted_share_is_the_on_minus_off_share_of_nodes_that_arrived_boosted() {
+        let header = test_header(&["a"]);
+        let mut rows = Vec::new();
+        for game in 0..12 {
+            for seat in 0..3 {
+                let on = (game + seat) % 2 == 0;
+                let mut row = test_row(game, seat, if on { "1" } else { "0" }, false);
+                row.techs_researched = 40;
+                row.techs_boosted = if on { 20 } else { 10 };
+                row.civics_adopted = 20;
+                row.civics_inspired = if on { 2 } else { 4 };
+                rows.push(row);
+            }
+        }
+        let estimates = estimate(&header, &rows);
+        let e = &estimates.genes[0];
+        let (techs, se) = e.techs_boosted_share.expect("every row carries the census");
+        assert!((techs - 25.0).abs() < 1e-9, "Δ techs boosted share {techs}");
+        assert!(se >= 0.0 && se.is_finite(), "se {se}");
+        let (civics, _) = e
+            .civics_inspired_share
+            .expect("every row carries the census");
+        assert!(
+            (civics + 10.0).abs() < 1e-9,
+            "Δ civics inspired share {civics}"
+        );
+        let json = pace_json(e.techs_boosted_share, e.n_on, e.n_off);
+        assert!((json["diff"].as_f64().unwrap() - 25.0).abs() < 1e-9);
+        assert_eq!(json["n_on"], 18);
+        // A seat that researched nothing is a zero, not a division by zero,
+        // and does not make the file read as unmeasured.
+        rows[0].techs_researched = 0;
+        rows[0].techs_boosted = 0;
+        let seats = Seats::of(&header, &rows);
+        let shares = seats.techs_boosted_share.expect("other rows carry it");
+        assert_eq!(shares[0], 0.0);
+        assert!(shares.iter().all(|share| share.is_finite()));
+    }
+
     #[test]
     fn science_pace_is_the_on_minus_off_techs_at_the_standard_turn_mark() {
         let header = test_header(&["a"]);
@@ -8560,6 +8677,8 @@ mod tests {
             techs_150: None,
             techs_end: None,
             science_end: None,
+            techs_boosted_share: None,
+            civics_inspired_share: None,
             tag: "t".into(),
             n_on: 1,
             n_off: 1,
