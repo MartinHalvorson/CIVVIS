@@ -523,7 +523,8 @@ def evacuation_section(
 
 
 def roster_section(
-    events: list[dict[str, Any]], unit_orders: list, local_player: int | None
+    events: list[dict[str, Any]], unit_orders: list | tuple = (),
+    local_player: int | None = None,
 ) -> dict[str, Any]:
     states = _states(events)
     turns = sorted(states)
