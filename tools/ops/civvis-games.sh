@@ -203,9 +203,29 @@ version_report() {
   # ladder row means, but they live in a file no other report mentions — a
   # sibling session set barbarian-hunt on 2026-08-21 and two batches ran with it
   # before anyone looked. Surface it beside the revision, where it belongs.
-  local forced="$HOME/.civvis-live-force-on"
+  # Since 2026-09-09 the versioned list is `deploy/live-force-on.txt` in the
+  # tree that builds, and the home file is a LOCAL OVERRIDE the supervisor
+  # honours only while it is non-empty — say both, and shout when they differ,
+  # because then this seat's rows are not comparable with the fleet's.
+  local forced="$HOME/.civvis-live-force-on" repo_forced="$tree/deploy/live-force-on.txt"
+  local repo_list="" local_list=""
+  [[ -r $repo_forced ]] && repo_list=$(tr -d '\n' < "$repo_forced")
+  if [[ -n ${CIVVIS_WITH_FILE:-} ]]; then
+    say "  ⚠ forced    CIVVIS_WITH_FILE=$CIVVIS_WITH_FILE is set in THIS shell; the supervisor reads its own environment, see supervisor.log 'source='"
+  fi
+  if [[ -e $repo_forced ]]; then
+    say "  forced     ${repo_list:-none}  (repo deploy/live-force-on.txt in ${tree:t})"
+  else
+    say "  forced     no deploy/live-force-on.txt in ${tree:t} — stock deployment genome unless a local file overrides"
+  fi
   if [[ -s $forced ]]; then
-    say "  ⚠ forced    $(tr -d '\n' < $forced)  (arm forced ON via ${forced/#$HOME/~}, set $(stat -f %Sm $forced))"
+    local_list=$(tr -d '\n' < "$forced")
+    if [[ $local_list == "$repo_list" ]]; then
+      say "  ⚠ forced    ${forced/#$HOME/~} equals the repo list (set $(stat -f %Sm "$forced")); delete it to track the repository"
+    else
+      say "  ⚠⚠ OVERRIDE  ${forced/#$HOME/~} = $local_list  (set $(stat -f %Sm "$forced"))"
+      say "             DIFFERS from the repo list — the seat plays the LOCAL list and its ladder rows are not the fleet's arm"
+    fi
   fi
   local withheld="${CIVVIS_WITHOUT:-}"
   [[ -n $withheld ]] && say "  ⚠ withheld  $withheld"

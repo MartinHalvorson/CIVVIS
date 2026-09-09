@@ -98,10 +98,16 @@ old restart policy — before it hands over. Change the file, then restart the
 chain at a boundary (`civvis-games off` … `civvis-games on`); the environment is
 fixed at process start, so an edit alone reaches nothing.
 
-Forced genome arms are a different file (`~/.civvis-live-force-on`, read per
-batch) and the revision pin is another (`~/.civvis-play-pin`, read per cycle);
-`civvis-games status` reports all three beside the revision the next batch
-will build.
+Forced genome arms are a different file, read per batch in this order: the
+path in `CIVVIS_WITH_FILE`; else `~/.civvis-live-force-on` when it exists and
+is non-empty (a LOCAL OVERRIDE, logged as one in `supervisor.log` every batch
+it wins); else `deploy/live-force-on.txt` in the tree being built -- the
+versioned list every seat on `main` plays. Empty the local file, or delete
+it, to track the repository again; to play the stock genome on a seat whose
+tree carries a repo list, set `CIVVIS_WITH_FILE=/dev/null`. The revision pin
+is another file (`~/.civvis-play-pin`, read per cycle); `civvis-games status`
+reports the repo list, flags a local override that differs from it, and shows
+the pin beside the revision the next batch will build.
 
 ## Day to day
 
