@@ -265,7 +265,7 @@ impl AdvancedAi {
             || self.amani_follows_suzerainty)
             || self.base.minor
             || self.base.barb
-            || g.turn % g.standard_duration(16).max(1) != 0
+            || !g.turn.is_multiple_of(g.standard_duration(16).max(1))
             || matches!(
                 plan.strategy,
                 GrandStrategy::Recovery | GrandStrategy::Conquest
