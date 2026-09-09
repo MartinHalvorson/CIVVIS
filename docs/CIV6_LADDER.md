@@ -25,10 +25,10 @@ before that export carries the index alone and reads `—` here.
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 921.
+Attempts recorded: 934.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 482 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 488 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
 
 ## Which victories have been won, per difficulty
 
@@ -61,14 +61,14 @@ absent from this table have never been completed by anyone here.
 
 | victory | type | games | of ended |
 |---|---|---|---|
-| 0 | VICTORY_SCORE | 202 | 56% |
-| 6 | VICTORY_DIPLOMATIC | 63 | 17% |
-| 3 | VICTORY_CULTURE | 60 | 17% |
-| 5 | VICTORY_TECHNOLOGY | 30 | 8% |
+| 0 | VICTORY_SCORE | 202 | 55% |
+| 6 | VICTORY_DIPLOMATIC | 64 | 18% |
+| 3 | VICTORY_CULTURE | 60 | 16% |
+| 5 | VICTORY_TECHNOLOGY | 33 | 9% |
 | 4 | — | 5 | 1% |
 | 2 | — | 1 | 0% |
 
-361 of 921 attempts reached a terminal victory event, and 6 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
+365 of 934 attempts reached a terminal victory event, and 8 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
 
 ## How the harness ended games, per day (last 14 days)
 
@@ -104,7 +104,7 @@ they did not produce.
 | 2026-09-03 | 5 | 5 | 0 | 9 | 1 | 0 | 1 | 21 | 26 | 0 |
 | 2026-09-04 | 0 | 2 | 0 | 0 | 0 | 0 | 1 | 3 | 0 | 0 |
 | 2026-09-08 | 0 | 1 | 0 | 8 | 0 | 0 | 0 | 9 | 15 | 0 |
-| 2026-09-09 | 0 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 | 0 |
+| 2026-09-09 | 0 | 4 | 0 | 7 | 0 | 0 | 0 | 11 | 6 | 0 |
 
 ## Every attempt
 
@@ -139,19 +139,6 @@ ground.
 
 | run | difficulty | playing for | configured | outcome | turns | score | techs@150 (ours/rival) | launches | ended |
 |---|---|---|---|---|---|---|---|---|---|
-| `civvis-20260903T112440Z-cont1` | Emperor | — | NO | killed | 40 | 68 | — | — | 2026-09-03T11:43:33Z |
-| `civvis-20260903T112440Z-cont2` | Emperor | — | NO | killed | 40 | 68 | — | — | 2026-09-03T11:51:05Z |
-| `civvis-20260903T112440Z-cont3` | Emperor | science | yes | operator_retired | 60 | 93 | — | — | 2026-09-03T11:55:51Z |
-| `civvis-20260903T120009Z` | Emperor | science | yes | operator_retired | 113 | 214 | — | — | 2026-09-03T12:18:06Z |
-| `civvis-20260903T122231Z` | Emperor | science | yes | rival victory | 234 | 405 | — | — | 2026-09-03T13:07:40Z |
-| `civvis-20260903T131248Z` | Emperor | science | yes | rival victory | 206 | 648 | — | — | 2026-09-03T13:55:15Z |
-| `civvis-20260903T135954Z` | Emperor | — | NO | killed | 40 | 76 | — | — | 2026-09-03T14:12:57Z |
-| `civvis-20260903T135954Z-cont1` | Emperor | — | NO | killed | 40 | 76 | — | — | 2026-09-03T14:17:55Z |
-| `civvis-20260903T135954Z-cont2` | Emperor | science | yes | stalled: turn 46 has not advanced for 480s while events kept arriving | 46 | 87 | — | — | 2026-09-03T15:40:11Z |
-| `civvis-20260904T054835Z-capture-free-1` | Emperor | science | yes | operator_retired | 33 | 36 | — | — | 2026-09-04T05:50:45Z |
-| `civvis-20260904T055102Z-capture-free-1` | Emperor | science | yes | operator_retired | 42 | 119 | — | — | 2026-09-04T06:00:45Z |
-| `civvis-20260904T060105Z-capture-free-1` | Emperor | science | yes | rival victory | 219 | 560 | — | — | 2026-09-04T06:43:12Z |
-| `civvis-20260908T164553Z` | Emperor | science | yes | rival victory | 198 | 304 | — | — | 2026-09-08T17:32:42Z |
 | `civvis-20260908T173748Z` | Emperor | science | yes | rival victory | 208 | 491 | 45/60 | — | 2026-09-08T18:04:48Z |
 | `civvis-20260908T181447Z` | Emperor | — | NO | killed | 116 | 385 | — | — | 2026-09-08T18:34:18Z |
 | `civvis-20260908T181447Z-cont1` | Emperor | science | yes | rival victory | 155 | 567 | 46/58 | — | 2026-09-08T18:48:17Z |
@@ -179,3 +166,16 @@ ground.
 | `civvis-20260909T002110Z` | Emperor | science | yes | operator_retired | 88 | 188 | — | — | 2026-09-09T00:32:52Z |
 | `civvis-20260909T003711Z` | Emperor | science | yes | rival victory | 175 | 521 | 43/48 | — | 2026-09-09T01:03:21Z |
 | `civvis-20260909T010354Z` | Emperor | science | yes | operator_retired | 185 | 502 | 43/59 | — | 2026-09-09T01:34:00Z |
+| `civvis-20260909T013436Z` | Emperor | — | NO | killed | 208 | 688 | 49/49 | — | 2026-09-09T02:29:26Z |
+| `civvis-20260909T013436Z-cont1` | Emperor | — | NO | killed | 208 | 688 | 73/76 | — | 2026-09-09T02:34:58Z |
+| `civvis-20260909T013436Z-cont2` | Emperor | — | NO | killed | 208 | 690 | 72/75 | — | 2026-09-09T02:40:32Z |
+| `civvis-20260909T013436Z-cont3` | Emperor | science | yes | rival victory | 208 | 691 | 71/73 | — | 2026-09-09T02:44:48Z |
+| `civvis-20260909T025914Z` | Emperor | — | NO | killed | 199 | 704 | 39/51 | 0/4 | 2026-09-09T03:39:57Z |
+| `civvis-20260909T025914Z-cont1` | Emperor | science | yes | rival victory | 224 | 779 | 58/69 | 2/4 port t204 last t215 | 2026-09-09T03:50:16Z |
+| `civvis-20260909T035048Z` | Emperor | science | yes | rival victory | 213 | 259 | 34/57 | 0/4 | 2026-09-09T04:25:22Z |
+| `civvis-20260909T042557Z` | Emperor | science | yes | operator_retired | 15 | 23 | — | 0/4 | 2026-09-09T04:27:35Z |
+| `civvis-20260909T043723Z` | Emperor | — | NO | killed | 99 | 341 | — | 0/4 | 2026-09-09T04:54:07Z |
+| `civvis-20260909T043723Z-cont1` | Emperor | science | yes | rival victory | 195 | 747 | 49/57 | 3/4 port t159 last t188 | 2026-09-09T05:19:49Z |
+| `civvis-20260909T052021Z` | Emperor | — | NO | killed | 158 | 274 | 40/61 | 0/4 | 2026-09-09T05:50:18Z |
+| `civvis-20260909T052021Z-cont1` | Emperor | science | yes | defeat | 173 | 257 | 41/66 | 0/4 | 2026-09-09T05:53:39Z |
+| `civvis-20260909T055408Z` | Emperor | science | yes | defeat | 119 | 129 | — | 0/4 | 2026-09-09T06:11:01Z |
