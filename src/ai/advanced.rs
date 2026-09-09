@@ -12698,8 +12698,7 @@ impl AdvancedAi {
         // Each eye already out discounts the next: the second Scout opens
         // ground the first would have reached inside the window anyway, the
         // third less again.
-        (EARLY_CONTACT_UNMET_VALUE * unmet as f64 + neighbor_value)
-            / (counts.scouts + 1) as f64
+        (EARLY_CONTACT_UNMET_VALUE * unmet as f64 + neighbor_value) / (counts.scouts + 1) as f64
     }
 
     /// Cache ruleset constants for the adjacency threshold once per decision.

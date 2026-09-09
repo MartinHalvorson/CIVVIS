@@ -216,7 +216,6 @@ impl AdvancedAi {
         self.early_contact_window_2 = false;
     }
 
-
     /// Reserve a city to build whatever unblocks an earned Great Person,
     /// selling duplicate works to make room. A class earned and blocked
     /// reserves a city for the slot building, district, wonder or soldier that
