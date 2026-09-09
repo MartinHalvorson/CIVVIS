@@ -470,6 +470,7 @@ pub mod quests;
 
 mod actions;
 mod city;
+mod route_avoidance;
 
 #[cfg(test)]
 mod housing_source_tests;

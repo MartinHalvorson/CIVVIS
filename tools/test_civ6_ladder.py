@@ -421,10 +421,14 @@ class TheRowCarriesTheResearchGap(unittest.TestCase):
 
 
 class TheHarnessAttritionIsOnThePage(unittest.TestCase):
-    """61% of September's Emperor games ended `killed` or `operator_retired`:
-    the harness, not the game, decided the record. The census makes that
-    visible per day, and stays byte-stable so the snapshot test does not go
-    stale overnight."""
+    """How games ended, per day, visible on the page and byte-stable so the
+    snapshot test does not go stale overnight.
+
+    ⚠ The "61% of September's Emperor games ended `killed` or
+    `operator_retired`" headline this class was written for was an artifact of
+    counting attempt ROWS: 74% of the `killed` rows were park restarts of games
+    that went on to end some other way. See
+    `TheAttritionTableCountsGamesNotSegments`."""
 
     @staticmethod
     def _attempt(utc: str, reason: str | None, won: bool = False) -> dict:
@@ -472,10 +476,16 @@ class TheHarnessAttritionIsOnThePage(unittest.TestCase):
         markdown = civ6_ladder.markdown_for({"wins": {}, "attempts": attempts})
         self.assertIn("## How the harness ended games, per day (last 14 days)",
                       markdown)
+        # `games` and `restarts` replaced `total`: one row here is one GAME,
+        # and a parked game's restarts are counted beside its ending rather
+        # than inside it. See `TheAttritionTableCountsGamesNotSegments`.
         self.assertIn("| day | killed | operator_retired | abandoned | stopped "
-                      "| game exited | timeout | other | total | won |", markdown)
-        self.assertIn("| 2026-09-07 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |", markdown)
-        self.assertIn("| 2026-09-08 | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 2 | 0 |", markdown)
+                      "| game exited | timeout | other | games | restarts | won |",
+                      markdown)
+        self.assertIn("| 2026-09-07 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |",
+                      markdown)
+        self.assertIn("| 2026-09-08 | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 2 | 0 | 0 |",
+                      markdown)
         self.assertLess(markdown.index("How the harness ended games"),
                         markdown.index("## Every attempt"))
 
@@ -2379,3 +2389,116 @@ class TheRowCarriesTheCultureClock(unittest.TestCase):
 # a green that had tested neither.
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheAttritionTableCountsGamesNotSegments(unittest.TestCase):
+    """A parked game reloaded from its autosave writes a ledger row per
+    segment, and the table counted rows.
+
+    The parked segment ends `killed`, then `<tag>-cont1` plays on and ends
+    however the game really ended, so every restart landed in the `killed`
+    column. Measured on the committed ledger: 119 `killed` rows against 31
+    `killed` games, 74% of them restarts, which made the harness look like the
+    largest single ending of the record when per game it is the smallest of the
+    five.
+    """
+
+    @staticmethod
+    def _attempt(tag: str, utc: str, reason: str, **extra) -> dict:
+        return {"tag": tag, "utc": utc, "reason": reason, **extra}
+
+    def test_a_resumed_game_is_counted_once_under_its_final_ending(self):
+        attempts = [
+            self._attempt("civvis-A", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-A-cont1", "2026-09-08T02:00:00Z", "killed"),
+            self._attempt("civvis-A-cont2", "2026-09-08T03:00:00Z", "stopped"),
+        ]
+        census = civ6_ladder.attrition_census(attempts)
+        self.assertEqual(len(census), 1, "one game, one day")
+        (day, counts), = census
+        self.assertEqual(day, "2026-09-08")
+        self.assertEqual(counts["stopped"], 1, "the game ended stopped")
+        self.assertEqual(counts["killed"], 0,
+                         "the two parked segments are restarts, not endings")
+        self.assertEqual(counts["restarts"], 2, "and they stay visible")
+
+    def test_a_game_killed_for_good_still_counts_as_killed(self):
+        """The fix must not hide a real kill: a game whose LAST segment was
+        killed is a killed game."""
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-B", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-B-cont1", "2026-09-08T02:00:00Z", "killed"),
+        ])
+        (_, counts), = census
+        self.assertEqual(counts["killed"], 1)
+        self.assertEqual(counts["restarts"], 1)
+
+    def test_ten_segments_sort_by_number_not_by_text(self):
+        """`-cont10` is the tenth segment, not the second: sorting the tags as
+        strings would put it before `-cont2` and read the wrong ending."""
+        attempts = [self._attempt("civvis-C", "2026-09-08T00:00:00Z", "killed")]
+        attempts += [self._attempt(f"civvis-C-cont{n}", f"2026-09-08T0{n%10}:00:00Z",
+                                   "killed") for n in range(1, 10)]
+        attempts.append(self._attempt("civvis-C-cont10", "2026-09-08T12:00:00Z",
+                                      "abandoned"))
+        (_, counts), = civ6_ladder.attrition_census(attempts)
+        self.assertEqual(counts["abandoned"], 1, "the tenth segment ended it")
+        self.assertEqual(counts["killed"], 0)
+        self.assertEqual(counts["restarts"], 10)
+
+    def test_a_win_belongs_to_the_game_not_to_a_segment(self):
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-D", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-D-cont1", "2026-09-08T04:00:00Z", "stopped",
+                          won=True),
+        ])
+        (_, counts), = census
+        self.assertEqual(counts["won"], 1)
+        self.assertEqual(counts["stopped"], 1)
+
+    def test_a_game_is_dated_by_the_segment_that_ended_it(self):
+        """A game that started before midnight and ended after it belongs to
+        the day it ENDED, so a day's endings and its restarts agree."""
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-E", "2026-09-07T23:30:00Z", "killed"),
+            self._attempt("civvis-E-cont1", "2026-09-08T00:30:00Z", "stopped"),
+        ])
+        self.assertEqual([day for day, _ in census], ["2026-09-08"])
+
+    def test_unresumed_games_are_untouched(self):
+        """The ordinary case, and the one the old counting got right."""
+        census = civ6_ladder.attrition_census([
+            self._attempt("civvis-F", "2026-09-08T01:00:00Z", "killed"),
+            self._attempt("civvis-G", "2026-09-08T02:00:00Z", "abandoned"),
+            self._attempt("civvis-H", "2026-09-08T03:00:00Z", "stopped"),
+        ])
+        (_, counts), = census
+        self.assertEqual((counts["killed"], counts["abandoned"], counts["stopped"]),
+                         (1, 1, 1))
+        self.assertEqual(counts["restarts"], 0)
+
+    def test_the_grouping_agrees_with_the_climbs_own_stem(self):
+        """⚠ TWO SPELLINGS OF ONE RULE. `civ6_civvis_climb.screen_stem` strips
+        the same suffix so a live screen's arm belongs to the game; if the two
+        ever disagree, a game would be split here and pooled there."""
+        import civ6_civvis_climb as climb
+        for tag in ("civvis-20260909T001600Z",
+                    "civvis-20260909T001600Z-cont1",
+                    "civvis-20260909T001600Z-cont12",
+                    "civvis-cont-not-a-suffix",
+                    "civvis-cont1-cont2"):
+            self.assertEqual(civ6_ladder.game_tag(tag), climb.screen_stem(tag), tag)
+
+    def test_the_committed_ledger_reads_the_measured_numbers(self):
+        """The claim in the docstring, against the record it was measured on."""
+        if not civ6_ladder.DATA.is_file():
+            self.skipTest("no published snapshot yet")
+        attempts = json.loads(civ6_ladder.DATA.read_text())["attempts"]
+        games = civ6_ladder.games_from_attempts(attempts)
+        self.assertLess(len(games), len(attempts),
+                        "the committed ledger holds resumed games")
+        killed_rows = sum(1 for a in attempts if a.get("reason") == "killed")
+        killed_games = sum(1 for rows in games
+                           if rows[-1].get("reason") == "killed")
+        self.assertGreater(killed_rows, killed_games * 2,
+                           "most `killed` rows are restarts, not killed games")
