@@ -6253,6 +6253,8 @@ pub struct AdvancedAi {
     /// raider's reach without a melee unit beside it. See
     /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
     wounded_out_of_reach: bool,
+    /// V2 also prices one nominal shot from a remembered gun.
+    wounded_out_of_reach_2: bool,
     /// `threatened-city-reserve`: while a city of ours is threatened
     /// (`plan.threatened_city`) or bleeding (`native_city_emergency_on`), every
     /// ordinary Gold purchase — the strategic buyer here and the baseline
@@ -7866,6 +7868,7 @@ impl AdvancedAi {
             upgrade_the_garrison: false,
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
+            wounded_out_of_reach_2: false,
         }
     }
 

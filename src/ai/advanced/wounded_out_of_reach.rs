@@ -90,7 +90,7 @@ impl AdvancedAi {
     /// the unit. The native turn executes the policy on its current board.
     /// This forecast does not move anything in the authoritative mirror.
     pub fn live_wounded_unit_reservations(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
-        if !self.wounded_out_of_reach {
+        if !(self.wounded_out_of_reach || self.wounded_out_of_reach_2) {
             return BTreeSet::new();
         }
         let policy = self.clone(); // Hypothetical moves keep a silent journal.
@@ -116,7 +116,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> BTreeSet<u32> {
         let mut reserved = BTreeSet::new();
-        if !self.wounded_out_of_reach {
+        if !(self.wounded_out_of_reach || self.wounded_out_of_reach_2) {
             return reserved;
         }
         let decline_settlers =
@@ -163,7 +163,7 @@ impl AdvancedAi {
         pid: usize,
         uid: u32,
     ) -> Option<bool> {
-        if !self.wounded_out_of_reach || g.is_arena() {
+        if !(self.wounded_out_of_reach || self.wounded_out_of_reach_2) || g.is_arena() {
             return None;
         }
         let unit = g.units.get(&uid)?;

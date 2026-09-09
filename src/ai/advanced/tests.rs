@@ -47757,3 +47757,24 @@ fn a_wounded_ship_may_finish_the_only_visible_shore_gun() {
         "removing the visible gun does not remove a different remembered gun"
     );
 }
+
+#[test]
+fn withdrawal_v2_remembers_the_gun_that_can_kill_a_healthy_chariot() {
+    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_631).unwrap();
+    let gun_at = far_side_of(&g, front, refuge).unwrap();
+    let ours = g.spawn_test_unit("heavy_chariot", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 80;
+    let gun = g.spawn_test_unit("field_cannon", barbarian, gun_at);
+    g.turn = 165;
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(gun as i64)));
+    g.remove_unit(gun);
+    g.turn = 167;
+    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+    ai.enable_wounded_out_of_reach_2();
+    assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some());
+    assert_ne!(g.units[&ours].pos, front);
+}
