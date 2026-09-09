@@ -4101,6 +4101,39 @@ impl AdvancedAi {
         self.culture_threat_early = false;
     }
 
+    /// Take a small neighbour's city in the opening: a met rival's known
+    /// city within twelve tiles of the capital, the capital's production
+    /// reserved for three shooters and two melee bodies ahead of the second
+    /// Settler, the war declared once the force is assembled and the bill
+    /// covered, and no strike-force body ending its move beside unseen
+    /// ground. See `advanced/early_conquest.rs`. Opt-in gene
+    /// `early-conquest-opening`; off in production, opted into by name.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_early_conquest_opening(&mut self) {
+        self.early_conquest_opening = true;
+    }
+
+    /// The twin of `enable_early_conquest_opening`.
+    pub fn disable_early_conquest_opening(&mut self) {
+        self.early_conquest_opening = false;
+    }
+
+    /// Scale the opening city target, the opening deadline, the Settler
+    /// cadence and the expansion cards with the difficulty rung: the measured
+    /// 4-6 band is a King-level reading and every rung above it widens the
+    /// rival field. See `advanced/expansion_scales_with_difficulty.rs`.
+    /// Opt-in gene `expansion-scales-with-difficulty`. Filed above the
+    /// markers: the append-point check reads a method line's first identifier.
+    pub fn enable_expansion_scales_with_difficulty(&mut self) {
+        self.expansion_scales_with_difficulty = true;
+    }
+
+    /// The twin of `enable_expansion_scales_with_difficulty`.
+    pub fn disable_expansion_scales_with_difficulty(&mut self) {
+        self.expansion_scales_with_difficulty = false;
+    }
+
     /// Rank met majors by science and alliance feasibility, lead with the
     /// declared friendship, take the Research Alliance the moment it is
     /// legal, pay a premium for the first route to that ally while its level
