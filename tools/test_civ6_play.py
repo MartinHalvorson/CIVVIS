@@ -208,6 +208,38 @@ class AttachSummaryTests(unittest.TestCase):
                          {100: {"techs": 14, "rival_techs": 19},
                           150: {"techs": 31, "rival_techs": 47}})
 
+    def test_attached_summary_carries_the_space_race_to_the_last_board(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-launches"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 201, "frame": 0,
+                     "science_projects": [],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                    {"kind": "state", "turn": 219, "frame": 0,
+                     "science_projects": ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                          "PROJECT_LAUNCH_MOON_LANDING"],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 226, "score": 470, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+        self.assertEqual(summary["launch_marks"],
+                         {"spaceport_turn": 201, "launches_completed": 2,
+                          "last_launch_turn": 219})
+
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
 
@@ -3183,6 +3215,18 @@ class AStoppedRunStillLeavesARecord(unittest.TestCase):
         self.assertIn('civ6_ladder.tech_marks(run_dir / "events.jsonl")', block)
         self.assertIn('partial["tech_marks"] = marks', block)
         self.assertLess(block.index('partial["tech_marks"]'),
+                        block.index("path.write_text"))
+
+    def test_the_fallback_measures_the_space_race_before_writing(self):
+        """The deep Emperor games that get launches in are the ones the
+        harness ends by hand, so the shutdown hook must carry them too."""
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        self.assertIn('civ6_ladder.launch_marks(run_dir / "events.jsonl")', block)
+        self.assertIn('partial["launch_marks"] = launches', block)
+        self.assertLess(block.index('partial["launch_marks"]'),
                         block.index("path.write_text"))
 
     def test_the_fallback_is_registered_and_never_overwrites(self):

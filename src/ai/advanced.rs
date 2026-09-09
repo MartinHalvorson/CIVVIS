@@ -1713,6 +1713,8 @@ impl SettlementAtlas {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TurnStartHostile {
     id: u32,
+    host_key: i64,
+    owner: usize,
     pos: Pos,
     /// Tiles the unit can enter next turn: its movement, rounded up.
     capture_reach: i32,
@@ -3265,6 +3267,8 @@ pub struct AdvancedAi {
     /// ordinary ranking fill the opening. The baseline governor owns the
     /// choice; this flag makes it a screenable AdvancedAI gene.
     pub capital_settler_after_completion: bool,
+    /// Build one opening Scout when the capital is safe and lacks recon.
+    pub scout_first_opening: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -4765,6 +4769,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    amani_follows_suzerainty: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     builder_workforce_recovery: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -4849,6 +4855,14 @@ pub struct AdvancedAi {
     /// flat credit. Opt-in gene `boost-first-research`; see
     /// `advanced/boost_research.rs`.
     boost_first_research: bool,
+    /// A boost in hand breaks ties among comparable research candidates only,
+    /// after every forced lane goal has stood down. Version two of
+    /// `boost-first-research`: the same discount scale, applied in the argmax
+    /// to a boosted node whose unscaled score is within
+    /// `BOOST_TIEBREAK_BAND` of the ordinary winner's, never inside
+    /// `tech_value` / `civic_value` and never over a beeline step. Opt-in
+    /// gene `boost-first-research-2`; see `advanced/boost_research.rs`.
+    boost_first_research_2: bool,
     /// Version two waits only when the final trigger is already at the front
     /// of an owned city queue and the node would finish inside a much shorter
     /// window. Opt-in gene `boost-wait-research-2`; see
@@ -4907,6 +4921,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
+    /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
+    culture_threat_early: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     culture_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -5567,6 +5585,10 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    magnus_follows_settlers: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    liang_follows_builders: bool,
     /// `modernize-before-spending` (default on): upgrade the standing army
     /// BEFORE the discretionary purchase pass, at the moments that matter.
     ///
@@ -5825,6 +5847,10 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    reyna_follows_revenue: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    pingala_follows_research: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -6807,6 +6833,7 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
+mod governor_dividends;
 mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -6861,6 +6888,7 @@ mod wonder_sites;
 
 mod science_endgame;
 mod science_victory_drive;
+mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
@@ -6895,6 +6923,8 @@ pub(super) mod rapid_city_expansion;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// Route around a host-refused step before discarding its city destination.
+mod settler_route_recovery;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -7538,6 +7568,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             land_grab: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -7611,6 +7642,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amani_follows_suzerainty: false,
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
             anvil: false,
@@ -7631,6 +7663,7 @@ impl AdvancedAi {
             age_closer: false,
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
+            boost_first_research_2: false,
             boost_wait_research_2: false,
             boost_unlock_research: false,
             buy_what_cards_cannot_boost: false,
@@ -7639,6 +7672,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,
             detour_keeps_the_site_worth: false,
@@ -7734,6 +7768,8 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            magnus_follows_settlers: false,
+            liang_follows_builders: false,
             modernize_before_spending: false,
             objective_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
@@ -7759,6 +7795,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reyna_follows_revenue: false,
+            pingala_follows_research: false,
             research_building_catchup: false,
             research_building_catchup_2: false,
             route_block_is_a_wait: false,
@@ -7895,6 +7933,8 @@ impl AdvancedAi {
             }
             self.turn_start_hostiles.push(TurnStartHostile {
                 id: unit.id,
+                host_key: hostile_memory_key(g, unit),
+                owner: unit.owner,
                 pos: unit.pos,
                 capture_reach: spec.moves.ceil() as i32,
                 strength: crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
@@ -13941,12 +13981,25 @@ impl AdvancedAi {
             // V1 above can replace a forced goal merely because a side node
             // is cheap. V2 enters only here, after `goal_pick` is absent, and
             // may replace the ordinary fallback only with a one-turn boosted
-            // node of nearly equal board value.
+            // node of nearly equal board value. `boost-first-research-2` sits
+            // behind it at the same seam: the boost-in-hand scale as a
+            // tie-break among comparable candidates, never over a forced
+            // goal. See `advanced/boost_research.rs`.
             let pick = if let Some(goal_pick) = goal_pick {
                 Some(goal_pick)
             } else {
                 fallback_pick.map(|ordinary| {
                     self.boosted_bargain_tech_2(g, pid, plan.strategy, &available, &ordinary)
+                        .or_else(|| {
+                            self.boost_tiebreak_pick(
+                                g,
+                                pid,
+                                plan.strategy,
+                                &available,
+                                &ordinary,
+                                true,
+                            )
+                        })
                         .unwrap_or(ordinary)
                 })
             };
@@ -14090,6 +14143,9 @@ impl AdvancedAi {
                     })
                     .cloned()
             });
+            // The civic half of the `boost-first-research-2` tie-break, at
+            // the same seam: after the forced goal, over the ordinary argmax.
+            // See `advanced/boost_research.rs`.
             let pick = goal_pick.or_else(|| {
                 available
                     .iter()
@@ -14100,6 +14156,17 @@ impl AdvancedAi {
                             .then_with(|| b.cmp(a))
                     })
                     .cloned()
+                    .map(|ordinary| {
+                        self.boost_tiebreak_pick(
+                            g,
+                            pid,
+                            plan.strategy,
+                            &available,
+                            &ordinary,
+                            false,
+                        )
+                        .unwrap_or(ordinary)
+                    })
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
@@ -15986,6 +16053,16 @@ impl AdvancedAi {
         } else if denied_partner {
             return -1_000.0;
         }
+        // `culture-threat-early`: passage is the one thing a proposal can
+        // ask of us that finances a rival's culture finish; a threat's
+        // offer of it is refused outright. See `advanced/culture_strategy.rs`.
+        if deal.open_borders
+            && !deal.peace
+            && self.culture_threat_early
+            && self.culture_trade_threats(g, pid).contains(&partner)
+        {
+            return -1_000.0;
+        }
         if deal.open_borders {
             value += match plan.strategy {
                 GrandStrategy::Culture => 70.0,
@@ -16075,7 +16152,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.item == "open_borders"
                         && deal.direction == "buy"
@@ -16103,7 +16180,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.category == "great_work"
                         && deal.direction == "buy"
@@ -16132,7 +16209,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
                         && deal.my_value >= 2.0
@@ -16157,7 +16234,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| Self::culture_deal_safe(deal, &culture_threats))
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .max_by(|left, right| {
                     self.base
                         .deal_objective(left)
@@ -18000,6 +18077,13 @@ impl AdvancedAi {
         // reserved; trade resumes immediately when the appointment ends.
         if self.war_plan.is_none() {
             self.strategic_bilateral_trade(g, pid, denied_trade_partner, plan.strategy);
+        }
+        // `culture-threat-early`: a culture threat is denounced. See
+        // `advanced/culture_strategy.rs`.
+        if let Some(rival) = self.culture_threat_denunciation(g, pid) {
+            think!(self.journal(), Diplomacy, Decision,
+                   "Denouncing {}", g.players[rival].civ;
+                   "their tourism is a culture threat");
         }
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See
@@ -29115,7 +29199,10 @@ impl AdvancedAi {
     /// still makes progress; if none exists, hold and let the target search
     /// reconsider rather than donating the settler to the threat.
     fn settler_step_toward_safe(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
-        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
+        let Some(waypoint) = self.settler_refusal_waypoint(g, uid, target) else {
+            return false;
+        };
+        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, waypoint)
     }
 
     /// Move either a Settler or the military leader of its linked formation
@@ -38840,19 +38927,13 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
-        // `live-move-refusal-break`: a Settler whose step the host has proved
-        // refused (see `BasicAi::judge_move_refusals`) does not merely bend
-        // its route — its destination goes through the same dead-site
-        // machinery a watchdog arrival uses, so the target chooser must pick
-        // a site the frozen approach does not serve. Bending alone can walk
-        // the same unreachable site from another angle for the whole bar.
+        // A host-refused step first asks for a detour. Only sites with no
+        // remaining route are deferred, and only for the refusal's lifetime.
         self.retire_frozen_settler_targets(g);
     }
 
-    /// `live-move-refusal-break`'s Settler half: a destination whose approach
-    /// the host has proved refused is set aside through the dead-site
-    /// machinery, exactly as a watchdog arrival is, so the target chooser
-    /// must pick a site the frozen approach does not serve.
+    /// Retain reachable city sites across replans; a remembered refusal must
+    /// not retire every new target for thirty turns without attempting it.
     fn retire_frozen_settler_targets(&mut self, g: &Game) {
         if !self.live_move_refusal_break {
             return;
@@ -38861,20 +38942,25 @@ impl AdvancedAi {
             .settler_targets
             .keys()
             .copied()
-            .filter(|uid| self.base.move_refusal_blocked(g, *uid))
+            .filter(|uid| {
+                self.base.move_refusal_blocked(g, *uid)
+                    && self
+                        .settler_refusal_waypoint(g, *uid, self.settler_targets[uid])
+                        .is_none()
+            })
             .collect();
         for uid in frozen {
             let Some(target) = self.settler_targets.remove(&uid) else {
                 continue;
             };
             self.settler_relaxed_targets.remove(&uid);
-            self.settler_dead_sites.entry(uid).or_default().insert(
-                target,
-                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-            );
+            self.settler_dead_sites
+                .entry(uid)
+                .or_default()
+                .insert(target, self.base.move_refusal_blocks[&uid].1);
             think!(self.journal(), Expansion, Detail,
                    "Settler retires a destination the host will not walk it toward";
-                   "its issued step was refused on consecutive turns without the unit \
+                   "no route avoids the step refused on consecutive turns without the unit \
                     moving, so {target:?} is set aside and a fresh site is chosen";
                    target);
         }
@@ -39552,6 +39638,7 @@ impl AdvancedAi {
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
+        self.relocate_governors_for_dividends(g, pid, &plan);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured

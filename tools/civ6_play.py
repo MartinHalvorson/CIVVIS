@@ -3628,6 +3628,22 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
         if marks:
             summary["tech_marks"] = marks
+        # And the culture clock beside it: the leading rival's share of the
+        # culture victory and the staycationer bar we set against it, from the
+        # same frame. The Emperor record's rival victories are majority culture
+        # and land ~30 turns earlier than the science ones. Absent when the run
+        # never reached t100 or predates the tourism export.
+        culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+        if culture:
+            summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         revisions = civ6_ladder.decider_revisions(run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
@@ -3892,6 +3908,12 @@ def _play(args: argparse.Namespace) -> int:
             marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
             if marks:
                 partial["tech_marks"] = marks
+            culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+            if culture:
+                partial["culture_marks"] = culture
+            launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+            if launches:
+                partial["launch_marks"] = launches
         except Exception:  # noqa: BLE001 - best-effort evidence at exit
             pass
         try:
@@ -4627,6 +4649,22 @@ def _play(args: argparse.Namespace) -> int:
         marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
         if marks:
             summary["tech_marks"] = marks
+        # And the culture clock beside it: the leading rival's share of the
+        # culture victory and the staycationer bar we set against it, from the
+        # same frame. The Emperor record's rival victories are majority culture
+        # and land ~30 turns earlier than the science ones. Absent when the run
+        # never reached t100 or predates the tourism export.
+        culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+        if culture:
+            summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log

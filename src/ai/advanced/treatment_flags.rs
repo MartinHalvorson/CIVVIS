@@ -1407,6 +1407,18 @@ impl AdvancedAi {
         self.base.land_grab = false;
     }
 
+    /// Reserve the safe capital's first build for its first Scout.
+    pub fn enable_scout_first_opening(&mut self) {
+        self.scout_first_opening = true;
+        self.base.scout_first_opening = true;
+    }
+
+    /// Restore the configured opening without changing its progress.
+    pub fn disable_scout_first_opening(&mut self) {
+        self.scout_first_opening = false;
+        self.base.scout_first_opening = false;
+    }
+
     /// After its current production completes, let a population-two capital
     /// start the next legal Settler before ordinary production ranking. The
     /// baseline governor retains the city-target, site, and emergency gates.
@@ -2332,11 +2344,28 @@ impl AdvancedAi {
     /// reads a method line's first identifier.
     pub fn enable_boost_first_research(&mut self) {
         self.boost_first_research = true;
+        self.boost_first_research_2 = false;
     }
 
     /// The twin of `enable_boost_first_research`.
     pub fn disable_boost_first_research(&mut self) {
         self.boost_first_research = false;
+    }
+
+    /// Let a boost in hand break ties among comparable research candidates
+    /// only: the same discount scale as version one, applied in the argmax
+    /// after every forced lane goal has stood down, to a boosted node whose
+    /// unscaled score is within `BOOST_TIEBREAK_BAND` of the ordinary
+    /// winner's. See [`AdvancedAi::boost_tiebreak_pick`]. Opt-in gene
+    /// `boost-first-research-2`; a seat plays at most one version.
+    pub fn enable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = true;
+        self.boost_first_research = false;
+    }
+
+    /// The twin of `enable_boost_first_research_2`.
+    pub fn disable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = false;
     }
 
     /// Version one hunts every Eureka and Inspiration through a global union
@@ -3995,9 +4024,22 @@ impl AdvancedAi {
         self.envoy_building_dividends = false;
     }
 
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// version one's 50, refuse every sale to the threatening rival, and
+    /// denounce it. See `advanced/culture_strategy.rs`. Opt-in gene
+    /// `culture-threat-early`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_culture_threat_early(&mut self) {
+        self.culture_threat_early = true;
+    }
+
+    /// The twin of `enable_culture_threat_early`.
+    pub fn disable_culture_threat_early(&mut self) {
+        self.culture_threat_early = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
-
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
