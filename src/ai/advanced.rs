@@ -5891,6 +5891,16 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// The stock alliance desk asks for a Research Alliance, on any turn,
+    /// ranked by the partner's science, and holds the slot for it; the first
+    /// route to that ally carries a premium while its level still climbs.
+    /// Opt-in gene `research-alliance-first`; see
+    /// `advanced/research_alliance.rs`.
+    research_alliance_first: bool,
+    /// Partners the research desk has asked, by the turn last asked, so a
+    /// refusal is not re-asked the next turn. Written only while
+    /// `research_alliance_first` is on; see `advanced/research_alliance.rs`.
+    research_alliance_asked: BTreeMap<usize, u32>,
     /// Opt-in governor relocation; see `governor_dividends`.
     reyna_follows_revenue: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
@@ -7038,6 +7048,10 @@ mod first_luxury;
 /// to its ending, with what became of it counted. Infrastructure, not a
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
+/// The alliance an Emperor handicap cannot deny us: the stock alliance desk
+/// asks for a Research Alliance, ranked by science, and feeds its level with
+/// routes. Opt-in gene `research-alliance-first`.
+mod research_alliance;
 /// A unit the next blow could remove leaves the reach of whatever can
 /// strike it; a shooter or scout does not end the turn inside a raider's
 /// reach without a melee unit beside it. Opt-in gene `wounded-out-of-reach`.
@@ -7920,6 +7934,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            research_alliance_first: false,
+            research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
             research_building_catchup: false,
@@ -16431,7 +16447,7 @@ impl AdvancedAi {
     }
 
     fn propose_strategic_alliance(
-        &self,
+        &mut self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
@@ -16445,19 +16461,32 @@ impl AdvancedAi {
         // it when the next-turn Favor can still reach the host score.
         let nobel_peace_alliance_pays =
             self.nobel_peace_favor_score_value(g, pid, 1.0, 1.0) > f64::EPSILON;
-        if (!nobel_peace_alliance_pays && g.turn % 12 != pid as u32 % 12)
+        // `research-alliance-first`: the kind is Research and the cadence is
+        // not waited for while a Research Alliance is worth waiting for; no
+        // other kind is proposed while it is not yet legal on our tree. Off,
+        // `Stock`. See `advanced/research_alliance.rs`.
+        let research_lane = self.research_alliance_lane(g, pid);
+        if research_lane == research_alliance::ResearchAllianceLane::Wait {
+            return;
+        }
+        let research_first = research_lane == research_alliance::ResearchAllianceLane::Research;
+        if (!nobel_peace_alliance_pays && !research_first && g.turn % 12 != pid as u32 % 12)
             || !g.players[pid]
                 .civics
                 .contains(&crate::name!("civil_service"))
         {
             return;
         }
-        let kind = match plan.strategy {
-            GrandStrategy::Science => "research",
-            GrandStrategy::Culture => "cultural",
-            GrandStrategy::Religion => "religious",
-            GrandStrategy::Conquest | GrandStrategy::Recovery => "military",
-            GrandStrategy::Expansion | GrandStrategy::Diplomacy => "economic",
+        let kind = if research_first {
+            research_alliance::ALLY_RESEARCH_KIND
+        } else {
+            match plan.strategy {
+                GrandStrategy::Science => "research",
+                GrandStrategy::Culture => "cultural",
+                GrandStrategy::Religion => "religious",
+                GrandStrategy::Conquest | GrandStrategy::Recovery => "military",
+                GrandStrategy::Expansion | GrandStrategy::Diplomacy => "economic",
+            }
         };
         if kind == "research" && g.tree_effect(pid, "research_agreements") <= 0.0 {
             return;
@@ -16510,6 +16539,9 @@ impl AdvancedAi {
                     // alliance makes the denial war illegal for its whole
                     // term. See `advanced/science_threat_denial.rs`.
                     && !self.science_denial_refuses_alliance(&science_threats, other.id)
+                    // `research-alliance-first`: a culture threat, or a
+                    // partner inside the cool-down on our last ask. Never off.
+                    && !self.research_alliance_barred(g, pid, other.id)
             })
             .max_by(|left, right| {
                 let score = |other: usize| {
@@ -16518,6 +16550,10 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // `research-alliance-first`: the partner's science as a
+                    // share of ours, the number level 3 pays 10 percent of.
+                    // Zero off.
+                    let science = self.research_alliance_science_term(g, pid, other, kind);
                     let connected = if g.routes.iter().any(|route| {
                         route.ends > g.turn
                             && ((route.owner == pid
@@ -16564,7 +16600,7 @@ impl AdvancedAi {
                             .then_some(plan.target_player)
                             .flatten(),
                     );
-                    friendship + connected + complement + across
+                    friendship + connected + complement + across + science
                         - g.players[pid]
                             .grievances
                             .get(&other)
@@ -16609,6 +16645,15 @@ impl AdvancedAi {
                     .counters
                     .entry("eoe:partners".to_string())
                     .or_insert(0) += 1;
+            }
+            if proposed {
+                self.research_alliance_note_asked(g, pid, partner, kind);
+                if research_first {
+                    think!(self.journal(), Diplomacy, Decision,
+                           "Proposing a Research Alliance to {}", g.players[partner].civ;
+                           "their science is worth allying for, and the handicap does not \
+                            touch a shared tech boost or the level-three science share");
+                }
             }
         }
     }
@@ -18286,6 +18331,9 @@ impl AdvancedAi {
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
         self.coalition_alliance_step(g, pid);
+        // `research-alliance-first` runs inside `propose_strategic_alliance`:
+        // the kind, the cadence, the ranking's science term and the partner
+        // bar. See `advanced/research_alliance.rs`.
         self.propose_strategic_alliance(g, pid, plan, denied_partner);
         // Relationship mechanics must be part of a strategic AI turn too.
         // Send one mission to the best non-hostile major, preferring the
@@ -33853,6 +33901,10 @@ impl AdvancedAi {
                 value += 18.0;
             }
         }
+        // `research-alliance-first`: the first route to an ally still short
+        // of the level that shares science, priced by what that level is
+        // worth. Zero off. See `advanced/research_alliance.rs`.
+        value += self.research_alliance_route_premium(g, pid, city.owner);
         let objective = self
             .victory_target
             .map(VictoryTarget::strategy)

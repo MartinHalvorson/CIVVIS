@@ -4180,6 +4180,22 @@ impl AdvancedAi {
         self.science_denial_war = false;
     }
 
+    /// The stock alliance desk asks for a Research Alliance on any turn,
+    /// ranks the partner by science, holds the slot for it while Scientific
+    /// Theory is still short, and pays a premium for the first route to that
+    /// ally while its level still climbs. See
+    /// `advanced/research_alliance.rs`. Opt-in gene
+    /// `research-alliance-first`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_research_alliance_first(&mut self) {
+        self.research_alliance_first = true;
+    }
+
+    /// The twin of `enable_research_alliance_first`.
+    pub fn disable_research_alliance_first(&mut self) {
+        self.research_alliance_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
