@@ -4554,6 +4554,21 @@ fn decide(
         snapshot.revealed_count()
     ));
 
+    // Batch metadata travels through the existing five-column order transport.
+    // The controller attaches it to each queued strike; no persistent host
+    // setting can leak the selected gene into a later frame or experiment.
+    if ai.live_strike_survival_enabled()
+        && orders.iter().any(|order| {
+            order.kind == "unit" && matches!(order.verb.as_deref(), Some("ATTACK" | "RANGE_ATTACK"))
+        })
+    {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("DOOMED_BLOW_VETO".to_string()),
+            pos: None,
+        });
+    }
     let body = orders
         .iter()
         .map(|o| o.to_json())
@@ -11224,6 +11239,18 @@ mod tests {
             },
         ))
         .unwrap();
+        assert_eq!(
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| {
+                    order["kind"] == "combat_policy" && order["verb"] == "DOOMED_BLOW_VETO"
+                })
+                .count(),
+            1,
+            "the full bridge reply must carry the selected survival policy"
+        );
         let strikers: Vec<_> = reply["orders"]
             .as_array()
             .unwrap()

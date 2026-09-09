@@ -10777,6 +10777,26 @@ CivvisLedger.refuseWarStarter = function(actor, subject, verb, x, y, turn)
 	return "would_declare_war:" .. table.concat(names, ",");
 end;
 
+-- A selected native survival gene can disagree with Firaxis's damage model.
+-- Honor a fresh, known-lethal host preview at issue time, including after a
+-- queued approach. Base/Assets/UI/Panels/UnitPanel.lua:3924 uses
+-- CombatManager.SimulateAttackInto for this preview; :1774 reads the unit's
+-- GetMaxDamage. An unavailable result adds no new veto.
+CivvisLedger.refuseLethalPreview = function(unit, subject, verb, x, y, turn, row)
+	if row._civvis_survival_guard ~= true then return nil; end
+	local preview = CivvisLedger.preview(unit, verb, x, y);
+	local damage = preview and tonumber(preview.damage_to_attacker);
+	local wounds = tonumber(try(function() return unit:GetDamage(); end, nil));
+	local maximum = tonumber(try(function() return unit:GetMaxDamage(); end, nil));
+	if damage == nil or wounds == nil or maximum == nil
+			or damage < maximum - wounds then return nil; end
+	emit("strike_survival_refused", {
+		turn = turn, unit = subject, verb = verb, x = x, y = y,
+		hp = maximum - wounds, preview = preview,
+	});
+	return "lethal_host_preview";
+end;
+
 -- Called from `applyOrder` before a strike is requested: emit the preview and
 -- remember it, so the combat this strike produces can carry it.
 CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
@@ -13714,6 +13734,8 @@ local function applyOrder(player, pid, row, turn)
 					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
 				end
 				if verb == "ATTACK" then
+					local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+					if survivalRefusal ~= nil then return false, survivalRefusal; end
 					CivvisLedger.strike(unit, subject, verb, x, y, turn);
 				end
 			end
@@ -13830,6 +13852,8 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+			if survivalRefusal ~= nil then return false, survivalRefusal; end
 			CivvisLedger.strike(unit, subject, verb, x, y, turn);
 			local accepted = operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params);
 			if not accepted then
@@ -16814,6 +16838,16 @@ CivvisFrames.repairProduction = function(player, pid, turn)
 end;
 
 local function applyOrders(player, pid, turn, rows)
+	-- Consume only the recognized batch directive. Attach the policy to the
+	-- rows themselves so delayed strikes retain it without global frame state.
+	local survival = false;
+	for i = #rows, 1, -1 do
+		local row = rows[i];
+		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
+			survival = true;
+			table.remove(rows, i);
+		end
+	end
 	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
 	-- Per kind, beside the per-turn totals: how many orders of each kind were
@@ -16856,6 +16890,10 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdActiveFireCivilianLegs(pid, turn, rows);
+	for _, row in ipairs(rows) do
+		row._civvis_survival_guard = survival and row.kind == "unit"
+			and (row.verb == "ATTACK" or row.verb == "RANGE_ATTACK");
+	end
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end

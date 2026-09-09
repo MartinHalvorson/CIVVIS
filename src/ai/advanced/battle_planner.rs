@@ -1045,6 +1045,12 @@ fn doomed_shooters(
 }
 
 impl AdvancedAi {
+    /// The live controller must also honor this policy when its fresh combat
+    /// preview disagrees with the native damage model.
+    pub fn live_strike_survival_enabled(&self) -> bool {
+        self.doomed_blow_veto || self.doomed_blow_veto_2
+    }
+
     /// Apply the selected survival policy to a live bridge finishing volley.
     /// The bridge commits these actions before `take_turn`, so the ordinary
     /// battle planner cannot protect their strikers afterwards. Recheck the
