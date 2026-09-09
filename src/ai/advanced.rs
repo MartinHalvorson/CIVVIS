@@ -6834,6 +6834,7 @@ mod battlefront;
 /// Encampment no foreign unit may ever enter, and the soldier who holds the
 /// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
 mod chokepoints;
+mod scout_distance;
 
 mod culture_strategy;
 /// Six opt-in genes for the victory lanes: the race the empire is actually
@@ -37102,6 +37103,14 @@ impl AdvancedAi {
         }
         if self.base.unit_objective_memory {
             if let Some(acted) = self.base.retreat_step(g, pid, uid) {
+                return acted;
+            }
+        }
+        // A free scout's job is distant discovery. Recovery and an existing
+        // civilian guard obligation had their chance; routine military work
+        // must not consume every turn before the exploration fallback.
+        if !unwanted_settler_adjacent && !holding_threatened_city {
+            if let Some(acted) = self.distance_scout_step(g, pid, uid) {
                 return acted;
             }
         }
