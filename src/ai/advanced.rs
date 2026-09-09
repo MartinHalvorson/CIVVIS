@@ -6004,6 +6004,9 @@ pub struct AdvancedAi {
     /// capitals leaves it by. Opt-in gene `pass-picket`; see
     /// `advanced/recon_disruption.rs`.
     pass_picket: bool,
+    /// V2 takes a same-turn pass block against a visible rival Settler
+    /// before exploring. One assigned recon unit, no multi-unit screen.
+    pass_picket_2: bool,
     /// This turn's recon orders — picket posts — drawn once per turn from
     /// the start-of-turn board so units planned in parallel agree on them.
     /// See `advanced/recon_disruption.rs`.
@@ -7816,6 +7819,7 @@ impl AdvancedAi {
             quest_boost: false,
             religious_veto_defence: false,
             pass_picket: false,
+            pass_picket_2: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
             power_the_laboratory_2: false,
 
@@ -7916,9 +7920,11 @@ impl AdvancedAi {
         }
         self.turn_start_hostiles_turn = Some(g.turn);
         self.turn_start_hostiles.clear();
+        let visible = g.player_vision_frame(pid);
         for unit in g.units.values() {
             if unit.owner == pid
                 || !g.is_at_war(pid, unit.owner)
+                || !g.sees(&visible, unit.pos)
                 || !g.unit_visible_to(unit.id, pid)
             {
                 continue;
@@ -7961,9 +7967,13 @@ impl AdvancedAi {
         self.hostile_last_seen.retain(|_, record| {
             record.when <= g.turn && g.turn - record.when <= civilian_safety::HOSTILE_MEMORY_TURNS
         });
+        // `unit_visible_to` checks stealth detection, not tile visibility.
+        // The native board also contains ordinary enemies still in the fog.
+        let visible = g.player_vision_frame(pid);
         for unit in g.units.values() {
             if unit.owner == pid
                 || !g.is_at_war(pid, unit.owner)
+                || !g.sees(&visible, unit.pos)
                 || !g.unit_visible_to(unit.id, pid)
             {
                 continue;
