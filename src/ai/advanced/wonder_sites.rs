@@ -20,10 +20,10 @@
 //!    the host pays a city holding one (328 city-turns at
 //!    `amenities_natural_wonders = 1` across the 08-25 live runs), not the
 //!    +2 Appeal on every neighbour, not the +2 Holy Site adjacency per wonder
-//!    tile, not the era score. `wonder-adjacent-sites` pays the projection
-//!    exactly as the engine does and nothing flat: only the tiles the
-//!    forecast actually works earn it, which is the engine's own answer.
-//!    Its version 2 adds a small flat footprint credit for the rest.
+//!    tile, not the era score. `wonder-adjacent-sites-2` pays the projection
+//!    exactly as the engine does: only the tiles the forecast actually works
+//!    earn it, which is the engine's own answer, plus a small flat footprint
+//!    credit for the rest.
 //!
 //!    ⚠ This is not #1419's `wonder-ring-settle-value`, culled in #2464 at
 //!    **−0.553 pp over ≥30k seats**. That gene never touched the yields a
@@ -31,9 +31,11 @@
 //!    — appeal × a weight plus the ring yields × all six ring tiles, as if
 //!    every neighbour were worked from turn one — on top of a forecast that
 //!    still could not see the projection. A speculative flat credit lost;
-//!    the engine-exact projection was never screened. Version 1 here is the
-//!    projection alone; version 2 adds a credit sized at a third of a river,
-//!    capped at one, so the batch prices the two apart.
+//!    the engine-exact projection was never screened. Version 1 of this
+//!    family was the projection alone; version 2 adds a credit sized at a
+//!    third of a river, capped at one, so the batch priced the two apart, and
+//!    version 1 left the code on 2026-09-09 under the batch rule
+//!    (-12/-19/-19) with version 2 shipping on.
 //!
 //! 2. **The ring was never seen.** The four tiles from which a city could
 //!    stand beside Roraima — civ6 (15,8), (15,9), (15,11), (16,10) — were
@@ -81,13 +83,13 @@ const WONDER_RING_RECON_UNIT_RANGE: i32 = 10;
 type WonderRingReconCandidate = (i32, Pos, usize, Pos, (Pos, i32), usize);
 
 impl AdvancedAi {
-    /// Either version of the family pays the projection; a seat plays one.
+    /// Whether the family pays the projection: its one remaining version.
     pub(super) fn wonder_adjacent_sites_on(&self) -> bool {
-        self.wonder_adjacent_sites || self.wonder_adjacent_sites_2
+        self.wonder_adjacent_sites_2
     }
 
     /// What a Citizen working `pos` is paid, as the site model sees it: the
-    /// tile's own yields, plus — under `wonder-adjacent-sites` — the yields
+    /// tile's own yields, plus — under `wonder-adjacent-sites-2` — the yields
     /// every neighbouring feature projects onto it, the rule
     /// `Game::player_tile_yields` pays with. Only natural wonders carry
     /// `adjacent_yields`, so off the gene and away from a wonder this is
@@ -116,9 +118,9 @@ impl AdvancedAi {
         yields
     }
 
-    /// Version 2 only: the natural-wonder tiles among `positions` (a site's
-    /// radius-two footprint), priced at `WONDER_FOOTPRINT_TILE_VALUE` each and
-    /// capped. Zero under version 1 and off the family.
+    /// The natural-wonder tiles among `positions` (a site's radius-two
+    /// footprint), priced at `WONDER_FOOTPRINT_TILE_VALUE` each and capped.
+    /// Zero off the family.
     pub(super) fn wonder_footprint_value(&self, g: &Game, positions: &[Pos]) -> f64 {
         if !self.wonder_adjacent_sites_2 {
             return 0.0;
@@ -425,7 +427,7 @@ mod tests {
         );
 
         let mut gene = AdvancedAi::new();
-        gene.enable_wonder_adjacent_sites();
+        gene.enable_wonder_adjacent_sites_2();
         let plain_gene = gene.settlement_static_value_uncached(&plain, 0, center);
         assert!(
             (plain_gene - plain_stock).abs() < 1e-9,
@@ -433,24 +435,10 @@ mod tests {
         );
         let wonder_gene = gene.settlement_static_value_uncached(&with_wonder, 0, center);
         assert!(
-            wonder_gene > plain_stock + 10.0,
-            "beside Roraima the site must read materially better ({wonder_gene:.1} vs {plain_stock:.1})"
+            wonder_gene > plain_stock + 10.0 + WONDER_FOOTPRINT_TILE_VALUE,
+            "beside Roraima the site must read materially better, the projection plus one \
+             wonder tile's credit ({wonder_gene:.1} vs {plain_stock:.1})"
         );
-
-        // Version 2 adds exactly the footprint credit on top of version 1.
-        let mut second = AdvancedAi::new();
-        second.enable_wonder_adjacent_sites_2();
-        assert!(
-            !second.wonder_adjacent_sites,
-            "one version of a family plays"
-        );
-        let wonder_second = second.settlement_static_value_uncached(&with_wonder, 0, center);
-        assert!(
-            (wonder_second - wonder_gene - WONDER_FOOTPRINT_TILE_VALUE).abs() < 1e-9,
-            "version 2 is version 1 plus one wonder tile's credit ({wonder_second:.1} vs {wonder_gene:.1})"
-        );
-        let plain_second = second.settlement_static_value_uncached(&plain, 0, center);
-        assert!((plain_second - plain_stock).abs() < 1e-9);
     }
 
     #[test]
@@ -466,7 +454,7 @@ mod tests {
         );
 
         let mut gene = AdvancedAi::new();
-        gene.enable_wonder_adjacent_sites();
+        gene.enable_wonder_adjacent_sites_2();
         let paid = gene.site_work_yields(&game, center, tile);
         assert_eq!(
             paid.science,
@@ -491,15 +479,9 @@ mod tests {
             game.rules.tile_yields(far_tile)
         );
 
-        // Only version 2 pays the flat footprint credit, per wonder tile, capped.
+        // Only the gene pays the flat footprint credit, per wonder tile, capped.
         assert_eq!(
             gene.wonder_footprint_value(&game, &game.wdisk(center, 2)),
-            0.0
-        );
-        let mut second = AdvancedAi::new();
-        second.enable_wonder_adjacent_sites_2();
-        assert_eq!(
-            second.wonder_footprint_value(&game, &game.wdisk(center, 2)),
             WONDER_FOOTPRINT_TILE_VALUE
         );
         assert_eq!(
@@ -514,18 +496,14 @@ mod tests {
             }
         }
         assert_eq!(
-            second.wonder_footprint_value(&four, &four.wdisk(center, 2)),
+            gene.wonder_footprint_value(&four, &four.wdisk(center, 2)),
             WONDER_FOOTPRINT_CAP
         );
 
-        // Both versions order a ranking scan's prefilter the same way.
+        // The gene orders a ranking scan's prefilter the same way.
         let bare_order = AdvancedAi::settlement_prefilter_score(&game, 0, center)
             + AdvancedAi::early_city_water_adjustment(&game, 0, center);
         assert!(gene.settlement_prefilter_score_for(&game, 0, center) > bare_order);
-        assert!(
-            second.settlement_prefilter_score_for(&game, 0, center)
-                > gene.settlement_prefilter_score_for(&game, 0, center)
-        );
         assert_eq!(
             AdvancedAi::new().settlement_prefilter_score_for(&game, 0, center),
             bare_order

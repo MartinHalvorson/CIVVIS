@@ -12261,74 +12261,6 @@ fn ordinary_religious_plan_routes_research_to_astrology() {
 }
 
 #[test]
-fn a_diplomatic_seat_takes_astrology_while_the_prophet_race_is_open() {
-    let mut game = Game::new_full(4, 30, 18, 76_105, 120, 0, false);
-    let settler = game
-        .player_unit_ids(0)
-        .into_iter()
-        .find(|unit| game.units[unit].kind == "settler")
-        .unwrap();
-    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Diplomacy,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    let opening = |game: &mut Game| {
-        game.players[0].research = None;
-        game.players[0].techs.clear();
-        for tech in ["animal_husbandry", "mining"] {
-            game.players[0].techs.insert(Name::new(tech));
-        }
-    };
-
-    // The shipped Diplomacy seat beelines Seasteads, and Astrology is a
-    // dead-end branch no goal is an ancestor of: it is never the pick.
-    opening(&mut game);
-    let shipped = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    shipped.advanced_research(&mut game, 0, &plan);
-    assert_ne!(
-        game.players[0].research.as_deref(),
-        Some("astrology"),
-        "the shipped beeline never reaches the dead-end branch"
-    );
-
-    // Treated: Astrology as soon as the opening techs are in.
-    opening(&mut game);
-    let mut treated = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    treated.enable_enter_the_prophet_race();
-    treated.advanced_research(&mut game, 0, &plan);
-    assert_eq!(game.players[0].research.as_deref(), Some("astrology"));
-
-    // Not before them: the Builder's techs still open the game.
-    game.players[0].research = None;
-    game.players[0].techs.clear();
-    treated.advanced_research(&mut game, 0, &plan);
-    assert_ne!(
-        game.players[0].research.as_deref(),
-        Some("astrology"),
-        "the opening techs come first"
-    );
-
-    // And not once every Prophet slot is taken: the beeline resumes.
-    opening(&mut game);
-    for player in 1..=game.max_religions() {
-        game.players[player].religion = Some(format!("faith{player}"));
-    }
-    assert!(!treated.prophet_race_open_for(&game, 0));
-    treated.advanced_research(&mut game, 0, &plan);
-    assert_ne!(
-        game.players[0].research.as_deref(),
-        Some("astrology"),
-        "a closed race is not entered"
-    );
-}
-
-#[test]
 fn enter_the_prophet_race_2_waits_for_a_feasible_commitment() {
     let mut game = Game::new_full(4, 34, 20, 76_108, 120, 0, false);
     let settler = game
@@ -12351,24 +12283,9 @@ fn enter_the_prophet_race_2_waits_for_a_feasible_commitment() {
     };
     let mut v2 = AdvancedAi::targeting(VictoryTarget::Diplomacy);
 
-    assert!(!v2.enter_the_prophet_race);
-    assert!(
-        !v2.enter_the_prophet_race_2,
-        "the new family member is opt-in"
-    );
-    v2.enable_enter_the_prophet_race();
-    assert!(v2.enter_the_prophet_race);
-    assert!(!v2.enter_the_prophet_race_2);
+    assert!(!v2.enter_the_prophet_race_2, "the family member is opt-in");
     v2.enable_enter_the_prophet_race_2();
-    assert!(!v2.enter_the_prophet_race);
     assert!(v2.enter_the_prophet_race_2);
-    v2.enable_enter_the_prophet_race();
-    assert!(v2.enter_the_prophet_race);
-    assert!(
-        !v2.enter_the_prophet_race_2,
-        "the last enabled version wins"
-    );
-    v2.enable_enter_the_prophet_race_2();
 
     assert!(v2.prophet_race_open_for(&game, 0));
     assert!(
@@ -12449,14 +12366,8 @@ fn skip_the_prophet_race_2_leaves_only_a_last_call_race() {
         rush: false,
     };
     let mut v2 = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    v2.enable_enter_the_prophet_race();
-    v2.enable_skip_the_prophet_race();
+    v2.enable_enter_the_prophet_race_2();
     v2.enable_skip_the_prophet_race_2();
-
-    assert!(
-        !v2.skip_the_prophet_race,
-        "v2 screens independently from v1"
-    );
     assert!(v2.skip_the_prophet_race_2);
     assert!(v2.skip_prophet_race_2_for(&game, 0, Some(VictoryTarget::Diplomacy)));
     assert!(!v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
@@ -12486,11 +12397,20 @@ fn skip_the_prophet_race_2_leaves_only_a_last_call_race() {
     );
 
     // One unfilled slot leaves the non-committed seat a genuine race, so v2
-    // does not repeat version 1's unconditional withdrawal.
+    // does not repeat the unconditional withdrawal version 1 made.
     let last_rival = open_slots;
     game.players[last_rival]
         .gpp
         .insert("prophet".to_string(), 0.0);
+    assert!(!v2.skip_prophet_race_2_for(&game, 0, Some(VictoryTarget::Diplomacy)));
+    // `enter-the-prophet-race-2` admits the race only from two cities with a
+    // placeable Holy Site; give the seat its second city and the race is on.
+    let anchor = game.cities[&cities[0]].pos;
+    found_nearby_test_city(&mut game, 0, anchor);
+    assert!(
+        v2.religious_opening_viable(&game, 0),
+        "two cities and a placeable Holy Site admit the seat"
+    );
     assert!(!v2.skip_prophet_race_2_for(&game, 0, Some(VictoryTarget::Diplomacy)));
     assert!(v2.prophet_race_enterable_for(&game, 0, Some(VictoryTarget::Diplomacy)));
 }
@@ -12520,7 +12440,7 @@ fn an_explicit_science_seat_stays_out_of_the_prophet_race() {
     }
 
     let mut treated = AdvancedAi::targeting(VictoryTarget::Science);
-    treated.enable_enter_the_prophet_race();
+    treated.enable_enter_the_prophet_race_2();
 
     assert!(!treated.prophet_race_enabled_for(Some(VictoryTarget::Science)));
     treated.advanced_research(&mut game, 0, &plan);
@@ -13765,119 +13685,6 @@ fn science_spaceport_cap_counts_placed_foundations_as_commitments() {
     );
 }
 
-/// ★★★★ The last fifty turns of a Settler game are a tally, and the science
-/// lane spent them on a launch pad (civvis-20260816T093036Z: Spaceport at
-/// t226 + Manhattan Project, 871 vs 1,157; T101521Z: two Spaceports after
-/// t220, 787 vs 1,198). See `score_horizon`. A one-city empire on turn 170
-/// of 200 with Rocketry only cannot finish four projects, their techs and
-/// fifty light-years in thirty turns: the treated seat prices the launch
-/// pad at nothing and skips the space-race governor, journaling why; the
-/// same seat on turn 20 races as before, as does the withheld arm.
-#[test]
-fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
-    let fresh = || {
-        let mut g = Game::new(2, 24, 16, 71, 200, 0);
-        let settler = g
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|uid| g.units[uid].kind == "settler")
-            .unwrap();
-        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        let city = g.player_city_ids(0)[0];
-        let site = g.cities[&city]
-            .owned_tiles
-            .iter()
-            .copied()
-            .find(|position| *position != g.cities[&city].pos)
-            .unwrap();
-        {
-            let tile = g.map.tiles.get_mut(&site).unwrap();
-            tile.terrain = crate::name!("plains");
-            tile.feature = None;
-            tile.resource = None;
-            tile.hills = false;
-        }
-        g.players[0].techs.insert(crate::name!("rocketry"));
-        (g, city)
-    };
-
-    // Late: thirty turns left.
-    let (mut late, city) = fresh();
-    late.turn = 170;
-    let science_plan = StrategicPlan {
-        strategy: GrandStrategy::Science,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 1,
-        assessed_turn: late.turn,
-        rush: false,
-    };
-    let mut live = AdvancedAi::targeting(VictoryTarget::Science);
-    live.enable_live_bridge_universe();
-    assert!(live.score_horizon, "the live seat carries the treatment");
-    assert!(
-        !live.space_race_can_finish(&late, 0),
-        "four projects, their techs and fifty light-years do not fit in thirty turns"
-    );
-    let journal = crate::reasoning::Journal::recording();
-    live.attach_journal(journal.handle());
-    // The space-race governor is skipped and says why; the withheld arm
-    // queues the launch pad exactly as the historical controller does.
-    live.space_race_production(&mut late, 0, &science_plan);
-    assert!(
-        !late.cities[&city].queue.iter().any(|item| matches!(
-            item,
-            Item::District { district, .. } if district == "spaceport"
-        )),
-        "no Spaceport is queued thirty turns from the tally: {:?}",
-        late.cities[&city].queue
-    );
-    assert!(
-        journal
-            .since(0)
-            .thoughts
-            .iter()
-            .any(|thought| thought.headline.starts_with("The space race cannot finish")),
-        "the skipped race is journaled"
-    );
-    let (mut late_withheld, city_withheld) = fresh();
-    late_withheld.turn = 170;
-    let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
-    withheld.enable_live_bridge_universe();
-    withheld.disable_score_horizon();
-    withheld.space_race_production(&mut late_withheld, 0, &science_plan);
-    assert!(
-        matches!(
-            late_withheld.cities[&city_withheld].queue.first(),
-            Some(Item::District { district, .. }) if district == "spaceport"
-        ),
-        "the withheld arm still reserves the launch pad"
-    );
-
-    // With turns to spare the same seat still races.
-    let (mut early, _) = fresh();
-    early.max_turns = 100_000;
-    assert!(
-        live.space_race_can_finish(&early, 0),
-        "with the limit far away the chain fits and the race is on"
-    );
-
-    // Nuclear lane: a bomb that cannot be finished prices zero, one that can does not.
-    assert!(!live.nuclear_lane_can_finish(&late, 0, city, "manhattan_project"));
-    let (mut boundless, city) = fresh();
-    boundless.max_turns = 0;
-    assert!(
-        live.space_race_can_finish(&boundless, 0),
-        "no turn limit, no horizon"
-    );
-    assert!(live.nuclear_lane_can_finish(&boundless, 0, city, "manhattan_project"));
-
-    // Defaults: off for the stock and frozen controllers.
-    assert!(!AdvancedAi::new().score_horizon);
-    assert!(!AdvancedAi::legacy().score_horizon);
-}
-
 /// ★★★ Four cities claimed the empire-wide first-pad rung at once because
 /// it counts finished districts only. Live run civvis-20260817T022159Z:
 /// Aquileia t144, Ostia t146, Arretium t146, Brundisium t157 — 119
@@ -13900,9 +13707,9 @@ fn the_empire_reserves_one_launch_pad_in_the_city_that_would_run_the_race() {
     let second = found_test_city(&mut game, 0);
     game.players[0].techs = game.rules.techs.keys().cloned().collect();
     game.turn = 140;
-    // The turn limit is a separate treatment (`score_horizon`); move to the
-    // specialization half while keeping every research prerequisite known,
-    // so the test isolates the one-pad rung rather than research payback.
+    // Move to the specialization half while keeping every research
+    // prerequisite known, so the test isolates the one-pad rung rather than
+    // research payback.
     game.max_turns = 100_000;
     // This test exercises the late one-pad specialization, after the shared
     // expansion-and-defense half has handed the plan to the victory lane.
