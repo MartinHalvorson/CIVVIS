@@ -18832,8 +18832,12 @@ local function tick()
 		local blocker = currentBlocker(pid);
 		local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
 		local same_pass_forced = false;
+		local congressBallotPending = false;
 		if blocker ~= nil and blocker ~= none then
 			local name = blockerName(blocker);
+			congressBallotPending = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
+				and envoyTally.ballot_turn ~= turn
+				and (softSeen[name] == nil or softSeen[name].voted_turn ~= turn);
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
@@ -19242,7 +19246,13 @@ local function tick()
 						-- like any other and is forced with the rest.
 						local holdForVote = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 							and seen.voted_turn ~= turn;
-						local dropped = dismissBlocker(pid, blocker);
+						congressBallotPending = holdForVote;
+						-- Native run 20260909T061606Z t56 dismissed the session
+						-- while waiting for its popup and advanced with default votes.
+						-- Holding only UserForced was insufficient: keep both the
+						-- notification and the ordinary end-turn request pending.
+						local dropped = false;
+						if not holdForVote then dropped = dismissBlocker(pid, blocker); end
 						emit("dismissed", { turn = turn, blocker = name,
 						                    dismissed = dropped, attempts = attempts,
 						                    answered = answered, parked = parked,
@@ -19298,7 +19308,7 @@ local function tick()
 			-- Only if the same blocker has survived a whole turn's worth of
 			-- attempts is the notification dropped, and that is reported as the
 			-- forfeit it is.
-			if attempts >= (cfg.MaxBlockedAttempts or 40) then
+			if attempts >= (cfg.MaxBlockedAttempts or 40) and not congressBallotPending then
 				local dropped = dismissBlocker(pid, blocker);
 				emit("dismissed", { turn = turn, blocker = name,
 				                    dismissed = dropped, attempts = attempts });
@@ -19306,7 +19316,7 @@ local function tick()
 			end
 		end
 
-		if not same_pass_forced then
+		if not same_pass_forced and not congressBallotPending then
 			pcall(function()
 				if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
 					UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
