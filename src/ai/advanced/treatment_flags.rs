@@ -2044,11 +2044,22 @@ impl AdvancedAi {
     /// `pass-picket`; see `advanced/recon_disruption.rs`.
     pub fn enable_pass_picket(&mut self) {
         self.pass_picket = true;
+        self.pass_picket_2 = false;
     }
 
     /// The twin of `enable_pass_picket`.
     pub fn disable_pass_picket(&mut self) {
         self.pass_picket = false;
+    }
+
+    /// Hold a pass against a visible approaching Settler before exploring.
+    pub fn enable_pass_picket_2(&mut self) {
+        self.pass_picket_2 = true;
+        self.pass_picket = false;
+    }
+
+    pub fn disable_pass_picket_2(&mut self) {
+        self.pass_picket_2 = false;
     }
 
     /// Convert the first six Standard-speed turns after a surprise war is
