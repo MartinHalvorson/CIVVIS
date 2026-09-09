@@ -352,7 +352,15 @@ impl AdvancedAi {
             .map(|threat| threat.rival)
             .filter(|rival| g.alliance_with(pid, *rival).is_none())
             .collect();
-        Self::denounce_most_pressing(g, pid, &ranked)
+        let rival = Self::denounce_most_pressing(g, pid, &ranked)?;
+        // The base tag's own record that it reached the board, beside the
+        // war tag's `denial_wars`: rungs 1 and 2 leave no unit and no war a
+        // screen row could otherwise count.
+        *g.players[pid]
+            .counters
+            .entry("denial_denunciations".to_string())
+            .or_insert(0) += 1;
+        Some(rival)
     }
 
     // ---- Rung 2: espionage ------------------------------------------------

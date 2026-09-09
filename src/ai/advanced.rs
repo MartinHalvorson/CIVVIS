@@ -23025,7 +23025,19 @@ impl AdvancedAi {
                 .max_by_key(|(score, city, _)| (*score, *city))
                 .map(|(_, _, action)| action);
             if let Some(action) = assignment {
-                let _ = g.apply(pid, action);
+                let posted = g.apply(pid, action).is_ok();
+                // `science-threat-denial`: the seat's record of a posting to
+                // a threat's pad, so a screen row can say the espionage rung
+                // reached the board. Never taken when the gene is off, since
+                // `denial_pads` is empty then.
+                if posted
+                    && matches!(action, Action::AssignSpy { city, .. } if denial_pads.contains(city))
+                {
+                    *g.players[pid]
+                        .counters
+                        .entry("denial_spy_posts".to_string())
+                        .or_insert(0) += 1;
+                }
                 self.spy_orders_until.insert(
                     spy_id,
                     g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),

@@ -358,6 +358,11 @@ fn the_most_pressing_threat_is_denounced_once_a_turn() {
     );
     assert!(g.players[0].denounced_until.get(&2).copied().unwrap_or(0) > g.turn);
     assert_eq!(
+        g.players[0].counters.get("denial_denunciations"),
+        Some(&1),
+        "the rung records that it reached the board, so a screen row can see it"
+    );
+    assert_eq!(
         ai.science_threat_denunciation(&mut g, 0),
         Some(1),
         "an active denouncement is not repeated; the next threat is taken"
