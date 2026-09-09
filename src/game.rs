@@ -1321,6 +1321,10 @@ type GreatWorksByCity = BTreeMap<u32, BTreeMap<String, usize>>;
 type HousedWorksByPlayer = BTreeMap<usize, GreatWorksByCity>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
+/// Every established National Park a player holds: `(host city, its four
+/// tiles)`. Aliased for the same reason `HousedWorksByPlayer` above is -- the
+/// nested form trips `clippy::type_complexity` inside a `RefCell<Option<..>>`.
+type NationalParksByPlayer = BTreeMap<usize, Vec<(u32, [Pos; 4])>>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
 /// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
@@ -1416,7 +1420,7 @@ pub struct QueryCache {
     /// find. Keyed by player, because that is the scope it is computed over
     /// rather than the scope it is read at -- the same reason the three entries
     /// above it are keyed that way.
-    national_parks: std::cell::RefCell<Option<BTreeMap<usize, Vec<(u32, [Pos; 4])>>>>,
+    national_parks: std::cell::RefCell<Option<NationalParksByPlayer>>,
     // A city-state's patron, which is a poll of every major's effective envoy
     // count. Deciding whether a step crosses a hostile border asks it, so a
     // route search asks it of the same city-state at every tile it considers.
