@@ -36,13 +36,13 @@
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
 use super::{AdvancedAi, StrategicPlan};
-use std::collections::BTreeSet;
 use crate::ai::{AttackEnvelopes, BasicAi, COMBAT_ROLL_MAX};
 use crate::game::{Action, ActionFamilies, Game};
 use crate::reasoning::plain;
 use crate::think;
 use crate::Pos;
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 /// `withdraw_hp`: the line the controller's own recovery uses. Kept as a
 /// constant here so this step reads the same line the recovery does without
@@ -80,7 +80,9 @@ impl AdvancedAi {
             .into_iter()
             .filter(|uid| {
                 let mut forecast = g.clone();
-                policy.wounded_out_of_reach_step(&mut forecast, pid, *uid).is_some()
+                policy
+                    .wounded_out_of_reach_step(&mut forecast, pid, *uid)
+                    .is_some()
             })
             .collect()
     }
@@ -105,19 +107,28 @@ impl AdvancedAi {
             let unit = &g.units[&uid];
             if self.guard_is_bound_to_any_settler(uid)
                 || plan.threatened_city.is_some_and(|cid| {
-                    g.cities.get(&cid).is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
+                    g.cities
+                        .get(&cid)
+                        .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
                 })
             {
                 continue;
             }
-            let barb_rescue = if self.base.barbarian_settler_capture { g.barb_pid } else { None };
-            let unwanted_settler_adjacent = decline_settlers && g.nbrs(unit.pos).into_iter().any(|position| {
-                g.unit_ids_at(position).iter().any(|other| {
-                    let other = &g.units[other];
-                    other.owner != pid && g.is_at_war(pid, other.owner)
-                        && other.kind == "settler" && barb_rescue != Some(other.owner)
-                })
-            });
+            let barb_rescue = if self.base.barbarian_settler_capture {
+                g.barb_pid
+            } else {
+                None
+            };
+            let unwanted_settler_adjacent = decline_settlers
+                && g.nbrs(unit.pos).into_iter().any(|position| {
+                    g.unit_ids_at(position).iter().any(|other| {
+                        let other = &g.units[other];
+                        other.owner != pid
+                            && g.is_at_war(pid, other.owner)
+                            && other.kind == "settler"
+                            && barb_rescue != Some(other.owner)
+                    })
+                });
             if !unwanted_settler_adjacent && self.wounded_out_of_reach_step(g, pid, uid).is_some() {
                 reserved.insert(uid);
             }

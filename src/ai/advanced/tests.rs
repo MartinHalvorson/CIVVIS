@@ -47118,14 +47118,20 @@ fn immediate_kill_priority_rejects_a_poisoned_finish() {
         tactical.units.contains_key(&victim),
         "the ordinary military path must not reopen the rejected finish"
     );
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()), 0);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        0
+    );
     assert!(g.units.contains_key(&victim));
 
     // Removing the second hostile makes the same blow a safe finish. The
     // killed victim must not remain in a cached attack envelope.
     g.remove_unit(counter);
     assert!(ai.immediate_kill_value(&g, 0, &action, &plan).is_some());
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()), 1);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        1
+    );
     assert!(!g.units.contains_key(&victim));
 }
 
@@ -47217,12 +47223,19 @@ fn scout_first_opening_registry_toggles_both_governors() {
 }
 
 fn wounded_galley_prepass_fixture() -> (Game, AdvancedAi, u32, u32, StrategicPlan) {
-    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_619).expect("barbarian fixture");
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_619).expect("barbarian fixture");
     for tile in g.map.tiles.values_mut() {
-        if tile.pos != refuge { tile.terrain = crate::name!("coast"); }
+        if tile.pos != refuge {
+            tile.terrain = crate::name!("coast");
+        }
     }
     let target_at = g.nbrs(front).into_iter().find(|p| *p != refuge).unwrap();
-    let unseen_at = g.nbrs(front).into_iter().find(|p| *p != refuge && *p != target_at).unwrap();
+    let unseen_at = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| *p != refuge && *p != target_at)
+        .unwrap();
     let ours = g.spawn_test_unit("galley", 0, front);
     let target = g.spawn_test_unit("galley", barbarian, target_at);
     let unseen = g.spawn_test_unit("galley", barbarian, unseen_at);
@@ -47238,8 +47251,13 @@ fn wounded_galley_prepass_fixture() -> (Game, AdvancedAi, u32, u32, StrategicPla
     g.remove_unit(unseen);
     g.turn = 177;
     let plan = StrategicPlan {
-        strategy: GrandStrategy::Science, target_player: None, target_city: None,
-        threatened_city: None, desired_cities: 1, assessed_turn: g.turn, rush: false,
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
     };
     (g, ai, ours, target, plan)
 }
@@ -47273,7 +47291,10 @@ fn selected_wounded_galley_withdraws_before_native_kill_plan() {
         assert_ne!(board.units[&ours].pos, before);
         assert_eq!(board.units[&ours].hp, 40);
         assert_eq!(board.units[&target].hp, 24);
-        assert!(!board.log.iter().any(|(_, a)| matches!(a, Action::Attack { unit, .. } if *unit == ours)));
+        assert!(!board
+            .log
+            .iter()
+            .any(|(_, a)| matches!(a, Action::Attack { unit, .. } if *unit == ours)));
     }
 }
 
@@ -47283,7 +47304,9 @@ fn selected_wounded_ship_holds_without_fortify_before_kill_prepasses() {
     let here = g.units[&ours].pos;
     let victim = g.units[&target].pos;
     for tile in g.map.tiles.values_mut() {
-        if tile.pos != here && tile.pos != victim { tile.terrain = crate::name!("plains"); }
+        if tile.pos != here && tile.pos != victim {
+            tile.terrain = crate::name!("plains");
+        }
     }
     assert!(!g.unit_can_fortify(&g.units[&ours]));
     ai.enable_wounded_out_of_reach();
@@ -47314,12 +47337,21 @@ fn wounded_prepass_preserves_the_only_threat_kill_and_city_defense_exception() {
     let mut no_memory = ai.clone();
     no_memory.disable_hostile_memory();
     no_memory.hostile_last_seen.clear();
-    assert!(no_memory.live_wounded_unit_reservations(&last_threat, 0).is_empty());
-    assert!(no_memory.withdraw_before_kill_prepass(&mut last_threat, 0, &plan).is_empty());
-    assert_eq!(no_memory.prioritize_immediate_kills(&mut last_threat, 0, &plan, &BTreeSet::new()), 1);
+    assert!(no_memory
+        .live_wounded_unit_reservations(&last_threat, 0)
+        .is_empty());
+    assert!(no_memory
+        .withdraw_before_kill_prepass(&mut last_threat, 0, &plan)
+        .is_empty());
+    assert_eq!(
+        no_memory.prioritize_immediate_kills(&mut last_threat, 0, &plan, &BTreeSet::new()),
+        1
+    );
     assert!(last_threat.units.contains_key(&ours));
     let mut defending = g.clone();
     plan.threatened_city = defending.player_city_ids(0).first().copied();
     assert!(plan.threatened_city.is_some());
-    assert!(ai.withdraw_before_kill_prepass(&mut defending, 0, &plan).is_empty());
+    assert!(ai
+        .withdraw_before_kill_prepass(&mut defending, 0, &plan)
+        .is_empty());
 }

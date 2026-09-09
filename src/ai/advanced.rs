@@ -38779,7 +38779,8 @@ impl AdvancedAi {
             self.fire_plan_orders = fire_plan::FirePlan::default();
         } else {
             withdrawn = self.withdraw_before_kill_prepass(g, pid, plan);
-            let killed = self.victory_planning && self.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0;
+            let killed = self.victory_planning
+                && self.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0;
             if killed || !withdrawn.is_empty() {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
@@ -38799,7 +38800,11 @@ impl AdvancedAi {
         // with the gene off. See `advanced/chokepoints.rs`.
         self.chokepoint_gate_plan(g, pid);
         let mut ids = g.player_unit_ids(pid);
-        ids.retain(|uid| !settled_first.contains(uid) && Some(*uid) != opening_recon_warrior && !withdrawn.contains(uid));
+        ids.retain(|uid| {
+            !settled_first.contains(uid)
+                && Some(*uid) != opening_recon_warrior
+                && !withdrawn.contains(uid)
+        });
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
             let spec = &g.rules.units[u.kind];

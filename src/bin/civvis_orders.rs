@@ -11071,12 +11071,20 @@ mod tests {
         let uid = mirror.uid_of[&101];
         mirror.game.units.get_mut(&uid).unwrap().hp = 40;
         let mut off = mirror.game.clone();
-        assert_eq!(finish_live_war_units(&mut off, 0, &mirror.civ6_of).targets, 1);
+        assert_eq!(
+            finish_live_war_units(&mut off, 0, &mirror.civ6_of).targets,
+            1
+        );
         let mut ai = civvis::ai::AdvancedAi::new();
         ai.enable_wounded_out_of_reach();
         let mut on = mirror.game.clone();
-        let volley = finish_live_war_units_excluding(&mut on, 0, &mirror.civ6_of,
-            &std::collections::BTreeSet::new(), &ai);
+        let volley = finish_live_war_units_excluding(
+            &mut on,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
         assert!(volley.actions.is_empty());
         assert_eq!(on.units[&uid].hp, 40);
         assert_eq!(on.units[&uid].pos, mirror.game.units[&uid].pos);
