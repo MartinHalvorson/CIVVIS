@@ -21016,7 +21016,24 @@ impl Game {
     }
 
     fn regional_building_effects_uncached(&self, city: &City) -> (Yields, f64) {
-        let mut groups: BTreeMap<String, (Yields, f64)> = BTreeMap::new();
+        // ⭐ BORROWED KEYS, NOT OWNED ONES. This map was keyed by `String` and
+        // every active building allocated one to look its group up: either
+        // `spec.regional_group.clone()` or `building.to_string()`. The function
+        // runs once per city per amenity derivation, over every building of
+        // every city, so that is one allocation and one copy per building per
+        // call, feeding the allocator and `memmove` leaves that a batch profile
+        // shows at roughly 17% and 3.5% of running samples.
+        //
+        // ⚠⚠ THE KEY TYPE HAD TO KEEP ITS ORDER. The fold at the end of this
+        // function sums `f64` yields over `groups.values()`, so the map's
+        // iteration order is part of the answer -- switching to a `Name` id key
+        // would reorder the summation and perturb the result. `Ord for &str` is
+        // `Ord for String`'s own implementation, byte for byte, so a
+        // `BTreeMap<&str, _>` holds these keys in exactly the same order and the
+        // fold is bit-identical. `Name::as_str` returns `&'static str` (the
+        // interning registry leaks its text) and `spec.regional_group` lives as
+        // long as the `&self` borrow, so both sources outlive the map.
+        let mut groups: BTreeMap<&str, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
             self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
         // ⭐ HOISTED, LIKE `integrate_industry` ABOVE IT. Mexico City's suzerain
@@ -21066,11 +21083,11 @@ impl Game {
                 if regional_range <= 0 || self.wdist(origin, city.pos) > regional_range {
                     continue;
                 }
-                let group = if !spec.regional_group.is_empty() {
-                    spec.regional_group.clone()
+                let group: &str = if !spec.regional_group.is_empty() {
+                    spec.regional_group.as_str()
                 } else {
                     spec.replaces
-                        .map_or_else(|| building.to_string(), |name| name.to_string())
+                        .map_or_else(|| building.as_str(), |name| name.as_str())
                 };
                 let integrate_this_group = integrate_industry
                     && spec.district.is_some_and(|district| {
