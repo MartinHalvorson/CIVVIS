@@ -926,6 +926,7 @@ pub const GENES: &[Gene] = &[
     // `AdvancedAi::one_war_observe` and `advanced/one_war.rs`.
     Gene { tag: "one-war-at-a-time", field: "one_war_at_a_time", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_at_a_time, disable: AdvancedAi::disable_one_war_at_a_time },
     Gene { tag: "pass-picket", field: "pass_picket", kind: Kind::OptIn, enable: AdvancedAi::enable_pass_picket, disable: AdvancedAi::disable_pass_picket },
+    Gene { tag: "pass-picket-2", field: "pass_picket_2", kind: Kind::OptIn, enable: AdvancedAi::enable_pass_picket_2, disable: AdvancedAi::disable_pass_picket_2 },
     // Run civvis-20260824T204654Z opened trade capacity around turn 17 and
     // still held zero Traders and zero routes at turn 65, by then at -6 Gold
     // per turn. The safety gate asked whether EVERY city was quiet, so a

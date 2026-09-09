@@ -82,6 +82,129 @@ short version is that the globe runs `Sphere::distance` and `arc_is_clear`, whic
 the batch never executes, and the three absolute readings in
 `docs/speed_ledger.json` had to be superseded rather than relabelled.
 
+### The profile after the day's work — and the first one taken on the right map
+
+Re-profiled on `main` at `38858432`, quiet host (load 1.35), `ci` profile through
+`tools/profile_civvis.py`. **This is the first profile this tool has produced at
+the topology the batch actually plays**; every earlier one sampled a globe (see
+below). It supersedes the ranking that guided the changes above, which predates
+the flood skip.
+
+Named leaves, share of running samples:
+
+| | |
+| ---: | --- |
+| 3.66% | `_xzm_free` |
+| 3.23% | `_platform_memcmp` |
+| **2.28%** | **`ai::BasicAi::safe_healing_step`** |
+| 1.94% | `slice::binary_search` |
+| 1.65% | `Game::suzerain_of_uncached` |
+| 1.41% | `Game::build_reverse_flow_field` |
+| 1.34% | `BTreeMap<String, _>::get` |
+| 1.33% | `ai::BasicAi::attack_envelope_fingerprint` |
+| 1.20% | `Game::class_can_traverse` |
+| 0.87% | `Game::tile_has_visibility_line` |
+
+Unnamed, attributed by caller (the third of the profile a flat table drops):
+
+| | |
+| ---: | --- |
+| 2.14% | `Vec::clone ← Game::clone` |
+| 1.79% | `Vec::from_iter ← Game::entry_at_neighbor` |
+| 1.66% | `established_governor_at ← Game::amani_envoy_terms` |
+| 1.33% + 1.21% | `Game::in_enemy_zoc_for ← approach_reach` and one more caller |
+| 0.83% | `defensible_district_owner_at ← Game::in_enemy_zoc_for` |
+| 0.50% | `Game::healing_location ← ai::BasicAi::safe_healing_step` |
+
+Roll-ups: allocator and libc primitives **16.84%**; linker-folded and unnamed
+**33.32%** — so treat every share above as a floor.
+
+**Three things to note before acting on it.**
+
+- `safe_healing_step` is now the largest named non-libc entry at 2.28% self, plus
+  0.50% under `healing_location`. There is a stale draft, #3200 *"perf: reuse safe
+  healing target scans"*, already aimed at exactly this.
+- `Vec::from_iter ← entry_at_neighbor` is `air_patrols()`'s `collect()`, inlined.
+  It is **not** per neighbour: all three `relax_movement` callers open a memo
+  scope, so the whole-board unit scan runs once per flood. 1.79% is the sum over
+  many floods, and shrinking it means caching that scan at a longer scope than a
+  memo — a turn stamp, as `VisionCache` does — rather than reordering anything.
+- `tile_has_visibility_line` at 0.87% is the globe-only visibility arc showing its
+  **flat-map** cost for the first time. Earlier profiles put it at 6.8% inclusive,
+  which was the globe. Do not size that work from the old number.
+
+### Where this profile stops being actionable
+
+After the day's changes the named leaves are libc and generic — `_xzm_free`
+3.66%, `_platform_memcmp` 3.23%, `slice::binary_search` 1.94%,
+`BTreeMap<String, _>::get` 1.34%. None of those names a place to change code, so
+the next step is attribution, and **attribution is where this tool runs out.**
+
+Re-run with `--parents 'xzm_free|memcmp|binary_search|BTreeMap|suzerain_of_uncached|class_can_traverse'`,
+the whole set of those leaves, on a quiet host. Total attributed: **1.34%**, in
+three entries.
+
+| | |
+| ---: | --- |
+| 0.56% | `unit_purchase_cost_for_formation ← purchase_actions_for_city_with_price_memo` |
+| 0.46% | `safe_healing_step ← healing_step ← military_step` |
+| 0.32% | `safe_healing_step ← retreat_step ← healing_step` |
+
+Everything else sits behind linker-folded frames — **33.32% of the profile is
+folded and unnamed**, even with the tool's `-no_deduplicate` `RUSTFLAGS`. So those
+leaves have callers the sampler cannot name, and any change aimed at them is a
+guess dressed as a measurement.
+
+⭐ **Two of the three attributed entries are the safe-healing scan**, which is
+what #3200 removes (−1.02% paired, after the soundness fix). That is the profile
+agreeing with a change already in flight rather than pointing at a new one.
+
+**So the honest next move on this axis is not another micro-optimization.** It is
+either to improve attribution — reduce folding further, or sample with a tool that
+walks full stacks — or to spend the effort elsewhere until there is a signal worth
+acting on. Today's record is the argument: of six paired changes, the two that
+paid were ones whose loop could be named exactly, and four aimed at leaf shares
+were neutral or slower.
+
+### ⭐ What five measurements say about where to look
+
+Five changes were paired at the same shape on the same day, and the result tracks
+one variable almost perfectly: **how often the code they touch runs.**
+
+| change | frequency of the touched code | result |
+| --- | --- | ---: |
+| the flood arrival skip (#3287) | per neighbour, per tile, per flood | **−4.30%** |
+| hoisting a city-state predicate out of a per-building loop (#3283) | per building, per city | −0.55%, and only on seeds that draw the city-state |
+| keying the regional group map by `&str` instead of allocating a `String` (#3298) | per building, per city | noise, +0.05% |
+| memoizing a per-player National Parks sweep asked once per city (#3299) | per city | noise, −0.11%, closed |
+| `crate::name!()` for `Name == "literal"`, plus a lazy family resolve (#3289) | per district, per city | +0.70%, **slower**, closed |
+| three science-lane predicate reorderings (#3293) | per city | +0.28%, **slower**, closed |
+
+Only the change inside the innermost, highest-frequency loop paid materially.
+Everything at per-city or per-building frequency landed at half a percent or
+worse.
+
+**The reason is that the city-yield tree is already memoized once per city**
+inside the enclosing memo scope, so its enormous inclusive share
+(`city_yields_inner` 44.3%, `city_amenities` 27.7%,
+`city_local_amenities_uncached` 25.4%) is mostly work that genuinely happens once
+— not repetition waiting to be removed. The National Parks case is the sharpest
+illustration: the sweep it removes is real, and the empty case (a player with no
+parks still walking every owned tile of every city) is both the expensive one and
+the common one, yet at five to ten cities per scope there is simply not enough of
+it to measure.
+
+⚠ **A profile ranks where time is spent. It cannot distinguish time spent once
+from time spent repeatedly, and only the second kind can be removed.** Before
+optimizing a function, ask how many times it runs per turn and whether a memo
+already covers it. Four of the six changes above would not have been attempted
+under that test, and two of those four made the simulator slower.
+
+Two candidates were dropped on exactly that test rather than measured:
+`war_weariness_amenity_loss` turned out to be a one-line division, and memoizing
+`policy_effect` — 141 call sites, seven of them inside the amenities derivation —
+is per-city frequency, so the pattern predicts under half a percent.
+
 ### Two rejections, both measured slower and both closed
 
 Neither of these shipped. Both were the profile's own suggestions, both are
