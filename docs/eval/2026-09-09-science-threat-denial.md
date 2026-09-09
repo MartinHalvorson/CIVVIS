@@ -145,6 +145,18 @@ the surprise war once a denouncement stands. When that function answers with a
 denouncement instead (the Formal War clock has not run), the denouncement is
 taken and **no** declaration is spent that turn.
 
+**The war must be able to reach its own objective.** The first probe of this
+gene opened **13 wars across 14 on-seats and pillaged 2 pads**: the
+declaration read only whether we could *see* a Spaceport, never whether the
+raid it exists for could get to one, so it bought grievances and no denial.
+`science_denial_raid_can_reach` now requires a soldier that is not a lone
+garrison to be within `DENIAL_MARCH_SHARE` (**0.6**) of `DENIAL_WAR_MAX_TURNS`
+of marching to the pad. The route is read on a **speculative board with the
+declaration already applied**, for the reason `opportunistic-war` version two
+reads it there: before the war, the target's closed borders make every route
+into its interior look impassable, and a distance on the map is not a route
+across an ocean at all.
+
 Peace is offered as soon as the pad is pillaged or gone, or after
 `DENIAL_WAR_MAX_TURNS` (**25**) standard turns, whichever comes first, and
 never before the engine's own minimum war length (`RAID_PEACE_EARLIEST`).
@@ -158,7 +170,7 @@ clears its own state and returns `false`. A test walks every one of them.
 
 ## Tests
 
-21 focused tests in `src/ai/advanced/science_threat_denial/tests.rs`:
+22 focused tests in `src/ai/advanced/science_threat_denial/tests.rs`:
 
 - the registry row is opt-in and ships off in both controllers
 - a pad or a landed project makes a rival a threat; a pad we have not explored
@@ -176,9 +188,11 @@ clears its own state and returns `false`. A test walks every one of them.
 - the pad is the spy posting and the disruption is promoted only in a threat's
   city; the bonus arithmetic clears the success-chance gap
 - the raid party is two soldiers and never a lone garrison
-- the raid pillages the pad it stands on, stands down once it is pillaged, and
-  marches on it otherwise
+- the raid pillages the pad it stands on (recording `denial_pillages`), stands
+  down once it is pillaged, and marches on it otherwise
 - the raid needs both the war and the gene
+- no war is declared for a pad no soldier can walk to, and the lone garrison
+  of our own city does not count as the march
 - the projection reads the launch city and shortens as the race is banked
 - the war opens only inside the horizon and only behind our own finish, and is
   refused by `war-needs-a-treasury` and `one-war-at-a-time`
@@ -191,6 +205,14 @@ clears its own state and returns `false`. A test walks every one of them.
 ## Fires probe
 
 <!-- PROBE -->
+
+## Instrumentation
+
+The two expensive rungs left no trace a screen could read, so the first probe
+could not say whether either reached the board — the "a claim is not a check"
+failure `AGENTS.md` names. `denial_wars` and `denial_pillages` are now counted
+on the seat and exported by `gene_screen` beside `raid_wars`, which is how the
+13-wars-for-2-pillages defect above was found at all.
 
 ## What this does not answer
 
