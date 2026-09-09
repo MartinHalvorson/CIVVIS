@@ -25,14 +25,11 @@ fn charted_habitable_land_beats_ocean_and_polar_terrain() {
 #[test]
 fn hidden_terrain_and_cities_do_not_change_the_prior() {
     let (mut g, scout, target) = board();
+    let before = BasicAi::rival_frontier_prior(&g, 0, scout, target, None);
     g.found_city_for(1, target, None);
     assert!(!g.cities.is_empty());
-    let before = BasicAi::rival_frontier_prior(&g, 0, scout, target, None);
     for tile in g.map.tiles.values_mut() {
         tile.terrain = crate::name!("ocean");
-    }
-    for city in g.cities.values_mut() {
-        city.pos = target;
     }
     assert_eq!(
         before,
