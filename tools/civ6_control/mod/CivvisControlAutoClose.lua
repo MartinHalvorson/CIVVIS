@@ -1019,7 +1019,13 @@ else
 		end
 		remaining = remaining - dt;
 		shown = shown + dt;
-		if remaining > 0 then return; end
+		-- ApplyStatement has already filtered and selected this response. Send
+		-- it on the next ready frame, including a follow-up invitation arriving
+		-- during the previous response's timer or a stale 30-second back-off.
+		-- Keep the deal ownership hold above and the native fade gate below.
+		local firstMeetReady = NAME == "DiplomacyActionView"
+			and firstMeetChoice ~= nil and not firstMeetAnswered;
+		if remaining > 0 and not firstMeetReady then return; end
 		if civvisDealView and not dealForceClose
 				and not dialogueReady() then
 			-- Keep the elapsed screen time for telemetry, but do not consume a
