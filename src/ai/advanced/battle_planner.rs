@@ -1371,7 +1371,7 @@ impl AdvancedAi {
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
                 || self.battle_planner_recovering.contains(&uid)
                 || self.battle_planner_ordered.contains(&uid)
-                || self.guard_is_bound_to_any_settler(uid)
+                || self.guard_is_reserved_for_civilian(uid)
                 // `battle-planner-3`: the siege's taker is not the plan's.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
@@ -1913,7 +1913,7 @@ impl AdvancedAi {
                 || unit.linked_to.is_some()
                 || unit.moves_left <= 0.0
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
-                || self.guard_is_bound_to_any_settler(uid)
+                || self.guard_is_reserved_for_civilian(uid)
                 // `battle-planner-3`: the siege's taker holds its post.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
@@ -2289,7 +2289,7 @@ impl AdvancedAi {
                     && !g.is_embarked(unit)
                     && g.city_at(unit.pos).is_none()
                     && g.encampment_at(unit.pos).is_none()
-                    && !self.guard_is_bound_to_any_settler(*uid)
+                    && !self.guard_is_reserved_for_civilian(*uid)
                     && !matches!(
                         Self::force_role(g, *uid),
                         ForceRole::Recon | ForceRole::AirStrike

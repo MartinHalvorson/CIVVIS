@@ -760,7 +760,7 @@ impl AdvancedAi {
         if !self.siege_train && !self.anvil {
             return None;
         }
-        if arm_of(g, uid) == Arm::Other || self.guard_is_bound_to_any_settler(uid) {
+        if arm_of(g, uid) == Arm::Other || self.guard_is_reserved_for_civilian(uid) {
             return None;
         }
         let group = self
