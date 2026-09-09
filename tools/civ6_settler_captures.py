@@ -103,12 +103,22 @@ class RunData:
     escort: list[dict] = field(default_factory=list)
     orders: list[dict] = field(default_factory=list)
     refusals: list[dict] = field(default_factory=list)
-    camps: set = field(default_factory=set)
+    camp_history: dict[tuple[int, int], list[tuple[int, bool]]] = field(default_factory=dict)
     why: dict[int, list[str]] = field(default_factory=dict)
     has_events: bool = False
 
     def state_at(self, turn: int) -> dict | None:
         return self.states.get(turn)
+
+    def camps_at(self, turn: int) -> set[tuple[int, int]]:
+        """Camps last observed by this turn, including observed clearings."""
+        camps = set()
+        for pos, observations in self.camp_history.items():
+            known = [(t, index, present) for index, (t, present) in enumerate(observations)
+                     if t <= turn]
+            if known and max(known)[2]:
+                camps.add(pos)
+        return camps
 
 
 def _int(value, default=None):
@@ -173,8 +183,13 @@ def load_run(run_dir: Path) -> RunData:
         elif kind in ("tiles", "tiles_delta"):
             plots = event.get("plots")
             for plot in plots if isinstance(plots, list) else []:
-                if isinstance(plot, dict) and plot.get("im") == "IMPROVEMENT_BARBARIAN_CAMP":
-                    data.camps.add((plot.get("x"), plot.get("y")))
+                if not isinstance(plot, dict) or turn is None:
+                    continue
+                x, y = _int(plot.get("x")), _int(plot.get("y"))
+                if x is None or y is None:
+                    continue
+                present = plot.get("im") == "IMPROVEMENT_BARBARIAN_CAMP"
+                data.camp_history.setdefault((x, y), []).append((turn, present))
     why = run_dir / "why.log"
     if why.is_file():
         try:
@@ -450,7 +465,7 @@ def _dossier(data: RunData, uid, turn: int, method: str, extra: dict) -> dict:
                 site_hostile_seen = True
                 break
     camp_near_site = site is not None and any(
-        camp[0] is not None and hex_distance(site, camp) <= 3 for camp in data.camps)
+        hex_distance(site, camp) <= 3 for camp in data.camps_at(seen_turn))
 
     orders = [
         {k: v for k, v in event.items() if k not in ("run", "ctx")}
