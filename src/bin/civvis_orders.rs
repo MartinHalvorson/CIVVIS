@@ -3156,6 +3156,8 @@ struct WarFinishingVolley {
     /// attacker when Firaxis may leave a modelled kill alive.
     actions: Vec<Action>,
     reserves: usize,
+    survival_rejections: usize,
+    roll_rejections: usize,
 }
 
 #[derive(Clone)]
@@ -3313,6 +3315,39 @@ fn live_finishing_candidates(
     candidates
 }
 
+/// A lower-roll estimate from the exported board, before any simulated
+/// damage weakens the defender. The bridge's RNG is unrelated to Firaxis's:
+/// one lucky native kill cannot prove that a live volley finishes its target.
+/// This bounds native roll uncertainty, not differences in the host's rules.
+fn live_finishing_damage_floor(
+    game: &civvis::game::Game,
+    pid: usize,
+    target: u32,
+    candidate: &FinishingCandidate,
+) -> Option<i32> {
+    let mut approach = game.clone();
+    for action in &candidate.simulation {
+        let strengths = match action {
+            Action::Move { .. } => {
+                approach.apply(pid, action).ok()?;
+                continue;
+            }
+            Action::Attack { unit, .. } => approach.melee_exchange_strengths(*unit, target),
+            Action::Ranged {
+                unit,
+                target: position,
+            } => approach.ranged_strike_strengths(*unit, target, *position),
+            _ => return None,
+        }?;
+        // Match `game::damage` at its lowest 0.8 roll, before rounding and
+        // clamping. Scaling its already-clamped mean would turn a guaranteed
+        // 100-damage blow into an incorrect 80-damage floor.
+        let damage = 30.0 * ((strengths.0 - strengths.1) / 25.0).exp() * 0.8;
+        return Some((damage.round() as i32).clamp(1, 100));
+    }
+    None
+}
+
 /// Finish exposed wounded enemies before their attackers receive campaign moves.
 ///
 /// The old live-only repair rewrote every wounded barbarian to 100 HP on the
@@ -3345,6 +3380,7 @@ fn finish_live_war_units(
         pid,
         mapped,
         &std::collections::BTreeSet::new(),
+        &civvis::ai::AdvancedAi::new(),
     )
 }
 
@@ -3357,10 +3393,12 @@ fn finish_live_war_units_excluding(
     pid: usize,
     mapped: &std::collections::BTreeMap<u32, i64>,
     excluded: &std::collections::BTreeSet<u32>,
+    ai: &civvis::ai::AdvancedAi,
 ) -> WarFinishingVolley {
+    let withdrawing = ai.live_wounded_unit_reservations(planned_game, pid);
     let mapped: std::collections::BTreeMap<u32, i64> = mapped
         .iter()
-        .filter(|(uid, _)| !excluded.contains(uid))
+        .filter(|(uid, _)| !excluded.contains(uid) && !withdrawing.contains(uid))
         .map(|(uid, civ6)| (*uid, *civ6))
         .collect();
     let mapped = &mapped;
@@ -3418,6 +3456,49 @@ fn finish_live_war_units_excluding(
         if proof.units.contains_key(&target) {
             continue;
         }
+        if !ai.live_finishing_actions_survive(
+            planned_game,
+            pid,
+            chosen.iter().flat_map(|candidate| &candidate.simulation),
+        ) {
+            result.survival_rejections += 1;
+            continue;
+        }
+        // Price each contribution against the original defender's health:
+        // sampled earlier damage must not inflate later blows. A reserve can
+        // cover a shortfall even when several primary attackers were chosen.
+        let primary_floor = chosen.iter().try_fold(0i32, |sum, candidate| {
+            Some(sum + live_finishing_damage_floor(planned_game, pid, target, candidate)?)
+        });
+        let needs_reserve = chosen.len() == 1
+            || primary_floor.is_none_or(|damage| damage < planned_game.units[&target].hp);
+        // The host issues a reserve only if the target remains alive. Check
+        // its survival on the original board where that defender still exists.
+        let backup = if needs_reserve {
+            initial
+                .iter()
+                .filter(|candidate| !chosen.iter().any(|primary| primary.unit == candidate.unit))
+                .find(|candidate| {
+                    let safe =
+                        ai.live_finishing_actions_survive(planned_game, pid, &candidate.simulation);
+                    if !safe {
+                        result.survival_rejections += 1;
+                    }
+                    safe
+                })
+        } else {
+            None
+        };
+        let damage_floor = primary_floor.and_then(|sum| match backup {
+            Some(candidate) => {
+                Some(sum + live_finishing_damage_floor(planned_game, pid, target, candidate)?)
+            }
+            None => Some(sum),
+        });
+        if damage_floor.is_none_or(|damage| damage < planned_game.units[&target].hp) {
+            result.roll_rejections += 1;
+            continue;
+        }
 
         for candidate in &chosen {
             let mut legal = true;
@@ -3438,20 +3519,16 @@ fn finish_live_war_units_excluding(
         }
         result.targets += 1;
 
-        // One predicted attack plus one available attacker is the exact shape
-        // the old durability rewrite was trying to preserve. Keep the reserve
-        // explicit instead of making the target look healthy to every scorer.
-        if chosen.len() == 1 {
-            if let Some(backup) = initial
-                .into_iter()
-                .find(|candidate| !committed.contains(&candidate.unit))
-            {
+        // Keep the conditional reserve explicit rather than rewriting the
+        // target's health or pretending its attack already landed.
+        if let Some(backup) = backup {
+            if !committed.contains(&backup.unit) {
                 if let Some(unit) = planned_game.units.get_mut(&backup.unit) {
                     unit.moves_left = 0.0;
                     unit.attacks_left = 0;
                 }
                 committed.insert(backup.unit);
-                result.actions.push(backup.order);
+                result.actions.push(backup.order.clone());
                 result.reserves += 1;
             }
         }
@@ -3752,9 +3829,15 @@ fn decide(
     // been measured leaving such kills alive. And a settler's bound guard is
     // not the volley's to spend one tile away from the civilian it shields.
     ai.observe_turn_start_hostiles(&planned_game, 0);
+    ai.observe_confirmed_host_deaths(&planned_game, state);
     let bound_guards = ai.bound_settler_guards(&planned_game, 0);
-    let war_finishers =
-        finish_live_war_units_excluding(&mut planned_game, 0, &mirror_state.civ6_of, &bound_guards);
+    let war_finishers = finish_live_war_units_excluding(
+        &mut planned_game,
+        0,
+        &mirror_state.civ6_of,
+        &bound_guards,
+        ai,
+    );
     // Finishing attacks are translated explicitly below, including the reserve
     // order that was intentionally not applied to the planning board. Ordinary
     // AI actions start after the attacks that were applied there.
@@ -3867,6 +3950,18 @@ fn decide(
             mirror_state.game.trade_capacity(0),
             mirror_state.game.active_routes(0),
             pre_traders.join("; ")
+        ));
+    }
+    if war_finishers.roll_rejections > 0 {
+        note_bits.push(format!(
+            "war_unit_finishing_roll_rejections={}",
+            war_finishers.roll_rejections
+        ));
+    }
+    if war_finishers.survival_rejections > 0 {
+        note_bits.push(format!(
+            "war_unit_finishing_survival_rejections={}",
+            war_finishers.survival_rejections
         ));
     }
     if war_finishers.targets > 0 {
@@ -4517,6 +4612,21 @@ fn decide(
         snapshot.revealed_count()
     ));
 
+    // Batch metadata travels through the existing five-column order transport.
+    // The controller attaches it to each queued strike; no persistent host
+    // setting can leak the selected gene into a later frame or experiment.
+    if ai.live_strike_survival_enabled()
+        && orders.iter().any(|order| {
+            order.kind == "unit" && matches!(order.verb.as_deref(), Some("ATTACK" | "RANGE_ATTACK"))
+        })
+    {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("DOOMED_BLOW_VETO".to_string()),
+            pos: None,
+        });
+    }
     let body = orders
         .iter()
         .map(|o| o.to_json())
@@ -5617,6 +5727,8 @@ fn unverifiable_unit_verb(op: &str) -> bool {
 
 /// Ledger event kinds the checks read as evidence between two frames.
 const EVIDENCE_KINDS: &[&str] = &[
+    "combat_policy_applied",
+    "strike_survival_refused",
     "combat",
     "deal_closed",
     "deal_declined",
@@ -6082,6 +6194,12 @@ fn strike_refusal_reason(
         .any(|event| of_kind(event, "war_refused") && aimed_here(event))
     {
         return Some("would_declare_war".to_string());
+    }
+    if evidence
+        .iter()
+        .any(|event| of_kind(event, "strike_survival_refused") && aimed_here(event))
+    {
+        return Some("lethal_host_preview".to_string());
     }
     let refused = evidence
         .iter()
@@ -6575,6 +6693,17 @@ fn verify_order_with_context(
     let verb = order.verb.as_deref().unwrap_or("");
     let failed = |why: String| Verdict::Failed(why);
     match order.kind.as_str() {
+        "combat_policy" => {
+            if evidence.iter().any(|event| {
+                event["kind"] == "combat_policy_applied"
+                    && event["turn"].as_u64() == Some(u64::from(turn))
+                    && event["policy"].as_str() == Some(verb)
+            }) {
+                Verdict::Verified
+            } else {
+                failed("combat_policy_not_acknowledged".to_string())
+            }
+        }
         "unit" => verify_unit_order(
             order,
             turn,
@@ -10954,6 +11083,332 @@ mod tests {
         (snapshot, state)
     }
 
+    fn finishing_survival_field(
+        with_archer: bool,
+        ranged_primary: bool,
+    ) -> civvis::mirror::LiveMirror {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.units.retain(|unit| unit.id == 101);
+        state.units[0].hp = 56.0;
+        if ranged_primary {
+            state.units.push(StateUnit {
+                id: 102,
+                kind: "UNIT_ARCHER".to_string(),
+                x: 5,
+                y: 6,
+                hp: 100.0,
+                moves: 2.0,
+                combat: 15.0,
+                ranged: 25.0,
+                ..StateUnit::default()
+            });
+        }
+        state.hostiles[0].id = 200;
+        state.hostiles[0].hp = 1.0;
+        if with_archer {
+            state.hostiles.push(StateUnit {
+                id: 201,
+                kind: "UNIT_ARCHER".to_string(),
+                x: 5,
+                y: 2,
+                hp: 100.0,
+                combat: 15.0,
+                ranged: 25.0,
+                moves: 0.0,
+                ..StateUnit::default()
+            });
+        }
+        civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0)
+    }
+
+    #[test]
+    fn one_native_damage_roll_does_not_prove_a_live_finishing_kill() {
+        let mirror = finishing_survival_field(false, false);
+        let uid = mirror.uid_of[&101];
+        let target = mirror.foreign_uid_of[&200];
+        let mut found = false;
+        for hp in 20..60 {
+            let mut game = mirror.game.clone();
+            game.units.get_mut(&uid).unwrap().hp = 100;
+            game.units.get_mut(&target).unwrap().hp = hp;
+            let (attack, defense) = game.melee_exchange_strengths(uid, target).unwrap();
+            let low_damage = (civvis::game::expected_damage(attack, defense) * 0.8)
+                .round()
+                .clamp(1.0, 100.0) as i32;
+            let candidates = live_finishing_candidates(
+                &game,
+                0,
+                target,
+                &mirror.civ6_of,
+                &std::collections::BTreeSet::new(),
+            );
+            if low_damage >= hp || !candidates.iter().any(|candidate| candidate.kills) {
+                continue;
+            }
+            found = true;
+            let volley = finish_live_war_units(&mut game, 0, &mirror.civ6_of);
+            assert_eq!(volley.targets, 0,
+                "a sampled kill cannot reserve the lone attacker when a lower damage roll leaves the target alive");
+            assert!(volley.actions.is_empty());
+            break;
+        }
+        assert!(
+            found,
+            "the fixture must include a sampled kill that a lower roll does not finish"
+        );
+    }
+
+    #[test]
+    fn finishing_volley_respects_selected_wounded_withdrawals() {
+        let mut mirror = finishing_survival_field(true, false);
+        let uid = mirror.uid_of[&101];
+        mirror.game.units.get_mut(&uid).unwrap().hp = 40;
+        let mut off = mirror.game.clone();
+        assert_eq!(
+            finish_live_war_units(&mut off, 0, &mirror.civ6_of).targets,
+            1
+        );
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_wounded_out_of_reach();
+        let mut on = mirror.game.clone();
+        let volley = finish_live_war_units_excluding(
+            &mut on,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert!(volley.actions.is_empty());
+        assert_eq!(on.units[&uid].hp, 40);
+        assert_eq!(on.units[&uid].pos, mirror.game.units[&uid].pos);
+    }
+
+    #[test]
+    fn finishing_survival_policy_rejects_the_kill_before_a_visible_archer_reply() {
+        let mirror = finishing_survival_field(true, false);
+        let mut old = mirror.game.clone();
+        assert_eq!(
+            finish_live_war_units(&mut old, 0, &mirror.civ6_of).targets,
+            1
+        );
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let mut planned = mirror.game.clone();
+        let volley = finish_live_war_units_excluding(
+            &mut planned,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert!(
+            volley.actions.is_empty(),
+            "the pre-pass must not spend a striker the survival policy rejects"
+        );
+        assert_eq!(planned.units.len(), mirror.game.units.len());
+        assert_eq!(planned.log.len(), mirror.game.log.len());
+    }
+
+    #[test]
+    fn finishing_survival_policy_keeps_a_kill_without_the_archer_reply() {
+        let mut mirror = finishing_survival_field(false, false);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let volley = finish_live_war_units_excluding(
+            &mut mirror.game,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.actions.len(), 1);
+    }
+
+    #[test]
+    fn finishing_survival_policy_also_covers_version_one() {
+        let mut mirror = finishing_survival_field(true, false);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto();
+        let volley = finish_live_war_units_excluding(
+            &mut mirror.game,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert!(volley.actions.is_empty());
+        assert_eq!(volley.survival_rejections, 1);
+    }
+
+    #[test]
+    fn finishing_survival_policy_does_not_reserve_an_unsafe_melee_followup() {
+        let mirror = finishing_survival_field(true, true);
+        let mut old = mirror.game.clone();
+        let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
+        assert_eq!(old_volley.reserves, 1);
+        let guard = *mirror.civ6_of.iter().find(|(_, id)| **id == 101).unwrap().0;
+        let mut planned = mirror.game.clone();
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let volley = finish_live_war_units_excluding(
+            &mut planned,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.reserves, 0);
+        assert_eq!(volley.actions.len(), 1);
+        assert!(matches!(volley.actions[0], Action::Ranged { .. }));
+        assert_eq!(
+            planned.units[&guard].moves_left,
+            mirror.game.units[&guard].moves_left
+        );
+        assert_eq!(
+            planned.units[&guard].attacks_left,
+            mirror.game.units[&guard].attacks_left
+        );
+    }
+
+    #[test]
+    fn finishing_survival_policy_keeps_a_safe_reserve() {
+        let mut mirror = finishing_survival_field(false, true);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let volley = finish_live_war_units_excluding(
+            &mut mirror.game,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.reserves, 1);
+        assert_eq!(volley.actions.len(), 2);
+    }
+
+    #[test]
+    fn finishing_survival_policy_prices_the_whole_volley_after_its_kill() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.units[0].hp = 30.0;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut old = mirror.game.clone();
+        let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
+        assert!(old_volley.actions.len() > 1);
+        assert_eq!(old_volley.reserves, 1);
+        let primary = &old_volley.actions[..old_volley.actions.len() - old_volley.reserves];
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        assert!(!ai.live_finishing_actions_survive(&mirror.game, 0, &old_volley.actions[..1]));
+        assert!(ai.live_finishing_actions_survive(&mirror.game, 0, primary));
+        let mut planned = mirror.game.clone();
+        let volley = finish_live_war_units_excluding(
+            &mut planned,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.actions, old_volley.actions);
+    }
+
+    #[test]
+    fn finishing_survival_policy_does_not_restore_the_unsafe_wounded_followup() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.cities[0].x = 5;
+        state.cities[0].y = 5;
+        state.units.retain(|unit| unit.id == 101);
+        state.units[0].hp = 56.0;
+        state.units.push(StateUnit {
+            id: 102,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 6,
+            y: 4,
+            hp: 100.0,
+            moves: 2.0,
+            ..StateUnit::default()
+        });
+        state.hostiles[0].id = 200;
+        state.hostiles[0].hp = 50.0;
+        state.hostiles.push(StateUnit {
+            id: 201,
+            kind: "UNIT_ARCHER".to_string(),
+            x: 5,
+            y: 2,
+            hp: 100.0,
+            combat: 15.0,
+            ranged: 25.0,
+            moves: 0.0,
+            ..StateUnit::default()
+        });
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut old = mirror.game.clone();
+        let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
+        let old_strikers: Vec<_> = old_volley
+            .actions
+            .iter()
+            .filter_map(|action| {
+                if let Action::Attack { unit, .. } = action {
+                    Some(mirror.civ6_of[unit])
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            old_strikers,
+            vec![102, 101],
+            "the original pre-pass spends the wounded finisher"
+        );
+        let mut ai = victory_lane("science").unwrap();
+        ai.enable_doomed_blow_veto_2();
+        ai.enable_battle_planner_2();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut std::collections::BTreeMap::new(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| {
+                    order["kind"] == "combat_policy" && order["verb"] == "DOOMED_BLOW_VETO"
+                })
+                .count(),
+            1,
+            "the full bridge reply must carry the selected survival policy"
+        );
+        let strikers: Vec<_> = reply["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|order| order["verb"] == "ATTACK" && order["x"] == 5 && order["y"] == 4)
+            .map(|order| order["subject"].as_i64().unwrap())
+            .collect();
+        assert_eq!(
+            strikers.last(),
+            Some(&102),
+            "the ordinary planner must not restore the unsafe wounded followup: {reply}"
+        );
+        assert!(reply["note"]
+            .as_str()
+            .unwrap()
+            .contains("war_unit_finishing_survival_rejections=1"));
+    }
+
     #[test]
     fn local_barbarian_finishing_volley_keeps_exported_hp_and_proves_the_kill() {
         let (snapshot, state) = local_barbarian_defense_board();
@@ -15124,7 +15579,7 @@ mod tests {
     }
 
     /// ★★★★★ The whole envoy chain inside the bridge: the held count reaches
-    /// the board, the deployed controller spends it on the planning clone, and
+    /// the board, the spend-all controller spends it on the planning clone, and
     /// each `SendEnvoy` crosses as an `envoy` order naming Firaxis's minor
     /// player id — including a city-state met before its centre is in view,
     /// which has no mirrored city to resolve through.
@@ -15207,9 +15662,12 @@ mod tests {
         // A major seat is not a city-state.
         assert!(translate(&Action::SendEnvoy { player: 1 }, &mirror, &state).is_none());
 
-        // The deployed controller spends what the board holds.
+        // Pin the spend-all policy: this checks order translation, not the
+        // tournament-selected defaults for saving envoys for future dividends.
         let mut ai = civvis::ai::AdvancedAi::new();
         ai.enable_live_bridge();
+        ai.disable_envoy_building_dividends();
+        ai.disable_bank_envoys();
         let mut planned = mirror.game.clone();
         let begin = planned.log.len();
         ai.take_turn(&mut planned, 0);
@@ -16863,6 +17321,37 @@ mod order_postcondition_tests {
             ),
             failed("deferred_same_turn_transaction_in_flight"),
             "the host's deferred transaction reason is more precise than a missing-card diff"
+        );
+    }
+
+    #[test]
+    fn combat_policy_requires_host_acknowledgement_and_names_lethal_refusals() {
+        let before = frame(7);
+        let after = frame(8);
+        let policy = order("combat_policy", None, Some("DOOMED_BLOW_VETO"), None);
+        assert!(EVIDENCE_KINDS.contains(&"combat_policy_applied"));
+        assert!(EVIDENCE_KINDS.contains(&"strike_survival_refused"));
+        assert_eq!(
+            check(&policy, &before, &after, &[]),
+            failed("combat_policy_not_acknowledged")
+        );
+        let ack = event(r#"{"kind":"combat_policy_applied","turn":7,"policy":"DOOMED_BLOW_VETO"}"#);
+        assert_eq!(check(&policy, &before, &after, &[ack]), Verdict::Verified);
+        let stale =
+            event(r#"{"kind":"combat_policy_applied","turn":6,"policy":"DOOMED_BLOW_VETO"}"#);
+        assert_eq!(
+            check(&policy, &before, &after, &[stale]),
+            failed("combat_policy_not_acknowledged")
+        );
+        let refusal =
+            event(r#"{"kind":"strike_survival_refused","turn":7,"unit":10,"x":31,"y":42}"#);
+        assert_eq!(
+            strike_refusal_reason(std::slice::from_ref(&refusal), 7, 10, Some((31, 42))).as_deref(),
+            Some("lethal_host_preview")
+        );
+        assert_eq!(
+            strike_refusal_reason(&[refusal], 7, 11, Some((31, 42))),
+            None
         );
     }
 

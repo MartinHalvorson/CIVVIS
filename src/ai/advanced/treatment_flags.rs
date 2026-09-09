@@ -197,11 +197,23 @@ impl AdvancedAi {
     /// cannot be met by land at all. See [`AdvancedAi::early_contact_window`].
     pub fn enable_early_contact_window(&mut self) {
         self.early_contact_window = true;
+        self.early_contact_window_2 = false;
     }
 
     /// The twin of `enable_early_contact_window`.
     pub fn disable_early_contact_window(&mut self) {
         self.early_contact_window = false;
+    }
+
+    /// Spread early Scouts across nearby land frontiers until first major
+    /// contact, retaining the original city-state production incentive.
+    pub fn enable_early_contact_window_2(&mut self) {
+        self.early_contact_window_2 = true;
+        self.early_contact_window = false;
+    }
+
+    pub fn disable_early_contact_window_2(&mut self) {
+        self.early_contact_window_2 = false;
     }
 
     /// Reserve a city to build whatever unblocks an earned Great Person,
@@ -225,12 +237,29 @@ impl AdvancedAi {
     /// [`AdvancedAi::opportunistic_war`]. Opt-in gene.
     pub fn enable_opportunistic_war(&mut self) {
         self.opportunistic_war = true;
+        self.opportunistic_war_2 = false;
     }
 
     /// The twin of `enable_opportunistic_war`.
     pub fn disable_opportunistic_war(&mut self) {
         self.opportunistic_war = false;
-        self.raid_war = None;
+        if !self.opportunistic_war_2 {
+            self.raid_war = None;
+        }
+    }
+
+    /// Price only prizes with a short route after declaration. Version two
+    /// of `opportunistic-war`; selecting either version clears its sibling.
+    pub fn enable_opportunistic_war_2(&mut self) {
+        self.opportunistic_war_2 = true;
+        self.opportunistic_war = false;
+    }
+
+    pub fn disable_opportunistic_war_2(&mut self) {
+        self.opportunistic_war_2 = false;
+        if !self.opportunistic_war {
+            self.raid_war = None;
+        }
     }
 
     /// Count a neighbour's unpillaged improvements within reach as raid prizes
@@ -1392,6 +1421,18 @@ impl AdvancedAi {
         self.base.land_grab = false;
     }
 
+    /// Reserve the safe capital's first build for its first Scout.
+    pub fn enable_scout_first_opening(&mut self) {
+        self.scout_first_opening = true;
+        self.base.scout_first_opening = true;
+    }
+
+    /// Restore the configured opening without changing its progress.
+    pub fn disable_scout_first_opening(&mut self) {
+        self.scout_first_opening = false;
+        self.base.scout_first_opening = false;
+    }
+
     /// After its current production completes, let a population-two capital
     /// start the next legal Settler before ordinary production ranking. The
     /// baseline governor retains the city-target, site, and emergency gates.
@@ -2017,11 +2058,22 @@ impl AdvancedAi {
     /// `pass-picket`; see `advanced/recon_disruption.rs`.
     pub fn enable_pass_picket(&mut self) {
         self.pass_picket = true;
+        self.pass_picket_2 = false;
     }
 
     /// The twin of `enable_pass_picket`.
     pub fn disable_pass_picket(&mut self) {
         self.pass_picket = false;
+    }
+
+    /// Hold a pass against a visible approaching Settler before exploring.
+    pub fn enable_pass_picket_2(&mut self) {
+        self.pass_picket_2 = true;
+        self.pass_picket = false;
+    }
+
+    pub fn disable_pass_picket_2(&mut self) {
+        self.pass_picket_2 = false;
     }
 
     /// Convert the first six Standard-speed turns after a surprise war is
@@ -2235,12 +2287,24 @@ impl AdvancedAi {
     /// turn inside a raider's reach without a melee unit beside it. See
     /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
     pub fn enable_wounded_out_of_reach(&mut self) {
+        self.wounded_out_of_reach_2 = false;
         self.wounded_out_of_reach = true;
     }
 
     /// The twin of `enable_wounded_out_of_reach`.
     pub fn disable_wounded_out_of_reach(&mut self) {
         self.wounded_out_of_reach = false;
+    }
+
+    /// Version two retains the original withdrawal and also considers a
+    /// nominal lethal shot from a recently observed gun. One version plays.
+    pub fn enable_wounded_out_of_reach_2(&mut self) {
+        self.wounded_out_of_reach = false;
+        self.wounded_out_of_reach_2 = true;
+    }
+
+    pub fn disable_wounded_out_of_reach_2(&mut self) {
+        self.wounded_out_of_reach_2 = false;
     }
 
     /// An improvement that completes an unresearched technology's or civic's
@@ -2316,11 +2380,28 @@ impl AdvancedAi {
     /// reads a method line's first identifier.
     pub fn enable_boost_first_research(&mut self) {
         self.boost_first_research = true;
+        self.boost_first_research_2 = false;
     }
 
     /// The twin of `enable_boost_first_research`.
     pub fn disable_boost_first_research(&mut self) {
         self.boost_first_research = false;
+    }
+
+    /// Let a boost in hand break ties among comparable research candidates
+    /// only: the same discount scale as version one, applied in the argmax
+    /// after every forced lane goal has stood down, to a boosted node whose
+    /// unscaled score is within `BOOST_TIEBREAK_BAND` of the ordinary
+    /// winner's. See [`AdvancedAi::boost_tiebreak_pick`]. Opt-in gene
+    /// `boost-first-research-2`; a seat plays at most one version.
+    pub fn enable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = true;
+        self.boost_first_research = false;
+    }
+
+    /// The twin of `enable_boost_first_research_2`.
+    pub fn disable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = false;
     }
 
     /// Version one hunts every Eureka and Inspiration through a global union
@@ -3401,6 +3482,17 @@ impl AdvancedAi {
     /// back into the fog. See `AdvancedAi::barbarian_reach`.
     pub fn enable_hostile_memory(&mut self) {
         self.hostile_memory = true;
+        self.hostile_memory_2 = false;
+    }
+
+    /// Version two retains civilian memory and prices a land escort's embarkation.
+    pub fn enable_hostile_memory_2(&mut self) {
+        self.hostile_memory = false;
+        self.hostile_memory_2 = true;
+    }
+
+    pub fn disable_hostile_memory_2(&mut self) {
+        self.hostile_memory_2 = false;
     }
 
     /// The twin of `enable_hostile_memory`.
@@ -3938,9 +4030,22 @@ impl AdvancedAi {
         self.envoy_building_dividends = false;
     }
 
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// version one's 50, refuse every sale to the threatening rival, and
+    /// denounce it. See `advanced/culture_strategy.rs`. Opt-in gene
+    /// `culture-threat-early`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_culture_threat_early(&mut self) {
+        self.culture_threat_early = true;
+    }
+
+    /// The twin of `enable_culture_threat_early`.
+    pub fn disable_culture_threat_early(&mut self) {
+        self.culture_threat_early = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
-
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------

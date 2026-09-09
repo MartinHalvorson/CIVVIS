@@ -121,6 +121,39 @@ class DismissalPolicyTest(unittest.TestCase):
         self.assertIsNone(cc.choose_dismissal(modal))
 
 
+class Civ6CrashAlertTest(unittest.TestCase):
+    def test_native_alert_chooses_ignore_without_relaunching(self):
+        for title in ["Civilization VI quit unexpectedly.", "“Civilization VI” quit unexpectedly."]:
+            with self.subTest(title=title):
+                modal = {"owner": "UserNotificationCenter", "text": title,
+                         "buttons": ["Reopen", "Ignore", "Report…"]}
+                self.assertEqual(cc.choose_dismissal(modal), "Ignore")
+
+    def test_ignore_is_not_granted_to_other_notifications(self):
+        for title in ["Safari quit unexpectedly.", "Civilization VII quit unexpectedly.",
+                      "Civilization VI would like to access Documents."]:
+            modal = {"owner": "UserNotificationCenter", "text": title,
+                     "buttons": ["Reopen", "Ignore", "Report…"]}
+            self.assertIsNone(cc.choose_dismissal(modal))
+
+    def test_crash_only_cleanup_leaves_other_modals_untouched(self):
+        crash = {"owner": "UserNotificationCenter",
+                 "text": "Civilization VI quit unexpectedly.",
+                 "buttons": ["Reopen", "Ignore", "Report…"]}
+        permission = {"owner": "UserNotificationCenter",
+                      "text": "Allow Steam to find devices on local networks?",
+                      "buttons": ["Don't Allow", "Allow"]}
+        with mock.patch.object(cc, "modal_census", return_value=[permission, crash]), \
+             mock.patch.object(cc, "_osascript", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+            report = cc.dismiss_modals(civ6_crashes_only=True)
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]["action"], "Ignore")
+        self.assertTrue(report[0]["dismissed"])
+        run.assert_called_once()
+        self.assertIn('click button "Ignore"', run.call_args.args[0])
+        self.assertIn('process "UserNotificationCenter"', run.call_args.args[0])
+
+
 class EnsureSingleGameTest(unittest.TestCase):
     def test_the_oldest_child_is_kept_and_newer_ones_are_culled(self) -> None:
         """This session's real duplicate: 47272 (leftover) then 47533 (fresh)."""

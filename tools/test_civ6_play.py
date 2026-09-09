@@ -208,6 +208,101 @@ class AttachSummaryTests(unittest.TestCase):
                          {100: {"techs": 14, "rival_techs": 19},
                           150: {"techs": 31, "rival_techs": 47}})
 
+    def test_attached_summary_carries_the_culture_clock_to_the_ladder_row(self):
+        """★ THE WHOLE PATH, NOT THE WIRING STRING.
+
+        `culture_marks` has unit tests and `attached_summary` was pinned by
+        asserting a source string. A source check passes even when the call
+        lands in a branch that never runs, and until the halt lifts no live game
+        can prove otherwise -- so this drives the real path end to end:
+        `events.jsonl` -> `attached_summary` -> `entry_from` -> the four flat
+        columns a reader actually queries.
+
+        The board is the one the Emperor record keeps losing to: a rival whose
+        visiting tourists already clear the bar, scored against a bar it does
+        not itself set.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-culture"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 100, "frame": 0,
+                     "techs": ["TECH_MINING"],
+                     "foreign_tourists": 30, "domestic_tourists": 40,
+                     "rivals": [{"foreign_tourists": 90, "domestic_tourists": 10},
+                                {"foreign_tourists": 50, "domestic_tourists": 80}]},
+                    {"kind": "state", "turn": 150, "frame": 0,
+                     "techs": ["TECH_MINING", "TECH_POTTERY"],
+                     "foreign_tourists": 44, "domestic_tourists": 55,
+                     "rivals": [{"foreign_tourists": 120, "domestic_tourists": 11},
+                                {"foreign_tourists": 60, "domestic_tourists": 88}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 160, "score": 300, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+
+        # The second rival draws FEWER tourists and is still closer, because its
+        # own staycationers do not shield it: 100*50/40 = 125% against
+        # 100*90/80 = 112.5%. A single board-wide bar would report 112.5%.
+        self.assertEqual(summary["culture_marks"][100], {
+            "tourists": 30, "domestic": 40, "rival_tourists": 90,
+            "rival_percent": 125.0, "percent": 37.5,
+        })
+        # t150: the leader must clear the OTHER rival's 88 staycationers, not
+        # our 55 -- 100*120/88 = 136.36%. The second rival clears only our 55,
+        # 100*60/55 = 109.09%, so the leader is the one with the higher bar.
+        self.assertEqual(summary["culture_marks"][150]["rival_percent"], 136.36)
+
+        # And the columns a reader queries, from that same summary.
+        import civ6_ladder
+        entry = civ6_ladder.entry_from(dict(summary, tag=run_dir.name))
+        self.assertEqual(entry["rival_culture_at_100"], 125.0)
+        self.assertEqual(entry["domestic_tourists_at_100"], 40)
+        self.assertEqual(entry["rival_culture_at_150"], 136.36)
+        self.assertEqual(entry["domestic_tourists_at_150"], 55)
+
+    def test_attached_summary_carries_the_space_race_to_the_last_board(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-launches"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 201, "frame": 0,
+                     "science_projects": [],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                    {"kind": "state", "turn": 219, "frame": 0,
+                     "science_projects": ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                          "PROJECT_LAUNCH_MOON_LANDING"],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 226, "score": 470, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+        self.assertEqual(summary["launch_marks"],
+                         {"spaceport_turn": 201, "launches_completed": 2,
+                          "last_launch_turn": 219})
+
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
 
@@ -3183,6 +3278,18 @@ class AStoppedRunStillLeavesARecord(unittest.TestCase):
         self.assertIn('civ6_ladder.tech_marks(run_dir / "events.jsonl")', block)
         self.assertIn('partial["tech_marks"] = marks', block)
         self.assertLess(block.index('partial["tech_marks"]'),
+                        block.index("path.write_text"))
+
+    def test_the_fallback_measures_the_space_race_before_writing(self):
+        """The deep Emperor games that get launches in are the ones the
+        harness ends by hand, so the shutdown hook must carry them too."""
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        self.assertIn('civ6_ladder.launch_marks(run_dir / "events.jsonl")', block)
+        self.assertIn('partial["launch_marks"] = launches', block)
+        self.assertLess(block.index('partial["launch_marks"]'),
                         block.index("path.write_text"))
 
     def test_the_fallback_is_registered_and_never_overwrites(self):

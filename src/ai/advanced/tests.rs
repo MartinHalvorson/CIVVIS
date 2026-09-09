@@ -29059,7 +29059,7 @@ fn immediate_kill_priority_finishes_barbarians_and_wartime_units() {
     };
     let mut ai = AdvancedAi::new();
     let legal = game.legal_actions_within(0, ActionFamilies::UNITS);
-    let finished = ai.prioritize_immediate_kills(&mut game, 0, &plan);
+    let finished = ai.prioritize_immediate_kills(&mut game, 0, &plan, &BTreeSet::new());
     assert_eq!(
         finished, 2,
         "each available positive exchange must finish its removable target; \
@@ -44751,10 +44751,8 @@ fn the_move_refusal_break_gene_off_records_and_bars_nothing() {
     assert!(!ai.base.move_refusal_blocked(&g, uid));
 }
 
-/// The Settler half: a frozen Settler does not merely bend its route — its
-/// destination is retired through the same dead-site machinery a watchdog
-/// arrival uses, so the chooser must pick a site the refused approach does
-/// not serve.
+/// A city site that is itself the refused tile has no alternate approach.
+/// It is deferred until the host refusal expires.
 #[test]
 fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
     let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
@@ -44772,11 +44770,7 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
         .into_iter()
         .find(|pos| *pos != here)
         .expect("a neighboring tile");
-    let target = g
-        .wdisk(here, 5)
-        .into_iter()
-        .find(|pos| g.wdist(*pos, here) >= 4)
-        .expect("a distant destination");
+    let target = step; // The unavailable tile is itself the city site.
     ai.settler_targets.insert(settler, target);
     ai.base
         .move_refusal_blocks
@@ -47013,14 +47007,20 @@ fn immediate_kill_priority_rejects_a_poisoned_finish() {
         tactical.units.contains_key(&victim),
         "the ordinary military path must not reopen the rejected finish"
     );
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 0);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        0
+    );
     assert!(g.units.contains_key(&victim));
 
     // Removing the second hostile makes the same blow a safe finish. The
     // killed victim must not remain in a cached attack envelope.
     g.remove_unit(counter);
     assert!(ai.immediate_kill_value(&g, 0, &action, &plan).is_some());
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 1);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        1
+    );
     assert!(!g.units.contains_key(&victim));
 }
 
@@ -47088,4 +47088,786 @@ fn live_science_peace_offer_keeps_the_war_and_threats_until_host_acceptance() {
     science.advanced_diplomacy(&mut game, 0, &plan);
     assert!(!game.is_at_war(0, 1));
     assert!(!science.peace_offers.contains(&1));
+}
+
+fn remembered_naval_escort_field() -> (Game, AdvancedAi, u32, u32, Pos, Pos) {
+    let (mut game, _, home) = barbarian_field(99_132_700);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    game.turn = 30;
+    game.players[0].techs.insert(crate::name!("shipbuilding"));
+    let start = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            game.wdist(*pos, home) > 4
+                && game.nbrs(*pos).len() == 6
+                && [
+                    (pos.0 + 1, pos.1),
+                    (pos.0 + 2, pos.1),
+                    (pos.0 + 2, pos.1 - 1),
+                ]
+                .iter()
+                .all(|p| game.map.get(*p).is_some() && game.city_at(*p).is_none())
+        })
+        .unwrap();
+    let water = (start.0 + 1, start.1);
+    let target = (start.0 + 2, start.1);
+    let seen = (start.0 + 2, start.1 - 1);
+    for pos in game.nbrs(start) {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+    }
+    for pos in [water, seen] {
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("coast");
+        tile.improvement = None;
+    }
+    let guard = game.spawn_test_unit("archer", 0, start);
+    let settler = game.spawn_test_unit("settler", 0, target);
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.disable_come_ashore(); // Matches the recorded live deployment.
+    ai.bind_settler_guard(&game, settler, guard);
+    ai.hostile_last_seen.insert(
+        999_999,
+        super::RememberedHostile {
+            pos: seen,
+            when: game.turn - 1,
+            owner: 1,
+            kind: crate::name!("caravel"),
+        },
+    );
+    assert!(
+        game.can_move(guard, water),
+        "the risky embarkation is legal"
+    );
+    (game, ai, guard, settler, start, water)
+}
+
+#[test]
+fn hostile_memory_v2_preserves_a_safe_land_guard_beside_a_remembered_fleet() {
+    let (game, ai, guard, settler, start, water) = remembered_naval_escort_field();
+    let mut old_game = game.clone();
+    let mut old = ai.clone();
+    assert_eq!(old.stacked_guard_step(&mut old_game, 0, guard), Some(true));
+    assert_eq!(
+        old_game.units[&guard].pos, water,
+        "v1 takes the legal water shortcut"
+    );
+
+    let mut safe_game = game;
+    let mut safe = ai;
+    safe.enable_hostile_memory_2();
+    assert_eq!(
+        safe.stacked_guard_step(&mut safe_game, 0, guard),
+        Some(false)
+    );
+    assert_eq!(
+        safe_game.units[&guard].pos, start,
+        "do not expose the guard to the remembered fleet"
+    );
+    assert!(safe_game.units[&guard].fortified);
+    assert_eq!(safe.settler_guards.get(&settler), Some(&guard));
+}
+
+#[test]
+fn hostile_memory_v2_does_not_forbid_a_trip_after_the_sighting_expires() {
+    let (mut game, mut ai, guard, _, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.get_mut(&999_999).unwrap().when =
+        game.turn - civilian_safety::HOSTILE_MEMORY_TURNS - 1;
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, water);
+}
+
+#[test]
+fn hostile_memory_versions_are_exclusive_and_opt_in() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.hostile_memory && !ai.hostile_memory_2);
+    ai.enable_hostile_memory();
+    ai.enable_hostile_memory_2();
+    assert!(!ai.hostile_memory && ai.hostile_memory_2);
+    ai.enable_hostile_memory();
+    assert!(ai.hostile_memory && !ai.hostile_memory_2);
+    ai.disable_hostile_memory();
+    assert!(!ai.hostile_memory && !ai.hostile_memory_2);
+    assert!(GENES
+        .iter()
+        .any(|g| g.tag == "hostile-memory-2" && g.opt_in()));
+}
+
+#[test]
+fn hostile_memory_v2_takes_a_safe_forward_land_step_instead() {
+    let (mut game, ai, guard, settler, start, dry) = remembered_naval_escort_field();
+    let wet = (start.0 + 1, start.1 - 1);
+    let target = (start.0 + 2, start.1 - 1);
+    let seen = (start.0 + 2, start.1);
+    game.relocate(settler, target);
+    for pos in [dry, target] {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("grassland");
+    }
+    for pos in [wet, seen] {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+    }
+    let mut ai = ai;
+    ai.hostile_last_seen.get_mut(&999_999).unwrap().pos = seen;
+    let mut old_game = game.clone();
+    let mut old = ai.clone();
+    assert_eq!(old.stacked_guard_step(&mut old_game, 0, guard), Some(true));
+    assert_eq!(old_game.units[&guard].pos, wet);
+    ai.enable_hostile_memory_2();
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, dry);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_invent_a_sighting_from_a_hidden_ship() {
+    let (mut game, mut ai, guard, _, start, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.clear();
+    let hidden = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            game.wdist(*pos, start) > 15
+                && game.city_at(*pos).is_none()
+                && !game.player_can_see(0, *pos)
+        })
+        .unwrap();
+    game.map.tiles.get_mut(&hidden).unwrap().terrain = crate::name!("coast");
+    let ship = game.spawn_test_unit("caravel", 1, hidden);
+    assert!(!game.player_can_see(0, game.units[&ship].pos));
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, water);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_hold_a_guard_under_a_remembered_land_threat() {
+    let (mut game, mut ai, guard, _, start, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.insert(
+        999_998,
+        super::RememberedHostile {
+            pos: start,
+            when: game.turn - 1,
+            owner: 1,
+            kind: crate::name!("warrior"),
+        },
+    );
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(
+        game.units[&guard].pos, water,
+        "do not replace an escape with an unsafe hold"
+    );
+}
+
+#[test]
+fn hostile_memory_v2_allows_an_embarked_guard_to_come_ashore() {
+    let (mut game, mut ai, guard, settler, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    game.relocate(guard, water);
+    let target = game.units[&settler].pos;
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, target);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_apply_the_land_guard_rule_to_a_ship() {
+    let (mut game, mut ai, _, settler, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    let ship = game.spawn_test_unit("galley", 0, water);
+    let target = game.units[&settler].pos;
+    assert_eq!(
+        ai.escort_naval_memory_step(&mut game, 0, ship, target),
+        None
+    );
+}
+
+#[test]
+fn scout_first_opening_registry_toggles_both_governors() {
+    let gene = crate::ai::GENES
+        .iter()
+        .find(|gene| gene.tag == "scout-first-opening")
+        .unwrap();
+    assert!(gene.opt_in());
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
+    assert!(!AdvancedAi::legacy().scout_first_opening);
+    ai.disable_recon_replacement();
+    (gene.enable)(&mut ai);
+    assert!(ai.scout_first_opening);
+    assert!(ai.base.scout_first_opening);
+    assert!(!ai.base.recon_replacement);
+    (gene.disable)(&mut ai);
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
+}
+
+fn remembered_shore_gun_fixture() -> (Game, AdvancedAi, u32, Pos) {
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_623).expect("barbarian fixture");
+    let gun_at = far_side_of(&g, front, refuge).expect("shore opposite refuge");
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != refuge && tile.pos != gun_at {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let ours = g.spawn_test_unit("galley", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 31;
+    let gun = g.spawn_test_unit("field_cannon", barbarian, gun_at);
+    g.turn = 134;
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(
+        ai.hostile_last_seen.contains_key(&(gun as i64)),
+        "the gun must actually have been seen"
+    );
+    g.remove_unit(gun);
+    g.turn = 136;
+    (g, ai, ours, gun_at)
+}
+
+#[test]
+fn a_wounded_galley_leaves_a_remembered_shore_guns_reach() {
+    let (mut g, ai, ours, gun_at) = remembered_shore_gun_fixture();
+    let before = g.units[&ours].pos;
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "a remembered land gun still threatens a wounded ship on water"
+    );
+    assert!(
+        g.wdist(g.units[&ours].pos, gun_at) > g.wdist(before, gun_at),
+        "if the unseen gun's entire projection cannot be escaped, increase separation"
+    );
+    assert_eq!(g.units[&ours].hp, 31);
+}
+
+#[test]
+fn a_shore_gun_without_an_in_scope_memory_does_not_move_the_ship() {
+    let (g, ai, ours, _) = remembered_shore_gun_fixture();
+    for mode in [
+        "gene-off",
+        "memory-off",
+        "unseen",
+        "expired",
+        "future",
+        "peace",
+        "melee-only",
+    ] {
+        let mut policy = ai.clone();
+        let mut board = g.clone();
+        match mode {
+            "gene-off" => policy.disable_wounded_out_of_reach(),
+            "memory-off" => policy.disable_hostile_memory(),
+            "unseen" => policy.hostile_last_seen.clear(),
+            "expired" => board.turn = 139,
+            "future" => {
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.when = 140;
+                }
+            }
+            "peace" => {
+                assert!(!board.is_at_war(0, 1));
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.owner = 1;
+                }
+            }
+            "melee-only" => {
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.kind = crate::name!("warrior");
+                }
+            }
+            _ => unreachable!(),
+        }
+        let before = board.units[&ours].pos;
+        assert_eq!(
+            policy.wounded_out_of_reach_step(&mut board, 0, ours),
+            None,
+            "{mode}"
+        );
+        assert_eq!(board.units[&ours].pos, before, "{mode}");
+    }
+}
+
+#[test]
+fn hostile_memory_v2_also_remembers_a_shore_guns_firing_reach() {
+    let (mut g, mut ai, ours, gun_at) = remembered_shore_gun_fixture();
+    ai.enable_hostile_memory_2();
+    let before = g.units[&ours].pos;
+    assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some());
+    assert!(g.wdist(g.units[&ours].pos, gun_at) > g.wdist(before, gun_at));
+}
+
+#[test]
+fn a_shore_guns_hidden_current_position_does_not_change_its_remembered_threat() {
+    let (mut g, mut ai, ours, _) = remembered_shore_gun_fixture();
+    let record = ai
+        .hostile_last_seen
+        .values()
+        .find(|r| r.kind == "field_cannon")
+        .unwrap()
+        .clone();
+    let remote: Vec<Pos> = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            g.wdist(*pos, g.units[&ours].pos) > 7
+                && g.cities.values().all(|city| g.wdist(*pos, city.pos) > 5)
+        })
+        .take(2)
+        .collect();
+    assert_eq!(remote.len(), 2);
+    let hidden = g.spawn_test_unit("field_cannon", record.owner, remote[0]);
+    ai.hostile_last_seen.clear();
+    ai.hostile_last_seen.insert(hidden as i64, record);
+    let mut destinations = Vec::new();
+    for pos in remote {
+        let mut board = g.clone();
+        board.relocate(hidden, pos);
+        assert!(!board.sees(&board.player_vision_frame(0), pos));
+        let mut observed = ai.clone();
+        observed.observe_turn_start_hostiles(&board, 0);
+        assert_eq!(
+            observed.hostile_last_seen[&(hidden as i64)],
+            ai.hostile_last_seen[&(hidden as i64)],
+            "an unseen move must not overwrite the recorded sighting"
+        );
+        assert!(observed
+            .wounded_out_of_reach_step(&mut board, 0, ours)
+            .is_some());
+        destinations.push(board.units[&ours].pos);
+    }
+    assert_eq!(
+        destinations[0], destinations[1],
+        "only the recorded position may be read"
+    );
+}
+
+#[test]
+fn a_never_seen_shore_gun_is_not_added_to_either_hostile_observation() {
+    let (mut g, mut ai, ours, _) = remembered_shore_gun_fixture();
+    let far = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            g.wdist(*pos, g.units[&ours].pos) > 7
+                && g.cities.values().all(|city| g.wdist(*pos, city.pos) > 5)
+        })
+        .unwrap();
+    let hidden = g.spawn_test_unit("field_cannon", g.barb_pid.unwrap(), far);
+    assert!(!g.sees(&g.player_vision_frame(0), far));
+    ai.live_formationless_settler_shadow = true;
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(!ai.hostile_last_seen.contains_key(&(hidden as i64)));
+    assert!(ai
+        .turn_start_hostiles
+        .iter()
+        .all(|record| record.id != hidden));
+}
+
+fn wounded_galley_prepass_fixture() -> (Game, AdvancedAi, u32, u32, StrategicPlan) {
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_619).expect("barbarian fixture");
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != refuge {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let target_at = g.nbrs(front).into_iter().find(|p| *p != refuge).unwrap();
+    let unseen_at = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| *p != refuge && *p != target_at)
+        .unwrap();
+    let ours = g.spawn_test_unit("galley", 0, front);
+    let target = g.spawn_test_unit("galley", barbarian, target_at);
+    let unseen = g.spawn_test_unit("galley", barbarian, unseen_at);
+    g.units.get_mut(&ours).unwrap().hp = 40;
+    g.units.get_mut(&target).unwrap().hp = 24;
+    g.units.get_mut(&unseen).unwrap().hp = 53;
+    g.turn = 173;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_hostile_memory();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(unseen as i64)));
+    // A subsequent observed frame has lost sight of the second hull.
+    g.remove_unit(unseen);
+    g.turn = 177;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    (g, ai, ours, target, plan)
+}
+
+#[test]
+fn selected_wounded_galley_is_reserved_before_live_finishing() {
+    let (g, mut ai, ours, _, _) = wounded_galley_prepass_fixture();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).is_empty());
+    ai.enable_wounded_out_of_reach();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+    assert_eq!(g.units[&ours].hp, 40);
+}
+
+#[test]
+fn selected_wounded_galley_withdraws_before_native_kill_plan() {
+    let (g, ai, ours, target, plan) = wounded_galley_prepass_fixture();
+    for planner in [false, true] {
+        let mut treated = ai.clone();
+        treated.enable_wounded_out_of_reach();
+        let mut board = g.clone();
+        let before = board.units[&ours].pos;
+        if planner {
+            treated.enable_battle_planner_2();
+            treated.plan_battle(&mut board, 0, &plan);
+            assert!(treated.battle_planner_ordered.contains(&ours));
+        } else {
+            let reserved = treated.withdraw_before_kill_prepass(&mut board, 0, &plan);
+            assert!(reserved.contains(&ours));
+            treated.prioritize_immediate_kills(&mut board, 0, &plan, &reserved);
+        }
+        assert_ne!(board.units[&ours].pos, before);
+        assert_eq!(board.units[&ours].hp, 40);
+        assert_eq!(board.units[&target].hp, 24);
+        assert!(!board
+            .log
+            .iter()
+            .any(|(_, a)| matches!(a, Action::Attack { unit, .. } if *unit == ours)));
+    }
+}
+
+#[test]
+fn selected_wounded_ship_holds_without_fortify_before_kill_prepasses() {
+    let (mut g, mut ai, ours, target, plan) = wounded_galley_prepass_fixture();
+    let here = g.units[&ours].pos;
+    let victim = g.units[&target].pos;
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != here && tile.pos != victim {
+            tile.terrain = crate::name!("plains");
+        }
+    }
+    assert!(!g.unit_can_fortify(&g.units[&ours]));
+    ai.enable_wounded_out_of_reach();
+    for planner in [false, true] {
+        let mut board = g.clone();
+        let mut treated = ai.clone();
+        if planner {
+            treated.enable_battle_planner_2();
+            treated.plan_battle(&mut board, 0, &plan);
+            assert!(treated.battle_planner_ordered.contains(&ours));
+        } else {
+            let reserved = treated.withdraw_before_kill_prepass(&mut board, 0, &plan);
+            assert!(reserved.contains(&ours));
+            treated.prioritize_immediate_kills(&mut board, 0, &plan, &reserved);
+        }
+        assert_eq!(board.units[&ours].pos, here);
+        assert_eq!(board.units[&ours].hp, 40);
+        assert_eq!(board.units[&target].hp, 24);
+    }
+}
+
+#[test]
+fn wounded_prepass_preserves_the_only_threat_kill_and_city_defense_exception() {
+    let (g, mut ai, ours, target, mut plan) = wounded_galley_prepass_fixture();
+    ai.enable_wounded_out_of_reach();
+    let mut last_threat = g.clone();
+    last_threat.units.get_mut(&target).unwrap().hp = 1;
+    let mut no_memory = ai.clone();
+    no_memory.disable_hostile_memory();
+    no_memory.hostile_last_seen.clear();
+    assert!(no_memory
+        .live_wounded_unit_reservations(&last_threat, 0)
+        .is_empty());
+    assert!(no_memory
+        .withdraw_before_kill_prepass(&mut last_threat, 0, &plan)
+        .is_empty());
+    assert_eq!(
+        no_memory.prioritize_immediate_kills(&mut last_threat, 0, &plan, &BTreeSet::new()),
+        1
+    );
+    assert!(last_threat.units.contains_key(&ours));
+    let mut defending = g.clone();
+    plan.threatened_city = defending.player_city_ids(0).first().copied();
+    assert!(plan.threatened_city.is_some());
+    assert!(ai
+        .withdraw_before_kill_prepass(&mut defending, 0, &plan)
+        .is_empty());
+}
+
+#[test]
+fn a_wounded_ship_may_finish_the_only_visible_shore_gun() {
+    let (mut g, mut ai, ours, gun_at) = remembered_shore_gun_fixture();
+    g.units.get_mut(&ours).unwrap().kind = crate::name!("frigate");
+    let gun = g.spawn_test_unit("field_cannon", g.barb_pid.unwrap(), gun_at);
+    g.units.get_mut(&gun).unwrap().hp = 1;
+    let unseen = ai
+        .hostile_last_seen
+        .iter()
+        .next()
+        .map(|(key, record)| (*key, record.clone()))
+        .unwrap();
+    ai.hostile_last_seen.clear();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(g
+        .legal_actions_within(0, ActionFamilies::UNITS)
+        .iter()
+        .any(|action| { matches!(action, Action::Ranged { unit, .. } if *unit == ours) }));
+    let before = g.units[&ours].pos;
+    assert_eq!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a shot removing the only gun must not retain its speculative casualty as firing memory"
+    );
+    assert_eq!(g.units[&ours].pos, before);
+    assert!(
+        ai.hostile_last_seen.contains_key(&(gun as i64)),
+        "forecasting a kill does not erase the real observed memory"
+    );
+    ai.hostile_last_seen.insert(unseen.0, unseen.1);
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "removing the visible gun does not remove a different remembered gun"
+    );
+}
+
+fn remembered_chariot_gun_fixture(gun_kind: &str) -> (Game, AdvancedAi, u32, Pos, usize) {
+    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_631).unwrap();
+    let gun_at = far_side_of(&g, front, refuge).unwrap();
+    let ours = g.spawn_test_unit("heavy_chariot", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 80;
+    let gun = g.spawn_test_unit(gun_kind, barbarian, gun_at);
+    g.turn = 165;
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(gun as i64)));
+    g.remove_unit(gun);
+    g.turn = 167;
+    (g, ai, ours, gun_at, barbarian)
+}
+
+#[test]
+fn withdrawal_v2_remembers_the_gun_that_can_kill_a_healthy_chariot() {
+    let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture("field_cannon");
+    let front = g.units[&ours].pos;
+    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+    assert!(!ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+    ai.enable_wounded_out_of_reach_2();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+    assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some());
+    assert_ne!(g.units[&ours].pos, front);
+}
+
+#[test]
+fn withdrawal_v2_does_not_invent_lethal_memory_from_weak_or_missing_guns() {
+    for mode in ["weak", "unseen", "expired", "off", "memory-off", "peace"] {
+        let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture(if mode == "weak" {
+            "archer"
+        } else {
+            "field_cannon"
+        });
+        ai.enable_wounded_out_of_reach_2();
+        match mode {
+            "unseen" => ai.hostile_last_seen.clear(),
+            "expired" => g.turn = 170,
+            "off" => ai.disable_wounded_out_of_reach_2(),
+            "memory-off" => ai.disable_hostile_memory(),
+            "peace" => {
+                assert!(!g.is_at_war(0, 1));
+                for record in ai.hostile_last_seen.values_mut() {
+                    record.owner = 1;
+                }
+            }
+            _ => {}
+        }
+        assert_eq!(
+            ai.wounded_out_of_reach_step(&mut g, 0, ours),
+            None,
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn withdrawal_v2_prices_one_remembered_gun_instead_of_summing_a_stale_army() {
+    let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture("archer");
+    let record = ai.hostile_last_seen.values().next().unwrap().clone();
+    for key in 100_000..100_010 {
+        ai.hostile_last_seen.insert(key, record.clone());
+    }
+    ai.enable_wounded_out_of_reach_2();
+    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+}
+
+#[test]
+fn withdrawal_v2_keeps_known_defenses_and_the_shore_guns_naval_penalty() {
+    for naval in [false, true] {
+        let (mut g, mut ai, ours, _, barbarian) = remembered_chariot_gun_fixture("field_cannon");
+        let front = g.units[&ours].pos;
+        if naval {
+            g.units.get_mut(&ours).unwrap().kind = crate::name!("galley");
+            g.map.tiles.get_mut(&front).unwrap().terrain = crate::name!("coast");
+        } else {
+            let unit = g.units.get_mut(&ours).unwrap();
+            unit.hp = 100;
+            unit.fortify_turns = 2;
+            let tile = g.map.tiles.get_mut(&front).unwrap();
+            tile.hills = true;
+            tile.feature = Some(crate::name!("forest"));
+        }
+        let nominal = g
+            .nominal_ranged_damage_from_kind(crate::name!("field_cannon"), barbarian, ours, front)
+            .unwrap();
+        assert!(nominal * crate::ai::COMBAT_ROLL_MAX < f64::from(g.units[&ours].hp));
+        ai.enable_wounded_out_of_reach_2();
+        assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+    }
+}
+
+#[test]
+fn withdrawal_v2_nominal_shot_matches_an_unmodified_observed_guns_combat_price() {
+    for (gun_kind, defender_kind, sea) in [
+        ("field_cannon", "heavy_chariot", false),
+        ("field_cannon", "galley", true),
+        ("catapult", "heavy_chariot", false),
+    ] {
+        let (mut g, _, ours, gun_at, barbarian) = remembered_chariot_gun_fixture(gun_kind);
+        g.units.get_mut(&ours).unwrap().kind = defender_kind.into();
+        let front = g.units[&ours].pos;
+        if sea {
+            g.map.tiles.get_mut(&front).unwrap().terrain = crate::name!("coast");
+        }
+        let gun = g.spawn_test_unit(gun_kind, barbarian, gun_at);
+        let (attack, defense) = g.ranged_strike_strengths(gun, ours, front).unwrap();
+        let actual_price = crate::game::expected_damage(attack, defense);
+        let nominal = g
+            .nominal_ranged_damage_from_kind(gun_kind.into(), barbarian, ours, front)
+            .unwrap();
+        assert!(
+            (actual_price - nominal).abs() < 1e-9,
+            "{gun_kind} into {defender_kind}: {actual_price} vs {nominal}"
+        );
+    }
+}
+
+#[test]
+fn military_withdrawal_does_not_use_the_civilian_terrain_fallback() {
+    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_641).unwrap();
+    let lair = far_side_of(&g, front, refuge).unwrap();
+    // Every two-step path crosses a mountain. A Builder on the far side
+    // supplies current sight without screening the Archer from the raider.
+    for pos in g.nbrs(front) {
+        if g.wdist(pos, lair) == 1 {
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+        }
+    }
+    let observer = g
+        .nbrs(lair)
+        .into_iter()
+        .find(|pos| g.wdist(*pos, front) > 2 && g.map.get(*pos).is_some())
+        .unwrap();
+    g.spawn_test_unit("builder", 0, observer);
+    let ours = g.spawn_test_unit("archer", 0, front);
+    let raider = g.spawn_test_unit("man_at_arms", barbarian, lair);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_settler_capture_lessons();
+    ai.enable_wounded_out_of_reach();
+    assert!(g.sees(&g.player_vision_frame(0), lair));
+    assert!(!g.threat_reach(raider).contains(&front));
+    assert!(
+        ai.barbarian_reach(&g, 0, front, 8).covers(&g, front),
+        "the host civilian capture fallback remains conservative"
+    );
+    assert_eq!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a visible raider cannot force a military withdrawal through mountains"
+    );
+    assert!(!ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+
+    let mut open = g.clone();
+    for pos in open.nbrs(front) {
+        if open.wdist(pos, lair) == 1 {
+            open.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
+        }
+    }
+    assert!(open.threat_reach(raider).contains(&front));
+    assert!(
+        ai.wounded_out_of_reach_step(&mut open, 0, ours).is_some(),
+        "an actual open route still forces the exposed shooter to withdraw"
+    );
+
+    ai.enable_hostile_memory();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(raider as i64)));
+    g.remove_unit(raider);
+    g.turn += 1;
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "the last-sighting projection remains conservative in fog"
+    );
+}
+
+#[test]
+fn remembered_threat_ties_do_not_trade_this_turns_healing_for_a_better_healing_tile() {
+    let (mut g, front, city, barbarian) = wounded_out_of_reach_board(91_629).unwrap();
+    let next = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| g.wdist(*p, city) > 1)
+        .unwrap();
+    let gun_at = g
+        .wdisk(front, 2)
+        .into_iter()
+        .find(|p| g.wdist(*p, front) == 2 && g.wdist(*p, next) == 2)
+        .unwrap();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("mountain");
+    }
+    for pos in [front, next, gun_at] {
+        g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
+    }
+    let cid = g.city_at(city).unwrap();
+    g.map.tiles.get_mut(&next).unwrap().owner_city = Some(cid);
+    let ours = g.spawn_test_unit("warrior", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 1;
+    let gun = g.spawn_test_unit("crossbowman", barbarian, gun_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(gun as i64)));
+    g.remove_unit(gun);
+    assert_eq!(g.reachable(ours), vec![next]);
+    assert!(g.healing_location(0, next).rate() > g.healing_location(0, front).rate());
+    for version in [1, 2] {
+        let mut policy = ai.clone();
+        if version == 2 {
+            policy.enable_wounded_out_of_reach_2();
+        }
+        let mut board = g.clone();
+        assert!(policy
+            .wounded_out_of_reach_step(&mut board, 0, ours)
+            .is_some());
+        assert_eq!(board.units[&ours].pos, front,
+            "an equally threatened tile is not a withdrawal, even if it would heal faster later (v{version})");
+    }
 }

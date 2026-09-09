@@ -470,6 +470,7 @@ pub mod quests;
 
 mod actions;
 mod city;
+mod route_avoidance;
 
 #[cfg(test)]
 mod housing_source_tests;
@@ -6540,6 +6541,12 @@ pub struct Game {
     /// empty, so nothing about simulated play changes.
     #[serde(default)]
     pub blocked_policies: Arc<BTreeSet<Name>>,
+    /// Current policy eligibility observed from a host, scoped to its mirrored
+    /// seat. Unlike historical refusals this is replaced on each observation:
+    /// government changes and Congress bans can make a card available again.
+    /// An absent seat entry preserves ordinary simulation rules.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub host_policy_choices: BTreeMap<usize, BTreeSet<Name>>,
     /// Pantheon beliefs a HOST has already granted to another player, for the same
     /// reasons and with the same emptiness in an ordinary game as
     /// [`Game::blocked_city_sites`].
@@ -7346,6 +7353,7 @@ impl From<GameSer> for Game {
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
+            host_policy_choices: BTreeMap::new(),
             blocked_pantheons: Arc::new(BTreeSet::new()),
             blocked_districts: Arc::new(BTreeMap::new()),
             host_district_sites: Arc::new(BTreeMap::new()),
@@ -8044,6 +8052,7 @@ impl Game {
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
+            host_policy_choices: BTreeMap::new(),
             blocked_pantheons: Arc::new(BTreeSet::new()),
             blocked_districts: Arc::new(BTreeMap::new()),
             host_district_sites: Arc::new(BTreeMap::new()),
@@ -11180,6 +11189,30 @@ impl Game {
             Some(_) => HealingLocation::EnemyTerritory,
             None => HealingLocation::NeutralTerritory,
         }
+    }
+
+    /// Generations for every mutable input to the cached safe-healing target
+    /// scan, plus the small diplomacy state that has no mutation wrapper.
+    ///
+    /// The caller keeps the three direct generations separate, avoiding a
+    /// needless hash collision across them. `at_war`, the arena mode, and the
+    /// barbarian seat all affect `is_at_war`; the latter two are static for a
+    /// game, but retaining them makes the cache's complete input explicit.
+    pub(crate) fn healing_target_stamp(&self) -> (u64, u64, u64, u64) {
+        let mut wars = vision_key(&[self.at_war.len() as u64]);
+        for &(a, b) in &self.at_war {
+            wars = vision_key(&[wars, a as u64, b as u64]);
+        }
+        (
+            self.map.tiles.epoch(),
+            self.cities.generation(),
+            self.players.epoch(),
+            vision_key(&[
+                wars,
+                self.barb_pid.map_or(u64::MAX, |pid| pid as u64),
+                self.is_arena() as u64,
+            ]),
+        )
     }
 
     /// What a unit standing in nuclear fallout loses at the start of its turn.
@@ -17020,20 +17053,29 @@ impl Game {
         if self.cs_bonus(city_state).is_none() {
             return false;
         }
-        let economic_partner = self.alliance_partner(pid, "economic", 3);
-        self.players
-            .iter()
-            .filter(|minor| {
-                minor.alive && minor.is_minor && !minor.is_barbarian && minor.civ == city_state
-            })
-            .any(|minor| {
-                if self.congress_effect_active("sovereignty", "B", self.cs_type(&minor.civ)) {
-                    return false;
-                }
-                let suzerain = self.suzerain_of(minor.id);
-                suzerain == Some(pid)
-                    || economic_partner.is_some_and(|partner| suzerain == Some(partner))
-            })
+        // The Economic Alliance walk is only needed by the second arm, and the
+        // first arm -- we are the suzerain ourselves -- answers most calls. It
+        // is a pure `find` over this player's alliances, so deferring it is the
+        // same answer; computing it eagerly paid for it on every call that
+        // never asked.
+        let mut economic_partner: Option<Option<usize>> = None;
+        for minor in self.players.iter().filter(|minor| {
+            minor.alive && minor.is_minor && !minor.is_barbarian && minor.civ == city_state
+        }) {
+            if self.congress_effect_active("sovereignty", "B", self.cs_type(&minor.civ)) {
+                continue;
+            }
+            let suzerain = self.suzerain_of(minor.id);
+            if suzerain == Some(pid) {
+                return true;
+            }
+            let partner =
+                *economic_partner.get_or_insert_with(|| self.alliance_partner(pid, "economic", 3));
+            if partner.is_some_and(|partner| suzerain == Some(partner)) {
+                return true;
+            }
+        }
+        false
     }
 
     fn at_war_with_any_civilization(&self, pid: usize) -> bool {
@@ -18233,6 +18275,7 @@ impl Game {
                     // A card the HOST ruleset has retired, learned from its own
                     // refusals. Empty in an ordinary game; see `blocked_policies`.
                     && !self.blocked_policies.contains(*name)
+                    && self.host_policy_choices.get(&pid).is_none_or(|choices| choices.contains(*name))
                     && s.offered(&p.age, self.world_era)
                     && s.civic
                         .as_ref()
@@ -19731,8 +19774,12 @@ impl Game {
                     .unwrap_or(0.0)
             })
             .sum::<f64>();
-        if self.grants_city_state_unique_bonus(city.owner, "Cardiff")
-            && self.city_has_active_district_family(city, crate::name!("harbor"))
+        // The Harbor test first: it reads this city's own districts, where
+        // `grants_city_state_unique_bonus` scans every player. Both are pure
+        // predicates of `&self`, so `&&` gives the same answer either way and
+        // the common no-Harbor city now pays for neither.
+        if self.city_has_active_district_family(city, crate::name!("harbor"))
+            && self.grants_city_state_unique_bonus(city.owner, "Cardiff")
         {
             renewable += 2.0;
         }
@@ -20993,9 +21040,39 @@ impl Game {
     }
 
     fn regional_building_effects_uncached(&self, city: &City) -> (Yields, f64) {
-        let mut groups: BTreeMap<String, (Yields, f64)> = BTreeMap::new();
+        // ⭐ BORROWED KEYS, NOT OWNED ONES. This map was keyed by `String` and
+        // every active building allocated one to look its group up: either
+        // `spec.regional_group.clone()` or `building.to_string()`. The function
+        // runs once per city per amenity derivation, over every building of
+        // every city, so that is one allocation and one copy per building per
+        // call, feeding the allocator and `memmove` leaves that a batch profile
+        // shows at roughly 17% and 3.5% of running samples.
+        //
+        // ⚠⚠ THE KEY TYPE HAD TO KEEP ITS ORDER. The fold at the end of this
+        // function sums `f64` yields over `groups.values()`, so the map's
+        // iteration order is part of the answer -- switching to a `Name` id key
+        // would reorder the summation and perturb the result. `Ord for &str` is
+        // `Ord for String`'s own implementation, byte for byte, so a
+        // `BTreeMap<&str, _>` holds these keys in exactly the same order and the
+        // fold is bit-identical. `Name::as_str` returns `&'static str` (the
+        // interning registry leaks its text) and `spec.regional_group` lives as
+        // long as the `&self` borrow, so both sources outlive the map.
+        let mut groups: BTreeMap<&str, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
             self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
+        // ⭐ HOISTED, LIKE `integrate_industry` ABOVE IT. Mexico City's suzerain
+        // bonus depends on `city.owner` and a literal, so it is invariant over
+        // every city and every building below -- and because it stood FIRST in
+        // an `&&`, the cheap district-family test could never short-circuit it.
+        // `grants_city_state_unique_bonus` walks an alliance map and then every
+        // player, calling `congress_effect_active`, `cs_type` and `suzerain_of`
+        // per minor: with nine city-states and ten cities of ten buildings that
+        // is a hundred empire-wide scans per call, and the call is made per city
+        // per amenity derivation. Sampled over a six-game 250-turn screen it was
+        // 7.2% of running samples on its own, the largest single self-time entry
+        // under `regional_building_effects` (15.6% inclusive).
+        let mexico_city_regional_range =
+            self.grants_city_state_unique_bonus(city.owner, "Mexico City");
         for source in self
             .cities
             .values()
@@ -21013,7 +21090,7 @@ impl Game {
                     .and_then(|district| self.city_district_family_position(source, district))
                     .unwrap_or(source.pos);
                 let regional_range = spec.regional_range
-                    + if self.grants_city_state_unique_bonus(city.owner, "Mexico City")
+                    + if mexico_city_regional_range
                         && spec.district.is_some_and(|district| {
                             self.district_is_family(district, crate::name!("industrial_zone"))
                                 || self.district_is_family(
@@ -21030,11 +21107,11 @@ impl Game {
                 if regional_range <= 0 || self.wdist(origin, city.pos) > regional_range {
                     continue;
                 }
-                let group = if !spec.regional_group.is_empty() {
-                    spec.regional_group.clone()
+                let group: &str = if !spec.regional_group.is_empty() {
+                    spec.regional_group.as_str()
                 } else {
                     spec.replaces
-                        .map_or_else(|| building.to_string(), |name| name.to_string())
+                        .map_or_else(|| building.as_str(), |name| name.as_str())
                 };
                 let integrate_this_group = integrate_industry
                     && spec.district.is_some_and(|district| {
@@ -23372,7 +23449,9 @@ impl Game {
         // drives the step negative instead.
         let bridged =
             self.crosses_river(from, to) && self.map.tiles[&from].road >= 2 && tile.road >= 2;
-        let mut cost = if bridged {
+        // Waive the river penalty before pricing the route. Applying
+        // Amphibious afterwards would overwrite a valid road discount.
+        let mut cost = if bridged || terms.amphibious > 0.0 && self.crosses_river(from, to) {
             self.rules.move_cost(tile)
         } else {
             self.step_cost(from, to)
@@ -23404,9 +23483,6 @@ impl Game {
         }
         if terms.hills_move_cost > 0.0 && tile.hills {
             cost = 1.0;
-        }
-        if terms.amphibious > 0.0 && self.crosses_river(from, to) {
-            cost = self.rules.move_cost(tile);
         }
         let changes_embarkation =
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);
@@ -26303,8 +26379,8 @@ impl Game {
     /// Whether this unit may cross `pos` on its way somewhere else.
     ///
     /// Weaker than [`Game::can_enter`] by exactly one rule: a tile held by one
-    /// of this unit's own units on the same stacking layer may be walked
-    /// through, and may not be finished on.
+    /// of this unit's own units on the same stacking layer, or a peaceful
+    /// foreign unit, may be crossed without permitting an occupied arrival.
     pub(crate) fn can_pass(&self, uid: u32, from: Pos, pos: Pos) -> bool {
         self.entry_at(uid, from, pos, false) != Entry::Blocked
     }
@@ -26364,7 +26440,16 @@ impl Game {
             }
             let o = &self.units[oid];
             if o.owner != u.owner {
-                continue; // a foreign unit blocks the step itself, not the layer
+                let ospec = &self.rules.units[o.kind];
+                // Peace permits crossing, not ending on the foreign unit.
+                // Preserve the independent aircraft and religious layers.
+                if !self.is_at_war(u.owner, o.owner)
+                    && ospec.domain.as_deref() != Some("air")
+                    && (spec.class == "religious") == (ospec.class == "religious")
+                {
+                    return false;
+                }
+                continue;
             }
             if self.shares_stacking_layer(spec, &self.rules.units[o.kind]) {
                 return false;
@@ -26398,8 +26483,9 @@ impl Game {
     ///
     /// Everything else a step has to satisfy binds identically at every hex of
     /// a path — terrain, cliffs, rivers, borders, zone of control, hostile
-    /// cities, and every foreign unit — because none of that moves out of the
-    /// way.
+    /// cities, and hostile units. Peaceful foreign occupancy permits transit
+    /// but still blocks arrival; see the official Civ VI manual, page 72, and
+    /// the recorded neutral-warrior passage in `movement_rule_tests`.
     ///
     /// `through_units` drops occupancy altogether and nothing the rules decide
     /// sets it. It exists for the question somebody watching asks about a unit
@@ -26522,10 +26608,15 @@ impl Game {
                 if (spec.class == "religious") != (ospec.class == "religious") {
                     continue;
                 }
-                if ospec.class == "military" || spec.class != "military" {
-                    return Entry::Blocked;
-                }
                 if !self.is_at_war(u.owner, o.owner) {
+                    // Official Civ VI manual p72: passage is legal with enough
+                    // movement to leave. Native run 20260909T055408Z t9/t12
+                    // crosses a neutral city-state warrior in exactly this way.
+                    // Keep scanning: a hostile occupant can still block transit.
+                    stacked = true;
+                    continue;
+                }
+                if ospec.class == "military" || spec.class != "military" {
                     return Entry::Blocked;
                 }
             } else if self.shares_stacking_layer(spec, ospec) {
@@ -27920,10 +28011,40 @@ impl Game {
             for &neighbor_index in neighbors.as_slice() {
                 let neighbor_index = neighbor_index as usize;
                 let n = map_tiles[neighbor_index].pos;
+                let index = neighbor_index;
+                // ⭐ SKIP THE ARRIVALS THAT CANNOT WIN, BEFORE PAYING FOR THEM.
+                // An arrival never carries more movement than the tile it came
+                // from: `unit_step_cost` ends `cost.max(0.0)` and asserts that
+                // "a step never grants movement", `(rem - cost).max(0.0)` is at
+                // most `rem` because `rem > 0` is already guaranteed above,
+                // `.min(capped_moves_at(..))` only lowers it, and every
+                // `FloodArrival::arrival` either keeps that value or zeroes it
+                // for a zone of control. So `score <= rem`, and a tile already
+                // holding `rem` or better can never lose the strict `>` test
+                // below.
+                //
+                // Every interior tile is reached from all six of its neighbours
+                // and re-pushed on each improvement, so roughly half of those
+                // arrivals come from a tile nearer the source and are discarded
+                // — after paying `passable`, `unit_step_cost`, `capped_moves_at`
+                // and the zone-of-control walk. `in_enemy_zoc_for` alone visits
+                // all six neighbours of the arrival, every unit standing on
+                // them, and a `zone_of_control` effect lookup per neighbour.
+                //
+                // ⚠ This skips only where the improvement test is PROVABLY
+                // false, so it writes nothing the test below would have written
+                // and pushes nothing it would have pushed: the LIFO order, the
+                // `nbrs` order and the strict `>` that together decide which
+                // parent `path_to` returns are all untouched. The sibling BFS
+                // above already skips on the same argument. Do not weaken `>=`
+                // to `>` here — equal scores must still fall through to the
+                // test, which rejects them.
+                if scratch.movement_seen[index] && scratch.movement_score[index] >= rem {
+                    continue;
+                }
                 if !passable(cur, n) {
                     continue;
                 }
-                let index = neighbor_index;
                 let cost = self.unit_step_cost(uid, cur, n);
                 let fresh = cur == start && rem >= max_moves;
                 if rem < cost && !fresh {
@@ -27941,6 +28062,28 @@ impl Game {
                 // identical and hands `path_to` a different walk to a
                 // destination under a zone of control.
                 let score = arrival.remaining();
+                // ⭐ THE SKIP ABOVE IS AN ARITHMETIC ARGUMENT, SO CHECK IT.
+                // The guard at the top of this body drops an arrival whose tile
+                // already holds `rem` or better, on the grounds that no arrival
+                // can carry more movement than the tile it came from:
+                // `unit_step_cost` ends `cost.max(0.0)`, `rem > 0` is guaranteed
+                // above, `(rem - cost).max(0.0) <= rem`, `.min(capped_moves_at)`
+                // only lowers it, and both `FloodArrival::arrival` impls keep
+                // that value or zero it for a zone of control. Nothing in the
+                // suite tested that chain -- it held by reading, and a later
+                // change to any link would silently turn the skip into a
+                // wrong answer that only a paired A/B would notice.
+                //
+                // `[profile.ci]` sets `debug-assertions = true` precisely so
+                // guards like this run in the build that gates a merge, so this
+                // is a real check on every one of the ~3,200 tests and costs
+                // nothing in `release`.
+                debug_assert!(
+                    score <= rem,
+                    "movement arrival at {n:?} kept {score} of the {rem} it \
+                     came from: a step granted movement, which makes the \
+                     unimprovable-arrival skip above unsound"
+                );
                 if !scratch.movement_seen[index] || score > scratch.movement_score[index] {
                     if !scratch.movement_seen[index] {
                         scratch.movement_seen[index] = true;

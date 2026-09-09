@@ -76,6 +76,35 @@ CivvisPolicy = {
 	attempt_turn = -1,
 	pending = nil,
 };
+-- Match GovernmentScreen_Expansion2.lua:IsPolicyAvailable. Unlocked is not
+-- sufficient: government exclusives and Congress bans can still reject a card.
+CivvisPolicy.isAvailable = function(culture, hash)
+	local ok, value = pcall(function()
+		local banned = culture:IsPolicyBanned(hash);
+		local slottable = culture:CanPolicyBeSlotted(hash);
+		local obsolete = culture:IsPolicyObsolete(hash);
+		if type(banned) ~= "boolean" or type(slottable) ~= "boolean"
+				or type(obsolete) ~= "boolean" then return nil; end
+		return not banned and slottable and not obsolete;
+	end);
+	if ok then return value; end
+	return nil;
+end;
+CivvisPolicy.availableNames = function(culture)
+	local ok, names = pcall(function()
+		local result = {};
+		for card in GameInfo.Policies() do
+			local available = CivvisPolicy.isAvailable(culture, card.Hash);
+			-- An incomplete observation is unknown, not an empty legal slate.
+			if available == nil then return nil; end
+			if available then result[#result + 1] = card.PolicyType; end
+		end
+		table.sort(result);
+		return result;
+	end);
+	if ok then return names; end
+	return nil;
+end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -528,7 +557,11 @@ local function survey()
 		map = try(function() return MapConfiguration.GetScript(); end, "?"),
 		size = typeName(GameInfo.Maps,
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
-		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+		-- The running game can retain 250 even after SetMaxTurns(650) updates
+		-- the configuration. WorldRankings.lua:1053 reads this native API for
+		-- the actual horizon. Unknown stays unknown instead of reporting the
+		-- requested cap as though the engine had accepted it.
+		max_turns = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		-- ★★★ WHICH OPTIONAL GAME MODES ARE ON, read from inside the game.
 		-- Exactly the `victories` argument below, and it went the same way: the
 		-- modes are the one setting on the Create Game screen that PERSISTS
@@ -8422,6 +8455,7 @@ local function exportState(player, pid, turn, frame)
 		religions = religions,
 		prophet_pending = prophet_pending,
 		policies = policies,
+		available_policies = CivvisPolicy.availableNames(pcult),
 		policy_slots = policy_slots,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
@@ -10275,8 +10309,17 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	local session = trade.sessions[other];
 	if session == nil then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
-	local sessionID = type(kVariants) == "table" and kVariants.SessionID or nil;
-	if session.sessionID == nil and sessionID ~= nil then session.sessionID = sessionID; end
+	-- Firaxis dispatches by StatementType and separates a MAKE_DEAL opening
+	-- acknowledgement from evaluation (DiplomacyActionView.lua:2547-2559,
+	-- 2757-2761). A greeting or another session must not consume this offer.
+	if type(kVariants) ~= "table" then return; end
+	local sessionID = kVariants.SessionID;
+	if sessionID == nil or (session.sessionID ~= nil and session.sessionID ~= sessionID) then return; end
+	local statementType = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementType);
+	end, nil);
+	if statementType ~= "MAKE_DEAL" then return; end
+	if session.sessionID == nil then session.sessionID = sessionID; end
 	if not session.sent then
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
@@ -10290,7 +10333,14 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
-	local dealAction = type(kVariants) == "table" and kVariants.DealAction or nil;
+	local dealAction = kVariants.DealAction;
+	if dealAction == nil then return; end
+	local opening = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementSubType) == "NONE"
+			and (kVariants.ResponseType == DiplomacyResponseTypes.INITIAL
+				or kVariants.ResponseType == DiplomacyResponseTypes.ACKNOWLEDGE);
+	end, false);
+	if opening then return; end
 	trade.unanswered = 0;
 	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
 		session = session.sessionID or -1, deal_action = tostring(dealAction) });
@@ -10775,6 +10825,26 @@ CivvisLedger.refuseWarStarter = function(actor, subject, verb, x, y, turn)
 		end, -1),
 	});
 	return "would_declare_war:" .. table.concat(names, ",");
+end;
+
+-- A selected native survival gene can disagree with Firaxis's damage model.
+-- Honor a fresh, known-lethal host preview at issue time, including after a
+-- queued approach. Base/Assets/UI/Panels/UnitPanel.lua:3924 uses
+-- CombatManager.SimulateAttackInto for this preview; :1774 reads the unit's
+-- GetMaxDamage. An unavailable result adds no new veto.
+CivvisLedger.refuseLethalPreview = function(unit, subject, verb, x, y, turn, row)
+	if row._civvis_survival_guard ~= true then return nil; end
+	local preview = CivvisLedger.preview(unit, verb, x, y);
+	local damage = preview and tonumber(preview.damage_to_attacker);
+	local wounds = tonumber(try(function() return unit:GetDamage(); end, nil));
+	local maximum = tonumber(try(function() return unit:GetMaxDamage(); end, nil));
+	if damage == nil or wounds == nil or maximum == nil
+			or damage < maximum - wounds then return nil; end
+	emit("strike_survival_refused", {
+		turn = turn, unit = subject, verb = verb, x = x, y = y,
+		hp = maximum - wounds, preview = preview,
+	});
+	return "lethal_host_preview";
 end;
 
 -- Called from `applyOrder` before a strike is requested: emit the preview and
@@ -12301,6 +12371,25 @@ local function applyOrder(player, pid, row, turn)
 	--
 	-- Policy cards are not marginal here -- already measured as mattering
 	-- (p=0.0023).
+	-- RequestChangeGovernment is asynchronous. Ordering it first does not make
+	-- the new slot indices observable in this tick. Do not clear the old deck
+	-- until the requested government is read back; a fresh turn releases an
+	-- unconfirmed request so a refused transition cannot block policies forever.
+	if (kind == "policy_deck" or kind == "policy") and CivvisPolicy.government_pending ~= nil then
+		local pending = CivvisPolicy.government_pending;
+		local current = try(function() return player:GetCulture():GetCurrentGovernment(); end, -1);
+		if current == pending.index or turn > pending.turn then
+			CivvisPolicy.government_pending = nil;
+		else
+			local desired = {};
+			for name in string.gmatch(verb, "[^,]+") do desired[#desired + 1] = name; end
+			emit(kind == "policy_deck" and "policy_deck_deferred" or "policy_deferred", {
+				turn = turn, desired = desired, why = "government_change_pending",
+				government = pending.name, requested_turn = pending.turn,
+			});
+			return false, "policy_government_pending";
+		end
+	end
 	if kind == "policy_deck" then
 		local culture = try(function() return player:GetCulture(); end);
 		if culture == nil then return false, "no_culture"; end
@@ -12313,6 +12402,9 @@ local function applyOrder(player, pid, row, turn)
 			end
 			if not try(function() return culture:IsPolicyUnlocked(card.Hash); end, false) then
 				return false, "locked_" .. resolved;
+			end
+			if CivvisPolicy.isAvailable(culture, card.Hash) == false then
+				return false, "unavailable_" .. resolved;
 			end
 			if not seen[card.Index] then
 				desired[#desired + 1] = card;
@@ -12603,11 +12695,14 @@ local function applyOrder(player, pid, row, turn)
 		if try(function() return culture:GetCurrentGovernment(); end, -1) == row2.Index then
 			return false, "already_" .. resolved;
 		end
-		local ok = pcall(function() culture:RequestChangeGovernment(row2.Hash); end);
+		local ok, accepted = pcall(function() return culture:RequestChangeGovernment(row2.Hash); end);
+		if ok and accepted ~= false then
+			CivvisPolicy.government_pending = { index = row2.Index, name = resolved, turn = turn };
+		end
 		-- Tell the game the prompt has been dealt with either way, or it re-raises
 		-- the blocker every turn.
 		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
-		return ok, ok and resolved or "throw";
+		return ok and accepted ~= false, not ok and "throw" or (accepted == false and "government_rejected" or resolved);
 	end
 
 	-- CIVVIS names the dedication it selected; the host operation accepts the
@@ -13714,6 +13809,8 @@ local function applyOrder(player, pid, row, turn)
 					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
 				end
 				if verb == "ATTACK" then
+					local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+					if survivalRefusal ~= nil then return false, survivalRefusal; end
 					CivvisLedger.strike(unit, subject, verb, x, y, turn);
 				end
 			end
@@ -13830,6 +13927,8 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+			if survivalRefusal ~= nil then return false, survivalRefusal; end
 			CivvisLedger.strike(unit, subject, verb, x, y, turn);
 			local accepted = operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params);
 			if not accepted then
@@ -16043,10 +16142,23 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 				return true, "path";
 			end
 		end
-		local baseMoves = tonumber(try(function()
-			local definition = GameInfo.Units[threat.unit:GetUnitType()];
-			return definition ~= nil and definition.BaseMoves;
-		end, nil)) or 2;
+		local definition = try(function()
+			return GameInfo.Units[threat.unit:GetUnitType()];
+		end, nil);
+		-- A distance fallback is not a naval path. In the native 20260909T064545Z
+		-- t29 export, a galley caused a land Settler to flee toward a hidden warrior.
+		-- Keep a positive host path above, and preserve city/district transitions
+		-- (including canals), water captures, and unavailable terrain information.
+		if definition ~= nil and definition.Domain == "DOMAIN_SEA" then
+			local plot = try(function() return Map.GetPlot(x, y); end, nil);
+			local water = try(function() return plot:IsWater(); end, nil);
+			local city = try(function() return plot:IsCity(); end, nil);
+			local district = tonumber(try(function() return plot:GetDistrictType(); end, nil));
+			if water == false and city == false and district ~= nil and district < 0 then
+				return false, "naval_land";
+			end
+		end
+		local baseMoves = tonumber(definition ~= nil and definition.BaseMoves) or 2;
 		local distance = tonumber(try(function()
 			return Map.GetPlotDistance(x, y, threat.x, threat.y);
 		end, -1)) or -1;
@@ -16814,6 +16926,16 @@ CivvisFrames.repairProduction = function(player, pid, turn)
 end;
 
 local function applyOrders(player, pid, turn, rows)
+	-- Consume only the recognized batch directive. Attach the policy to the
+	-- rows themselves so delayed strikes retain it without global frame state.
+	local survival = false;
+	for i = #rows, 1, -1 do
+		local row = rows[i];
+		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
+			survival = true;
+			table.remove(rows, i);
+		end
+	end
 	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
 	-- Per kind, beside the per-turn totals: how many orders of each kind were
@@ -16856,6 +16978,16 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdActiveFireCivilianLegs(pid, turn, rows);
+	for _, row in ipairs(rows) do
+		row._civvis_survival_guard = survival and row.kind == "unit"
+			and (row.verb == "ATTACK" or row.verb == "RANGE_ATTACK");
+	end
+	if survival then
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "DOOMED_BLOW_VETO",
+		});
+	end
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -17048,6 +17180,8 @@ local function applyOrders(player, pid, turn, rows)
 	-- correctly, and `data/governments.json` matches `Government_SlotCounts` for
 	-- all 13 governments — checked before touching anything, because the obvious
 	-- read is that the deck chooser is broken and it is not.
+	-- Request order alone is insufficient: the policy handler also waits for
+	-- the asynchronous government change to become observable before clearing cards.
 	for index, row in ipairs(rows) do
 		if not ordered[index] and tostring(row.kind or "") == "government" then
 			runOrder(index, row);
@@ -18583,34 +18717,16 @@ local function tick()
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
-		-- ★★★★★ THE BALLOT IS CAST WHEN THE POPUP ASKS, NOT WHEN THE BLOCKER
-		-- APPEARS. `voteWorldCongress` below is also called from the blocker
-		-- ladder, and that call has never registered a vote: `wc_vote` says
-		-- `spent 760` at t201 of civvis-20260816T184500Z and Favor reads
-		-- 822→829→836 across it; `wc_outcome` shows our selection on every
-		-- resolution as the core's default `option 1, votes 1` — the free vote
-		-- cast FOR the diplomatic leader. The shipped screen votes from inside
-		-- the WorldCongressPopup in stage 1; the autoclose shim standing in
-		-- front of that popup raises `LuaEvents.CivvisCongressBallot` right
-		-- before its `OnAccept`, and this is the handler. Registered once, from
-		-- inside `tick` because `voteWorldCongress` is nested here (a file-scope
-		-- local would cross the 200-register ceiling); the flag hangs off
-		-- `envoyTally` for the same reason. `source` on the event tells the two
-		-- call sites apart in the ledger; the popup one is the one that counts.
-		-- ⚠⚠ AND THE FIRST POPUP-MOMENT ATTEMPT NEVER FIRED EITHER: batch-9
-		-- game civvis-20260816T223457Z has no `source:"popup"` row at all —
-		-- the shim's WorldCongressPopup ladder runs its `OnPass` rung, not the
-		-- `OnAccept` one the event was raised in. Two triggers now, either of
-		-- which casts once per turn: the game core's own
-		-- `Events.WorldCongressStage1(playerID)` — the very event the shipped
-		-- popup opens on, i.e. the earliest moment a person could vote — and
-		-- the shim's ballot event, now raised from the rung that runs.
-		-- `castBallot` is shared; `envoyTally.ballot_turn` is the once-per-turn
-		-- latch and is only set when something was cast, so a trigger that
-		-- arrives before the resolutions are readable does not spend the turn.
-		-- The blocker path below defers to these and only falls back a forfeit
-		-- cycle later. Every ballot reports its trigger, the core's `Stage`,
-		-- and Favor before, so the next `wc_outcome` says which moment took.
+		-- Submit from the popup's voting callback, after its setup, matching
+		-- WorldCongressPopup.lua:2222-2271. WorldCongressStage1 announces the
+		-- stage; it is not proof that a player-operation ballot can land yet.
+		-- In civvis-20260909T043723Z-cont1, stage1 requested 3/12/13/14 votes
+		-- on turns 134/154/174/194, but every review recorded one. The early
+		-- request also latched ballot_turn, blocking the later popup callback.
+		-- Keep stage1 observable without submitting there. A popup with no
+		-- readable resolutions leaves the latch open for a later callback; the
+		-- bounded blocker fallback remains available if the popup never calls.
+		-- Only the later native review proves count, option, and target landed.
 		local function castBallot(trigger)
 			local ballotPlayer, ballotPid = localPlayer();
 			if ballotPlayer == nil then return; end
@@ -18662,7 +18778,12 @@ local function tick()
 			end);
 			local hookedStage = pcall(function()
 				Events.WorldCongressStage1.Add(function(playerID)
-					if tonumber(playerID) == pid then castBallot("stage1"); end
+					if tonumber(playerID) == pid then
+						emit("wc_vote", {
+							turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+							source = "stage1", cast = 0, spent = 0, why = "awaiting_popup",
+						});
+					end
 				end);
 			end);
 			emit("wc_ballot_hooked", { turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
@@ -18724,8 +18845,12 @@ local function tick()
 		local blocker = currentBlocker(pid);
 		local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
 		local same_pass_forced = false;
+		local congressBallotPending = false;
 		if blocker ~= nil and blocker ~= none then
 			local name = blockerName(blocker);
+			congressBallotPending = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
+				and envoyTally.ballot_turn ~= turn
+				and (softSeen[name] == nil or softSeen[name].voted_turn ~= turn);
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
@@ -19103,15 +19228,15 @@ local function tick()
 								and seen.voted_turn ~= turn then
 							-- ⚠ THE BLOCKER IS SEEN BEFORE THE SESSION IS OPEN FOR
 							-- VOTING (its ballot never registered; see `castBallot`
-							-- above), so it defers: if the stage-1/popup ballot has
+							-- above), so it defers: if the popup ballot has
 							-- cast this turn there is nothing to do, and otherwise
-							-- it waits one forfeit cycle for those triggers before
+							-- it waits one forfeit cycle for that callback before
 							-- falling back to the old vote-and-submit, so a session
 							-- that neither trigger reaches still ends.
 							if envoyTally.ballot_turn == turn then
 								seen.voted_turn = turn;
 								emit("wc_vote", { turn = turn, cast = 0, spent = 0,
-								                  why = "cast_at_stage1", source = "blocker" });
+								                  why = "cast_at_popup", source = "blocker" });
 							elseif seen.forfeits >= 2 then
 								seen.voted_turn = turn;
 								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
@@ -19125,7 +19250,7 @@ local function tick()
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						-- ⚠⚠⚠ ONE BLOCKER MUST NOT BE FORCED PAST YET. The congress session
 						-- defers its ballot by one forfeit cycle on purpose (the vote arm just
-						-- above): forfeit 1 waits for the stage-1/popup ballot to land, and only
+						-- above): forfeit 1 waits for the popup ballot to land, and only
 						-- forfeit 2 falls back to vote-and-submit. Forcing the turn at forfeit 1
 						-- ends it before either can happen, so the session is dismissed unvoted
 						-- every time -- and this seat plays for a DIPLOMATIC victory, where those
@@ -19134,7 +19259,13 @@ local function tick()
 						-- like any other and is forced with the rest.
 						local holdForVote = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 							and seen.voted_turn ~= turn;
-						local dropped = dismissBlocker(pid, blocker);
+						congressBallotPending = holdForVote;
+						-- Native run 20260909T061606Z t56 dismissed the session
+						-- while waiting for its popup and advanced with default votes.
+						-- Holding only UserForced was insufficient: keep both the
+						-- notification and the ordinary end-turn request pending.
+						local dropped = false;
+						if not holdForVote then dropped = dismissBlocker(pid, blocker); end
 						emit("dismissed", { turn = turn, blocker = name,
 						                    dismissed = dropped, attempts = attempts,
 						                    answered = answered, parked = parked,
@@ -19190,7 +19321,7 @@ local function tick()
 			-- Only if the same blocker has survived a whole turn's worth of
 			-- attempts is the notification dropped, and that is reported as the
 			-- forfeit it is.
-			if attempts >= (cfg.MaxBlockedAttempts or 40) then
+			if attempts >= (cfg.MaxBlockedAttempts or 40) and not congressBallotPending then
 				local dropped = dismissBlocker(pid, blocker);
 				emit("dismissed", { turn = turn, blocker = name,
 				                    dismissed = dropped, attempts = attempts });
@@ -19198,7 +19329,7 @@ local function tick()
 			end
 		end
 
-		if not same_pass_forced then
+		if not same_pass_forced and not congressBallotPending then
 			pcall(function()
 				if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
 					UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
@@ -19254,7 +19385,7 @@ local function ensureStarted()
 		emit("turn_limit", {
 			asked = cfg.MaxTurns,
 			config = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
-			game = try(function() return Game.GetMaxTurns(); end, -1),
+			game = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		});
 	end
 

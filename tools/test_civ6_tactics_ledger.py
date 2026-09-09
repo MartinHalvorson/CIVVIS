@@ -216,6 +216,49 @@ class SalvageableLossTest(unittest.TestCase):
         self.assertIsNone(report["roster"]["salvageable_share"])
 
 
+class FormationRemovalTest(unittest.TestCase):
+    def report(self, *, verb="FORM_CORPS", before=0, after=1, owner=0,
+               next_turn=4, survivor=True, donor_gone=True, order_turn=3):
+        first = [_unit(1, "UNIT_ARCHER", 5, 5, formation=before),
+                 _unit(2, "UNIT_ARCHER", 6, 5, hp=20, formation=0),
+                 _unit(3, "UNIT_WARRIOR", 8, 5, hp=20)]
+        nxt = [_unit(1, "UNIT_ARCHER", 5, 5, formation=after)] if survivor else []
+        if not donor_gone:
+            nxt.append(first[1])
+        events = [
+            {"kind": "seat", "local_player": 0},
+            {"kind": "state", "turn": 3, "units": first},
+            {"kind": "state", "turn": next_turn, "units": nxt},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _write_run(Path(tmp), events, [(order_turn, 0, 1, verb, owner, 2)])
+            return ledger.ledger(run)
+
+    def test_observed_corps_and_army_exclude_wounded_donor_from_loss_share(self):
+        for verb, before, after in [("FORM_CORPS", 0, 1), ("FORM_ARMY", 0, 2),
+                                    ("FORM_ARMY", 1, 2)]:
+            with self.subTest(verb=verb, before=before):
+                report = self.report(verb=verb, before=before, after=after)
+                roster = report["roster"]
+                self.assertEqual(roster["military_units_gone"], 2)
+                self.assertEqual(roster["confirmed_formation_removals"], 1)
+                self.assertEqual(roster["unattributed_removals"], 1)
+                self.assertEqual(roster["lost_when_salvageable"], 1)
+                self.assertEqual(roster["salvageable_share"], 1.0)
+                self.assertIn("confirmed_formation 1", ledger.render(report))
+
+    def test_unverified_formation_never_hides_a_disappearance(self):
+        for kwargs in [dict(after=0), dict(after=None), dict(before=None),
+                       dict(before=1), dict(owner=1), dict(next_turn=5),
+                       dict(survivor=False), dict(order_turn=2),
+                       dict(verb="ENTER_FORMATION"), dict(donor_gone=False)]:
+            with self.subTest(**kwargs):
+                roster = self.report(**kwargs)["roster"]
+                self.assertEqual(roster["confirmed_formation_removals"], 0)
+                self.assertEqual(roster["unattributed_removals"],
+                                 roster["military_units_gone"])
+
+
 class EvacuationTest(unittest.TestCase):
     """The death shape measured on the 08-30..09-01 ledger: the victim began
     its death turn wounded, had been ordered to leave, and never moved."""
@@ -274,6 +317,32 @@ class EvacuationTest(unittest.TestCase):
         self.assertEqual(section["move_fallback"], 1)
         self.assertEqual(section["move_fallback_reasons"], {"zoc": 1})
 
+    def test_later_retreat_supersedes_previous_turn_without_movement(self) -> None:
+        events = self._events()
+        death = next(i for i, e in enumerate(events) if e.get("kind") == "combat")
+        events.insert(death, {"kind": "host_move", "turn": 10, "unit": 1,
+                              "from_x": 2, "from_y": 2, "x": 3, "y": 2})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 0)
+
+    def test_exported_progress_counts_without_a_host_move_event(self) -> None:
+        events = self._events()
+        death = next(i for i, e in enumerate(events) if e.get("kind") == "combat")
+        events.insert(death, {"kind": "state", "turn": 10, "frame": 1,
+                              "units": [_unit(1, "UNIT_WARRIOR", 3, 2, hp=40)]})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 0)
+
+    def test_progress_before_the_order_turn_does_not_clear_the_failure(self) -> None:
+        events = self._events()
+        events.insert(1, {"kind": "state", "turn": 8, "frame": 0,
+                          "units": [_unit(1, "UNIT_WARRIOR", 1, 2, hp=40)]})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 1)
+
+    def test_movement_after_death_cannot_explain_the_retreat(self) -> None:
+        events = self._events()
+        events.append({"kind": "host_move", "turn": 10, "unit": 1,
+                       "from_x": 2, "from_y": 2, "x": 3, "y": 2})
+        self.assertEqual(ledger.evacuation_section(events, 0)["deaths_after_unexecuted_move"], 1)
+
     def test_a_mod_with_no_combat_events_says_nothing(self) -> None:
         self.assertIsNone(ledger.evacuation_section([{"kind": "seat", "local_player": 0}], 0))
 
@@ -284,7 +353,7 @@ class EvacuationTest(unittest.TestCase):
             text = ledger.render(report) if hasattr(ledger, "render") else ""
         self.assertEqual(report["evacuation"]["deaths_after_unexecuted_move"], 1)
         if text:
-            self.assertIn("never executed", text)
+            self.assertIn("no subsequent observed movement before death", text)
 
 
 class CityOccupationTest(unittest.TestCase):

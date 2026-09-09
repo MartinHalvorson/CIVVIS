@@ -81,41 +81,109 @@ FORCED_ENV=${CIVVIS_WITH:-}
 # its one comma-separated line is the same explicit `CIVVIS_WITH` value.  The
 # per-batch read is deliberate: editing the file can never alter a game that is
 # already running, and one three-attempt batch retains one recorded identity.
-FORCE_FILE=${CIVVIS_WITH_FILE:-$HOME/.civvis-live-force-on}
+#
+# Three files can carry that line, and exactly one is read per batch:
+#   1. `CIVVIS_WITH_FILE`         an explicit path handed to this process;
+#   2. `~/.civvis-live-force-on`  a LOCAL OPERATOR OVERRIDE, honoured only
+#                                 while it exists AND is non-empty, and logged
+#                                 as an override every batch it wins;
+#   3. `deploy/live-force-on.txt` in the tree being built -- the versioned,
+#                                 reviewed list, the same on every account and
+#                                 machine that plays main.
+# Before 2026-09-09 only the local file existed, so what the seat played was
+# invisible to the repository and differed per account: one night's ladder
+# rows carried a six-tag arm while another account's file named nine others.
+# The repository file is the source of truth; a local file is a deliberate,
+# visible departure from it.  To play the STOCK genome on a seat whose tree
+# carries a repo list, point `CIVVIS_WITH_FILE` at an empty file (`/dev/null`
+# does): an empty local override no longer means "none", it means "no
+# override".
+FORCE_FILE_ENV=${CIVVIS_WITH_FILE:-}
+LOCAL_FORCE_FILE=$HOME/.civvis-live-force-on
+REPO_FORCE_FILE_REL=deploy/live-force-on.txt
+FORCE_FILE=""
 FORCED=""
 FORCE_SOURCE="none"
 WITH_ARGS=()
 
-# Resolve the force-on selection once at the no-game batch boundary.  A bad or
-# conflicting operator request must stop before build/launch rather than fall
-# through to an unlabelled control, because that would file the wrong arm under
-# a plausible-looking ladder row.  Whitespace also rejects accidental multi-line
-# files: treatment names are hyphenated tokens and the decider receives every
-# comma member as its own quoted `--with` word below.
+# Read one force-on file into REPLY, refusing the batch (return 1) on the
+# faults that would otherwise file the wrong arm under a plausible-looking
+# ladder row.  Whitespace rejects accidental multi-line files: treatment
+# names are hyphenated tokens and the decider receives every comma member as
+# its own quoted `--with` word below.
+read_force_file() {
+  local path=$1
+  REPLY=""
+  [[ -e "$path" ]] || return 0
+  if [[ ! -r "$path" ]]; then
+    say "force-on file exists but is unreadable ($path); refusing batch"
+    return 1
+  fi
+  REPLY=$(<"$path")
+  if [[ "$REPLY" == *[[:space:]]* ]]; then
+    say "force-on file contains whitespace ($path); refusing batch"
+    return 1
+  fi
+  return 0
+}
+
+# Resolve the force-on selection once at the no-game batch boundary, in the
+# order above.  A bad or conflicting operator request must stop before
+# build/launch rather than fall through to an unlabelled control.  `$REPO` is
+# the tree this cycle builds; the repo file is read from there so a pinned
+# tree plays its own list.
 resolve_forced_arm() {
-  local from_file=""
+  local from_file="" repo_list="" local_list=""
   FORCED="$FORCED_ENV"
   FORCE_SOURCE="environment"
   [[ -n "$FORCED" ]] || FORCE_SOURCE="none"
+  FORCE_FILE=""
 
-  if [[ -e "$FORCE_FILE" ]]; then
-    if [[ ! -r "$FORCE_FILE" ]]; then
-      say "force-on file exists but is unreadable ($FORCE_FILE); refusing batch"
-      return 1
+  read_force_file "${REPO:-.}/$REPO_FORCE_FILE_REL" || return 1
+  repo_list=$REPLY
+  if [[ -n "$FORCE_FILE_ENV" ]]; then
+    read_force_file "$FORCE_FILE_ENV" || return 1
+    from_file=$REPLY
+    FORCE_FILE=$FORCE_FILE_ENV
+    FORCE_SOURCE="env-file:$FORCE_FILE_ENV"
+  elif [[ -s "$LOCAL_FORCE_FILE" ]]; then
+    read_force_file "$LOCAL_FORCE_FILE" || return 1
+    local_list=$REPLY
+    from_file=$local_list
+    FORCE_FILE=$LOCAL_FORCE_FILE
+    FORCE_SOURCE="local-override:$LOCAL_FORCE_FILE"
+    # Forced tags are a set: order and duplicates do not change the arm.
+    local -a local_tags repo_tags
+    local_tags=("${(@s:,:)local_list}")
+    repo_tags=("${(@s:,:)repo_list}")
+    if [[ "${(j:,:)${(@ou)local_tags}}" == "${(j:,:)${(@ou)repo_tags}}" ]]; then
+      say "force-on LOCAL OVERRIDE $LOCAL_FORCE_FILE is in effect and equals the repo list ($REPO_FORCE_FILE_REL); delete it to track the repository"
+    else
+      say "force-on LOCAL OVERRIDE $LOCAL_FORCE_FILE is in effect: playing ${local_list} instead of the repo list ${repo_list:-none} ($REPO_FORCE_FILE_REL)"
     fi
-    from_file=$(<"$FORCE_FILE")
-    if [[ "$from_file" == *[[:space:]]* ]]; then
-      say "force-on file contains whitespace ($FORCE_FILE); refusing batch"
-      return 1
-    fi
-    if [[ -n "$from_file" ]]; then
-      if [[ -n "$FORCED" && "$FORCED" != "$from_file" ]]; then
-        say "force-on file conflicts with CIVVIS_WITH; refusing batch"
+  elif [[ -e "${REPO:-.}/$REPO_FORCE_FILE_REL" ]]; then
+    from_file=$repo_list
+    FORCE_FILE="${REPO:-.}/$REPO_FORCE_FILE_REL"
+    FORCE_SOURCE="repo:$REPO_FORCE_FILE_REL"
+  fi
+
+  if [[ -n "$from_file" ]]; then
+    if [[ -n "$FORCED" && "$FORCED" != "$from_file" ]]; then
+      if [[ "$FORCE_SOURCE" == repo:* ]]; then
+        # An explicit CIVVIS_WITH is an operator act; the repo list is only
+        # the default it departs from.  Say so and play the explicit value.
+        say "CIVVIS_WITH=$FORCED overrides the repo list ${from_file} ($REPO_FORCE_FILE_REL)"
+        FORCE_SOURCE="environment"
+        FORCE_FILE=""
+      else
+        say "force-on file $FORCE_FILE ($from_file) conflicts with CIVVIS_WITH ($FORCED); refusing batch"
         return 1
       fi
+    else
       FORCED="$from_file"
-      FORCE_SOURCE="file:$FORCE_FILE"
     fi
+  elif [[ -z "$FORCED" ]]; then
+    FORCE_SOURCE="none"
   fi
 
   WITH_ARGS=()
@@ -284,7 +352,7 @@ fi
 if [[ -n "$REQUESTED_RETIRED_STRATEGY" ]]; then
   say "ignoring retired CIVVIS_STRATEGY=$REQUESTED_RETIRED_STRATEGY; live seat uses deployment genome (no --strategy)"
 fi
-say "supervisor up (genome=deployment, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
+say "supervisor up (genome=deployment, withheld=${WITHHELD:-none}, force_files=${FORCE_FILE_ENV:-<CIVVIS_WITH_FILE unset>} > $LOCAL_FORCE_FILE > <tree>/$REPO_FORCE_FILE_REL, pinfile=$PINFILE)"
 # The game inherits this shell's priority and macOS will not lower a nice once
 # set, so a supervisor that starts demoted plays every game demoted. Say the
 # number on every start; a non-zero one names the launch site to fix.
