@@ -1920,10 +1920,13 @@ impl AdvancedAi {
                 continue;
             }
             if g.city_at(unit.pos).is_some() || g.encampment_at(unit.pos).is_some() {
-                // A garrison needs no evacuation, but its proposed sortie
-                // still needs the veto. Otherwise the early return lets the
-                // ladder reopen the very poisoned finish marked above.
-                if doomed.contains(&uid) {
+                // A recovering garrison already reached safety. Keep its
+                // reservation across live frames until RETURN_HP, otherwise
+                // the per-unit ladder can undo the rotation with a sortie.
+                // Other garrisons still need the proposed-strike veto.
+                if doomed.contains(&uid)
+                    || (heals && self.battle_planner_recovering.contains(&uid))
+                {
                     self.base.fortify_or_stop(g, pid, uid);
                     self.battle_planner_ordered.insert(uid);
                 }
@@ -4231,6 +4234,33 @@ mod tests {
             "wounded, it steps out of reach"
         );
         assert!(hurt.battle_planner_recovering.contains(&ours));
+    }
+
+    #[test]
+    fn a_recovering_garrison_stays_claimed_until_it_can_return_to_battle() {
+        for hp in [57, RETURN_HP - 1, RETURN_HP] {
+            let mut g = open_field();
+            g.tactics.heal = true;
+            let refuge = at(10, 4);
+            g.found_city_for(0, refuge, Some("Refuge".to_string()));
+            let ours = g.spawn_unit("warrior", 0, refuge);
+            wound(&mut g, ours, hp);
+            let mut ai = version_two();
+            // The preceding host frame rotated this unit into the city.
+            // A fresh frame restores its unspent movement before FORTIFY
+            // has landed, so the per-unit ladder must still leave it alone.
+            ai.battle_planner_recovering.insert(ours);
+            let plan = conquest(&g);
+            ai.plan_battle(&mut g, 0, &plan);
+            assert_eq!(ai.battle_planner_claims(ours), hp < RETURN_HP);
+            if hp < RETURN_HP {
+                assert!(g.units[&ours].fortified);
+                assert_eq!(g.units[&ours].pos, refuge);
+                assert!(ai.battle_planner_recovering.contains(&ours));
+            } else {
+                assert!(!ai.battle_planner_recovering.contains(&ours));
+            }
+        }
     }
 
     #[test]
