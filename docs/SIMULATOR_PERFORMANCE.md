@@ -133,6 +133,39 @@ Roll-ups: allocator and libc primitives **16.84%**; linker-folded and unnamed
   **flat-map** cost for the first time. Earlier profiles put it at 6.8% inclusive,
   which was the globe. Do not size that work from the old number.
 
+### Where this profile stops being actionable
+
+After the day's changes the named leaves are libc and generic — `_xzm_free`
+3.66%, `_platform_memcmp` 3.23%, `slice::binary_search` 1.94%,
+`BTreeMap<String, _>::get` 1.34%. None of those names a place to change code, so
+the next step is attribution, and **attribution is where this tool runs out.**
+
+Re-run with `--parents 'xzm_free|memcmp|binary_search|BTreeMap|suzerain_of_uncached|class_can_traverse'`,
+the whole set of those leaves, on a quiet host. Total attributed: **1.34%**, in
+three entries.
+
+| | |
+| ---: | --- |
+| 0.56% | `unit_purchase_cost_for_formation ← purchase_actions_for_city_with_price_memo` |
+| 0.46% | `safe_healing_step ← healing_step ← military_step` |
+| 0.32% | `safe_healing_step ← retreat_step ← healing_step` |
+
+Everything else sits behind linker-folded frames — **33.32% of the profile is
+folded and unnamed**, even with the tool's `-no_deduplicate` `RUSTFLAGS`. So those
+leaves have callers the sampler cannot name, and any change aimed at them is a
+guess dressed as a measurement.
+
+⭐ **Two of the three attributed entries are the safe-healing scan**, which is
+what #3200 removes (−1.02% paired, after the soundness fix). That is the profile
+agreeing with a change already in flight rather than pointing at a new one.
+
+**So the honest next move on this axis is not another micro-optimization.** It is
+either to improve attribution — reduce folding further, or sample with a tool that
+walks full stacks — or to spend the effort elsewhere until there is a signal worth
+acting on. Today's record is the argument: of six paired changes, the two that
+paid were ones whose loop could be named exactly, and four aimed at leaf shares
+were neutral or slower.
+
 ### ⭐ What five measurements say about where to look
 
 Five changes were paired at the same shape on the same day, and the result tracks
