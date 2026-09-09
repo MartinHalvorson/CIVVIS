@@ -1407,21 +1407,6 @@ impl AdvancedAi {
         self.base.land_grab = false;
     }
 
-    /// Run the screenable native expansion curve: rapid safe settlement first,
-    /// then a conquest posture only after the practical frontier is exhausted.
-    /// See [`AdvancedAi::rapid_city_expansion`].
-    pub fn enable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion_2 = false;
-        self.rapid_city_expansion = true;
-        self.base.enable_rapid_city_expansion();
-    }
-
-    /// The twin of [`AdvancedAi::enable_rapid_city_expansion`].
-    pub fn disable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion = false;
-        self.base.disable_rapid_city_expansion();
-    }
-
     /// After its current production completes, let a population-two capital
     /// start the next legal Settler before ordinary production ranking. The
     /// baseline governor retains the city-target, site, and emergency gates.
@@ -1825,7 +1810,6 @@ impl AdvancedAi {
     /// append-point check reads a line's first identifier, which for any `pub
     /// fn` is `pub`.)
     pub fn enable_district_planning(&mut self) {
-        self.district_planning_2 = false;
         self.district_planning_3 = false;
         self.district_planning = true;
     }
@@ -2039,22 +2023,6 @@ impl AdvancedAi {
         self.base.naval_threat_triage = false;
     }
 
-    /// Block a seen rival Settler with up to four nearby units standing on its
-    /// likeliest paths to slow its founding. A seen rival Settler near our
-    /// cities is screened: up to four of our nearby land units, recon first,
-    /// take the stands that add the most expected steps to its likeliest walks
-    /// — a tile a foreign unit holds cannot be entered at peace — and hold them
-    /// while the plan names them. [`AdvancedAi::settler_screen`]. Opt-in gene
-    /// `settler-screen`; see `advanced/recon_disruption.rs`.
-    pub fn enable_settler_screen(&mut self) {
-        self.settler_screen = true;
-    }
-
-    /// The twin of `enable_settler_screen`.
-    pub fn disable_settler_screen(&mut self) {
-        self.settler_screen = false;
-    }
-
     /// Station an idle recon unit on the chokepoint tile of the land route
     /// toward a neighbour, or watch their border. A recon unit with nothing
     /// left to explore holds the pass toward a neighbour — the first tile
@@ -2191,48 +2159,18 @@ impl AdvancedAi {
         self.order_retry = false;
     }
 
-    /// Before the first city, move a nearby Warrior before the Settler and
-    /// choose the city site from the terrain the Warrior has now revealed.
-    /// Opt-in gene `opening-warrior-recon`; see
-    /// `advanced/opening_settlement.rs`. Filed above the markers: the
-    /// append-point check reads a method line's first identifier.
-    pub fn enable_opening_warrior_recon(&mut self) {
-        self.opening_warrior_recon = true;
-        self.opening_warrior_recon_2 = false;
-    }
-
-    /// The twin of `enable_opening_warrior_recon`.
-    pub fn disable_opening_warrior_recon(&mut self) {
-        self.opening_warrior_recon = false;
-    }
-
     /// Before the first city, let only a Warrior directly escorting the
     /// Settler reveal terrain first, then reconsider from the ordinary
     /// settlement candidates. Opt-in gene `opening-warrior-recon-2`; see
     /// `advanced/opening_settlement.rs`. Filed above the markers: the
     /// append-point check reads a method line's first identifier.
     pub fn enable_opening_warrior_recon_2(&mut self) {
-        self.opening_warrior_recon = false;
         self.opening_warrior_recon_2 = true;
     }
 
     /// The twin of `enable_opening_warrior_recon_2`.
     pub fn disable_opening_warrior_recon_2(&mut self) {
         self.opening_warrior_recon_2 = false;
-    }
-
-    /// After a Settler's first move, discard only its disposable cached site
-    /// while movement remains, so the next leg can use its new sight. Opt-in
-    /// gene `settler-second-look`; see `advanced/opening_settlement.rs`.
-    /// Filed above the markers: the append-point check reads a method line's
-    /// first identifier.
-    pub fn enable_settler_second_look(&mut self) {
-        self.settler_second_look = true;
-    }
-
-    /// The twin of `enable_settler_second_look`.
-    pub fn disable_settler_second_look(&mut self) {
-        self.settler_second_look = false;
     }
 
     /// When the empire leads the field in science, beeline the space-race chain,
@@ -2801,19 +2739,6 @@ impl AdvancedAi {
     /// The twin of `enable_first_research_building_reserve`.
     pub fn disable_first_research_building_reserve(&mut self) {
         self.first_research_building_reserve = false;
-    }
-    /// Let the Builder see the Housing an improvement carries, the way the
-    /// baseline chooser already does. See
-    /// `AdvancedAi::improvement_housing_value`; opt-in gene
-    /// `improvement-housing-value`. Filed here rather than under a marker: the
-    /// append-point check reads a method line's first identifier.
-    pub fn enable_improvement_housing_value(&mut self) {
-        self.improvement_housing_value = true;
-    }
-
-    /// The twin of `enable_improvement_housing_value`.
-    pub fn disable_improvement_housing_value(&mut self) {
-        self.improvement_housing_value = false;
     }
     /// Climb to a tier-2 government once Political Philosophy lands, instead of
     /// playing the whole game on four policy slots. See
@@ -3563,38 +3488,12 @@ impl AdvancedAi {
         self.spaceport_surplus_veto = false;
     }
 
-    /// `district-planning-2`: the district plan's tile buy competes out of
-    /// the treasury reserve (never spending below half of it) instead of
-    /// needing 200 Gold of surplus headroom, and the purchase bars drop to
-    /// adjacency 2 with an edge of 1 over owned ground. A Science lane also
-    /// promotes a workable tile worth at least 5 Science, or the connector
-    /// that immediately opens it, into that strategic competition; it may
-    /// draw through the general reserve but preserves the war-package and
-    /// immediate-defender floors. Measured motive: zero `buy_plot` orders in
-    /// every recorded live game — replaying Emperor
-    /// game 20260901T132005Z, the plan priced the adjacency-4 Campus plot at
-    /// 905 against a floor of 120 on every probed turn and only the headroom
-    /// rule refused it, while three cities placed campuses at adjacency ≤ 1
-    /// beside that ground.
-    pub fn enable_district_planning_2(&mut self) {
-        self.district_planning = false;
-        self.district_planning_3 = false;
-        self.district_planning_2 = true;
-    }
-
-    /// The twin of `enable_district_planning_2`.
-    pub fn disable_district_planning_2(&mut self) {
-        self.district_planning_2 = false;
-    }
-
     /// `district-planning-3`: retain the joint district-site plan, but make
     /// a Gold purchase only for its highest-value unowned site when that city
     /// is idle and can start the district next. The full working reserve stays
-    /// intact, and version 2's speculative high-Science and bridge purchases
-    /// are deliberately absent. One family version plays at a time.
+    /// intact. One family version plays at a time.
     pub fn enable_district_planning_3(&mut self) {
         self.district_planning = false;
-        self.district_planning_2 = false;
         self.district_planning_3 = true;
     }
 
@@ -3745,13 +3644,11 @@ impl AdvancedAi {
         self.settler_target_floor = false;
     }
 
-    /// Version two of `rapid-city-expansion`: aim at the measured five-city
-    /// opening band without version one's immediate fifteen-city order,
-    /// non-empty queue preemption, closest-site override, founding-pantheon
-    /// override, or automatic conquest pivot. One family member plays, so
-    /// enabling this version turns version one off.
+    /// Version two of rapid city expansion: aim at the measured five-city
+    /// opening band without the culled version one's immediate fifteen-city
+    /// order, non-empty queue preemption, closest-site override,
+    /// founding-pantheon override, or automatic conquest pivot.
     pub fn enable_rapid_city_expansion_2(&mut self) {
-        self.rapid_city_expansion = false;
         self.rapid_city_expansion_2 = true;
         self.base.enable_rapid_city_expansion_2();
     }
