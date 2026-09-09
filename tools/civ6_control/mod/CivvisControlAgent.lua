@@ -12351,6 +12351,25 @@ local function applyOrder(player, pid, row, turn)
 	--
 	-- Policy cards are not marginal here -- already measured as mattering
 	-- (p=0.0023).
+	-- RequestChangeGovernment is asynchronous. Ordering it first does not make
+	-- the new slot indices observable in this tick. Do not clear the old deck
+	-- until the requested government is read back; a fresh turn releases an
+	-- unconfirmed request so a refused transition cannot block policies forever.
+	if (kind == "policy_deck" or kind == "policy") and CivvisPolicy.government_pending ~= nil then
+		local pending = CivvisPolicy.government_pending;
+		local current = try(function() return player:GetCulture():GetCurrentGovernment(); end, -1);
+		if current == pending.index or turn > pending.turn then
+			CivvisPolicy.government_pending = nil;
+		else
+			local desired = {};
+			for name in string.gmatch(verb, "[^,]+") do desired[#desired + 1] = name; end
+			emit(kind == "policy_deck" and "policy_deck_deferred" or "policy_deferred", {
+				turn = turn, desired = desired, why = "government_change_pending",
+				government = pending.name, requested_turn = pending.turn,
+			});
+			return false, "policy_government_pending";
+		end
+	end
 	if kind == "policy_deck" then
 		local culture = try(function() return player:GetCulture(); end);
 		if culture == nil then return false, "no_culture"; end
@@ -12656,11 +12675,14 @@ local function applyOrder(player, pid, row, turn)
 		if try(function() return culture:GetCurrentGovernment(); end, -1) == row2.Index then
 			return false, "already_" .. resolved;
 		end
-		local ok = pcall(function() culture:RequestChangeGovernment(row2.Hash); end);
+		local ok, accepted = pcall(function() return culture:RequestChangeGovernment(row2.Hash); end);
+		if ok and accepted ~= false then
+			CivvisPolicy.government_pending = { index = row2.Index, name = resolved, turn = turn };
+		end
 		-- Tell the game the prompt has been dealt with either way, or it re-raises
 		-- the blocker every turn.
 		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
-		return ok, ok and resolved or "throw";
+		return ok and accepted ~= false, not ok and "throw" or (accepted == false and "government_rejected" or resolved);
 	end
 
 	-- CIVVIS names the dedication it selected; the host operation accepts the
