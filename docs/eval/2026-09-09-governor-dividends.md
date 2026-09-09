@@ -111,3 +111,10 @@ Screens were delayed by the host resource manager pausing native screening
 while other Rust test workloads ran. No seed, sample size or strategy was
 changed in response to partial results. These are AI-only changes, with no
 engine rule changes requiring a separate mechanics soak.
+
+After the ship step requested integration of newly landed scout/settler changes,
+registry ordering was preserved and generated documents were refreshed. The
+integrated revision passed 3,238 Rust tests (49 ignored, zero failures), all six
+governor tests, the Rust quality gate, 14 append-point tests, the firing ratchet,
+and generator/manifest checks. The governor module and tests are unchanged from
+the screened source; the fixed probes were not rerun on the integration merge.
