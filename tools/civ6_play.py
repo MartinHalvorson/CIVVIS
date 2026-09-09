@@ -1116,6 +1116,17 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
     return macos_window.focus_game(GAME_PROCESS)
 
 
+def shared_desktop_in_use() -> bool:
+    """Optional GUI recovery must leave other apps in front in shared mode."""
+    if not (Path.home() / ".civvis-shared-desktop").exists():
+        return False
+    try:
+        return not popup_clear.frontmost().startswith("Civ6")
+    except (OSError, subprocess.SubprocessError):
+        # An unreadable foreground is not permission to take the keyboard.
+        return True
+
+
 def maintain_game_focus(interval: float, last_focus: float, *,
                         place: bool = False) -> float:
     """Periodic upkeep only; explicit setup/recovery can still use the GUI.
@@ -4033,6 +4044,15 @@ def _play(args: argparse.Namespace) -> int:
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
         elif kind in ("autoclose_desktop", "autoclose_stuck"):
+            # These shim requests can outlive their dialogue. On the live
+            # 20260909T150620Z run, t24 raised Civ VI over Chrome only to find
+            # an ordinary card. Defer optional requests before capture/budget
+            # work while the shared desktop is in use. The independent,
+            # confirmed-stall recovery below can still recover a blocked game.
+            if shared_desktop_in_use():
+                print(f"[{kind}] shared desktop in use; deferring optional "
+                      f"recovery for {event.get('screen')}")
+                return
             # Every desktop request is pixel-classified before any click. A
             # DiplomacyActionView context can remain technically visible while
             # the ordinary map is in front; treating its counter alone as proof
