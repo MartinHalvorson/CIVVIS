@@ -91,7 +91,7 @@ class WinBandTest(unittest.TestCase):
                 "ending": {"last_turn": 225, "victory": None},
                 "trajectory": rr.trajectory(rows, 50),
                 "ballots": {"verdicts": 0, "multi_vote_ballots": 0,
-                            "multi_vote_registered": 0},
+                            "multi_vote_count_matches": 0},
                 "settler": {"holds": 0, "sites": []}}
         line = [l for l in rr.render(data).splitlines()
                 if "never lost the lead" in l]
@@ -166,8 +166,57 @@ class BallotTest(unittest.TestCase):
             data = rr.report(run, 25)
         self.assertEqual(data["ballots"]["verdicts"], 2)
         self.assertEqual(data["ballots"]["multi_vote_ballots"], 1)
-        self.assertEqual(data["ballots"]["multi_vote_registered"], 0)
-        self.assertEqual(data["ballots"]["first_unregistered"]["turn"], 162)
+        self.assertEqual(data["ballots"]["multi_vote_count_matches"], 0)
+        self.assertEqual(data["ballots"]["first_count_mismatch"]["turn"], 162)
+
+    def test_legacy_counts_and_complete_selections_are_not_conflated(self) -> None:
+        def ballot(version, asked, option, actual_option, target, actual_target):
+            return {"kind": "wc_ballot_verdict", "turn": 160, "asked": asked,
+                    "recorded": asked, "registered": True,
+                    "verification_version": version,
+                    "option_asked": option, "option_recorded": actual_option,
+                    "target_asked": target, "target_recorded": actual_target}
+        extra = [
+            ballot(1, 1, 2, 1, None, None),
+            ballot(1, 3, 2, 2, None, None),
+            ballot(2, 1, 2, 1, 4, 4),
+            ballot(2, 3, 2, 2, 4, "4"),
+            ballot(2, 3, 2, 2, 4, 0),
+        ]
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            run = write_run(root, [state(60, 10, rival=20, cities=5)], extra)
+            data = rr.report(run, 25)
+            cohort = rr.aggregate(root, 25)
+        ball = data["ballots"]
+        self.assertEqual(ball["multi_vote_count_matches"], 3)
+        self.assertEqual(ball["selection_verdicts"], 3)
+        self.assertEqual(ball["selection_matches"], 1)
+        self.assertEqual(ball["legacy_verdicts"], 2)
+        self.assertEqual(ball["first_selection_mismatch"]["option_recorded"], 1)
+        self.assertEqual(cohort["selection_matches"], 1)
+        for rendered in (rr.render(data), rr.render_aggregate(cohort)):
+            self.assertIn("purchased-vote counts matched", rendered)
+            self.assertIn("complete selections verified: 1/3", rendered)
+            self.assertIn("2 legacy verdicts lack complete verification", rendered)
+            self.assertNotIn("ballots registered", rendered)
+
+    def test_missing_target_and_extra_votes_do_not_verify_a_selection(self) -> None:
+        extra = [
+            {"kind": "wc_ballot_verdict", "verification_version": 2,
+             "asked": 1, "recorded": 1, "option_asked": 1,
+             "option_recorded": 1, "registered": True},
+            {"kind": "wc_ballot_verdict", "verification_version": 2,
+             "asked": 3, "recorded": 4, "option_asked": 1,
+             "option_recorded": 1, "target_asked": 4,
+             "target_recorded": 4, "registered": True},
+        ]
+        with TemporaryDirectory() as raw:
+            run = write_run(Path(raw), [state(60, 10)], extra)
+            ball = rr.ballots(run / "events.jsonl")
+        self.assertEqual(ball["selection_matches"], 0)
+        self.assertEqual(ball["selection_verdicts"], 2)
+        self.assertEqual(ball["multi_vote_count_matches"], 0)
 
 
 class EndingTest(unittest.TestCase):

@@ -4,7 +4,7 @@
 //! ## The live evidence (Emperor, run `civvis-20260901T182050Z`, Rome)
 //!
 //! Between t55 and t105 the seat's Settlers changed target on 61 of 100
-//! marching turns. With `rapid-city-expansion` on, `best_settler_target`
+//! marching turns. With the (since culled) first rapid-expansion version on, `best_settler_target`
 //! exhausts the four-tile ring and then takes the global best with no travel
 //! premium and no floor, so once the near ring was empty the walker sent
 //! Settlers 14–18 tiles to sites worth **−35.0**, **−4.1**, **−4.7**, 17.7
