@@ -8,8 +8,8 @@
 //! neither spends one turn of the lead time on who else will be fighting the
 //! target. `propose_strategic_alliance` picks its partner from the empire's
 //! own grand strategy on a 12-turn cadence and never looks at the target;
-//! the envoy scorer reads a city-state's place only relative to OUR cities
-//! (`flip-nearby-city-states`); and `Action::ProposeJointWar` — the one
+//! the envoy scorer read a city-state's place only relative to OUR cities
+//! (`flip-nearby-city-states`, since removed); and `Action::ProposeJointWar` — the one
 //! engine action that makes a second empire declare on the same turn we do —
 //! is constructed by `legal_actions` and by no controller at all. The
 //! operator's rule (2026-08-25): *before we go to war, recruit allies, a

@@ -312,6 +312,8 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
+mod movement_risk;
+mod scout_first;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
@@ -372,17 +374,6 @@ const HOST_SETTLER_MIN_POP: f64 = 2.0;
 /// grab's `pick_item` window closes this far before the turn limit instead of
 /// at the genome's `settler_stop_turn`. See `BasicAi::land_grab`.
 const LAND_GRAB_SETTLE_HORIZON: u32 = 18;
-
-/// The rapid-expansion gene keeps this many Settlers in the shared pipeline
-/// before the empire's city count starts widening it further. Three walkers
-/// lets the first city seed the t25/t50 expansion wave without turning the
-/// target itself into an unbounded production order.
-pub(crate) const RAPID_EXPANSION_PIPELINE_BASE: usize = 3;
-
-/// Every two founded cities add one rapid-expansion pipeline seat. The
-/// ordinary land grab widens every three cities; this gene opens the next wave
-/// one city sooner so nearby safe sites are claimed before rivals take them.
-pub(crate) const RAPID_EXPANSION_PIPELINE_CITY_DIVISOR: usize = 2;
 
 /// One coordinated force as an observer sees it: what it is, where it is
 /// going, and how ready it is to fight when it gets there.
@@ -2285,7 +2276,8 @@ pub struct BasicAi {
     /// entry fee is paid and the winnings are discarded. This flag closes the
     /// reservation too, so the empire never opens the tab.
     ///
-    /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race`.
+    /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race-2`
+    /// and by `religion-race-is-closed`.
     pub(crate) skip_prophet_race: bool,
     /// Open the Great Prophet race on purpose: while this is set, the empire's
     /// FIRST Holy Site outranks every lane district in `pick_item`, so the
@@ -2295,7 +2287,7 @@ pub struct BasicAi {
     /// below is unchanged: a second Holy Site waits for a religion.
     ///
     /// Set per turn from `AdvancedAi::take_turn_inner` by the gene
-    /// `enter-the-prophet-race`, and only while `prophet_race_open_for` holds.
+    /// `enter-the-prophet-race-2`, and only while `prophet_race_open_for` holds.
     pub(crate) enter_prophet_race: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
@@ -2996,6 +2988,8 @@ pub struct BasicAi {
     /// lives here because `projected_counter_damage` does. Opt-in gene
     /// `defend-where-you-stand`; see `advanced/engine_pricing.rs`.
     pub(crate) defend_where_you_stand: bool,
+    /// Frozen historical movement; false for every current controller.
+    pub(crate) legacy_movement: bool,
     /// ★ THE BARBARIANS HUNT THE RELIGIOUS CORPS TOO. A Missionary beside a
     /// city it is converting stands still for three turns at zero movement,
     /// and in Civilization VI a raider that reaches it condemns it. Here the
@@ -3118,20 +3112,10 @@ pub struct BasicAi {
     /// constructors and the frozen anchor keep the one-at-a-time gate and the
     /// gene. See `pick_item` and `AdvancedAi::land_grab`.
     pub(crate) land_grab: bool,
-    /// The native rapid-city-expansion gene's half of the baseline governor.
-    ///
-    /// It is deliberately distinct from `land_grab`: that bridge-only policy
-    /// prices an unconstrained Firaxis board, while this screenable native gene
-    /// drives a settler-first opening, a faster shared pipeline, the legal
-    /// population floor, the founding pantheon, and the same late settlement
-    /// horizon. `AdvancedAi` owns the target and the safe-site-to-conquest
-    /// handoff; this flag keeps the governor that actually queues Settlers in
-    /// step with it.
-    pub(crate) rapid_city_expansion: bool,
     /// The baseline-governor half of `rapid-city-expansion-2`.
     ///
-    /// Unlike version one, this never rewrites the opening book, pantheon, or
-    /// site ranking. It reserves the capital's next empty production choice,
+    /// Unlike the culled version one, this never rewrites the opening book,
+    /// pantheon, or site ranking. It reserves the capital's next empty production choice,
     /// uses the measured opening-band pipeline, and keeps the legal
     /// population and payback gates in step with the strategic controller.
     pub(crate) rapid_city_expansion_2: bool,
@@ -3142,6 +3126,8 @@ pub struct BasicAi {
     /// emergency choices remain authoritative. Set through
     /// `AdvancedAi::enable_capital_settler_after_completion`.
     pub(crate) capital_settler_after_completion: bool,
+    /// Independent first-slot exploration experiment.
+    pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -4979,6 +4965,7 @@ impl BasicAi {
             contested_land_first: false,
             exchange_is_the_engines: false,
             defend_where_you_stand: false,
+            legacy_movement: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -5004,9 +4991,9 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
-            rapid_city_expansion: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -5042,20 +5029,8 @@ impl BasicAi {
         self.land_grab = true;
     }
 
-    /// Enable the baseline half of the native rapid-city-expansion gene.
-    pub(crate) fn enable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion_2 = false;
-        self.rapid_city_expansion = true;
-    }
-
-    /// Disable the baseline half of the native rapid-city-expansion gene.
-    pub(crate) fn disable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion = false;
-    }
-
     /// Enable the baseline half of the selective rapid-expansion rewrite.
     pub(crate) fn enable_rapid_city_expansion_2(&mut self) {
-        self.rapid_city_expansion = false;
         self.rapid_city_expansion_2 = true;
     }
 
@@ -5444,6 +5419,7 @@ impl BasicAi {
             contested_land_first: false,
             exchange_is_the_engines: false,
             defend_where_you_stand: false,
+            legacy_movement: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -5469,9 +5445,9 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
-            rapid_city_expansion: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -6221,9 +6197,10 @@ impl BasicAi {
         position: Pos,
         envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> bool {
-        envelopes
-            .iter()
-            .any(|(enemy_id, reach)| reach.contains(&position) && g.units.contains_key(enemy_id))
+        Self::movement_hazard_damage(g, pid, position) > 0.0
+            || envelopes.iter().any(|(enemy_id, reach)| {
+                reach.contains(&position) && g.units.contains_key(enemy_id)
+            })
             || g.cities
                 .values()
                 .any(|city| Self::city_centre_strikes(g, pid, city, position))
@@ -6262,15 +6239,20 @@ impl BasicAi {
         // or Encampment damage that district, not the formation stationed in
         // it. That makes a friendly city a genuine safe refuge even while the
         // enemy can still bombard its walls.
+        let hazard = IncomingDamage::default().with(Self::movement_hazard_damage(g, pid, position));
         let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
         if garrisoned {
-            return IncomingDamage::default();
+            return hazard;
         }
         if !Self::anything_can_reach(g, pid, position, envelopes) {
             return IncomingDamage::default();
         }
         let mut defender = unit.clone();
         defender.pos = position;
+        if position != unit.pos {
+            defender.fortified = false;
+            defender.fortify_turns = 0;
+        }
         let defense = effective_strength(
             g.unit_strength(&defender, true) + g.tile_defense_bonus(position),
             defender.hp,
@@ -6323,7 +6305,10 @@ impl BasicAi {
                 })
                 .fold(IncomingDamage::default(), IncomingDamage::with)
         };
-        unit_damage.merge(city_damage).merge(encampment_damage)
+        unit_damage
+            .merge(city_damage)
+            .merge(encampment_damage)
+            .merge(hazard)
     }
 
     /// The largest single blow anything the controller can see would land on
@@ -7889,7 +7874,7 @@ impl BasicAi {
             // free Settler in the capital and Fertility Rites a free Builder,
             // and Divine Spark — the shipped first choice, taken in 40 of 40
             // recorded live runs — pays nothing until a district stands.
-            let prefix: &[&str] = if self.expansion_pantheon || self.rapid_city_expansion {
+            let prefix: &[&str] = if self.expansion_pantheon {
                 &[
                     "religious_settlements",
                     "fertility_rites",
@@ -9306,6 +9291,11 @@ impl BasicAi {
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
+            // Reserve the first slot before population-two Settler genes can
+            // claim it. Successful production consumes exactly one book slot.
+            if self.play_scout_first_opening(g, pid, *cid) {
+                continue;
+            }
             // The normal production picker sits after the scripted opening
             // book. Let `capital-settler-after-completion` reserve the first
             // newly empty capital queue once it reaches population two,
@@ -9412,10 +9402,7 @@ impl BasicAi {
                     // fifth build. Frozen controllers retain their genes.
                     let missing_opening_recon =
                         self.book_pos == 0 && self.recon_is_the_missing_arm(g, pid);
-                    let rapid_opening_settler = self.rapid_city_expansion && self.book_pos == 0;
-                    let gene = if rapid_opening_settler {
-                        3.0 // OPENING_MENU[3] is Settler.
-                    } else if missing_opening_recon {
+                    let gene = if missing_opening_recon {
                         0.0 // OPENING_MENU[0] is Scout.
                     } else {
                         [self.w.open0, self.w.open1, self.w.open2, self.w.open3][self.book_pos]
@@ -9426,16 +9413,6 @@ impl BasicAi {
                         continue; // "pass" gene: fall back to evaluation
                     }
                     let name = OPENING_MENU[i];
-                    // The rapid gene's opening is one committed Settler, not
-                    // four book slots spent on a Warrior, Builder, and
-                    // Monument before the capital can start city two. If
-                    // population one refuses it, the pending-book path starts
-                    // it the instant the legal population floor is reached;
-                    // ending the book prevents a duplicate scripted Settler
-                    // from serialising the same opening.
-                    if rapid_opening_settler {
-                        self.book_pos = 4;
-                    }
                     if name == "settler" && !self.has_practical_settle_site(g, pid) {
                         continue;
                     }
@@ -9444,7 +9421,7 @@ impl BasicAi {
                     // the next slot plays now, and the Settler takes the queue
                     // the turn the city grows.
                     if name == "settler"
-                        && (self.opening_settler_waits || self.rapid_city_expansion)
+                        && self.opening_settler_waits
                         && (g.cities[cid].pop as f64) < HOST_SETTLER_MIN_POP
                     {
                         self.book_settler_pending = true;
@@ -11805,10 +11782,7 @@ impl BasicAi {
             // same width for the strategic governor.
             let seats_short =
                 (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
-            let pipeline = if self.rapid_city_expansion && seats_short > 0 {
-                (RAPID_EXPANSION_PIPELINE_BASE + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
-                    .min(seats_short)
-            } else if self.rapid_city_expansion_2 && seats_short > 0 {
+            let pipeline = if self.rapid_city_expansion_2 && seats_short > 0 {
                 advanced::rapid_city_expansion::pipeline_width(
                     g,
                     n_cities + seats_short,
@@ -11845,10 +11819,7 @@ impl BasicAi {
             // Civilization VI starts a Settler at population 2, and the live
             // genome's 2.456 held a food-poor capital at one city for forty
             // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop
-                || self.rapid_city_expansion
-                || self.rapid_city_expansion_2
-            {
+            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion_2 {
                 self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
             } else {
                 self.w.settler_min_pop
@@ -11857,7 +11828,7 @@ impl BasicAi {
             // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
             // REPAY, not until the genome's turn. See `land_grab`.
             let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || ((self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
+                || ((self.land_grab || self.rapid_city_expansion_2)
                     && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
@@ -12045,7 +12016,7 @@ impl BasicAi {
                 *weight *= 1.0 - depth * (have / total);
             }
         }
-        // `enter-the-prophet-race`: the empire's first Holy Site goes to the
+        // `enter-the-prophet-race-2`: the empire's first Holy Site goes to the
         // front while the race is open. The reservation below still limits
         // the empire to one site before a religion exists, and the unlock
         // check still waits for Astrology.
@@ -12073,7 +12044,7 @@ impl BasicAi {
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         for (family, _) in dpri {
             if family == "holy_site" && g.players[pid].religion.is_none() {
-                // `skip-the-prophet-race`: never open the tab. See the flag's
+                // `skip-the-prophet-race-2`: never open the tab. See the flag's
                 // doc comment — gating the prize without gating this costs
                 // strictly more than either pure choice.
                 if self.skip_prophet_race {
@@ -12662,7 +12633,6 @@ impl BasicAi {
         }
         let upos = g.units[&uid].pos;
         let u = &g.units[&uid];
-        let my_def = effective_strength(g.unit_strength(u, true), u.hp);
         let prefer_dry = self.come_ashore && g.rules.units[u.kind].domain.as_deref() != Some("sea");
         let doctrine = Self::unit_doctrine(g, uid);
         let (preferred_range, progress, threat_caution) = match doctrine {
@@ -12688,6 +12658,8 @@ impl BasicAi {
         } else {
             Vec::new()
         };
+        let movement_risk =
+            (!self.legacy_movement).then(|| self.movement_risk_frame(g, pid, uid, target));
         let score = |g: &Game, tile: Pos| -> f64 {
             let depth_error = (g.wdist(tile, target) - preferred_range).abs();
             let mut s = -3.0 * progress * depth_error as f64;
@@ -12700,12 +12672,13 @@ impl BasicAi {
                     }
                     if o.owner == pid && *oid != uid {
                         adjacent_support += 1;
-                    } else if enemy_ids.contains(&o.owner) {
-                        let att = effective_strength(g.unit_strength(o, false), o.hp);
+                    } else if self.legacy_movement && enemy_ids.contains(&o.owner) {
+                        let attack = effective_strength(g.unit_strength(o, false), o.hp);
+                        let defense = effective_strength(g.unit_strength(u, true), u.hp);
                         s -= self.w.mv_threat
                             * threat_caution
                             * 30.0
-                            * ((att - my_def) / 25.0).exp();
+                            * ((attack - defense) / 25.0).exp();
                     }
                 }
             }
@@ -12714,6 +12687,9 @@ impl BasicAi {
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
+            if let Some(risk) = &movement_risk {
+                s += risk.score(g, pid, uid, tile, self.w.mv_threat * threat_caution);
+            }
             // ⭐ The score above has no terrain term at all, and open water is
             // doubly attractive because of it: a sea tile is usually the
             // geometrically shorter road to an objective across a bay, AND it
@@ -13026,6 +13002,9 @@ impl BasicAi {
     /// movement points the generic mover enters it and immediately routes
     /// back out, repeating the same round trip every turn.
     fn settler_step_toward(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
+        if let Some(acted) = self.risk_aware_route_step(g, pid, uid, target, 0) {
+            return acted;
+        }
         if let Some(next) = g
             .route_step(uid, target, 0)
             .filter(|next| g.can_move(uid, *next))
@@ -13047,6 +13026,9 @@ impl BasicAi {
         target: Pos,
         stop_range: i32,
     ) -> bool {
+        if let Some(acted) = self.risk_aware_route_step(g, pid, uid, target, stop_range) {
+            return acted;
+        }
         let cur = g.units[&uid].pos;
         if g.wdist(cur, target) <= stop_range {
             return false;
@@ -13300,23 +13282,7 @@ impl BasicAi {
                 (pos, score)
             })
             .collect();
-        if self.rapid_city_expansion {
-            // The first phase is a land race for easy cities, not a search
-            // for the prettiest distant capital site.  A four-to-six tile
-            // seat that can be founded this wave compounds sooner than a
-            // slightly richer eight-tile seat that leaves the next city idle.
-            // Value remains the deterministic tiebreak among equally quick
-            // sites; once no nearby seat remains, the normal global fallback
-            // below still lets the empire cross the remaining frontier.
-            candidates.sort_by(|a, b| {
-                g.wdist(from, a.0)
-                    .cmp(&g.wdist(from, b.0))
-                    .then_with(|| b.1.partial_cmp(&a.1).unwrap())
-                    .then(a.0.cmp(&b.0))
-            });
-        } else {
-            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
-        }
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         Self::first_reachable_settle_site(g, uid, &candidates)
     }
 
@@ -13372,18 +13338,10 @@ impl BasicAi {
             // Shipbuilding stranded settlers whose only site was farther than
             // the local radius on the same landmass.
             let global = self.best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height);
-            if self.rapid_city_expansion {
-                // Settle the closest easy ring completely before spending a
-                // wave walking toward a harder site.  `global` is only a
-                // fallback when that ring is truly empty, not an override for
-                // a higher-yield distant tile.
-                local.or(global)
-            } else {
-                match (local, global) {
-                    (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
-                    (Some(local), _) => Some(local),
-                    (None, global) => global,
-                }
+            match (local, global) {
+                (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
+                (Some(local), _) => Some(local),
+                (None, global) => global,
             }
             .map(|(target, _)| {
                 self.settler_targets.insert(uid, target);
@@ -24236,7 +24194,7 @@ mod tests {
     }
 
     #[test]
-    fn scout_explores_while_strong_assault_unit_attacks() {
+    fn scout_avoids_damage_while_strong_assault_unit_attacks() {
         let mut g = Game::new_full(2, 24, 16, 38, 30, 0, false);
         g.at_war.insert((0, 1));
         let (enemy_pos, scout_pos, assault_pos, hidden) = g
@@ -24287,10 +24245,15 @@ mod tests {
 
         let mut ai = BasicAi::new();
         assert!(ai.military_step(&mut g, 0, scout));
-        assert!(matches!(
-            g.log.last(),
-            Some((0, Action::Move { unit, to })) if *unit == scout && *to == hidden
-        ));
+        assert!(matches!(g.log.last(), Some((0, Action::Move { unit, .. })) if *unit == scout));
+        let envelopes = ai.enemy_attack_envelopes(&g, 0);
+        let selected =
+            BasicAi::incoming_damage(&g, 0, scout, g.units[&scout].pos, &envelopes).total;
+        let exposed = BasicAi::incoming_damage(&g, 0, scout, hidden, &envelopes).total;
+        assert!(
+            selected <= exposed,
+            "exploration must not override a safer route"
+        );
         assert!(g.units.contains_key(&enemy));
 
         assert!(

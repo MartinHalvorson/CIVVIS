@@ -176,6 +176,69 @@ class AttachSummaryTests(unittest.TestCase):
         self.assertEqual(summary["victory_target"], "science")
         self.assertEqual(summary["city_two_turn"], 45)
         self.assertEqual(summary["cities_at_60"], 5)
+        # No state frame in this run: the research gap stays absent, not zero.
+        self.assertNotIn("tech_marks", summary)
+
+    def test_attached_summary_carries_the_research_gap_at_the_marks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-techs"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 100, "frame": 0,
+                     "techs": [f"TECH_{i}" for i in range(14)],
+                     "rivals": [{"techs": 19}, {"techs": -1}]},
+                    {"kind": "state", "turn": 150, "frame": 0,
+                     "techs": [f"TECH_{i}" for i in range(31)],
+                     "rivals": [{"techs": 40}, {"techs": 47}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 160, "score": 300, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+        self.assertEqual(summary["tech_marks"],
+                         {100: {"techs": 14, "rival_techs": 19},
+                          150: {"techs": 31, "rival_techs": 47}})
+
+    def test_attached_summary_carries_the_space_race_to_the_last_board(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-launches"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 201, "frame": 0,
+                     "science_projects": [],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                    {"kind": "state", "turn": 219, "frame": 0,
+                     "science_projects": ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                          "PROJECT_LAUNCH_MOON_LANDING"],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 226, "score": 470, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+        self.assertEqual(summary["launch_marks"],
+                         {"spaceport_turn": 201, "launches_completed": 2,
+                          "last_launch_turn": 219})
 
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
@@ -1709,6 +1772,39 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
 
 
 class VisualPopupCaptureFailureTests(unittest.TestCase):
+    def test_rescue_saves_and_classifies_one_frame(self) -> None:
+        frame = mock.Mock()
+        frame.size = (1728, 1084)
+        rect = (864, 33, 864, 542)
+        target = (800, 400)
+        with patch.object(civ6_play, "game_window", return_value=rect), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play.popup_clear, "capture", return_value=(frame, 2)) as capture, \
+             patch.object(civ6_play.popup_clear, "classify", return_value=("notice", [target], 0)) as classify, \
+             patch.object(civ6_play.popup_clear, "click_target", return_value=target), \
+             patch.object(civ6_play.popup_clear, "held_click") as click:
+            result = civ6_play.dismiss_visually_confirmed_popup(diagnostic_path=Path("frame.png"))
+        self.assertEqual(result, (True, "confirmed notice button"))
+        capture.assert_called_once_with(rect)
+        frame.save.assert_called_once_with(Path("frame.png"))
+        classify.assert_called_once_with(frame)
+        click.assert_called_once_with(target, rect, 2)
+
+    def test_diagnostic_write_failure_does_not_prevent_safe_classification(self) -> None:
+        frame = mock.Mock()
+        frame.save.side_effect = OSError("disk full")
+        with patch.object(civ6_play, "game_window", return_value=(0, 0, 864, 542)), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play.popup_clear, "capture", return_value=(frame, 2)), \
+             patch.object(civ6_play.popup_clear, "classify", return_value=("map", [], 0)) as classify, \
+             patch.object(civ6_play.popup_clear, "held_click") as click:
+            result = civ6_play.dismiss_visually_confirmed_popup(diagnostic_path=Path("frame.png"))
+        self.assertEqual(result, (False, "no safe visible dialogue (map)"))
+        classify.assert_called_once_with(frame)
+        click.assert_not_called()
+
     def test_transient_popup_capture_miss_leaves_the_game_controller_alive(self) -> None:
         """A blank ScreenCaptureKit frame is not a reason to end a live game."""
         with patch.object(civ6_play, "game_window", return_value=(0, 0, 864, 542)), \
@@ -2564,6 +2660,42 @@ class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):
         self.assertNotIn("save_label = Path(args.load_save).stem", source)
 
 
+class ConnectionIssueAcknowledgement(unittest.TestCase):
+    def labels(self):
+        return {
+            "Connection Issue": [(1297, 325)],
+            "A connection to Civilization VI could not be established.": [(1296, 346)],
+            "OK": [(1297, 379)],
+        }
+
+    def dismiss(self, labels):
+        with patch.object(civ6_play, "_observed_label_points",
+                          side_effect=lambda path, text, bounds: labels.get(text, [])), \
+             patch.object(civ6_play, "click_at") as click:
+            result = civ6_play.dismiss_connection_issue(Path("connection.png"), (864, 33, 864, 542))
+        return result, click
+
+    def test_clicks_only_the_read_acknowledgement(self):
+        result, click = self.dismiss(self.labels())
+        self.assertTrue(result)
+        click.assert_called_once_with(1297, 379)
+
+    def test_incomplete_or_ambiguous_dialog_is_left_alone(self):
+        for label in self.labels():
+            for points in ([], [(1297, 325), (1298, 326)]):
+                with self.subTest(label=label, points=points):
+                    labels = self.labels(); labels[label] = points
+                    result, click = self.dismiss(labels)
+                    self.assertFalse(result); click.assert_not_called()
+
+    def test_ok_above_title_or_far_from_dialog_is_not_clicked(self):
+        for button in ((1297, 300), (900, 379), (1297, 600)):
+            with self.subTest(button=button):
+                labels = self.labels(); labels["OK"] = [button]
+                result, click = self.dismiss(labels)
+                self.assertFalse(result); click.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -3073,6 +3205,30 @@ class AStoppedRunStillLeavesARecord(unittest.TestCase):
         self.assertIsNone(row["last_turn"])
         self.assertIsNone(row["cities_at_60"])
 
+    def test_the_fallback_measures_the_research_gap_before_writing(self):
+        """A killed run is most of the record; its tech marks must be read
+        from events.jsonl inside the shutdown hook, and never fail it."""
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        self.assertIn('civ6_ladder.tech_marks(run_dir / "events.jsonl")', block)
+        self.assertIn('partial["tech_marks"] = marks', block)
+        self.assertLess(block.index('partial["tech_marks"]'),
+                        block.index("path.write_text"))
+
+    def test_the_fallback_measures_the_space_race_before_writing(self):
+        """The deep Emperor games that get launches in are the ones the
+        harness ends by hand, so the shutdown hook must carry them too."""
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        self.assertIn('civ6_ladder.launch_marks(run_dir / "events.jsonl")', block)
+        self.assertIn('partial["launch_marks"] = launches', block)
+        self.assertLess(block.index('partial["launch_marks"]'),
+                        block.index("path.write_text"))
+
     def test_the_fallback_is_registered_and_never_overwrites(self):
         source = (Path(__file__).resolve().parent
                   / "civ6_play.py").read_text(encoding="utf-8")
@@ -3172,6 +3328,17 @@ class PollCadenceKeepsItsWallClock(unittest.TestCase):
         self.assertIn("cfg.TickEvery or 16)", lua,
                       "the batches-per-tick figure this arithmetic rests on moved")
         self.assertGreaterEqual(civ6_play.ORDERS_POLL_TICKS * 16, 32)
+
+    def test_production_repair_waits_for_orders_before_any_blocker_escape(self) -> None:
+        lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAgent.lua").read_text()
+        tick = lua[lua.index("local function tick()") :]
+        settle = tick.index("if cfg.CivvisDecides and not settleTurn(")
+        repair = tick.index("if cfg.CivvisDecides and CivvisFrames.repairProduction(")
+        blocker = tick.index("local blocker = currentBlocker(pid);", settle)
+        self.assertLess(settle, repair)
+        self.assertLess(repair, blocker)
+        self.assertRegex(tick[repair:blocker], r"repairProduction\(player, pid, turn\) then\s+return;")
 
     def test_the_lua_fallbacks_match_the_harness_defaults(self) -> None:
         lua = (Path(civ6_play.__file__).resolve().parent / "civ6_control" / "mod"

@@ -1407,19 +1407,16 @@ impl AdvancedAi {
         self.base.land_grab = false;
     }
 
-    /// Run the screenable native expansion curve: rapid safe settlement first,
-    /// then a conquest posture only after the practical frontier is exhausted.
-    /// See [`AdvancedAi::rapid_city_expansion`].
-    pub fn enable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion_2 = false;
-        self.rapid_city_expansion = true;
-        self.base.enable_rapid_city_expansion();
+    /// Reserve the safe capital's first build for its first Scout.
+    pub fn enable_scout_first_opening(&mut self) {
+        self.scout_first_opening = true;
+        self.base.scout_first_opening = true;
     }
 
-    /// The twin of [`AdvancedAi::enable_rapid_city_expansion`].
-    pub fn disable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion = false;
-        self.base.disable_rapid_city_expansion();
+    /// Restore the configured opening without changing its progress.
+    pub fn disable_scout_first_opening(&mut self) {
+        self.scout_first_opening = false;
+        self.base.scout_first_opening = false;
     }
 
     /// After its current production completes, let a population-two capital
@@ -1611,16 +1608,6 @@ impl AdvancedAi {
         self.barbarian_scouts_are_scouts = false;
     }
 
-    /// Skip a space race or Manhattan Project that cannot finish before the
-    /// turn limit ends the game. See `score_horizon`.
-    pub fn enable_score_horizon(&mut self) {
-        self.score_horizon = true;
-    }
-
-    pub fn disable_score_horizon(&mut self) {
-        self.score_horizon = false;
-    }
-
     /// Price a wonder's effects in the victory lane's currency and build the
     /// ones that lane needs. See `AdvancedAi::strategic_wonder_value`.
     pub fn enable_strategic_wonders(&mut self) {
@@ -1769,8 +1756,7 @@ impl AdvancedAi {
     /// Science seat throughout the space race: the pad count, the city a launch
     /// project may claim and the city a pad may be sited in all read the race
     /// rather than an explicitly assigned target, and the pass opens at all.
-    /// `score_horizon` still refuses a race that cannot finish. See
-    /// `advanced/victory_lane.rs`. Off everywhere by default; opt-in gene
+    /// See `advanced/victory_lane.rs`. Off everywhere by default; opt-in gene
     /// `lane-space-race`.
     pub fn enable_lane_space_race(&mut self) {
         self.lane_space_race = true;
@@ -1836,7 +1822,6 @@ impl AdvancedAi {
     /// append-point check reads a line's first identifier, which for any `pub
     /// fn` is `pub`.)
     pub fn enable_district_planning(&mut self) {
-        self.district_planning_2 = false;
         self.district_planning_3 = false;
         self.district_planning = true;
     }
@@ -1974,21 +1959,6 @@ impl AdvancedAi {
         self.one_war_at_a_time = false;
     }
 
-    /// Add a city-state's proximity and hostile suzerain to the envoy score,
-    /// amortised over envoys the flip needs. A city-state's place enters the
-    /// envoy score: up to ninety for one on our border, two hundred more when
-    /// its sitting suzerain is at war with us, amortised over the envoys the
-    /// flip still needs. [`AdvancedAi::flip_nearby_city_states`]. Opt-in gene
-    /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
-    pub fn enable_flip_nearby_city_states(&mut self) {
-        self.flip_nearby_city_states = true;
-    }
-
-    /// The twin of `enable_flip_nearby_city_states`.
-    pub fn disable_flip_nearby_city_states(&mut self) {
-        self.flip_nearby_city_states = false;
-    }
-
     /// Appraise weaker neighbours, plan to take one to three holdable cities
     /// the army can afford, and launch when staged. Appraise the neighbours on
     /// public military power and tech count, plan the holdable city — or two,
@@ -2063,22 +2033,6 @@ impl AdvancedAi {
     /// The twin of `enable_naval_threat_triage`.
     pub fn disable_naval_threat_triage(&mut self) {
         self.base.naval_threat_triage = false;
-    }
-
-    /// Block a seen rival Settler with up to four nearby units standing on its
-    /// likeliest paths to slow its founding. A seen rival Settler near our
-    /// cities is screened: up to four of our nearby land units, recon first,
-    /// take the stands that add the most expected steps to its likeliest walks
-    /// — a tile a foreign unit holds cannot be entered at peace — and hold them
-    /// while the plan names them. [`AdvancedAi::settler_screen`]. Opt-in gene
-    /// `settler-screen`; see `advanced/recon_disruption.rs`.
-    pub fn enable_settler_screen(&mut self) {
-        self.settler_screen = true;
-    }
-
-    /// The twin of `enable_settler_screen`.
-    pub fn disable_settler_screen(&mut self) {
-        self.settler_screen = false;
     }
 
     /// Station an idle recon unit on the chokepoint tile of the land route
@@ -2217,48 +2171,18 @@ impl AdvancedAi {
         self.order_retry = false;
     }
 
-    /// Before the first city, move a nearby Warrior before the Settler and
-    /// choose the city site from the terrain the Warrior has now revealed.
-    /// Opt-in gene `opening-warrior-recon`; see
-    /// `advanced/opening_settlement.rs`. Filed above the markers: the
-    /// append-point check reads a method line's first identifier.
-    pub fn enable_opening_warrior_recon(&mut self) {
-        self.opening_warrior_recon = true;
-        self.opening_warrior_recon_2 = false;
-    }
-
-    /// The twin of `enable_opening_warrior_recon`.
-    pub fn disable_opening_warrior_recon(&mut self) {
-        self.opening_warrior_recon = false;
-    }
-
     /// Before the first city, let only a Warrior directly escorting the
     /// Settler reveal terrain first, then reconsider from the ordinary
     /// settlement candidates. Opt-in gene `opening-warrior-recon-2`; see
     /// `advanced/opening_settlement.rs`. Filed above the markers: the
     /// append-point check reads a method line's first identifier.
     pub fn enable_opening_warrior_recon_2(&mut self) {
-        self.opening_warrior_recon = false;
         self.opening_warrior_recon_2 = true;
     }
 
     /// The twin of `enable_opening_warrior_recon_2`.
     pub fn disable_opening_warrior_recon_2(&mut self) {
         self.opening_warrior_recon_2 = false;
-    }
-
-    /// After a Settler's first move, discard only its disposable cached site
-    /// while movement remains, so the next leg can use its new sight. Opt-in
-    /// gene `settler-second-look`; see `advanced/opening_settlement.rs`.
-    /// Filed above the markers: the append-point check reads a method line's
-    /// first identifier.
-    pub fn enable_settler_second_look(&mut self) {
-        self.settler_second_look = true;
-    }
-
-    /// The twin of `enable_settler_second_look`.
-    pub fn disable_settler_second_look(&mut self) {
-        self.settler_second_look = false;
     }
 
     /// When the empire leads the field in science, beeline the space-race chain,
@@ -2346,20 +2270,6 @@ impl AdvancedAi {
         self.wounded_out_of_reach = false;
     }
 
-    /// A Builder chops woods, rainforest or marsh into the Settler, district
-    /// or wonder at the front of the owning city's queue, priced as a one-off
-    /// lump against the per-turn jobs. See
-    /// [`AdvancedAi::chop_into_the_queue_value`]. Opt-in gene
-    /// `chop-into-the-queue`.
-    pub fn enable_chop_into_the_queue(&mut self) {
-        self.chop_into_the_queue = true;
-    }
-
-    /// The twin of `enable_chop_into_the_queue`.
-    pub fn disable_chop_into_the_queue(&mut self) {
-        self.chop_into_the_queue = false;
-    }
-
     /// An improvement that completes an unresearched technology's or civic's
     /// boost is worth the research the boost grants, spread over the steps
     /// the trigger still needs. See [`AdvancedAi::eureka_builder_premium`].
@@ -2434,11 +2344,28 @@ impl AdvancedAi {
     /// reads a method line's first identifier.
     pub fn enable_boost_first_research(&mut self) {
         self.boost_first_research = true;
+        self.boost_first_research_2 = false;
     }
 
     /// The twin of `enable_boost_first_research`.
     pub fn disable_boost_first_research(&mut self) {
         self.boost_first_research = false;
+    }
+
+    /// Let a boost in hand break ties among comparable research candidates
+    /// only: the same discount scale as version one, applied in the argmax
+    /// after every forced lane goal has stood down, to a boosted node whose
+    /// unscaled score is within `BOOST_TIEBREAK_BAND` of the ordinary
+    /// winner's. See [`AdvancedAi::boost_tiebreak_pick`]. Opt-in gene
+    /// `boost-first-research-2`; a seat plays at most one version.
+    pub fn enable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = true;
+        self.boost_first_research = false;
+    }
+
+    /// The twin of `enable_boost_first_research_2`.
+    pub fn disable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = false;
     }
 
     /// Version one hunts every Eureka and Inspiration through a global union
@@ -2472,28 +2399,11 @@ impl AdvancedAi {
         self.chase_every_boost_2 = false;
     }
 
-    /// Take a node the empire would finish before its own eureka lands after
-    /// that eureka, not before it. The engine credits a boost mid-research
-    /// onto a node still being worked, and never onto one already finished, so
-    /// only a short node loses its discount outright. See [`AdvancedAi::boost_research_value`]. Opt-in gene
-    /// `boost-wait-research`. Filed above the markers: the append-point check
-    /// reads a method line's first identifier.
-    pub fn enable_boost_wait_research(&mut self) {
-        self.boost_wait_research = true;
-        self.boost_wait_research_2 = false;
-    }
-
-    /// The twin of `enable_boost_wait_research`.
-    pub fn disable_boost_wait_research(&mut self) {
-        self.boost_wait_research = false;
-    }
-
     /// Wait only on a two-turn node whose final boost trigger is already at
     /// the front of an owned city queue, using the boost as a light tie-break.
     /// Opt-in gene `boost-wait-research-2`.
     pub fn enable_boost_wait_research_2(&mut self) {
         self.boost_wait_research_2 = true;
-        self.boost_wait_research = false;
     }
 
     /// The twin of `enable_boost_wait_research_2`.
@@ -2634,20 +2544,6 @@ impl AdvancedAi {
         self.build_what_cards_boost = false;
     }
 
-    /// Pay a Gold purchase premium in a city producing less than the empire's
-    /// best city, proportional to the deficit. Opt-in gene
-    /// `gold-for-the-young-city`; see `advanced/gold_and_cards.rs`. Filed
-    /// above the markers: the append-point check reads a method line's first
-    /// identifier.
-    pub fn enable_gold_for_the_young_city(&mut self) {
-        self.gold_for_the_young_city = true;
-    }
-
-    /// The twin of `enable_gold_for_the_young_city`.
-    pub fn disable_gold_for_the_young_city(&mut self) {
-        self.gold_for_the_young_city = false;
-    }
-
     /// Version one buys Walls or a land defender for a city struck within four
     /// turns, retaining its broad damage-memory signal for comparison. Opt-in
     /// gene `native-emergency-purchase`; see
@@ -2754,26 +2650,13 @@ impl AdvancedAi {
 
     /// Price a settle site the way the engine pays it beside a natural
     /// wonder: the wonder's projected yields on every neighbouring work tile
-    /// and a capped credit for the amenity, appeal, Holy Site adjacency and
-    /// era score no yield table shows. Opt-in gene `wonder-adjacent-sites`;
-    /// see `advanced/wonder_sites.rs`.
-    pub fn enable_wonder_adjacent_sites(&mut self) {
-        self.wonder_adjacent_sites = true;
-    }
-
-    /// The twin of `enable_wonder_adjacent_sites`.
-    pub fn disable_wonder_adjacent_sites(&mut self) {
-        self.wonder_adjacent_sites = false;
-    }
-
-    /// The projection plus a small flat credit per wonder tile in the
-    /// footprint, capped at a river's worth.
+    /// plus a small flat credit per wonder tile in the footprint, capped at a
+    /// river's worth.
     ///
-    /// Version 2 of `wonder_adjacent_sites`; one version of a family plays, so
-    /// this turns version 1 off. Opt-in gene `wonder-adjacent-sites-2`. See
-    /// `AdvancedAi::wonder_adjacent_sites_2`.
+    /// Version 2 of `wonder-adjacent-sites`; version 1 left the code on
+    /// 2026-09-09. Opt-in gene `wonder-adjacent-sites-2`. See
+    /// `AdvancedAi::wonder_adjacent_sites_2` and `advanced/wonder_sites.rs`.
     pub fn enable_wonder_adjacent_sites_2(&mut self) {
-        self.wonder_adjacent_sites = false;
         self.wonder_adjacent_sites_2 = true;
     }
 
@@ -2886,19 +2769,6 @@ impl AdvancedAi {
     pub fn disable_first_research_building_reserve(&mut self) {
         self.first_research_building_reserve = false;
     }
-    /// Let the Builder see the Housing an improvement carries, the way the
-    /// baseline chooser already does. See
-    /// `AdvancedAi::improvement_housing_value`; opt-in gene
-    /// `improvement-housing-value`. Filed here rather than under a marker: the
-    /// append-point check reads a method line's first identifier.
-    pub fn enable_improvement_housing_value(&mut self) {
-        self.improvement_housing_value = true;
-    }
-
-    /// The twin of `enable_improvement_housing_value`.
-    pub fn disable_improvement_housing_value(&mut self) {
-        self.improvement_housing_value = false;
-    }
     /// Climb to a tier-2 government once Political Philosophy lands, instead of
     /// playing the whole game on four policy slots. See
     /// `AdvancedAi::government_ladder`; opt-in gene `government-ladder`. Filed
@@ -2981,19 +2851,6 @@ impl AdvancedAi {
     /// The twin of `enable_science_building_first`.
     pub fn disable_science_building_first(&mut self) {
         self.science_building_first = false;
-    }
-
-    /// `AdvancedAi::skip_the_prophet_race`; opt-in gene
-    /// `skip-the-prophet-race`. Filed above the markers with the other
-    /// toggles, because the append-point check reads a line's first
-    /// identifier and every one of these starts `pub`.
-    pub fn enable_skip_the_prophet_race(&mut self) {
-        self.skip_the_prophet_race = true;
-    }
-
-    /// The twin of `enable_skip_the_prophet_race`.
-    pub fn disable_skip_the_prophet_race(&mut self) {
-        self.skip_the_prophet_race = false;
     }
 
     /// Cap the city target at the sites the map can actually seat. See
@@ -3103,17 +2960,6 @@ impl AdvancedAi {
     /// The twin of `enable_escort_patience_runs_out`.
     pub fn disable_escort_patience_runs_out(&mut self) {
         self.escort_patience_runs_out = false;
-    }
-
-    /// Keep one emergency defender and ten turns of deficit in the bank,
-    /// not 250 + 75 Gold a city. See `treasury_at_work`.
-    pub fn enable_treasury_at_work(&mut self) {
-        self.treasury_at_work = true;
-    }
-
-    /// The twin of `enable_treasury_at_work`.
-    pub fn disable_treasury_at_work(&mut self) {
-        self.treasury_at_work = false;
     }
 
     /// The working reserve, and the first Builder or a missing Monument
@@ -3386,22 +3232,6 @@ impl AdvancedAi {
         self.settler_never_idles = false;
     }
 
-    /// Enter the secondary Great Prophet race for eligible lanes: Astrology
-    /// after the opening techs, the empire's first Holy Site at the front of
-    /// the district order, the Prophet priced as a lane great person, and
-    /// `pursue_religion` for the prize. An explicit Science lane stays on its
-    /// pure beeline. See `enter_the_prophet_race`.
-    pub fn enable_enter_the_prophet_race(&mut self) {
-        self.enter_the_prophet_race_2 = false;
-        self.enter_the_prophet_race = true;
-    }
-
-    /// The twin of `enable_enter_the_prophet_race`.
-    pub fn disable_enter_the_prophet_race(&mut self) {
-        self.enter_the_prophet_race = false;
-        self.base.enter_prophet_race = false;
-    }
-
     /// The host's barbarian scouts capture civilians, so a barbarian recon unit counts in every capture-reach model.
     ///
     /// Host-only `live-barbarian-scouts-capture`. Run civvis-20260828T122324Z
@@ -3627,6 +3457,17 @@ impl AdvancedAi {
     /// back into the fog. See `AdvancedAi::barbarian_reach`.
     pub fn enable_hostile_memory(&mut self) {
         self.hostile_memory = true;
+        self.hostile_memory_2 = false;
+    }
+
+    /// Version two retains civilian memory and prices a land escort's embarkation.
+    pub fn enable_hostile_memory_2(&mut self) {
+        self.hostile_memory = false;
+        self.hostile_memory_2 = true;
+    }
+
+    pub fn disable_hostile_memory_2(&mut self) {
+        self.hostile_memory_2 = false;
     }
 
     /// The twin of `enable_hostile_memory`.
@@ -3676,38 +3517,12 @@ impl AdvancedAi {
         self.spaceport_surplus_veto = false;
     }
 
-    /// `district-planning-2`: the district plan's tile buy competes out of
-    /// the treasury reserve (never spending below half of it) instead of
-    /// needing 200 Gold of surplus headroom, and the purchase bars drop to
-    /// adjacency 2 with an edge of 1 over owned ground. A Science lane also
-    /// promotes a workable tile worth at least 5 Science, or the connector
-    /// that immediately opens it, into that strategic competition; it may
-    /// draw through the general reserve but preserves the war-package and
-    /// immediate-defender floors. Measured motive: zero `buy_plot` orders in
-    /// every recorded live game — replaying Emperor
-    /// game 20260901T132005Z, the plan priced the adjacency-4 Campus plot at
-    /// 905 against a floor of 120 on every probed turn and only the headroom
-    /// rule refused it, while three cities placed campuses at adjacency ≤ 1
-    /// beside that ground.
-    pub fn enable_district_planning_2(&mut self) {
-        self.district_planning = false;
-        self.district_planning_3 = false;
-        self.district_planning_2 = true;
-    }
-
-    /// The twin of `enable_district_planning_2`.
-    pub fn disable_district_planning_2(&mut self) {
-        self.district_planning_2 = false;
-    }
-
     /// `district-planning-3`: retain the joint district-site plan, but make
     /// a Gold purchase only for its highest-value unowned site when that city
     /// is idle and can start the district next. The full working reserve stays
-    /// intact, and version 2's speculative high-Science and bridge purchases
-    /// are deliberately absent. One family version plays at a time.
+    /// intact. One family version plays at a time.
     pub fn enable_district_planning_3(&mut self) {
         self.district_planning = false;
-        self.district_planning_2 = false;
         self.district_planning_3 = true;
     }
 
@@ -3762,6 +3577,24 @@ impl AdvancedAi {
         self.campus_through_expansion = false;
     }
 
+    /// `campus-before-halfway` (OptIn): a Science seat's Campus keeps the
+    /// lane's 170-point arm before the halfway clock instead of pricing at
+    /// zero, and past the half-empire coverage cliff the Campus keeps asking
+    /// in any city of `CAMPUS_EVERY_CITY_POP_FLOOR` (four) — the floor the
+    /// 2026-08-19 repair named and left as a literal `false`. Measured
+    /// motive (2026-09-08): September Emperor ladder games were lost to a
+    /// rival's science win at t182–224; #3124 reserved the first half of the
+    /// clock for expansion and defence, which also zeroed the Campus's lane
+    /// arm for 125 turns of a 250-turn game.
+    pub fn enable_campus_before_halfway(&mut self) {
+        self.campus_before_halfway = true;
+    }
+
+    /// The twin of `enable_campus_before_halfway`.
+    pub fn disable_campus_before_halfway(&mut self) {
+        self.campus_before_halfway = false;
+    }
+
     /// `trade-route-network` (OptIn): a Commercial Hub (or a Harbor where no
     /// Hub stands) beside a standing Campus escapes the Science contract and
     /// is priced as trade capacity; a Market or Lighthouse is worth the
@@ -3792,11 +3625,10 @@ impl AdvancedAi {
         self.industrial_chain_debt = false;
     }
 
-    /// Version 2 of `skip-the-prophet-race`: retain version 1's published
-    /// behavior, but screen the narrower last-call decision independently.
-    /// One version per family is active in a screen.
+    /// Version 2 of `skip-the-prophet-race`: leave the Prophet race only at
+    /// the narrower last call. Version 1's unconditional withdrawal left the
+    /// code on 2026-09-09. See `AdvancedAi::skip_the_prophet_race_2`.
     pub fn enable_skip_the_prophet_race_2(&mut self) {
-        self.skip_the_prophet_race = false;
         self.skip_the_prophet_race_2 = true;
     }
 
@@ -3841,13 +3673,11 @@ impl AdvancedAi {
         self.settler_target_floor = false;
     }
 
-    /// Version two of `rapid-city-expansion`: aim at the measured five-city
-    /// opening band without version one's immediate fifteen-city order,
-    /// non-empty queue preemption, closest-site override, founding-pantheon
-    /// override, or automatic conquest pivot. One family member plays, so
-    /// enabling this version turns version one off.
+    /// Version two of rapid city expansion: aim at the measured five-city
+    /// opening band without the culled version one's immediate fifteen-city
+    /// order, non-empty queue preemption, closest-site override,
+    /// founding-pantheon override, or automatic conquest pivot.
     pub fn enable_rapid_city_expansion_2(&mut self) {
-        self.rapid_city_expansion = false;
         self.rapid_city_expansion_2 = true;
         self.base.enable_rapid_city_expansion_2();
     }
@@ -4008,11 +3838,13 @@ impl AdvancedAi {
 
     /// Enter the secondary Great Prophet race only when the board-aware
     /// religious-opening rank admits this seat: two cities, a real Holy Site
-    /// path, and one of the remaining global slots. The entry fee and prize
-    /// still move together. Version 2 of `enter-the-prophet-race`; enabling it
-    /// selects this family version.
+    /// path, and one of the remaining global slots. Astrology after the
+    /// opening techs, the empire's first Holy Site at the front of the
+    /// district order, the Prophet priced as a lane great person, and
+    /// `pursue_religion` for the prize; an explicit Science lane stays on its
+    /// pure beeline. Version 2 of `enter-the-prophet-race`; version 1 left
+    /// the code on 2026-09-09. See `enter_the_prophet_race_2`.
     pub fn enable_enter_the_prophet_race_2(&mut self) {
-        self.enter_the_prophet_race = false;
         self.enter_the_prophet_race_2 = true;
     }
 
@@ -4140,6 +3972,18 @@ impl AdvancedAi {
     /// exposed unit. See `battle_planner`.
     pub fn enable_doomed_blow_veto(&mut self) {
         self.doomed_blow_veto = true;
+        self.doomed_blow_veto_2 = false;
+    }
+
+    /// Price survival after the complete friendly strike sequence.
+    pub fn enable_doomed_blow_veto_2(&mut self) {
+        self.doomed_blow_veto = false;
+        self.doomed_blow_veto_2 = true;
+    }
+
+    /// Disable version two without enabling another family version.
+    pub fn disable_doomed_blow_veto_2(&mut self) {
+        self.doomed_blow_veto_2 = false;
     }
 
     /// The twin of `enable_doomed_blow_veto`.
@@ -4171,19 +4015,6 @@ impl AdvancedAi {
         self.standing_still_is_a_risk = false;
     }
 
-    /// Stop paying for a city-state race this seat cannot hold: the leading
-    /// rival is a major we are at war with and is level or ahead, or the seat
-    /// has already sunk `CONTESTED_ENVOY_STACK_CAP` envoys and a rival is
-    /// within one. See [`Self::contested_suzerainty_brake`].
-    pub fn enable_contested_suzerainty_brake(&mut self) {
-        self.contested_suzerainty_brake = true;
-    }
-
-    /// The twin of `enable_contested_suzerainty_brake`.
-    pub fn disable_contested_suzerainty_brake(&mut self) {
-        self.contested_suzerainty_brake = false;
-    }
-
     /// A threat detour refuses a fallback worth less than
     /// `SETTLER_DETOUR_VALUE_FLOOR` of the site it defers. See the field doc
     /// on `AdvancedAi`.
@@ -4196,9 +4027,30 @@ impl AdvancedAi {
         self.detour_keeps_the_site_worth = false;
     }
 
+    pub fn enable_envoy_building_dividends(&mut self) {
+        self.envoy_building_dividends = true;
+    }
+
+    pub fn disable_envoy_building_dividends(&mut self) {
+        self.envoy_building_dividends = false;
+    }
+
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// version one's 50, refuse every sale to the threatening rival, and
+    /// denounce it. See `advanced/culture_strategy.rs`. Opt-in gene
+    /// `culture-threat-early`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_culture_threat_early(&mut self) {
+        self.culture_threat_early = true;
+    }
+
+    /// The twin of `enable_culture_threat_early`.
+    pub fn disable_culture_threat_early(&mut self) {
+        self.culture_threat_early = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
-
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------

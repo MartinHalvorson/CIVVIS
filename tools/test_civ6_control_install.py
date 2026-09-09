@@ -16,6 +16,28 @@ from civ6_control import install  # noqa: E402
 
 
 class ProtectedInstallTest(unittest.TestCase):
+    def test_hud_heartbeat_is_installed_configured_and_connected(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        tree = ET.parse(install.MOD_SOURCE / "CivvisControl.modinfo")
+        name = "CivvisControlHeartbeat.lua"
+        self.assertIn(name, install.SCRIPTS)
+        self.assertIn(name, [n.text for n in tree.findall("./Files/File")])
+        self.assertIn(name, [n.text for n in tree.findall("./InGameActions/ImportFiles/File")])
+        actions = tree.findall("./InGameActions/ReplaceUIScript/Properties")
+        self.assertTrue(any(n.findtext("LuaContext") == "TopPanel"
+                            and n.findtext("LuaReplace") == name
+                            and int(n.findtext("LoadOrder", "0")) > 0 for n in actions))
+        references = {n.get("id").lower() for n in tree.findall("./References/Mod")}
+        self.assertTrue({"1b28771a-c749-434b-9053-d1380c553de9",
+                         "4873eb62-8ccc-4574-b784-dda455e74e68"} <= references)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(install, "check_syntax", return_value=None):
+            install._write_mod(Path(tmp), {"Play": True, "CivvisDecides": True})
+            deployed = (Path(tmp) / name).read_text()
+            self.assertTrue(deployed.startswith(install.prelude({"Play": True, "CivvisDecides": True})))
+        agent = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("LuaEvents.CivvisControlPulse.Add(CivvisQueue.onUiPulse)", agent)
+
     def test_city_export_preserves_great_works_citizens_yields_and_progress(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("local function exportState", 1)[1].split(
@@ -328,7 +350,7 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('emit("emergency_defender_preserved", {', source)
         self.assertIn('return true, "finishing_defender_preserved";', source)
         self.assertLess(
-            source.index('if immediateThreat and finishingDefender then'),
+            source.index('if not cfg.CivvisDecides and immediateThreat and finishingDefender then'),
             source.index('civvisBuild[cityId] = resolved;'),
             "the finishing defender must be preserved before the next-build memo can replace it",
         )
@@ -966,9 +988,16 @@ class ProtectedInstallTest(unittest.TestCase):
         # defines OnPass as well as OnAccept — raises it before it closes.
         for closer in ("OnPass", "OnAccept"):
             rung = shim.split(f'if NAME == "WorldCongressPopup" and type({closer}) == "function" then', 1)[1].split("return true;", 1)[0]
-            self.assertIn("LuaEvents.CivvisCongressBallot()", rung, closer)
-            self.assertLess(rung.index("LuaEvents.CivvisCongressBallot()"), rung.index(f"{closer}();"),
+            self.assertIn("requestCongressBallot()", rung, closer)
+            self.assertLess(rung.index("requestCongressBallot()"), rung.index(f"{closer}();"),
                             f"the ballot goes in before {closer}")
+        guard = shim.split("local function requestCongressBallot()", 1)[1].split(
+            "-- What a click", 1)[0]
+        self.assertIn("Game.GetCurrentTurnSegment()", guard)
+        self.assertIn('DB.MakeHash("TURNSEG_WORLDCONGRESS_1")', guard)
+        self.assertIn('DB.MakeHash("TURNSEG_WORLDCONGRESS_2")', guard)
+        self.assertIn("if ok and voting then", guard)
+        self.assertIn("LuaEvents.CivvisCongressBallot()", guard)
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         # One shared ballot, two triggers: the core's own stage-1 event and the
         # shim's popup event; once per turn, only latched when something was cast.

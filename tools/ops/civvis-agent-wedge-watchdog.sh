@@ -423,6 +423,31 @@ while true; do
         (( unowned_silence < 0 )) && unowned_silence=0
       fi
     fi
+    # A completed match is expected to go silent while the next build starts.
+    # Suppress only a matching, explicit stop receipt newer than the journal;
+    # an unreadable receipt or events after it must retain the diagnosis.
+    if (( unowned_silence >= UNOWNED_SILENCE_S )) \
+        && [[ -r "$RUNS/$tag/summary.json" ]] \
+        && python3 - "$RUNS/$tag" "$tag" <<'PY_STOPPED'
+import json
+import sys
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+try:
+    receipt = run_dir / "summary.json"
+    summary = json.loads(receipt.read_text())
+    stopped = (isinstance(summary, dict)
+               and summary.get("tag") == sys.argv[2]
+               and summary.get("game_stopped") is True
+               and receipt.stat().st_mtime_ns >= (run_dir / "events.jsonl").stat().st_mtime_ns)
+except (OSError, ValueError):
+    stopped = False
+sys.exit(0 if stopped else 1)
+PY_STOPPED
+    then
+      unowned_silence=-1
+    fi
     if (( unowned_silence >= UNOWNED_SILENCE_S )); then
       unowned_now=$(date -u +%s)
       if (( unowned_now - unowned_reported_at >= UNOWNED_REPORT_EVERY_S )); then

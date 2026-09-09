@@ -38,13 +38,40 @@
 //!   144 seats: score share **-3.36 pp, z -3.21**, against a run resolving
 //!   ±2.93 — outside its own noise, which the win column's -9.4 against ±17.0
 //!   was not. See `docs/gene_screens/fires/boost-first-research-v1.json`.
-//! - **`boost-wait-research`.** The other half of the same fact: a node we
-//!   would *finish* inside a few turns, whose boost is still earnable, is
-//!   taken after the eureka rather than before it — the discount survives a
-//!   long node (it is credited mid-research) and dies on a short one. The
-//!   penalty is the boost at risk scaled by how likely the node is to beat its
-//!   own trigger home, so it reorders the cheap end of the list and cannot
-//!   reach a node far enough out to be safe.
+//! - **`boost-first-research-2`.** The scale as a **tie-break**, which is what
+//!   the paragraph above asked for and v1 did not deliver. v1 on the
+//!   2026-09-08 13,938-seat screen (`docs/gene_screens/2026-09-08-standard-
+//!   continuous-13938-total-seats-20260908T150313Z-6afe.json`): research pace
+//!   **+0.42 techs at standard turn 150, z +5.6** — the third-best pace gene
+//!   of 268 — and wins **−0.48 pp** (P(>0) 40.8%, batch columns +8/+32/−27,
+//!   rank 241). More techs, and the wrong ones: a 1.29 multiplier on a boosted
+//!   node beats the plain winner whenever the two are within 29% of each
+//!   other, and inside `tech_value` it also reaches every reader of the score,
+//!   so a Sailing or an Astrology with an inspiration in hand walks past the
+//!   Campus building, the luxury, the wall the plan actually wanted. v2 keeps
+//!   the multiplier and the cap and changes *where it may decide*:
+//!   1. It lives in `advanced_research`, after every forced goal — the war
+//!      breakthrough, the lane beeline, the luxury, the harbour, the science
+//!      milestone — has stood down. A beeline step is never overturned.
+//!   2. The ordinary argmax runs unscaled. A boosted candidate is admitted
+//!      only when its **unscaled** score is at least
+//!      `BOOST_TIEBREAK_BAND` (85%) of the ordinary winner's; among the
+//!      admitted, the scaled score decides, and it must beat the winner
+//!      outright. So the boost decides among near-equals (a runner-up at 0.85
+//!      scales to 1.10 and takes the slot) and a node at 0.80 — which v1 lifts
+//!      to 1.03 and takes — keeps its place behind the clear leader.
+//!   3. `tech_value` / `civic_value` never see the scale: reasoning lines,
+//!      the bargain genes and every other reader price the node as before.
+//! - **`boost-wait-research-2`.** The other half of the same fact: a node we
+//!   would *finish* inside two turns, whose final boost trigger is already at
+//!   the front of an owned city queue, is taken after the eureka rather than
+//!   before it — the discount survives a long node (it is credited
+//!   mid-research) and dies on a short one. The penalty is a light tie-break
+//!   on the boost at risk, scaled by how likely the node is to beat its own
+//!   trigger home. Version one (`boost-wait-research`: a six-turn window,
+//!   any buildable trigger, half the boost) left the code on 2026-09-08 with
+//!   version two shipping on; its broader window repeatedly delayed useful
+//!   prerequisites for a boost whose Builder or queue item never arrived.
 //! - **`boost-unlock-research`.** Being *intentional* about earning the rest:
 //!   a node is credited the boosts it makes chaseable at all. Masonry's quarry
 //!   wants Mining, Machinery's three Archers want Archery, Guilds' two Markets
@@ -74,37 +101,47 @@ pub(super) const BOOST_IN_HAND_FLAT_VALUE: f64 = 28.0;
 /// inspiration is the additive mistake in another costume.
 pub(super) const BOOST_SCALE_CAP: f64 = 2.0;
 
-/// `boost_wait_research` / `boost_unlock_research`: what one turn of research
+/// `boost_first_research_2`: how close, in unscaled score, a boosted node must
+/// be to the ordinary argmax winner before its discount is allowed to decide.
+/// 85%: with the shipped 40% boost (scale 1.29) a node at the band's edge
+/// scores 1.10 of the winner and takes the slot, and a node at 80% — which v1
+/// lifts to 1.03 and takes, and which is where v1's +0.42 techs / −0.48 pp
+/// record says the wrong nodes come from — stays behind the clear leader.
+pub(super) const BOOST_TIEBREAK_BAND: f64 = 0.85;
+
+/// `boost_wait_research_2` / `boost_unlock_research`: what one turn of research
 /// is worth on the `tech_value` / `civic_value` scale, above the `sqrt(cost)`
 /// divisor. Both of those genes price something the node does for the rest of
 /// the tree — a boost lost, a permission bought — which is an ordinary
 /// addition like a building unlock, not a discount on this node.
 pub(super) const BOOST_TURN_VALUE: f64 = 22.0;
 
-/// `boost_wait_research` / `boost_unlock_research`: the ceiling on how many
+/// `boost_wait_research_2` / `boost_unlock_research`: the ceiling on how many
 /// turns of research one boost is allowed to be worth. An empire whose science
 /// has collapsed against a mid-game tree can price a single boost at forty
 /// turns, which would dictate the tree rather than order it.
 pub(super) const BOOST_TURNS_CAP: f64 = 12.0;
 
-/// `boost_wait_research`: a node the empire needs longer than this to finish
-/// is not at risk — its trigger has room to land while the node runs, and the
-/// engine credits the boost mid-research. Six turns is the shortest ordinary
-/// gap between two eurekas earned by ordinary building.
+/// `chase_every_boost`'s wait: a node the empire needs longer than this to
+/// finish is not at risk — its trigger has room to land while the node runs,
+/// and the engine credits the boost mid-research. Six turns is the shortest
+/// ordinary gap between two eurekas earned by ordinary building. (This was
+/// `boost-wait-research` v1's window; that gene left the code on 2026-09-08.)
 pub(super) const BOOST_WAIT_HORIZON_TURNS: f64 = 6.0;
 
-/// `boost_wait_research-2`: only a node within two turns is close enough to
+/// `boost_wait_research_2`: only a node within two turns is close enough to
 /// justify yielding its slot to the final outstanding trigger step. The
 /// broader six-turn v1 window repeatedly delayed useful prerequisites for a
 /// boost whose Builder or queue item never arrived.
 pub(super) const BOOST_WAIT_V2_HORIZON_TURNS: f64 = 2.0;
 
-/// `boost_wait_research`: how much of the boost at risk the wait subtracts.
-/// Half, so the penalty reorders the cheap end of the list against nodes of
-/// comparable value and never outweighs a node that is wanted on its merits.
+/// `chase_every_boost`'s wait: how much of the boost at risk the wait
+/// subtracts. Half, so the penalty reorders the cheap end of the list against
+/// nodes of comparable value and never outweighs a node that is wanted on
+/// its merits. (`boost-wait-research` v1's factor; that gene left the code.)
 pub(super) const BOOST_WAIT_FACTOR: f64 = 0.5;
 
-/// `boost_wait_research-2`: a light tie-break rather than v1's half-boost
+/// `boost_wait_research_2`: a light tie-break rather than v1's half-boost
 /// veto. The last trigger still has to win its own Builder or production
 /// decision, so its uncertain saving must not overrule a wanted node.
 pub(super) const BOOST_WAIT_V2_FACTOR: f64 = 0.2;
@@ -171,8 +208,63 @@ impl AdvancedAi {
         if !self.boost_first_research || !Self::boost_in_hand(g, pid, node, techs) {
             return 1.0;
         }
+        Self::boost_discount_scale(g, node, techs)
+    }
+
+    /// What a node's boost buys under the `sqrt(cost)` divisor, read without
+    /// asking whether it is in hand or whether any gene is on: `1 / (1 -
+    /// frac).sqrt()`, capped at `BOOST_SCALE_CAP`. Version one applies it
+    /// inside the value functions; version two applies it in the argmax.
+    pub(super) fn boost_discount_scale(g: &Game, node: &str, techs: bool) -> f64 {
         let frac = Self::boost_frac(g, node, techs).clamp(0.0, 0.99);
         (1.0 / (1.0 - frac).sqrt()).min(BOOST_SCALE_CAP)
+    }
+
+    /// `boost_first_research_2`: the scale as a tie-break on the ordinary
+    /// research argmax. `ordinary` is the node the plain `tech_value` (`techs`)
+    /// or `civic_value` (`!techs`) argmax chose over `available`; the answer is
+    /// a boosted node whose **unscaled** score is within `BOOST_TIEBREAK_BAND`
+    /// of the winner's and whose scaled score beats the winner outright — the
+    /// best such by scaled score, ties to the name the argmax itself would
+    /// prefer — or `None`, which leaves the ordinary pick standing. `None`
+    /// with the gene off, so the argmax is byte-identical. Called only after
+    /// every forced goal has stood down: a beeline step is never overturned.
+    pub(super) fn boost_tiebreak_pick(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: super::GrandStrategy,
+        available: &[Name],
+        ordinary: &Name,
+        techs: bool,
+    ) -> Option<Name> {
+        if !self.boost_first_research_2 {
+            return None;
+        }
+        let value = |node: &Name| {
+            if techs {
+                self.tech_value(g, pid, node, strategy)
+            } else {
+                self.civic_value(g, pid, node, strategy)
+            }
+        };
+        let winner = value(ordinary);
+        let floor = winner * BOOST_TIEBREAK_BAND;
+        available
+            .iter()
+            .filter(|node| *node != ordinary && Self::boost_in_hand(g, pid, node, techs))
+            .filter_map(|node| {
+                let unscaled = value(node);
+                (unscaled >= floor)
+                    .then(|| (unscaled * Self::boost_discount_scale(g, node, techs), *node))
+            })
+            .filter(|(scaled, _)| *scaled > winner)
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| right.1.cmp(&left.1))
+            })
+            .map(|(_, node)| node)
     }
 
     /// Is this node's boost already banked?
@@ -199,12 +291,12 @@ impl AdvancedAi {
         percent.unwrap_or(40.0) / 100.0
     }
 
-    /// `boost_wait_research`: what to subtract from a node whose boost is
+    /// `boost_wait_research_2`: what to subtract from a node whose boost is
     /// still earnable and which the empire would finish before the trigger
     /// lands. Zero with the gene off, for a node nothing buildable can boost,
     /// and for one far enough out that the mid-research credit will reach it.
     fn boost_wait_penalty(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
-        if !(self.boost_wait_research || self.boost_wait_research_2 || self.chase_every_boost) {
+        if !(self.boost_wait_research_2 || self.chase_every_boost) {
             return 0.0;
         }
         // ⚠ THE RISK TEST COMES FIRST, AND IT IS THE CHEAP ONE. How likely the
@@ -242,12 +334,9 @@ impl AdvancedAi {
         // away: the thing its trigger names can be done now, and one step
         // finishes it. A trigger three builds out, or one only growth or a
         // contact advances, is not worth holding a node for. See
-        // `advanced/chase_every_boost.rs`. With either wait gene on, that
+        // `advanced/chase_every_boost.rs`. With the wait gene on, that
         // gene's own rule below decides instead.
-        if !self.boost_wait_research
-            && !self.boost_wait_research_2
-            && !self.chase_one_action_away(g, pid, chase)
-        {
+        if !self.boost_wait_research_2 && !self.chase_one_action_away(g, pid, chase) {
             return 0.0;
         }
         if self.boost_wait_research_2
@@ -465,8 +554,8 @@ mod tests {
     }
 
     #[test]
-    fn boost_wait_research_is_a_native_opt_in_off_in_both_controllers() {
-        opt_in_off_in_both_controllers("boost-wait-research", |ai| ai.boost_wait_research);
+    fn boost_first_research_2_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("boost-first-research-2", |ai| ai.boost_first_research_2);
     }
 
     #[test]
@@ -657,51 +746,12 @@ mod tests {
         }
     }
 
-    /// `boost-wait-research` docks a node the empire would finish before the
-    /// eureka it is still owed can land, and leaves a node far enough out that
-    /// the engine's mid-research credit will reach it alone.
-    #[test]
-    fn a_node_that_would_outrun_its_own_eureka_waits() {
-        let mut game = capital_board(53_004);
-        game.players[0].techs.insert(name!("mining"));
-        let plain = AdvancedAi::new();
-        let mut waiting = AdvancedAi::new();
-        waiting.enable_boost_wait_research();
-        // Masonry's quarry boost is one improvement away and unearned.
-        assert!(waiting
-            .eureka_chases(&game, 0)
-            .iter()
-            .any(|chase| chase.node == "masonry"));
-        // A capital rich enough to finish Masonry inside the horizon.
-        let capital = game.player_city_ids(0)[0];
-        let rich = crate::rules::Yields {
-            science: game.tech_cost("masonry"),
-            ..Default::default()
-        };
-        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, rich);
-        let off = plain.boost_research_value(&game, 0, "masonry", true);
-        let on = waiting.boost_research_value(&game, 0, "masonry", true);
-        assert_eq!(off, 0.0);
-        assert!(on < 0.0, "the node at risk is docked: {on}");
-        // Slow the empire down until Masonry is a long node again: nothing
-        // is at risk and the wait is silent.
-        let capital = game.player_city_ids(0)[0];
-        let slow = crate::rules::Yields {
-            science: game.tech_cost("masonry") / (BOOST_WAIT_HORIZON_TURNS * 2.0),
-            ..Default::default()
-        };
-        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, slow);
-        assert_eq!(waiting.boost_research_value(&game, 0, "masonry", true), 0.0);
-    }
-
-    /// V2 keeps only the high-confidence edge of v1: a short node and the
-    /// final outstanding trigger step, with a smaller penalty that breaks a
+    /// The wait keeps only the high-confidence edge: a short node and the
+    /// final outstanding trigger step, with a small penalty that breaks a
     /// close choice instead of vetoing useful research.
     #[test]
     fn boost_wait_research_2_is_a_short_final_step_tiebreak() {
         let mut game = capital_board(53_014);
-        let mut v1 = AdvancedAi::new();
-        v1.enable_boost_wait_research();
         let mut v2 = AdvancedAi::new();
         v2.enable_boost_wait_research_2();
         let cost = game.tech_cost("engineering");
@@ -717,12 +767,11 @@ mod tests {
             building: name!("walls"),
         }];
         game.turn += 1;
-        let v1_penalty = v1.boost_research_value(&game, 0, "engineering", true);
         let v2_penalty = v2.boost_research_value(&game, 0, "engineering", true);
         assert!(v2_penalty < 0.0, "the queued final Wall can justify a wait");
         assert!(
-            v2_penalty.abs() < v1_penalty.abs(),
-            "v2 is a tie-break, not v1's broad veto: {v2_penalty} versus {v1_penalty}"
+            v2_penalty.abs() <= BOOST_TURNS_CAP * BOOST_TURN_VALUE * BOOST_WAIT_V2_FACTOR,
+            "a tie-break, never a veto: {v2_penalty}"
         );
 
         set_science(&mut game, cost / (BOOST_WAIT_V2_HORIZON_TURNS * 2.0));
@@ -731,11 +780,6 @@ mod tests {
             0.0,
             "a node outside v2's short window keeps its place"
         );
-
-        v1.enable_boost_wait_research_2();
-        assert!(!v1.boost_wait_research && v1.boost_wait_research_2);
-        v1.enable_boost_wait_research();
-        assert!(v1.boost_wait_research && !v1.boost_wait_research_2);
     }
 
     /// A boost already in hand is never waited for — there is nothing left to
@@ -746,7 +790,7 @@ mod tests {
         game.players[0].techs.insert(name!("mining"));
         game.players[0].boosted_techs.insert(name!("masonry"));
         let mut waiting = AdvancedAi::new();
-        waiting.enable_boost_wait_research();
+        waiting.enable_boost_wait_research_2();
         let capital = game.player_city_ids(0)[0];
         let rich = crate::rules::Yields {
             science: game.tech_cost("masonry"),
@@ -877,6 +921,186 @@ mod tests {
                 chase.node
             );
         }
+    }
+
+    /// A seat plays at most one version of the family: arming either version
+    /// stands the other down.
+    #[test]
+    fn boost_first_research_versions_are_mutually_exclusive() {
+        let mut ai = AdvancedAi::new();
+        ai.enable_boost_first_research();
+        ai.enable_boost_first_research_2();
+        assert!(!ai.boost_first_research && ai.boost_first_research_2);
+        ai.enable_boost_first_research();
+        assert!(ai.boost_first_research && !ai.boost_first_research_2);
+        ai.disable_boost_first_research();
+        assert!(!ai.boost_first_research && !ai.boost_first_research_2);
+    }
+
+    /// Version two never touches the value functions — a boosted node prices
+    /// exactly as with every gene off — and the tie-break answers nothing
+    /// while the gene is off, however boosted the runner-up.
+    #[test]
+    fn boost_first_research_2_leaves_the_value_functions_and_the_off_argmax_alone() {
+        let mut game = capital_board(53_020);
+        let strategy = GrandStrategy::Expansion;
+        let plain = AdvancedAi::new();
+        let mut v2 = AdvancedAi::new();
+        v2.enable_boost_first_research_2();
+        let available = game.available_techs(0);
+        for tech in game.rules.techs.keys().copied().collect::<Vec<_>>() {
+            game.players[0].boosted_techs.insert(tech);
+        }
+        for civic in game.rules.civics.keys().copied().collect::<Vec<_>>() {
+            game.players[0].boosted_civics.insert(civic);
+        }
+        for tech in game.rules.techs.keys() {
+            assert_eq!(
+                v2.tech_value(&game, 0, tech.as_str(), strategy),
+                plain.tech_value(&game, 0, tech.as_str(), strategy),
+                "{tech} is priced the same under v2 as with every gene off"
+            );
+        }
+        for civic in game.rules.civics.keys() {
+            assert_eq!(
+                v2.civic_value(&game, 0, civic.as_str(), strategy),
+                plain.civic_value(&game, 0, civic.as_str(), strategy),
+                "{civic} is priced the same under v2 as with every gene off"
+            );
+        }
+        let ordinary = available[0];
+        assert_eq!(
+            plain.boost_tiebreak_pick(&game, 0, strategy, &available, &ordinary, true),
+            None,
+            "off, the tie-break never speaks"
+        );
+    }
+
+    /// The band's arithmetic: at the shipped 40% boost a node at the band's
+    /// edge is carried over the winner (so the tie-break can speak at all),
+    /// and there is a gap below the band where v1's scale alone would carry
+    /// a node over the winner and v2 refuses it — the whole difference
+    /// between the versions.
+    #[test]
+    fn the_band_admits_its_edge_and_leaves_v1_a_gap_below_it() {
+        let scale = 1.0 / (1.0f64 - 0.4).sqrt();
+        assert!(
+            BOOST_TIEBREAK_BAND * scale > 1.0,
+            "a node at the band's edge scales to {:.3} and must beat the winner",
+            BOOST_TIEBREAK_BAND * scale
+        );
+        let v1_floor = 1.0 / scale;
+        assert!(
+            v1_floor < BOOST_TIEBREAK_BAND,
+            "v1 lifts anything above {v1_floor:.3}; v2 admits nothing below {BOOST_TIEBREAK_BAND}"
+        );
+        assert!(
+            (1.0..=BOOST_SCALE_CAP).contains(&scale),
+            "the shipped scale sits under the cap"
+        );
+    }
+
+    /// The band, on real trees: boosting one node at a time under each grand
+    /// strategy, on the opening tree and again on the classical tier, the
+    /// tie-break takes it exactly when its unscaled score is within
+    /// `BOOST_TIEBREAK_BAND` of the plain winner AND the scale carries it over
+    /// — so a comparable node is admitted and a clear leader is never
+    /// overturned. (The real trees are lumpy: no node on these boards falls
+    /// in the gap v1 takes and v2 refuses, which the arithmetic test above
+    /// covers.)
+    #[test]
+    fn the_tiebreak_admits_a_comparable_boost_and_refuses_a_clear_leader_overturn() {
+        let mut game = capital_board(53_009);
+        let plain = AdvancedAi::new();
+        let mut v2 = AdvancedAi::new();
+        v2.enable_boost_first_research_2();
+        let (mut admitted, mut refused) = (0, 0);
+        let mut sweep = |game: &mut Game| {
+            let available = game.available_techs(0);
+            let argmax = |ai: &AdvancedAi, game: &Game, strategy: GrandStrategy| {
+                available
+                    .iter()
+                    .max_by(|a, b| {
+                        ai.tech_value(game, 0, a, strategy)
+                            .partial_cmp(&ai.tech_value(game, 0, b, strategy))
+                            .unwrap()
+                            .then_with(|| b.cmp(a))
+                    })
+                    .cloned()
+                    .expect("the tree offers something")
+            };
+            for strategy in [
+                GrandStrategy::Expansion,
+                GrandStrategy::Science,
+                GrandStrategy::Culture,
+            ] {
+                game.players[0].boosted_techs.clear();
+                let ordinary = argmax(&plain, game, strategy);
+                let winner = plain.tech_value(game, 0, &ordinary, strategy);
+                for node in available.iter().filter(|node| **node != ordinary) {
+                    game.players[0].boosted_techs.clear();
+                    game.players[0].boosted_techs.insert(*node);
+                    // The plain score of a boosted node already carries the
+                    // pre-gene flat credit; the band reads that score.
+                    let unscaled = plain.tech_value(game, 0, node, strategy);
+                    let scale = AdvancedAi::boost_discount_scale(game, node, true);
+                    let expected = (unscaled >= winner * BOOST_TIEBREAK_BAND
+                        && unscaled * scale > winner)
+                        .then_some(*node);
+                    let pick =
+                        v2.boost_tiebreak_pick(game, 0, strategy, &available, &ordinary, true);
+                    assert_eq!(
+                        pick, expected,
+                        "{node} at {unscaled:.1} against {ordinary} at {winner:.1} ({strategy:?})"
+                    );
+                    match pick {
+                        Some(_) => admitted += 1,
+                        None => refused += 1,
+                    }
+                }
+                // The clear leader case by name: the worst node on offer,
+                // boosted, is never admitted.
+                let worst = *available
+                    .iter()
+                    .filter(|tech| **tech != ordinary)
+                    .min_by(|a, b| {
+                        plain
+                            .tech_value(game, 0, a, strategy)
+                            .total_cmp(&plain.tech_value(game, 0, b, strategy))
+                    })
+                    .expect("and something else");
+                game.players[0].boosted_techs.clear();
+                game.players[0].boosted_techs.insert(worst);
+                assert_eq!(
+                    v2.boost_tiebreak_pick(game, 0, strategy, &available, &ordinary, true),
+                    None,
+                    "boosting {worst} must not lift it over {ordinary}"
+                );
+            }
+        };
+        sweep(&mut game);
+        for tech in [
+            "pottery",
+            "animal_husbandry",
+            "mining",
+            "sailing",
+            "astrology",
+            "irrigation",
+            "writing",
+            "archery",
+            "masonry",
+            "bronze_working",
+            "wheel",
+        ] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        game.turn += 1;
+        sweep(&mut game);
+        assert!(
+            admitted > 0,
+            "some runner-up is comparable and takes the slot"
+        );
+        assert!(refused > 0, "some node is a clear loser and stays put");
     }
 
     /// The whole point, on the real argmax: among nodes the plain function

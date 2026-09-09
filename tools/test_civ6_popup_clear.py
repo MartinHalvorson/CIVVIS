@@ -21,6 +21,70 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from civ6_control import popup_clear  # noqa: E402
 
 
+@unittest.skipIf(Image is None, "requires Pillow")
+class PauseMenuTest(unittest.TestCase):
+    def observations(self):
+        labels = (("MENU", 0.26), ("RETURN TO GAME", 0.32),
+                  ("SAVE GAME", 0.40), ("LOAD GAME", 0.46),
+                  ("EXIT TO MAIN MENU", 0.65))
+        return [{"text": text, "confidence": 1.0, "x": 0.45, "y": y,
+                 "width": 0.10, "height": 0.02} for text, y in labels]
+
+    def panel(self):
+        image = Image.new("RGB", (800, 600), (120, 140, 110))
+        ImageDraw.Draw(image).rectangle((340, 140, 460, 470), fill=(20, 50, 90))
+        return image
+
+    def test_verified_menu_selects_return_and_never_an_exit_row(self):
+        with mock.patch.object(popup_clear.macos_ocr, "recognize",
+                               return_value=self.observations()) as recognize:
+            kind, targets, _ = popup_clear.classify(self.panel())
+        self.assertEqual(kind, "pause")
+        self.assertEqual(targets, [(400.0, 198.0)])
+        self.assertEqual(popup_clear.click_target(kind, targets, 800), targets[0])
+        recognize.assert_called_once()
+
+    def test_target_scales_with_image_pixels(self):
+        self.assertEqual(popup_clear.pause_menu_target(
+            self.observations(), (1600, 1200)), (800.0, 396.0))
+
+    def test_map_does_not_pay_for_ocr(self):
+        with mock.patch.object(popup_clear.macos_ocr, "recognize") as recognize:
+            self.assertIsNone(popup_clear.pause_menu_button(
+                Image.new("RGB", (800, 600), (120, 140, 110))))
+        recognize.assert_not_called()
+
+    def test_blue_panel_without_menu_text_is_not_actionable(self):
+        with mock.patch.object(popup_clear.macos_ocr, "recognize",
+                               return_value=[]):
+            self.assertIsNone(popup_clear.pause_menu_button(self.panel()))
+
+    def test_confirmation_over_a_legible_menu_is_not_a_resume_target(self):
+        rows = self.observations()
+        rows.append({"text": "Are you sure you want to exit the game?"})
+        self.assertIsNone(popup_clear.pause_menu_target(rows, (800, 600)))
+
+    def test_ocr_failure_does_not_interrupt_the_backstop(self):
+        with mock.patch.object(popup_clear.macos_ocr, "recognize",
+                               side_effect=popup_clear.macos_ocr.OCRUnavailable("busy")):
+            self.assertIsNone(popup_clear.pause_menu_button(self.panel()))
+
+    def test_missing_ambiguous_and_misaligned_labels_are_not_clicked(self):
+        for mutate in (
+            lambda rows: rows.pop(),
+            lambda rows: rows.append(dict(rows[1])),
+            lambda rows: rows[1].update(confidence=0.5),
+            lambda rows: rows[1].update(text="EXIT TO DESKTOP"),
+            lambda rows: rows[1].update(x=0.58),
+            lambda rows: rows[1].update(y=0.70),
+            lambda rows: rows[1].update(width=-0.1),
+        ):
+            rows = self.observations()
+            mutate(rows)
+            with self.subTest(rows=rows):
+                self.assertIsNone(popup_clear.pause_menu_target(rows, (800, 600)))
+
+
 class PixelSamplingCompatibilityTest(unittest.TestCase):
     def test_the_current_pillow_pixel_api_is_preferred(self) -> None:
         class CurrentImage:

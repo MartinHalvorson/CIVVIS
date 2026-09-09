@@ -21,9 +21,11 @@
 //! | `090732Z` | 203 | 64 (76) | 1 | 1, at t242 | 3, 2 |
 //!
 //! The seat led the field in science and never ran a launch project. Its
-//! journal says why: from turn ~150 `space_race_can_finish` refused the race
-//! every turn — *"101 turns left; the launch pad, the remaining projects,
-//! their techs and fifty light-years do not fit"*. That estimate prices the
+//! journal says why: from turn ~150 the stock turn-limit horizon
+//! (`score-horizon`'s `space_race_can_finish`, both removed 2026-09-09)
+//! refused the race every turn — *"101 turns left; the launch pad, the
+//! remaining projects, their techs and fifty light-years do not fit"*. That
+//! estimate priced the
 //! whole chain at the best city's **current** production, 31–46 a turn in
 //! those games, and ignores the engine's own +100% on every Spaceport
 //! project (`Game::item_prod_mult`), so it reads 96 turns of production
@@ -69,15 +71,12 @@
 //!    once a pad stands there (Space Initiative, +30%), and the Gold reserve
 //!    falls to [`SCIENCE_DRIVE_GOLD_RESERVE`] once Rocketry is known so the
 //!    pad and its buildings can be bought.
-//! 5. **The horizon prices the race the engine actually runs.**
-//!    [`AdvancedAi::science_drive_race_fits`] replaces `space_race_can_finish`
-//!    while driving: the launch city's production with the zone chain it is
-//!    about to build, the engine's project multiplier (the +100%, Pingala,
-//!    the policy card), research overlapping production, and a flight
-//!    simulated with every pad building laser stations — accepted inside
-//!    [`SCIENCE_DRIVE_STRETCH`] of the turns left, [`SCIENCE_DRIVE_STRETCH_COMMITTED`]
-//!    once a pad stands or a project is done, always once the expedition
-//!    is away.
+//! 5. **The horizon left with `score-horizon`.** A driving horizon
+//!    (`science_drive_race_fits`, priced as the engine runs the race) once
+//!    replaced the stock `space_race_can_finish` while driving, but both were
+//!    reachable only behind `score-horizon`, which the ledger held off on
+//!    every deployed seat and which left the code on 2026-09-09 under the
+//!    batch rule (-11/-50/-25). The drive races whenever its lane is active.
 //! 6. **Two pads by the Earth Satellite, three by Mars.** Stock waits for the
 //!    Moon Landing before a second pad. Here the second city builds its pad
 //!    while the first runs the chain, so both build laser stations the turn
@@ -104,14 +103,6 @@ pub const SCIENCE_DRIVE_CHAIN: [&str; 5] = [
     "offworld_mission",
 ];
 
-/// The four launch projects, in order; each needs the one before it.
-pub const SCIENCE_DRIVE_PROJECTS: [&str; 4] = [
-    "launch_earth_satellite",
-    "launch_moon_landing",
-    "launch_mars_colony",
-    "exoplanet_expedition",
-];
-
 /// The fraction of the turn cap after which an adaptive seat reads the
 /// field: turn 87 on the 250-turn Online standard.
 pub const SCIENCE_DRIVE_START: f64 = 0.35;
@@ -134,19 +125,6 @@ pub const SCIENCE_DRIVE_TECH_SLACK: usize = 3;
 /// Version 2 requires one completed technology beyond the rival, rather than
 /// treating parity as an adaptive lead.
 pub const SCIENCE_DRIVE_TECH_LEAD: usize = 1;
-/// The race is attempted while its estimate fits in this multiple of the
-/// turns left: the estimate has no Great Engineer, no chop, no policy the
-/// seat has not slotted yet, and every turn the seat waits is a turn of
-/// production it cannot get back.
-pub const SCIENCE_DRIVE_STRETCH: f64 = 1.3;
-/// The same once a pad stands or a project is done: what is built is built.
-pub const SCIENCE_DRIVE_STRETCH_COMMITTED: f64 = 1.6;
-/// Version 2 advances the next launch rung while a standing or queued pad's
-/// immediate project fits, even when the whole remaining chain does not yet.
-pub const SCIENCE_DRIVE_STEP_STRETCH: f64 = 1.6;
-/// Version 2 can seed its first Spaceport when the pad and first launch fit,
-/// rather than requiring the whole unstarted chain to fit at once.
-pub const SCIENCE_DRIVE_BOOTSTRAP_STRETCH: f64 = 1.5;
 /// The world era from which the launch city's production chain is priced
 /// (Industrial: the Factory's era).
 pub const SCIENCE_DRIVE_PRODUCTION_ERA: usize = 4;
@@ -172,9 +150,6 @@ pub const SCIENCE_DRIVE_BUILDING_BONUS: [(&str, f64); 7] = [
 ];
 /// Pingala's preference for the launch city once a pad stands there.
 pub const SCIENCE_DRIVE_PINGALA_BONUS: f64 = 1_500.0;
-/// How much of the launch city's production the zone chain still to be
-/// built is projected to add: a Factory and a Power Plant, one share each.
-pub const SCIENCE_DRIVE_CHAIN_UPLIFT: f64 = 0.15;
 /// Version 2's credit for a Campus while the science drive is active.
 pub const SCIENCE_DRIVE_CAMPUS_BONUS: f64 = 700.0;
 /// Version 2's credits for missing research buildings behind a Campus.
@@ -619,6 +594,17 @@ impl AdvancedAi {
         };
         let city = &g.cities[&cid];
         let player = &g.players[pid];
+        // Support that cannot finish before a known rival flight arrives
+        // cannot accelerate our launch. Keep racing projects themselves alive:
+        // a deadline is a reason to cut detours, not abandon the race.
+        if matches!(item, Item::Building { .. } | Item::District { .. })
+            && !matches!(item, Item::District { district, .. }
+                if g.district_family(*district) == "spaceport")
+            && Self::science_project_build_turns(g, pid, cid, item)
+                >= Self::science_support_horizon(g, pid)
+        {
+            return 0.0;
+        }
         // The launch chain has one serial bottleneck: every queue spent on a
         // research building in a non-launch city is a queue not available to
         // the next Spaceport or a parallel production site.  V2 originally
@@ -688,6 +674,40 @@ impl AdvancedAi {
                 }
                 _ => 0.0,
             }
+    }
+
+    /// Earliest observable flight deadline; unmet rivals never supply private
+    /// progress. Missing launch evidence leaves the configured turn limit.
+    fn science_support_horizon(g: &Game, pid: usize) -> f64 {
+        let limit = if g.max_turns == 0 {
+            f64::INFINITY
+        } else {
+            g.max_turns.saturating_sub(g.turn) as f64
+        };
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && g.has_met(pid, rival.id)
+                    && rival.science_projects.contains("exoplanet_expedition")
+            })
+            .map(|rival| {
+                ((EXOPLANET_DESTINATION - rival.exoplanet_distance).max(0.0)
+                    / g.exoplanet_speed(rival.id).max(1.0))
+                .ceil()
+            })
+            .fold(limit, f64::min)
+    }
+
+    /// Compare actual remaining work at this city's item-specific rate.
+    /// Production banks and Space Race modifiers can reverse a raw-yield rank.
+    pub(super) fn science_project_build_turns(g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        g.item_remaining_cost_for_city(pid, cid, item)
+            / (g.city_yields(cid).production.max(0.1)
+                * g.item_prod_mult(pid, cid, Some(item)).max(0.1))
     }
 
     /// Version 2 keeps the launch city's research funnel alive even when the
@@ -845,459 +865,6 @@ impl AdvancedAi {
             1
         }
     }
-
-    /// Whether the race fits the turns left, priced as the engine runs it.
-    /// Always true without a turn limit, and once the expedition is away.
-    pub(super) fn science_drive_race_fits(&self, g: &Game, pid: usize) -> bool {
-        if self.science_victory_drive_2 {
-            return self.science_drive_race_fits_v2(g, pid);
-        }
-        if g.max_turns == 0 {
-            return true;
-        }
-        let player = &g.players[pid];
-        if player.science_projects.contains("exoplanet_expedition") {
-            return true;
-        }
-        let Some(launch) = self.science_drive_launch_city(g, pid) else {
-            return false;
-        };
-        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
-        let pad = crate::name!("spaceport");
-        let _memo = g.query_memo();
-        let city_ids = g.player_city_ids(pid);
-        let pads_standing = city_ids
-            .iter()
-            .filter(|cid| g.cities[cid].districts.contains_key(pad))
-            .count();
-        let pad_queued = city_ids.iter().any(|cid| {
-            g.cities[cid].queue.iter().any(|item| {
-                matches!(item, Item::District { district, .. } if g.district_family(*district) == pad)
-            })
-        });
-
-        // The launch city's production, with the zone chain it is about to
-        // build projected in.
-        let launch_city = &g.cities[&launch];
-        let held = |name: &str| {
-            launch_city
-                .buildings
-                .iter()
-                .any(|b| Self::base_building(g, b) == name)
-        };
-        let uplift = if g.world_era >= SCIENCE_DRIVE_PRODUCTION_ERA {
-            SCIENCE_DRIVE_CHAIN_UPLIFT
-                * (usize::from(!held("factory"))
-                    + usize::from(!POWER_PLANTS.iter().any(|plant| held(plant))))
-                    as f64
-        } else {
-            0.0
-        };
-        let base = g.city_yields(launch).production.max(1.0) * (1.0 + uplift);
-        let project_item = Item::Project {
-            project: Name::new(SCIENCE_DRIVE_PROJECTS[0]),
-        };
-        let project_rate = base * g.item_prod_mult(pid, launch, Some(&project_item)).max(1.0);
-
-        // Production: the pad if none stands or is on its way, then every
-        // project not yet completed.
-        let mut production_turns = 0.0;
-        if pads_standing == 0 && !pad_queued {
-            let pad_item = Item::District {
-                district: pad,
-                pos: launch_city.pos,
-            };
-            let pad_rate = base * g.item_prod_mult(pid, launch, Some(&pad_item)).max(1.0);
-            production_turns += g.item_cost(&pad_item) / pad_rate;
-        }
-        let mut techs_needed: BTreeSet<Name> = BTreeSet::new();
-        let mut need_tech = |tech: &Name| {
-            if !player.techs.contains(tech) {
-                techs_needed.insert(*tech);
-                if let Some(ancestors) = g.rules.tech_ancestors.get(tech.as_str()) {
-                    for ancestor in ancestors {
-                        let ancestor = Name::new(ancestor);
-                        if !player.techs.contains(&ancestor) {
-                            techs_needed.insert(ancestor);
-                        }
-                    }
-                }
-            }
-        };
-        for project in SCIENCE_DRIVE_PROJECTS {
-            if player.science_projects.contains(project) {
-                continue;
-            }
-            let Some(spec) = g.rules.projects.get(project) else {
-                continue;
-            };
-            production_turns += g.item_cost(&Item::Project {
-                project: Name::new(project),
-            }) / project_rate;
-            if let Some(tech) = spec.tech.as_ref() {
-                need_tech(tech);
-            }
-        }
-        // The stations that carry the flight need the gateway tech too.
-        need_tech(&crate::name!("offworld_mission"));
-        // The empire's own pace: techs known per turn so far, floored at the
-        // ruleset's ordinary cadence (stock's own rule).
-        let turns_per_tech = if player.techs.is_empty() {
-            8.0
-        } else {
-            (g.turn as f64 / player.techs.len() as f64).max(2.0)
-        };
-        let research_turns = techs_needed.len() as f64 * turns_per_tech;
-
-        // The flight: every pad the drive will have builds laser stations
-        // from the launch, each +1 light-year a turn.
-        let pads_planned = 3.min(city_ids.len()).max(pads_standing);
-        let mut pad_rates: Vec<f64> = city_ids
-            .iter()
-            .filter(|cid| **cid != launch)
-            .map(|cid| {
-                g.city_yields(*cid).production.max(1.0)
-                    * g.item_prod_mult(pid, *cid, Some(&project_item)).max(1.0)
-            })
-            .collect();
-        pad_rates.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        pad_rates.truncate(pads_planned.saturating_sub(1));
-        pad_rates.insert(0, project_rate);
-        let station_cost = g.item_cost(&Item::Project {
-            project: crate::name!("lagrange_laser_station"),
-        });
-        // No worse than stock's flight, which assumes the two stations a
-        // racing empire builds triple the base speed.
-        let flight_turns = Self::science_drive_flight_turns(station_cost, &pad_rates)
-            .min(EXOPLANET_DESTINATION / 3.0);
-
-        let committed = pads_standing > 0 || !player.science_projects.is_empty();
-        let stretch = if committed {
-            SCIENCE_DRIVE_STRETCH_COMMITTED
-        } else {
-            SCIENCE_DRIVE_STRETCH
-        };
-        let total = production_turns.max(research_turns) + flight_turns;
-        let fits = total <= remaining * stretch;
-        if !fits {
-            think!(self.journal(), Cities, Detail,
-                   "The science drive cannot land the race";
-                   "{remaining:.0} turns left; {production_turns:.0} of production at {project_rate:.0} a turn \
-                    in {} ({pads_standing} pads), {research_turns:.0} of research, {flight_turns:.0} of flight",
-                   launch_city.name);
-        }
-        fits
-    }
-
-    /// Version 2 prices the route the continuing drive can really use: legal
-    /// pad sites, queue progress, parallel pad construction, actual research
-    /// cost and progress, and the next launch rung. Version one above keeps
-    /// its original estimate for an honest family comparison.
-    fn science_drive_race_fits_v2(&self, g: &Game, pid: usize) -> bool {
-        if g.max_turns == 0 {
-            return true;
-        }
-        let player = &g.players[pid];
-        if player.science_projects.contains("exoplanet_expedition") {
-            return true;
-        }
-        let Some(launch) = self.science_drive_launch_city(g, pid) else {
-            return false;
-        };
-        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
-        let pad = crate::name!("spaceport");
-        let _memo = g.query_memo();
-        let city_ids = g.player_city_ids(pid);
-        let has_pad = |cid: u32| g.cities[&cid].districts.contains_key(pad);
-        let pad_in_queue = |cid: u32| {
-            g.cities[&cid].queue.iter().any(|item| {
-                matches!(item, Item::District { district, .. }
-                    if g.district_family(*district) == pad)
-            })
-        };
-
-        // A pad city is a real parallel site. The v1 estimate uses the
-        // remembered launch city's raw production for every project and
-        // assumes future pads for the flight, which can be pessimistic about
-        // projects and optimistic about stations at the same time.
-        let project_item = Item::Project {
-            project: Name::new(SCIENCE_DRIVE_PROJECTS[0]),
-        };
-        let site_rate = |cid: u32| {
-            let mut production = g.city_yields(cid).production.max(1.0);
-            if cid == launch && g.world_era >= SCIENCE_DRIVE_PRODUCTION_ERA {
-                let city = &g.cities[&cid];
-                let held = |name: &str| {
-                    city.buildings
-                        .iter()
-                        .any(|building| Self::base_building(g, building) == name)
-                };
-                let uplift = SCIENCE_DRIVE_CHAIN_UPLIFT
-                    * (usize::from(!held("factory"))
-                        + usize::from(!POWER_PLANTS.iter().any(|plant| held(plant))))
-                        as f64;
-                production *= 1.0 + uplift;
-            }
-            production * g.item_prod_mult(pid, cid, Some(&project_item)).max(1.0)
-        };
-        let viable_site =
-            |cid: u32| has_pad(cid) || pad_in_queue(cid) || !g.district_sites(cid, pad).is_empty();
-        let mut sites: Vec<(u32, bool, bool, f64)> = city_ids
-            .iter()
-            .copied()
-            .filter(|cid| viable_site(*cid))
-            .map(|cid| (cid, has_pad(cid), pad_in_queue(cid), site_rate(cid)))
-            .collect();
-        // A host can omit the plot list during a partial live export. Keep
-        // the remembered city as an estimate in that case; the production pass
-        // still asks the host for a legal plot before applying the order.
-        if sites.is_empty() {
-            sites.push((
-                launch,
-                has_pad(launch),
-                pad_in_queue(launch),
-                site_rate(launch),
-            ));
-        }
-        sites.sort_by(|left, right| {
-            right
-                .1
-                .cmp(&left.1)
-                .then_with(|| right.2.cmp(&left.2))
-                .then_with(|| right.3.total_cmp(&left.3))
-                .then_with(|| left.0.cmp(&right.0))
-        });
-        let pads_standing = sites.iter().filter(|(_, standing, _, _)| *standing).count();
-        let pads_committed = sites.iter().filter(|(_, _, queued, _)| *queued).count();
-        let desired_pads = Self::science_drive_desired_pads(&player.science_projects)
-            .max(pads_standing + pads_committed)
-            .min(city_ids.len().max(1));
-
-        let mut pad_sites: Vec<(u32, f64)> = sites
-            .iter()
-            .filter(|(_, standing, queued, _)| *standing || *queued)
-            .map(|(cid, _, _, rate)| (*cid, *rate))
-            .collect();
-        for (cid, standing, queued, rate) in &sites {
-            if pad_sites.len() >= desired_pads || *standing || *queued {
-                continue;
-            }
-            pad_sites.push((*cid, *rate));
-        }
-        if pad_sites.is_empty() {
-            pad_sites.push((launch, site_rate(launch)));
-        }
-        pad_sites.sort_by(|left, right| {
-            right
-                .1
-                .total_cmp(&left.1)
-                .then_with(|| left.0.cmp(&right.0))
-        });
-        pad_sites.truncate(desired_pads.clamp(1, 3));
-
-        // A first pad blocks all launch projects. Later pads can be built in
-        // parallel by other cities, so they join the critical path only until
-        // their own completion rather than being charged serially to launch.
-        let pad_turns = |cid: u32| {
-            let position = g
-                .district_sites(cid, pad)
-                .into_iter()
-                .next()
-                .unwrap_or(g.cities[&cid].pos);
-            let item = Item::District {
-                district: pad,
-                pos: position,
-            };
-            g.item_remaining_cost_for_city(pid, cid, &item)
-                / (g.city_yields(cid).production.max(1.0)
-                    * g.item_prod_mult(pid, cid, Some(&item)).max(1.0))
-        };
-        let queued_pad_turns = |cid: u32| {
-            let mut turns = 0.0;
-            for item in &g.cities[&cid].queue {
-                turns += g.item_remaining_cost_for_city(pid, cid, item)
-                    / (g.city_yields(cid).production.max(1.0)
-                        * g.item_prod_mult(pid, cid, Some(item)).max(1.0));
-                if matches!(item, Item::District { district, .. }
-                    if g.district_family(*district) == pad)
-                {
-                    return Some(turns);
-                }
-            }
-            None
-        };
-        let queued_item_turns = |cid: u32, target: &Item| {
-            let mut turns = 0.0;
-            for item in &g.cities[&cid].queue {
-                turns += g.item_remaining_cost_for_city(pid, cid, item)
-                    / (g.city_yields(cid).production.max(1.0)
-                        * g.item_prod_mult(pid, cid, Some(item)).max(1.0));
-                if item == target {
-                    return Some(turns);
-                }
-            }
-            None
-        };
-        let first_pad_turns = if pads_standing > 0 {
-            0.0
-        } else if let Some(turns) = sites
-            .iter()
-            .filter(|(_, _, queued, _)| *queued)
-            .filter_map(|(cid, _, _, _)| queued_pad_turns(*cid))
-            .min_by(|a, b| a.total_cmp(b))
-        {
-            turns
-        } else {
-            pad_sites
-                .first()
-                .map(|(cid, _)| pad_turns(*cid))
-                .unwrap_or(f64::INFINITY)
-        };
-        let additional_pad_turns = pad_sites
-            .iter()
-            .filter(|(cid, _)| !has_pad(*cid) && !pad_in_queue(*cid))
-            .map(|(cid, _)| pad_turns(*cid))
-            .fold(0.0, f64::max);
-
-        // The empire's best pad city can run every sequential launch project.
-        // If one is already in a queue, preserve its actual remaining progress
-        // rather than charging the full project again.
-        let project_rate = pad_sites.iter().map(|(_, rate)| *rate).fold(1.0, f64::max);
-        let mut project_turns = 0.0;
-        let mut first_project_turns = None;
-        let mut techs_needed: BTreeSet<Name> = BTreeSet::new();
-        let mut need_tech = |tech: &Name| {
-            if !player.techs.contains(tech) {
-                techs_needed.insert(*tech);
-                if let Some(ancestors) = g.rules.tech_ancestors.get(tech.as_str()) {
-                    for ancestor in ancestors {
-                        let ancestor = Name::new(ancestor);
-                        if !player.techs.contains(&ancestor) {
-                            techs_needed.insert(ancestor);
-                        }
-                    }
-                }
-            }
-        };
-        for project in SCIENCE_DRIVE_PROJECTS {
-            if player.science_projects.contains(project) {
-                continue;
-            }
-            let Some(spec) = g.rules.projects.get(project) else {
-                continue;
-            };
-            let item = Item::Project {
-                project: Name::new(project),
-            };
-            let queued = city_ids
-                .iter()
-                .find_map(|cid| queued_item_turns(*cid, &item));
-            let turns = queued.unwrap_or_else(|| g.item_cost(&item) / project_rate);
-            first_project_turns.get_or_insert(turns);
-            project_turns += turns;
-            if let Some(tech) = spec.tech.as_ref() {
-                need_tech(tech);
-            }
-        }
-        // The stations that carry the flight need the gateway tech too.
-        need_tech(&crate::name!("offworld_mission"));
-        // Retain v1's historical cadence as a bounded prior, but use a real
-        // science rate and current research progress when the live state has
-        // them. A low/partial mirror cannot block the race indefinitely.
-        let turns_per_tech = if player.techs.is_empty() {
-            8.0
-        } else {
-            (g.turn as f64 / player.techs.len() as f64).max(2.0)
-        };
-        let historical_research_turns = techs_needed.len() as f64 * turns_per_tech;
-        let mut research_cost = techs_needed
-            .iter()
-            .map(|tech| g.tech_cost(tech.as_str()))
-            .sum::<f64>();
-        if let Some(current) = player.research.as_deref() {
-            if techs_needed.contains(&Name::new(current)) {
-                research_cost -= player.research_progress.min(g.tech_cost(current));
-            }
-        } else {
-            research_cost -= player.research_overflow;
-        }
-        let science_rate = Self::empire_science(g, pid);
-        let live_research_turns = if science_rate > 1.0 {
-            (research_cost.max(0.0) / science_rate).max(0.0)
-        } else {
-            historical_research_turns
-        };
-        let research_turns = live_research_turns.min(historical_research_turns * 1.5);
-
-        // Only pads the drive can actually stand or build contribute stations.
-        let pad_rates: Vec<f64> = pad_sites.iter().map(|(_, rate)| *rate).collect();
-        let station_cost = g.item_cost(&Item::Project {
-            project: crate::name!("lagrange_laser_station"),
-        });
-        let flight_turns = Self::science_drive_flight_turns(station_cost, &pad_rates)
-            .min(EXOPLANET_DESTINATION / 3.0);
-
-        let committed =
-            pads_standing > 0 || pads_committed > 0 || !player.science_projects.is_empty();
-        let stretch = if committed {
-            SCIENCE_DRIVE_STRETCH_COMMITTED
-        } else {
-            SCIENCE_DRIVE_STRETCH
-        };
-        let production_turns = first_pad_turns + project_turns;
-        let production_critical = production_turns.max(additional_pad_turns);
-        let total = production_critical.max(research_turns) + flight_turns;
-        let full_race_fits = total <= remaining * stretch;
-        let next_step_fits = (pads_standing > 0 || pads_committed > 0)
-            && first_project_turns
-                .is_some_and(|project| project <= remaining * SCIENCE_DRIVE_STEP_STRETCH);
-        let bootstrap_fits = pads_standing == 0
-            && pads_committed == 0
-            && player.techs.contains(&crate::name!("rocketry"))
-            && first_pad_turns.is_finite()
-            && first_project_turns.is_some_and(|project| {
-                first_pad_turns + project <= remaining * SCIENCE_DRIVE_BOOTSTRAP_STRETCH
-            });
-        let fits = full_race_fits || bootstrap_fits || next_step_fits;
-        if !fits {
-            think!(self.journal(), Cities, Detail,
-                   "The science drive cannot land the race";
-                   "{remaining:.0} turns left; {production_critical:.0} of production at {project_rate:.0} a turn \
-                    in {} ({pads_standing} pads, {pads_committed} queued, {desired_pads} planned), \
-                   {research_turns:.0} of research, {flight_turns:.0} of flight",
-                   g.cities[&launch].name);
-        } else if bootstrap_fits && !full_race_fits {
-            think!(self.journal(), Cities, Detail,
-                   "The science drive seeds its first Spaceport";
-                   "the full chain is not priced inside the horizon yet, but the pad and \
-                    first launch fit in {remaining:.0} turns; build the bottleneck now in {}",
-                   g.cities[&launch].name);
-        }
-        fits
-    }
-
-    /// Turns from the launch to the destination when each pad puts its
-    /// production into laser stations: the ship leaves at one light-year a
-    /// turn and every finished station adds one.
-    pub(super) fn science_drive_flight_turns(station_cost: f64, pad_rates: &[f64]) -> f64 {
-        let station_cost = station_cost.max(1.0);
-        let mut progress = vec![0.0; pad_rates.len()];
-        let mut speed = 1.0;
-        let mut distance = 0.0;
-        let mut turns = 0.0;
-        while distance < EXOPLANET_DESTINATION && turns < 200.0 {
-            for (done, rate) in progress.iter_mut().zip(pad_rates) {
-                *done += rate;
-                while *done >= station_cost {
-                    *done -= station_cost;
-                    speed += 1.0;
-                }
-            }
-            distance += speed;
-            turns += 1.0;
-        }
-        turns
-    }
 }
 
 #[cfg(test)]
@@ -1363,6 +930,72 @@ mod tests {
             .map(|t| Name::new(t))
             .collect();
         g.players[pid].techs.extend(techs);
+    }
+
+    #[test]
+    fn targeted_launch_uses_banked_progress_instead_of_raw_production_rank() {
+        let (mut g, ours, second) = board();
+        g.cities.get_mut(&second).unwrap().owner = 0;
+        for tech in g.rules.tech_ancestors["rocketry"].clone() {
+            g.players[0].techs.insert(Name::new(&tech));
+        }
+        g.players[0].techs.insert(crate::name!("rocketry"));
+        install_pad(&mut g, ours);
+        install_pad(&mut g, second);
+        std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+            ours,
+            crate::rules::Yields {
+                production: 100.0,
+                ..Default::default()
+            },
+        );
+        let project = Item::Project {
+            project: crate::name!("launch_earth_satellite"),
+        };
+        let cost = g.item_cost_for_city(0, second, &project);
+        g.cities
+            .get_mut(&second)
+            .unwrap()
+            .production_progress
+            .insert("project:launch_earth_satellite".into(), cost - 1.0);
+        assert!(
+            AdvancedAi::science_project_build_turns(&g, 0, second, &project)
+                < AdvancedAi::science_project_build_turns(&g, 0, ours, &project)
+        );
+        AdvancedAi::targeting(VictoryTarget::Science).science_production(&mut g, 0);
+        assert_eq!(g.cities[&second].queue.first(), Some(&project));
+    }
+
+    #[test]
+    fn a_known_rival_flight_cuts_support_detours_without_private_information() {
+        let (mut g, ours, _) = board();
+        g.players[1]
+            .science_projects
+            .insert("exoplanet_expedition".into());
+        g.players[1].exoplanet_distance = 49.0;
+        // The fixture can spawn within sight; explicitly forget contact first.
+        g.players[0].met.clear();
+        assert_eq!(
+            AdvancedAi::science_support_horizon(&g, 0),
+            200.0 - g.turn as f64
+        );
+        g.players[0].met.insert(1);
+        assert_eq!(AdvancedAi::science_support_horizon(&g, 0), 1.0);
+        give_techs(&mut g, 0, 30);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_science_victory_drive_2();
+        ai.maintain_science_drive(&g, 0);
+        assert_eq!(
+            ai.science_drive_production_bonus(
+                &g,
+                0,
+                ours,
+                &Item::Building {
+                    building: crate::name!("research_lab")
+                }
+            ),
+            0.0
+        );
     }
 
     #[test]
@@ -1637,14 +1270,6 @@ mod tests {
         v2.maintain_science_drive(&g, 0);
         assert!(v1.science_drive().is_some());
         assert!(v2.science_drive().is_some());
-        assert!(
-            !v1.science_drive_race_fits(&g, 0),
-            "version 1 requires the entire remaining chain to fit"
-        );
-        assert!(
-            v2.science_drive_race_fits(&g, 0),
-            "version 2 advances the next project behind a standing pad"
-        );
     }
 
     #[test]
@@ -1956,77 +1581,6 @@ mod tests {
         assert_eq!(
             AdvancedAi::new().science_drive_tech_bonus(&g, 0, "industrialization"),
             0.0
-        );
-    }
-
-    #[test]
-    fn the_flight_is_faster_with_more_pads() {
-        let one = AdvancedAi::science_drive_flight_turns(300.0, &[60.0]);
-        let two = AdvancedAi::science_drive_flight_turns(300.0, &[60.0, 40.0]);
-        let none = AdvancedAi::science_drive_flight_turns(300.0, &[]);
-        assert_eq!(none, 50.0, "no stations: one light-year a turn");
-        assert!(one < none && two < one, "{none} {one} {two}");
-    }
-
-    /// The live defect: a seat with a pad and Rocketry refused by the stock
-    /// horizon, which prices the projects at the city's raw production and
-    /// ignores the engine's +100% on every Spaceport project.
-    #[test]
-    fn the_drive_prices_the_race_the_engine_runs_and_races_where_stock_refuses() {
-        let (mut g, ours, _) = board();
-        give_techs(&mut g, 0, 30);
-        for tech in g.rules.tech_ancestors["rocketry"].clone() {
-            g.players[0].techs.insert(Name::new(&tech));
-        }
-        g.players[0].techs.insert(crate::name!("rocketry"));
-        install_pad(&mut g, ours);
-        // A launch city with a real late-game production line, the way the
-        // mirror corrects a live city's yields.
-        std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
-            ours,
-            crate::rules::Yields {
-                production: 60.0,
-                ..crate::rules::Yields::default()
-            },
-        );
-        assert!(g.city_yields(ours).production >= 60.0);
-        let mut ai = AdvancedAi::new();
-        ai.enable_science_victory_drive();
-        let stock = AdvancedAi::new();
-        let mut drive_only = Vec::new();
-        let mut stock_only = Vec::new();
-        for turn in (20..200).step_by(5) {
-            g.turn = turn;
-            ai.maintain_science_drive(&g, 0);
-            let s = stock.space_race_can_finish(&g, 0);
-            let d = ai.space_race_can_finish(&g, 0);
-            if d && !s {
-                drive_only.push(turn);
-            }
-            if s && !d {
-                stock_only.push(turn);
-            }
-        }
-        assert!(
-            !drive_only.is_empty(),
-            "some turn where the drive races and stock refuses"
-        );
-        assert!(
-            stock_only.is_empty(),
-            "stock never races where the drive refuses: {stock_only:?}"
-        );
-        g.turn = 199;
-        ai.maintain_science_drive(&g, 0);
-        assert!(
-            !ai.space_race_can_finish(&g, 0),
-            "one turn left: nothing fits"
-        );
-        g.players[0]
-            .science_projects
-            .insert("exoplanet_expedition".to_string());
-        assert!(
-            ai.space_race_can_finish(&g, 0),
-            "the expedition is away: always finish the flight"
         );
     }
 

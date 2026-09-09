@@ -644,15 +644,17 @@ def start_visible_server(run_dir, players):
     return False
 
 
+def mirror_frame_body(game):
+    """Publish the board and its restricted, paused view in one transaction."""
+    return json.dumps({"game": game, "mirror_player": 0}).encode()
+
+
 def hold_the_frame():
     """Watch our own seat, and never simulate.
 
-    Both must be re-asserted after every `/load`: it rebuilds the Session from
-    the incoming game, so the view player falls back to the seatless spectator
-    and the spectator pause is not carried over. Left alone, the page would
-    reframe onto the whole ocean and then play CIVVIS's own game forward from
-    the real position — a window that starts as a mirror and silently becomes a
-    different game is worse than no window.
+    Startup and browser handoffs can change the selected seat. Frame publishes
+    carry mirror_player in /load so their seat and pause are atomic; this is
+    only the startup/transport pin, never the protection for a frame update.
     """
     for path, payload in (("/view", {"player": 0}),
                           ("/spectator-status", {"paused": True})):
@@ -669,9 +671,30 @@ MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
 MIRROR_ENUM_CACHE_SECONDS = 5.0
 _MIRROR_ENUM_CACHE_AT = 0.0
 _MIRROR_ENUM_CACHE_VALUE = None
+BROWSER_INTENT = os.environ.get(
+    "CIVVIS_MIRROR_BROWSER_INTENT_FILE",
+    os.path.expanduser("~/.civvis-mirror-browser-intent"))
+
+
+def browser_management_enabled():
+    """Only an explicit, current operator opt-in permits desktop automation.
+
+    Read on every action so an already-running follower respects revocation.
+    A missing, unreadable or invalid setting leaves the browser under manual
+    control while the mirror continues serving HTTP.
+    """
+    try:
+        with open(BROWSER_INTENT, encoding="utf-8") as handle:
+            return handle.read().strip() == "managed"
+    except (OSError, UnicodeError):
+        return False
 
 
 def chrome(script):
+    # AppleScript can launch a stopped application even for a read-only query.
+    # Guard the final dispatch too: intent may change after a presence check.
+    if not browser_management_enabled():
+        return ""
     # ⚠ A PENDING AUTOMATION CONSENT KILLED THE WHOLE FOLLOWER (2026-08-14).
     # On a host whose Terminal has never been granted control of Chrome, macOS
     # queues the osascript call behind its consent dialog. Nobody was at the
@@ -732,6 +755,9 @@ def mirror_on_screen(*, fresh=True):
     that repair or refresh a tab use the default fresh read.
     """
     global _MIRROR_ENUM_CACHE_AT, _MIRROR_ENUM_CACHE_VALUE
+    if not browser_management_enabled():
+        forget_mirror_presence()
+        return None
     now = time.monotonic()
     if (
         not fresh
@@ -780,7 +806,7 @@ def refresh_mirror_page(server_pid):
 
 
 def ensure_on_screen(misses):
-    """Put the mirror back on the display if it has been closed.
+    """Restore a closed mirror only while browser management is opted in.
 
     Leave placement and sizing to the operator. The follower owns the mirror's
     availability, not the desktop layout.
@@ -837,6 +863,9 @@ def ensure_watching(watch):
     tab — a full navigation reboots the client; after two revivals without a
     cure, replace the tab entirely, which also abandons its sessionStorage.
     """
+    if not browser_management_enabled():
+        watch.update(dead_since=None, last_revival=0.0, revivals=0)
+        return
     viewers = mirror_viewers()
     if viewers is None:
         # `/status` is already the server liveness check. Avoid a second HTTP
@@ -1034,7 +1063,7 @@ def main():
             continue
 
         try:
-            body = json.dumps({"game": game}).encode()
+            body = mirror_frame_body(game)
             answer = json.loads(http_post(PORT, "/load", body))
         except Exception as error:
             log(f"could not publish: {error}")

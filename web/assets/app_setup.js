@@ -18,6 +18,7 @@ let victoryRoster = "civvis";
 // returns to the size that was picked rather than to the smallest.
 const tacticsSizeChoices = {};
 document.getElementById("humanplayers").addEventListener("change", syncSetupMode);
+document.getElementById("humanplayers").addEventListener("change", () => refreshSaves());
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("leaderselection").addEventListener("change", syncCustomLeaderSelection);
@@ -516,6 +517,23 @@ function updateRestartSimulationButton() {
     : human || changed
     ? "with selected settings"
     : "same settings";
+  // Keep the launch action beside the choices as well as above the deck.
+  // Both controls use the same validation and request path.
+  const setupStart = document.getElementById("setup-start");
+  setupStart.hidden = !human || civ6;
+  setupStart.disabled = button.disabled || newSimulationBusy;
+  setupStart.textContent = button.querySelector(".lbl").textContent;
+  setupStart.title = button.title;
+}
+function openSinglePlayerSetup() {
+  if (newSimulationBusy) return;
+  document.getElementById("humanplayers").value = "single";
+  document.getElementById("gamemode").value = "civ";
+  syncSetupMode();
+  updateRestartSimulationButton();
+  openGameMenu();
+  document.getElementById("leader").focus({preventScroll: true});
+  refreshSaves();
 }
 function stageSelectedSimulationSettings() {
   updateRestartSimulationButton();
@@ -542,6 +560,7 @@ function setNewSimulationBusy(busy) {
     ...document.querySelectorAll("#newgame-options select, #newgame-options input, #newgame-options button"),
     document.getElementById("restart-sim"), document.getElementById("specpause"),
     document.getElementById("collapsepause"),
+    document.getElementById("single-player-entry"), document.getElementById("setup-start"),
   ].filter(Boolean);
   if (busy) {
     for (const control of controls) {
@@ -1222,12 +1241,17 @@ function syncEarthShape() {
 let savesKnown = null;
 async function refreshSaves() {
   const group = document.getElementById("saves-group");
-  if (!group || SPEC) { if (group) group.style.display = "none"; return; }
+  const browsingSaves = () => !SPEC || readSetting("humanplayers") === "single";
+  if (!group || !browsingSaves()) { if (group) group.style.display = "none"; return; }
   let saves;
   try { saves = (await fetchJSON("/saves", {}, 4000)).saves; }
   catch (error) { group.style.display = "none"; savesKnown = null; return; }
   if (!Array.isArray(saves)) { group.style.display = "none"; return; }
   savesKnown = saves;
+  // A returning player must be able to load before creating a replacement
+  // world. Recheck the selection after the request in case they went back
+  // to watching while the list was loading.
+  if (!browsingSaves()) { group.style.display = "none"; return; }
   group.style.display = "block";
   document.getElementById("saves-count").textContent = saves.length ? ` ${saves.length}` : "";
   document.getElementById("saves-list").innerHTML = saves.length
@@ -1236,7 +1260,7 @@ async function refreshSaves() {
         `<span>Turn ${save.turn}${save.civ ? ` · ${escapeAttr(save.civ)}` : ""}` +
         `${save.difficulty ? ` · ${titleCase(save.difficulty)}` : ""}</span></div>` +
         `<button onclick='loadSave(${JSON.stringify(save.name)})'>Load</button></div>`).join("")
-    : `<div class="empty-state">No saves yet. One is written at the end of every turn.</div>`;
+    : `<div class="empty-state">No saves yet. Start a game; each completed turn is saved automatically.</div>`;
 }
 async function loadSave(name) {
   try {
@@ -1396,6 +1420,8 @@ async function playOnPastVictory(mode, paused) {
   }
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
+document.getElementById("setup-start").onclick = startNewSimulation;
+document.getElementById("single-player-entry").onclick = openSinglePlayerSetup;
 document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
 
 // ── deferred cross-file init ─────────────────────────────────────────────────

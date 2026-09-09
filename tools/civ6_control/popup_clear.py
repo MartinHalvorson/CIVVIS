@@ -42,12 +42,13 @@ import shlex
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from civ6_control import macos_capture, macos_input  # noqa: E402
+from civ6_control import macos_capture, macos_input, macos_ocr  # noqa: E402
 
 PILLOW_MISSING = "popup_clear needs Pillow: python3 -m pip install pillow"
 
@@ -872,8 +873,65 @@ def notice_button(rgb, gray):
     return None
 
 
+def pause_menu_target(observations, size):
+    """Only the Return to Game label in a verified, aligned pause menu."""
+    names = ("MENU", "RETURN TO GAME", "SAVE GAME", "LOAD GAME",
+             "EXIT TO MAIN MENU")
+    matches = {name: [] for name in names}
+    for item in observations:
+        name = " ".join(str(item.get("text", "")).upper().split())
+        # The menu can remain legible behind an exit/restart confirmation.
+        if "ARE YOU SURE" in name:
+            return None
+        if name not in matches:
+            continue
+        try:
+            x, y = float(item["x"]), float(item["y"])
+            width, height = float(item["width"]), float(item["height"])
+            confidence = float(item["confidence"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        cx, cy = x + width / 2, y + height / 2
+        if (confidence >= 0.85 and 0 < width < 0.35 and 0 < height < 0.08
+                and 0.35 < cx < 0.65 and 0.15 < cy < 0.85):
+            matches[name].append((cx, cy))
+    if any(len(points) != 1 for points in matches.values()):
+        return None
+    points = [matches[name][0] for name in names]
+    if (max(x for x, _ in points) - min(x for x, _ in points) > 0.03
+            or any(a[1] >= b[1] for a, b in zip(points, points[1:]))):
+        return None
+    x, y = matches["RETURN TO GAME"][0]
+    return x * size[0], y * size[1]
+
+
+def pause_menu_button(window):
+    """Read menu text only when a tall central blue panel is present.
+
+    The t164 live stall on 2026-09-08 had this panel, but the old classifier
+    called it map. Text verification prevents a blue map feature from turning
+    into a click, and targets Return to Game rather than any exit/retire row.
+    """
+    w, h = window.size
+    if not any(0.08 * w < c["w"] < 0.35 * w
+               and 0.30 * h < c["h"] < 0.85 * h
+               and c["h"] > 1.2 * c["w"]
+               and 0.42 * w < c["cx"] < 0.58 * w
+               and 0.30 * h < c["cy"] < 0.70 * h
+               for c in blue_clusters(window)):
+        return None
+    try:
+        with tempfile.TemporaryDirectory(prefix="civvis-pause-menu-") as tmp:
+            shot = Path(tmp) / "menu.png"
+            window.save(shot)
+            observations = macos_ocr.recognize(shot)
+        return pause_menu_target(observations, window.size)
+    except (macos_ocr.OCRUnavailable, OSError, ValueError):
+        return None
+
+
 def classify(window):
-    """What is on screen: leader, card, advisor, or map plus safe targets.
+    """Identify a covered surface or map, and return only safe targets.
 
     `window` is the game window alone, so every coordinate returned is relative
     to it, in image pixels.
@@ -907,6 +965,10 @@ def classify(window):
     notice = notice_button(window, grey)
     if notice:
         return "notice", [notice], dark
+
+    pause = pause_menu_button(window)
+    if pause:
+        return "pause", [pause], dark
 
     if dark > LEADER_DARK_FRACTION:
         return "leader", dialogue_buttons(grey, box), dark
@@ -1048,11 +1110,11 @@ def main():
                 window, scale = capture(box)
                 kind, targets, dark = classify(window)
                 front = frontmost()
-                # An advisor card can be the reason the log stopped advancing.
-                # Give that one strongly classified surface a longer grace period;
+                # These positively identified panels can stop the game clock.
+                # Give them a longer grace period to recover a paused run;
                 # all broader dark/card recognition remains tied to a fresh turn so
                 # setup controls can never be clicked because of an old run.
-                freshness = 3600.0 if kind in ("advisor", "congress") else 180.0
+                freshness = 3600.0 if kind in ("advisor", "congress", "pause") else 180.0
                 playing = game_in_progress(args.runs, fresh_seconds=freshness)
                 covered = kind != "map"
                 # ★ ESCALATE ON PERSISTENCE, NOT ON ANY ONE BRANCH'S LATCH.

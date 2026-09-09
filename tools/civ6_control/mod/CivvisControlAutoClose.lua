@@ -378,6 +378,21 @@ if NAME == "InGamePopup" and type(OnPopupOpen) == "function" then
 	if swapped then OnPopupOpen = countingPopupOpen; end
 end
 
+-- WorldCongressPopup.lua:78-88 opens voting only in the two Congress
+-- segments. The same context also shows reviews with old resolutions still
+-- readable, so a later-turn review must not request another agent ballot.
+local function requestCongressBallot()
+	local ok, voting = pcall(function()
+		local segment = Game.GetCurrentTurnSegment();
+		if segment == nil then return false; end
+		return segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_1")
+			or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_2");
+	end);
+	if ok and voting then
+		pcall(function() LuaEvents.CivvisCongressBallot(); end);
+	end
+end
+
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
 local function endScreen(attempt)
@@ -435,9 +450,9 @@ local function endScreen(attempt)
 		-- civvis-20260816T223457Z shows the popup closing here 0.05 s after it
 		-- opened at t61/81/101/121 with no `source:"popup"` ballot anywhere.
 		-- The ballot is raised here as well; the agent's handler ignores a
-		-- second call in the same turn, and between sessions (the review
-		-- popup) it finds no resolutions and casts nothing.
-		pcall(function() LuaEvents.CivvisCongressBallot(); end);
+		-- second call in the same turn. The phase guard below excludes reviews
+		-- even when the host still exposes the previous session's resolutions.
+		requestCongressBallot();
 		OnPass();
 		return true;
 	end
@@ -477,7 +492,7 @@ local function endScreen(attempt)
 		-- what crosses them, synchronously), and `OnAccept` submits what it
 		-- cast. `pcall`, so an agent that is not loaded still gets the
 		-- abstain-and-submit this rung always did.
-		pcall(function() LuaEvents.CivvisCongressBallot(); end);
+		requestCongressBallot();
 		OnAccept();
 		return true;
 	end
@@ -689,6 +704,7 @@ else
 	local desktopReportedAt = -1;   -- attempts count at the last ask, -1 = never
 	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
 	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
+	local controllerPulseSeconds = 0;
 
 	-- ★★★★★ A FRESH SHOW IS A FRESH DIALOGUE, EVEN WHEN THIS CONTEXT NEVER TICKS
 	-- WHILE HIDDEN.
@@ -709,6 +725,7 @@ else
 	-- session and may have been armed before the view becomes visible.
 	local function resetShownAttemptState()
 		showing = false;
+		controllerPulseSeconds = 0;
 		remaining = 0;
 		shown = 0;
 		closes = 0;
@@ -905,6 +922,7 @@ else
 			heartbeatSeconds = 0;
 		end
 		if not isUp() then
+			controllerPulseSeconds = 0;
 			showing = false;
 			closes = 0;
 			reported = false;
@@ -912,6 +930,17 @@ else
 			wonderAnimationWaitReported = false;
 			dealForceClose = false;
 			return;
+		end
+		-- A leader screen can hide TopPanel while its own UI clock continues.
+		-- Use the same guarded agent wakeup here; keep deal holds and native
+		-- close handling below intact. One long frame produces only one pulse.
+		if cfg.Play ~= false and cfg.CivvisDecides then
+			controllerPulseSeconds = controllerPulseSeconds + math.max(0, tonumber(fDTime) or 0);
+			if controllerPulseSeconds >= 1 then
+				controllerPulseSeconds = 0;
+				pcall(function() LuaEvents.CivvisControlPulse(); end);
+				if not isUp() then showing = false; return; end
+			end
 		end
 		if not showing then
 			showing = true;

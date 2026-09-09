@@ -60,10 +60,8 @@ const SIEGE_COMMITMENT_PER_HP: f64 = 1.5;
 /// Without it the campaign could be dragged across the map by damage another
 /// civilization dealt.
 const SIEGE_COMMITMENT_REACH: i32 = 6;
-/// Health above which [`AdvancedAi::promotion_heal_is_wasted`] holds a
-/// promotion back. `do_promote` heals `min(50, 100 - hp)`, so promoting at 100
-/// delivers nothing; 75 asks for at least 25 of the 50 to land before spending
-/// the unit's turn on it.
+/// Healing preference retained for the `promote-when-wounded` treatment.
+/// Pending promotions bypass it because they block further XP awards.
 const PROMOTE_HEAL_HP_CEILING: i32 = 75;
 /// Scale of [`AdvancedAi::strike_opening_value`] against `mv_threat`'s own
 /// `30.0`. At even odds this returns +5.2 where the parity threat penalty is
@@ -753,18 +751,6 @@ pub const SCIENCE_EXPANSION_CITY_CEILING: usize = 24;
 /// `civvis_notes.jsonl` as desired_cities 24 -> 16.
 pub const SCIENCE_EXPANSION_UNTIL_TURN: u32 = 188;
 
-/// The rapid native expansion gene aims to own this many cities on a roomy
-/// board. The practical-site gate can stop it sooner, and the target derives
-/// from land density on cramped maps, but a fifteen-city horizon gives the
-/// early pipeline enough room to reach the 3/8/14 city tempo checkpoints.
-pub const RAPID_EXPANSION_CITY_CEILING: usize = 15;
-
-/// The rapid gene does not switch into conquest after a single unlucky site
-/// scan. Three founded cities are enough to establish a defensible home ring;
-/// only then does an exhausted safe frontier become a reason to acquire the
-/// next cities from a rival.
-const RAPID_EXPANSION_SETTLE_FLOOR: usize = 3;
-
 /// Settlers the land grab keeps in flight from the first city, before the
 /// per-three-cities widening. Two: the capital may queue its next Settler
 /// while the last one walks, which is how the second and third cities come
@@ -825,26 +811,6 @@ const SUZERAIN_PRIZE: i64 = 180;
 /// within one envoy of a rival deliberately does not qualify: defending a
 /// narrow suzerainty remains more valuable than this cap.
 const UNCONTESTED_POST_TIER_ENVOY_PENALTY: i64 = 300;
-
-/// The contested twin of [`UNCONTESTED_POST_TIER_ENVOY_PENALTY`], and the same
-/// magnitude for the same reason: it must sit below every ordinary alignment
-/// score (`(12 + 15) * 10 = 270`) so a fresh city-state or an available 1/3/6
-/// tier takes the envoy instead, and it must leave a clearly negative score so
-/// `bank_envoys` can retain the envoy when nothing better exists.
-///
-/// ⚠ The penalty above says a city-state within one envoy of a rival
-/// "deliberately does not qualify: defending a narrow suzerainty remains more
-/// valuable than this cap". That assumption is what
-/// [`AdvancedAi::contested_suzerainty_brake`] revisits against a live run: the
-/// narrow suzerainty was defended seven times, cost twenty-seven envoys, and
-/// was lost anyway to the rival the seat was already at war with.
-const CONTESTED_RACE_ENVOY_PENALTY: i64 = 300;
-
-/// How many envoys the seat may sink into a city-state a rival major is still
-/// level with before [`AdvancedAi::contested_suzerainty_brake`] stops paying
-/// for the race. Six is `bank_envoys`' own post-tier step, so the contested
-/// brake and the uncontested one release at the same stack.
-const CONTESTED_ENVOY_STACK_CAP: i64 = 6;
 
 /// Keep a small, spendable Envoy reserve for the city-states exploration will
 /// uncover. First contact supplies one Envoy at the city-state, so six held
@@ -1445,8 +1411,8 @@ struct TacticalAttackCandidate {
     score: f64,
     target: Pos,
     action: Action,
-    /// A simulated direct kill with a positive immediate exchange.  It outranks
-    /// a nonlethal option even when the slower reply search is pessimistic:
+    /// A simulated direct kill with a positive immediate exchange and a
+    /// survivable post-strike tile. It outranks a nonlethal option:
     /// a unit that can be removed now does not get another turn to heal,
     /// retreat, pillage, or join a focus fire sequence.
     lethal_kill: bool,
@@ -1747,6 +1713,8 @@ impl SettlementAtlas {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TurnStartHostile {
     id: u32,
+    host_key: i64,
+    owner: usize,
     pos: Pos,
     /// Tiles the unit can enter next turn: its movement, rounded up.
     capture_reach: i32,
@@ -2857,32 +2825,6 @@ pub struct AdvancedAi {
     /// Settler seat's measured record, and CIVVIS-vs-CIVVIS wars are the ones
     /// the branch was written for. Off for ordinary and frozen controllers.
     pub no_elective_war: bool,
-    /// Do not build a space race, or a bomb, that cannot finish before the
-    /// turn limit.
-    ///
-    /// ★★★★ THE LAST FIFTY TURNS OF A SETTLER GAME ARE A SCORE TALLY, AND THE
-    /// SCIENCE LANE SPENT THEM ON A LAUNCH PAD. Run civvis-20260816T093036Z
-    /// (250 turns, Online): the Science strategy queued a Spaceport at ~t226
-    /// (24 city-turns), the war lane a Manhattan Project (16 city-turns), and
-    /// the game ended 871 to 1,157 on score with 69 of 77 techs — the first
-    /// launch needs Rocketry, four projects and fifty light-years of travel,
-    /// none of which fit in the turns left. Run civvis-20260816T101521Z built
-    /// TWO Spaceports after t220 and ended 787 to 1,198. Both empires ended
-    /// on the tally, where a Spaceport is worth two points and the buildings
-    /// those city-turns would have bought are worth one each and yield.
-    ///
-    /// With this on, `space_race_can_finish` prices the remaining chain —
-    /// the launch pad if none stands, every project not yet completed, the
-    /// unresearched ancestors of their techs at the empire's own pace, and
-    /// the fifty light-years at a generous three per turn — against the
-    /// turns left, and when it does not fit: `science_production` is skipped
-    /// (a Diplomacy backup too), the strategic governor's Spaceport arms price
-    /// zero, and the nuclear project arms price zero when the device cannot be
-    /// finished either (`nuclear_lane_can_finish`). Research is untouched:
-    /// every tech is still two points and the lane's yields still pay. Off
-    /// for ordinary and frozen controllers; on for the live bridge and the
-    /// native repair bundle (a native league game ends on the same tally).
-    pub score_horizon: bool,
     /// One launch pad, in the city that will actually run the race.
     ///
     /// ★★★ THE 3,000-POINT FIRST-PAD RUNG IS EMPIRE-WIDE. The old controller
@@ -2900,8 +2842,8 @@ pub struct AdvancedAi {
     ///
     /// The chain is sequential — Earth Satellite, Moon Landing, Mars Colony,
     /// the expedition — so a second pad launches nothing sooner, and
-    /// `space_race_can_finish` already prices the race at ONE pad and the
-    /// empire's BEST city. With this on the two agree: the 3,000 rung goes to
+    /// the race is run at ONE pad in the empire's BEST city. With this on
+    /// the 3,000 rung goes to
     /// the single best-production city with no pad, and only while no other
     /// city of ours is already building one. Every other city keeps the
     /// ordinary 250, so a genuine second launch site is still reachable when
@@ -3320,23 +3262,13 @@ pub struct AdvancedAi {
     /// against CIVVIS rivals who contest the ground. Off for ordinary and
     /// frozen controllers.
     pub land_grab: bool,
-    /// Screenable native gene for an intentionally fast city curve.
-    ///
-    /// It starts with a Settler instead of spending the opening book on a
-    /// military unit, keeps a three-plus shared Settler pipeline, uses the
-    /// legal population-two floor and founding pantheon, targets dense
-    /// land-capacity from turn one, and changes its strategic posture to
-    /// Conquest only after the practical safe-site search is empty. The map's
-    /// safety, loyalty, route, and payoff gates remain authoritative.
-    ///
-    /// Native and off by default until `gene_screen` prices it through
-    /// `PRODUCTION_OPT_INS` as `rapid-city-expansion`.
-    pub rapid_city_expansion: bool,
     /// `capital-settler-after-completion`: after its queue drains, the capital
     /// starts a legal Settler at population two rather than letting the
     /// ordinary ranking fill the opening. The baseline governor owns the
     /// choice; this flag makes it a screenable AdvancedAI gene.
     pub capital_settler_after_completion: bool,
+    /// Build one opening Scout when the capital is safe and lacks recon.
+    pub scout_first_opening: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -4220,8 +4152,7 @@ pub struct AdvancedAi {
     /// that keeps them affordable read the raced lane.
     pub lane_culture_spending: bool,
     /// `lane-space-race`: the Spaceport and launch pass opens for an empire
-    /// racing Science that is still settling. `score_horizon` still refuses a
-    /// race that cannot finish.
+    /// racing Science that is still settling.
     pub lane_space_race: bool,
     /// `competition-victory-points`: a scored competition's first place is
     /// priced by the Diplomatic Victory Points it pays, at the same rate
@@ -4838,6 +4769,12 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    amani_follows_suzerainty: bool,
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    builder_workforce_recovery: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    builder_workforce_recovery_2: bool,
     /// `anvil`: the land group nearest a threatened city of ours holds it
     /// as a formation — a shooter on the centre, melee on the front tiles,
     /// the rest within two — instead of the relief hold point. Opt-in gene;
@@ -4918,10 +4855,14 @@ pub struct AdvancedAi {
     /// flat credit. Opt-in gene `boost-first-research`; see
     /// `advanced/boost_research.rs`.
     boost_first_research: bool,
-    /// A node the empire would finish before the eureka it is still owed can
-    /// land waits its turn. Opt-in gene `boost-wait-research`; see
-    /// `advanced/boost_research.rs`.
-    boost_wait_research: bool,
+    /// A boost in hand breaks ties among comparable research candidates only,
+    /// after every forced lane goal has stood down. Version two of
+    /// `boost-first-research`: the same discount scale, applied in the argmax
+    /// to a boosted node whose unscaled score is within
+    /// `BOOST_TIEBREAK_BAND` of the ordinary winner's, never inside
+    /// `tech_value` / `civic_value` and never over a beeline step. Opt-in
+    /// gene `boost-first-research-2`; see `advanced/boost_research.rs`.
+    boost_first_research_2: bool,
     /// Version two waits only when the final trigger is already at the front
     /// of an owned city queue and the node would finish inside a much shorter
     /// window. Opt-in gene `boost-wait-research-2`; see
@@ -4980,51 +4921,14 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
-    /// ★★★★ TWENTY-SEVEN ENVOYS INTO A RACE THE SEAT WAS ALWAYS GOING TO
-    /// LOSE, AND THE PRIZE CAME BACK AS AN ARMY. The envoy scorer prices the
-    /// NEXT envoy toward a suzerainty ([`SUZERAIN_PRIZE`] over the envoys
-    /// still needed) and never prices the stock already sunk into the race,
-    /// nor whether the seat can hold what it buys. Against a rival with equal
-    /// envoy income every bid buys the suzerainty only until that rival's next
-    /// envoy, so the seat pays again, and again.
-    ///
-    /// Measured on live run `civvis-20260902T205532Z`, Bologna:
-    ///
-    /// | turn | 44 | 88 | 111 | 125 | 136 | 156 | 164 |
-    /// |------|----|----|-----|-----|-----|-----|-----|
-    /// | our envoys | 1 | 7 | 11 | 17 | 24 | 27 | 27 |
-    /// | suzerain | rival | **us** | us | us | us | us | **Arabia** |
-    ///
-    /// Suzerainty came back to us on t111, t112, t121, t125, t131, t134 and
-    /// t136 — **seven re-takes** — and was lost for good on t164 when Arabia
-    /// reached 28. [`Game::envoy_yields`] suspends every type bonus from a
-    /// city-state at war with the seat, and a Suzerain levies its city-state
-    /// into its own wars, so all twenty-seven envoys stopped paying the turn
-    /// Arabia took it. The war with Arabia had begun on **t139**: the seat
-    /// spent its 25th, 26th and 27th envoy there while already at war with the
-    /// very rival it was bidding against.
-    ///
-    /// ⚠ There is no exit afterwards. `Game::do_make_peace` refuses a
-    /// bilateral peace with a levied city-state — *"a city-state's derived war
-    /// must be settled by its Suzerain"* — so the stake stays dead for the
-    /// rest of the major war. The only lever is not building the stake.
-    ///
-    /// `bank_envoys` already brakes the UNCONTESTED overstack
-    /// (`already_secure && mine >= 6`), and deliberately exempts a city-state
-    /// within one envoy of a rival on the grounds that defending a narrow
-    /// suzerainty is worth more than the cap. This is the contested half that
-    /// exemption leaves open: `already_secure` is false exactly when a rival
-    /// is level, which is when the next envoy is likeliest to be matched and
-    /// lost.
-    ///
-    /// With this on, the ordinary post-tier penalty also applies to a race the
-    /// seat cannot hold — when the leading rival is a major we are AT WAR with
-    /// and is level or ahead, or when the seat has already sunk
-    /// [`CONTESTED_ENVOY_STACK_CAP`] envoys and a rival is within one. Nothing
-    /// is refused: every other term still prices the envoy, and an uncontested
-    /// city-state with a real 1/3/6 tier to buy wins it instead. Off
-    /// everywhere by default; opt-in gene `contested-suzerainty-brake`.
-    contested_suzerainty_brake: bool,
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
+    /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
+    culture_threat_early: bool,
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    culture_building_catchup: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    culture_building_catchup_2: bool,
     /// A threat detour must keep most of the site's worth. See
     /// `SETTLER_DETOUR_VALUE_FLOOR` for the live measurement: the median
     /// detour improves on the site it leaves, but a quarter of them give up
@@ -5042,6 +4946,9 @@ pub struct AdvancedAi {
     /// against its hit points — is rotated instead of left to the ladder to
     /// attack. Opt-in gene; see `advanced/battle_planner.rs`.
     doomed_blow_veto: bool,
+    /// `doomed-blow-veto-2`: require every planned striker to survive the
+    /// replies remaining after the complete friendly sequence. Opt-in.
+    doomed_blow_veto_2: bool,
     /// Hunt every Eureka and Inspiration: the union of the boost-aware
     /// research, builder and production habits, over every trigger the engine
     /// can judge, plus a boost-aware beeline and a kill premium. Opt-in gene
@@ -5101,26 +5008,15 @@ pub struct AdvancedAi {
     /// path skips such cities. Every other family, lane and seat is
     /// untouched. Opt-in gene `campus-through-expansion`.
     campus_through_expansion: bool,
-    /// `district-planning-2`: the plan's own tile buy competes out of the
-    /// treasury reserve (never spending below half of it) instead of
-    /// waiting for 200 Gold of surplus headroom, and the purchase bars
-    /// drop to adjacency 2 with an edge of 1 over owned ground. A workable
-    /// tile carrying at least 5 Science in a Science lane — or the one
-    /// connector that immediately opens it — also competes as a strategic
-    /// asset; that exceptional route may draw through the general reserve,
-    /// but preserves the funded war and immediate-defender floors. Measured
-    /// motive: no recorded live game has ever bought a
-    /// plot — replaying Emperor game 20260901T132005Z at t40/t44, the plan
-    /// priced the adjacency-4 Campus plot at score 905 against a floor of
-    /// 120 and the headroom rule alone refused it, while three cities then
-    /// placed campuses at adjacency 1 or lower beside that ground. Version
-    /// 2 of `district-planning`; shared behaviour reads `district_planning_on`.
-    district_planning_2: bool,
+    /// See `campus_before_halfway`.
+    campus_before_halfway: bool,
     /// Version 3 of `district-planning`: retain the joint site plan, but buy
     /// only its highest-value unowned site when the city can start that
     /// district immediately, out of Gold above the full reserve. It does not
     /// chase independent exceptional-yield tiles or bridge plots. Opt-in gene
-    /// `district-planning-3`.
+    /// `district-planning-3`. Version 2 of `district-planning`, which spent
+    /// into the reserve and chased exceptional Science tiles, was dropped on
+    /// 2026-09-08 as the family's third-best version.
     district_planning_3: bool,
     /// `cheapest-wonder-first`: a wonder this city can finish within
     /// `CHEAPEST_WONDER_TURNS` turns, in one of the empire's strongest
@@ -5209,10 +5105,6 @@ pub struct AdvancedAi {
     /// version instead of version 1. Opt-in gene `coastal-city-sites-2`.
     coastal_city_sites_2: bool,
 
-    /// A Builder chops woods, rainforest or marsh into a Settler, a district
-    /// or a wonder at the front of the owning city's queue. Opt-in gene
-    /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
-    chop_into_the_queue: bool,
     /// The at-war cities an own unit has already reached this campaign;
     /// state for `siege_is_progress_2`, rebuilt from the current at-war set
     /// each observation.
@@ -5352,18 +5244,68 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    expansion_best_idle_city: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    expansion_best_idle_city_2: bool,
+    /// Price affordable 1/3/6 building packages independently of suzerainty.
+    envoy_building_dividends: bool,
     /// Version two of `eureka-chasing-builder`: only the final Builder action
     /// for the technology or civic being researched right now earns a capped
     /// tiebreak premium. V1's global future-boost bidding remains measurable
     /// as its own control. Opt-in gene `eureka-chasing-builder-2`.
     eureka_chasing_builder_2: bool,
-    /// Version 2 of `enter-the-prophet-race`: pay the secondary race's entry
-    /// fee only when the board-aware religious-opening rank admits this seat.
-    /// That requires two cities and an actual or placeable Holy Site, limits
-    /// new entrants to the remaining global slots, and keeps an empire that
-    /// has already committed ahead of an uninvested rival. The admitted race
-    /// still moves research, district priority, patronage, and the prize as
-    /// one package. Opt-in gene `enter-the-prophet-race-2`.
+    /// Enter the finite Great Prophet race from an explicit victory lane when
+    /// the board admits this seat.
+    ///
+    /// ★★★★ THE LIVE SEAT NEVER RESEARCHES ASTROLOGY. Every live game runs
+    /// an explicit target (`--victory diplomatic`), and `advanced_research`
+    /// pins that lane's far-era goal — Seasteads for Diplomacy, Printing /
+    /// Radio / Computers for Culture, Rocketry onward for Science — from
+    /// turn 1 until it is researched. Each pick is "the cheapest step
+    /// toward" that goal, and Astrology → Celestial Navigation is a dead-end
+    /// branch nothing else requires, so Astrology is never an ancestor of any
+    /// goal and the `tech_value` fallback is never consulted while one
+    /// stands. MEASURED over 130 live runs (2026-08-27): `TECH_ASTROLOGY`
+    /// researched in ONE game, at t244 — four turns after Seasteads; ONE
+    /// `DISTRICT_HOLY_SITE` in 1,680 district orders (t74, after the race
+    /// had closed); no Shrine anywhere; the host never listed a Missionary
+    /// as purchasable in any of our cities; `prophet_pending` never true;
+    /// 0 of 28 faith patronages went to a Prophet. Rivals fielded religious
+    /// units 20,591 times in the same rows, and the four King religions were
+    /// all founded by median t62 (earliest t38).
+    ///
+    /// Behind that, `take_turn_inner` sets `pursue_religion` false for any
+    /// explicit non-Religion target, so even a seat that stumbled into a Holy
+    /// Site would discard the prize. The secondary race remains available to
+    /// adaptive and non-Science lanes that the board-aware religious-opening
+    /// rank admits -- two cities and an actual or placeable Holy Site, new
+    /// entrants limited to the remaining global slots, an empire that has
+    /// already committed kept ahead of an uninvested rival -- while an
+    /// explicit Science lane keeps its research and production contract
+    /// intact. For the lanes that enter it,
+    /// four things move together because the entry fee and the prize are
+    /// separate gates (`BasicAi::skip_prophet_race`) and paying one without
+    /// the other is strictly worse than either pure choice:
+    /// 1. `advanced_research` takes Astrology once the first
+    ///    `PROPHET_RACE_OPENING_TECHS` techs are in, while a Prophet slot is
+    ///    still open for this seat (`prophet_race_open_for`). The lane's own
+    ///    beeline resumes the turn Astrology lands.
+    /// 2. `BasicAi::pick_item` puts the empire's FIRST Holy Site at the front
+    ///    of the district order while the race is open (`enter_prophet_race`
+    ///    on the base); the existing one-site reservation is unchanged.
+    /// 3. `advanced_great_people` prices the Great Prophet as a lane great
+    ///    person (650) while the race is open, so a Gold or Faith patronage
+    ///    within 40 % is taken instead of waiting at 15 %.
+    /// 4. `pursue_religion` is true while the race is open for this seat and
+    ///    again once it holds a religion, so the belief pick, the Prophet
+    ///    claim and the Missionary buy run on the eligible seat.
+    ///
+    /// `religion-race-is-closed` (pinned on) still wins once every slot is
+    /// taken: `prophet_race_open_for` is false the moment the race closes.
+    /// Version 2 of `enter-the-prophet-race`; version 1 -- the unconditional
+    /// entry, rank 267 at -1.99 pp -- left the code on 2026-09-09. Opt-in
+    /// gene `enter-the-prophet-race-2`.
     enter_the_prophet_race_2: bool,
     /// Version 2 of `early-project-restraint`: a repeatable Great-Person
     /// project waits only while its own district owes a first building that
@@ -5396,50 +5338,6 @@ pub struct AdvancedAi {
     /// tier runs the same concrete-revolt forecast the ranked tier does. See
     /// `advanced/settler_never_idles.rs`.
     exhaustion_loyalty_guard: bool,
-    /// Enter the finite Great Prophet race from an explicit victory lane.
-    ///
-    /// ★★★★ THE LIVE SEAT NEVER RESEARCHES ASTROLOGY. Every live game runs
-    /// an explicit target (`--victory diplomatic`), and `advanced_research`
-    /// pins that lane's far-era goal — Seasteads for Diplomacy, Printing /
-    /// Radio / Computers for Culture, Rocketry onward for Science — from
-    /// turn 1 until it is researched. Each pick is "the cheapest step
-    /// toward" that goal, and Astrology → Celestial Navigation is a dead-end
-    /// branch nothing else requires, so Astrology is never an ancestor of any
-    /// goal and the `tech_value` fallback is never consulted while one
-    /// stands. MEASURED over 130 live runs (2026-08-27): `TECH_ASTROLOGY`
-    /// researched in ONE game, at t244 — four turns after Seasteads; ONE
-    /// `DISTRICT_HOLY_SITE` in 1,680 district orders (t74, after the race
-    /// had closed); no Shrine anywhere; the host never listed a Missionary
-    /// as purchasable in any of our cities; `prophet_pending` never true;
-    /// 0 of 28 faith patronages went to a Prophet. Rivals fielded religious
-    /// units 20,591 times in the same rows, and the four King religions were
-    /// all founded by median t62 (earliest t38).
-    ///
-    /// Behind that, `take_turn_inner` sets `pursue_religion` false for any
-    /// explicit non-Religion target, so even a seat that stumbled into a Holy
-    /// Site would discard the prize. The secondary race remains available to
-    /// adaptive and non-Science lanes, but an explicit Science lane keeps its
-    /// research and production contract intact. For the lanes that enter it,
-    /// four things move together because the entry fee and the prize are
-    /// separate gates (`BasicAi::skip_prophet_race`) and paying one without
-    /// the other is strictly worse than either pure choice:
-    /// 1. `advanced_research` takes Astrology once the first
-    ///    `PROPHET_RACE_OPENING_TECHS` techs are in, while a Prophet slot is
-    ///    still open for this seat (`prophet_race_open_for`). The lane's own
-    ///    beeline resumes the turn Astrology lands.
-    /// 2. `BasicAi::pick_item` puts the empire's FIRST Holy Site at the front
-    ///    of the district order while the race is open (`enter_prophet_race`
-    ///    on the base); the existing one-site reservation is unchanged.
-    /// 3. `advanced_great_people` prices the Great Prophet as a lane great
-    ///    person (650) while the race is open, so a Gold or Faith patronage
-    ///    within 40 % is taken instead of waiting at 15 %.
-    /// 4. `pursue_religion` is true while the race is open for this seat and
-    ///    again once it holds a religion, so the belief pick, the Prophet
-    ///    claim and the Missionary buy run on the eligible seat.
-    ///
-    /// `religion-race-is-closed` (pinned on) still wins once every slot is
-    /// taken: `prophet_race_open_for` is false the moment the race closes.
-    enter_the_prophet_race: bool,
     /// An Archer for every city, the frontier city first, while the world
     /// is Ancient and Classical, and Archery chased until a city can train
     /// one. Opt-in gene `early-archers`; see `advanced/early_archers.rs`.
@@ -5542,10 +5440,6 @@ pub struct AdvancedAi {
     /// open the settler pipeline by the shortfall. Opt-in gene
     /// `expansion-schedule`; see `advanced/expansion_schedule.rs`.
     expansion_schedule: bool,
-    /// A city-state's place enters the envoy score: proximity to our
-    /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
-    /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
-    flip_nearby_city_states: bool,
     /// An improvement that completes an unresearched technology's or civic's
     /// boost is worth the research the boost grants. Opt-in gene
     /// `eureka-chasing-builder`; see `advanced/deity_habits.rs`.
@@ -5608,6 +5502,8 @@ pub struct AdvancedAi {
     /// `civilian_safety::HOSTILE_MEMORY_TURNS` turns after it walks back into
     /// the fog. See `AdvancedAi::barbarian_reach`.
     hostile_memory: bool,
+    /// Version two also protects land escorts from embarking into known naval reach.
+    hostile_memory_2: bool,
     /// Where each in-scope military unit was last seen, and the facts needed
     /// to project its capture reach after the visible-only host export drops
     /// it. The key is the stable Civ 6 id when the live mirror provides one;
@@ -5636,40 +5532,6 @@ pub struct AdvancedAi {
     /// it is untouched: this only ever raises capacity, and that guard
     /// already refuses a lateral or a downgrade.
     government_capacity_fallback: bool,
-    /// Let the Builder see the Housing an improvement carries.
-    ///
-    /// ★★★★ ONE CHOOSER READS IT AND THE OTHER DOES NOT.
-    /// `BasicAi::best_improvement` scores `spec.housing * 2.0` alongside the
-    /// yields. `AdvancedAi::improvement_value_with_appeal` — the one the
-    /// deployed agent actually uses — never reads `spec.housing` at all,
-    /// because `Yields` has no housing member and the field lives on
-    /// `ImprovementSpec`. So the advanced Builder is strictly blinder than the
-    /// basic one about the thing that decides whether a city can grow.
-    ///
-    /// Housing from improvements is real and it is large: seventeen
-    /// improvements carry it, Farm, Pasture and Plantation at 0.5 each and the
-    /// unique terraces and stepwells at 1.0, counted within three tiles of the
-    /// city centre whether or not the tile is worked. A dry city's floor is
-    /// two; four Farms is a whole extra population point of ceiling on top of
-    /// it.
-    ///
-    /// Why it is worth a gene in this regime: 88% of standard Emperor games
-    /// end on a science victory, and Population is the largest single source
-    /// of a city's science — 3.5 of 9.3 beakers per city on the live seat,
-    /// against the Campus district's own 2.1. Housing is the cap on
-    /// Population. MEASURED on the live King seat, 2026-08-25: 58% of cities
-    /// were at or within one of their housing ceiling at turn 100, and only
-    /// 13% of owned land was improved at all.
-    ///
-    /// Under Expansion the lane weights make a Farm worth 2.0 food and a Mine
-    /// 2.2 production, so a Farm loses to a Mine on a bare hill and its half
-    /// point of Housing is invisible. This adds that term and nothing else.
-    /// Opt-in gene `improvement-housing-value`.
-    improvement_housing_value: bool,
-    /// A Gold purchase in a city producing less than the empire's best city
-    /// earns a premium proportional to the deficit. Opt-in gene
-    /// `gold-for-the-young-city`; see `advanced/gold_and_cards.rs`.
-    gold_for_the_young_city: bool,
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
@@ -5725,6 +5587,10 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    magnus_follows_settlers: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    liang_follows_builders: bool,
     /// `modernize-before-spending` (default on): upgrade the standing army
     /// BEFORE the discretionary purchase pass, at the moments that matter.
     ///
@@ -5950,11 +5816,6 @@ pub struct AdvancedAi {
     /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
     /// see `advanced/order_retry.rs`.
     order_retry: bool,
-    /// Before the first city, let the starting Warrior reveal ground and then
-    /// choose the Settler's target from the now-observed city footprints.
-    /// Opt-in gene `opening-warrior-recon`; see
-    /// `advanced/opening_settlement.rs`.
-    opening_warrior_recon: bool,
     /// A selective rewrite of the opening reconnaissance pass: only a Warrior
     /// escorting the initial Settler acts first, while normal settlement
     /// candidate filtering stays in force. Opt-in gene
@@ -5988,6 +5849,14 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    reyna_follows_revenue: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    pingala_follows_research: bool,
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    research_building_catchup: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    research_building_catchup_2: bool,
     /// A route step that is not legal THIS TURN is a wait, not a new
     /// decision. `commitment_owners_act` releases a settle or improve
     /// decision the moment `route_step` yields no enterable neighbour —
@@ -6043,7 +5912,7 @@ pub struct AdvancedAi {
     /// gene. It follows the measured five-city opening band, reserves only an
     /// empty capital queue, refuses unworthy or already-claimed sites, and
     /// never turns an exhausted settlement frontier into an automatic war.
-    /// Version one remains intact for direct family comparison. See
+    /// Version one was culled on 2026-09-08 under the batch rule. See
     /// `advanced/rapid_city_expansion.rs`.
     rapid_city_expansion_2: bool,
     /// `relief-column-marches`: a force group standing beyond
@@ -6072,12 +5941,13 @@ pub struct AdvancedAi {
     /// `pursue_religion` is already false for any seat with a non-Religion
     /// victory target, but `skip_prophet_race` -- the reservation that stops
     /// the empire *paying* for the race -- is gated behind
-    /// `skip_the_prophet_race`, which a stock seat does not carry. So a
+    /// `skip_the_prophet_race_2`, which a stock seat does not carry. So a
     /// diplomatic seat discards the winnings and keeps buying the ticket.
     ///
     /// The distinction this gene adds is that it reads an OBSERVED fact
-    /// rather than a prior. `skip-the-prophet-race` is a bet that contesting
-    /// is not worth it, and forcing non-founding measured **-12 pp**
+    /// rather than a prior. `skip-the-prophet-race` (version 1, removed
+    /// 2026-09-09) was a bet that contesting is not worth it, and forcing
+    /// non-founding measured **-12 pp**
     /// (replicated). This fires only once `religions_founded()` has reached
     /// `max_religions()` with none of them ours -- at which point no prophet
     /// this empire ever recruits can found anything, and the bet is not a bet.
@@ -6134,9 +6004,9 @@ pub struct AdvancedAi {
     /// capitals leaves it by. Opt-in gene `pass-picket`; see
     /// `advanced/recon_disruption.rs`.
     pass_picket: bool,
-    /// This turn's recon orders — screen stands and picket posts — drawn
-    /// once per turn from the start-of-turn board so units planned in
-    /// parallel agree on them. See `advanced/recon_disruption.rs`.
+    /// This turn's recon orders — picket posts — drawn once per turn from
+    /// the start-of-turn board so units planned in parallel agree on them.
+    /// See `advanced/recon_disruption.rs`.
     recon_disruption: recon_disruption::ReconPlan,
     /// Version 2 of `power_the_laboratory`: the plant credit of version 1,
     /// plus the other side of the switch — a building whose `powered_*`
@@ -6267,46 +6137,6 @@ pub struct AdvancedAi {
     /// empire's builds, and a gene that only reprices `production_value`
     /// reaches the other 22%. See that flag for the regime argument.
     science_building_first: bool,
-    /// An adaptive seat stops racing for a Great Prophet, because the race
-    /// costs more science than the religion returns.
-    ///
-    /// ★★★★ EVERY ADAPTIVE SEAT PURSUES A RELIGION, AND NOTHING WEIGHS IT
-    /// AGAINST THE RACE IT COMPETES WITH. `take_turn_inner` sets
-    /// `base.pursue_religion` from `active_victory_target.is_none()` — and a
-    /// screen seat has no explicit target, so the answer is always yes. It
-    /// gates the Holy Site's society choice, the pending-Prophet claim and the
-    /// faith purchase pass alike.
-    ///
-    /// MEASURED over this branch's 12,000-seat probe (seeds 95000000.., 89% of
-    /// games ending on a SCIENCE victory at median turn 185): seats that
-    /// founded a religion won **14.5%** (n=8,000) against **20.9%** (n=4,000)
-    /// for seats that did not — a 6.4 pp gap on a binary two thirds of seats
-    /// perform, against a 16.7% base rate. It survives stratification by
-    /// empire size and the gap WIDENS with it, which is what an opportunity
-    /// cost looks like: −2.4 pp at five cities, −4.5 at six, −8.8 at seven,
-    /// −16.3 at eight. Founders carry five fewer techs at the end (median 62
-    /// against 67), and the 160 religious victories they win do not cover it.
-    ///
-    /// ⚠ The selection runs the RIGHT way. A seat that chased a Prophet and
-    /// was beaten to it spent the faith and the Holy Site anyway and lands in
-    /// the "did not found" group — so that group is contaminated with wasted
-    /// investment and still wins more. Suppressing the race entirely should
-    /// therefore beat 20.9%, not merely reach it.
-    ///
-    /// Byzantium's `taxis` and an explicit Religion target both keep the race;
-    /// this only removes the unconditional yes. Opt-in gene
-    /// `skip-the-prophet-race`.
-    skip_the_prophet_race: bool,
-    /// A seen rival Settler near our cities is screened: up to four of our
-    /// nearby land units, recon first, take the stands that add the most
-    /// expected steps to its likeliest walks, and hold them. Opt-in gene
-    /// `settler-screen`; see `advanced/recon_disruption.rs`.
-    settler_screen: bool,
-    /// A Settler with movement remaining drops its cached target after its
-    /// first move, so the remaining movement can use what that move revealed.
-    /// Opt-in gene `settler-second-look`; see
-    /// `advanced/opening_settlement.rs`.
-    settler_second_look: bool,
     /// An empire that dominates science drives the space race: the chain
     /// beeline, the launch city's production, a horizon priced as the engine
     /// runs the race, two pads by the Earth Satellite. Opt-in gene
@@ -6358,15 +6188,20 @@ pub struct AdvancedAi {
     /// ordering more after the race was lost. Opt-in gene
     /// `spaceport-surplus-veto`.
     spaceport_surplus_veto: bool,
-    /// Version 2 of `skip_the_prophet_race`: leave the Prophet race only
+    /// Version 2 of `skip-the-prophet-race`: leave the Prophet race only
     /// after every still-open religion slot has a rival forecast to reach the
     /// current Prophet inside the short last-call window. A seat with active
     /// Prophet income, a pending Prophet, Taxis, or an explicit Religion lane
-    /// keeps racing. Version 1 remains unchanged; enabling this version turns
-    /// version 1 off. Opt-in gene `skip-the-prophet-race-2`.
+    /// keeps racing. Version 1 -- the unconditional withdrawal, batch columns
+    /// -31/-41/-24 -- left the code on 2026-09-09. Opt-in gene
+    /// `skip-the-prophet-race-2`.
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Opt-in bottleneck reservation; see `higher_level_strategy`.
+    trade_building_before_bankruptcy: bool,
+    /// Disciplined investment variant; see `higher_level_strategy`.
+    trade_building_before_bankruptcy_2: bool,
     /// Who may be a target, when a war is declared and when peace is sued
     /// for, read off the Objective Board's own requirements: a rival whose
     /// nearest city's Siege bill is over the whole roster is no target, a
@@ -6432,12 +6267,10 @@ pub struct AdvancedAi {
     /// `advanced/yield_floors.rs`.
     yield_floor_frame: RefCell<yield_floors::YieldFloorFrame>,
     /// The purchase reserve is one emergency defender plus ten turns of any
-    /// recurring deficit, not `250 + 75` Gold per city. Opt-in gene
-    /// `treasury-at-work`; see `advanced/gold_and_cards.rs`.
-    treasury_at_work: bool,
-    /// `treasury_at_work`, and one under-bought compounding asset — the
-    /// empire's first Builder, then a Monument where a city has none — is
-    /// bought ahead of the purchase argmax. Opt-in gene `treasury-at-work-2`.
+    /// recurring deficit, not `250 + 75` Gold per city, and one under-bought
+    /// compounding asset — the empire's first Builder, then a Monument where
+    /// a city has none — is bought ahead of the purchase argmax. Opt-in gene
+    /// `treasury-at-work-2`; see `advanced/gold_and_cards.rs`.
     treasury_at_work_2: bool,
     /// Do not start a war the treasury cannot pay for.
     ///
@@ -6490,20 +6323,16 @@ pub struct AdvancedAi {
     upgrade_the_garrison: bool,
     /// A settle site beside a natural wonder is priced the way the engine
     /// pays it: the wonder's projected yields on every neighbouring work tile
-    /// (`Game::player_tile_yields`' rule, which every site score skipped) and
-    /// a capped footprint credit for the +1 Amenity, +2 Appeal, Holy Site
+    /// (`Game::player_tile_yields`' rule, which every site score skipped),
+    /// plus a small flat credit per natural-wonder tile in the footprint
+    /// (capped at a river's worth) for the +1 Amenity, +2 Appeal, Holy Site
     /// adjacency and era score no yield table shows. Off it, the impassable
     /// wonder tiles are merely lost jobs and the site reads no better than
-    /// bare ground. Opt-in gene `wonder-adjacent-sites`; see
-    /// `advanced/wonder_sites.rs`.
-    wonder_adjacent_sites: bool,
-    /// Version 2 of `wonder_adjacent_sites`: the projection, plus a small
-    /// flat credit per natural-wonder tile in the footprint (capped at a
-    /// river's worth) for the +1 Amenity, appeal, Holy Site adjacency and
-    /// era score the yields never show. Kept apart from version 1 because
-    /// #1419's flat wonder credit lost −0.553 pp at scale (#2464); the batch
-    /// prices the two. Implies version 1; its enable turns version 1 off.
-    /// Opt-in gene `wonder-adjacent-sites-2`.
+    /// bare ground. Version 2 of `wonder-adjacent-sites`: version 1 (the
+    /// projection alone, batch columns -12/-19/-19) left the code on
+    /// 2026-09-09; the flat credit stays small because #1419's flat wonder
+    /// credit lost −0.553 pp at scale (#2464). Opt-in gene
+    /// `wonder-adjacent-sites-2`; see `advanced/wonder_sites.rs`.
     wonder_adjacent_sites_2: bool,
 }
 
@@ -6518,7 +6347,7 @@ pub struct AdvancedAi {
 /// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
 /// floor for its own currency, and this only stops the other lanes pricing
 /// research below their least valuable ordinary yield.
-/// How many techs `enter_the_prophet_race` lets the lane's own opening take
+/// How many techs `enter_the_prophet_race_2` lets the lane's own opening take
 /// before Astrology: the two 25-cost Ancient techs the beeline reaches first
 /// (Animal Husbandry and Mining on every live opening), so the Builder's work
 /// is not delayed and Astrology still lands by about turn 15.
@@ -6610,15 +6439,6 @@ enum ChainRung {
 /// why the Builder loses the argmax; 420 clears that band while still losing
 /// to a Settler's 920 and to every repair.
 const BUILDER_SUPPLY_FLOOR_BASE: f64 = 420.0;
-
-/// What a point of an improvement's Housing is worth to the Builder choosing
-/// it. `BasicAi::best_improvement` already pays `spec.housing * 2.0` on a scale
-/// whose food term is 2.0; this function's food term is the lane weight, 2.0
-/// under Expansion, so the same relative price is 2.0 — doubled to 4.0 because
-/// the improvements that carry Housing carry only 0.5 or 1.0 of it, and a
-/// half-point that decides whether a city can grow at all is worth more than a
-/// half-point of food. See `improvement_housing_value`.
-const IMPROVEMENT_HOUSING_WEIGHT: f64 = 4.0;
 
 /// Below this a `production_value` is a REFUSAL rather than a low preference.
 /// The scorer returns two sentinels for an item it does not want: -10,000 is
@@ -6765,6 +6585,19 @@ const INDUSTRIAL_BUILDINGS_BEFORE_PROJECTS: [&str; 5] = [
 /// See `campus_through_expansion`: the Science lane's Campus arm, paid to a
 /// Science seat's Campus while its plan still reads Expansion.
 const CAMPUS_THROUGH_EXPANSION_DISTRICT: f64 = 170.0;
+/// See `campus_before_halfway`: the Science lane's Campus arm before the
+/// halfway clock, the same 170 the lane pays after it. Measured motive
+/// (2026-09-08): every September Emperor ladder game that ran to its outcome
+/// was lost to a rival's science victory at t182–224 while our one science
+/// win took 234 turns at King, and #3124 gated `victory_specialization_active`
+/// to the second half — so for 125 of 250 turns a Science seat priced its own
+/// Campus at zero to the lane.
+const CAMPUS_BEFORE_HALFWAY_DISTRICT: f64 = 170.0;
+/// See `campus_before_halfway`: the population at which a city can staff a
+/// Library, and from which the Campus keeps asking past the half-empire
+/// coverage cliff. Named by the 2026-08-19 repair note above
+/// `campus_keeps_asking` and never wired until the gene.
+const CAMPUS_EVERY_CITY_POP_FLOOR: i32 = 4;
 /// See `trade_route_network`: a Commercial Hub, or a Harbor where no Hub
 /// stands, beside a standing Campus — below the Campus's own 170 so the
 /// research district keeps first claim on a city.
@@ -6875,9 +6708,8 @@ mod civilian_safety;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
-/// Three Deity habits: chop into the queue, chase eurekas with Builders and
-/// with the production queue. Three opt-in genes; see
-/// `advanced/deity_habits.rs`.
+/// Two Deity habits: chase eurekas with Builders and with the production
+/// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
 mod deity_habits;
 
 /// Boost-aware research: research what is already boosted, wait out an
@@ -6912,10 +6744,6 @@ pub(crate) mod enemy_of_my_enemy;
 /// the peacetime garrison.
 pub(crate) mod contested_land;
 
-/// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
-/// and flipping nearby city-states. Four opt-in genes; see
-/// `advanced/field_craft.rs`.
-mod field_craft;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
@@ -6925,8 +6753,8 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
-/// Recon disruption: the settler screen and the pass picket. Two opt-in
-/// genes; see `advanced/recon_disruption.rs`.
+/// Recon disruption: the pass picket. One opt-in gene; see
+/// `advanced/recon_disruption.rs`.
 mod recon_disruption;
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
@@ -6955,6 +6783,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
 /// Close as a body, and screen the shooters: two opt-in genes in the deployed
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
@@ -6992,6 +6821,7 @@ mod battlefront;
 /// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
 mod chokepoints;
 
+mod culture_strategy;
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
@@ -7005,6 +6835,8 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
+mod governor_dividends;
+mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
 /// build a Settler, the citizens work food. One opt-in gene; see
@@ -7022,9 +6854,9 @@ mod island_expansion;
 mod order_retry;
 
 /// `buy-what-cards-cannot-boost`, `build-what-cards-boost`,
-/// `gold-for-the-young-city`, `native-emergency-purchase`: which currency
-/// pays for an item, from the operator's Gold-versus-production heuristic.
-/// Four opt-in genes; see `advanced/gold_and_cards.rs`.
+/// `native-emergency-purchase`: which currency pays for an item, from the
+/// operator's Gold-versus-production heuristic. Opt-in genes; see
+/// `advanced/gold_and_cards.rs`.
 mod gold_and_cards;
 
 /// `culture-floor` and `gold-income-floor`: the Amphitheatre out from under
@@ -7034,9 +6866,10 @@ mod gold_and_cards;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
-/// `opening-warrior-recon` gives the starting Warrior the first move before
-/// the capital is founded; `settler-second-look` refreshes a Settler's cached
-/// target after its first movement leg. Two opt-in genes; see
+mod production_compounding;
+
+/// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
+/// move before the capital is founded. One opt-in gene; see
 /// `advanced/opening_settlement.rs`.
 mod opening_settlement;
 
@@ -7049,13 +6882,15 @@ pub(crate) mod city_state_quests;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
 /// settlement forecast's second ring remains a purchasable city asset.
 mod science_wonder_sites;
-/// `wonder-adjacent-sites` prices a settle site beside a natural wonder the
-/// way the engine pays it; `wonder-ring-recon` sends an explorer to the
+/// `wonder-adjacent-sites-2` prices a settle site beside a natural wonder
+/// the way the engine pays it; `wonder-ring-recon` sends an explorer to the
 /// unseen ring of a natural wonder near home before it picks a frontier. Two
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
 
+mod science_endgame;
 mod science_victory_drive;
+mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
@@ -7090,6 +6925,8 @@ pub(super) mod rapid_city_expansion;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// Route around a host-refused step before discarding its city destination.
+mod settler_route_recovery;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -7584,6 +7421,7 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        ai.base.legacy_movement = true;
         ai.base.precise_evacuation = false;
         // The adjacent camp clear is default-ON everywhere current, but this
         // gate keeps that controller treatment outside the frozen anchor (see
@@ -7700,7 +7538,6 @@ impl AdvancedAi {
             wonder_score_tally: false,
             expansion_before_prophet: false,
             no_elective_war: false,
-            score_horizon: false,
             one_launch_pad: false,
             wide_map_capacity: false,
             fog_land_capacity: false,
@@ -7732,8 +7569,8 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             land_grab: false,
-            rapid_city_expansion: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -7807,6 +7644,9 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amani_follows_suzerainty: false,
+            builder_workforce_recovery: false,
+            builder_workforce_recovery_2: false,
             anvil: false,
             anvil_orders: BTreeMap::new(),
             anvil_orders_turn: None,
@@ -7825,7 +7665,7 @@ impl AdvancedAi {
             age_closer: false,
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
-            boost_wait_research: false,
+            boost_first_research_2: false,
             boost_wait_research_2: false,
             boost_unlock_research: false,
             buy_what_cards_cannot_boost: false,
@@ -7834,16 +7674,19 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
-            contested_suzerainty_brake: false,
+            culture_threat_early: false,
+            culture_building_catchup: false,
+            culture_building_catchup_2: false,
             detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
+            doomed_blow_veto_2: false,
             chase_every_boost: false,
             chase_every_boost_2: false,
             coalition_before_war_2: false,
             coalition_before_war_3: false,
             city_campaign_2: false,
             campus_through_expansion: false,
-            district_planning_2: false,
+            campus_before_halfway: false,
             district_planning_3: false,
             cheapest_wonder_first: false,
             connect_the_luxury: false,
@@ -7860,7 +7703,6 @@ impl AdvancedAi {
             coastal_city_sites: false,
             coastal_city_sites_2: false,
 
-            chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
             campaign_city_health_v3: BTreeMap::new(),
             campaign_cities_pressured_v3: BTreeSet::new(),
@@ -7886,6 +7728,9 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            expansion_best_idle_city: false,
+            expansion_best_idle_city_2: false,
+            envoy_building_dividends: false,
             eureka_chasing_builder_2: false,
             enter_the_prophet_race_2: false,
             early_project_restraint_2: false,
@@ -7893,7 +7738,6 @@ impl AdvancedAi {
             escort_cap_holds: false,
             first_granary_reserve: false,
             exhaustion_loyalty_guard: false,
-            enter_the_prophet_race: false,
             early_archers: false,
             early_project_restraint: false,
             fire_plan: false,
@@ -7905,7 +7749,6 @@ impl AdvancedAi {
             first_builder_reserve_2_paid: false,
             first_research_building_reserve: false,
             expansion_schedule: false,
-            flip_nearby_city_states: false,
             eureka_chasing_builder: false,
             eureka_chasing_production: false,
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
@@ -7917,18 +7760,19 @@ impl AdvancedAi {
             industrial_chain_debt: false,
             guard_breaks_the_pin: false,
             hostile_memory: false,
+            hostile_memory_2: false,
             hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
             government_ladder_2: false,
             government_capacity_fallback: false,
-            improvement_housing_value: false,
-            gold_for_the_young_city: false,
             growth_to_settle: false,
             guru_heals_the_corps_2: false,
             holy_site_where_the_threat_is_2: false,
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            magnus_follows_settlers: false,
+            liang_follows_builders: false,
             modernize_before_spending: false,
             objective_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
@@ -7945,7 +7789,6 @@ impl AdvancedAi {
             native_emergency_purchase: false,
             native_emergency_purchase_2: false,
             order_retry: false,
-            opening_warrior_recon: false,
             opening_warrior_recon_2: false,
             missionary_last_charge_explores: false,
             missionary_last_charge_explores_2: false,
@@ -7955,6 +7798,10 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reyna_follows_revenue: false,
+            pingala_follows_research: false,
+            research_building_catchup: false,
+            research_building_catchup_2: false,
             route_block_is_a_wait: false,
             recovery_reads_the_war_2: false,
             requisitions: false,
@@ -7994,9 +7841,6 @@ impl AdvancedAi {
             swap_rotation_2: false,
             screen_the_shooters: false,
             science_building_first: false,
-            skip_the_prophet_race: false,
-            settler_screen: false,
-            settler_second_look: false,
             science_victory_drive: false,
             science_victory_drive_2: false,
             science_drive: None,
@@ -8009,17 +7853,17 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            trade_building_before_bankruptcy: false,
+            trade_building_before_bankruptcy_2: false,
             war_policy_via_board: false,
             war_policy: war_policy::WarPolicy::default(),
             trade_route_network: false,
             walls_after_districts: false,
             threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
-            treasury_at_work: false,
             treasury_at_work_2: false,
             war_needs_a_treasury: false,
             upgrade_the_garrison: false,
-            wonder_adjacent_sites: false,
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
         }
@@ -8063,7 +7907,7 @@ impl AdvancedAi {
         // use the same bounded memory for barbarian sightings, while the
         // opt-in `hostile-memory` gene additionally widens the owner scope on
         // native/evaluator boards.
-        if self.hostile_memory || self.live_settler_capture_lessons {
+        if self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons {
             self.remember_visible_hostiles(g, pid);
         }
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
@@ -8092,6 +7936,8 @@ impl AdvancedAi {
             }
             self.turn_start_hostiles.push(TurnStartHostile {
                 id: unit.id,
+                host_key: hostile_memory_key(g, unit),
+                owner: unit.owner,
                 pos: unit.pos,
                 capture_reach: spec.moves.ceil() as i32,
                 strength: crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
@@ -11282,15 +11128,7 @@ impl AdvancedAi {
         // denser than the wide-map ceiling — from turn one; the pipeline,
         // the practical-site search and the payback deadline pace the count.
         let ordinary_city_target = (city_floor + g.turn as usize / city_cadence).min(city_ceiling);
-        let desired_cities = if self.rapid_city_expansion {
-            let land = if self.fog_land_capacity {
-                Self::fog_land_estimate(g, land)
-            } else {
-                land
-            };
-            (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(RAPID_EXPANSION_SETTLE_FLOOR, RAPID_EXPANSION_CITY_CEILING)
-        } else if self.rapid_city_expansion_2 {
+        let desired_cities = if self.rapid_city_expansion_2 {
             rapid_city_expansion::city_target(g, ordinary_city_target, city_ceiling)
         } else if self.land_grab {
             let land = if self.fog_land_capacity {
@@ -11380,23 +11218,6 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
-        // The rapid gene's phase boundary is deliberately the same practical
-        // safe-site search that permits a Settler. A low-value, unsafe, or
-        // unreachable tile therefore does not postpone the conquest phase;
-        // nor does a lone walker already on its way to the last good site.
-        // Three established cities are the defensive floor before the empire
-        // turns scarce domestic land into an offensive objective.
-        let rapid_frontier_exhausted = self.rapid_city_expansion
-            && cities.len() >= RAPID_EXPANSION_SETTLE_FLOOR
-            && !has_site
-            && !g
-                .player_unit_ids(pid)
-                .into_iter()
-                .any(|uid| g.units[&uid].kind == "settler")
-            && major_rivals
-                .iter()
-                .any(|rival| self.campaign_target_legal(g, pid, *rival));
-
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
             "Sumeria" | "Aztec" | "Nubia" | "Scythia" | "Byzantium"
@@ -11496,11 +11317,6 @@ impl AdvancedAi {
             (
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
-            )
-        } else if rapid_frontier_exhausted {
-            (
-                GrandStrategy::Conquest,
-                "the easy settlement frontier is full; the next cities must be taken",
             )
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
@@ -12008,7 +11824,7 @@ impl AdvancedAi {
         // city target is only useful if a productive city may still fund the
         // next campus after the old clock has expired.
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
-        if (self.rapid_city_expansion || self.rapid_city_expansion_2)
+        if self.rapid_city_expansion_2
             || self.land_grab
             || self.expansion_pays_back
             || science_targeted
@@ -12032,7 +11848,7 @@ impl AdvancedAi {
     /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
     /// slower or longer games without removing the endgame reserve.
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.plan_city_target && !self.rapid_city_expansion && !self.rapid_city_expansion_2 {
+        if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
             return;
         }
@@ -12784,9 +12600,10 @@ impl AdvancedAi {
     /// passes can fill an idle city with an Envoy district, Aerodrome, or
     /// another unrelated one-off. The ordinary Advanced production reserve is
     /// intentionally later in the turn; this narrow early pass exists only
-    /// for an explicit Science target and preserves the same cheapest-rung
-    /// ordering in every city that already owns a Campus.
-    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize) {
+    /// for an explicit Science target. The cheapest owed research rung competes
+    /// with legal industrial buildings so the production foundation can win
+    /// this reservation too; unrelated construction remains excluded.
+    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         for cid in g.player_city_ids(pid) {
             if !g.cities[&cid].queue.is_empty() {
                 continue;
@@ -12794,7 +12611,13 @@ impl AdvancedAi {
             let Some(building) = Self::first_owed_campus_building(g, pid, cid) else {
                 continue;
             };
-            let item = Item::Building { building };
+            let item = self.research_or_industrial_foundation(
+                g,
+                pid,
+                cid,
+                Item::Building { building },
+                plan,
+            );
             if !g.can_produce(pid, cid, &item)
                 || g.apply(
                     pid,
@@ -12811,7 +12634,7 @@ impl AdvancedAi {
                 let city_name = g.cities[&cid].name.clone();
                 think!(self.journal(), Research, Decision,
                     "{} reserves {} for the Science lane", city_name, Self::plain_item(&item);
-                    "the Campus chain is owed before ancillary production claims this idle queue");
+                    "research and its industrial foundation precede ancillary production in this idle queue");
             }
         }
     }
@@ -13875,6 +13698,54 @@ impl AdvancedAi {
             .any(|cid| Self::imminent_city_attack(g, pid, cid, &visible))
     }
 
+    /// An active major war must be able to retire its standing land army.
+    /// Score bonuses cannot reach a missing prerequisite when a victory lane
+    /// owns the research slot. Route one immediate successor explicitly; once
+    /// its technology is known, let production/resources/Gold catch up before
+    /// requesting another generation. Do not require stockpiled resources here:
+    /// the missing prerequisite may be the technology that reveals them.
+    fn wartime_modernization_tech(&self, g: &Game, pid: usize) -> Option<Name> {
+        if !self.victory_planning
+            || !g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            })
+        {
+            return None;
+        }
+        let mut goals: BTreeMap<Name, (usize, f64)> = BTreeMap::new();
+        for unit in g.units.values().filter(|unit| unit.owner == pid) {
+            let held = &g.rules.units[unit.kind];
+            if held.class != "military" || matches!(held.domain.as_deref(), Some("sea" | "air")) {
+                continue;
+            }
+            let Some(successor) = held.upgrade_to else {
+                continue;
+            };
+            let successor = &g.rules.units[g.player_unit_replacement(pid, successor)];
+            let Some(tech) = successor.tech else { continue };
+            if !successor.buildable || g.players[pid].techs.contains(&tech) {
+                continue;
+            }
+            let gain = successor.strength.max(successor.ranged_attack_strength())
+                - held.strength.max(held.ranged_attack_strength());
+            if gain > 0.0 {
+                let entry = goals.entry(tech).or_default();
+                entry.0 += 1;
+                entry.1 += gain;
+            }
+        }
+        goals
+            .into_iter()
+            // One obsolete scout must not displace the empire's victory lane.
+            .filter(|(_, (count, _))| *count >= 2)
+            .max_by(|(a, (_, av)), (b, (_, bv))| av.total_cmp(bv).then_with(|| b.cmp(a)))
+            .map(|(tech, _)| tech)
+    }
+
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // Explicit evaluator targets and the adaptive live plan must drive the
         // same prerequisite search.  Previously only `victory_target` enabled
@@ -13897,6 +13768,13 @@ impl AdvancedAi {
             } else {
                 None
             };
+            if let Some(goal) = self.science_endgame_research_goal(g, pid) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             // The rolling window protects unattended research from leaving
             // an old branch behind. An explicit Science target (or an
@@ -13936,6 +13814,8 @@ impl AdvancedAi {
             } else {
                 None
             };
+            let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
+            let endgame_goal = self.science_endgame_research_goal(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -13989,7 +13869,11 @@ impl AdvancedAi {
                 // the strongest upgrade supported by the army already in the
                 // field; `goal_pick` below walks its prerequisites.
                 _ if barbarian_military_goal.is_some() => barbarian_military_goal.as_deref(),
-                // `enter-the-prophet-race`: Astrology is a dead-end branch no
+                _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
+                // Once the late launch chain is committed, finish its remaining
+                // research before optional economic and bargain detours.
+                _ if endgame_goal.is_some() => endgame_goal,
+                // `enter-the-prophet-race-2`: Astrology is a dead-end branch no
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
                 // is still open for this seat.
@@ -14100,12 +13984,25 @@ impl AdvancedAi {
             // V1 above can replace a forced goal merely because a side node
             // is cheap. V2 enters only here, after `goal_pick` is absent, and
             // may replace the ordinary fallback only with a one-turn boosted
-            // node of nearly equal board value.
+            // node of nearly equal board value. `boost-first-research-2` sits
+            // behind it at the same seam: the boost-in-hand scale as a
+            // tie-break among comparable candidates, never over a forced
+            // goal. See `advanced/boost_research.rs`.
             let pick = if let Some(goal_pick) = goal_pick {
                 Some(goal_pick)
             } else {
                 fallback_pick.map(|ordinary| {
                     self.boosted_bargain_tech_2(g, pid, plan.strategy, &available, &ordinary)
+                        .or_else(|| {
+                            self.boost_tiebreak_pick(
+                                g,
+                                pid,
+                                plan.strategy,
+                                &available,
+                                &ordinary,
+                                true,
+                            )
+                        })
                         .unwrap_or(ordinary)
                 })
             };
@@ -14116,6 +14013,11 @@ impl AdvancedAi {
                             if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the cheapest step toward {}, needed to catch a nearby barbarian army",
+                                    plain(goal)
+                                )
+                            } else if wartime_modernization_goal.as_deref() == Some(goal) {
+                                format!(
+                                    "the cheapest step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
                                 )
                             } else {
@@ -14244,6 +14146,9 @@ impl AdvancedAi {
                     })
                     .cloned()
             });
+            // The civic half of the `boost-first-research-2` tie-break, at
+            // the same seam: after the forced goal, over the ordinary argmax.
+            // See `advanced/boost_research.rs`.
             let pick = goal_pick.or_else(|| {
                 available
                     .iter()
@@ -14254,6 +14159,17 @@ impl AdvancedAi {
                             .then_with(|| b.cmp(a))
                     })
                     .cloned()
+                    .map(|ordinary| {
+                        self.boost_tiebreak_pick(
+                            g,
+                            pid,
+                            plan.strategy,
+                            &available,
+                            &ordinary,
+                            false,
+                        )
+                        .unwrap_or(ordinary)
+                    })
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
@@ -14499,7 +14415,7 @@ impl AdvancedAi {
     /// Whether this seat can still found a religion: none of its own yet, a
     /// Prophet already claimed or a slot still open once the Prophets other
     /// majors hold are counted, and the first half of the clock. See
-    /// `enter_the_prophet_race`.
+    /// `enter_the_prophet_race_2`.
     /// `connect-the-luxury`: the cheapest technology that would let some
     /// improvement take an owned, unimproved luxury no unlocked improvement
     /// can — Irrigation for a Plantation luxury, Sailing for a sea one.
@@ -14762,14 +14678,13 @@ impl AdvancedAi {
         rivals_at_last_call >= open_slots
     }
 
-    /// Whether either optional secondary Prophet-race version is compatible
-    /// with the seat's explicit lane. Science has a long, dead-end-free
+    /// Whether the optional secondary Prophet race is compatible with the
+    /// seat's explicit lane. Science has a long, dead-end-free
     /// beeline and the 2026-09-01 deployment screen showed the race cutting
     /// its Science wins from 12/16 to 3/16 when it pulled that lane into
     /// Astrology, Holy Sites, and Prophet patronage.
     fn prophet_race_enabled_for(&self, target: Option<VictoryTarget>) -> bool {
-        (self.enter_the_prophet_race || self.enter_the_prophet_race_2)
-            && target != Some(VictoryTarget::Science)
+        self.enter_the_prophet_race_2 && target != Some(VictoryTarget::Science)
     }
 
     /// The secondary Prophet-race package has to agree on one admission gate:
@@ -14783,7 +14698,7 @@ impl AdvancedAi {
     ) -> bool {
         self.prophet_race_enabled_for(target)
             && self.prophet_race_open_for(g, pid)
-            && (!self.enter_the_prophet_race_2 || self.religious_opening_viable(g, pid))
+            && self.religious_opening_viable(g, pid)
             && !self.skip_prophet_race_2_for(g, pid, target)
     }
 
@@ -15342,11 +15257,11 @@ impl AdvancedAi {
         // selection also precedes production, which makes the city-plan gap
         // the signal for pre-slotting Colonization this turn.
         // The rapid-expansion gene needs the same timely Settler card as the
-        // wide-map plan: its dense opening target is intentionally active
-        // before the normal map-capacity treatment would turn this portfolio
-        // arm on.  Without it, the gene starts its second wave at the full
-        // price even after Early Empire unlocks Colonization.
-        if self.wide_map_capacity || self.rapid_city_expansion || self.rapid_city_expansion_2 {
+        // wide-map plan: its opening target is intentionally active before
+        // the normal map-capacity treatment would turn this portfolio arm
+        // on.  Without it, the gene starts its second wave at the full price
+        // even after Early Empire unlocks Colonization.
+        if self.wide_map_capacity || self.rapid_city_expansion_2 {
             let settler_queued = city_ids.iter().any(|city| {
                 matches!(
                     g.cities[city].queue.first(),
@@ -15613,13 +15528,7 @@ impl AdvancedAi {
         // Wanted first, so `desired_set` below keeps it slotted through the
         // civic swap; it leaves the list the turn the pantheon is founded and
         // the slot goes to Colonization exactly as before.
-        // Rapid expansion owns its founding-pantheon route outright rather
-        // than depending on the separate live-only expansion-pantheon gene.
-        // The two options deliberately compose, so either one keeps
-        // God-King until the city-founding pantheon is affordable.
-        if (self.expansion_pantheon || self.rapid_city_expansion)
-            && self.pantheon_faith_card_pays(g, pid)
-        {
+        if self.expansion_pantheon && self.pantheon_faith_card_pays(g, pid) {
             temporary.retain(|card| *card != "god_king");
             temporary.insert(0, "god_king");
         }
@@ -15664,18 +15573,27 @@ impl AdvancedAi {
             desired.splice(0..0, nobel_peace_direct_favor_cards.iter().copied());
         }
 
-        // If circumstances changed, remove a downside-bearing Dark Age card
-        // immediately.  Most importantly, Isolationism can never coexist with
-        // a live settler or an Expansion plan.
+        // Tourism defense must enter the protected set before ordinary cards
+        // are considered, including when the empire targets another victory.
+        let culture_defense_cards = self.culture_defense_cards(g, pid);
+        desired.retain(|card| !culture_defense_cards.contains(card));
+        desired.splice(0..0, culture_defense_cards.iter().copied());
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
+        // If circumstances changed, remove a downside-bearing Dark Age card
+        // immediately. Isolationism must not coexist with a live Settler.
+
         let unsafe_dark_cards: Vec<Name> = g.players[pid]
             .policies
             .iter()
-            .filter(|card| g.rules.policies[card].dark_age && !desired_set.contains(card.as_str()))
+            .filter(|card| {
+                (g.rules.policies[card].dark_age
+                    || (self.victory_planning && card.as_str() == "music_censorship"))
+                    && !desired_set.contains(card.as_str())
+            })
             .cloned()
             .collect();
         for card in unsafe_dark_cards {
-            think!(self.journal(), Policies, Decision, "Dropping the Dark Age card {}", plain(&card);
+            think!(self.journal(), Policies, Decision, "Dropping the situational card {}", plain(&card);
                    "its downside no longer suits the {} plan", objective.as_str());
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
@@ -15729,6 +15647,12 @@ impl AdvancedAi {
                 .iter()
                 .filter(|current| {
                     !desired_set.contains(current.as_str())
+                        // Defensive cards must be able to take an occupied
+                        // slot, but never evict each other or a different
+                        // typed lane card merely to borrow wildcard capacity.
+                        || (culture_defense_cards.contains(&card)
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && g.rules.policies[current].slot == g.rules.policies[card].slot)
                         // An ordinary desired card normally remains protected
                         // from a policy reassessment. A live Nobel Peace
                         // direct-Favor card is a timed host competition action,
@@ -16132,6 +16056,16 @@ impl AdvancedAi {
         } else if denied_partner {
             return -1_000.0;
         }
+        // `culture-threat-early`: passage is the one thing a proposal can
+        // ask of us that finances a rival's culture finish; a threat's
+        // offer of it is refused outright. See `advanced/culture_strategy.rs`.
+        if deal.open_borders
+            && !deal.peace
+            && self.culture_threat_early
+            && self.culture_trade_threats(g, pid).contains(&partner)
+        {
+            return -1_000.0;
+        }
         if deal.open_borders {
             value += match plan.strategy {
                 GrandStrategy::Culture => 70.0,
@@ -16215,11 +16149,13 @@ impl AdvancedAi {
             .victory_target
             .map(VictoryTarget::strategy)
             .unwrap_or(strategy);
+        let culture_threats = self.culture_trade_threats(g, pid);
         if objective == GrandStrategy::Culture && g.turn % 6 == pid as u32 % 6 {
             let best = g
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.item == "open_borders"
                         && deal.direction == "buy"
@@ -16247,6 +16183,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     deal.category == "great_work"
                         && deal.direction == "buy"
@@ -16275,6 +16212,7 @@ impl AdvancedAi {
                 .quick_deals(pid)
                 .into_iter()
                 .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
                 .filter(|deal| {
                     !(deal.category == "great_work" && deal.direction == "sell")
                         && deal.my_value >= 2.0
@@ -16291,8 +16229,26 @@ impl AdvancedAi {
             }
             return;
         }
-        self.base
-            .bilateral_trade_excluding(g, pid, excluded_partner);
+        if culture_threats.is_empty() {
+            self.base
+                .bilateral_trade_excluding(g, pid, excluded_partner);
+        } else if !self.base.minor && !self.base.barb && g.turn % 6 == pid as u32 % 6 {
+            let best = g
+                .quick_deals(pid)
+                .into_iter()
+                .filter(|deal| Some(deal.partner) != excluded_partner)
+                .filter(|deal| self.culture_deal_allowed(deal, &culture_threats))
+                .max_by(|left, right| {
+                    self.base
+                        .deal_objective(left)
+                        .total_cmp(&self.base.deal_objective(right))
+                });
+            if let Some(deal) =
+                best.filter(|deal| deal.my_value >= 2.0 && deal.partner_value >= 2.0)
+            {
+                self.base.close_quick_deal(g, pid, deal);
+            }
+        }
     }
 
     fn propose_strategic_alliance(
@@ -18125,6 +18081,13 @@ impl AdvancedAi {
         if self.war_plan.is_none() {
             self.strategic_bilateral_trade(g, pid, denied_trade_partner, plan.strategy);
         }
+        // `culture-threat-early`: a culture threat is denounced. See
+        // `advanced/culture_strategy.rs`.
+        if let Some(rival) = self.culture_threat_denunciation(g, pid) {
+            think!(self.journal(), Diplomacy, Decision,
+                   "Denouncing {}", g.players[rival].civ;
+                   "their tourism is a culture threat");
+        }
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
@@ -18306,6 +18269,13 @@ impl AdvancedAi {
                     think!(self.journal(), Diplomacy, Decision,
                            "Offering peace to {}", g.players[*other].civ;
                            "{because}: {my_power:.0} power against their {their_power:.0}");
+                }
+                // A live peace order is only an offer. The host may refuse it
+                // or require tribute, so its next exported war state must end
+                // the war. The report above emits the offer without letting
+                // this speculative pass turn the army's threat field off.
+                if pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty() {
+                    continue;
                 }
                 // Keep this narrow: ordinary adaptive seats still negotiate,
                 // and an appointed campaign or Emergency war retains its
@@ -18689,26 +18659,6 @@ impl AdvancedAi {
                     };
                     let already_secure = g.suzerain_of(minor.id) == Some(pid) && mine > rival + 1;
                     let overfunded_uncontested = self.bank_envoys && already_secure && mine >= 6;
-                    // `contested-suzerainty-brake`: the two shapes of a race
-                    // this seat cannot hold. The brake above sees only the
-                    // UNCONTESTED overstack, because `already_secure` is false
-                    // exactly when a rival is level — which is when the next
-                    // envoy is likeliest to be matched and lost. See
-                    // `AdvancedAi::contested_suzerainty_brake`.
-                    let leader_at_war = rival > 0
-                        && g.players
-                            .iter()
-                            .filter(|p| !p.is_minor && !p.is_barbarian && p.id != pid)
-                            .filter(|p| g.envoys_at(p.id, minor.id) == rival)
-                            .any(|p| g.is_at_war(pid, p.id));
-                    // The belligerent clause needs a rival that could actually
-                    // HOLD the prize and levy it: `mine.max(3)` is the engine's
-                    // own suzerainty floor (`3_i64.max(rival + 1)` above), so a
-                    // fresh city-state where an enemy happens to hold one envoy
-                    // is still worth opening for its 1/3/6 tier.
-                    let contested_race = self.contested_suzerainty_brake
-                        && ((rival >= mine.max(3) && leader_at_war)
-                            || (mine >= CONTESTED_ENVOY_STACK_CAP && rival + 1 >= mine));
                     let shared_from_partner = g.suzerain_of(minor.id).is_some_and(|leader| {
                         leader != pid
                             && g.alliance_with(pid, leader).is_some_and(|alliance| {
@@ -18746,9 +18696,6 @@ impl AdvancedAi {
                     } else {
                         0
                     };
-                    // `flip_nearby_city_states`: where the city-state is, and
-                    // whose it is. See `advanced/field_craft.rs`.
-                    let place = self.flip_nearby_city_state_bonus(g, pid, minor.id, needed);
                     // `coalition_before_war`: the city-state's place next to
                     // the war desk's target. See `advanced/coalition.rs`.
                     let coalition = self.coalition_city_state_bonus(g, pid, minor.id, needed);
@@ -18760,18 +18707,49 @@ impl AdvancedAi {
                         + denial
                         + suzerain_prize
                         + nobel_peace_suzerain_prize
-                        + place
                         + coalition
                         + across
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
-                        } else if contested_race {
-                            CONTESTED_RACE_ENVOY_PENALTY
                         } else {
                             already_secure as i64 * 80
                         }
                         - shared_from_partner as i64 * 300;
+                    let score = if self.envoy_building_dividends {
+                        let ours = g.suzerain_of(minor.id) == Some(pid);
+                        g.envoy_investment_options(pid, minor.id)
+                            .into_iter()
+                            .map(|(placements, count, yields)| {
+                                let economic = self.yield_value(yields, strategy) * 14.0;
+                                let capture = !ours && count >= 3 && count > rival;
+                                let defend = ours && mine == rival + 1 && count > mine;
+                                // A rival's delegation does not tax Library or
+                                // University income. Identity, denial and the
+                                // unique prize pay only on a reachable takeover
+                                // or defense, and a shared prize is not bought twice.
+                                let political = if (capture || defend) && !shared_from_partner {
+                                    (alignment + unique_alignment) * 10
+                                        + if capture {
+                                            denial
+                                                + (suzerain_prize
+                                                    + nobel_peace_suzerain_prize
+                                                    + coalition
+                                                    + across)
+                                                    * needed
+                                        } else {
+                                            0
+                                        }
+                                } else {
+                                    0
+                                };
+                                ((economic + political as f64) / placements as f64).round() as i64
+                            })
+                            .max()
+                            .unwrap_or(0)
+                    } else {
+                        score
+                    };
                     (
                         score,
                         std::cmp::Reverse(needed),
@@ -18782,6 +18760,13 @@ impl AdvancedAi {
                 .max()
                 .map(|(score, _, _, id)| (id, score));
             let Some((target, score)) = target else { break };
+            if self.envoy_building_dividends && score <= 0 {
+                think!(self.journal(), Diplomacy, Decision,
+                       "Saving envoys for a paying threshold";
+                       "{} placements available; no reachable building dividend or worthwhile suzerainty",
+                       g.players[pid].envoys_free);
+                break;
+            }
             // See `bank_envoys`: retain the bounded discovery/reclaim reserve
             // once nothing on the board is worth an Envoy. Any surplus has a
             // productive opportunity cost, so it reinforces the best available
@@ -18933,7 +18918,7 @@ impl AdvancedAi {
                 (GrandStrategy::Religion, "prophet") if g.players[pid].religion.is_none() => 650.0,
                 (GrandStrategy::Expansion | GrandStrategy::Recovery, "engineer" | "merchant")
                 | (GrandStrategy::Science | GrandStrategy::Culture, "engineer") => 300.0,
-                // `enter-the-prophet-race`: the Prophet is this seat's lane
+                // `enter-the-prophet-race-2`: the Prophet is this seat's lane
                 // great person while a slot is still open for it.
                 (_, "prophet") if self.prophet_race_enterable_for(g, pid, self.victory_target) => {
                     650.0
@@ -19610,11 +19595,10 @@ impl AdvancedAi {
         } else {
             reserve
         };
-        // `treasury-at-work`: the reserve is what one emergency costs plus
+        // `treasury-at-work-2`: the reserve is what one emergency costs plus
         // what a deficit would drain before it can be corrected, not a flat
         // sum that grows with every city founded. `stock` comes back
-        // unchanged while both versions are off. See
-        // `advanced/gold_and_cards.rs`.
+        // unchanged while the gene is off. See `advanced/gold_and_cards.rs`.
         let reserve = self.working_treasury_reserve(g, pid, reserve);
         // `threatened-city-reserve`: never below one emergency defender
         // while a city of ours is threatened or bleeding. `stock` comes back
@@ -19667,28 +19651,13 @@ impl AdvancedAi {
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
                 if let Action::BuyPlot { city, pos, cost } = &action {
-                    // A highly productive Science tile — or its one cheap
-                    // connector — is a durable science asset, not ordinary
-                    // surplus ground. Its scorer keeps the actual
-                    // war/defence floor, but lets it compete with the unit
-                    // and building candidates below instead of hiding it
-                    // behind the broad working reserve.
-                    if let Some(score) = self.exceptional_science_plot_score(g, pid, plan, &action)
-                    {
-                        candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
-                        continue;
-                    }
                     // See `district_planning`: the plan may have named this
                     // very plot for a very valuable district site. That buy
-                    // competes as a strategic purchase, not a surplus one —
-                    // and under `district-planning-2` it may spend into the
-                    // reserve, though never below half of it. Version 3 keeps
-                    // the whole reserve, but removes version 1's extra
-                    // 200-Gold surplus requirement when the idle city can
-                    // actually start the plan's head next.
-                    let affordable_to_the_plan = if self.district_planning_2 {
-                        bank + f64::EPSILON >= reserve * 0.5 + cost
-                    } else if self.district_planning_3 {
+                    // competes as a strategic purchase, not a surplus one.
+                    // Version 3 keeps the whole reserve, but removes version
+                    // 1's extra 200-Gold surplus requirement when the idle
+                    // city can actually start the plan's head next.
+                    let affordable_to_the_plan = if self.district_planning_3 {
                         bank + f64::EPSILON >= reserve + cost
                     } else {
                         bank + f64::EPSILON >= reserve + 200.0 + cost
@@ -19998,9 +19967,9 @@ impl AdvancedAi {
         if matches!(item, Item::Unit { .. }) && production_score < 120.0 {
             return None;
         }
-        // `treasury-at-work`: a treasury at work stays solvent — a unit
+        // `treasury-at-work-2`: a treasury at work stays solvent — a unit
         // whose upkeep would take the recurring budget below zero is not
-        // bought. Always true while the family is off.
+        // bought. Always true while the gene is off.
         if !self.treasury_purchase_stays_solvent(g, pid, item) {
             return None;
         }
@@ -20010,11 +19979,20 @@ impl AdvancedAi {
         if after.players[pid].gold + f64::EPSILON < reserve {
             return None;
         }
-        let positional = production_score * (7.0 + turns.max(1.0));
+        // Undo the production scorer's actual time divisor before applying
+        // the purchase gene's opportunity-cost adjustment. Otherwise a faster
+        // build raises willingness to BUY the item as well, merely because
+        // the old unmodified divisor no longer cancels the production score.
+        let raw_turns = g.item_remaining_cost_for_city(pid, city, item) / production;
+        let build_turns = self.production_build_turns(g, pid, city, item);
+        let purchase_basis = if build_turns == raw_turns {
+            production_score
+        } else {
+            production_score * self.production_time_divisor(g, city, item, build_turns)
+                / self.production_time_divisor(g, city, item, raw_turns)
+        };
+        let positional = purchase_basis * (7.0 + turns.max(1.0));
         let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30 * card;
-        // `gold_for_the_young_city`: the same money buys more turns where
-        // the Production is not. Exactly 1.0 with the gene off.
-        let score = score * self.young_city_premium(g, pid, city);
         (score >= 120.0).then_some(score)
     }
 
@@ -21503,96 +21481,6 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// Whether the science victory can still be completed before the turn
-    /// limit. Prices the remaining chain against the turns left: production
-    /// of the launch pad (if no commitment stands) and every project not yet completed
-    /// at the empire's best city, research of the unknown ancestors of those
-    /// projects' techs at the empire's own pace (both overlap, so the larger
-    /// counts), then the fifty light-years at the current expedition speed.
-    /// Always true without a turn limit. See `score_horizon`.
-    pub(crate) fn space_race_can_finish(&self, g: &Game, pid: usize) -> bool {
-        if g.max_turns == 0 {
-            return true;
-        }
-        // `science_victory_drive`: a driving seat prices the race as the
-        // engine runs it (the project multiplier, the zone chain it is about
-        // to build, a flight with laser stations) and attempts it inside a
-        // stretch of the turns left. See `science_drive_race_fits`.
-        if self.science_drive_active() {
-            return self.science_drive_race_fits(g, pid);
-        }
-        let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
-        let player = &g.players[pid];
-        let completed = &player.science_projects;
-        let chain = [
-            "launch_earth_satellite",
-            "launch_moon_landing",
-            "launch_mars_colony",
-            "exoplanet_expedition",
-        ];
-        let mut production = 0.0;
-        let mut techs_needed: BTreeSet<Name> = BTreeSet::new();
-        for project in chain {
-            if completed.contains(project) {
-                continue;
-            }
-            let Some(spec) = g.rules.projects.get(project) else {
-                continue;
-            };
-            production += g.item_cost(&Item::Project {
-                project: Name::new(project),
-            });
-            if let Some(tech) = spec.tech {
-                if !player.techs.contains(&tech) {
-                    techs_needed.insert(tech);
-                    if let Some(ancestors) = g.rules.tech_ancestors.get(tech.as_str()) {
-                        for ancestor in ancestors {
-                            let ancestor = Name::new(ancestor);
-                            if !player.techs.contains(&ancestor) {
-                                techs_needed.insert(ancestor);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let city_ids = g.player_city_ids(pid);
-        let has_spaceport = city_ids
-            .iter()
-            .copied()
-            .any(|cid| Self::city_has_spaceport_commitment(g, cid));
-        if !has_spaceport {
-            production += g.item_cost(&Item::District {
-                district: crate::name!("spaceport"),
-                pos: (0, 0),
-            });
-        }
-        let best_production = city_ids
-            .iter()
-            .map(|cid| g.city_yields(*cid).production)
-            .fold(0.0, f64::max)
-            .max(1.0);
-        let production_turns = production / best_production;
-        // The empire's own pace: techs known per turn so far, floored at the
-        // ruleset's ordinary cadence so a fresh board does not read as instant.
-        let turns_per_tech = if player.techs.is_empty() {
-            8.0
-        } else {
-            (g.turn as f64 / player.techs.len() as f64).max(2.0)
-        };
-        let research_turns = techs_needed.len() as f64 * turns_per_tech;
-        // Travel is priced generously — the two laser stations that a racing
-        // empire builds triple the base speed — so the horizon only closes a
-        // race that is out of reach, never one that is merely hard.
-        let speed = g.exoplanet_speed(pid).max(3.0);
-        let travel_turns = if completed.contains("exoplanet_expedition") {
-            (crate::game::EXOPLANET_DESTINATION - player.exoplanet_distance).max(0.0) / speed
-        } else {
-            crate::game::EXOPLANET_DESTINATION / speed
-        };
-        production_turns.max(research_turns) + travel_turns <= remaining_turns
-    }
-
     /// The one city that may claim the 3,000-point first-pad rung: the
     /// empire's best-production city with no Spaceport, and only while no
     /// other city of ours already has one standing or in its queue. `None`
@@ -21705,12 +21593,14 @@ impl AdvancedAi {
     }
 
     /// Whether the game has entered the victory-specialization half of its
-    /// clock. The turn limit is the cleanest common denominator across game
-    /// speeds; an unlimited game has no clock boundary, so its Industrial-era
-    /// fallback keeps the same early-development/midgame split.
+    /// clock. A shortened game accelerates this boundary, but extending the
+    /// verification cap cannot postpone development past the normal speed's
+    /// halfway point: rivals do not slow down when the operator retains more
+    /// turns of evidence. Unlimited games keep their Industrial-era fallback.
     fn victory_specialization_active(g: &Game) -> bool {
         if g.max_turns > 0 {
-            g.turn.saturating_mul(2) >= g.max_turns
+            let development_clock = g.max_turns.min(g.game_speed.turn_limit());
+            g.turn.saturating_mul(2) >= development_clock
         } else {
             g.world_era >= 4
         }
@@ -21742,41 +21632,6 @@ impl AdvancedAi {
                     )
                 })
         })
-    }
-
-    /// Whether a nuclear project queued now in `cid` can end in a finished
-    /// device before the turn limit: the project itself plus the device it
-    /// unlocks (or the device alone), at this city's production. Always true
-    /// without a turn limit. See `score_horizon`.
-    pub(crate) fn nuclear_lane_can_finish(
-        &self,
-        g: &Game,
-        _pid: usize,
-        cid: u32,
-        project: &str,
-    ) -> bool {
-        if g.max_turns == 0 {
-            return true;
-        }
-        let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
-        let cost = |name: &str| {
-            if g.rules.projects.contains_key(name) {
-                {
-                    g.item_cost(&Item::Project {
-                        project: Name::new(name),
-                    })
-                }
-            } else {
-                0.0
-            }
-        };
-        let total = match project {
-            "manhattan_project" => cost("manhattan_project") + cost("build_nuclear_device"),
-            "operation_ivy" => cost("operation_ivy") + cost("build_thermonuclear_device"),
-            other => cost(other),
-        };
-        let production = g.city_yields(cid).production.max(1.0);
-        total / production <= remaining_turns
     }
 
     /// The normal denial alarm starts at 78, which is right for an army that
@@ -22101,7 +21956,6 @@ impl AdvancedAi {
         &self,
         g: &Game,
         pid: usize,
-        cid: u32,
         project: &str,
         plan: &StrategicPlan,
     ) -> f64 {
@@ -22124,9 +21978,6 @@ impl AdvancedAi {
         let thermonuclear_needed = goal.needs_thermonuclear && thermonuclear_devices == 0;
         if stockpile >= goal.desired_stockpile && !thermonuclear_needed {
             return -10_000.0;
-        }
-        if self.score_horizon && !self.nuclear_lane_can_finish(g, pid, cid, project) {
-            return 0.0;
         }
         let completed = &g.players[pid].science_projects;
         let base = 760.0
@@ -22172,23 +22023,27 @@ impl AdvancedAi {
         if city_count == 0 {
             return 0;
         }
-        // A pad whose launch chain cannot fit is not a useful fallback
-        // district. Any already-finished Spaceport remains, but an unfinished
-        // one should release its city back to ordinary development.
-        if self.score_horizon && !self.space_race_can_finish(g, pid) {
-            return 0;
-        }
         let completed = &g.players[pid].science_projects;
         let earth_satellite_started = !completed.contains("launch_earth_satellite")
             && Self::science_project_is_queued(g, pid, "launch_earth_satellite");
-        let desired = if self.science_drive_active() {
+        let desired = if self.science_drive_active()
+            || (self.victory_planning
+                && (self.space_race_lane(g, pid)
+                    || self.raced_target() == Some(VictoryTarget::Science)))
+        {
             // The drive starts its second pad as soon as the Earth Satellite
             // is underway, so it is ready for the later parallel laser phase.
-            Self::science_drive_desired_pads(completed).max(if earth_satellite_started {
-                2
-            } else {
-                1
-            })
+            Self::science_drive_desired_pads(completed).max(
+                if self.victory_planning
+                    && Self::science_project_is_queued(g, pid, "launch_mars_colony")
+                {
+                    3
+                } else if earth_satellite_started {
+                    2
+                } else {
+                    1
+                },
+            )
         } else if self.space_race_lane(g, pid)
             || self.raced_target() == Some(VictoryTarget::Science)
         {
@@ -22410,8 +22265,8 @@ impl AdvancedAi {
                             .total_cmp(&right.0)
                             .then_with(|| right.1.cmp(&left.1))
                     });
-                // A score-horizon guard can correctly make every ordinary
-                // production score negative late in a game. It must not leave
+                // Every ordinary production score can correctly go negative
+                // late in a game. That must not leave
                 // an already-illegal fourth Spaceport running, though. In
                 // that exceptional case reclaim the queue for a concrete
                 // repair/building, a Builder, or finally a Science/Industrial
@@ -22472,21 +22327,11 @@ impl AdvancedAi {
         }
     }
 
-    /// The science lane's production pass, behind the turn-limit horizon:
-    /// `science_production` when the race can still finish, a journaled skip
-    /// when it cannot. See `score_horizon`.
+    /// The science lane's production pass: the Spaceport queues rebalanced,
+    /// then `science_production`.
     fn space_race_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.rebalance_science_spaceport_queues(g, pid, plan);
-        if !self.score_horizon || self.space_race_can_finish(g, pid) {
-            self.science_production(g, pid);
-        } else {
-            think!(self.journal(), Cities, Detail,
-                   "The space race cannot finish before the turn limit";
-                   "{} turns left; the launch pad, the remaining projects, their techs \
-                    and fifty light-years do not fit, so the cities build for the tally \
-                    instead of a Spaceport",
-                   g.max_turns.saturating_sub(g.turn));
-        }
+        self.science_production(g, pid);
         self.repair_stalled_science_project_queues(g, pid);
     }
 
@@ -22501,7 +22346,9 @@ impl AdvancedAi {
     /// the project's progress by its normal item key, repairs the launch site,
     /// and lets the next science pass resume the same rung.
     fn repair_stalled_science_project_queues(&self, g: &mut Game, pid: usize) {
-        if self.raced_target() != Some(VictoryTarget::Science) {
+        if self.raced_target() != Some(VictoryTarget::Science)
+            && !self.science_endgame_committed(g, pid)
+        {
             return;
         }
         let is_science_project = |project: &str| {
@@ -22565,6 +22412,10 @@ impl AdvancedAi {
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
+        if self.schedule_science_endgame(g, pid) {
+            self.science_spaceport_production(g, pid);
+            return;
+        }
         // See `lane_space_race`: every gate below asks for an EXPLICITLY
         // assigned Science target, so the adaptive agent production ships —
         // which has no target at all — races the space race at one pad, and
@@ -22615,12 +22466,22 @@ impl AdvancedAi {
                                 || self.raced_target() == Some(VictoryTarget::Science)
                                 || g.cities[cid].queue.is_empty())
                     })
-                    .max_by(|a, b| {
-                        g.city_yields(*a)
-                            .production
-                            .partial_cmp(&g.city_yields(*b).production)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| b.cmp(a))
+                    .min_by(|a, b| {
+                        if races_science || self.raced_target() == Some(VictoryTarget::Science) {
+                            Self::science_project_build_turns(g, pid, *a, &project_item)
+                                .total_cmp(&Self::science_project_build_turns(
+                                    g,
+                                    pid,
+                                    *b,
+                                    &project_item,
+                                ))
+                                .then_with(|| a.cmp(b))
+                        } else {
+                            g.city_yields(*b)
+                                .production
+                                .total_cmp(&g.city_yields(*a).production)
+                                .then_with(|| a.cmp(b))
+                        }
                     })
             };
             if let Some(city) = project_city {
@@ -22635,6 +22496,11 @@ impl AdvancedAi {
             }
         }
 
+        self.science_spaceport_production(g, pid);
+    }
+
+    fn science_spaceport_production(&self, g: &mut Game, pid: usize) {
+        let races_science = self.space_race_lane(g, pid);
         let city_ids = g.player_city_ids(pid);
         if Self::science_spaceport_commitments(g, pid) >= self.science_spaceport_target(g, pid) {
             return;
@@ -23168,7 +23034,7 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether the live war-production path must yield to the baseline
+    /// Whether war or targeted science/culture production must yield to the baseline
     /// solvency recovery before it adds another upkeep bill.
     ///
     /// `BasicAi::product_for` uses the same reserve-and-deficit predicate:
@@ -23184,14 +23050,24 @@ impl AdvancedAi {
     /// Keep the baseline's emergency exception. An empire at major war with
     /// fewer military units than cities may still raise its first garrison;
     /// every other live war queue takes the same recovery branch that the
-    /// ordinary governor would have used.
+    /// ordinary governor would have used. Science targeting also bypasses the
+    /// baseline picker, including when the optional war-economy gene is off.
+    /// Rome on 2026-09-08 stayed insolvent from t100 through t190 in peace
+    /// while this guard was disabled, continually replacing unpaid units.
     fn live_war_economy_requires_recovery(
         &self,
         g: &Game,
         pid: usize,
         counts: &EmpireCounts,
     ) -> bool {
-        if !self.war_economy || self.base.minor || self.base.barb {
+        if (!self.war_economy
+            && !matches!(
+                self.active_victory_target(g),
+                Some(VictoryTarget::Science | VictoryTarget::Culture)
+            ))
+            || self.base.minor
+            || self.base.barb
+        {
             return false;
         }
         let city_count = g.player_city_ids(pid).len();
@@ -23207,6 +23083,88 @@ impl AdvancedAi {
             g.players[pid].gold_per_turn < -0.5 && g.players[pid].gold < recovery_reserve;
         let emergency_defense = at_major_war && counts.military < city_count.max(1);
         economic_recovery && !emergency_defense
+    }
+
+    /// Science must stop adding recurring expenses before a bankrupt queue
+    /// finishes. Repairs, victory projects, income infrastructure, and local
+    /// defenders retain their banked commitment.
+    fn science_recovery_preempts(&self, g: &Game, item: &Item) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Science)
+            || Self::active_queue_is_defensive(g, item)
+        {
+            return false;
+        }
+        match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[unit].maintenance > 0.0
+            }
+            Item::Building { building } => {
+                let spec = &g.rules.buildings[building];
+                spec.maintenance > spec.yields.gold
+            }
+            Item::District { district, .. } => {
+                !matches!(
+                    g.district_family(*district).as_str(),
+                    "commercial_hub" | "harbor" | "spaceport"
+                ) && g.rules.districts[district].maintenance > 0.0
+            }
+            _ => false,
+        }
+    }
+
+    /// Modernize one existing core defender before discretionary spending.
+    /// A reserve and the incremental maintenance bill must both fit; matching
+    /// an unaffordable rival army is not a sustainable defence strategy.
+    fn modernize_science_core(&self, g: &mut Game, pid: usize) {
+        if self.active_victory_target(g) != Some(VictoryTarget::Science) || self.war_plan.is_some()
+        {
+            return;
+        }
+        let cities = g.player_city_ids(pid);
+        let reserve = 100.0 + 25.0 * cities.len() as f64;
+        let best = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let unit = &g.units[&uid];
+                let from = &g.rules.units[unit.kind];
+                if from.class != "military"
+                    || from.siege
+                    || matches!(from.domain.as_deref(), Some("sea" | "air"))
+                {
+                    return None;
+                }
+                let core = cities
+                    .iter()
+                    .filter(|cid| {
+                        let city = &g.cities[cid];
+                        !city.districts.is_empty() && crate::hex::distance(city.pos, unit.pos) <= 3
+                    })
+                    .map(|cid| g.cities[cid].districts.len())
+                    .max()?;
+                let (target, price, _) = g.unit_gold_upgrade_offer(pid, uid)?;
+                let to = &g.rules.units[target];
+                let formation = match unit.formation {
+                    0 => 1.0,
+                    1 => 2.0,
+                    _ => 3.0,
+                };
+                let upkeep = (to.maintenance - from.maintenance).max(0.0) * formation;
+                let gain = to.strength.max(to.ranged_attack_strength())
+                    - from.strength.max(from.ranged_attack_strength());
+                (gain > 0.0
+                    && g.players[pid].gold - price >= reserve
+                    && g.players[pid].gold_per_turn >= upkeep)
+                    .then_some((core, gain / price.max(1.0), std::cmp::Reverse(uid), uid))
+            })
+            .max_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.total_cmp(&b.1))
+                    .then(a.2.cmp(&b.2))
+            });
+        if let Some((_, _, _, uid)) = best {
+            let _ = g.apply(pid, &Action::UpgradeUnit { unit: uid });
+        }
     }
 
     /// The adaptive agent normally delegates routine city queues to the
@@ -23817,105 +23775,6 @@ impl AdvancedAi {
                    "{} pauses a repeatable project for a settler", city_name;
                    "worth {score:.0}; the peaceful {} plan has {city_count} cities and wants {}",
                    plan.strategy.as_str(), plan.desired_cities);
-        }
-    }
-
-    /// Keep the rapid gene's legal Settler pipeline occupied while there is a
-    /// nearby practical site. The ordinary governor only examines empty
-    /// queues, which leaves a fast city plan waiting behind a slinger, Builder
-    /// or district even when it still has several Settler seats open.
-    ///
-    /// This is deliberately a peaceful, bounded override: active major wars,
-    /// recovery, a named threatened city, a full pipeline, and an exhausted
-    /// site search all retain their normal owners. Replaced progress stays in
-    /// the city's normal bank and resumes after the settlement wave fills.
-    fn rapid_expansion_settler_wave(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.rapid_city_expansion
-            || matches!(
-                plan.strategy,
-                GrandStrategy::Conquest | GrandStrategy::Recovery
-            )
-        {
-            return;
-        }
-        let active_major_war = g.players.iter().any(|player| {
-            player.id != pid
-                && player.alive
-                && !player.is_minor
-                && !player.is_barbarian
-                && g.is_at_war(pid, player.id)
-        });
-        if active_major_war {
-            return;
-        }
-
-        let city_ids = g.player_city_ids(pid);
-        let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
-        let counts = self.counts(g, pid);
-        let has_practical_site = city_ids.iter().any(|city| {
-            let origin = g.cities[city].pos;
-            if self.settler_site_gate {
-                // `settler-site-gate`: the wave fills seats, not queues.
-                return self
-                    .settler_site_gate(g, pid, origin, counts.settlers)
-                    .is_ok();
-            }
-            self.settle_site_exists(g, pid, origin, 10)
-                || (shipbuilding
-                    && self.settle_site_exists(g, pid, origin, g.map.width + g.map.height))
-        });
-        if !has_practical_site {
-            return;
-        }
-        let city_count = city_ids.len();
-        let desired = plan.desired_cities;
-        if city_count + counts.settlers >= desired {
-            return;
-        }
-        let allowance = self.settler_pipeline_width(g, pid, desired, city_count, counts.settlers);
-        let open_seats = allowance.saturating_sub(counts.settlers);
-        if open_seats == 0 {
-            return;
-        }
-
-        let settler = Item::Unit {
-            unit: crate::name!("settler"),
-        };
-        let mut candidates: Vec<u32> = city_ids
-            .into_iter()
-            .filter(|city| plan.threatened_city != Some(*city))
-            .filter(|city| {
-                !matches!(
-                    g.cities[city].queue.first(),
-                    Some(Item::Unit { unit }) if unit == "settler"
-                ) && g.can_produce(pid, *city, &settler)
-            })
-            .collect();
-        candidates.sort_by(|left, right| {
-            g.city_yields(*right)
-                .production
-                .total_cmp(&g.city_yields(*left).production)
-                .then_with(|| g.cities[right].pop.cmp(&g.cities[left].pop))
-                .then(left.cmp(right))
-        });
-
-        for city in candidates.into_iter().take(open_seats) {
-            let city_name = g.cities[&city].name.clone();
-            if g.apply(
-                pid,
-                &Action::Produce {
-                    city,
-                    item: settler.clone(),
-                },
-            )
-            .is_ok()
-                && self.journal().wants(crate::reasoning::Level::Decision)
-            {
-                think!(self.journal(), Economy, Decision,
-                       "{} joins the rapid Settler wave", city_name;
-                       "{city_count} cities against a target of {desired}, with {} of {allowance} Settlers already in flight",
-                       counts.settlers);
-            }
         }
     }
 
@@ -24574,10 +24433,8 @@ impl AdvancedAi {
             if committed.is_some() {
                 self.clear_idle_production_streak(cid);
             }
-            // The ordinary governor's recovery path only receives empty
-            // queues. Preserve that contract even when an experimental
-            // preemption margin is active: a banked unit can finish, but no
-            // fresh upkeep-bearing commitment starts while the treasury heals.
+            // Recovery preserves useful commitments. Targeted science may
+            // bank an upkeep-heavy queue below when it deepens the deficit.
             // `siege-preempts-the-queue`: see `advanced/siege_response.rs`. A
             // raider within `SIEGE_RADIUS` of a city with no defender at all is
             // bought out of the treasury first; a queue holding anything but a
@@ -24620,7 +24477,14 @@ impl AdvancedAi {
                     }
                 }
             }
-            if committed.is_some() && (self.preempt_margin <= 1.0 || economic_recovery) {
+            let recovery_preemption = economic_recovery
+                && committed
+                    .as_ref()
+                    .is_some_and(|(_, item)| self.science_recovery_preempts(g, item));
+            if committed.is_some()
+                && !recovery_preemption
+                && (self.preempt_margin <= 1.0 || economic_recovery)
+            {
                 continue;
             }
             if economic_recovery {
@@ -24646,7 +24510,7 @@ impl AdvancedAi {
                                 "{} starts {}", city_name, Self::plain_item(&item);
                                 "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
                         }
-                        counts.add_item(g, &item);
+                        counts = self.counts(g, pid);
                         self.clear_idle_production_streak(cid);
                     }
                 }
@@ -24841,15 +24705,21 @@ impl AdvancedAi {
             }
             // An explicit Science target makes the same contract as the
             // opt-in reserve: once a city has paid for a Campus, finish its
-            // cheapest owed Campus-family building before the generic scorer
-            // can spend the queue on a Theater Square or another unrelated
+            // cheapest owed Campus-family building or a higher-valued industrial
+            // foundation before spending the queue on a Theater Square or another unrelated
             // item. Adaptive seats still need the independently screenable
             // gene; only a named Science lane gets this invariant for free.
             if committed.is_none() && (self.first_research_building_reserve || science_specialized)
             {
                 let owed = Self::first_owed_campus_building(g, pid, cid);
                 if let Some(building) = owed {
-                    let item = Item::Building { building };
+                    let item = self.research_or_industrial_foundation(
+                        g,
+                        pid,
+                        cid,
+                        Item::Building { building },
+                        plan,
+                    );
                     if g.can_produce(pid, cid, &item)
                         && g.apply(
                             pid,
@@ -24914,6 +24784,33 @@ impl AdvancedAi {
                                 "the promoted baseline repair was unreachable in strategic production; {} Amenities short",
                                 shortfall);
                         }
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
+            // A named lane compounds a repayable industrial foundation
+            // before discretionary Spies, extra districts and projects. The
+            // preceding survival, research, growth and income reservations
+            // retain priority, and existing commitments are never displaced.
+            if committed.is_none() {
+                if let Some(item) = self.profitable_industrial_foundation(g, pid, cid, plan) {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} invests in {}", city_name, Self::plain_item(&item);
+                                "the industrial foundation can repay its remaining production cost before the clock");
+                        }
+                        counts.add_item(g, &item);
                         self.clear_idle_production_streak(cid);
                         continue;
                     }
@@ -26061,11 +25958,7 @@ impl AdvancedAi {
                 .settler_blocked_turns
                 .values()
                 .any(|turns| *turns >= SETTLER_REPLACEMENT_BLOCKED_TURNS);
-        if self.rapid_city_expansion && city_count + settlers < desired_cities {
-            (crate::ai::RAPID_EXPANSION_PIPELINE_BASE
-                + city_count / crate::ai::RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
-                .min(desired_cities - city_count)
-        } else if self.land_grab && city_count + settlers < desired_cities {
+        if self.land_grab && city_count + settlers < desired_cities {
             // ★★★★ THE LAND GRAB'S PIPELINE WIDENS WITH THE EMPIRE. See
             // `land_grab`: two walkers from the first city, one more for
             // every three cities held, never more than the seats still short
@@ -26326,6 +26219,23 @@ impl AdvancedAi {
         }
     }
 
+    fn production_build_turns(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        let production = g.city_yields(cid).production.max(1.0);
+        let rate = if self.victory_planning {
+            (production * g.item_prod_mult(pid, cid, Some(item))).max(1.0)
+        } else {
+            production
+        };
+        g.item_remaining_cost_for_city(pid, cid, item) / rate
+    }
+
+    fn production_time_divisor(&self, g: &Game, cid: u32, item: &Item, turns: f64) -> f64 {
+        let first_district = self.first_district_first
+            && g.cities[&cid].districts.is_empty()
+            && matches!(item, Item::District { district, .. } if g.rules.districts[district].specialty);
+        7.0 + turns.max(1.0) * if first_district { 0.6 } else { 1.0 }
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -26337,9 +26247,21 @@ impl AdvancedAi {
     ) -> f64 {
         let city = &g.cities[&cid];
         let city_count = g.player_city_ids(pid).len();
+        // The undermanned-war exception permits defenders, not another Spy
+        // replacement loop while the same treasury is already in deficit.
+        if g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < 100.0 + 25.0 * city_count as f64
+            && self.science_recovery_preempts(g, item)
+        {
+            return -10_000.0;
+        }
         let specialization_active = self.phase_specialization_active(g);
-        let production = g.city_yields(cid).production.max(1.0);
-        let turns = g.item_remaining_cost_for_city(pid, cid, item) / production;
+        // Colonization, Ilkum, Veterancy and project modifiers change when
+        // this exact item completes. The final score divides by these turns,
+        // so ignoring the multiplier both underprices discounted development
+        // and can reject a build that actually fits the remaining clock.
+        // The pinned pre-victory-planning controller keeps its old stream.
+        let turns = self.production_build_turns(g, pid, cid, item);
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
         let barbarian_tactics = self.base.barbarian_tactics_enabled();
         let barbarian_pressure = if barbarian_tactics {
@@ -26419,9 +26341,7 @@ impl AdvancedAi {
         // and the ground it claims is held. Wartime targets are already
         // larger and untouched.
         let desired_military =
-            if (self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
-                && !active_major_war
-            {
+            if (self.land_grab || self.rapid_city_expansion_2) && !active_major_war {
                 desired_military.max(city_count + counts.settlers)
             } else {
                 desired_military
@@ -26964,6 +26884,9 @@ impl AdvancedAi {
                     && great_work_vetoed
                     && !self.lane_lost
                     && !self.culture_floor_lifts_veto(g, pid, spec)
+                    && !(spec.yields.culture > 0.0
+                        && self.culture_race_production_bonus(g, pid, item, plan.strategy, turns)
+                            > 0.0)
                 {
                     return -10_000.0;
                 }
@@ -27096,15 +27019,29 @@ impl AdvancedAi {
                             .is_some_and(|family| family.as_str() == "industrial_zone")
                         && Self::city_holds_district_family(g, city, "industrial_zone")
                     {
-                        INDUSTRIAL_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
-                            + self.regional_production_reach(
-                                g,
-                                pid,
-                                city,
-                                building,
-                                spec,
-                                plan.strategy,
-                            )
+                        let regional = self.regional_production_reach(
+                            g,
+                            pid,
+                            city,
+                            building,
+                            spec,
+                            plan.strategy,
+                        );
+                        if self.active_victory_target(g).is_some() {
+                            (INDUSTRIAL_BUILDING_DEBT + regional)
+                                * self.industrial_investment_horizon(
+                                    g,
+                                    pid,
+                                    cid,
+                                    item,
+                                    spec,
+                                    regional,
+                                    plan.strategy,
+                                )
+                        } else {
+                            INDUSTRIAL_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
+                                + regional
+                        }
                     } else {
                         0.0
                     };
@@ -27391,7 +27328,11 @@ impl AdvancedAi {
                 // stays (no city is EVER told half the empire is enough once
                 // it can staff a Library) while the towns keep compounding
                 // until they qualify. Below the cliff nothing changes.
-                let campus_keeps_asking = false;
+                // `campus-before-halfway` wires that floor; withheld, the
+                // literal `false` of the 2026-08-19 repair stands.
+                let campus_keeps_asking = self.campus_before_halfway
+                    && family == "campus"
+                    && city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR;
 
                 let balanced_core = if self.first_district_first {
                     // `first-district-first`: a slope in place of the cliff.
@@ -27556,13 +27497,6 @@ impl AdvancedAi {
 
                 let strategic_family = match (plan.strategy, family.as_str()) {
                     (GrandStrategy::Science, "spaceport") if !specialization_active => 0.0,
-                    // See `score_horizon`: a launch pad that cannot launch in
-                    // time is two points of district and nothing else.
-                    (GrandStrategy::Science, "spaceport")
-                        if self.score_horizon && !self.space_race_can_finish(g, pid) =>
-                    {
-                        0.0
-                    }
                     // See `one_launch_pad`: the rung is empire-wide, so it
                     // belongs to one city — the one the race would actually be
                     // run in — and it lapses the moment a pad is on its way.
@@ -27589,6 +27523,11 @@ impl AdvancedAi {
                     }
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") if specialization_active => 170.0,
+                    // `campus-before-halfway`: the lane's own district keeps
+                    // its arm through the first half of the clock too.
+                    (GrandStrategy::Science, "campus") if self.campus_before_halfway => {
+                        CAMPUS_BEFORE_HALFWAY_DISTRICT
+                    }
                     (GrandStrategy::Science, "campus") => 0.0,
                     // One coastal Harbor pays back through empire-wide trade
                     // capacity and gold. During the foundation half the first
@@ -28091,7 +28030,7 @@ impl AdvancedAi {
                         | "operation_ivy"
                         | "build_nuclear_device"
                         | "build_thermonuclear_device" => {
-                            self.nuclear_project_value(g, pid, cid, project, plan)
+                            self.nuclear_project_value(g, pid, project, plan)
                         }
                         _ if spec.requires_host_competition() => {
                             // See `competition_victory_points`: first place in
@@ -28178,7 +28117,8 @@ impl AdvancedAi {
         // as the line above, and independent of it. See
         // `advanced/city_state_quests.rs`.
         let raw = if raw > 0.0 {
-            raw + self.production_boost_premium(g, pid, cid, item, raw)
+            raw + self.culture_race_production_bonus(g, pid, item, plan.strategy, turns)
+                + self.production_boost_premium(g, pid, cid, item, raw)
                 + self.quest_production_premium(g, pid, item, plan.strategy)
                 + self.quest_boost_premium(g, pid, item, plan.strategy)
         } else {
@@ -28207,14 +28147,7 @@ impl AdvancedAi {
         // 15-25 turns and divides by 22-32 while a Warrior divides by 12-17;
         // the district's raw score never gets to speak. For THIS city's first
         // specialty district only, the turns count at six tenths.
-        let first_district_item = self.first_district_first
-            && city.districts.is_empty()
-            && matches!(item, Item::District { district, .. } if g.rules.districts[district].specialty);
-        let divisor = if first_district_item {
-            7.0 + turns.max(1.0) * 0.6
-        } else {
-            7.0 + turns.max(1.0)
-        };
+        let divisor = self.production_time_divisor(g, cid, item, turns);
         completion_discount * raw / divisor
     }
 
@@ -28806,7 +28739,7 @@ impl AdvancedAi {
     }
 
     pub(super) fn district_planning_on(&self) -> bool {
-        self.district_planning || self.district_planning_2 || self.district_planning_3
+        self.district_planning || self.district_planning_3
     }
 
     fn power_the_laboratory_on(&self) -> bool {
@@ -29269,70 +29202,10 @@ impl AdvancedAi {
     /// still makes progress; if none exists, hold and let the target search
     /// reconsider rather than donating the settler to the threat.
     fn settler_step_toward_safe(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
-        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
-    }
-
-    /// Spend a rapid settler's whole legal movement allowance toward its
-    /// target. The ordinary route field is deliberately hex-based, so its
-    /// first step can land on rough ground and strand a two-movement Settler
-    /// with a point unused. The rapid wave needs its cities to compound on
-    /// schedule; choose a safe endpoint from the engine's movement-aware
-    /// reach instead, while leaving the ordinary controller unchanged.
-    fn rapid_settler_stride_toward_safe(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        uid: u32,
-        target: Pos,
-    ) -> bool {
-        let current = g.units[&uid].pos;
-        let current_distance = g.wdist(current, target);
-        if current_distance <= 0 {
+        let Some(waypoint) = self.settler_refusal_waypoint(g, uid, target) else {
             return false;
-        }
-        let visible = self
-            .settlement_safety
-            .then(|| self.battlefront_visibility(g, pid));
-        let mut best: Option<(Pos, i32, f64, f64)> = None;
-        for (destination, (moves_left, path)) in g.approach_reach(uid) {
-            let distance = g.wdist(destination, target);
-            if distance >= current_distance {
-                continue;
-            }
-            let risk = if let Some(visible) = visible.as_ref() {
-                let Some(worst) = path
-                    .iter()
-                    .map(|position| {
-                        self.settlement_tile_risk(g, pid, Some(uid), *position, visible)
-                    })
-                    .max_by(f64::total_cmp)
-                else {
-                    continue;
-                };
-                if worst > SETTLER_STEP_RISK_LIMIT {
-                    continue;
-                }
-                worst
-            } else {
-                0.0
-            };
-            let replace =
-                best.is_none_or(|(old_destination, old_distance, old_moves, old_risk)| {
-                    distance < old_distance
-                        || (distance == old_distance
-                            && (moves_left > old_moves
-                                || (moves_left == old_moves
-                                    && (risk < old_risk
-                                        || (risk == old_risk && destination < old_destination)))))
-                });
-            if replace {
-                best = Some((destination, distance, moves_left, risk));
-            }
-        }
-        if let Some((destination, _, _, _)) = best {
-            return self.base.path_walk_to(g, pid, uid, destination);
-        }
-        self.settler_step_toward_safe(g, pid, uid, target)
+        };
+        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, waypoint)
     }
 
     /// Move either a Settler or the military leader of its linked formation
@@ -29968,14 +29841,6 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|pos| {
                 let tile = g.map.get(pos)?;
-                // Historical opening-recon v1 must not let the native board's
-                // complete map decide a site the player has not observed. The
-                // Warrior moves before this scan and exposes whole radius-two
-                // city footprints for that v1-only filter; v2 keeps this
-                // shipped candidate path intact.
-                if !self.opening_settlement_footprint_known(g, pid, pos) {
-                    return None;
-                }
                 // A site the HOST engine refused is not settleable however good it looks;
                 // see `Game::blocked_city_sites`, which is empty in an ordinary game.
                 if g.blocked_city_sites.contains(&pos)
@@ -30237,11 +30102,7 @@ impl AdvancedAi {
         // deployment genome and the live seat carry and `legacy()` does not,
         // so the Elo anchor's play is untouched
         // (`advanced_v1_plays_the_same_game_it_always_did`).
-        if self.settle_sooner
-            && g.player_city_ids(pid).is_empty()
-            && g.can_found_city(uid)
-            && self.opening_settlement_footprint_known(g, pid, from)
-        {
+        if self.settle_sooner && g.player_city_ids(pid).is_empty() && g.can_found_city(uid) {
             let stand = self.settle_value(g, pid, from);
             let costs = Self::settle_sooner_walk_costs(g, uid, radius);
             let (budget, per_turn) = Self::opening_walk_budget(g.game_speed);
@@ -30531,48 +30392,6 @@ impl AdvancedAi {
         best
     }
 
-    /// Choose the nearest eligible, reachable city claim for version one's
-    /// compounding wave. The normal ranking is value-first and can send a
-    /// just-built Settler past a legal five-step city to a richer nine-step
-    /// one; that is the opposite of the rapid profile's stated land-race
-    /// policy. All of the ordinary target-memory filters remain in force.
-    fn rapid_closest_settler_target(
-        &self,
-        g: &Game,
-        pid: usize,
-        uid: u32,
-        avoid: Option<Pos>,
-    ) -> Option<(Pos, f64)> {
-        let from = g.units[&uid].pos;
-        let radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
-            g.map.width + g.map.height
-        } else {
-            SETTLER_LAND_FALLBACK_RADIUS
-        };
-        let mut candidates = self
-            .settle_sites(g, pid, from, radius)
-            .into_iter()
-            .filter(|(position, value)| {
-                Some(*position) != avoid
-                    && self.early_settler_site_allowed(g, pid, uid, *position)
-                    && !self.settler_site_is_dead(uid, *position)
-                    && (!self.settler_threat_detour_on()
-                        || !self.settler_threat_deferrals.contains_key(position))
-                    && !self.settler_target_reserved_by_other(g, pid, uid, *position)
-                    && self.settler_target_clears_floor(g, from, *position, *value)
-            })
-            .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| {
-            g.wdist(from, left.0)
-                .cmp(&g.wdist(from, right.0))
-                .then_with(|| right.1.total_cmp(&left.1))
-                .then_with(|| left.0.cmp(&right.0))
-        });
-        candidates
-            .into_iter()
-            .find(|(position, _)| *position == from || g.route_step(uid, *position, 0).is_some())
-    }
-
     fn best_settler_target(
         &self,
         g: &Game,
@@ -30581,9 +30400,6 @@ impl AdvancedAi {
         local_radius: i32,
         avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
-        if self.rapid_city_expansion {
-            return self.rapid_closest_settler_target(g, pid, uid, avoid);
-        }
         let mut score_cache = BTreeMap::new();
         let local = self.best_reachable_settle_site_except_cached(
             g,
@@ -31522,7 +31338,7 @@ impl AdvancedAi {
     /// has held for `SETTLER_IDLE_PATIENCE` turns. See
     /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let acted = self.advanced_settler_step_inner(g, pid, uid, true);
+        let acted = self.advanced_settler_step_inner(g, pid, uid);
         if acted || !self.settler_never_idles {
             return acted;
         }
@@ -31547,13 +31363,7 @@ impl AdvancedAi {
         self.settler_watchdog_step(g, pid, uid)
     }
 
-    fn advanced_settler_step_inner(
-        &mut self,
-        g: &mut Game,
-        pid: usize,
-        uid: u32,
-        allow_arrival_follow_up: bool,
-    ) -> bool {
+    fn advanced_settler_step_inner(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
         if self.live_settler_capture_lessons {
             self.settler_last_seen.insert(uid, current);
@@ -31775,8 +31585,7 @@ impl AdvancedAi {
                 let Some(tile) = g.map.get(*target) else {
                     return false;
                 };
-                self.opening_settlement_footprint_known(g, pid, *target)
-                    && !g.rules.is_water(tile)
+                !g.rules.is_water(tile)
                     && g.rules.is_passable(tile)
                     && !g.cities.values().any(|city| g.wdist(city.pos, *target) < 4)
                     && tile
@@ -31795,11 +31604,7 @@ impl AdvancedAi {
                 self.settler_targets.remove(&uid);
             }
             let target = cached.or_else(|| {
-                let current_value = if self.opening_settlement_footprint_known(g, pid, current) {
-                    self.settle_value(g, pid, current)
-                } else {
-                    f64::NEG_INFINITY
-                };
+                let current_value = self.settle_value(g, pid, current);
                 let local = self.best_reachable_settle_site_except(g, pid, uid, 2, avoid);
                 let target = if g.can_found_city(uid) {
                     Some(
@@ -31824,24 +31629,14 @@ impl AdvancedAi {
                             }
                         })
                         .or_else(|| {
-                            if !self.opening_warrior_recon_v1_active(g, pid) {
-                                self.base
-                                    .best_reachable_settle_site(
-                                        g,
-                                        pid,
-                                        uid,
-                                        g.map.width + g.map.height,
-                                    )
-                                    .filter(|(pos, _)| {
-                                        !self.settler_site_is_dead(uid, *pos)
-                                            && (!self.settler_threat_detour_on()
-                                                || !self.settler_threat_deferrals.contains_key(pos))
-                                            && !self
-                                                .settler_target_reserved_by_other(g, pid, uid, *pos)
-                                    })
-                            } else {
-                                None
-                            }
+                            self.base
+                                .best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height)
+                                .filter(|(pos, _)| {
+                                    !self.settler_site_is_dead(uid, *pos)
+                                        && (!self.settler_threat_detour_on()
+                                            || !self.settler_threat_deferrals.contains_key(pos))
+                                        && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
+                                })
                         })
                         .map(|(pos, _)| pos)
                 };
@@ -32336,25 +32131,9 @@ impl AdvancedAi {
         // reach unless the guard walks in too or the city is founded now.
         let moved = if self.civilian_out_of_reach || self.long_settler_escort_active(uid, target) {
             self.settler_step_out_of_reach(g, pid, uid, target)
-        } else if self.rapid_city_expansion {
-            self.rapid_settler_stride_toward_safe(g, pid, uid, target)
         } else {
             self.settler_step_toward_safe(g, pid, uid, target)
         };
-        // A Settler may found after moving, but this controller historically
-        // waited for its next turn when a rapid-expansion walker reached its
-        // target on the final step. Re-enter the established arrival path so
-        // its loyalty and safety checks remain authoritative before founding.
-        // The follow-up is deliberately bounded to one pass: reaching a newly
-        // selected fallback may still consume this turn's movement, but cannot
-        // turn one unit step into an unbounded march.
-        if moved
-            && allow_arrival_follow_up
-            && self.rapid_city_expansion
-            && g.units.get(&uid).is_some_and(|unit| unit.pos == target)
-        {
-            return self.advanced_settler_step_inner(g, pid, uid, false);
-        }
         // ★★★★ "marching" is printed ABOVE, before the step is attempted, so the
         // journal has never been able to tell a march from a hold. Measured on the
         // live ladder: settlers cross **0.78 tiles/turn on 2 movement points**,
@@ -32654,12 +32433,6 @@ impl AdvancedAi {
                 "strategic" => 0.0,
                 _ => 4.0,
             };
-        }
-        // See `improvement_housing_value`: the Housing an improvement carries
-        // is a yield this function cannot see, because `Yields` has no housing
-        // member and `ImprovementSpec::housing` is never read here.
-        if self.improvement_housing_value {
-            value += spec.housing * IMPROVEMENT_HOUSING_WEIGHT;
         }
         // `eureka_chasing_builder`: the boost this improvement on this tile
         // earns. See `advanced/deity_habits.rs`.
@@ -33272,46 +33045,6 @@ impl AdvancedAi {
                 .then_with(|| left.cmp(right))
             });
         }
-        // `chop_into_the_queue`: a chop on this tile outbids the best
-        // improvement it could host when the owning city's queue front wants
-        // the lump. See `advanced/deity_habits.rs`.
-        if self.chop_into_the_queue {
-            let worked = g
-                .map
-                .get(current)
-                .and_then(|tile| tile.owner_city)
-                .is_some_and(|cid| g.city_citizen_plan(cid).worked_tiles.contains(&current));
-            if let Some((operation, value)) =
-                self.chop_into_the_queue_value(g, pid, current, strategy, worked)
-            {
-                let best_here = here.first().map_or(f64::MIN, |improvement| {
-                    self.production_foundation_improvement_value(
-                        g,
-                        pid,
-                        current,
-                        improvement,
-                        strategy,
-                        here_shortfall,
-                    )
-                });
-                if value > best_here {
-                    self.builder_targets.remove(&uid);
-                    think!(self.journal(), Expansion, Detail,
-                           "Chopping {} at {current:?} into the queue", plain(&operation);
-                           "worth {value:.1} to the {} plan, above the best improvement here",
-                           strategy.as_str(); current);
-                    return g
-                        .apply(
-                            pid,
-                            &Action::Improve {
-                                unit: uid,
-                                improvement: operation,
-                            },
-                        )
-                        .is_ok();
-                }
-            }
-        }
         if !here.is_empty() {
             self.builder_targets.remove(&uid);
             // `order_retry`: `worthwhile_improvements` is already ranked and
@@ -33385,12 +33118,9 @@ impl AdvancedAi {
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
                     && (self.commitment_patience || job_out_of_reach(*pos))
-                    && (!self
+                    && !self
                         .worthwhile_improvements(g, pid, *pos, strategy)
                         .is_empty()
-                        || self
-                            .chop_into_the_queue_value(g, pid, *pos, strategy, false)
-                            .is_some())
             });
             match current_target {
                 Some(pos) => Ok(pos),
@@ -33398,14 +33128,6 @@ impl AdvancedAi {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
                         let city_shortfall = self.city_production_foundation_shortfall(g, pid, cid);
-                        // Computing the citizen plan can inspect every tile in a
-                        // city. Read it once per city, rather than once for every
-                        // candidate improvement in the target sweep.
-                        let worked_tiles: HashSet<Pos> = if self.chop_into_the_queue {
-                            g.city_citizen_plan(cid).worked_tiles.into_iter().collect()
-                        } else {
-                            HashSet::new()
-                        };
                         for pos in &g.cities[&cid].owned_tiles {
                             if reserved.contains(pos) || !job_out_of_reach(*pos) {
                                 continue;
@@ -33420,23 +33142,6 @@ impl AdvancedAi {
                                     strategy,
                                     city_shortfall,
                                 ) - g.wdist(current, *pos) as f64 * 0.7;
-                                if best
-                                    .map(|(old, bp)| score > old || (score == old && *pos < bp))
-                                    .unwrap_or(true)
-                                {
-                                    best = Some((score, *pos));
-                                }
-                            }
-                            // `chop_into_the_queue`: the chop is one more job
-                            // on the same list, priced the same way.
-                            if let Some((_, value)) = self.chop_into_the_queue_value(
-                                g,
-                                pid,
-                                *pos,
-                                strategy,
-                                worked_tiles.contains(pos),
-                            ) {
-                                let score = value - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
@@ -33829,17 +33534,8 @@ impl AdvancedAi {
             .victory_target
             .map(VictoryTarget::strategy)
             .unwrap_or(strategy);
-        // One route unlocks the entire empire's +25% Tourism pressure against
-        // that civilization (+75% with Online Communities). Duplicate routes
-        // do not stack, so Culture agents connect every rival before
-        // optimizing the route's ordinary yields.
-        if objective == GrandStrategy::Culture
-            && city.owner != pid
-            && !g.has_tourism_trade_route(pid, city.owner)
-        {
-            let modifier = 25.0 + g.policy_effect(pid, "trade_partner_tourism_pct");
-            value += 12.0 + g.tourism_per_turn(pid).min(400.0) * modifier / 100.0;
-        }
+        value += self.culture_route_bonus(g, pid, city.owner, objective);
+
         value
     }
 
@@ -35044,6 +34740,18 @@ impl AdvancedAi {
         };
         let body_pace = self.body_pace(g, uid, group, target, &field_enemies);
         let screen_frame = self.screen_frame(g, uid, group, &field_enemies);
+        let movement_risk = (!self.base.legacy_movement).then(|| {
+            let mut risk =
+                self.base
+                    .movement_risk_frame_for_group(g, pid, uid, target, Some(&group.units));
+            risk.retain_enemies(|enemy| {
+                visible.as_ref().is_none_or(|frame| {
+                    g.sees(frame, g.units[&enemy].pos)
+                        && self.battlefront_unit_visible(g, pid, enemy)
+                })
+            });
+            risk
+        });
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -35079,45 +34787,52 @@ impl AdvancedAi {
                     value += self.base.w.mv_support;
                 }
             }
-            // `defend-where-you-stand`: priced once for this tile, and only
-            // if something actually reaches it. `None` with the gene off,
-            // and then the defence below is the snapshot's, as before. See
-            // `advanced/engine_pricing.rs`.
-            let mut standing_defense: Option<f64> = None;
-            for enemy in g.units.values().filter(|other| {
-                enemies.contains(&other.owner)
-                    && visible.as_ref().is_none_or(|visible| {
-                        g.sees(visible, other.pos)
-                            && self.battlefront_unit_visible(g, pid, other.id)
-                    })
-            }) {
-                let enemy_spec = &g.rules.units[enemy.kind];
-                if enemy_spec.class != "military"
-                    || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
-                {
-                    continue;
-                }
-                let radius = if enemy_spec.has_ranged_attack() {
-                    g.unit_attack_range(enemy.id).max(1)
-                } else {
-                    1
-                };
-                if g.wdist(tile, enemy.pos) <= radius {
-                    let attack =
-                        crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
-                    let defense = *standing_defense.get_or_insert_with(|| {
-                        let base = self
-                            .base
-                            .defence_base_where_it_would_stand(g, uid, tile)
-                            .unwrap_or_else(|| g.unit_strength(&unit, true));
-                        crate::game::effective_strength(base, unit.hp)
-                    });
-                    value -= self.base.w.mv_threat
-                        * threat_caution
-                        * 30.0
-                        * ((attack - defense) / 25.0).exp();
+            if let Some(risk) = &movement_risk {
+                value += risk.score(g, pid, uid, tile, self.base.w.mv_threat * threat_caution);
+            } else {
+                // `defend-where-you-stand`: priced once for this tile, and only
+                // if something actually reaches it. `None` with the gene off,
+                // and then the defence below is the snapshot's, as before. See
+                // `advanced/engine_pricing.rs`.
+                let mut standing_defense: Option<f64> = None;
+                for enemy in g.units.values().filter(|other| {
+                    enemies.contains(&other.owner)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                }) {
+                    let enemy_spec = &g.rules.units[enemy.kind];
+                    if enemy_spec.class != "military"
+                        || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
+                    {
+                        continue;
+                    }
+                    let radius = if enemy_spec.has_ranged_attack() {
+                        g.unit_attack_range(enemy.id).max(1)
+                    } else {
+                        1
+                    };
+                    if g.wdist(tile, enemy.pos) <= radius {
+                        let attack = crate::game::effective_strength(
+                            g.unit_strength(enemy, false),
+                            enemy.hp,
+                        );
+                        let defense = *standing_defense.get_or_insert_with(|| {
+                            let base = self
+                                .base
+                                .defence_base_where_it_would_stand(g, uid, tile)
+                                .unwrap_or_else(|| g.unit_strength(&unit, true));
+                            crate::game::effective_strength(base, unit.hp)
+                        });
+                        value -= self.base.w.mv_threat
+                            * threat_caution
+                            * 30.0
+                            * ((attack - defense) / 25.0).exp();
+                    }
                 }
             }
+
             // Walking into the sea costs most of the unit; the score has no
             // other term that notices. Sized to outweigh the few tiles of
             // objective progress a detour around a bay gives up, without
@@ -35821,12 +35536,8 @@ impl AdvancedAi {
     /// combat rolls are seeded, so an advertised finishing blow is only a
     /// finish when the exact action actually removes the defender.
     ///
-    /// A kill must still pay for itself *immediately*.  That is the
-    /// "typically" in the policy: a damaged GDR is not ordered to die for a
-    /// cheap Warrior merely because that Warrior happens to be at one health.
-    /// Once the direct exchange clears this gate, however, a reply estimate
-    /// cannot resurrect the removed unit, so the action is allowed to outrank
-    /// a nonlethal alternative.
+    /// A finish must pay for itself and leave a surviving attacker outside
+    /// lethal reply damage. Removing one hostile does not remove its allies.
     fn immediate_kill_value(
         &self,
         g: &Game,
@@ -35855,7 +35566,7 @@ impl AdvancedAi {
             .iter()
             .filter(|other| !after.units.contains_key(other))
             .count();
-        if eliminated == 0 {
+        if eliminated == 0 || !self.finisher_survives_reach(&after, pid, uid) {
             return None;
         }
         let value = match action {
@@ -35881,6 +35592,18 @@ impl AdvancedAi {
         (value.is_finite() && value > 0.0).then_some((value, eliminated))
     }
 
+    /// Price the post-strike tile and remaining enemies, with next-turn reach.
+    /// The killing blow can move a melee attacker out of cover and reduce its
+    /// HP; pricing either the original tile or original HP misses that trap.
+    fn finisher_survives_reach(&self, after: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = after.units.get(&uid) else {
+            return false;
+        };
+        let envelopes = self.base.enemy_attack_envelopes(after, pid);
+        let incoming = BasicAi::incoming_damage(after, pid, uid, unit.pos, &envelopes);
+        incoming.total * crate::ai::COMBAT_ROLL_MAX < f64::from(unit.hp)
+    }
+
     /// Spend one immediate, positive kill per unit before either tactical
     /// planner can decline it.  This deliberately enumerates engine-legal
     /// actions rather than reproducing visibility, terrain, embarkation, and
@@ -35892,9 +35615,10 @@ impl AdvancedAi {
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
+        reserved: &BTreeSet<u32>,
     ) -> usize {
         let actions = g.legal_actions_within(pid, ActionFamilies::UNITS);
-        let mut spent = BTreeSet::new();
+        let mut spent = reserved.clone();
         let mut kills = 0usize;
         loop {
             let best = actions
@@ -36974,6 +36698,9 @@ impl AdvancedAi {
                    "sharing the tile blocks capture outright"; settler_pos);
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
+        if let Some(acted) = self.escort_naval_memory_step(g, pid, uid, settler_pos) {
+            return Some(acted);
+        }
         // A guard that cannot close this turn stays a guard: the settler's
         // own bounded patience decides when to stop waiting, and an idle
         // chase still shadows the route. Standing down here would hand the
@@ -37589,10 +37316,9 @@ impl AdvancedAi {
                     }
                 }
             }
-            // `settler-screen` / `pass-picket`: a unit nothing above wanted
-            // takes its recon order — a stand on a rival Settler's walk, or
-            // the post toward a neighbour once nothing is left to explore.
-            // See `advanced/recon_disruption.rs`.
+            // `pass-picket`: a unit nothing above wanted takes its recon
+            // order — the post toward a neighbour once nothing is left to
+            // explore. See `advanced/recon_disruption.rs`.
             if let Some(acted) = self.recon_disruption_step(g, pid, uid) {
                 return acted;
             }
@@ -37794,6 +37520,17 @@ impl AdvancedAi {
             ),
         ) in candidates.into_iter().zip(evaluations).enumerate()
         {
+            // The immediate-kill pass and the ordinary tactical ladder must
+            // agree: declining a poisoned finish above is useless if this
+            // second path immediately takes it through its kill override.
+            if self.victory_planning && eliminates_enemy_unit {
+                let mut after = g.speculative_clone();
+                if after.apply(pid, &action).is_err()
+                    || !self.finisher_survives_reach(&after, pid, uid)
+                {
+                    continue;
+                }
+            }
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
             let mut score = attack_value - threshold;
@@ -38237,47 +37974,12 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether taking a promotion now would waste the healing it carries.
-    ///
-    /// `Game::do_promote` ends with
-    ///
-    /// ```text
-    /// unit.hp = (unit.hp + 50).min(100);
-    /// unit.moves_left = 0.0;
-    /// unit.attacks_left = 0;
-    /// ```
-    ///
-    /// so a promotion is **worth up to 50 health**, and it costs the unit its
-    /// whole turn. `advanced_promotions` took every promotion the instant it
-    /// became available, at whatever health the unit happened to be — so a
-    /// full-health unit paid a turn for nothing and threw the heal away.
-    ///
-    /// Measured across every recorded run on this machine, **359 promotions**:
-    ///
-    /// | health when promoted | | |
-    /// |---|---|---|
-    /// | **100 — heal entirely wasted** | **156** | **43%** |
-    /// | 80-99 | 22 | 6% |
-    /// | 55-79 | 64 | 18% |
-    /// | <= 54 — heal fully used | 117 | 33% |
-    ///
-    /// Median health at promotion is 79, and **54% of all the healing
-    /// available was wasted — 8,307 delivered of 17,950 possible.**
-    ///
-    /// Waiting is close to free: experience is banked on the unit and the
-    /// promotion stays available. A unit that never takes 25 damage never
-    /// promotes under this rule, which is the right trade — it is also a unit
-    /// that is not fighting, so the combat bonus it forgoes is worth little,
-    /// and the moment it is hurt it promotes and heals.
-    ///
-    /// ⚠⚠ **This is a NATIVE-engine treatment and is deliberately NOT in
-    /// `enable_live_bridge`.** The +50 is CIVVIS's own model; the Civilization
-    /// VI bridge does not model it and Civ VI's own promotion rule has not been
-    /// verified here. Deferring a promotion for a heal that never arrives would
-    /// be a pure loss of the combat bonus, so the live controller keeps taking
-    /// promotions immediately until someone checks the real rule.
+    /// Preserve the healing preference only when it cannot stall experience.
+    /// Both XP award paths stop while `Game::promotion_pending` is true, so
+    /// an earned promotion must be taken even at full health. This also
+    /// applies when the deployment ledger enables `promote-when-wounded`.
     fn promotion_heal_is_wasted(&self, g: &Game, uid: u32) -> bool {
-        if !self.promote_when_wounded {
+        if !self.promote_when_wounded || g.promotion_pending(uid) {
             return false;
         }
         g.units
@@ -38755,16 +38457,12 @@ impl AdvancedAi {
         decline_settlers: bool,
     ) -> bool {
         let mut took_a_turn = false;
-        let mut took_settler_second_look = false;
         for _ in 0..8 {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                 break;
             }
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
-            let first_settler_leg =
-                (kind == "settler" && self.settler_second_look && !took_settler_second_look)
-                    .then(|| g.units[&uid].pos);
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
@@ -38784,9 +38482,6 @@ impl AdvancedAi {
             };
             if !acted {
                 break;
-            }
-            if let Some(before) = first_settler_leg {
-                took_settler_second_look = self.reassess_settler_after_first_leg(g, uid, before);
             }
             took_a_turn = true;
         }
@@ -39043,7 +38738,7 @@ impl AdvancedAi {
         // raiders on the board, and a settler that reads the board afterwards
         // steps beside a raider the host may not have touched (t60 of
         // civvis-20260816T200454Z, `planned_risk 0.0` beside a live slinger).
-        // Apart from `opening-warrior-recon` above, Settlers lead the unit
+        // Apart from `opening-warrior-recon-2` above, Settlers lead the unit
         // order; this only moves them ahead of the one thing that used to run
         // first.
         let mut settled_first: Vec<u32> = Vec::new();
@@ -39081,6 +38776,7 @@ impl AdvancedAi {
         // predecessors and do not run beside it. Either version of the
         // family; version two adds the positions plan inside. See
         // `advanced/battle_planner.rs`.
+        let mut withdrawn = BTreeSet::new();
         if self.battle_planner_on() {
             if self.plan_battle(g, pid, plan) {
                 self.rebuild_force_groups(g, pid, plan);
@@ -39088,7 +38784,10 @@ impl AdvancedAi {
             }
             self.fire_plan_orders = fire_plan::FirePlan::default();
         } else {
-            if self.victory_planning && self.prioritize_immediate_kills(g, pid, plan) > 0 {
+            withdrawn = self.withdraw_before_kill_prepass(g, pid, plan);
+            let killed = self.victory_planning
+                && self.prioritize_immediate_kills(g, pid, plan, &withdrawn) > 0;
+            if killed || !withdrawn.is_empty() {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
@@ -39097,9 +38796,9 @@ impl AdvancedAi {
             // first. Empty with the gene off. See `advanced/fire_plan.rs`.
             self.plan_fire(g, pid);
         }
-        // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
-        // once from the start-of-turn board so units planned in parallel
-        // agree on them. Nothing is read with both genes off. See
+        // `pass-picket`: this turn's recon orders, drawn once from the
+        // start-of-turn board so units planned in parallel agree on them.
+        // Nothing is read with the gene off. See
         // `advanced/recon_disruption.rs`.
         self.recon_disruption_plan(g, pid);
         // `chokepoint-garrison`: this turn's gates and their garrisons, drawn
@@ -39107,7 +38806,11 @@ impl AdvancedAi {
         // with the gene off. See `advanced/chokepoints.rs`.
         self.chokepoint_gate_plan(g, pid);
         let mut ids = g.player_unit_ids(pid);
-        ids.retain(|uid| !settled_first.contains(uid) && Some(*uid) != opening_recon_warrior);
+        ids.retain(|uid| {
+            !settled_first.contains(uid)
+                && Some(*uid) != opening_recon_warrior
+                && !withdrawn.contains(uid)
+        });
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
             let spec = &g.rules.units[u.kind];
@@ -39239,19 +38942,13 @@ impl AdvancedAi {
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_avoid
             .retain(|uid, _| g.units.contains_key(uid));
-        // `live-move-refusal-break`: a Settler whose step the host has proved
-        // refused (see `BasicAi::judge_move_refusals`) does not merely bend
-        // its route — its destination goes through the same dead-site
-        // machinery a watchdog arrival uses, so the target chooser must pick
-        // a site the frozen approach does not serve. Bending alone can walk
-        // the same unreachable site from another angle for the whole bar.
+        // A host-refused step first asks for a detour. Only sites with no
+        // remaining route are deferred, and only for the refusal's lifetime.
         self.retire_frozen_settler_targets(g);
     }
 
-    /// `live-move-refusal-break`'s Settler half: a destination whose approach
-    /// the host has proved refused is set aside through the dead-site
-    /// machinery, exactly as a watchdog arrival is, so the target chooser
-    /// must pick a site the frozen approach does not serve.
+    /// Retain reachable city sites across replans; a remembered refusal must
+    /// not retire every new target for thirty turns without attempting it.
     fn retire_frozen_settler_targets(&mut self, g: &Game) {
         if !self.live_move_refusal_break {
             return;
@@ -39260,20 +38957,25 @@ impl AdvancedAi {
             .settler_targets
             .keys()
             .copied()
-            .filter(|uid| self.base.move_refusal_blocked(g, *uid))
+            .filter(|uid| {
+                self.base.move_refusal_blocked(g, *uid)
+                    && self
+                        .settler_refusal_waypoint(g, *uid, self.settler_targets[uid])
+                        .is_none()
+            })
             .collect();
         for uid in frozen {
             let Some(target) = self.settler_targets.remove(&uid) else {
                 continue;
             };
             self.settler_relaxed_targets.remove(&uid);
-            self.settler_dead_sites.entry(uid).or_default().insert(
-                target,
-                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-            );
+            self.settler_dead_sites
+                .entry(uid)
+                .or_default()
+                .insert(target, self.base.move_refusal_blocks[&uid].1);
             think!(self.journal(), Expansion, Detail,
                    "Settler retires a destination the host will not walk it toward";
-                   "its issued step was refused on consecutive turns without the unit \
+                   "no route avoids the step refused on consecutive turns without the unit \
                     moving, so {target:?} is set aside and a fresh site is chosen";
                    target);
         }
@@ -39769,15 +39471,15 @@ impl AdvancedAi {
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
         let specialization_active = self.phase_specialization_active(g);
-        // See `skip_the_prophet_race`: an adaptive seat pursues a religion
-        // unconditionally, and in this regime that trade is measured negative.
+        // See `skip_the_prophet_race_2`: an adaptive seat pursues a religion
+        // unconditionally, and in this regime that trade is measured negative;
+        // v2 leaves the race at the last call.
         // See `religion_race_is_closed`: the world's religions are all
         // founded and none of them is ours, so no prophet this empire ever
         // recruits can found one. Kongo is exempt -- Taxis pays it for
         // everyone else's religion, so its faith economy is unconditional.
         let religion_race_closed = self.religion_race_closed_for(g, pid);
-        let skip_prophet_race_v2 = self.skip_prophet_race_2_for(g, pid, active_victory_target);
-        let skip_prophet_race = self.skip_the_prophet_race || skip_prophet_race_v2;
+        let skip_prophet_race = self.skip_prophet_race_2_for(g, pid, active_victory_target);
         self.base.pursue_religion = (g.has_ability(pid, "taxis")
             || active_victory_target == Some(VictoryTarget::Religion)
             || (active_victory_target.is_none() && !skip_prophet_race))
@@ -39791,7 +39493,7 @@ impl AdvancedAi {
         self.base.skip_prophet_race = (skip_prophet_race || religion_race_closed)
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
-        // `enter-the-prophet-race`: the entry fee AND the prize, together,
+        // `enter-the-prophet-race-2`: the entry fee AND the prize, together,
         // while a slot is still open for this seat — and the prize again once
         // it holds a religion. The closed case above still wins, because
         // `prophet_race_open_for` is false by then.
@@ -39909,6 +39611,7 @@ impl AdvancedAi {
         // breakthrough arrives still upgrades appointed predecessors before
         // Great Person patronage, ordinary purchases, diplomacy, or movement.
         self.execute_war_upgrades(g, pid);
+        self.modernize_science_core(g, pid);
         // Modernization normally waits until after every purchase and is
         // suppressed by an appointed war package. A defender that did not
         // choose the declaration timing gets the wartime upgrade pass now.
@@ -39950,6 +39653,7 @@ impl AdvancedAi {
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
+        self.relocate_governors_for_dividends(g, pid, &plan);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured
@@ -40060,7 +39764,7 @@ impl AdvancedAi {
                 // The named research chain owns an idle Campus city before
                 // ancillary reservations such as Envoy infrastructure, so a
                 // one-off district cannot hide the Library/University debt.
-                self.reserve_targeted_research_buildings(g, pid);
+                self.reserve_targeted_research_buildings(g, pid, &plan);
             }
             // Reserve one reachable diplomatic stage before baseline queues fill.
 
@@ -40103,10 +39807,12 @@ impl AdvancedAi {
                 }
             }
             // See `lane_space_race`: the last disjunct opens the pass for an
-            // empire racing Science that has not finished settling. The
-            // `score_horizon` refusal inside it is unchanged.
+            // empire racing Science that has not finished settling.
             if self.victory_planning
-                && (self.science_drive_opens(plan.strategy)
+                && (g.players[pid]
+                    .science_projects
+                    .contains("exoplanet_expedition")
+                    || self.science_drive_opens(plan.strategy)
                     || (specialization_active
                         && (plan.strategy == GrandStrategy::Science
                             || self.diplomatic_science_backup(g, pid, &plan)
@@ -40136,6 +39842,8 @@ impl AdvancedAi {
             // Science reservations, then claims only an idle, non-threatened
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
+            // Reach both governors without changing their dispatch or opening book.
+            self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
             // claims only one idle, safe queue after all higher-priority
@@ -40186,10 +39894,6 @@ impl AdvancedAi {
                 // governor. Thread the larger, speed-aware plan through that
                 // call without leaking it to later consumers.
                 self.delegated_cities(g, pid, &plan);
-                // The native rapid gene owns a bounded peaceful wave after
-                // the general governor has filled its queues, so ordinary
-                // infrastructure cannot leave open Settler seats idle.
-                self.rapid_expansion_settler_wave(g, pid, &plan);
             }
         }
         // Make the declaration response the final authority over queues this

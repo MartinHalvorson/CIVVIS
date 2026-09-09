@@ -540,6 +540,50 @@ def report(profile: Profile, top: int = 40, parents: Optional[str] = None,
 # Running the thing
 # --------------------------------------------------------------------------
 
+def screen_topology(repo: Path = REPO) -> str:
+    """The map TOPOLOGY `gene_screen` plays: `flat` or `planet`.
+
+    ⚠⚠⚠ AND IT IS NOT THE ONE `simulate` PLAYS BY DEFAULT. This is the sixth
+    leg of the shape and the only one that was never read. `gene_screen` builds
+    its world through `GameOptions`, which sets no topology, so it gets
+    `MapTopology::default()` — `Flat` (`src/setup.rs`, the `#[default]`
+    variant). `civvis simulate` defaults the other way, to
+    `MapTopology::Planet` (`src/main.rs`, `map_topology`). So every profile this
+    tool ever took was of a GLOBE while the batch it claims to represent played
+    a flat map, and the docstring one field above narrates exactly this failure
+    for `tennis_ball` against Continents.
+
+    It is not a small difference. `Sphere::distance` and `arc_is_clear` exist
+    only on the globe: measured over a six-game 250-turn screen,
+    `tile_has_visibility_line` was 6.8% inclusive on the globe and 0.9% flat,
+    and `Sphere::distance` 2.85% against 0.00%. A profiler pointed at the wrong
+    topology cannot see the batch's hot code and spends its readings on code the
+    batch never runs.
+
+    Derived, not pinned: the screen's topology is whatever `gene_screen` asks
+    for, and when it asks for nothing that is the enum's own `#[default]`. If
+    the screen ever starts naming one, this reads that instead.
+    """
+    screen = (repo / "src" / "bin" / "gene_screen.rs").read_text(encoding="utf-8")
+    named = re.search(r"map_topology:\s*MapTopology::(\w+)", screen)
+    if named:
+        return named.group(1).lower()
+    setup = (repo / "src" / "setup.rs").read_text(encoding="utf-8")
+    body = re.search(r"pub enum MapTopology\s*\{(.*?)\n\}", setup, re.S)
+    if not body:
+        raise SystemExit(
+            "src/setup.rs no longer declares `pub enum MapTopology`. This tool "
+            "derives the screen's topology from that enum's #[default] on "
+            "purpose; update the pattern rather than pinning a copy here.")
+    default = re.search(r"#\[default\]\s*\n\s*(\w+)", body.group(1))
+    if not default:
+        raise SystemExit(
+            "`pub enum MapTopology` no longer marks a #[default] variant, so "
+            "the topology `gene_screen` gets by not asking cannot be derived. "
+            "Read gene_screen's own `map_topology:` instead.")
+    return default.group(1).lower()
+
+
 def screen_shape(repo: Path = REPO) -> Dict[str, str]:
     """The map row `gene_screen` actually plays, read from its source.
 
@@ -548,6 +592,10 @@ def screen_shape(repo: Path = REPO) -> Dict[str, str]:
     measured one hotspot at 1.42% on the first map and 13.19% on the second.
     The map does not change how much code runs, it changes *which code is hot*,
     so a profiler that guesses the shape is measuring a different program.
+
+    ⚠⚠ Five of the six legs were read here and the sixth was not: see
+    `screen_topology`. The topology is the one field where `simulate`'s default
+    disagrees with the screen, so omitting it profiled a globe on every run.
     """
     source = (repo / "src" / "bin" / "gene_screen.rs").read_text(encoding="utf-8")
     found = dict(re.findall(
@@ -564,6 +612,7 @@ def screen_shape(repo: Path = REPO) -> Dict[str, str]:
         "height": found["HEIGHT"],
         "city-states": found["CITY_STATES"],
         "map": found["MAP"].rsplit("::", 1)[-1].lower(),
+        "shape": screen_topology(repo),
     }
 
 

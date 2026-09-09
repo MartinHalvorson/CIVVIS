@@ -17,6 +17,11 @@ import follow  # noqa: E402
 
 
 class FollowTest(unittest.TestCase):
+    def test_frame_publish_pins_seat_in_the_load_transaction(self):
+        game = {"turn": 42}
+        self.assertEqual(json.loads(follow.mirror_frame_body(game)),
+                         {"game": game, "mirror_player": 0})
+
     def test_visible_server_refreshes_an_existing_tab_after_starting(self) -> None:
         class LiveProcess:
             pid = 4242
@@ -302,7 +307,8 @@ class FollowTest(unittest.TestCase):
         with mock.patch.object(
             follow.subprocess, "run",
             side_effect=follow.subprocess.TimeoutExpired(cmd="osascript", timeout=30),
-        ), mock.patch.object(follow, "log") as log:
+        ), mock.patch.object(follow, "log") as log, \
+             mock.patch.object(follow, "browser_management_enabled", return_value=True):
             self.assertEqual(follow.chrome("tell application \"Google Chrome\" to beep"), "")
         log.assert_called_once()
         self.assertIn("consent", log.call_args.args[0])
@@ -310,7 +316,8 @@ class FollowTest(unittest.TestCase):
     def test_chrome_enumeration_timeout_reads_as_cannot_enumerate(self) -> None:
         with mock.patch.object(
             follow.subprocess, "run",
-        ) as run, mock.patch.object(follow, "log"):
+        ) as run, mock.patch.object(follow, "log"), \
+             mock.patch.object(follow, "browser_management_enabled", return_value=True):
             run.side_effect = [
                 mock.Mock(returncode=0),  # pgrep: Chrome is running
                 follow.subprocess.TimeoutExpired(cmd="osascript", timeout=30),

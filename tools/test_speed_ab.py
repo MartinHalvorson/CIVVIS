@@ -639,6 +639,11 @@ class TheWorkflowMeasuresTheScreensShape(unittest.TestCase):
         self.assertEqual(flags["players"], "6")
         self.assertEqual(flags["speed"], "online")
         self.assertEqual(flags["map"], "continents")
+        # ⚠⚠ The sixth leg. Without it `simulate` defaults to a GLOBE
+        # (`MapTopology::Planet`) while the screen plays `MapTopology::default()`
+        # — Flat — so every reading this gate ever took was of a different game
+        # than the batch it protects.
+        self.assertEqual(flags["shape"], "flat")
 
     def test_the_screen_constants_say_the_same_thing(self):
         """Read from `gene_screen.rs`, so moving the screen moves this gate or
@@ -652,6 +657,25 @@ class TheWorkflowMeasuresTheScreensShape(unittest.TestCase):
         self.assertEqual(constants["HEIGHT"], flags["height"])
         self.assertEqual(constants["CITY_STATES"], flags["city-states"])
         self.assertEqual(constants["MAP"], "MapScript::Continents")
+
+    def test_the_topology_is_derived_from_the_source_not_pinned_here(self):
+        """★★★ THE LEG THAT WAS NEVER READ. `gene_screen` builds its world
+        through `GameOptions`, which names no topology, so it plays the enum's
+        own `#[default]`; `civvis simulate` defaults the other way. There is one
+        derivation of that in the tree — `profile_civvis.screen_topology` — and
+        this gate's literal has to agree with it, or the two performance
+        instruments measure two different programs again.
+        """
+        import profile_civvis
+        derived = profile_civvis.screen_topology(REPO)
+        self.assertEqual(derived, speed_ab.GATE_SHAPE["shape"])
+        self.assertEqual(derived, gate_flags()["shape"])
+
+    def test_the_measured_command_carries_the_topology(self):
+        """A shape leg that never reaches argv is a comment. This is the check
+        that the flag is actually passed to the binary."""
+        source = (Path(speed_ab.__file__)).read_text(encoding="utf-8")
+        self.assertIn('"--shape", opts["shape"]', source)
 
     def test_the_tools_defaults_are_the_workflows_arguments(self):
         """Two places holding one shape is one place too many unless something

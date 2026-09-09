@@ -220,8 +220,19 @@ FENCE = re.compile(r"^ {0,3}(```+|~~~+)")
 #: clock traded down for the runner (see the module docstring). `speed.yml`
 #: passes every one of these explicitly and `test_speed_ab.py` asserts the two
 #: agree, so the workflow and this default cannot drift apart in silence.
+#:
+#: ⚠⚠⚠ `shape` IS THE TOPOLOGY AND IT WAS MISSING, WHICH MADE EVERY READING A
+#: GLOBE. `gene_screen` sets no topology and so plays `MapTopology::default()`
+#: — `Flat`; `civvis simulate` defaults to `MapTopology::Planet`. Passing no
+#: `--shape` therefore measured a closed geodesic globe while the batch this
+#: gate exists to protect played a flat map. Proven by hand on
+#: `mbp-m5-max-128`: one seed, one binary, `--shape flat` against no flag gave
+#: two different game reports. The globe runs code the batch never runs
+#: (`Sphere::distance`, `arc_is_clear`, the visibility arc: 6.8% inclusive on
+#: the globe against 0.9% flat) and the whole point of the map row above is
+#: that the shape decides WHICH code is hot.
 GATE_SHAPE = dict(players=6, turns=120, width=74, height=46, city_states=9,
-                  speed="online", map="continents")
+                  speed="online", map="continents", shape="flat")
 
 #: Five pairs rather than three, because the gate statistic is a median and a
 #: median of three has no spread to report. One interleave, because a second
@@ -298,7 +309,7 @@ def run_once(binary: Path, seed: int, opts: dict) -> tuple[float, str, int]:
          "--players", str(opts["players"]), "--turns", str(opts["turns"]),
          "--width", str(opts["width"]), "--height", str(opts["height"]),
          "--city-states", str(opts["city_states"]), "--speed", opts["speed"],
-         "--map", opts["map"]],
+         "--map", opts["map"], "--shape", opts["shape"]],
         capture_output=True, text=True, check=False)
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     if done.returncode != 0:

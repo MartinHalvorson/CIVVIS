@@ -12,19 +12,19 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Live-bridge treatments | 72 |
+| Live-bridge treatments | 70 |
 | Firaxis-only treatments | 32 |
-| Native engine-repair treatments | 40 |
-| Withholdable live treatments | 40 |
+| Native engine-repair treatments | 38 |
+| Withholdable live treatments | 38 |
 
 ## Bundle coverage
 
 How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
-- Withholdable live treatments: **40**
-- Named somewhere in the evidence: **37**
-- **Never named in any round: 3**
+- Withholdable live treatments: **38**
+- Named somewhere in the evidence: **36**
+- **Never named in any round: 2**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -39,7 +39,7 @@ over ladder games. This list is the debt neither has touched.
 
 Never named:
 
-`enter-the-prophet-race`, `relief-column-marches`, `threatened-city-reserve`
+`relief-column-marches`, `threatened-city-reserve`
 
 ## Genome coverage
 
@@ -47,9 +47,9 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **309**
-- Reachable as a gene `gene_screen` can vary: **268**
-- Measured by at least one screen: **73**
+- Capability toggles on the controller: **300**
+- Reachable as a gene `gene_screen` can vary: **274**
+- Measured by at least one screen: **72**
 - Resolved by the ledger (helps or hurts): **16**
 - **Unreachable by any screen: 41**
 
@@ -73,16 +73,16 @@ Unreachable:
 
 ## Live ladder
 
-- Attempts recorded: **873**
-- Configured attempts: **772**
-- Terminal outcomes: **348**
+- Attempts recorded: **921**
+- Configured attempts: **795**
+- Terminal outcomes: **361**
 - Configured wins: **24**
-- Latest ledger entry: **2026-09-03T09:39:12Z**
+- Latest ledger entry: **2026-09-09T01:34:00Z**
 
 - Attempts that ran the full clock: **209**, median score **547**, best **1606**
-- Graded against the best rival: **449** of 209 finished attempts; rival bar median **691**, our lead median **-202**, best **+759**, ahead in **47**
-- Lost to a rival's victory before the clock: **137** (diplomatic 60, culture 48, technology 23, religious 5, conquest 1), of which **17** while our own score was the highest on the board
-- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 228), diplomatic 202–247 (median 239), religious 75–233 (median 170), technology 182–246 (median 233)
+- Graded against the best rival: **471 configured attempts**; rival bar median **720**, our lead median **-207**, best **+759**, ahead in **47**
+- Lost to a rival's victory before the clock: **150** (diplomatic 61, culture 54, technology 29, religious 5, conquest 1), of which **17** while our own score was the highest on the board
+- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 221), diplomatic 202–247 (median 235), religious 75–233 (median 170), technology 182–246 (median 226)
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this

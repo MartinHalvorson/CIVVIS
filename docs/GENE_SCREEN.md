@@ -750,6 +750,27 @@ genome forward, so the rule reading a gene `off` does not remove it — four of
 the five genes held off on 2026-08-26 read `off` and shipped anyway. Adding
 the tag to `OPERATOR_DEFAULT_OFF` is what takes it out, under either policy.
 
+⭐ **A reselection has hysteresis (operator, 2026-09-09).** A batch
+publication (`python3 tools/genes.py write --reselect-deployment-defaults`,
+what `continuous_batch_scheduler.py` runs) re-decides the retained genome
+from each gene's completed-total-seat-weighted average over its available
+readings in the three displayed batches, wins per 10,000 total seats — but
+against the previous published selection, not from zero: a gene that was
+**off** turns on only when that average is strictly above **+3**; a gene that
+was **on** stays on unless it is strictly below **−3** (a gene that was on and
+no batch priced keeps its default). #3236 turned 32 defaults off from one
+batch's reading — `bounded-recovery` left with verdict Helps, P(>0) = 100%,
+pooled Diff +0.53 pp and readings −14 / +45 / +10 — and 20 of them came back
+under the band. "Was on" is the `deployment_genome` of the ledger `write`
+reads (`--prior-ledger FILE` names an older published one); the ledger records
+the list it read as `rules.prior_deployment_genome` and the genes kept on by
+the band alone as `rules.hysteresis_held`, so `check` and
+`tools/test_genes.py` re-derive the same answer. A family still ships exactly
+one version: qualifying versions compete by that average, ties to the higher
+version, so a version held on by the band alone yields to a sibling that
+clears +3. `tools/genes.py::retained_deployment_genome_from_batches` is the
+rule.
+
 ⭐ **Moving a versioned family's ship.** Pin the version you want on and hold
 the one you want off: on 2026-08-26 `settler-target-hysteresis-2` joined
 `OPERATOR_DEFAULT_ON` and `settler-target-hysteresis` joined
@@ -2237,6 +2258,41 @@ lane-pursuer's own win rates are a census of the opposition — and **every gene
 past the family-wise bar read on the three kinds apart**, with `agree` when
 every kind's sign is the whole batch's and `SPLIT` when a gene pays against
 one rival and not another.
+
+### ⭐ Handicapped rivals: `--handicap rivals --rival-chairs N` (2026-09-08)
+
+`--difficulty emperor` hands the rung's bonuses to **every** major alike,
+because the screen declares no seat human — six equally boosted seats, which is
+not what the live Civilization VI seat meets: there *we* get nothing at Emperor
+and every rival AI gets +16% science/culture, +40% production/gold, the bonus
+start units and the era boosts. The recipe for that shape is
+
+```
+gene_screen --games N --difficulty emperor --rivals firaxis-mix --handicap rivals --rival-chairs 5 --out rows.jsonl
+```
+
+`--handicap rivals` puts every measured seat in `GameOptions::handicap_exempt`
+(a set of its own, not `human_seats`, which is a person's chair everywhere
+else), so only the rival chairs play with the rung; `--rival-chairs N` seats
+`N` consecutive rival chairs from the rotating rival index (at most
+`players - 1`, so one measured seat against five handicapped rivals in a
+six-player game), every chair of a `firaxis-mix` game drawing its own lane
+slot so the batch still plays each lane its share. Both need `--rivals`; the
+default `--handicap all` is the batch as it was. **The rival chairs are
+unmeasured** (`kind: "rival"`, as above), and the header records `handicap`
+and `rival_chairs` beside `rivals` — provenance `tools/genes.py` records on
+the source (`RECORDED_WHEN_SET`) and `--analyze` refuses to merge across.
+
+**Read such a source on its own.** `wins_per_10k` in `tools/genes.py` prices a
+win column against the 1-in-`players` a seat takes by chance, and
+`column_estimate`'s docstring says when that column and the on-off difference
+coincide: only while the arms are symmetric about chance, which every all-seats
+self-play source is. One measured seat against five Emperor rivals is not —
+both arms sit far below 1/6, as the single-seat probe `2026-08-20-s2` did — so
+a win column from a `--handicap rivals` source is a statement about the seat
+against handicapped rivals, **not comparable to the self-play columns** beside
+it; the on-off difference (`win_delta_pp`, what the posterior reads) is the
+statement about the gene. The arithmetic is deliberately unchanged.
 
 ## ⭐ The drift meter (2026-08-25)
 
