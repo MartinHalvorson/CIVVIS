@@ -47721,3 +47721,39 @@ fn wounded_prepass_preserves_the_only_threat_kill_and_city_defense_exception() {
         .withdraw_before_kill_prepass(&mut defending, 0, &plan)
         .is_empty());
 }
+
+#[test]
+fn a_wounded_ship_may_finish_the_only_visible_shore_gun() {
+    let (mut g, mut ai, ours, gun_at) = remembered_shore_gun_fixture();
+    g.units.get_mut(&ours).unwrap().kind = crate::name!("frigate");
+    let gun = g.spawn_test_unit("field_cannon", g.barb_pid.unwrap(), gun_at);
+    g.units.get_mut(&gun).unwrap().hp = 1;
+    let unseen = ai
+        .hostile_last_seen
+        .iter()
+        .next()
+        .map(|(key, record)| (*key, record.clone()))
+        .unwrap();
+    ai.hostile_last_seen.clear();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(g
+        .legal_actions_within(0, ActionFamilies::UNITS)
+        .iter()
+        .any(|action| { matches!(action, Action::Ranged { unit, .. } if *unit == ours) }));
+    let before = g.units[&ours].pos;
+    assert_eq!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a shot removing the only gun must not retain its speculative casualty as firing memory"
+    );
+    assert_eq!(g.units[&ours].pos, before);
+    assert!(
+        ai.hostile_last_seen.contains_key(&(gun as i64)),
+        "forecasting a kill does not erase the real observed memory"
+    );
+    ai.hostile_last_seen.insert(unseen.0, unseen.1);
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "removing the visible gun does not remove a different remembered gun"
+    );
+}

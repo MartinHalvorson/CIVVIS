@@ -374,10 +374,16 @@ impl AdvancedAi {
                     return false;
                 };
                 let after = survivor.pos;
+                let removed: BTreeSet<i64> = g
+                    .units
+                    .values()
+                    .filter(|unit| !future.units.contains_key(&unit.id))
+                    .map(|unit| super::hostile_memory_key(g, unit))
+                    .collect();
                 let envelopes = self.base.enemy_attack_envelopes(&future, pid);
                 !BasicAi::anything_can_reach(&future, pid, after, &envelopes)
                     && self
-                        .remembered_ranged_reach(&future, pid)
+                        .remembered_ranged_reach_excluding(&future, pid, &removed)
                         .margin(&future, after)
                         > 0
                     && !self
@@ -390,6 +396,17 @@ impl AdvancedAi {
     /// read a hidden unit's current position, HP, or promotions. Visible units
     /// are handled by exact attack envelopes rather than counted twice here.
     fn remembered_ranged_reach(&self, g: &Game, pid: usize) -> RememberedRangedReach {
+        self.remembered_ranged_reach_excluding(g, pid, &BTreeSet::new())
+    }
+
+    /// Simulated casualties disappear only from this attack forecast. Actual
+    /// sighting history is retained until the host confirms what happened.
+    fn remembered_ranged_reach_excluding(
+        &self,
+        g: &Game,
+        pid: usize,
+        excluded: &BTreeSet<i64>,
+    ) -> RememberedRangedReach {
         if !(self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons) {
             return RememberedRangedReach(Vec::new());
         }
@@ -410,6 +427,7 @@ impl AdvancedAi {
             .iter()
             .filter_map(|(key, record)| {
                 if current.contains(key)
+                    || excluded.contains(key)
                     || record.when > g.turn
                     || g.turn - record.when > HOSTILE_MEMORY_TURNS
                     || record.owner >= g.players.len()

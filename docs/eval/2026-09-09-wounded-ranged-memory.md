@@ -26,6 +26,11 @@ If every reachable tile remains inside a remembered firing projection, the
 withdrawal can improve separation from its edge instead of considering all
 such tiles equally dangerous and holding. Exact visible incoming damage,
 garrison and screening priorities retain their place ahead of this comparison.
+A kill forecast excludes only the units that the simulated shot removed from
+this firing projection. Their actual observation history stays intact, and a
+different remembered gun still counts. The final control initially caught a
+regression here: the projection retained the simulated casualty and withdrew a
+ship that could finish its only threat. The corrected forecast permits that shot.
 No deployment selection changes, and civilian capture calculations are unchanged.
 
 The native observation also lacked a tile-visibility check: `unit_visible_to`
@@ -41,5 +46,19 @@ unit's move, promotions, or line of sight. It repairs remembered firing coverage
 for the existing withdrawal triggers; it does not add remembered damage totals
 to the roll-top trigger for otherwise healthy melee units.
 
-Validation and the repaired recorded-board replay are in progress. A fixed-
-observation replay is not a counterfactual host game or proof of improved wins.
+The initial combined full suite passed 3,378 tests with 50 ignored, and the
+changed-line formatting/clippy gate passed. Six targeted controls now cover
+wounded ship withdrawal, both memory versions, off/unseen/expired/future/peace
+and melee-only controls, hidden-position independence through the observer,
+never-seen units, and the only-threat shot. Final validation follows the shot
+forecast correction.
+
+A same-binary persistent replay of the recorded encounter leaves the Galley
+holding when withdrawal is explicitly withheld; the repaired deployed policy
+moves through (62,7), (63,7), (64,7), and (65,7). Evidence and exact source/binary
+hashes are retained in `025914-shore-cannon-repaired/provenance.json` under the
+local tactical evidence directory. This pre-final-control binary was built from
+`c6fba0ba0`; the final revision is replayed again before shipping.
+
+A fixed-observation replay is not a counterfactual host game or proof of
+improved wins.
