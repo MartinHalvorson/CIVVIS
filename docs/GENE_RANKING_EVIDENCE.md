@@ -191,7 +191,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 | `culture-threat-early` | off (unmeasured) | Arm the culture defence at 30 percent of the victory bar instead of version one's 50, refuse every sale to the threatening rival, and denounce it. | 1 \| 1 |
 | `doomed-blow-veto-2` | off (unmeasured) | Price survival after the complete friendly strike sequence. | 1 \| 2 |
-| `early-contact-window-2` | off (unmeasured) | Add a bounded Scout incentive until the first major contact while retaining the original city-state contact window. | 1 \| 2 |
+| `early-contact-window-2` | off (unmeasured) | Spread early Scouts across nearby land frontiers until first major contact, retaining the original city-state production incentive. | 1 \| 2 |
 | `expansion-best-idle-city` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `expansion-best-idle-city-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 | `hostile-memory-2` | off (unmeasured) | Version two retains civilian memory and prices a land escort's embarkation. | 1 \| 2 |

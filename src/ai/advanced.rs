@@ -3916,8 +3916,8 @@ pub struct AdvancedAi {
     ///
     /// Off everywhere by default; opt-in gene `early-contact-window`.
     pub early_contact_window: bool,
-    /// Version two also values finding the first neighboring major while
-    /// nearby explored land still has a frontier; at most two Scouts for it.
+    /// Version two spreads early recon across nearby land frontiers until
+    /// the first major contact, retaining the original Scout production value.
     pub early_contact_window_2: bool,
 
     /// ★★★★ A GREAT PERSON THE EMPIRE HAS EARNED AND CANNOT USE IS A RACE
@@ -12660,8 +12660,8 @@ impl AdvancedAi {
     /// and both historical vetoes stand — when the flag is off, when the arm
     /// is already at `EARLY_CONTACT_SCOUT_MAX`, when this seat has adopted the
     /// civic that closes borders, or when every living city-state is already
-    /// on its contact ledger (v1). Version two also prices the first major
-    /// contact while nearby land has unexplored edges.
+    /// on its contact ledger. Both versions keep this production value;
+    /// version two also coordinates the direction of early recon.
     ///
     /// Reads only this seat's own civics and its own contact ledger; which
     /// city-states a rival has reached is not something it is entitled to
@@ -12690,15 +12690,10 @@ impl AdvancedAi {
                     && !g.has_met(pid, minor.id)
             })
             .count();
-        let neighbor_value = if self.early_contact_window_2 {
-            self.neighbor_contact_value(g, pid, counts.scouts)
-        } else {
-            0.0
-        };
         // Each eye already out discounts the next: the second Scout opens
         // ground the first would have reached inside the window anyway, the
         // third less again.
-        (EARLY_CONTACT_UNMET_VALUE * unmet as f64 + neighbor_value) / (counts.scouts + 1) as f64
+        EARLY_CONTACT_UNMET_VALUE * unmet as f64 / (counts.scouts + 1) as f64
     }
 
     /// Cache ruleset constants for the adjacency threshold once per decision.
@@ -37325,6 +37320,9 @@ impl AdvancedAi {
                         return self.base.fortify_or_stop(g, pid, uid);
                     }
                 }
+            }
+            if self.neighbor_contact_step(g, pid, uid) {
+                return true;
             }
             // `pass-picket`: a unit nothing above wanted takes its recon
             // order — the post toward a neighbour once nothing is left to

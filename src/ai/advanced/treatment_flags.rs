@@ -205,8 +205,8 @@ impl AdvancedAi {
         self.early_contact_window = false;
     }
 
-    /// Add a bounded Scout incentive until the first major contact while
-    /// retaining the original city-state contact window.
+    /// Spread early Scouts across nearby land frontiers until first major
+    /// contact, retaining the original city-state production incentive.
     pub fn enable_early_contact_window_2(&mut self) {
         self.early_contact_window_2 = true;
         self.early_contact_window = false;
