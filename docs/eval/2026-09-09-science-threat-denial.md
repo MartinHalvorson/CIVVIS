@@ -204,7 +204,53 @@ clears its own state and returns `false`. A test walks every one of them.
 
 ## Fires probe
 
-<!-- PROBE -->
+`target/ci/gene_screen --games 12 --jobs 4 --genes science-threat-denial
+--p-on 0.5 --difficulty emperor --rivals firaxis-mix --handicap rivals
+--rival-chairs 3` — 12 games, 36 seats, 14 on / 22 off.
+`docs/gene_screens/fires/2026-09-09-science-threat-denial.json`.
+
+**The regime is the right one.** Of the 12 games, **7 ended in a science
+victory** at a median standard turn **199**, and **50 % of measured seats lost
+to a rival's science finish** (religion 19.4 %, culture 8.3 %, diplomatic
+0 %). This batch reproduces the failure the gene is aimed at.
+
+**The gene fires, hard.** 13 denial wars across 14 on-seats and 2 pads
+pillaged; zero of both off. `gene_fires.py --max 0` is green on the artifact.
+
+**Every number is against it, and none of them resolves.**
+
+| axis | on | off | Δ | z |
+|---|---:|---:|---:|---:|
+| win | 14.3 % | 18.2 % | **−3.9 ± 11.5 pp** [−26.4, +18.6] | −0.34 |
+| score share | — | — | −2.77 pp | −1.36 |
+| lost to a rival's science | 57.1 % | 45.5 % | **+11.7 pp** | — |
+| techs at end | 51.4 | 54.6 | −3.23 ± 3.84 | −0.84 |
+| techs at std t150 | — | — | −0.48 ± 1.12 | −0.43 |
+| science / turn | — | — | −35.8 ± 43.4 | −0.82 |
+| games finished | — | — | −5.94 ± 4.04 pp | −1.47 |
+| seats forgotten | — | — | +1.18 ± 0.53 pp | **+2.24** |
+
+Read honestly: at this size nothing is resolved (`~`), but **the gene did not
+reduce the thing it exists to reduce** — on-seats lost to a rival's science
+finish *more* often, not less — and it cost technologies of our own. The
+mechanism is visible in the two counters: **13 wars bought 2 pillages**. The
+war rung pays the full price of a war (production, grievances, the units) and
+converts to the denial it was declared for about one time in six.
+
+**The reachability gate did not cause any of that, and did not fix it.** The
+run above is byte-for-byte identical to the run before
+`science_denial_raid_can_reach` was added — same wins, same 13 wars, same 2
+pillages — so on these maps the gate never refused a declaration it would
+otherwise have made. Whatever loses the other eleven wars happens *after* the
+declaration: the raid party is two soldiers picked by map distance each turn,
+the pad is inside a defended rival city's ring, and peace arrives at
+`DENIAL_WAR_MAX_TURNS` whether or not the march got there. The gate is still
+right — it refuses a war whose objective is across an ocean, which this batch
+simply never offered — but it is not the fix.
+
+A 12-game probe is not a measurement (`docs/GENE_SCREEN.md` §"A probe's win Δ
+is not a measurement of the gene"): this says the gene fires and shows *how*
+it fires, not what it is worth.
 
 ## Instrumentation
 
@@ -219,10 +265,19 @@ on the seat and exported by `gene_screen` beside `raid_wars`, which is how the
 - **The probe is not a price.** `docs/GENE_SCREEN.md` §"A probe's win Δ is not
   a measurement of the gene" — twelve games cannot separate a gene from the
   seed. Pricing belongs to the continuous screen.
-- **The four rungs are screened together.** Nothing here says which of the
-  four pays. If the joint gene prices positive, the natural follow-up is to
-  split rungs 3–4 into their own tag the way `raid-pillage-prizes` splits the
-  pillage half off `opportunistic-war`.
+- **The four rungs are screened together, and the probe implicates one of
+  them.** Nothing here separates the four, but 13 wars for 2 pillages points
+  squarely at rung 4. The obvious next move is to split rungs 3–4 into their
+  own tag the way `raid-pillage-prizes` splits the pillage half off
+  `opportunistic-war`, and screen rungs 1–2 alone: the diplomatic refusals and
+  the espionage disruption cost almost nothing and are the half with no war
+  attached. **A reviewer who wants this gene to ship as it stands should want
+  that split first.**
+- **Why eleven wars did not reach a pad is not diagnosed.** The counters say
+  it happened; nothing says whether the party never formed, never arrived, or
+  died on the ring. A `denial_marched` counter, or a journal read of one of
+  the eleven, would say which — and that is the measurement that decides
+  whether rung 3 is fixable or whether the war rung should simply go.
 - **The pace admission is untested against a real board.** Six technologies at
   turn 120 is argued from the ladder's end-of-game deficits, not measured at
   turn 120. A screen that varies `SCIENCE_THREAT_TECH_LEAD` would say whether
