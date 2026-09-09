@@ -23449,7 +23449,9 @@ impl Game {
         // drives the step negative instead.
         let bridged =
             self.crosses_river(from, to) && self.map.tiles[&from].road >= 2 && tile.road >= 2;
-        let mut cost = if bridged {
+        // Waive the river penalty before pricing the route. Applying
+        // Amphibious afterwards would overwrite a valid road discount.
+        let mut cost = if bridged || terms.amphibious > 0.0 && self.crosses_river(from, to) {
             self.rules.move_cost(tile)
         } else {
             self.step_cost(from, to)
@@ -23481,9 +23483,6 @@ impl Game {
         }
         if terms.hills_move_cost > 0.0 && tile.hills {
             cost = 1.0;
-        }
-        if terms.amphibious > 0.0 && self.crosses_river(from, to) {
-            cost = self.rules.move_cost(tile);
         }
         let changes_embarkation =
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);

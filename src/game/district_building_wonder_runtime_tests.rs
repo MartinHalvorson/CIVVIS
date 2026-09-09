@@ -464,6 +464,29 @@ fn routes_level_per_tile_and_engineers_lay_railroads() {
     }
     let warrior = game.spawn_unit("warrior", 0, a);
     assert!((game.unit_step_cost(warrior, a, b) - 2.0).abs() < 1e-9);
+    // A route on the destination alone does not flatten an off-road entry.
+    // Live Pikeman 2818080 stopped on this first hill of a two-step retreat;
+    // pricing it at one point invented movement toward the final refuge.
+    for level in 1..=5 {
+        game.map.tiles.get_mut(&b).unwrap().road = level;
+        assert_eq!(
+            game.unit_step_cost(warrior, a, b),
+            2.0,
+            "road level {level} cannot discount an off-road origin"
+        );
+        let mut moved = game.clone();
+        moved.units.get_mut(&warrior).unwrap().moves_left = 2.0;
+        moved
+            .apply(
+                0,
+                &Action::Move {
+                    unit: warrior,
+                    to: b,
+                },
+            )
+            .unwrap();
+        assert_eq!(moved.units[&warrior].moves_left, 0.0);
+    }
     // The shipped ladder, per tile: Ancient/Medieval 1 MP, Industrial
     // 0.75, Modern 0.5, Railroad 0.25.
     for (level, expected) in [(1, 1.0), (2, 1.0), (3, 0.75), (4, 0.5), (5, 0.25)] {
@@ -564,6 +587,26 @@ fn a_bridged_river_crossing_costs_its_route_and_never_returns_movement() {
             "a level {level} bridge costs {cost} MP, expected {expected}"
         );
     }
+
+    // Amphibious removes the river penalty; it must not replace a valid
+    // route discount with the destination's terrain cost afterwards.
+    game.units
+        .get_mut(&warrior)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("amphibious"));
+    game.map.tiles.get_mut(&a).unwrap().road = 3;
+    game.map.tiles.get_mut(&b).unwrap().road = 3;
+    game.map.tiles.get_mut(&b).unwrap().hills = true;
+    assert_eq!(game.unit_step_cost(warrior, a, b), 0.75);
+    game.map.tiles.get_mut(&a).unwrap().road = 0;
+    assert_eq!(
+        game.unit_step_cost(warrior, a, b),
+        2.0,
+        "Amphibious waives the river, not an off-road hill entry"
+    );
+    game.units.get_mut(&warrior).unwrap().promotions.clear();
+    game.map.tiles.get_mut(&b).unwrap().hills = false;
 
     // The price is not why this matters. A step costing less than nothing
     // *returns* movement, so a unit crossing a bridge and back regains MP
