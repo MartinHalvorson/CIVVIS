@@ -1779,6 +1779,15 @@
           "battle-planner-3": null
         }
       },
+      "boost-first-research": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "boost-first-research": null,
+          "boost-first-research-2": null
+        }
+      },
       "boost-wait-research": {
         "rule_on": [
           "boost-wait-research-2"

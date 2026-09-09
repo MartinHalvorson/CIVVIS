@@ -2434,11 +2434,28 @@ impl AdvancedAi {
     /// reads a method line's first identifier.
     pub fn enable_boost_first_research(&mut self) {
         self.boost_first_research = true;
+        self.boost_first_research_2 = false;
     }
 
     /// The twin of `enable_boost_first_research`.
     pub fn disable_boost_first_research(&mut self) {
         self.boost_first_research = false;
+    }
+
+    /// Let a boost in hand break ties among comparable research candidates
+    /// only: the same discount scale as version one, applied in the argmax
+    /// after every forced lane goal has stood down, to a boosted node whose
+    /// unscaled score is within `BOOST_TIEBREAK_BAND` of the ordinary
+    /// winner's. See [`AdvancedAi::boost_tiebreak_pick`]. Opt-in gene
+    /// `boost-first-research-2`; a seat plays at most one version.
+    pub fn enable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = true;
+        self.boost_first_research = false;
+    }
+
+    /// The twin of `enable_boost_first_research_2`.
+    pub fn disable_boost_first_research_2(&mut self) {
+        self.boost_first_research_2 = false;
     }
 
     /// Version one hunts every Eureka and Inspiration through a global union
