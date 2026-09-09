@@ -4555,6 +4555,21 @@ fn decide(
         snapshot.revealed_count()
     ));
 
+    // Batch metadata travels through the existing five-column order transport.
+    // The controller attaches it to each queued strike; no persistent host
+    // setting can leak the selected gene into a later frame or experiment.
+    if ai.live_strike_survival_enabled()
+        && orders.iter().any(|order| {
+            order.kind == "unit" && matches!(order.verb.as_deref(), Some("ATTACK" | "RANGE_ATTACK"))
+        })
+    {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("DOOMED_BLOW_VETO".to_string()),
+            pos: None,
+        });
+    }
     let body = orders
         .iter()
         .map(|o| o.to_json())
@@ -5655,6 +5670,8 @@ fn unverifiable_unit_verb(op: &str) -> bool {
 
 /// Ledger event kinds the checks read as evidence between two frames.
 const EVIDENCE_KINDS: &[&str] = &[
+    "combat_policy_applied",
+    "strike_survival_refused",
     "combat",
     "deal_closed",
     "deal_declined",
@@ -6120,6 +6137,12 @@ fn strike_refusal_reason(
         .any(|event| of_kind(event, "war_refused") && aimed_here(event))
     {
         return Some("would_declare_war".to_string());
+    }
+    if evidence
+        .iter()
+        .any(|event| of_kind(event, "strike_survival_refused") && aimed_here(event))
+    {
+        return Some("lethal_host_preview".to_string());
     }
     let refused = evidence
         .iter()
@@ -6613,6 +6636,17 @@ fn verify_order_with_context(
     let verb = order.verb.as_deref().unwrap_or("");
     let failed = |why: String| Verdict::Failed(why);
     match order.kind.as_str() {
+        "combat_policy" => {
+            if evidence.iter().any(|event| {
+                event["kind"] == "combat_policy_applied"
+                    && event["turn"].as_u64() == Some(u64::from(turn))
+                    && event["policy"].as_str() == Some(verb)
+            }) {
+                Verdict::Verified
+            } else {
+                failed("combat_policy_not_acknowledged".to_string())
+            }
+        }
         "unit" => verify_unit_order(
             order,
             turn,
@@ -11225,6 +11259,18 @@ mod tests {
             },
         ))
         .unwrap();
+        assert_eq!(
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| {
+                    order["kind"] == "combat_policy" && order["verb"] == "DOOMED_BLOW_VETO"
+                })
+                .count(),
+            1,
+            "the full bridge reply must carry the selected survival policy"
+        );
         let strikers: Vec<_> = reply["orders"]
             .as_array()
             .unwrap()
@@ -17152,6 +17198,37 @@ mod order_postcondition_tests {
             ),
             failed("deferred_same_turn_transaction_in_flight"),
             "the host's deferred transaction reason is more precise than a missing-card diff"
+        );
+    }
+
+    #[test]
+    fn combat_policy_requires_host_acknowledgement_and_names_lethal_refusals() {
+        let before = frame(7);
+        let after = frame(8);
+        let policy = order("combat_policy", None, Some("DOOMED_BLOW_VETO"), None);
+        assert!(EVIDENCE_KINDS.contains(&"combat_policy_applied"));
+        assert!(EVIDENCE_KINDS.contains(&"strike_survival_refused"));
+        assert_eq!(
+            check(&policy, &before, &after, &[]),
+            failed("combat_policy_not_acknowledged")
+        );
+        let ack = event(r#"{"kind":"combat_policy_applied","turn":7,"policy":"DOOMED_BLOW_VETO"}"#);
+        assert_eq!(check(&policy, &before, &after, &[ack]), Verdict::Verified);
+        let stale =
+            event(r#"{"kind":"combat_policy_applied","turn":6,"policy":"DOOMED_BLOW_VETO"}"#);
+        assert_eq!(
+            check(&policy, &before, &after, &[stale]),
+            failed("combat_policy_not_acknowledged")
+        );
+        let refusal =
+            event(r#"{"kind":"strike_survival_refused","turn":7,"unit":10,"x":31,"y":42}"#);
+        assert_eq!(
+            strike_refusal_reason(std::slice::from_ref(&refusal), 7, 10, Some((31, 42))).as_deref(),
+            Some("lethal_host_preview")
+        );
+        assert_eq!(
+            strike_refusal_reason(&[refusal], 7, 11, Some((31, 42))),
+            None
         );
     }
 
