@@ -4769,6 +4769,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    amani_follows_suzerainty: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     builder_workforce_recovery: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -5581,6 +5583,10 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    magnus_follows_settlers: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    liang_follows_builders: bool,
     /// `modernize-before-spending` (default on): upgrade the standing army
     /// BEFORE the discretionary purchase pass, at the moments that matter.
     ///
@@ -5839,6 +5845,10 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Opt-in governor relocation; see `governor_dividends`.
+    reyna_follows_revenue: bool,
+    /// Opt-in governor relocation; see `governor_dividends`.
+    pingala_follows_research: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -6821,6 +6831,7 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
+mod governor_dividends;
 mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -7627,6 +7638,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amani_follows_suzerainty: false,
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
             anvil: false,
@@ -7752,6 +7764,8 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            magnus_follows_settlers: false,
+            liang_follows_builders: false,
             modernize_before_spending: false,
             objective_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
@@ -7777,6 +7791,8 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reyna_follows_revenue: false,
+            pingala_follows_research: false,
             research_building_catchup: false,
             research_building_catchup_2: false,
             route_block_is_a_wait: false,
@@ -39550,6 +39566,7 @@ impl AdvancedAi {
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
+        self.relocate_governors_for_dividends(g, pid, &plan);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured

@@ -183,6 +183,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `amani-follows-suzerainty` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `boost-first-research-2` | off (unmeasured) | Let a boost in hand break ties among comparable research candidates only: the same discount scale as version one, applied in the argmax after every forced lane goal has stood down, to a boosted node whose unscaled score is within `BOOST_TIEBREAK_BAND` of the ordinary winner's. | 1 \| 2 |
 | `builder-workforce-recovery` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `builder-workforce-recovery-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
@@ -194,8 +195,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `expansion-best-idle-city` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `expansion-best-idle-city-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 | `hostile-memory-2` | off (unmeasured) | Version two retains civilian memory and prices a land escort's embarkation. | 1 \| 2 |
+| `liang-follows-builders` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
+| `magnus-follows-settlers` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
+| `pingala-follows-research` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `research-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `research-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `reyna-follows-revenue` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
 | `scout-first-opening` | off (unmeasured) | Reserve the safe capital's first build for its first Scout. | 1 \| 1 |
 | `trade-building-before-bankruptcy` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `trade-building-before-bankruptcy-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |

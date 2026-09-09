@@ -2142,6 +2142,11 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "boost-first-research-2", field: "boost_first_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_first_research_2, disable: AdvancedAi::disable_boost_first_research_2 },
     // One safe first-slot Scout, independent of later recon replacement.
     Gene { tag: "scout-first-opening", field: "scout_first_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_scout_first_opening, disable: AdvancedAi::disable_scout_first_opening },
+    Gene { tag: "amani-follows-suzerainty", field: "amani_follows_suzerainty", kind: Kind::OptIn, enable: AdvancedAi::enable_amani_follows_suzerainty, disable: AdvancedAi::disable_amani_follows_suzerainty },
+    Gene { tag: "liang-follows-builders", field: "liang_follows_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_liang_follows_builders, disable: AdvancedAi::disable_liang_follows_builders },
+    Gene { tag: "magnus-follows-settlers", field: "magnus_follows_settlers", kind: Kind::OptIn, enable: AdvancedAi::enable_magnus_follows_settlers, disable: AdvancedAi::disable_magnus_follows_settlers },
+    Gene { tag: "pingala-follows-research", field: "pingala_follows_research", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_follows_research, disable: AdvancedAi::disable_pingala_follows_research },
+    Gene { tag: "reyna-follows-revenue", field: "reyna_follows_revenue", kind: Kind::OptIn, enable: AdvancedAi::enable_reyna_follows_revenue, disable: AdvancedAi::disable_reyna_follows_revenue },
     // Retain hostile sightings for civilians and a land escort about to embark.
     Gene { tag: "hostile-memory-2", field: "hostile_memory_2", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_2, disable: AdvancedAi::disable_hostile_memory_2 },
     // ---- append: a-b ------------------------------------------------
