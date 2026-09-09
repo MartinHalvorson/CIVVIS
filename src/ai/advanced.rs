@@ -6945,6 +6945,7 @@ pub(super) mod rapid_city_expansion;
 mod settler_never_idles;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
+mod settler_shelter;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -31479,6 +31480,11 @@ impl AdvancedAi {
                 self.settler_stalls.remove(&uid);
                 self.settler_blocked_turns.remove(&uid);
             }
+        }
+        // An expansion settler can replace its exposed civilian with a city
+        // before the retreat rules run, even short of its preferred target.
+        if self.settler_founds_for_shelter(g, pid, uid) {
+            return true;
         }
         // ★★★★ A SETTLER ON A THREATENED TILE RETREATS BEFORE IT DOES ANYTHING
         // ELSE. Every hold in this routine — waiting out a forecast, a
