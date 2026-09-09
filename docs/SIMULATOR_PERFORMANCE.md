@@ -82,6 +82,57 @@ short version is that the globe runs `Sphere::distance` and `arc_is_clear`, whic
 the batch never executes, and the three absolute readings in
 `docs/speed_ledger.json` had to be superseded rather than relabelled.
 
+### The profile after the day's work — and the first one taken on the right map
+
+Re-profiled on `main` at `38858432`, quiet host (load 1.35), `ci` profile through
+`tools/profile_civvis.py`. **This is the first profile this tool has produced at
+the topology the batch actually plays**; every earlier one sampled a globe (see
+below). It supersedes the ranking that guided the changes above, which predates
+the flood skip.
+
+Named leaves, share of running samples:
+
+| | |
+| ---: | --- |
+| 3.66% | `_xzm_free` |
+| 3.23% | `_platform_memcmp` |
+| **2.28%** | **`ai::BasicAi::safe_healing_step`** |
+| 1.94% | `slice::binary_search` |
+| 1.65% | `Game::suzerain_of_uncached` |
+| 1.41% | `Game::build_reverse_flow_field` |
+| 1.34% | `BTreeMap<String, _>::get` |
+| 1.33% | `ai::BasicAi::attack_envelope_fingerprint` |
+| 1.20% | `Game::class_can_traverse` |
+| 0.87% | `Game::tile_has_visibility_line` |
+
+Unnamed, attributed by caller (the third of the profile a flat table drops):
+
+| | |
+| ---: | --- |
+| 2.14% | `Vec::clone ← Game::clone` |
+| 1.79% | `Vec::from_iter ← Game::entry_at_neighbor` |
+| 1.66% | `established_governor_at ← Game::amani_envoy_terms` |
+| 1.33% + 1.21% | `Game::in_enemy_zoc_for ← approach_reach` and one more caller |
+| 0.83% | `defensible_district_owner_at ← Game::in_enemy_zoc_for` |
+| 0.50% | `Game::healing_location ← ai::BasicAi::safe_healing_step` |
+
+Roll-ups: allocator and libc primitives **16.84%**; linker-folded and unnamed
+**33.32%** — so treat every share above as a floor.
+
+**Three things to note before acting on it.**
+
+- `safe_healing_step` is now the largest named non-libc entry at 2.28% self, plus
+  0.50% under `healing_location`. There is a stale draft, #3200 *"perf: reuse safe
+  healing target scans"*, already aimed at exactly this.
+- `Vec::from_iter ← entry_at_neighbor` is `air_patrols()`'s `collect()`, inlined.
+  It is **not** per neighbour: all three `relax_movement` callers open a memo
+  scope, so the whole-board unit scan runs once per flood. 1.79% is the sum over
+  many floods, and shrinking it means caching that scan at a longer scope than a
+  memo — a turn stamp, as `VisionCache` does — rather than reordering anything.
+- `tile_has_visibility_line` at 0.87% is the globe-only visibility arc showing its
+  **flat-map** cost for the first time. Earlier profiles put it at 6.8% inclusive,
+  which was the globe. Do not size that work from the old number.
+
 ### ⭐ What five measurements say about where to look
 
 Five changes were paired at the same shape on the same day, and the result tracks
