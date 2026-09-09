@@ -750,6 +750,27 @@ genome forward, so the rule reading a gene `off` does not remove it — four of
 the five genes held off on 2026-08-26 read `off` and shipped anyway. Adding
 the tag to `OPERATOR_DEFAULT_OFF` is what takes it out, under either policy.
 
+⭐ **A reselection has hysteresis (operator, 2026-09-09).** A batch
+publication (`python3 tools/genes.py write --reselect-deployment-defaults`,
+what `continuous_batch_scheduler.py` runs) re-decides the retained genome
+from each gene's completed-total-seat-weighted average over its available
+readings in the three displayed batches, wins per 10,000 total seats — but
+against the previous published selection, not from zero: a gene that was
+**off** turns on only when that average is strictly above **+3**; a gene that
+was **on** stays on unless it is strictly below **−3** (a gene that was on and
+no batch priced keeps its default). #3236 turned 32 defaults off from one
+batch's reading — `bounded-recovery` left with verdict Helps, P(>0) = 100%,
+pooled Diff +0.53 pp and readings −14 / +45 / +10 — and 20 of them came back
+under the band. "Was on" is the `deployment_genome` of the ledger `write`
+reads (`--prior-ledger FILE` names an older published one); the ledger records
+the list it read as `rules.prior_deployment_genome` and the genes kept on by
+the band alone as `rules.hysteresis_held`, so `check` and
+`tools/test_genes.py` re-derive the same answer. A family still ships exactly
+one version: qualifying versions compete by that average, ties to the higher
+version, so a version held on by the band alone yields to a sibling that
+clears +3. `tools/genes.py::retained_deployment_genome_from_batches` is the
+rule.
+
 ⭐ **Moving a versioned family's ship.** Pin the version you want on and hold
 the one you want off: on 2026-08-26 `settler-target-hysteresis-2` joined
 `OPERATOR_DEFAULT_ON` and `settler-target-hysteresis` joined
