@@ -100,6 +100,14 @@ A reporting-only table rotation may instead use
 refreshes the evidence columns and preserves the already selected on/off
 genome. This explicit mode is what the continuous tournament scheduler uses,
 so publishing a historical batch cannot silently change live behavior.
+`--reselect-deployment-defaults` re-decides the retained genome from the
+three displayed batches WITH HYSTERESIS (operator, 2026-09-09): a gene's
+completed-total-seat-weighted average over its available readings turns an
+off gene on only strictly above +3 wins per 10,000 total seats, and turns an
+on gene off only strictly below −3; "on" is the previous published ledger's
+`deployment_genome` (`--prior-ledger FILE` names an older one), recorded as
+`rules.prior_deployment_genome`, and `rules.hysteresis_held` names the genes
+kept on by the band alone.
 
 Deployment policy (mirrored in `src/ai/advanced/gene_ledger.rs`):
 
@@ -682,11 +690,26 @@ RETAINED_DEPLOYMENT_POLICY = "operator-retained-selection"
 #: pooled on/off percentage-point Diff. Each available batch is weighted by
 #: its completed player seats, so a short batch cannot dominate the selection.
 RETAINED_SELECTION_MIN_AVERAGE = 3
+#: ⭐ HYSTERESIS (operator, 2026-09-09). #3236 flipped 32 defaults off and 20
+#: on from ONE batch's reading — `bounded-recovery` left with verdict Helps,
+#: P(>0) = 100%, pooled Diff +0.53 pp, readings −14 / +45 / +10. A gene that
+#: is currently ON therefore stays on unless its weighted latest-three
+#: average is STRICTLY BELOW this (the symmetric band); a gene currently OFF
+#: turns on only STRICTLY ABOVE `RETAINED_SELECTION_MIN_AVERAGE`, unchanged.
+#: "Currently on" is the `default_on` the previous published ledger recorded
+#: (`rules.deployment_genome` of the ledger `write` reads as its prior state,
+#: or of `--prior-ledger FILE`), and the ledger records the list it read as
+#: `rules.prior_deployment_genome` so `check` reproduces the answer.
+RETAINED_SELECTION_OFF_BELOW = -3
 RETAINED_SELECTION_RULE = (
-    "each selected gene has a completed-total-seat-weighted average strictly above "
-    "+3 wins per 10,000 total seats over its available readings from the latest "
-    "three reporting batches; when multiple versions of one gene qualify, only the "
-    "version with the higher such average ships; every other screenable gene is off"
+    "each gene's completed-total-seat-weighted average over its available readings "
+    "from the latest three reporting batches, in wins per 10,000 total seats, decides "
+    "it with hysteresis against the previous published selection "
+    "(prior_deployment_genome): a gene currently off turns on only strictly above +3; "
+    "a gene currently on stays on unless strictly below -3, and a gene currently on "
+    "that no batch priced keeps its default; when multiple versions of one gene "
+    "qualify, only the version with the higher such average ships (ties to the higher "
+    "version); every other screenable gene is off"
 )
 #: ⭐ THE OPERATOR'S PINS. The explicit 2026-08-31 selection contains no
 #: exceptions: every deployed gene must earn its place from the three latest
@@ -1747,39 +1770,74 @@ def resolve_family_heads(rule_on: tuple[str, ...], tags: list[str],
     return tuple(sorted(chosen)), record
 
 
-def retained_deployment_genome_from_batches(batches: list,
-                                            tags: list[str]) -> tuple[str, ...]:
-    """The current explicit retained selection from the displayed batches.
+def retained_selection_averages(batches: list, tags: list[str]) -> dict[str, float]:
+    """Every tag's completed-total-seat-weighted mean over its available
+    readings in the newest three ranking columns, wins per 10,000 total seats.
+    A tag no displayed batch priced has no entry."""
+    weights = [int(batch["meta"]["seats"]) if batch is not None else None
+               for batch in batches[:BATCH_RULE_WINDOW]]
+    averages = {}
+    for tag in tags:
+        average = retained_selection_average([
+            total_seat_batch_wins_value(batch["rows"][tag])
+            if batch is not None and tag in batch["rows"] else None
+            for batch in batches[:BATCH_RULE_WINDOW]
+        ], weights)
+        if average is not None:
+            averages[tag] = average
+    return averages
 
-    A tag qualifies when its completed-total-seat-weighted mean over available
-    entries in the newest three ranking columns is strictly above +3 wins per
-    10,000 total seats. The deployment model allows one active version per
-    family, so a qualifying family selects the member with the higher directive
-    mean (ties go to the higher version, matching ``family_head``). This is
+
+def retained_deployment_genome_from_batches(batches: list, tags: list[str],
+                                            prior_on: tuple[str, ...] | list[str] = ()
+                                            ) -> tuple[str, ...]:
+    """The current explicit retained selection from the displayed batches,
+    with hysteresis against ``prior_on`` — the previous published selection.
+
+    A tag's reading is its completed-total-seat-weighted mean over available
+    entries in the newest three ranking columns (`retained_selection_averages`).
+    A tag currently OFF turns on only when that mean is strictly above +3 wins
+    per 10,000 total seats; a tag currently ON stays on unless the mean is
+    strictly below −3 (`RETAINED_SELECTION_OFF_BELOW`), and a tag currently on
+    that no displayed batch priced keeps its default (there is no reading to
+    move it). The deployment model allows one active version per family, so a
+    family with several qualifying members ships the one with the higher mean
+    (ties go to the higher version, matching ``family_head``); a version held
+    by hysteresis alone therefore yields to a sibling that clears +3. This is
     intentionally separate from ``batch_rule``: the latter stays recorded as
     evidence while the retained policy carries this explicit selection across
     table rotations.
     """
-    weights = [int(batch["meta"]["seats"]) if batch is not None else None
-               for batch in batches[:BATCH_RULE_WINDOW]]
-    averages = {
-        tag: average
-        for tag in tags
-        if (average := retained_selection_average([
-                total_seat_batch_wins_value(batch["rows"][tag])
-                if batch is not None and tag in batch["rows"] else None
-                for batch in batches[:BATCH_RULE_WINDOW]
-            ], weights)) is not None
-        and average > RETAINED_SELECTION_MIN_AVERAGE
+    prior = set(prior_on)
+    averages = retained_selection_averages(batches, tags)
+    qualifies = {
+        tag for tag in tags
+        if (tag in averages and averages[tag] > RETAINED_SELECTION_MIN_AVERAGE)
+        or (tag in prior and (tag not in averages
+                              or averages[tag] >= RETAINED_SELECTION_OFF_BELOW))
     }
-    selected = set(averages)
+    selected = set(qualifies)
     for family in families_of(tags):
-        qualifying = [tag for tag in family if tag in averages]
+        qualifying = [tag for tag in family if tag in qualifies]
         if len(qualifying) < 2:
             continue
         selected.difference_update(qualifying)
-        selected.add(max(qualifying, key=lambda tag: (averages[tag], family.index(tag))))
+        selected.add(max(qualifying,
+                         key=lambda tag: (averages.get(tag, float("-inf")),
+                                          family.index(tag))))
     return tuple(sorted(selected))
+
+
+def hysteresis_held(batches: list, tags: list[str],
+                    selected: tuple[str, ...] | list[str]) -> list[str]:
+    """The selected tags whose weighted average does not clear the turn-on
+    threshold: on only because they were already on (hysteresis), or because
+    a reporting-only rotation retained them. Recorded beside the genome so a
+    reader can tell an earned default from a kept one."""
+    averages = retained_selection_averages(batches, tags)
+    return sorted(tag for tag in selected
+                  if averages.get(tag) is None
+                  or averages[tag] <= RETAINED_SELECTION_MIN_AVERAGE)
 
 
 def tracked_wins(gene: dict) -> float:
@@ -1898,7 +1956,8 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                  reporting_batches: list[Path] | None = None,
                  reporting_build_notes: dict[str, str] | None = None,
                  deployment_policy: str = DEPLOYMENT_POLICY,
-                 retained_deployment_genome: tuple[str, ...] | None = None) -> dict:
+                 retained_deployment_genome: tuple[str, ...] | None = None,
+                 prior_deployment_genome: tuple[str, ...] | None = None) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
     Sources are recorded oldest-first, and a later one overrides an earlier one
     per gene. `filter_known=False` keeps every tag (synthetic tests).
@@ -1906,7 +1965,12 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     The normal policy derives `default_on` from the batch rule plus explicit
     pins. `operator-retained-selection` is for reporting-only table rotation:
     it keeps the recorded deployment genome and treats incoming batch rows as
-    evidence only.
+    evidence only. ``prior_deployment_genome`` is the previous published
+    selection the hysteresis of `retained_deployment_genome_from_batches` read
+    when ``retained_deployment_genome`` was chosen; it is recorded as
+    `rules.prior_deployment_genome` so `check` re-derives the same answer.
+    ``None`` records the retained genome itself as its own prior (a rotation
+    that changed nothing).
 
     `build_notes` maps a source's file name to the reason its build check was
     waived, and is what makes `--unverified-build` a *recorded* escape rather
@@ -2103,8 +2167,10 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 "the version that ships; every other screenable tag is off"
                 if deployment_policy == DEPLOYMENT_POLICY else
                 "operator-retained-selection: " + RETAINED_SELECTION_RULE + "; exactly "
-                "the tags in deployment_genome are on, and a reporting-only batch refresh "
-                "retains that selected set while its batch columns remain published evidence"
+                "the tags in deployment_genome are on, a reselection reads the previous "
+                "published selection from prior_deployment_genome, and a reporting-only "
+                "batch refresh retains the selected set while its batch columns remain "
+                "published evidence"
             ),
             "batch_rule": "read over the reporting batches that priced the gene, newest first, "
                           "at most batch_rule_window of them, each reading the ranking's wins "
@@ -2119,7 +2185,25 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "batch_rule_average": BATCH_RULE_AVERAGE,
             "batch_rule_remove_below": BATCH_RULE_REMOVE_BELOW,
             "retained_selection_min_average": RETAINED_SELECTION_MIN_AVERAGE,
+            "retained_selection_off_below": RETAINED_SELECTION_OFF_BELOW,
             "retained_selection_weighting": "completed total player seats",
+            "retained_selection_hysteresis": (
+                "a gene in prior_deployment_genome stays selected unless its weighted "
+                "average is strictly below retained_selection_off_below; a gene outside it "
+                "is selected only strictly above retained_selection_min_average; "
+                "hysteresis_held lists the selected genes whose average does not clear "
+                "retained_selection_min_average - on because they were already on, or "
+                "because a reporting-only rotation retained them"
+            ),
+            "prior_deployment_genome": (
+                sorted(prior_deployment_genome if prior_deployment_genome is not None
+                       else selected)
+                if deployment_policy == RETAINED_DEPLOYMENT_POLICY else []
+            ),
+            "hysteresis_held": (
+                hysteresis_held(batches, sorted(allowed), selected)
+                if deployment_policy == RETAINED_DEPLOYMENT_POLICY else []
+            ),
             "batch_columns": columns_by_tag,
             "batch_decisions": decisions,
             "removals_due": removals_due if deployment_policy == DEPLOYMENT_POLICY else [],
@@ -2227,8 +2311,10 @@ def render_rust(ledger: dict) -> str:
     provenance = (
         [
             "// together; this reporting-only publication retains `DEPLOYMENT_GENOME`.",
-            "// Each selected tag's available latest-three `BATCH_COLUMNS` are weighted by",
-            "// completed total player seats and average strictly above +3 wins/10k; one higher-average version ships per family.",
+            "// Each tag's available latest-three `BATCH_COLUMNS`, weighted by completed",
+            "// total player seats, decide it with hysteresis against the previous published",
+            "// selection: off turns on strictly above +3 wins/10k, on turns off strictly",
+            "// below -3; one higher-average version ships per family.",
         ]
         if retained else
         [
@@ -2239,9 +2325,12 @@ def render_rust(ledger: dict) -> str:
     )
     genome_description = (
         [
-            "/// The screenable genes whose completed-total-seat-weighted average is strictly",
-            "/// above +3 wins per 10,000 total seats over available latest-three batch",
-            "/// readings; every other screenable gene is off. One higher-average version ships per family.",
+            "/// The screenable genes selected with hysteresis from their completed-total-",
+            "/// seat-weighted average over available latest-three batch readings: a gene",
+            "/// that was off turned on strictly above +3 wins per 10,000 total seats, a gene",
+            "/// that was on stayed on unless strictly below -3 (`rules.hysteresis_held` in",
+            "/// the ledger names the kept ones); every other screenable gene is off. One",
+            "/// higher-average version ships per family.",
         ]
         if retained else
         [
@@ -2253,7 +2342,8 @@ def render_rust(ledger: dict) -> str:
     pin_description = (
         [
             "/// No manual on overrides: every deployed gene meets the published",
-            "/// completed-total-seat-weighted latest-three average-above-+3 criterion.",
+            "/// completed-total-seat-weighted latest-three criterion — above +3 to turn",
+            "/// on, not below -3 to stay on.",
         ]
         if retained else
         [
@@ -2535,12 +2625,17 @@ def rebuild_from_ledger(ledger: dict) -> dict:
     policy = rules.get("deployment_policy", DEPLOYMENT_POLICY)
     retained = (tuple(rules.get("deployment_genome", ()))
                 if policy == RETAINED_DEPLOYMENT_POLICY else None)
+    # The previous published selection the hysteresis read; a ledger written
+    # before it was recorded (pre-2026-09-09) is its own prior.
+    prior = (tuple(rules.get("prior_deployment_genome", rules.get("deployment_genome", ())))
+             if policy == RETAINED_DEPLOYMENT_POLICY else None)
     return build_ledger(sources_from_ledger(ledger),
                         build_notes=notes_from_ledger(ledger),
                         reporting_batches=reporting_batches_from_ledger(ledger),
                         reporting_build_notes=reporting_batch_notes_from_ledger(ledger),
                         deployment_policy=policy,
-                        retained_deployment_genome=retained)
+                        retained_deployment_genome=retained,
+                        prior_deployment_genome=prior)
 
 
 def sources_from_ledger(ledger: dict) -> list[Path]:
@@ -3062,10 +3157,13 @@ def evidence_sections(ledger: dict, measured: dict[str, list[dict]],
     heading = ("## Evidence beside the retained deployment selection" if retained
                else "## Evidence beside the batch rule")
     policy_explanation = (
-        "This is a reporting-only publication: the selected deployment genome contains exactly "
-        "the genes whose available readings in the latest three reporting batches have a "
-        "completed-total-seat-weighted average strictly above +3 wins per 10,000 total seats; "
-        "when versions of the same gene both qualify, "
+        "This is a reporting-only publication: the selected deployment genome is decided by "
+        "each gene's completed-total-seat-weighted average over its available readings in the "
+        "latest three reporting batches, with hysteresis against the previous published "
+        "selection (operator, 2026-09-09) — a gene that was off turns on only strictly above "
+        "+3 wins per 10,000 total seats, and a gene that was on stays on unless strictly below "
+        "−3, so one batch's bounce cannot flip a default (the ledger's `rules.hysteresis_held` "
+        "names the genes kept that way); when versions of the same gene both qualify, "
         "only the higher-average version ships. Every other screenable gene is off. Later table "
         "rotations retain that explicit selection while refreshing evidence, so a historical "
         "batch cannot silently rewrite the live genome."
@@ -3339,15 +3437,17 @@ def render_parts(ledger: dict) -> tuple[str, str]:
     if retained:
         default_authority = (
             "the explicit retained selection (`docs/gene_ledger.json`, "
-            "`rules.deployment_genome`): a gene is on only when its available readings "
-            "in the latest three reporting batches have a completed-total-seat-weighted average "
-            "strictly above +3 wins per 10,000 total seats; qualifying versions compete by that "
-            "average and every other "
+            "`rules.deployment_genome`): a gene that was off turns on only when its available "
+            "readings in the latest three reporting batches have a completed-total-seat-weighted "
+            "average strictly above +3 wins per 10,000 total seats, and a gene that was on "
+            "(`rules.prior_deployment_genome`) stays on unless that average is strictly below "
+            "−3; qualifying versions compete by that average and every other "
             "screenable gene is off."
         )
         pins_reference = (
             "**Selected defaults.** No named overrides remain: the deployed set is exactly "
-            "the completed-total-seat-weighted latest-three average-above-+3 selection, with the "
+            "the completed-total-seat-weighted latest-three selection with hysteresis — off "
+            "turns on above +3, on turns off below −3 — with the "
             "higher-average version winning any family collision. The legacy batch-rule "
             "readings remain visible in `rules.batch_decisions`, but do not change a default "
             "during table rotation."
@@ -3770,7 +3870,14 @@ def _add_source_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument(
         "--reselect-deployment-defaults", action="store_true",
         help=("replace the retained deployment genome with the current completed-total-seat-"
-              "weighted latest-three-batch selection"),
+              "weighted latest-three-batch selection, with hysteresis against the previous "
+              "published selection (the checked-in ledger's, or --prior-ledger's)"),
+    )
+    ap.add_argument(
+        "--prior-ledger", metavar="FILE", default=None,
+        help=("the previously published docs/gene_ledger.json whose deployment_genome is "
+              "the 'currently on' state --reselect-deployment-defaults reads for its "
+              "hysteresis; default: the checked-in ledger"),
     )
     ap.add_argument(
         "--retained-deployment-genome", metavar="JSON", default=None,
@@ -3930,12 +4037,23 @@ def main(argv=None) -> int:
         raise SystemExit("--preserve-deployment-defaults needs an existing deployment genome")
     if args.reselect_deployment_defaults and current is None:
         raise SystemExit("--reselect-deployment-defaults needs an existing reporting ledger")
+    if args.prior_ledger is not None and not args.reselect_deployment_defaults:
+        raise SystemExit("--prior-ledger requires --reselect-deployment-defaults")
     reporting = latest_reporting_batches(entered_reporting, recorded_reporting)
     reporting_notes = dict(recorded_reporting_notes)
     if args.reporting_unverified_build:
         for path in entered_reporting:
             reporting_notes[path.name] = args.reporting_unverified_build
     current_rules = (current or {}).get("rules", {})
+    # ⭐ THE PRIOR STATE the hysteresis reads: the previous published
+    # selection. A plain write or a preserve rotation keeps the genome, so its
+    # prior is the checked-in one; a reselection may name an older published
+    # ledger explicitly (how #3236's one-batch flips were re-decided).
+    prior_deployment_genome: tuple[str, ...] | None = None
+    if args.reselect_deployment_defaults:
+        prior_rules = (json.loads(Path(args.prior_ledger).read_text()).get("rules", {})
+                       if args.prior_ledger is not None else current_rules)
+        prior_deployment_genome = retained_deployment_selection(prior_rules, None)
     if args.preserve_deployment_defaults:
         deployment_policy = RETAINED_DEPLOYMENT_POLICY
         retained_deployment_genome = retained_deployment_selection(
@@ -3962,7 +4080,8 @@ def main(argv=None) -> int:
                                 reporting_batches=reporting,
                                 reporting_build_notes=reporting_notes,
                                 deployment_policy=policy,
-                                retained_deployment_genome=selection)
+                                retained_deployment_genome=selection,
+                                prior_deployment_genome=prior_deployment_genome)
     else:
         if current is None:
             raise SystemExit("no existing ledger; provide at least one source")
@@ -3972,11 +4091,13 @@ def main(argv=None) -> int:
                                 reporting_batches=reporting,
                                 reporting_build_notes=reporting_notes,
                                 deployment_policy=policy,
-                                retained_deployment_genome=selection)
+                                retained_deployment_genome=selection,
+                                prior_deployment_genome=prior_deployment_genome)
     ledger = rebuild(deployment_policy, retained_deployment_genome)
     if args.reselect_deployment_defaults:
         retained_deployment_genome = retained_deployment_genome_from_batches(
-            load_reporting_batches(ledger), screenable_tags())
+            load_reporting_batches(ledger), screenable_tags(),
+            prior_on=prior_deployment_genome or ())
         ledger = rebuild(RETAINED_DEPLOYMENT_POLICY, retained_deployment_genome)
     LEDGER_JSON.write_text(render_json(ledger))
     REGISTRY_PATH.write_text(registry_with_block(render_rust(ledger)), encoding="utf-8")
