@@ -4779,6 +4779,15 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Plan the next six technologies' and four civics' boosts: classify each
+    /// trigger by what it costs the plan, turn the cheap ones into at most
+    /// three deadlined side objectives, and defer a node whose committed
+    /// boost lands within three turns. Opt-in gene `boost-planner`; see
+    /// `advanced/boost_planner.rs`.
+    boost_planner: bool,
+    /// The per-turn memo behind `boost_planner`: the live side objectives and
+    /// the set already written to the journal.
+    boost_planner_frame: RefCell<boost_planner::BoostPlannerFrame>,
     /// Opt-in governor relocation; see `governor_dividends`.
     amani_follows_suzerainty: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
@@ -6734,6 +6743,12 @@ mod deity_habits;
 mod boost_research;
 mod chase_every_boost;
 
+/// A short, deadlined plan for the Eurekas and Inspirations the beeline is
+/// about to walk past: a six-technology, four-civic horizon, a trigger cost
+/// table, at most three side objectives, and a three-turn research deferral.
+/// Opt-in gene `boost-planner`; see `advanced/boost_planner.rs`.
+mod boost_planner;
+
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -7693,6 +7708,8 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            boost_planner: false,
+            boost_planner_frame: RefCell::new(boost_planner::BoostPlannerFrame::default()),
             amani_follows_suzerainty: false,
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
@@ -14065,6 +14082,33 @@ impl AdvancedAi {
                         .unwrap_or(ordinary)
                 })
             };
+            // `boost-planner`: a node whose committed boost lands within
+            // `BOOST_DEFER_TURNS` yields its slot to another node on the same
+            // beeline, so the discount is banked before the node is bought at
+            // full price. `None` with the gene off. See
+            // `advanced/boost_planner.rs`.
+            let pick = pick.map(|chosen| {
+                match self.boost_planner_defer_pick(
+                    g,
+                    pid,
+                    &available,
+                    &chosen,
+                    forced_goal,
+                    true,
+                ) {
+                    Some(deferral) => {
+                        think!(self.journal(), Research, Decision,
+                               "Deferring {} for its boost", plain(chosen.as_str());
+                               "{} fires within {:.0} turns and pays 40 percent of the node; \
+                                researching {} first",
+                               deferral.trigger,
+                               boost_planner::BOOST_DEFER_TURNS,
+                               plain(deferral.pick.as_str()));
+                        deferral.pick
+                    }
+                    None => chosen,
+                }
+            });
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
@@ -14231,6 +14275,33 @@ impl AdvancedAi {
                         )
                         .unwrap_or(ordinary)
                     })
+            });
+            // `boost-planner`: a node whose committed boost lands within
+            // `BOOST_DEFER_TURNS` yields its slot to another node on the same
+            // beeline, so the discount is banked before the node is bought at
+            // full price. `None` with the gene off. See
+            // `advanced/boost_planner.rs`.
+            let pick = pick.map(|chosen| {
+                match self.boost_planner_defer_pick(
+                    g,
+                    pid,
+                    &available,
+                    &chosen,
+                    forced_goal,
+                    false,
+                ) {
+                    Some(deferral) => {
+                        think!(self.journal(), Research, Decision,
+                               "Deferring {} for its boost", plain(chosen.as_str());
+                               "{} fires within {:.0} turns and pays 40 percent of the node; \
+                                researching {} first",
+                               deferral.trigger,
+                               boost_planner::BOOST_DEFER_TURNS,
+                               plain(deferral.pick.as_str()));
+                        deferral.pick
+                    }
+                    None => chosen,
+                }
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
@@ -28188,6 +28259,10 @@ impl AdvancedAi {
         let raw = if raw > 0.0 {
             raw + self.culture_race_production_bonus(g, pid, item, plan.strategy, turns)
                 + self.production_boost_premium(g, pid, cid, item, raw)
+                // `boost-planner`: the deadlined side objective this item
+                // satisfies, as a share of the item's own value. Zero with
+                // the gene off. See `advanced/boost_planner.rs`.
+                + self.boost_planner_production_premium(g, pid, cid, item, raw, plan)
                 + self.quest_production_premium(g, pid, item, plan.strategy)
                 + self.quest_boost_premium(g, pid, item, plan.strategy)
         } else {
@@ -28773,6 +28848,10 @@ impl AdvancedAi {
         // return 0.0 with their gene off. See `advanced/chokepoints.rs`.
         value += self.chokepoint_site_bonus(g, pid, pos);
         value += self.canal_city_bonus(g, pid, pos);
+        // `boost-planner`: a live coastal-city side objective, as a share of
+        // the site's own value. Zero with the gene off. See
+        // `advanced/boost_planner.rs`.
+        value += self.boost_planner_site_premium(g, pid, pos, value);
         value
     }
 
@@ -32530,6 +32609,10 @@ impl AdvancedAi {
         // `advanced/city_state_quests.rs`.
         value
             + self.builder_boost_premium(g, pos, improvement, value)
+            // `boost-planner`: the deadlined side objective this Builder job
+            // satisfies, as a share of the job's own value. Zero with the
+            // gene off. See `advanced/boost_planner.rs`.
+            + self.boost_planner_builder_premium(g, pos, improvement, value)
             + self.quest_boost_builder_premium(g, pos, improvement, strategy)
     }
 

@@ -4101,6 +4101,21 @@ impl AdvancedAi {
         self.culture_threat_early = false;
     }
 
+    /// Plan the next six technologies' and four civics' boosts: classify each
+    /// trigger by what it costs the plan, turn the cheap ones into at most
+    /// three deadlined side objectives, and defer a node whose committed boost
+    /// lands within three turns. See `advanced/boost_planner.rs`. Opt-in gene
+    /// `boost-planner`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_boost_planner(&mut self) {
+        self.boost_planner = true;
+    }
+
+    /// The twin of `enable_boost_planner`.
+    pub fn disable_boost_planner(&mut self) {
+        self.boost_planner = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

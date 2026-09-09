@@ -356,7 +356,7 @@ impl AdvancedAi {
     /// Is the final buildable boost trigger already at the front of an owned
     /// city queue? V2 waits only for work the empire has actually committed,
     /// never for a hypothetical Builder job or a merely legal queue item.
-    fn boost_trigger_is_queued(g: &Game, pid: usize, trigger: &str) -> bool {
+    pub(super) fn boost_trigger_is_queued(g: &Game, pid: usize, trigger: &str) -> bool {
         g.cities
             .values()
             .filter(|city| city.owner == pid)

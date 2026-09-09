@@ -2162,6 +2162,14 @@ pub const GENES: &[Gene] = &[
     // Version two also withdraws healthy units exposed to a nominal lethal
     // shot from one recently observed gun; v1 remains the deployed control.
     Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
+    // A short, deadlined plan for the Eurekas and Inspirations the beeline is
+    // about to walk past: the next six technologies and four civics, a trigger
+    // cost table, at most three cheap side objectives carrying the turn they
+    // expire, and a three-turn research deferral. The live ladder triggers
+    // 13-40 percent of tech boosts and 0-26 percent of civic boosts, and
+    // `chase-every-boost-2` shows that pricing every reachable trigger instead
+    // measures negative. See `advanced/boost_planner.rs`.
+    Gene { tag: "boost-planner", field: "boost_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner, disable: AdvancedAi::disable_boost_planner },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

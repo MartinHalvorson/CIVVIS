@@ -265,7 +265,7 @@ impl AdvancedAi {
     /// The trigger key an item advances, in the chase table's own spelling.
     /// A wonder advances the tree-agnostic `wonders` trigger (Drama and
     /// Poetry's inspiration); projects and repairs advance nothing.
-    fn item_trigger_key(g: &Game, item: &Item) -> Option<String> {
+    pub(super) fn item_trigger_key(g: &Game, item: &Item) -> Option<String> {
         Some(match item {
             Item::Unit { unit } => format!("units_of:{unit}"),
             Item::Building { building } => format!("building:{building}"),
