@@ -3307,6 +3307,10 @@ pub struct StateSnapshot {
     /// 23 `already_*` in 61 turns of run civvis-20260731T070956Z.
     #[serde(default)]
     pub policies: Vec<String>,
+    /// Current native eligibility, including government exclusives and bans.
+    /// None is unknown (older mod); Some(empty) means no available cards.
+    #[serde(default)]
+    pub available_policies: Option<Vec<String>>,
     /// How many policy slots this government actually has. Choosing a card for a slot
     /// that does not exist is an uninformed decision, not a bad one.
     #[serde(default)]
@@ -5709,7 +5713,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "religions", "prophet_pending",
-        "policies", "policy_slots", "gold", "gold_per_turn",
+        "policies", "available_policies", "policy_slots", "gold", "gold_per_turn",
         "unit_maintenance_total", "building_maintenance_total", "district_maintenance_total",
         "faith", "faith_per_turn",
         "faith_sources", "science",
@@ -6169,6 +6173,19 @@ fn blocked_policies_from(
         .filter_map(|civ6| civvis_node_name(&rules.policies, civ6, "POLICY_"))
         .map(|name| Name::new(&name))
         .collect()
+}
+
+fn apply_host_policy_choices(game: &mut crate::game::Game, state: &StateSnapshot) {
+    if let Some(names) = &state.available_policies {
+        let choices = names
+            .iter()
+            .filter_map(|name| civvis_node_name(&game.rules.policies, name, "POLICY_"))
+            .map(|name| Name::new(&name))
+            .collect();
+        game.host_policy_choices.insert(0, choices);
+    } else {
+        game.host_policy_choices.remove(&0);
+    }
 }
 
 /// Translate the completed one-time projects from Civilization VI's project
@@ -11071,6 +11088,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("human_seat", REBUILD, step_human_seat),
             ("map_script", REBUILD, step_map_script),
             ("refused_site_blocks", REBUILD, step_refused_site_blocks),
+            ("policy_choices", BOTH, step_policy_choices),
             ("identity", BOTH, step_identity),
         ],
     ),
@@ -11226,6 +11244,10 @@ fn step_map_script(ctx: &mut HostStepCtx<'_>) {
     if let Some(map_script) = civvis_map_script(&ctx.state.seat.map) {
         ctx.game.map_script = map_script;
     }
+}
+
+fn step_policy_choices(ctx: &mut HostStepCtx<'_>) {
+    apply_host_policy_choices(ctx.game, ctx.state);
 }
 
 fn step_refused_site_blocks(ctx: &mut HostStepCtx<'_>) {

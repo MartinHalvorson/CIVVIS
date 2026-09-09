@@ -162,6 +162,36 @@ class TheResolutionOrder(unittest.TestCase):
         self.assertEqual(len(logs), 1)
         self.assertIn("equals the repo list", logs[0])
 
+    def test_reordering_or_repeating_tags_does_not_change_the_arm(self) -> None:
+        self.repo_list("alpha-one,beta-two\n")
+        for text in ("beta-two,alpha-one\n", "beta-two,alpha-one,beta-two\n"):
+            with self.subTest(text=text):
+                self.local_list(text)
+                rc, got, logs = self.resolve()
+                self.assertEqual(rc, 0)
+                self.assertEqual(got["FORCED"], text.strip(), "preserve execution arguments")
+                self.assertTrue(any("equals the repo list" in line for line in logs), logs)
+
+    def test_status_compares_the_effective_set_of_tags(self) -> None:
+        source = GAMES.read_text()
+        start = source.index("    # Forced tags are a set:")
+        end = source.index("\n    else", start)
+        block = source[start:end] + "\n    else\n      print DIFFERENT\n    fi\n"
+        # Run the actual status branch, with only its display dependencies stubbed.
+        for local, repo, equal in (("beta,alpha", "alpha,beta", True),
+                                   ("alpha,alpha,beta", "alpha,beta", True),
+                                   ("alpha,gamma", "alpha,beta", False),
+                                   ("alpha", "alpha,beta", False),
+                                   ("alpha", "", False)):
+            with self.subTest(local=local, repo=repo):
+                script = ('say() { print -r -- "$*"; }\n'
+                          'stat() { print timestamp; }\n'
+                          'local_list=$1; repo_list=$2; forced=/tmp/forced\n' + block)
+                done = subprocess.run(["zsh", "-c", script, "status-test", local, repo],
+                                      capture_output=True, text=True, timeout=10)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual("equals the repo list" in done.stdout, equal, done.stdout)
+
     def test_an_empty_local_file_falls_through_to_the_repo_list(self) -> None:
         self.repo_list("alpha-one\n")
         self.local_list("")

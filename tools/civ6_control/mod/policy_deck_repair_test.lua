@@ -128,6 +128,8 @@ function culture:GetNumPolicySlots() return 8 end
 function culture:GetSlotType(i) return i + 1 end
 function culture:GetSlotPolicy(i) return host.slots[i + 1] or -1 end
 function culture:IsPolicyUnlocked() return true end
+function culture:IsPolicyBanned(hash) return host.banned == hash end
+function culture:CanPolicyBeSlotted(hash) return host.unavailable ~= hash end
 function culture:IsPolicyObsolete() return false end
 function culture:RequestPolicyChanges(clearList, addList)
 	host.calls[#host.calls + 1] = { clear = copy(clearList), add = copy(addList) }
@@ -165,6 +167,19 @@ local desired = table.concat({
 	"POLICY_PUBLIC_WORKS", "POLICY_CRYPTOGRAPHY", "POLICY_RATIONALISM",
 }, ",")
 local order = { kind = "policy_deck", verb = desired }
+
+host.unavailable = policyRows.POLICY_NEW_DEAL.Hash
+local rejected, refusal = applyOrder(player, 0, order, 99)
+assert(not rejected and refusal == "unavailable_POLICY_NEW_DEAL",
+	"an unlocked but government-exclusive card must be rejected")
+assert(#host.calls == 0 and host.slots[5] == policyRows.POLICY_LIBERALISM.Index,
+	"refusing an unavailable card must preserve the entire existing deck")
+host.unavailable = nil
+host.banned = policyRows.POLICY_NEW_DEAL.Hash
+rejected, refusal = applyOrder(player, 0, order, 99)
+assert(not rejected and refusal == "unavailable_POLICY_NEW_DEAL" and #host.calls == 0,
+	"a Congress-banned card must not start a policy transaction")
+host.banned = nil
 
 local ok, reason = applyOrder(player, 0, order, 100)
 assert(ok and reason == "policy_deck", "initial deck request failed: " .. tostring(reason))
