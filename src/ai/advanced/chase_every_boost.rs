@@ -24,7 +24,7 @@
 //! research-pace lever the size of the whole late-game deficit.
 //!
 //! Why the six existing boost genes did not close it: three of them only
-//! re-order research (`boost-first-research`, `boost-wait-research`,
+//! re-order research (`boost-first-research`, `boost-wait-research-2`,
 //! `boost-unlock-research`), two chase a trigger by building the thing it
 //! names (`eureka-chasing-builder`, `eureka-chasing-production`), and all
 //! five read [`AdvancedAi::eureka_chases`], whose progress reader knew **six

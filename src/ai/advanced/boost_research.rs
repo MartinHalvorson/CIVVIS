@@ -38,13 +38,16 @@
 //!   144 seats: score share **-3.36 pp, z -3.21**, against a run resolving
 //!   ±2.93 — outside its own noise, which the win column's -9.4 against ±17.0
 //!   was not. See `docs/gene_screens/fires/boost-first-research-v1.json`.
-//! - **`boost-wait-research`.** The other half of the same fact: a node we
-//!   would *finish* inside a few turns, whose boost is still earnable, is
-//!   taken after the eureka rather than before it — the discount survives a
-//!   long node (it is credited mid-research) and dies on a short one. The
-//!   penalty is the boost at risk scaled by how likely the node is to beat its
-//!   own trigger home, so it reorders the cheap end of the list and cannot
-//!   reach a node far enough out to be safe.
+//! - **`boost-wait-research-2`.** The other half of the same fact: a node we
+//!   would *finish* inside two turns, whose final boost trigger is already at
+//!   the front of an owned city queue, is taken after the eureka rather than
+//!   before it — the discount survives a long node (it is credited
+//!   mid-research) and dies on a short one. The penalty is a light tie-break
+//!   on the boost at risk, scaled by how likely the node is to beat its own
+//!   trigger home. Version one (`boost-wait-research`: a six-turn window,
+//!   any buildable trigger, half the boost) left the code on 2026-09-08 with
+//!   version two shipping on; its broader window repeatedly delayed useful
+//!   prerequisites for a boost whose Builder or queue item never arrived.
 //! - **`boost-unlock-research`.** Being *intentional* about earning the rest:
 //!   a node is credited the boosts it makes chaseable at all. Masonry's quarry
 //!   wants Mining, Machinery's three Archers want Archery, Guilds' two Markets
@@ -74,37 +77,39 @@ pub(super) const BOOST_IN_HAND_FLAT_VALUE: f64 = 28.0;
 /// inspiration is the additive mistake in another costume.
 pub(super) const BOOST_SCALE_CAP: f64 = 2.0;
 
-/// `boost_wait_research` / `boost_unlock_research`: what one turn of research
+/// `boost_wait_research_2` / `boost_unlock_research`: what one turn of research
 /// is worth on the `tech_value` / `civic_value` scale, above the `sqrt(cost)`
 /// divisor. Both of those genes price something the node does for the rest of
 /// the tree — a boost lost, a permission bought — which is an ordinary
 /// addition like a building unlock, not a discount on this node.
 pub(super) const BOOST_TURN_VALUE: f64 = 22.0;
 
-/// `boost_wait_research` / `boost_unlock_research`: the ceiling on how many
+/// `boost_wait_research_2` / `boost_unlock_research`: the ceiling on how many
 /// turns of research one boost is allowed to be worth. An empire whose science
 /// has collapsed against a mid-game tree can price a single boost at forty
 /// turns, which would dictate the tree rather than order it.
 pub(super) const BOOST_TURNS_CAP: f64 = 12.0;
 
-/// `boost_wait_research`: a node the empire needs longer than this to finish
-/// is not at risk — its trigger has room to land while the node runs, and the
-/// engine credits the boost mid-research. Six turns is the shortest ordinary
-/// gap between two eurekas earned by ordinary building.
+/// `chase_every_boost`'s wait: a node the empire needs longer than this to
+/// finish is not at risk — its trigger has room to land while the node runs,
+/// and the engine credits the boost mid-research. Six turns is the shortest
+/// ordinary gap between two eurekas earned by ordinary building. (This was
+/// `boost-wait-research` v1's window; that gene left the code on 2026-09-08.)
 pub(super) const BOOST_WAIT_HORIZON_TURNS: f64 = 6.0;
 
-/// `boost_wait_research-2`: only a node within two turns is close enough to
+/// `boost_wait_research_2`: only a node within two turns is close enough to
 /// justify yielding its slot to the final outstanding trigger step. The
 /// broader six-turn v1 window repeatedly delayed useful prerequisites for a
 /// boost whose Builder or queue item never arrived.
 pub(super) const BOOST_WAIT_V2_HORIZON_TURNS: f64 = 2.0;
 
-/// `boost_wait_research`: how much of the boost at risk the wait subtracts.
-/// Half, so the penalty reorders the cheap end of the list against nodes of
-/// comparable value and never outweighs a node that is wanted on its merits.
+/// `chase_every_boost`'s wait: how much of the boost at risk the wait
+/// subtracts. Half, so the penalty reorders the cheap end of the list against
+/// nodes of comparable value and never outweighs a node that is wanted on
+/// its merits. (`boost-wait-research` v1's factor; that gene left the code.)
 pub(super) const BOOST_WAIT_FACTOR: f64 = 0.5;
 
-/// `boost_wait_research-2`: a light tie-break rather than v1's half-boost
+/// `boost_wait_research_2`: a light tie-break rather than v1's half-boost
 /// veto. The last trigger still has to win its own Builder or production
 /// decision, so its uncertain saving must not overrule a wanted node.
 pub(super) const BOOST_WAIT_V2_FACTOR: f64 = 0.2;
@@ -199,12 +204,12 @@ impl AdvancedAi {
         percent.unwrap_or(40.0) / 100.0
     }
 
-    /// `boost_wait_research`: what to subtract from a node whose boost is
+    /// `boost_wait_research_2`: what to subtract from a node whose boost is
     /// still earnable and which the empire would finish before the trigger
     /// lands. Zero with the gene off, for a node nothing buildable can boost,
     /// and for one far enough out that the mid-research credit will reach it.
     fn boost_wait_penalty(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
-        if !(self.boost_wait_research || self.boost_wait_research_2 || self.chase_every_boost) {
+        if !(self.boost_wait_research_2 || self.chase_every_boost) {
             return 0.0;
         }
         // ⚠ THE RISK TEST COMES FIRST, AND IT IS THE CHEAP ONE. How likely the
@@ -242,12 +247,9 @@ impl AdvancedAi {
         // away: the thing its trigger names can be done now, and one step
         // finishes it. A trigger three builds out, or one only growth or a
         // contact advances, is not worth holding a node for. See
-        // `advanced/chase_every_boost.rs`. With either wait gene on, that
+        // `advanced/chase_every_boost.rs`. With the wait gene on, that
         // gene's own rule below decides instead.
-        if !self.boost_wait_research
-            && !self.boost_wait_research_2
-            && !self.chase_one_action_away(g, pid, chase)
-        {
+        if !self.boost_wait_research_2 && !self.chase_one_action_away(g, pid, chase) {
             return 0.0;
         }
         if self.boost_wait_research_2
@@ -465,11 +467,6 @@ mod tests {
     }
 
     #[test]
-    fn boost_wait_research_is_a_native_opt_in_off_in_both_controllers() {
-        opt_in_off_in_both_controllers("boost-wait-research", |ai| ai.boost_wait_research);
-    }
-
-    #[test]
     fn boost_wait_research_2_is_a_native_opt_in_off_in_both_controllers() {
         opt_in_off_in_both_controllers("boost-wait-research-2", |ai| ai.boost_wait_research_2);
     }
@@ -657,51 +654,12 @@ mod tests {
         }
     }
 
-    /// `boost-wait-research` docks a node the empire would finish before the
-    /// eureka it is still owed can land, and leaves a node far enough out that
-    /// the engine's mid-research credit will reach it alone.
-    #[test]
-    fn a_node_that_would_outrun_its_own_eureka_waits() {
-        let mut game = capital_board(53_004);
-        game.players[0].techs.insert(name!("mining"));
-        let plain = AdvancedAi::new();
-        let mut waiting = AdvancedAi::new();
-        waiting.enable_boost_wait_research();
-        // Masonry's quarry boost is one improvement away and unearned.
-        assert!(waiting
-            .eureka_chases(&game, 0)
-            .iter()
-            .any(|chase| chase.node == "masonry"));
-        // A capital rich enough to finish Masonry inside the horizon.
-        let capital = game.player_city_ids(0)[0];
-        let rich = crate::rules::Yields {
-            science: game.tech_cost("masonry"),
-            ..Default::default()
-        };
-        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, rich);
-        let off = plain.boost_research_value(&game, 0, "masonry", true);
-        let on = waiting.boost_research_value(&game, 0, "masonry", true);
-        assert_eq!(off, 0.0);
-        assert!(on < 0.0, "the node at risk is docked: {on}");
-        // Slow the empire down until Masonry is a long node again: nothing
-        // is at risk and the wait is silent.
-        let capital = game.player_city_ids(0)[0];
-        let slow = crate::rules::Yields {
-            science: game.tech_cost("masonry") / (BOOST_WAIT_HORIZON_TURNS * 2.0),
-            ..Default::default()
-        };
-        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(capital, slow);
-        assert_eq!(waiting.boost_research_value(&game, 0, "masonry", true), 0.0);
-    }
-
-    /// V2 keeps only the high-confidence edge of v1: a short node and the
-    /// final outstanding trigger step, with a smaller penalty that breaks a
+    /// The wait keeps only the high-confidence edge: a short node and the
+    /// final outstanding trigger step, with a small penalty that breaks a
     /// close choice instead of vetoing useful research.
     #[test]
     fn boost_wait_research_2_is_a_short_final_step_tiebreak() {
         let mut game = capital_board(53_014);
-        let mut v1 = AdvancedAi::new();
-        v1.enable_boost_wait_research();
         let mut v2 = AdvancedAi::new();
         v2.enable_boost_wait_research_2();
         let cost = game.tech_cost("engineering");
@@ -717,12 +675,11 @@ mod tests {
             building: name!("walls"),
         }];
         game.turn += 1;
-        let v1_penalty = v1.boost_research_value(&game, 0, "engineering", true);
         let v2_penalty = v2.boost_research_value(&game, 0, "engineering", true);
         assert!(v2_penalty < 0.0, "the queued final Wall can justify a wait");
         assert!(
-            v2_penalty.abs() < v1_penalty.abs(),
-            "v2 is a tie-break, not v1's broad veto: {v2_penalty} versus {v1_penalty}"
+            v2_penalty.abs() <= BOOST_TURNS_CAP * BOOST_TURN_VALUE * BOOST_WAIT_V2_FACTOR,
+            "a tie-break, never a veto: {v2_penalty}"
         );
 
         set_science(&mut game, cost / (BOOST_WAIT_V2_HORIZON_TURNS * 2.0));
@@ -731,11 +688,6 @@ mod tests {
             0.0,
             "a node outside v2's short window keeps its place"
         );
-
-        v1.enable_boost_wait_research_2();
-        assert!(!v1.boost_wait_research && v1.boost_wait_research_2);
-        v1.enable_boost_wait_research();
-        assert!(v1.boost_wait_research && !v1.boost_wait_research_2);
     }
 
     /// A boost already in hand is never waited for — there is nothing left to
@@ -746,7 +698,7 @@ mod tests {
         game.players[0].techs.insert(name!("mining"));
         game.players[0].boosted_techs.insert(name!("masonry"));
         let mut waiting = AdvancedAi::new();
-        waiting.enable_boost_wait_research();
+        waiting.enable_boost_wait_research_2();
         let capital = game.player_city_ids(0)[0];
         let rich = crate::rules::Yields {
             science: game.tech_cost("masonry"),
