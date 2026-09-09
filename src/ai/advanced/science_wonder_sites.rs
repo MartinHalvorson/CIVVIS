@@ -4,10 +4,9 @@
 //! two: its four citizens need jobs now, rather than an optimistic list of
 //! every plot a city may someday own. That otherwise leaves a precise blind
 //! spot for Galápagos and the Bermuda Triangle. Civ VI lets a city work a
-//! third-ring plot, and `district-planning-2` can already buy an exceptional
-//! Science plot (and its one-tile connector). A coastal site whose third ring
-//! contains those known, unowned plots should therefore survive the shortlist
-//! and beat a similarly fertile site that cannot ever acquire them.
+//! third-ring plot. A coastal site whose third ring contains those known,
+//! unowned plots should therefore survive the shortlist and beat a similarly
+//! fertile site that cannot ever acquire them.
 //!
 //! This remains narrower than a general water or wonder bonus:
 //!

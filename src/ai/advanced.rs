@@ -751,18 +751,6 @@ pub const SCIENCE_EXPANSION_CITY_CEILING: usize = 24;
 /// `civvis_notes.jsonl` as desired_cities 24 -> 16.
 pub const SCIENCE_EXPANSION_UNTIL_TURN: u32 = 188;
 
-/// The rapid native expansion gene aims to own this many cities on a roomy
-/// board. The practical-site gate can stop it sooner, and the target derives
-/// from land density on cramped maps, but a fifteen-city horizon gives the
-/// early pipeline enough room to reach the 3/8/14 city tempo checkpoints.
-pub const RAPID_EXPANSION_CITY_CEILING: usize = 15;
-
-/// The rapid gene does not switch into conquest after a single unlucky site
-/// scan. Three founded cities are enough to establish a defensible home ring;
-/// only then does an exhausted safe frontier become a reason to acquire the
-/// next cities from a rival.
-const RAPID_EXPANSION_SETTLE_FLOOR: usize = 3;
-
 /// Settlers the land grab keeps in flight from the first city, before the
 /// per-three-cities widening. Two: the capital may queue its next Settler
 /// while the last one walks, which is how the second and third cities come
@@ -3263,18 +3251,6 @@ pub struct AdvancedAi {
     /// against CIVVIS rivals who contest the ground. Off for ordinary and
     /// frozen controllers.
     pub land_grab: bool,
-    /// Screenable native gene for an intentionally fast city curve.
-    ///
-    /// It starts with a Settler instead of spending the opening book on a
-    /// military unit, keeps a three-plus shared Settler pipeline, uses the
-    /// legal population-two floor and founding pantheon, targets dense
-    /// land-capacity from turn one, and changes its strategic posture to
-    /// Conquest only after the practical safe-site search is empty. The map's
-    /// safety, loyalty, route, and payoff gates remain authoritative.
-    ///
-    /// Native and off by default until `gene_screen` prices it through
-    /// `PRODUCTION_OPT_INS` as `rapid-city-expansion`.
-    pub rapid_city_expansion: bool,
     /// `capital-settler-after-completion`: after its queue drains, the capital
     /// starts a legal Settler at population two rather than letting the
     /// ordinary ranking fill the opening. The baseline governor owns the
@@ -5002,26 +4978,13 @@ pub struct AdvancedAi {
     campus_through_expansion: bool,
     /// See `campus_before_halfway`.
     campus_before_halfway: bool,
-    /// `district-planning-2`: the plan's own tile buy competes out of the
-    /// treasury reserve (never spending below half of it) instead of
-    /// waiting for 200 Gold of surplus headroom, and the purchase bars
-    /// drop to adjacency 2 with an edge of 1 over owned ground. A workable
-    /// tile carrying at least 5 Science in a Science lane — or the one
-    /// connector that immediately opens it — also competes as a strategic
-    /// asset; that exceptional route may draw through the general reserve,
-    /// but preserves the funded war and immediate-defender floors. Measured
-    /// motive: no recorded live game has ever bought a
-    /// plot — replaying Emperor game 20260901T132005Z at t40/t44, the plan
-    /// priced the adjacency-4 Campus plot at score 905 against a floor of
-    /// 120 and the headroom rule alone refused it, while three cities then
-    /// placed campuses at adjacency 1 or lower beside that ground. Version
-    /// 2 of `district-planning`; shared behaviour reads `district_planning_on`.
-    district_planning_2: bool,
     /// Version 3 of `district-planning`: retain the joint site plan, but buy
     /// only its highest-value unowned site when the city can start that
     /// district immediately, out of Gold above the full reserve. It does not
     /// chase independent exceptional-yield tiles or bridge plots. Opt-in gene
-    /// `district-planning-3`.
+    /// `district-planning-3`. Version 2 of `district-planning`, which spent
+    /// into the reserve and chased exceptional Science tiles, was dropped on
+    /// 2026-09-08 as the family's third-best version.
     district_planning_3: bool,
     /// `cheapest-wonder-first`: a wonder this city can finish within
     /// `CHEAPEST_WONDER_TURNS` turns, in one of the empire's strongest
@@ -5535,36 +5498,6 @@ pub struct AdvancedAi {
     /// it is untouched: this only ever raises capacity, and that guard
     /// already refuses a lateral or a downgrade.
     government_capacity_fallback: bool,
-    /// Let the Builder see the Housing an improvement carries.
-    ///
-    /// ★★★★ ONE CHOOSER READS IT AND THE OTHER DOES NOT.
-    /// `BasicAi::best_improvement` scores `spec.housing * 2.0` alongside the
-    /// yields. `AdvancedAi::improvement_value_with_appeal` — the one the
-    /// deployed agent actually uses — never reads `spec.housing` at all,
-    /// because `Yields` has no housing member and the field lives on
-    /// `ImprovementSpec`. So the advanced Builder is strictly blinder than the
-    /// basic one about the thing that decides whether a city can grow.
-    ///
-    /// Housing from improvements is real and it is large: seventeen
-    /// improvements carry it, Farm, Pasture and Plantation at 0.5 each and the
-    /// unique terraces and stepwells at 1.0, counted within three tiles of the
-    /// city centre whether or not the tile is worked. A dry city's floor is
-    /// two; four Farms is a whole extra population point of ceiling on top of
-    /// it.
-    ///
-    /// Why it is worth a gene in this regime: 88% of standard Emperor games
-    /// end on a science victory, and Population is the largest single source
-    /// of a city's science — 3.5 of 9.3 beakers per city on the live seat,
-    /// against the Campus district's own 2.1. Housing is the cap on
-    /// Population. MEASURED on the live King seat, 2026-08-25: 58% of cities
-    /// were at or within one of their housing ceiling at turn 100, and only
-    /// 13% of owned land was improved at all.
-    ///
-    /// Under Expansion the lane weights make a Farm worth 2.0 food and a Mine
-    /// 2.2 production, so a Farm loses to a Mine on a bare hill and its half
-    /// point of Housing is invisible. This adds that term and nothing else.
-    /// Opt-in gene `improvement-housing-value`.
-    improvement_housing_value: bool,
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
@@ -5845,11 +5778,6 @@ pub struct AdvancedAi {
     /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
     /// see `advanced/order_retry.rs`.
     order_retry: bool,
-    /// Before the first city, let the starting Warrior reveal ground and then
-    /// choose the Settler's target from the now-observed city footprints.
-    /// Opt-in gene `opening-warrior-recon`; see
-    /// `advanced/opening_settlement.rs`.
-    opening_warrior_recon: bool,
     /// A selective rewrite of the opening reconnaissance pass: only a Warrior
     /// escorting the initial Settler acts first, while normal settlement
     /// candidate filtering stays in force. Opt-in gene
@@ -5930,7 +5858,7 @@ pub struct AdvancedAi {
     /// gene. It follows the measured five-city opening band, reserves only an
     /// empty capital queue, refuses unworthy or already-claimed sites, and
     /// never turns an exhausted settlement frontier into an automatic war.
-    /// Version one remains intact for direct family comparison. See
+    /// Version one was culled on 2026-09-08 under the batch rule. See
     /// `advanced/rapid_city_expansion.rs`.
     rapid_city_expansion_2: bool,
     /// `relief-column-marches`: a force group standing beyond
@@ -6003,9 +5931,9 @@ pub struct AdvancedAi {
     /// capitals leaves it by. Opt-in gene `pass-picket`; see
     /// `advanced/recon_disruption.rs`.
     pass_picket: bool,
-    /// This turn's recon orders — screen stands and picket posts — drawn
-    /// once per turn from the start-of-turn board so units planned in
-    /// parallel agree on them. See `advanced/recon_disruption.rs`.
+    /// This turn's recon orders — picket posts — drawn once per turn from
+    /// the start-of-turn board so units planned in parallel agree on them.
+    /// See `advanced/recon_disruption.rs`.
     recon_disruption: recon_disruption::ReconPlan,
     /// Version 2 of `power_the_laboratory`: the plant credit of version 1,
     /// plus the other side of the switch — a building whose `powered_*`
@@ -6136,16 +6064,6 @@ pub struct AdvancedAi {
     /// empire's builds, and a gene that only reprices `production_value`
     /// reaches the other 22%. See that flag for the regime argument.
     science_building_first: bool,
-    /// A seen rival Settler near our cities is screened: up to four of our
-    /// nearby land units, recon first, take the stands that add the most
-    /// expected steps to its likeliest walks, and hold them. Opt-in gene
-    /// `settler-screen`; see `advanced/recon_disruption.rs`.
-    settler_screen: bool,
-    /// A Settler with movement remaining drops its cached target after its
-    /// first move, so the remaining movement can use what that move revealed.
-    /// Opt-in gene `settler-second-look`; see
-    /// `advanced/opening_settlement.rs`.
-    settler_second_look: bool,
     /// An empire that dominates science drives the space race: the chain
     /// beeline, the launch city's production, a horizon priced as the engine
     /// runs the race, two pads by the Earth Satellite. Opt-in gene
@@ -6448,15 +6366,6 @@ enum ChainRung {
 /// why the Builder loses the argmax; 420 clears that band while still losing
 /// to a Settler's 920 and to every repair.
 const BUILDER_SUPPLY_FLOOR_BASE: f64 = 420.0;
-
-/// What a point of an improvement's Housing is worth to the Builder choosing
-/// it. `BasicAi::best_improvement` already pays `spec.housing * 2.0` on a scale
-/// whose food term is 2.0; this function's food term is the lane weight, 2.0
-/// under Expansion, so the same relative price is 2.0 — doubled to 4.0 because
-/// the improvements that carry Housing carry only 0.5 or 1.0 of it, and a
-/// half-point that decides whether a city can grow at all is worth more than a
-/// half-point of food. See `improvement_housing_value`.
-const IMPROVEMENT_HOUSING_WEIGHT: f64 = 4.0;
 
 /// Below this a `production_value` is a REFUSAL rather than a low preference.
 /// The scorer returns two sentinels for an item it does not want: -10,000 is
@@ -6764,8 +6673,8 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
-/// Recon disruption: the settler screen and the pass picket. Two opt-in
-/// genes; see `advanced/recon_disruption.rs`.
+/// Recon disruption: the pass picket. One opt-in gene; see
+/// `advanced/recon_disruption.rs`.
 mod recon_disruption;
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
@@ -6873,9 +6782,8 @@ mod gold_and_cards;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
-/// `opening-warrior-recon` gives the starting Warrior the first move before
-/// the capital is founded; `settler-second-look` refreshes a Settler's cached
-/// target after its first movement leg. Two opt-in genes; see
+/// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
+/// move before the capital is founded. One opt-in gene; see
 /// `advanced/opening_settlement.rs`.
 mod opening_settlement;
 
@@ -7572,7 +7480,6 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             land_grab: false,
-            rapid_city_expansion: false,
             capital_settler_after_completion: false,
             expansion_pantheon: false,
             expansion_hall: false,
@@ -7686,7 +7593,6 @@ impl AdvancedAi {
             city_campaign_2: false,
             campus_through_expansion: false,
             campus_before_halfway: false,
-            district_planning_2: false,
             district_planning_3: false,
             cheapest_wonder_first: false,
             connect_the_luxury: false,
@@ -7764,7 +7670,6 @@ impl AdvancedAi {
             gold_income_floor: false,
             government_ladder_2: false,
             government_capacity_fallback: false,
-            improvement_housing_value: false,
             growth_to_settle: false,
             guru_heals_the_corps_2: false,
             holy_site_where_the_threat_is_2: false,
@@ -7787,7 +7692,6 @@ impl AdvancedAi {
             native_emergency_purchase: false,
             native_emergency_purchase_2: false,
             order_retry: false,
-            opening_warrior_recon: false,
             opening_warrior_recon_2: false,
             missionary_last_charge_explores: false,
             missionary_last_charge_explores_2: false,
@@ -7835,8 +7739,6 @@ impl AdvancedAi {
             swap_rotation_2: false,
             screen_the_shooters: false,
             science_building_first: false,
-            settler_screen: false,
-            settler_second_look: false,
             science_victory_drive: false,
             science_victory_drive_2: false,
             science_drive: None,
@@ -11122,15 +11024,7 @@ impl AdvancedAi {
         // denser than the wide-map ceiling — from turn one; the pipeline,
         // the practical-site search and the payback deadline pace the count.
         let ordinary_city_target = (city_floor + g.turn as usize / city_cadence).min(city_ceiling);
-        let desired_cities = if self.rapid_city_expansion {
-            let land = if self.fog_land_capacity {
-                Self::fog_land_estimate(g, land)
-            } else {
-                land
-            };
-            (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(RAPID_EXPANSION_SETTLE_FLOOR, RAPID_EXPANSION_CITY_CEILING)
-        } else if self.rapid_city_expansion_2 {
+        let desired_cities = if self.rapid_city_expansion_2 {
             rapid_city_expansion::city_target(g, ordinary_city_target, city_ceiling)
         } else if self.land_grab {
             let land = if self.fog_land_capacity {
@@ -11220,23 +11114,6 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
-        // The rapid gene's phase boundary is deliberately the same practical
-        // safe-site search that permits a Settler. A low-value, unsafe, or
-        // unreachable tile therefore does not postpone the conquest phase;
-        // nor does a lone walker already on its way to the last good site.
-        // Three established cities are the defensive floor before the empire
-        // turns scarce domestic land into an offensive objective.
-        let rapid_frontier_exhausted = self.rapid_city_expansion
-            && cities.len() >= RAPID_EXPANSION_SETTLE_FLOOR
-            && !has_site
-            && !g
-                .player_unit_ids(pid)
-                .into_iter()
-                .any(|uid| g.units[&uid].kind == "settler")
-            && major_rivals
-                .iter()
-                .any(|rival| self.campaign_target_legal(g, pid, *rival));
-
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
             "Sumeria" | "Aztec" | "Nubia" | "Scythia" | "Byzantium"
@@ -11336,11 +11213,6 @@ impl AdvancedAi {
             (
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
-            )
-        } else if rapid_frontier_exhausted {
-            (
-                GrandStrategy::Conquest,
-                "the easy settlement frontier is full; the next cities must be taken",
             )
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
@@ -11848,7 +11720,7 @@ impl AdvancedAi {
         // city target is only useful if a productive city may still fund the
         // next campus after the old clock has expired.
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
-        if (self.rapid_city_expansion || self.rapid_city_expansion_2)
+        if self.rapid_city_expansion_2
             || self.land_grab
             || self.expansion_pays_back
             || science_targeted
@@ -11872,7 +11744,7 @@ impl AdvancedAi {
     /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
     /// slower or longer games without removing the endgame reserve.
     fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.plan_city_target && !self.rapid_city_expansion && !self.rapid_city_expansion_2 {
+        if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.base.cities(g, pid);
             return;
         }
@@ -15246,11 +15118,11 @@ impl AdvancedAi {
         // selection also precedes production, which makes the city-plan gap
         // the signal for pre-slotting Colonization this turn.
         // The rapid-expansion gene needs the same timely Settler card as the
-        // wide-map plan: its dense opening target is intentionally active
-        // before the normal map-capacity treatment would turn this portfolio
-        // arm on.  Without it, the gene starts its second wave at the full
-        // price even after Early Empire unlocks Colonization.
-        if self.wide_map_capacity || self.rapid_city_expansion || self.rapid_city_expansion_2 {
+        // wide-map plan: its opening target is intentionally active before
+        // the normal map-capacity treatment would turn this portfolio arm
+        // on.  Without it, the gene starts its second wave at the full price
+        // even after Early Empire unlocks Colonization.
+        if self.wide_map_capacity || self.rapid_city_expansion_2 {
             let settler_queued = city_ids.iter().any(|city| {
                 matches!(
                     g.cities[city].queue.first(),
@@ -15517,13 +15389,7 @@ impl AdvancedAi {
         // Wanted first, so `desired_set` below keeps it slotted through the
         // civic swap; it leaves the list the turn the pantheon is founded and
         // the slot goes to Colonization exactly as before.
-        // Rapid expansion owns its founding-pantheon route outright rather
-        // than depending on the separate live-only expansion-pantheon gene.
-        // The two options deliberately compose, so either one keeps
-        // God-King until the city-founding pantheon is affordable.
-        if (self.expansion_pantheon || self.rapid_city_expansion)
-            && self.pantheon_faith_card_pays(g, pid)
-        {
+        if self.expansion_pantheon && self.pantheon_faith_card_pays(g, pid) {
             temporary.retain(|card| *card != "god_king");
             temporary.insert(0, "god_king");
         }
@@ -19575,28 +19441,13 @@ impl AdvancedAi {
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
                 if let Action::BuyPlot { city, pos, cost } = &action {
-                    // A highly productive Science tile — or its one cheap
-                    // connector — is a durable science asset, not ordinary
-                    // surplus ground. Its scorer keeps the actual
-                    // war/defence floor, but lets it compete with the unit
-                    // and building candidates below instead of hiding it
-                    // behind the broad working reserve.
-                    if let Some(score) = self.exceptional_science_plot_score(g, pid, plan, &action)
-                    {
-                        candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
-                        continue;
-                    }
                     // See `district_planning`: the plan may have named this
                     // very plot for a very valuable district site. That buy
-                    // competes as a strategic purchase, not a surplus one —
-                    // and under `district-planning-2` it may spend into the
-                    // reserve, though never below half of it. Version 3 keeps
-                    // the whole reserve, but removes version 1's extra
-                    // 200-Gold surplus requirement when the idle city can
-                    // actually start the plan's head next.
-                    let affordable_to_the_plan = if self.district_planning_2 {
-                        bank + f64::EPSILON >= reserve * 0.5 + cost
-                    } else if self.district_planning_3 {
+                    // competes as a strategic purchase, not a surplus one.
+                    // Version 3 keeps the whole reserve, but removes version
+                    // 1's extra 200-Gold surplus requirement when the idle
+                    // city can actually start the plan's head next.
+                    let affordable_to_the_plan = if self.district_planning_3 {
                         bank + f64::EPSILON >= reserve + cost
                     } else {
                         bank + f64::EPSILON >= reserve + 200.0 + cost
@@ -23717,105 +23568,6 @@ impl AdvancedAi {
         }
     }
 
-    /// Keep the rapid gene's legal Settler pipeline occupied while there is a
-    /// nearby practical site. The ordinary governor only examines empty
-    /// queues, which leaves a fast city plan waiting behind a slinger, Builder
-    /// or district even when it still has several Settler seats open.
-    ///
-    /// This is deliberately a peaceful, bounded override: active major wars,
-    /// recovery, a named threatened city, a full pipeline, and an exhausted
-    /// site search all retain their normal owners. Replaced progress stays in
-    /// the city's normal bank and resumes after the settlement wave fills.
-    fn rapid_expansion_settler_wave(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.rapid_city_expansion
-            || matches!(
-                plan.strategy,
-                GrandStrategy::Conquest | GrandStrategy::Recovery
-            )
-        {
-            return;
-        }
-        let active_major_war = g.players.iter().any(|player| {
-            player.id != pid
-                && player.alive
-                && !player.is_minor
-                && !player.is_barbarian
-                && g.is_at_war(pid, player.id)
-        });
-        if active_major_war {
-            return;
-        }
-
-        let city_ids = g.player_city_ids(pid);
-        let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
-        let counts = self.counts(g, pid);
-        let has_practical_site = city_ids.iter().any(|city| {
-            let origin = g.cities[city].pos;
-            if self.settler_site_gate {
-                // `settler-site-gate`: the wave fills seats, not queues.
-                return self
-                    .settler_site_gate(g, pid, origin, counts.settlers)
-                    .is_ok();
-            }
-            self.settle_site_exists(g, pid, origin, 10)
-                || (shipbuilding
-                    && self.settle_site_exists(g, pid, origin, g.map.width + g.map.height))
-        });
-        if !has_practical_site {
-            return;
-        }
-        let city_count = city_ids.len();
-        let desired = plan.desired_cities;
-        if city_count + counts.settlers >= desired {
-            return;
-        }
-        let allowance = self.settler_pipeline_width(g, pid, desired, city_count, counts.settlers);
-        let open_seats = allowance.saturating_sub(counts.settlers);
-        if open_seats == 0 {
-            return;
-        }
-
-        let settler = Item::Unit {
-            unit: crate::name!("settler"),
-        };
-        let mut candidates: Vec<u32> = city_ids
-            .into_iter()
-            .filter(|city| plan.threatened_city != Some(*city))
-            .filter(|city| {
-                !matches!(
-                    g.cities[city].queue.first(),
-                    Some(Item::Unit { unit }) if unit == "settler"
-                ) && g.can_produce(pid, *city, &settler)
-            })
-            .collect();
-        candidates.sort_by(|left, right| {
-            g.city_yields(*right)
-                .production
-                .total_cmp(&g.city_yields(*left).production)
-                .then_with(|| g.cities[right].pop.cmp(&g.cities[left].pop))
-                .then(left.cmp(right))
-        });
-
-        for city in candidates.into_iter().take(open_seats) {
-            let city_name = g.cities[&city].name.clone();
-            if g.apply(
-                pid,
-                &Action::Produce {
-                    city,
-                    item: settler.clone(),
-                },
-            )
-            .is_ok()
-                && self.journal().wants(crate::reasoning::Level::Decision)
-            {
-                think!(self.journal(), Economy, Decision,
-                       "{} joins the rapid Settler wave", city_name;
-                       "{city_count} cities against a target of {desired}, with {} of {allowance} Settlers already in flight",
-                       counts.settlers);
-            }
-        }
-    }
-
     /// A Science project earns useful Great Person points, but it is not worth
     /// preserving while several host-observed cities are deep in the unhappy
     /// bands. The baseline governor already asks for an Entertainment Complex;
@@ -25933,11 +25685,7 @@ impl AdvancedAi {
                 .settler_blocked_turns
                 .values()
                 .any(|turns| *turns >= SETTLER_REPLACEMENT_BLOCKED_TURNS);
-        if self.rapid_city_expansion && city_count + settlers < desired_cities {
-            (crate::ai::RAPID_EXPANSION_PIPELINE_BASE
-                + city_count / crate::ai::RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
-                .min(desired_cities - city_count)
-        } else if self.land_grab && city_count + settlers < desired_cities {
+        if self.land_grab && city_count + settlers < desired_cities {
             // ★★★★ THE LAND GRAB'S PIPELINE WIDENS WITH THE EMPIRE. See
             // `land_grab`: two walkers from the first city, one more for
             // every three cities held, never more than the seats still short
@@ -26320,9 +26068,7 @@ impl AdvancedAi {
         // and the ground it claims is held. Wartime targets are already
         // larger and untouched.
         let desired_military =
-            if (self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
-                && !active_major_war
-            {
+            if (self.land_grab || self.rapid_city_expansion_2) && !active_major_war {
                 desired_military.max(city_count + counts.settlers)
             } else {
                 desired_military
@@ -28701,7 +28447,7 @@ impl AdvancedAi {
     }
 
     pub(super) fn district_planning_on(&self) -> bool {
-        self.district_planning || self.district_planning_2 || self.district_planning_3
+        self.district_planning || self.district_planning_3
     }
 
     fn power_the_laboratory_on(&self) -> bool {
@@ -29165,69 +28911,6 @@ impl AdvancedAi {
     /// reconsider rather than donating the settler to the threat.
     fn settler_step_toward_safe(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
         self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
-    }
-
-    /// Spend a rapid settler's whole legal movement allowance toward its
-    /// target. The ordinary route field is deliberately hex-based, so its
-    /// first step can land on rough ground and strand a two-movement Settler
-    /// with a point unused. The rapid wave needs its cities to compound on
-    /// schedule; choose a safe endpoint from the engine's movement-aware
-    /// reach instead, while leaving the ordinary controller unchanged.
-    fn rapid_settler_stride_toward_safe(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        uid: u32,
-        target: Pos,
-    ) -> bool {
-        let current = g.units[&uid].pos;
-        let current_distance = g.wdist(current, target);
-        if current_distance <= 0 {
-            return false;
-        }
-        let visible = self
-            .settlement_safety
-            .then(|| self.battlefront_visibility(g, pid));
-        let mut best: Option<(Pos, i32, f64, f64)> = None;
-        for (destination, (moves_left, path)) in g.approach_reach(uid) {
-            let distance = g.wdist(destination, target);
-            if distance >= current_distance {
-                continue;
-            }
-            let risk = if let Some(visible) = visible.as_ref() {
-                let Some(worst) = path
-                    .iter()
-                    .map(|position| {
-                        self.settlement_tile_risk(g, pid, Some(uid), *position, visible)
-                    })
-                    .max_by(f64::total_cmp)
-                else {
-                    continue;
-                };
-                if worst > SETTLER_STEP_RISK_LIMIT {
-                    continue;
-                }
-                worst
-            } else {
-                0.0
-            };
-            let replace =
-                best.is_none_or(|(old_destination, old_distance, old_moves, old_risk)| {
-                    distance < old_distance
-                        || (distance == old_distance
-                            && (moves_left > old_moves
-                                || (moves_left == old_moves
-                                    && (risk < old_risk
-                                        || (risk == old_risk && destination < old_destination)))))
-                });
-            if replace {
-                best = Some((destination, distance, moves_left, risk));
-            }
-        }
-        if let Some((destination, _, _, _)) = best {
-            return self.base.path_walk_to(g, pid, uid, destination);
-        }
-        self.settler_step_toward_safe(g, pid, uid, target)
     }
 
     /// Move either a Settler or the military leader of its linked formation
@@ -29863,14 +29546,6 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|pos| {
                 let tile = g.map.get(pos)?;
-                // Historical opening-recon v1 must not let the native board's
-                // complete map decide a site the player has not observed. The
-                // Warrior moves before this scan and exposes whole radius-two
-                // city footprints for that v1-only filter; v2 keeps this
-                // shipped candidate path intact.
-                if !self.opening_settlement_footprint_known(g, pid, pos) {
-                    return None;
-                }
                 // A site the HOST engine refused is not settleable however good it looks;
                 // see `Game::blocked_city_sites`, which is empty in an ordinary game.
                 if g.blocked_city_sites.contains(&pos)
@@ -30132,11 +29807,7 @@ impl AdvancedAi {
         // deployment genome and the live seat carry and `legacy()` does not,
         // so the Elo anchor's play is untouched
         // (`advanced_v1_plays_the_same_game_it_always_did`).
-        if self.settle_sooner
-            && g.player_city_ids(pid).is_empty()
-            && g.can_found_city(uid)
-            && self.opening_settlement_footprint_known(g, pid, from)
-        {
+        if self.settle_sooner && g.player_city_ids(pid).is_empty() && g.can_found_city(uid) {
             let stand = self.settle_value(g, pid, from);
             let costs = Self::settle_sooner_walk_costs(g, uid, radius);
             let (budget, per_turn) = Self::opening_walk_budget(g.game_speed);
@@ -30426,48 +30097,6 @@ impl AdvancedAi {
         best
     }
 
-    /// Choose the nearest eligible, reachable city claim for version one's
-    /// compounding wave. The normal ranking is value-first and can send a
-    /// just-built Settler past a legal five-step city to a richer nine-step
-    /// one; that is the opposite of the rapid profile's stated land-race
-    /// policy. All of the ordinary target-memory filters remain in force.
-    fn rapid_closest_settler_target(
-        &self,
-        g: &Game,
-        pid: usize,
-        uid: u32,
-        avoid: Option<Pos>,
-    ) -> Option<(Pos, f64)> {
-        let from = g.units[&uid].pos;
-        let radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
-            g.map.width + g.map.height
-        } else {
-            SETTLER_LAND_FALLBACK_RADIUS
-        };
-        let mut candidates = self
-            .settle_sites(g, pid, from, radius)
-            .into_iter()
-            .filter(|(position, value)| {
-                Some(*position) != avoid
-                    && self.early_settler_site_allowed(g, pid, uid, *position)
-                    && !self.settler_site_is_dead(uid, *position)
-                    && (!self.settler_threat_detour_on()
-                        || !self.settler_threat_deferrals.contains_key(position))
-                    && !self.settler_target_reserved_by_other(g, pid, uid, *position)
-                    && self.settler_target_clears_floor(g, from, *position, *value)
-            })
-            .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| {
-            g.wdist(from, left.0)
-                .cmp(&g.wdist(from, right.0))
-                .then_with(|| right.1.total_cmp(&left.1))
-                .then_with(|| left.0.cmp(&right.0))
-        });
-        candidates
-            .into_iter()
-            .find(|(position, _)| *position == from || g.route_step(uid, *position, 0).is_some())
-    }
-
     fn best_settler_target(
         &self,
         g: &Game,
@@ -30476,9 +30105,6 @@ impl AdvancedAi {
         local_radius: i32,
         avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
-        if self.rapid_city_expansion {
-            return self.rapid_closest_settler_target(g, pid, uid, avoid);
-        }
         let mut score_cache = BTreeMap::new();
         let local = self.best_reachable_settle_site_except_cached(
             g,
@@ -31417,7 +31043,7 @@ impl AdvancedAi {
     /// has held for `SETTLER_IDLE_PATIENCE` turns. See
     /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let acted = self.advanced_settler_step_inner(g, pid, uid, true);
+        let acted = self.advanced_settler_step_inner(g, pid, uid);
         if acted || !self.settler_never_idles {
             return acted;
         }
@@ -31442,13 +31068,7 @@ impl AdvancedAi {
         self.settler_watchdog_step(g, pid, uid)
     }
 
-    fn advanced_settler_step_inner(
-        &mut self,
-        g: &mut Game,
-        pid: usize,
-        uid: u32,
-        allow_arrival_follow_up: bool,
-    ) -> bool {
+    fn advanced_settler_step_inner(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
         if self.live_settler_capture_lessons {
             self.settler_last_seen.insert(uid, current);
@@ -31670,8 +31290,7 @@ impl AdvancedAi {
                 let Some(tile) = g.map.get(*target) else {
                     return false;
                 };
-                self.opening_settlement_footprint_known(g, pid, *target)
-                    && !g.rules.is_water(tile)
+                !g.rules.is_water(tile)
                     && g.rules.is_passable(tile)
                     && !g.cities.values().any(|city| g.wdist(city.pos, *target) < 4)
                     && tile
@@ -31690,11 +31309,7 @@ impl AdvancedAi {
                 self.settler_targets.remove(&uid);
             }
             let target = cached.or_else(|| {
-                let current_value = if self.opening_settlement_footprint_known(g, pid, current) {
-                    self.settle_value(g, pid, current)
-                } else {
-                    f64::NEG_INFINITY
-                };
+                let current_value = self.settle_value(g, pid, current);
                 let local = self.best_reachable_settle_site_except(g, pid, uid, 2, avoid);
                 let target = if g.can_found_city(uid) {
                     Some(
@@ -31719,24 +31334,14 @@ impl AdvancedAi {
                             }
                         })
                         .or_else(|| {
-                            if !self.opening_warrior_recon_v1_active(g, pid) {
-                                self.base
-                                    .best_reachable_settle_site(
-                                        g,
-                                        pid,
-                                        uid,
-                                        g.map.width + g.map.height,
-                                    )
-                                    .filter(|(pos, _)| {
-                                        !self.settler_site_is_dead(uid, *pos)
-                                            && (!self.settler_threat_detour_on()
-                                                || !self.settler_threat_deferrals.contains_key(pos))
-                                            && !self
-                                                .settler_target_reserved_by_other(g, pid, uid, *pos)
-                                    })
-                            } else {
-                                None
-                            }
+                            self.base
+                                .best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height)
+                                .filter(|(pos, _)| {
+                                    !self.settler_site_is_dead(uid, *pos)
+                                        && (!self.settler_threat_detour_on()
+                                            || !self.settler_threat_deferrals.contains_key(pos))
+                                        && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
+                                })
                         })
                         .map(|(pos, _)| pos)
                 };
@@ -32231,25 +31836,9 @@ impl AdvancedAi {
         // reach unless the guard walks in too or the city is founded now.
         let moved = if self.civilian_out_of_reach || self.long_settler_escort_active(uid, target) {
             self.settler_step_out_of_reach(g, pid, uid, target)
-        } else if self.rapid_city_expansion {
-            self.rapid_settler_stride_toward_safe(g, pid, uid, target)
         } else {
             self.settler_step_toward_safe(g, pid, uid, target)
         };
-        // A Settler may found after moving, but this controller historically
-        // waited for its next turn when a rapid-expansion walker reached its
-        // target on the final step. Re-enter the established arrival path so
-        // its loyalty and safety checks remain authoritative before founding.
-        // The follow-up is deliberately bounded to one pass: reaching a newly
-        // selected fallback may still consume this turn's movement, but cannot
-        // turn one unit step into an unbounded march.
-        if moved
-            && allow_arrival_follow_up
-            && self.rapid_city_expansion
-            && g.units.get(&uid).is_some_and(|unit| unit.pos == target)
-        {
-            return self.advanced_settler_step_inner(g, pid, uid, false);
-        }
         // ★★★★ "marching" is printed ABOVE, before the step is attempted, so the
         // journal has never been able to tell a march from a hold. Measured on the
         // live ladder: settlers cross **0.78 tiles/turn on 2 movement points**,
@@ -32549,12 +32138,6 @@ impl AdvancedAi {
                 "strategic" => 0.0,
                 _ => 4.0,
             };
-        }
-        // See `improvement_housing_value`: the Housing an improvement carries
-        // is a yield this function cannot see, because `Yields` has no housing
-        // member and `ImprovementSpec::housing` is never read here.
-        if self.improvement_housing_value {
-            value += spec.housing * IMPROVEMENT_HOUSING_WEIGHT;
         }
         // `eureka_chasing_builder`: the boost this improvement on this tile
         // earns. See `advanced/deity_habits.rs`.
@@ -37434,10 +37017,9 @@ impl AdvancedAi {
                     }
                 }
             }
-            // `settler-screen` / `pass-picket`: a unit nothing above wanted
-            // takes its recon order — a stand on a rival Settler's walk, or
-            // the post toward a neighbour once nothing is left to explore.
-            // See `advanced/recon_disruption.rs`.
+            // `pass-picket`: a unit nothing above wanted takes its recon
+            // order — the post toward a neighbour once nothing is left to
+            // explore. See `advanced/recon_disruption.rs`.
             if let Some(acted) = self.recon_disruption_step(g, pid, uid) {
                 return acted;
             }
@@ -38576,16 +38158,12 @@ impl AdvancedAi {
         decline_settlers: bool,
     ) -> bool {
         let mut took_a_turn = false;
-        let mut took_settler_second_look = false;
         for _ in 0..8 {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                 break;
             }
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
-            let first_settler_leg =
-                (kind == "settler" && self.settler_second_look && !took_settler_second_look)
-                    .then(|| g.units[&uid].pos);
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
@@ -38605,9 +38183,6 @@ impl AdvancedAi {
             };
             if !acted {
                 break;
-            }
-            if let Some(before) = first_settler_leg {
-                took_settler_second_look = self.reassess_settler_after_first_leg(g, uid, before);
             }
             took_a_turn = true;
         }
@@ -38864,7 +38439,7 @@ impl AdvancedAi {
         // raiders on the board, and a settler that reads the board afterwards
         // steps beside a raider the host may not have touched (t60 of
         // civvis-20260816T200454Z, `planned_risk 0.0` beside a live slinger).
-        // Apart from `opening-warrior-recon` above, Settlers lead the unit
+        // Apart from `opening-warrior-recon-2` above, Settlers lead the unit
         // order; this only moves them ahead of the one thing that used to run
         // first.
         let mut settled_first: Vec<u32> = Vec::new();
@@ -38918,9 +38493,9 @@ impl AdvancedAi {
             // first. Empty with the gene off. See `advanced/fire_plan.rs`.
             self.plan_fire(g, pid);
         }
-        // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
-        // once from the start-of-turn board so units planned in parallel
-        // agree on them. Nothing is read with both genes off. See
+        // `pass-picket`: this turn's recon orders, drawn once from the
+        // start-of-turn board so units planned in parallel agree on them.
+        // Nothing is read with the gene off. See
         // `advanced/recon_disruption.rs`.
         self.recon_disruption_plan(g, pid);
         // `chokepoint-garrison`: this turn's gates and their garrisons, drawn
@@ -40012,10 +39587,6 @@ impl AdvancedAi {
                 // governor. Thread the larger, speed-aware plan through that
                 // call without leaking it to later consumers.
                 self.delegated_cities(g, pid, &plan);
-                // The native rapid gene owns a bounded peaceful wave after
-                // the general governor has filled its queues, so ordinary
-                // infrastructure cannot leave open Settler seats idle.
-                self.rapid_expansion_settler_wave(g, pid, &plan);
             }
         }
         // Make the declaration response the final authority over queues this
