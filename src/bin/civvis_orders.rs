@@ -3752,6 +3752,7 @@ fn decide(
     // been measured leaving such kills alive. And a settler's bound guard is
     // not the volley's to spend one tile away from the civilian it shields.
     ai.observe_turn_start_hostiles(&planned_game, 0);
+    ai.observe_confirmed_host_deaths(&planned_game, state);
     let bound_guards = ai.bound_settler_guards(&planned_game, 0);
     let war_finishers =
         finish_live_war_units_excluding(&mut planned_game, 0, &mirror_state.civ6_of, &bound_guards);
