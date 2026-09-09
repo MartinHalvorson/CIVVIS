@@ -75,7 +75,9 @@ Game = {
 }
 
 local sessions = { requested = {}, closed = {}, nextId = 900 }
+DiplomacyResponseTypes = { INITIAL = 0, ACKNOWLEDGE = 1 }
 DiplomacyManager = {
+	GetKeyName = function(key) return key end,
 	FindOpenSessionID = function() return nil end,
 	RequestSession = function(pid, subject, kind)
 		sessions.requested[#sessions.requested + 1] = { pid = pid, subject = subject, kind = kind }
@@ -217,16 +219,40 @@ check("the hold carries the configured seconds", holds[1] and holds[1].seconds, 
 check("the session is registered", trade.sessions[3] ~= nil, true)
 check("the opening is in the ledger", eventField(lastEvent("deal_session"), "phase"), "opening")
 
+-- Unrelated diplomacy must not claim the pending outgoing deal's session.
+onStatement(3, 7, { StatementType = "GREETING", SessionID = 899 })
+check("a greeting does not send the pending offer", #sale.sends, 0)
+check("a greeting does not bind its session", trade.sessions[3] and trade.sessions[3].sessionID, nil)
+onStatement(7, 3, { StatementType = "MAKE_DEAL" })
+check("an opening without a session id does not send", #sale.sends, 0)
+
 -- Our own opening statement: the session is live, the question goes out.
-onStatement(7, 3, { SessionID = 901 })
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 901 })
 check("the question is EQUALIZE", sale.sends[1] and sale.sends[1][1], "equalize")
 check("the question names both players", sale.sends[1] and (sale.sends[1][2] .. ":" .. sale.sends[1][3]), "7:3")
 check("the session id is kept", trade.sessions[3] and trade.sessions[3].sessionID, 901)
 check("the ask is in the ledger", eventField(lastEvent("deal_session"), "phase"), "asked")
 
+trade.unanswered = 2
+-- Firaxis distinguishes the opening acknowledgement from deal evaluation
+-- (DiplomacyActionView.lua:2547-2559). Neither it nor another session's
+-- response may accept the fixture's already-populated incoming deal.
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 901,
+	StatementSubType = "NONE", ResponseType = DiplomacyResponseTypes.ACKNOWLEDGE,
+	DealAction = DealProposalAction.ADJUSTED })
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 901 })
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 999,
+	DealAction = DealProposalAction.ADJUSTED })
+onStatement(3, 7, { StatementType = "GREETING", SessionID = 901,
+	DealAction = DealProposalAction.ADJUSTED })
+check("nonanswers do not accept an incoming deal", #sale.sends, 1)
+check("nonanswers keep the deal session open", trade.sessions[3] ~= nil, true)
+check("nonanswers do not close native sessions", #sessions.closed, 0)
+check("nonanswers do not reset the stand-down count", trade.unanswered, 2)
+
 -- The rival's statement carries its verdict: a fair answer is accepted and
 -- the session is closed by us.
-onStatement(3, 7, { SessionID = 901, DealAction = DealProposalAction.ADJUSTED })
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 901, DealAction = DealProposalAction.ADJUSTED })
 check("a fair answer is accepted", sale.sends[2] and sale.sends[2][1], "accepted")
 check("the close is in the ledger", eventField(lastEvent("deal_closed"), "gold"), "90")
 check("the session is closed by us", sessions.closed[1], 901)
@@ -241,8 +267,8 @@ local low, lowPlayer = fixture({ incoming = {
 	{ kind = "resources", from = 7, duration = 30, amount = 1, valueType = 12 },
 } })
 applyOrder(lowPlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
-onStatement(7, 3, { SessionID = 902 })
-onStatement(3, 7, { SessionID = 902, DealAction = DealProposalAction.ADJUSTED })
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 902 })
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 902, DealAction = DealProposalAction.ADJUSTED })
 check("a lowball is not accepted", #low.sends, 1)
 check("a lowball is in the ledger", eventField(lastEvent("deal_declined"), "worth"), "20")
 check("a declined session is closed too", sessions.closed[2], 902)
@@ -256,9 +282,16 @@ check("peace is submitted through the lane", ok, true)
 check("peace says submitted", why, "peace_submitted")
 check("peace waits for its session", #peace.sends, 0)
 check("peace requests a MAKE_DEAL session", sessions.requested[#sessions.requested].kind, "MAKE_DEAL")
-onStatement(7, 5, { SessionID = 903 })
+onStatement(7, 5, { StatementType = "MAKE_DEAL", SessionID = 903 })
 check("the peace offer is PROPOSED once the session is live", peace.sends[1] and peace.sends[1][1], "proposed")
-onStatement(5, 7, { SessionID = 903, DealAction = DealProposalAction.ACCEPTED })
+onStatement(5, 7, { StatementType = "MAKE_DEAL", SessionID = 903,
+	StatementSubType = "NONE", ResponseType = DiplomacyResponseTypes.INITIAL,
+	DealAction = DealProposalAction.ADJUSTED })
+onStatement(5, 7, { StatementType = "MAKE_DEAL", SessionID = 903 })
+check("a peace greeting does not consume the offer", trade.sessions[5] ~= nil, true)
+check("a peace greeting does not submit another deal", #peace.sends, 1)
+
+onStatement(5, 7, { StatementType = "MAKE_DEAL", SessionID = 903, DealAction = DealProposalAction.ACCEPTED })
 check("an accepted peace is enacted by our ACCEPTED", peace.sends[2] and peace.sends[2][1], "accepted")
 check("the peace answer is in the ledger", eventField(lastEvent("peace_response"), "accepted"), "true")
 check("the answer is not called enacted before a host frame",
@@ -275,13 +308,13 @@ check("the peace session is closed", sessions.closed[#sessions.closed], 903)
 TURN = 75
 local adjusted, adjustedPlayer = fixture({ atWar = true, dealsEqual = false })
 applyOrder(adjustedPlayer, 7, { kind = "peace", subject = "12" }, TURN)
-onStatement(7, 12, { SessionID = 905 })
-onStatement(12, 7, { SessionID = 905, DealAction = DealProposalAction.ACCEPTED })
+onStatement(7, 12, { StatementType = "MAKE_DEAL", SessionID = 905 })
+onStatement(12, 7, { StatementType = "MAKE_DEAL", SessionID = 905, DealAction = DealProposalAction.ACCEPTED })
 check("an unequal accepted deal is adjusted", adjusted.sends[2] and adjusted.sends[2][1], "adjusted")
 check("an unequal accepted deal is not enacted", eventField(lastEvent("peace_response"), "enacted"), "false")
 check("an adjusted peace session stays open", trade.sessions[12] ~= nil, true)
 adjusted.dealsEqual = true
-onStatement(12, 7, { SessionID = 905, DealAction = DealProposalAction.ACCEPTED })
+onStatement(12, 7, { StatementType = "MAKE_DEAL", SessionID = 905, DealAction = DealProposalAction.ACCEPTED })
 check("a reconciled deal is accepted", adjusted.sends[3] and adjusted.sends[3][1], "accepted")
 adjusted.atWar = false
 trade.pollPeace()
@@ -292,8 +325,8 @@ check("a reconciled deal proves peace", eventField(lastEvent("peace_result"), "e
 TURN = 78
 local adjustedClosed, adjustedClosedPlayer = fixture({ atWar = true, dealsEqual = false })
 applyOrder(adjustedClosedPlayer, 7, { kind = "peace", subject = "13" }, TURN)
-onStatement(7, 13, { SessionID = 906 })
-onStatement(13, 7, { SessionID = 906, DealAction = DealProposalAction.ACCEPTED })
+onStatement(7, 13, { StatementType = "MAKE_DEAL", SessionID = 906 })
+onStatement(13, 7, { StatementType = "MAKE_DEAL", SessionID = 906, DealAction = DealProposalAction.ACCEPTED })
 onClosed(906)
 check("an adjusted session closes", trade.sessions[13], nil)
 check("an adjusted close has no synthetic peace result",
@@ -302,8 +335,8 @@ check("an adjusted close has no synthetic peace result",
 TURN = 80
 local refused, refusedPlayer = fixture({ atWar = true })
 applyOrder(refusedPlayer, 7, { kind = "peace", subject = "6" }, TURN)
-onStatement(7, 6, { SessionID = 904 })
-onStatement(6, 7, { SessionID = 904, DealAction = DealProposalAction.REJECTED })
+onStatement(7, 6, { StatementType = "MAKE_DEAL", SessionID = 904 })
+onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 904, DealAction = DealProposalAction.REJECTED })
 check("a refused peace sends nothing more", #refused.sends, 1)
 check("the refusal is in the ledger", eventField(lastEvent("peace_response"), "accepted"), "false")
 
@@ -313,7 +346,7 @@ for i = 1, 3 do
 	local quiet, quietPlayer = fixture()
 	local asked = applyOrder(quietPlayer, 7, { kind = "sell", subject = "3", verb = "RESOURCE_DYES=1", x = 60 }, TURN)
 	check("unanswered ask " .. i .. " goes out", asked, true)
-	onStatement(7, 3, { SessionID = 910 + i })
+	onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 910 + i })
 	-- The closer's ladder shuts the screen; the core reports the session closed.
 	onClosed(910 + i)
 	check("unanswered session " .. i .. " is counted", trade.unanswered, i)
