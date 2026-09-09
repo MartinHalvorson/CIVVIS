@@ -445,8 +445,15 @@ local function endScreen(attempt)
             local ok = pcall(function() OnSelectConversationDiplomacyStatement(choice); end);
             if not ok then firstMeetAnswered = false; end
             report("first_meet_choice", string.format(',"choice":"%s","sent":%s', choice, tostring(ok)));
+            return ok;
         end
-        return true;
+        -- A dispatched response can leave the context visible. Let Firaxis
+        -- finish closing it on the next tick, without answering twice or
+        -- falling through to the generic NEGATIVE/IGNORE response ladder.
+        -- Do not close on the dispatch tick: ApplyStatement may synchronously
+        -- install a follow-up invitation with its own unanswered choice.
+        return type(CloseFocusedState) == "function"
+            and pcall(function() CloseFocusedState(true); end);
     end
 	-- WonderBuiltPopup is a readable completion announcement, not a choice.
 	-- Keep its own Firaxis close path explicit: the shipped context defines
