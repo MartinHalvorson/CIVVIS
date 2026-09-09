@@ -4101,6 +4101,21 @@ impl AdvancedAi {
         self.culture_threat_early = false;
     }
 
+    /// Scale the opening city target, the opening deadline, the Settler
+    /// cadence and the expansion cards with the difficulty rung: the measured
+    /// 4-6 band is a King-level reading and every rung above it widens the
+    /// rival field. See `advanced/expansion_scales_with_difficulty.rs`.
+    /// Opt-in gene `expansion-scales-with-difficulty`. Filed above the
+    /// markers: the append-point check reads a method line's first identifier.
+    pub fn enable_expansion_scales_with_difficulty(&mut self) {
+        self.expansion_scales_with_difficulty = true;
+    }
+
+    /// The twin of `enable_expansion_scales_with_difficulty`.
+    pub fn disable_expansion_scales_with_difficulty(&mut self) {
+        self.expansion_scales_with_difficulty = false;
+    }
+
     /// Deny a rival the science victory rather than only race it: the
     /// diplomatic refusals and the denunciation, the espionage disruption of
     /// the launch pad, the two-soldier pillage raid on it, and the bounded

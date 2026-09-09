@@ -2162,6 +2162,13 @@ pub const GENES: &[Gene] = &[
     // Version two also withdraws healthy units exposed to a nominal lethal
     // shot from one recently observed gun; v1 remains the deployed control.
     Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
+    // `expansion-scales-with-difficulty` (2026-09-09): the measured 4-6 city
+    // opening band was read off a King-level field. Above King the rivals take
+    // +16/+24/+32 percent of every yield and free Settlers every era, so the
+    // target, its deadline, the Settler cadence and the expansion cards scale
+    // with the rung. Appended above the markers, so a running screen keeps its
+    // positional genome. See `advanced/expansion_scales_with_difficulty.rs`.
+    Gene { tag: "expansion-scales-with-difficulty", field: "expansion_scales_with_difficulty", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_scales_with_difficulty, disable: AdvancedAi::disable_expansion_scales_with_difficulty },
     // Deny a rival the science victory instead of only racing it: no
     // alliance, passage or Great Work to a science threat and a
     // denunciation; the launch pad disrupted by espionage; a two-soldier
