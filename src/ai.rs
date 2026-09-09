@@ -2092,7 +2092,9 @@ impl<T> Clone for FreshOnClone<T> {
 
 impl<T> FreshOnClone<T> {
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<T>> {
-        self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
