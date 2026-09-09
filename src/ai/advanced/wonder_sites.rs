@@ -586,6 +586,23 @@ mod tests {
     }
 
     #[test]
+    fn live_opening_scouts_a_known_wonder_before_the_ordinary_frontier() {
+        let (mut game, _, wonder, scout) = wonder_pocket_board();
+        let mut live = BasicAi::new();
+        live.garrison_under_fire = true;
+        let goal = live.exploration_goal(&game, 0, scout, false).unwrap();
+        assert!(game.wdist(goal, wonder) <= WONDER_RING_RADIUS);
+        assert!(!game.players[0].explored.contains(&goal));
+        // Discovery, not omniscient map data, triggers the detour.
+        game.players[0].explored.remove(&wonder);
+        let ordinary = BasicAi::new().exploration_goal(&game, 0, scout, false);
+        assert_eq!(live.exploration_goal(&game, 0, scout, false), ordinary);
+        game.players[0].explored.insert(wonder);
+        game.players[0].techs.insert(crate::name!("machinery"));
+        assert_eq!(live.exploration_goal(&game, 0, scout, false), ordinary);
+    }
+
+    #[test]
     fn version_two_reveals_at_least_as_much_for_at_most_one_extra_tile() {
         let (game, _, wonder, scout) = wonder_pocket_board();
         let mut original = BasicAi::new();
