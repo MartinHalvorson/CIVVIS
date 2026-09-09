@@ -2024,6 +2024,15 @@
           "holy-site-where-the-threat-is-2": null
         }
       },
+      "hostile-memory": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "hostile-memory": null,
+          "hostile-memory-2": null
+        }
+      },
       "missionary-last-charge-explores": {
         "rule_on": [
           "missionary-last-charge-explores-2"
