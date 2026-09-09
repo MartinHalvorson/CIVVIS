@@ -285,6 +285,39 @@ class DetectionTest(unittest.TestCase):
         self.assertTrue(capture["camp_near_site"])
         self.assertEqual(capture["mechanism"], "site-in-barbarian-nest")
 
+    def test_camp_evidence_uses_the_capture_turn_not_the_completed_map(self):
+        why = ["[why] t5 Expansion/Detail Settler marching to (7, 10) | 2 tiles away  "
+               "[civ6 (12,10) = axial (7,10)]"]
+        def observation(turn, present, kind="tiles"):
+            plot = {"x": 13, "y": 10, "t": "TERRAIN_PLAINS"}
+            if present:
+                plot["im"] = "IMPROVEMENT_BARBARIAN_CAMP"
+            event = {"kind": kind, "plots": [plot]}
+            if turn is not None:
+                event["turn"] = turn
+            return event
+
+        cases = [
+            ("future discovery", [observation(6, True)], False),
+            ("undated discovery", [observation(None, True)], False),
+            ("already known", [observation(4, True)], True),
+            ("cleared before loss", [observation(2, True), observation(4, False)], False),
+            ("cleared after loss", [observation(2, True), observation(6, False)], True),
+            ("last same-turn observation", [observation(5, True), observation(5, False)], False),
+            ("reappeared", [observation(2, True), observation(3, False),
+                            observation(4, True, "tiles_delta")], True),
+            ("out of order", [observation(6, False), observation(4, True)], True),
+        ]
+        for label, observations, expected in cases:
+            with self.subTest(label=label):
+                events = settler_walk((3, 4, 5), 10, 10) + observations + [
+                    {"kind": "unit_lost", "turn": 5, "unit": SETTLER,
+                     "unit_kind": "UNIT_SETTLER"}]
+                run = make_run(self.root, "civvis-history-" + label.replace(" ", "-"), events, why)
+                capture = captures.detect_captures(run)[0]
+                self.assertEqual(capture["camp_near_site"], expected)
+                self.assertEqual("site-in-barbarian-nest" in capture["mechanisms"], expected)
+
     def test_a_run_without_events_is_not_a_run(self):
         (self.root / "civvis-empty").mkdir()
         self.assertEqual(captures.detect_captures(self.root / "civvis-empty"), [])
