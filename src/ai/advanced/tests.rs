@@ -29059,7 +29059,7 @@ fn immediate_kill_priority_finishes_barbarians_and_wartime_units() {
     };
     let mut ai = AdvancedAi::new();
     let legal = game.legal_actions_within(0, ActionFamilies::UNITS);
-    let finished = ai.prioritize_immediate_kills(&mut game, 0, &plan);
+    let finished = ai.prioritize_immediate_kills(&mut game, 0, &plan, &BTreeSet::new());
     assert_eq!(
         finished, 2,
         "each available positive exchange must finish its removable target; \
@@ -47118,14 +47118,20 @@ fn immediate_kill_priority_rejects_a_poisoned_finish() {
         tactical.units.contains_key(&victim),
         "the ordinary military path must not reopen the rejected finish"
     );
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 0);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        0
+    );
     assert!(g.units.contains_key(&victim));
 
     // Removing the second hostile makes the same blow a safe finish. The
     // killed victim must not remain in a cached attack envelope.
     g.remove_unit(counter);
     assert!(ai.immediate_kill_value(&g, 0, &action, &plan).is_some());
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 1);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        1
+    );
     assert!(!g.units.contains_key(&victim));
 }
 
@@ -47412,4 +47418,342 @@ fn scout_first_opening_registry_toggles_both_governors() {
     (gene.disable)(&mut ai);
     assert!(!ai.scout_first_opening);
     assert!(!ai.base.scout_first_opening);
+}
+
+fn remembered_shore_gun_fixture() -> (Game, AdvancedAi, u32, Pos) {
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_623).expect("barbarian fixture");
+    let gun_at = far_side_of(&g, front, refuge).expect("shore opposite refuge");
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != refuge && tile.pos != gun_at {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let ours = g.spawn_test_unit("galley", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 31;
+    let gun = g.spawn_test_unit("field_cannon", barbarian, gun_at);
+    g.turn = 134;
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(
+        ai.hostile_last_seen.contains_key(&(gun as i64)),
+        "the gun must actually have been seen"
+    );
+    g.remove_unit(gun);
+    g.turn = 136;
+    (g, ai, ours, gun_at)
+}
+
+#[test]
+fn a_wounded_galley_leaves_a_remembered_shore_guns_reach() {
+    let (mut g, ai, ours, gun_at) = remembered_shore_gun_fixture();
+    let before = g.units[&ours].pos;
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "a remembered land gun still threatens a wounded ship on water"
+    );
+    assert!(
+        g.wdist(g.units[&ours].pos, gun_at) > g.wdist(before, gun_at),
+        "if the unseen gun's entire projection cannot be escaped, increase separation"
+    );
+    assert_eq!(g.units[&ours].hp, 31);
+}
+
+#[test]
+fn a_shore_gun_without_an_in_scope_memory_does_not_move_the_ship() {
+    let (g, ai, ours, _) = remembered_shore_gun_fixture();
+    for mode in [
+        "gene-off",
+        "memory-off",
+        "unseen",
+        "expired",
+        "future",
+        "peace",
+        "melee-only",
+    ] {
+        let mut policy = ai.clone();
+        let mut board = g.clone();
+        match mode {
+            "gene-off" => policy.disable_wounded_out_of_reach(),
+            "memory-off" => policy.disable_hostile_memory(),
+            "unseen" => policy.hostile_last_seen.clear(),
+            "expired" => board.turn = 139,
+            "future" => {
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.when = 140;
+                }
+            }
+            "peace" => {
+                assert!(!board.is_at_war(0, 1));
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.owner = 1;
+                }
+            }
+            "melee-only" => {
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.kind = crate::name!("warrior");
+                }
+            }
+            _ => unreachable!(),
+        }
+        let before = board.units[&ours].pos;
+        assert_eq!(
+            policy.wounded_out_of_reach_step(&mut board, 0, ours),
+            None,
+            "{mode}"
+        );
+        assert_eq!(board.units[&ours].pos, before, "{mode}");
+    }
+}
+
+#[test]
+fn hostile_memory_v2_also_remembers_a_shore_guns_firing_reach() {
+    let (mut g, mut ai, ours, gun_at) = remembered_shore_gun_fixture();
+    ai.enable_hostile_memory_2();
+    let before = g.units[&ours].pos;
+    assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some());
+    assert!(g.wdist(g.units[&ours].pos, gun_at) > g.wdist(before, gun_at));
+}
+
+#[test]
+fn a_shore_guns_hidden_current_position_does_not_change_its_remembered_threat() {
+    let (mut g, mut ai, ours, _) = remembered_shore_gun_fixture();
+    let record = ai
+        .hostile_last_seen
+        .values()
+        .find(|r| r.kind == "field_cannon")
+        .unwrap()
+        .clone();
+    let remote: Vec<Pos> = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            g.wdist(*pos, g.units[&ours].pos) > 7
+                && g.cities.values().all(|city| g.wdist(*pos, city.pos) > 5)
+        })
+        .take(2)
+        .collect();
+    assert_eq!(remote.len(), 2);
+    let hidden = g.spawn_test_unit("field_cannon", record.owner, remote[0]);
+    ai.hostile_last_seen.clear();
+    ai.hostile_last_seen.insert(hidden as i64, record);
+    let mut destinations = Vec::new();
+    for pos in remote {
+        let mut board = g.clone();
+        board.relocate(hidden, pos);
+        assert!(!board.sees(&board.player_vision_frame(0), pos));
+        let mut observed = ai.clone();
+        observed.observe_turn_start_hostiles(&board, 0);
+        assert_eq!(
+            observed.hostile_last_seen[&(hidden as i64)],
+            ai.hostile_last_seen[&(hidden as i64)],
+            "an unseen move must not overwrite the recorded sighting"
+        );
+        assert!(observed
+            .wounded_out_of_reach_step(&mut board, 0, ours)
+            .is_some());
+        destinations.push(board.units[&ours].pos);
+    }
+    assert_eq!(
+        destinations[0], destinations[1],
+        "only the recorded position may be read"
+    );
+}
+
+#[test]
+fn a_never_seen_shore_gun_is_not_added_to_either_hostile_observation() {
+    let (mut g, mut ai, ours, _) = remembered_shore_gun_fixture();
+    let far = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            g.wdist(*pos, g.units[&ours].pos) > 7
+                && g.cities.values().all(|city| g.wdist(*pos, city.pos) > 5)
+        })
+        .unwrap();
+    let hidden = g.spawn_test_unit("field_cannon", g.barb_pid.unwrap(), far);
+    assert!(!g.sees(&g.player_vision_frame(0), far));
+    ai.live_formationless_settler_shadow = true;
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(!ai.hostile_last_seen.contains_key(&(hidden as i64)));
+    assert!(ai
+        .turn_start_hostiles
+        .iter()
+        .all(|record| record.id != hidden));
+}
+
+fn wounded_galley_prepass_fixture() -> (Game, AdvancedAi, u32, u32, StrategicPlan) {
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_619).expect("barbarian fixture");
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != refuge {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let target_at = g.nbrs(front).into_iter().find(|p| *p != refuge).unwrap();
+    let unseen_at = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| *p != refuge && *p != target_at)
+        .unwrap();
+    let ours = g.spawn_test_unit("galley", 0, front);
+    let target = g.spawn_test_unit("galley", barbarian, target_at);
+    let unseen = g.spawn_test_unit("galley", barbarian, unseen_at);
+    g.units.get_mut(&ours).unwrap().hp = 40;
+    g.units.get_mut(&target).unwrap().hp = 24;
+    g.units.get_mut(&unseen).unwrap().hp = 53;
+    g.turn = 173;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_hostile_memory();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(unseen as i64)));
+    // A subsequent observed frame has lost sight of the second hull.
+    g.remove_unit(unseen);
+    g.turn = 177;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    (g, ai, ours, target, plan)
+}
+
+#[test]
+fn selected_wounded_galley_is_reserved_before_live_finishing() {
+    let (g, mut ai, ours, _, _) = wounded_galley_prepass_fixture();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).is_empty());
+    ai.enable_wounded_out_of_reach();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+    assert_eq!(g.units[&ours].hp, 40);
+}
+
+#[test]
+fn selected_wounded_galley_withdraws_before_native_kill_plan() {
+    let (g, ai, ours, target, plan) = wounded_galley_prepass_fixture();
+    for planner in [false, true] {
+        let mut treated = ai.clone();
+        treated.enable_wounded_out_of_reach();
+        let mut board = g.clone();
+        let before = board.units[&ours].pos;
+        if planner {
+            treated.enable_battle_planner_2();
+            treated.plan_battle(&mut board, 0, &plan);
+            assert!(treated.battle_planner_ordered.contains(&ours));
+        } else {
+            let reserved = treated.withdraw_before_kill_prepass(&mut board, 0, &plan);
+            assert!(reserved.contains(&ours));
+            treated.prioritize_immediate_kills(&mut board, 0, &plan, &reserved);
+        }
+        assert_ne!(board.units[&ours].pos, before);
+        assert_eq!(board.units[&ours].hp, 40);
+        assert_eq!(board.units[&target].hp, 24);
+        assert!(!board
+            .log
+            .iter()
+            .any(|(_, a)| matches!(a, Action::Attack { unit, .. } if *unit == ours)));
+    }
+}
+
+#[test]
+fn selected_wounded_ship_holds_without_fortify_before_kill_prepasses() {
+    let (mut g, mut ai, ours, target, plan) = wounded_galley_prepass_fixture();
+    let here = g.units[&ours].pos;
+    let victim = g.units[&target].pos;
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != here && tile.pos != victim {
+            tile.terrain = crate::name!("plains");
+        }
+    }
+    assert!(!g.unit_can_fortify(&g.units[&ours]));
+    ai.enable_wounded_out_of_reach();
+    for planner in [false, true] {
+        let mut board = g.clone();
+        let mut treated = ai.clone();
+        if planner {
+            treated.enable_battle_planner_2();
+            treated.plan_battle(&mut board, 0, &plan);
+            assert!(treated.battle_planner_ordered.contains(&ours));
+        } else {
+            let reserved = treated.withdraw_before_kill_prepass(&mut board, 0, &plan);
+            assert!(reserved.contains(&ours));
+            treated.prioritize_immediate_kills(&mut board, 0, &plan, &reserved);
+        }
+        assert_eq!(board.units[&ours].pos, here);
+        assert_eq!(board.units[&ours].hp, 40);
+        assert_eq!(board.units[&target].hp, 24);
+    }
+}
+
+#[test]
+fn wounded_prepass_preserves_the_only_threat_kill_and_city_defense_exception() {
+    let (g, mut ai, ours, target, mut plan) = wounded_galley_prepass_fixture();
+    ai.enable_wounded_out_of_reach();
+    let mut last_threat = g.clone();
+    last_threat.units.get_mut(&target).unwrap().hp = 1;
+    let mut no_memory = ai.clone();
+    no_memory.disable_hostile_memory();
+    no_memory.hostile_last_seen.clear();
+    assert!(no_memory
+        .live_wounded_unit_reservations(&last_threat, 0)
+        .is_empty());
+    assert!(no_memory
+        .withdraw_before_kill_prepass(&mut last_threat, 0, &plan)
+        .is_empty());
+    assert_eq!(
+        no_memory.prioritize_immediate_kills(&mut last_threat, 0, &plan, &BTreeSet::new()),
+        1
+    );
+    assert!(last_threat.units.contains_key(&ours));
+    let mut defending = g.clone();
+    plan.threatened_city = defending.player_city_ids(0).first().copied();
+    assert!(plan.threatened_city.is_some());
+    assert!(ai
+        .withdraw_before_kill_prepass(&mut defending, 0, &plan)
+        .is_empty());
+}
+
+#[test]
+fn a_wounded_ship_may_finish_the_only_visible_shore_gun() {
+    let (mut g, mut ai, ours, gun_at) = remembered_shore_gun_fixture();
+    g.units.get_mut(&ours).unwrap().kind = crate::name!("frigate");
+    let gun = g.spawn_test_unit("field_cannon", g.barb_pid.unwrap(), gun_at);
+    g.units.get_mut(&gun).unwrap().hp = 1;
+    let unseen = ai
+        .hostile_last_seen
+        .iter()
+        .next()
+        .map(|(key, record)| (*key, record.clone()))
+        .unwrap();
+    ai.hostile_last_seen.clear();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(g
+        .legal_actions_within(0, ActionFamilies::UNITS)
+        .iter()
+        .any(|action| { matches!(action, Action::Ranged { unit, .. } if *unit == ours) }));
+    let before = g.units[&ours].pos;
+    assert_eq!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a shot removing the only gun must not retain its speculative casualty as firing memory"
+    );
+    assert_eq!(g.units[&ours].pos, before);
+    assert!(
+        ai.hostile_last_seen.contains_key(&(gun as i64)),
+        "forecasting a kill does not erase the real observed memory"
+    );
+    ai.hostile_last_seen.insert(unseen.0, unseen.1);
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "removing the visible gun does not remove a different remembered gun"
+    );
 }
