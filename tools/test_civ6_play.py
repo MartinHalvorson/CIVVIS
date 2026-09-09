@@ -49,6 +49,66 @@ def args(**changes):
     return SimpleNamespace(**values)
 
 
+class SharedDesktopFocusTests(unittest.TestCase):
+    def test_disabled_interval_never_raises_or_places_the_game(self):
+        with patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "place_game") as place:
+            for interval in (0, -1):
+                self.assertEqual(civ6_play.maintain_game_focus(
+                    interval, 0, place=True), 0)
+        focus.assert_not_called()
+        place.assert_not_called()
+
+    def test_marker_can_disable_and_restore_upkeep_without_a_restart(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.time, "monotonic", return_value=100), \
+             patch.object(civ6_play, "screen_locked", return_value=False), \
+             patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "place_game") as place:
+            marker = Path(tmp) / ".civvis-shared-desktop"
+            marker.touch()
+            self.assertEqual(civ6_play.maintain_game_focus(
+                15, 0, place=True), 0)
+            focus.assert_not_called()
+            place.assert_not_called()
+            marker.unlink()
+            self.assertEqual(civ6_play.maintain_game_focus(
+                15, 0, place=True), 100)
+            focus.assert_called_once_with()
+            place.assert_called_once_with(civ6_play.GAME_SIDE,
+                                          civ6_play.GAME_FRACTION,
+                                          civ6_play.GAME_VFRACTION)
+            self.assertEqual(civ6_play.maintain_game_focus(
+                15, 100, place=True), 100)
+            self.assertEqual(focus.call_count, 1)
+
+    def test_locked_session_is_untouched_and_attach_never_repositions(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.time, "monotonic", return_value=100), \
+             patch.object(civ6_play, "screen_locked", return_value=True) as locked, \
+             patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "place_game") as place:
+            self.assertEqual(civ6_play.maintain_game_focus(15, 0), 0)
+            focus.assert_not_called()
+            locked.return_value = False
+            self.assertEqual(civ6_play.maintain_game_focus(15, 0), 100)
+            focus.assert_called_once_with()
+            place.assert_not_called()
+
+    def test_both_game_loops_use_shared_upkeep_and_retirement_stays_active(self):
+        source = Path(civ6_play.__file__).read_text()
+        attach = source[source.index("def _attach_running_game("):]
+        self.assertIn("last_focus = maintain_game_focus(args.focus_every, last_focus)",
+                      attach)
+        normal = source[source.index("    def keep_foreground() -> None:"):]
+        callback = normal[:normal.index("    # ⚠ THE POLL INTERVAL")]
+        self.assertLess(callback.index("process_operator_retirement()"),
+                        callback.index("maintain_game_focus("))
+        self.assertIn("args.focus_every, last_focus[0], place=True", callback)
+
+
 class AttachRunningTests(unittest.TestCase):
     """A loaded save has an ownership path that never touches its process."""
 
