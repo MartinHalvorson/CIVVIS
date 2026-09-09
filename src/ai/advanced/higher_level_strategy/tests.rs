@@ -447,3 +447,192 @@ fn builder_v2_needs_three_distinct_jobs_not_three_improvement_choices() {
         );
     }
 }
+
+// ---------------------- `expansion-scales-with-difficulty`: the wide cadence
+//
+// Filed here rather than beside the gene's own module because this is the code
+// path the gene widens: same debt, same idle-queue rule, same ranking, same
+// admission tests. See `advanced/expansion_scales_with_difficulty.rs`.
+
+use super::super::expansion_scales_with_difficulty::WIDE_PARALLEL_SETTLERS;
+
+fn wide() -> AdvancedAi {
+    let mut ai = AdvancedAi::new();
+    ai.enable_expansion_scales_with_difficulty();
+    ai
+}
+
+/// A capital plus one other city, everything explored, both queues empty.
+fn two_cities() -> (Game, u32, u32) {
+    let mut g = Game::new(2, 32, 22, 71, 250, 0);
+    g.game_speed = GameSpeed::Online;
+    g.difficulty = "emperor".to_string();
+    let settler = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|id| g.units[id].kind == "settler")
+        .unwrap();
+    let start = g.units[&settler].pos;
+    let capital = g.found_city_for(0, start, None);
+    g.remove_unit(settler);
+    let second = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| g.wdist(*pos, start) == 5)
+        .find(|pos| g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
+        .expect("a land tile five steps out");
+    let second = g.found_city_for(0, second, None);
+    for cid in [capital, second] {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.queue.clear();
+        city.buildings.clear();
+        city.pop = 5;
+    }
+    let positions: Vec<_> = g.map.tiles.keys().copied().collect();
+    for pos in positions {
+        g.players[0].explored.insert(pos);
+    }
+    g.players[0].gold = 500.0;
+    g.players[0].gold_per_turn = 10.0;
+    g.turn = 25;
+    g.record_contact(0, 1);
+    (g, capital, second)
+}
+
+fn wide_plan(desired: usize) -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: desired,
+        assessed_turn: 25,
+        rush: false,
+    }
+}
+
+#[test]
+fn a_busy_capital_hands_the_settler_to_the_best_other_city() {
+    let (mut g, capital, second) = two_cities();
+    let plan = wide_plan(9);
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    g.cities.get_mut(&capital).unwrap().queue.push(settler);
+
+    // The shipped reservation reads a Settler queued anywhere as the debt
+    // already serviced, so version two asks for nothing.
+    let mut v2 = AdvancedAi::new();
+    v2.enable_expansion_best_idle_city_2();
+    assert!(v2.higher_level_investment_target(&g, 0, &plan).is_none());
+
+    // The rung-scaled cadence takes the best OTHER idle city instead.
+    let (cid, item, debt) = wide()
+        .higher_level_investment_target(&g, 0, &plan)
+        .expect("a second settler factory");
+    assert_eq!(debt, Debt::Expansion);
+    assert_eq!(cid, second, "never the busy capital, which is not idle");
+    assert!(matches!(&item, Item::Unit { unit } if unit == "settler"));
+}
+
+#[test]
+fn a_capital_busy_with_a_district_is_busy_too_and_an_idle_one_is_not() {
+    let (mut g, capital, _) = two_cities();
+    let plan = wide_plan(9);
+    assert!(
+        !AdvancedAi::expansion_wide_capital_is_busy(&g, 0),
+        "an empty capital queue is not busy"
+    );
+    let pos = g.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|p| *p != g.cities[&capital].pos)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().queue.push(Item::District {
+        district: crate::name!("campus"),
+        pos,
+    });
+    assert!(AdvancedAi::expansion_wide_capital_is_busy(&g, 0));
+    // A cheap building in the capital is not the stall this gene clears.
+    g.cities.get_mut(&capital).unwrap().queue.clear();
+    g.cities.get_mut(&capital).unwrap().queue.push(Item::Building {
+        building: crate::name!("monument"),
+    });
+    assert!(!AdvancedAi::expansion_wide_capital_is_busy(&g, 0));
+    // And with the capital idle, both genes agree on the capital itself.
+    g.cities.get_mut(&capital).unwrap().queue.clear();
+    let (cid, _, debt) = wide()
+        .higher_level_investment_target(&g, 0, &plan)
+        .expect("the ordinary reservation");
+    assert_eq!(debt, Debt::Expansion);
+    assert_eq!(cid, capital, "the capital is still the best factory");
+}
+
+#[test]
+fn the_cadence_admits_at_most_two_walkers_and_only_behind_a_busy_capital() {
+    let (mut g, capital, _) = two_cities();
+    let ai = wide();
+    let off = AdvancedAi::new();
+    // No walker: every arm admits, exactly as the shipped rule does.
+    assert!(ai.expansion_wide_cadence_admits(&g, 0, 0));
+    assert!(off.expansion_wide_cadence_admits(&g, 0, 0));
+    // One walker and an idle capital: the shipped rule stands.
+    assert!(!ai.expansion_wide_cadence_admits(&g, 0, 1));
+    g.cities
+        .get_mut(&capital)
+        .unwrap()
+        .queue
+        .push(Item::Unit {
+            unit: crate::name!("settler"),
+        });
+    assert!(ai.expansion_wide_cadence_admits(&g, 0, 1), "the stall case");
+    assert!(
+        !ai.expansion_wide_cadence_admits(&g, 0, WIDE_PARALLEL_SETTLERS),
+        "two walkers is the ceiling"
+    );
+    assert!(
+        !off.expansion_wide_cadence_admits(&g, 0, 1),
+        "off, a walker always closes the reservation"
+    );
+}
+
+#[test]
+fn the_cadence_pauses_when_no_safe_site_is_left() {
+    let (mut g, capital, _) = two_cities();
+    let plan = wide_plan(9);
+    g.cities.get_mut(&capital).unwrap().queue.push(Item::Unit {
+        unit: crate::name!("settler"),
+    });
+    assert!(
+        wide().higher_level_investment_target(&g, 0, &plan).is_some(),
+        "the site gate passes on an open board"
+    );
+    // Drown everything outside the two cities' own rings. There is now no
+    // legal seat inside the safe radius at all, and no Shipbuilding to widen
+    // the search, so the walker-aware site gate holds: the cadence asks for
+    // nothing rather than sending a Settler into the fog.
+    let home = g.cities[&capital].pos;
+    let positions: Vec<_> = g.map.tiles.keys().copied().collect();
+    for pos in positions {
+        if g.wdist(pos, home) <= 2 {
+            continue;
+        }
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("ocean");
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = None;
+    }
+    assert!(
+        g.player_city_ids(0)
+            .into_iter()
+            .all(|cid| AdvancedAi::new()
+                .settler_site_gate(&g, 0, g.cities[&cid].pos, 0)
+                .is_err()),
+        "no seat is left to walk to"
+    );
+    assert!(wide().higher_level_investment_target(&g, 0, &plan).is_none());
+}

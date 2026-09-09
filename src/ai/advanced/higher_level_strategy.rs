@@ -163,7 +163,9 @@ impl AdvancedAi {
     ) -> Option<(u32, Item, Debt)> {
         if !((self.builder_workforce_recovery || self.builder_workforce_recovery_2)
             || (self.culture_building_catchup || self.culture_building_catchup_2)
-            || (self.expansion_best_idle_city || self.expansion_best_idle_city_2)
+            || (self.expansion_best_idle_city
+                || self.expansion_best_idle_city_2
+                || self.expansion_wide_level(g).is_some())
             || (self.research_building_catchup || self.research_building_catchup_2)
             || (self.trade_building_before_bankruptcy || self.trade_building_before_bankruptcy_2))
             || self.base.minor
@@ -226,11 +228,17 @@ impl AdvancedAi {
             ),
             (
                 Debt::Expansion,
-                (self.expansion_best_idle_city || self.expansion_best_idle_city_2)
-                    && g.turn <= Self::expansion_band_turn(g)
-                    && cities.len() < Self::expansion_pace(g)
+                (self.expansion_best_idle_city
+                    || self.expansion_best_idle_city_2
+                    || self.expansion_wide_level(g).is_some())
+                    // `expansion-scales-with-difficulty` supplies the horizon,
+                    // the pace and the walker rule; all three are exactly the
+                    // shipped ones while it is off. See
+                    // `advanced/expansion_scales_with_difficulty.rs`.
+                    && g.turn <= self.expansion_cadence_horizon(g)
+                    && cities.len() < self.expansion_pace_now(g)
                     && cities.len() < self.settlement_target(plan)
-                    && counts.settlers == 0,
+                    && self.expansion_wide_cadence_admits(g, pid, counts.settlers),
             ),
             (
                 Debt::Culture,
@@ -247,7 +255,7 @@ impl AdvancedAi {
                 (self.builder_workforce_recovery || self.builder_workforce_recovery_2)
                     && cities.len() >= 2
                     && counts.builders == 0
-                    && (counts.settlers > 0 || cities.len() >= Self::expansion_pace(g))
+                    && (counts.settlers > 0 || cities.len() >= self.expansion_pace_now(g))
                     && super::BasicAi::has_builder_work(g, pid),
             ),
         ];
@@ -257,9 +265,21 @@ impl AdvancedAi {
             .into_iter()
             .filter(|(debt, enabled)| {
                 *enabled
-                    && !cities
-                        .iter()
-                        .any(|cid| g.cities[cid].queue.iter().any(|item| debt.matches(g, item)))
+                    && !cities.iter().any(|cid| {
+                        // `expansion-scales-with-difficulty`: a Settler queued
+                        // in the CAPITAL is the stall this gene exists to
+                        // clear, not proof the debt is serviced. Every other
+                        // city, and every other debt, still closes it, and
+                        // `expansion_wide_cadence_admits` above has already
+                        // capped how many walkers may be in flight at once.
+                        if *debt == Debt::Expansion
+                            && g.cities[cid].is_capital
+                            && self.expansion_wide_level(g).is_some()
+                        {
+                            return false;
+                        }
+                        g.cities[cid].queue.iter().any(|item| debt.matches(g, item))
+                    })
             })
             .map(|(debt, _)| debt)
             .collect();
