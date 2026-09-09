@@ -4931,6 +4931,14 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `early-conquest-opening`: the opening this controller has committed
+    /// to. `None` whenever the gene is off. See
+    /// `advanced/early_conquest.rs`.
+    conquest_opening: Option<early_conquest::ConquestOpening>,
+    /// `early-conquest-opening`: an opening that assembled or declared has
+    /// been released, and this game has had its one attempt. `false`
+    /// whenever the gene is off.
+    conquest_closed: bool,
     /// Arm the culture defence at 30 percent of the victory bar instead of
     /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
     /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
@@ -5254,6 +5262,14 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Take a small neighbour's city in the opening: a met rival's known
+    /// city within twelve tiles of the capital, the capital's production
+    /// reserved for three shooters and two melee bodies ahead of the second
+    /// Settler, the war declared once the force is assembled and the bill
+    /// covered, and no strike-force body ending its move beside unseen
+    /// ground. Opt-in gene `early-conquest-opening`; see
+    /// `advanced/early_conquest.rs`.
+    early_conquest_opening: bool,
     /// Scale the opening city target, its deadline, the Settler cadence and
     /// the expansion cards with the difficulty rung. Opt-in gene
     /// `expansion-scales-with-difficulty`; see
@@ -6950,6 +6966,11 @@ mod camp_buyout;
 /// the world is Ancient and Classical, and Archery chased until a city can
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
 mod early_archers;
+/// `early-conquest-opening`: take a small neighbour's city in the opening —
+/// the fog-honest target, the capital's reserved strike force, the rally and
+/// the declaration, the vision guard on the march, and the continuation while
+/// the war pays. One opt-in gene; see `advanced/early_conquest.rs`.
+mod early_conquest;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
@@ -7735,6 +7756,8 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            conquest_opening: None,
+            conquest_closed: false,
             culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,
@@ -7789,6 +7812,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            early_conquest_opening: false,
             expansion_scales_with_difficulty: false,
             expansion_best_idle_city: false,
             expansion_best_idle_city_2: false,
@@ -15912,6 +15936,10 @@ impl AdvancedAi {
         // shooter, and every node on the way, while the empire lacks it.
         // Zero with the gene off.
         value += self.early_archers_research_value(g, pid, tech);
+        // `early-conquest-opening`: the node that upgrades the strike force's
+        // Slinger into a real shooter, while the reservation is open. Zero
+        // while off. See `advanced/early_conquest.rs`.
+        value += self.conquest_research_value(g, pid, tech);
         if let Some(goal) = BasicAi::water_research_goal(g, pid) {
             if self.tech_leads_to(g, tech, goal) {
                 // Embarkation and ocean access change which parts of the map
@@ -18424,6 +18452,13 @@ impl AdvancedAi {
         // a prize the board exposes this turn. A declaration here is the
         // turn's one declaration.
         if self.opportunistic_war_diplomacy(g, pid, plan) {
+            return;
+        }
+        // `early-conquest-opening`: the assembled force's declaration, and the
+        // terms it asks for once the war stops paying. A declaration here is
+        // the turn's one declaration. Exact no-op while off. See
+        // `advanced/early_conquest.rs`.
+        if self.conquest_declaration(g, pid) {
             return;
         }
         // `city_campaign`: a campaign whose every city is ours offers peace,
@@ -26549,6 +26584,19 @@ impl AdvancedAi {
             Item::Unit { unit } if unit == "settler" && threatened_recovery_holds_settlers => {
                 -10_000.0
             }
+            // `early-conquest-opening`: the capital's production is RESERVED
+            // for the strike force, not merely bidding against the Settler.
+            // Never the first Settler, never a threatened capital, never any
+            // other city. `false` with the gene off. See
+            // `advanced/early_conquest.rs`.
+            Item::Unit { unit }
+                if unit == "settler"
+                    && self.conquest_defers_the_settler(
+                        g, pid, cid, counts, city_count, threatened,
+                    ) =>
+            {
+                -10_000.0
+            }
             Item::Unit { unit } if unit == "settler" => {
                 let settlement_target = self.settlement_target(plan);
                 let in_flight_allowed = self.settler_pipeline_width(
@@ -26824,12 +26872,19 @@ impl AdvancedAi {
                     // outside its window, or for anything but a land shooter.
                     let early_archer =
                         self.early_archers_value(g, pid, cid, spec, counts, city_count);
+                    // And neither is a body the opening reserved: see
+                    // `advanced/early_conquest.rs`. Zero with the gene off,
+                    // outside the capital, while the city is threatened, or
+                    // once the strike force is complete.
+                    let conquest_body =
+                        self.conquest_reservation(g, pid, cid, spec, counts, threatened);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
                         && !threatened
                         && early_contact <= 0.0
                         && early_archer <= 0.0
+                        && conquest_body <= 0.0
                     {
                         return -2_000.0;
                     }
@@ -26970,6 +27025,7 @@ impl AdvancedAi {
                         + unique_window
                         + early_contact
                         + early_archer
+                        + conquest_body
                 } else if spec.class == "support" {
                     self.support_unit_value(g, pid, cid, unit, plan, counts)
                 } else {
@@ -35013,6 +35069,14 @@ impl AdvancedAi {
             if let Some(frame) = &screen_frame {
                 value += self.screen_bonus(g, tile, frame);
             }
+            // `early-conquest-opening`: a strike-force body does not end its
+            // move beside ground it cannot see unless a friendly stands with
+            // it. 234 of 304 live unit deaths carried `no_visible_threat`.
+            // Zero with the gene off and for every unit outside the force.
+            // See `advanced/early_conquest.rs`.
+            if let Some(frame) = visible.as_ref() {
+                value -= self.conquest_blind_tile_penalty(g, pid, uid, tile, frame);
+            }
             // The posture selector's superiority gate is already arena-off
             // (an army that declines every even fight loses the field to the
             // clock), but this second gate — a per-tile brake on any closing
@@ -39730,6 +39794,12 @@ impl AdvancedAi {
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
+        // `early-conquest-opening`: name or keep the opening's target, count
+        // the war's losses, and pin the campaign it has handed over — before
+        // the shipped campaign maintenance reads the plan, and before
+        // `assess` aims the army. Exact no-op while off. See
+        // `advanced/early_conquest.rs`.
+        self.maintain_conquest_opening(g, pid);
         // `city_campaign`: drop the cities the plan has taken, expire one
         // never launched, draw or refresh one at peace. See
         // `advanced/city_campaign.rs`.

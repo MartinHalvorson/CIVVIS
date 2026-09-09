@@ -2162,6 +2162,12 @@ pub const GENES: &[Gene] = &[
     // Version two also withdraws healthy units exposed to a nominal lethal
     // shot from one recently observed gun; v1 remains the deployed control.
     Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
+    // Take a small neighbour's city in the opening. The live seat has never
+    // won at Emperor: rivals there take +16% on every yield and a free
+    // Settler an era, our combat trades at 0.45 kills per loss, and 234 of
+    // 304 unit deaths had no visible threat. See
+    // `advanced/early_conquest.rs`.
+    Gene { tag: "early-conquest-opening", field: "early_conquest_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_early_conquest_opening, disable: AdvancedAi::disable_early_conquest_opening },
     // `expansion-scales-with-difficulty` (2026-09-09): the measured 4-6 city
     // opening band was read off a King-level field. Above King the rivals take
     // +16/+24/+32 percent of every yield and free Settlers every era, so the
