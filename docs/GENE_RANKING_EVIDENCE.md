@@ -189,6 +189,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `builder-workforce-recovery-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 | `culture-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `culture-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `culture-threat-early` | off (unmeasured) | Arm the culture defence at 30 percent of the victory bar instead of version one's 50, refuse every sale to the threatening rival, and denounce it. | 1 \| 1 |
 | `doomed-blow-veto-2` | off (unmeasured) | Price survival after the complete friendly strike sequence. | 1 \| 2 |
 | `expansion-best-idle-city` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `expansion-best-idle-city-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |

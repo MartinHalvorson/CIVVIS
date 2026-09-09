@@ -334,3 +334,208 @@ fn censorship_amenity_cost_ends_even_without_a_replacement_card() {
         .policies
         .contains(&crate::name!("music_censorship")));
 }
+
+/// `culture-threat-early`: the registry row ships off, its toggles are twins,
+/// and off the defence keeps version one's 50-percent bar exactly.
+#[test]
+fn culture_threat_early_ships_off_and_keeps_the_halfway_bar_off() {
+    let gene = crate::ai::GENES
+        .iter()
+        .find(|gene| gene.tag == "culture-threat-early")
+        .unwrap();
+    assert!(gene.opt_in());
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(!ai.culture_threat_early, "the gene ships off");
+    assert!(!AdvancedAi::legacy().culture_threat_early);
+    assert_eq!(ai.culture_threat_pressure(), CULTURE_THREAT_PRESSURE);
+    assert_eq!(CULTURE_THREAT_PRESSURE, 50);
+    (gene.enable)(&mut ai);
+    assert!(ai.culture_threat_early);
+    assert_eq!(ai.culture_threat_pressure(), CULTURE_THREAT_PRESSURE_EARLY);
+    assert_eq!(CULTURE_THREAT_PRESSURE_EARLY, 30);
+    (gene.disable)(&mut ai);
+    assert!(!ai.culture_threat_early);
+    assert_eq!(ai.culture_threat_pressure(), 50);
+}
+
+/// A rival at 35 percent of the bar is a threat only with the gene on; one
+/// at 29 percent is a threat to neither, and the urgency follows the bar.
+#[test]
+fn early_threshold_admits_a_thirty_five_percent_rival_and_off_keeps_fifty() {
+    let mut g = board();
+    // Player 1's pressure is 100 * foreign / max(other domestic) = foreign / 100.
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(35);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        ai.culture_trade_threats(&g, 0).is_empty(),
+        "off, 35 percent is below the halfway bar"
+    );
+    assert_eq!(ai.culture_defense_urgency(&g, 0), 0.0);
+    assert!(ai.culture_defense_cards(&g, 0).is_empty());
+    ai.enable_culture_threat_early();
+    assert_eq!(ai.culture_trade_threats(&g, 0), BTreeSet::from([1]));
+    assert_eq!(ai.culture_defense_urgency(&g, 0), 0.35);
+    assert_eq!(
+        ai.culture_defense_cards(&g, 0),
+        vec!["future_counter_culture"]
+    );
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(29);
+    assert!(ai.culture_trade_threats(&g, 0).is_empty());
+    assert_eq!(ai.culture_defense_urgency(&g, 0), 0.0);
+    // The same guards as version one: an unmet or dead rival is no threat.
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(35);
+    g.players[0].met.remove(&1);
+    assert!(ai.culture_trade_threats(&g, 0).is_empty());
+    g.record_contact(0, 1);
+    g.players[1].alive = false;
+    assert!(ai.culture_trade_threats(&g, 0).is_empty());
+}
+
+/// With the gene on nothing is sold to the threat itself; sales to other
+/// buyers and purchases from the threat stay open, and off the filter is
+/// exactly version one's.
+#[test]
+fn early_defense_refuses_every_sale_to_the_threat_only() {
+    let threats = BTreeSet::from([1]);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut deal = QuickDeal {
+        partner: 1,
+        category: "luxury".into(),
+        item: "silk".into(),
+        direction: "sell".into(),
+        offer: DealItems::default(),
+        request: DealItems::default(),
+        my_value: 100.0,
+        partner_value: 100.0,
+    };
+    assert!(AdvancedAi::culture_deal_safe(&deal, &threats));
+    assert!(
+        ai.culture_deal_allowed(&deal, &threats),
+        "off: version one sells luxuries"
+    );
+    ai.enable_culture_threat_early();
+    assert!(!ai.culture_deal_allowed(&deal, &threats));
+    for (category, item) in [
+        ("strategic", "iron"),
+        ("gold", "gold"),
+        ("diplomatic", "open_borders"),
+    ] {
+        deal.category = category.into();
+        deal.item = item.into();
+        assert!(
+            !ai.culture_deal_allowed(&deal, &threats),
+            "{category}/{item}"
+        );
+    }
+    deal.category = "luxury".into();
+    deal.item = "silk".into();
+    deal.partner = 2;
+    assert!(
+        ai.culture_deal_allowed(&deal, &threats),
+        "a bystander may buy"
+    );
+    deal.partner = 1;
+    deal.direction = "buy".into();
+    assert!(
+        ai.culture_deal_allowed(&deal, &threats),
+        "buying from the threat is fine"
+    );
+    deal.direction = "sell".into();
+    deal.category = "great_work".into();
+    deal.partner = 2;
+    assert!(
+        !ai.culture_deal_allowed(&deal, &threats),
+        "version one's great-work veto still holds for every buyer"
+    );
+    assert!(
+        ai.culture_deal_allowed(&deal, &BTreeSet::new()),
+        "no threat, no veto"
+    );
+}
+
+/// The threat is denounced once, the most pressing first, only with the
+/// gene on, and only while the engine calls the denouncement legal.
+#[test]
+fn early_defense_denounces_the_culture_threat_once() {
+    let mut g = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(ai.culture_trade_threats(&g, 0), BTreeSet::from([1]));
+    assert_eq!(ai.culture_threat_denunciation(&mut g, 0), None, "off");
+    assert!(g.players[0].denounced_until.is_empty());
+    ai.enable_culture_threat_early();
+    assert_eq!(ai.culture_threat_denunciation(&mut g, 0), Some(1));
+    assert!(g.players[0]
+        .denounced_until
+        .get(&1)
+        .is_some_and(|until| *until > g.turn));
+    assert_eq!(
+        ai.culture_threat_denunciation(&mut g, 0),
+        None,
+        "an active denouncement is not repeated"
+    );
+    // A second threat under a friendship cannot be denounced; nothing else is.
+    let mut friends = board();
+    Arc::make_mut(&mut friends.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(0);
+    Arc::make_mut(&mut friends.observed_public_empire_stats)
+        .get_mut(&2)
+        .unwrap()
+        .foreign_tourists = Some(40);
+    friends.players[0]
+        .friends_until
+        .insert(2, friends.turn + 30);
+    assert_eq!(ai.culture_trade_threats(&friends, 0), BTreeSet::from([2]));
+    assert_eq!(ai.culture_threat_denunciation(&mut friends, 0), None);
+    assert!(friends.players[0].denounced_until.is_empty());
+}
+
+/// A threat's own passage proposal is refused with the gene on and valued
+/// as version one values it when the gene is off.
+#[test]
+fn early_defense_refuses_the_threats_open_borders_proposal() {
+    let g = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let deal = crate::game::DiplomaticDeal {
+        id: 1,
+        from: 1,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: true,
+        friendship: false,
+        peace: false,
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target: None,
+        promise: None,
+        demand: false,
+        expires: g.turn + 5,
+    };
+    let off = ai.incoming_deal_value(&g, 0, &deal, &plan);
+    assert!(off > 0.0, "version one accepts passage: {off}");
+    ai.enable_culture_threat_early();
+    assert_eq!(ai.incoming_deal_value(&g, 0, &deal, &plan), -1_000.0);
+    let mut bystander = deal.clone();
+    bystander.from = 2;
+    assert_eq!(ai.incoming_deal_value(&g, 0, &bystander, &plan), off);
+}
