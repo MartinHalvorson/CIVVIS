@@ -49,7 +49,12 @@ retirement expiry, inactive treatment, and refusal to detour into a barbarian's
 capture reach. The saved-export replay is explicitly ignored in CI because the
 external run artifact is required; the controlled regressions run by default.
 
-Full repository validation is pending. The new game routing query is called
+Validation on `ceab7a2ac`: `cargo test --profile ci --locked` passed all
+3,224 executed tests locally; the recorded turn-48 replay also passed.
+All PR checks passed, including Rust tests, quality, control-mod validation,
+and the paired performance comparison.
+
+The new game routing query is called
 only by the existing host-only move-refusal policy; simulator movement rules
 and the native evaluation genome are unchanged, so a native policy soak does
 not exercise this host-refusal repair.
