@@ -81,6 +81,19 @@
       "load_end": 5.64,
       "pair_spread_pct": 10.923,
       "note": "first reading at the corrected topology: gene_screen plays MapTopology::default()=Flat and this gate passed no --shape, so every earlier row measured a globe"
+    },
+    {
+      "date": "2026-09-09",
+      "machine": "github-ubuntu-latest",
+      "commit": "b83b2248",
+      "cpu_seconds": 143.76,
+      "turns": 600,
+      "seconds_per_turn": 0.2396,
+      "load_start": 4.46,
+      "load_peak": 4.46,
+      "load_end": 4.46,
+      "pair_spread_pct": 1.77,
+      "note": "transcribed from the paired-cost run on b83b2248 (run 34324850475), the first CI reading at the corrected topology; the globe rows it replaces are under superseded_readings"
     }
   ]
 }
