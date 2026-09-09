@@ -128,11 +128,6 @@
         16,
         26
       ],
-      "boost-wait-research": [
-        -1,
-        -14,
-        -27
-      ],
       "boost-wait-research-2": [
         2,
         50,
@@ -372,11 +367,6 @@
         20,
         5,
         1
-      ],
-      "contested-suzerainty-brake": [
-        -5,
-        -56,
-        -11
       ],
       "conversion-majority-alarm": [
         0,
@@ -627,11 +617,6 @@
         3,
         -1,
         -6
-      ],
-      "gold-for-the-young-city": [
-        -14,
-        16,
-        -16
       ],
       "gold-income-floor": [
         -5,
@@ -1243,11 +1228,6 @@
         -18,
         -3
       ],
-      "treasury-at-work": [
-        -22,
-        -8,
-        -4
-      ],
       "treasury-at-work-2": [
         55,
         65,
@@ -1360,7 +1340,6 @@
       "blind-objective-units": "off",
       "boost-first-research": "off",
       "boost-unlock-research": "on",
-      "boost-wait-research": "off",
       "boost-wait-research-2": "on",
       "boosted-bargain-first": "off",
       "boosted-bargain-first-2": "off",
@@ -1409,7 +1388,6 @@
       "congress-counter-leader": "off",
       "connect-the-luxury": "on",
       "contested-land-first": "on",
-      "contested-suzerainty-brake": "off",
       "conversion-majority-alarm": "on",
       "conversion-majority-alarm-2": "off",
       "coordinated-finish": "off",
@@ -1460,7 +1438,6 @@
       "founder-temple": "off",
       "frontier-massing-alarm": "off",
       "garrison-under-fire": "off",
-      "gold-for-the-young-city": "off",
       "gold-income-floor": "on",
       "government-capacity-fallback": "off",
       "government-ladder": "off",
@@ -1583,7 +1560,6 @@
       "swap-rotation-2": "off",
       "threatened-city-reserve": "off",
       "trade-route-network": "off",
-      "treasury-at-work": "off",
       "treasury-at-work-2": "on",
       "unchosen-war-keeps-the-lane": "on",
       "unit-cost-efficiency": "on",
@@ -1741,17 +1717,6 @@
           "battle-planner": null,
           "battle-planner-2": null,
           "battle-planner-3": null
-        }
-      },
-      "boost-wait-research": {
-        "rule_on": [
-          "boost-wait-research-2"
-        ],
-        "head": null,
-        "ships": "boost-wait-research-2",
-        "versions": {
-          "boost-wait-research": null,
-          "boost-wait-research-2": null
         }
       },
       "boosted-bargain-first": {
@@ -2132,17 +2097,6 @@
           "trade-building-before-bankruptcy-2": null
         }
       },
-      "treasury-at-work": {
-        "rule_on": [
-          "treasury-at-work-2"
-        ],
-        "head": null,
-        "ships": "treasury-at-work-2",
-        "versions": {
-          "treasury-at-work": null,
-          "treasury-at-work-2": null
-        }
-      },
       "wonder-ring-recon": {
         "rule_on": [
           "wonder-ring-recon-2"
@@ -2439,7 +2393,7 @@
         "complete_seats": 13938,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price chop-into-the-queue, score-horizon, skip-the-prophet-race and wonder-adjacent-sites (batch-rule removals, below -10 in all three batches) and enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), all of which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
     },
     {
       "path": "docs/gene_screens/2026-09-08-standard-continuous-2460-total-seats-20260908-unified-current-build.json",
@@ -2476,7 +2430,7 @@
         "complete_seats": 2460,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price chop-into-the-queue, score-horizon, skip-the-prophet-race and wonder-adjacent-sites (batch-rule removals, below -10 in all three batches) and enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), all of which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
     },
     {
       "path": "docs/gene_screens/2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json",
@@ -2520,7 +2474,7 @@
         "complete_seats": 18768,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price chop-into-the-queue, score-horizon, skip-the-prophet-race and wonder-adjacent-sites (batch-rule removals, below -10 in all three batches) and enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), all of which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
     }
   ],
   "counts": {
