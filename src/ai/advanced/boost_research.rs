@@ -250,12 +250,8 @@ impl AdvancedAi {
             .filter(|node| *node != ordinary && Self::boost_in_hand(g, pid, node, techs))
             .filter_map(|node| {
                 let unscaled = value(node);
-                (unscaled >= floor).then(|| {
-                    (
-                        unscaled * Self::boost_discount_scale(g, node, techs),
-                        node.clone(),
-                    )
-                })
+                (unscaled >= floor)
+                    .then(|| (unscaled * Self::boost_discount_scale(g, node, techs), *node))
             })
             .filter(|(scaled, _)| *scaled > winner)
             .max_by(|left, right| {
@@ -1020,7 +1016,7 @@ mod tests {
                 "{civic} is priced the same under v2 as with every gene off"
             );
         }
-        let ordinary = available[0].clone();
+        let ordinary = available[0];
         assert_eq!(
             plain.boost_tiebreak_pick(&game, 0, strategy, &available, &ordinary, true),
             None,
