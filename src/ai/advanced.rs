@@ -24702,6 +24702,33 @@ impl AdvancedAi {
                     }
                 }
             }
+            // A named lane compounds a repayable industrial foundation
+            // before discretionary Spies, extra districts and projects. The
+            // preceding survival, research, growth and income reservations
+            // retain priority, and existing commitments are never displaced.
+            if committed.is_none() {
+                if let Some(item) = self.profitable_industrial_foundation(g, pid, cid, plan) {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            think!(self.journal(), Economy, Decision,
+                                "{} invests in {}", city_name, Self::plain_item(&item);
+                                "the industrial foundation can repay its remaining production cost before the clock");
+                        }
+                        counts.add_item(g, &item);
+                        self.clear_idle_production_streak(cid);
+                        continue;
+                    }
+                }
+            }
             // `order_retry`: the menu is RANKED rather than reduced to its
             // argmax, so a refused item falls through to the next-best without
             // scoring anything a second time. With the gene off only the argmax

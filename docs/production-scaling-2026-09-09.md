@@ -28,28 +28,41 @@ building valuation alone. A single live trace cannot establish typical strength.
 
 ## First intervention
 
-The named victory lanes already carry an industrial-building premium. That
-premium usually decayed with `(max_turns - turn) / max_turns`, independently
-of build cost or the production returned. Price it instead by the remaining
-investment's payback: subtract completion time from the remaining clock, then
-compare production returned with remaining production cost. A profitable
-investment receives full credit, a partial return receives proportional credit,
-and a building that cannot complete before the clock receives none. Preserve
-the regional reach discount and the existing separate power utility policy.
-Unlimited games use a rolling speed-aware investment window.
+Replaying turn 150 through all six named victory targets initially made
+Mediolanum choose a Spy despite a legal Workshop. That city already had its
+Library and University; the generic Spy bid outranked industrial investment.
+A larger industrial score alone did not solve the actual queue choice.
+
+Idle, safe cities in named lanes now reserve a legal industrial building when
+its projected production return repays its remaining cost before the clock.
+This reservation follows the existing survival, research, growth, solvency and
+amenity reservations, preserves commitments, and excludes active Science launch
+cities. It makes the production foundation precede discretionary production.
+
+The payback estimate subtracts construction time and compares printed local
+production plus existing discounted regional reach against remaining cost. A
+profitable investment receives full credit, a partial return proportional
+credit, and a building that cannot complete receives none. This is a projection,
+not a full simulation of future policies, citizen allocation or amenities.
+Unlimited games use a rolling speed-aware window. Separate power utility stays
+under its existing policy.
+
+The named lanes' industrial premium uses that estimate too. The older expression
+could decay with the fraction of the whole game remaining; **the recorded live
+genome already enables `chain-payback-window-2`, which addresses much of that
+problem**. The queue reservation, not a claim that this live gene was absent,
+is the central intervention.
 
 Science also reserved its cheapest owed research building before the general
 production scorer ran. Both reservation paths now let legal Industrial Zone
-buildings compete using that same scorer. The reservation stays within the
-research and industrial foundation: it does not admit unrelated districts or
-repeatable projects. Other named lanes receive the payback valuation through
-their normal scoring path. Adaptive seats retain the separately screened
+buildings compete using that same scorer. The reservation stays within research
+and the industrial foundation. Adaptive seats retain their separately screened
 industrial and research-reservation expressions.
 
 Implementation: `src/ai/advanced/production_compounding.rs`; fixtures live in
-its `tests.rs`. These test the valuation, all six named targets, terminal and
-unlimited clocks, regional reach, and execution through the early Science
-reservation. They do not establish an economic or win-rate improvement.
+its `tests.rs`. They test valuation, all six named lanes, terminal and unlimited
+clocks, regional reach, and actual queue selection. Fixtures and one-turn replay
+do not establish a production-curve or win-rate improvement.
 
 ## Remaining outcome work
 

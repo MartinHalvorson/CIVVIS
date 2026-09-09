@@ -188,3 +188,98 @@ fn adaptive_research_reservation_retains_its_screened_policy() {
         library
     );
 }
+
+#[test]
+fn repayable_workshop_precedes_discretionary_spy_in_the_real_queue() {
+    let (mut game, cid, workshop) = workshop_fixture();
+    game.turn = 100;
+    game.players[0]
+        .civics
+        .insert(crate::name!("diplomatic_service"));
+    let spy = Item::Unit {
+        unit: crate::name!("spy"),
+    };
+    assert!(game.can_produce(0, cid, &spy));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = ai.counts(&game, 0);
+    assert!(
+        ai.production_value(&game, 0, cid, &spy, &plan, &counts)
+            > ai.production_value(&game, 0, cid, &workshop, &plan, &counts),
+        "reproduce the old discretionary score winning"
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&cid].queue.first(),
+        Some(&workshop),
+        "the actual queue must invest instead of merely raising a score"
+    );
+}
+
+#[test]
+fn every_named_lane_reserves_only_a_safe_repayable_idle_investment() {
+    let (mut game, cid, workshop) = workshop_fixture();
+    game.turn = 100;
+    for target in VictoryTarget::ALL {
+        let ai = AdvancedAi::targeting(target);
+        let mut plan = StrategicPlan {
+            strategy: target.strategy(),
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        assert_eq!(
+            ai.profitable_industrial_foundation(&game, 0, cid, &plan),
+            Some(workshop.clone())
+        );
+        plan.threatened_city = Some(cid);
+        assert!(ai
+            .profitable_industrial_foundation(&game, 0, cid, &plan)
+            .is_none());
+        plan.threatened_city = None;
+        game.cities.get_mut(&cid).unwrap().last_attacked = game.turn;
+        assert!(ai
+            .profitable_industrial_foundation(&game, 0, cid, &plan)
+            .is_none());
+        game.cities.get_mut(&cid).unwrap().last_attacked = 0;
+        game.cities.get_mut(&cid).unwrap().queue.push(Item::Unit {
+            unit: crate::name!("warrior"),
+        });
+        assert!(ai
+            .profitable_industrial_foundation(&game, 0, cid, &plan)
+            .is_none());
+        game.cities.get_mut(&cid).unwrap().queue.clear();
+        game.max_turns = game.turn + 1;
+        assert!(ai
+            .profitable_industrial_foundation(&game, 0, cid, &plan)
+            .is_none());
+        game.max_turns = 250;
+    }
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    install_test_district(&mut game, cid, "spaceport");
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(
+        ai.profitable_industrial_foundation(&game, 0, cid, &plan)
+            .is_none(),
+        "a launch city's project priority is preserved"
+    );
+}

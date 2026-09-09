@@ -1,9 +1,9 @@
 //! Price the industrial foundation by time to repay the remaining investment.
 //!
-//! The named lanes already owe industrial buildings. Their old horizon was
-//! usually the fraction of the entire game still remaining: a profitable
-//! Workshop at turn 180/250 received only 28% of its foundation premium.
-//! Build time and production returned are the relevant clock instead. The
+//! Named lanes already owe industrial buildings, but discretionary bids and
+//! research reservations can still take every queue before that debt is paid.
+//! Reserve profitable infrastructure and compare it with research explicitly.
+//! Build time and projected production returned set the investment clock; the
 //! separately screened adaptive treatment retains its measured expression.
 
 use super::{AdvancedAi, ChainRung, GrandStrategy, StrategicPlan, VictoryTarget};
@@ -51,6 +51,57 @@ impl AdvancedAi {
             }
         }
         best
+    }
+
+    /// Repayable industrial infrastructure precedes discretionary production
+    /// in an idle, safe city. Research, survival, growth, solvency and amenity
+    /// reservations run first; an active launch city keeps its project queue.
+    pub(super) fn profitable_industrial_foundation(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<Item> {
+        let target = self.active_victory_target(g)?;
+        let city = &g.cities[&cid];
+        if !city.queue.is_empty()
+            || plan.threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            || (target == VictoryTarget::Science && Self::city_has_spaceport(g, cid))
+        {
+            return None;
+        }
+        let counts = self.counts(g, pid);
+        let mut best: Option<(f64, Item)> = None;
+        for (building, spec) in &g.rules.buildings {
+            if spec.wonder
+                || spec.yields.production <= 0.0
+                || !spec
+                    .district
+                    .is_some_and(|d| g.district_family(d) == "industrial_zone")
+            {
+                continue;
+            }
+            let item = Item::Building {
+                building: *building,
+            };
+            if !g.can_produce(pid, cid, &item) {
+                continue;
+            }
+            let regional =
+                self.regional_production_reach(g, pid, city, building, spec, plan.strategy);
+            if self.industrial_investment_horizon(g, pid, cid, &item, spec, regional, plan.strategy)
+                < 1.0
+            {
+                continue;
+            }
+            let score = self.production_value(g, pid, cid, &item, plan, &counts);
+            if score > 0.0 && best.as_ref().is_none_or(|(old, _)| score > *old) {
+                best = Some((score, item));
+            }
+        }
+        best.map(|(_, item)| item)
     }
 
     /// Full premium when the remaining production repays itself before the
