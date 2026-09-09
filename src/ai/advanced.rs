@@ -22024,9 +22024,20 @@ impl AdvancedAi {
         let earth_satellite_started = !completed.contains("launch_earth_satellite")
             && Self::science_project_is_queued(g, pid, "launch_earth_satellite");
         let desired = if self.science_drive_active()
+                    // ⭐ THE FREE QUESTION FIRST. `raced_target()` reads two
+                    // fields; `space_race_lane` calls `victory_focus`, which
+                    // sweeps the whole empire through `lane_progress_table`.
+                    // Both are pure, so `||` gives the same answer either way,
+                    // and a seat already racing Science -- the case this branch
+                    // exists for -- now skips the sweep entirely. Sampled over a
+                    // six-game 250-turn screen, the chain
+                    // `victory_focus <- science_spaceport_target <-
+                    // science_spaceport_retained_cities` was 10.4% of the
+                    // busiest thread, and `science_spaceport_city_is_admitted`
+                    // re-enters it once per city.
             || (self.victory_planning
-                && (self.space_race_lane(g, pid)
-                    || self.raced_target() == Some(VictoryTarget::Science)))
+                && (self.raced_target() == Some(VictoryTarget::Science)
+                    || self.space_race_lane(g, pid)))
         {
             // The drive starts its second pad as soon as the Earth Satellite
             // is underway, so it is ready for the later parallel laser phase.
@@ -22041,8 +22052,8 @@ impl AdvancedAi {
                     1
                 },
             )
-        } else if self.space_race_lane(g, pid)
-            || self.raced_target() == Some(VictoryTarget::Science)
+        } else if self.raced_target() == Some(VictoryTarget::Science)
+            || self.space_race_lane(g, pid)
         {
             if completed.contains("launch_mars_colony") {
                 3
@@ -27247,9 +27258,11 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if family == "spaceport" {
+                    // Both free field reads before the empire sweep; see the
+                    // note in `science_spaceport_target`.
                     let races_science = self.science_drive_active()
-                        || self.space_race_lane(g, pid)
-                        || self.raced_target() == Some(VictoryTarget::Science);
+                        || self.raced_target() == Some(VictoryTarget::Science)
+                        || self.space_race_lane(g, pid);
                     let current_queued_spaceport = city.queue.first().is_some_and(|queued| {
                         queued == item
                             && matches!(queued, Item::District { district, .. }
