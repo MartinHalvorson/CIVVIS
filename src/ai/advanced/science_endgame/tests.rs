@@ -438,3 +438,19 @@ fn third_pad_prepares_while_mars_is_still_being_built() {
         matches!(g.cities[&third].queue.first(), Some(Item::District { district, .. }) if district == "spaceport")
     );
 }
+
+#[test]
+fn older_space_projects_do_not_override_another_explicit_victory_target() {
+    let (mut g, _, _) = board();
+    g.players[0].science_projects.remove("exoplanet_expedition");
+    g.players[0].techs.remove(&crate::name!("smart_materials"));
+    for target in [VictoryTarget::Culture, VictoryTarget::Diplomacy] {
+        let ai = AdvancedAi::targeting(target);
+        assert_eq!(ai.science_endgame_research_goal(&g, 0), None);
+        assert!(!ai.schedule_science_endgame(&mut g, 0));
+    }
+    g.players[0]
+        .science_projects
+        .insert("exoplanet_expedition".into());
+    assert!(AdvancedAi::targeting(VictoryTarget::Culture).science_endgame_committed(&g, 0));
+}

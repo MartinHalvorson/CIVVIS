@@ -20,9 +20,13 @@ impl AdvancedAi {
             && g.victory_conditions.science
             && (self.raced_target() == Some(VictoryTarget::Science)
                 || self.space_race_lane(g, pid)
-                || LAUNCHES
-                    .iter()
-                    .any(|project| g.players[pid].science_projects.contains(*project)))
+                || g.players[pid]
+                    .science_projects
+                    .contains("exoplanet_expedition")
+                || (self.raced_target().is_none()
+                    && LAUNCHES
+                        .iter()
+                        .any(|project| g.players[pid].science_projects.contains(*project))))
     }
 
     pub(super) fn science_endgame_research_goal(
