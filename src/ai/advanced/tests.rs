@@ -47195,6 +47195,204 @@ fn live_science_peace_offer_keeps_the_war_and_threats_until_host_acceptance() {
     assert!(!science.peace_offers.contains(&1));
 }
 
+fn remembered_naval_escort_field() -> (Game, AdvancedAi, u32, u32, Pos, Pos) {
+    let (mut game, _, home) = barbarian_field(99_132_700);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    game.turn = 30;
+    game.players[0].techs.insert(crate::name!("shipbuilding"));
+    let start = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            game.wdist(*pos, home) > 4
+                && game.nbrs(*pos).len() == 6
+                && [
+                    (pos.0 + 1, pos.1),
+                    (pos.0 + 2, pos.1),
+                    (pos.0 + 2, pos.1 - 1),
+                ]
+                .iter()
+                .all(|p| game.map.get(*p).is_some() && game.city_at(*p).is_none())
+        })
+        .unwrap();
+    let water = (start.0 + 1, start.1);
+    let target = (start.0 + 2, start.1);
+    let seen = (start.0 + 2, start.1 - 1);
+    for pos in game.nbrs(start) {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+    }
+    for pos in [water, seen] {
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("coast");
+        tile.improvement = None;
+    }
+    let guard = game.spawn_test_unit("archer", 0, start);
+    let settler = game.spawn_test_unit("settler", 0, target);
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.disable_come_ashore(); // Matches the recorded live deployment.
+    ai.bind_settler_guard(&game, settler, guard);
+    ai.hostile_last_seen.insert(
+        999_999,
+        super::RememberedHostile {
+            pos: seen,
+            when: game.turn - 1,
+            owner: 1,
+            kind: crate::name!("caravel"),
+        },
+    );
+    assert!(
+        game.can_move(guard, water),
+        "the risky embarkation is legal"
+    );
+    (game, ai, guard, settler, start, water)
+}
+
+#[test]
+fn hostile_memory_v2_preserves_a_safe_land_guard_beside_a_remembered_fleet() {
+    let (game, ai, guard, settler, start, water) = remembered_naval_escort_field();
+    let mut old_game = game.clone();
+    let mut old = ai.clone();
+    assert_eq!(old.stacked_guard_step(&mut old_game, 0, guard), Some(true));
+    assert_eq!(
+        old_game.units[&guard].pos, water,
+        "v1 takes the legal water shortcut"
+    );
+
+    let mut safe_game = game;
+    let mut safe = ai;
+    safe.enable_hostile_memory_2();
+    assert_eq!(
+        safe.stacked_guard_step(&mut safe_game, 0, guard),
+        Some(false)
+    );
+    assert_eq!(
+        safe_game.units[&guard].pos, start,
+        "do not expose the guard to the remembered fleet"
+    );
+    assert!(safe_game.units[&guard].fortified);
+    assert_eq!(safe.settler_guards.get(&settler), Some(&guard));
+}
+
+#[test]
+fn hostile_memory_v2_does_not_forbid_a_trip_after_the_sighting_expires() {
+    let (mut game, mut ai, guard, _, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.get_mut(&999_999).unwrap().when =
+        game.turn - civilian_safety::HOSTILE_MEMORY_TURNS - 1;
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, water);
+}
+
+#[test]
+fn hostile_memory_versions_are_exclusive_and_opt_in() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.hostile_memory && !ai.hostile_memory_2);
+    ai.enable_hostile_memory();
+    ai.enable_hostile_memory_2();
+    assert!(!ai.hostile_memory && ai.hostile_memory_2);
+    ai.enable_hostile_memory();
+    assert!(ai.hostile_memory && !ai.hostile_memory_2);
+    ai.disable_hostile_memory();
+    assert!(!ai.hostile_memory && !ai.hostile_memory_2);
+    assert!(GENES
+        .iter()
+        .any(|g| g.tag == "hostile-memory-2" && g.opt_in()));
+}
+
+#[test]
+fn hostile_memory_v2_takes_a_safe_forward_land_step_instead() {
+    let (mut game, ai, guard, settler, start, dry) = remembered_naval_escort_field();
+    let wet = (start.0 + 1, start.1 - 1);
+    let target = (start.0 + 2, start.1 - 1);
+    let seen = (start.0 + 2, start.1);
+    game.relocate(settler, target);
+    for pos in [dry, target] {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("grassland");
+    }
+    for pos in [wet, seen] {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+    }
+    let mut ai = ai;
+    ai.hostile_last_seen.get_mut(&999_999).unwrap().pos = seen;
+    let mut old_game = game.clone();
+    let mut old = ai.clone();
+    assert_eq!(old.stacked_guard_step(&mut old_game, 0, guard), Some(true));
+    assert_eq!(old_game.units[&guard].pos, wet);
+    ai.enable_hostile_memory_2();
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, dry);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_invent_a_sighting_from_a_hidden_ship() {
+    let (mut game, mut ai, guard, _, start, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.clear();
+    let hidden = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            game.wdist(*pos, start) > 15
+                && game.city_at(*pos).is_none()
+                && !game.player_can_see(0, *pos)
+        })
+        .unwrap();
+    game.map.tiles.get_mut(&hidden).unwrap().terrain = crate::name!("coast");
+    let ship = game.spawn_test_unit("caravel", 1, hidden);
+    assert!(!game.player_can_see(0, game.units[&ship].pos));
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, water);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_hold_a_guard_under_a_remembered_land_threat() {
+    let (mut game, mut ai, guard, _, start, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.insert(
+        999_998,
+        super::RememberedHostile {
+            pos: start,
+            when: game.turn - 1,
+            owner: 1,
+            kind: crate::name!("warrior"),
+        },
+    );
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(
+        game.units[&guard].pos, water,
+        "do not replace an escape with an unsafe hold"
+    );
+}
+
+#[test]
+fn hostile_memory_v2_allows_an_embarked_guard_to_come_ashore() {
+    let (mut game, mut ai, guard, settler, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    game.relocate(guard, water);
+    let target = game.units[&settler].pos;
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, target);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_apply_the_land_guard_rule_to_a_ship() {
+    let (mut game, mut ai, _, settler, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    let ship = game.spawn_test_unit("galley", 0, water);
+    let target = game.units[&settler].pos;
+    assert_eq!(
+        ai.escort_naval_memory_step(&mut game, 0, ship, target),
+        None
+    );
+}
+
 #[test]
 fn scout_first_opening_registry_toggles_both_governors() {
     let gene = crate::ai::GENES

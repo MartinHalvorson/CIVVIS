@@ -2153,6 +2153,8 @@ pub const GENES: &[Gene] = &[
     // t155-208, one with the 50-percent defence in place. See
     // `advanced/culture_strategy.rs`.
     Gene { tag: "culture-threat-early", field: "culture_threat_early", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_threat_early, disable: AdvancedAi::disable_culture_threat_early },
+    // Retain hostile sightings for civilians and a land escort about to embark.
+    Gene { tag: "hostile-memory-2", field: "hostile_memory_2", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_2, disable: AdvancedAi::disable_hostile_memory_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
