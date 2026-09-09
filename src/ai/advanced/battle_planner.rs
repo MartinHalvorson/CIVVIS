@@ -1924,8 +1924,7 @@ impl AdvancedAi {
                 // reservation across live frames until RETURN_HP, otherwise
                 // the per-unit ladder can undo the rotation with a sortie.
                 // Other garrisons still need the proposed-strike veto.
-                if doomed.contains(&uid)
-                    || (heals && self.battle_planner_recovering.contains(&uid))
+                if doomed.contains(&uid) || (heals && self.battle_planner_recovering.contains(&uid))
                 {
                     self.base.fortify_or_stop(g, pid, uid);
                     self.battle_planner_ordered.insert(uid);
