@@ -168,7 +168,7 @@ jobs:
             --candidate /tmp/civvis-candidate \
             --seeds 900001 --games 5 --interleaves 1 \
             --players 6 --width 74 --height 46 --city-states 9 \
-            --turns 120 --speed online --map continents \
+            --turns 120 --speed online --map continents --shape flat \
             --noise-floor 1.0 \
             --ledger-machine github-ubuntu-latest \
             --acknowledge-env PR_BODY \
