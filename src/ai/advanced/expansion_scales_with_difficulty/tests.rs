@@ -231,3 +231,44 @@ fn the_target_horizon_never_lowers_an_empire_that_is_already_wider() {
     // is untouched; every land-aware cap below it still runs afterwards.
     assert_eq!(12usize.max(ai.expansion_wide_city_target(&g).unwrap()), 12);
 }
+
+#[test]
+fn the_science_contract_is_raised_to_the_rung_not_applied_over_it() {
+    use super::super::{VictoryTarget, SCIENCE_CITY_TARGET_CAP};
+    use crate::game::{GameOptions, VictoryConditions};
+    // The board the shipped Science-contract test plans on, at Emperor.
+    let mut g = Game::new_with(GameOptions {
+        speed: "online".to_string(),
+        ..GameOptions::new(2, 74, 46, 91_508, 250, 0)
+    });
+    g.victory_conditions = VictoryConditions::parse("science,score").unwrap();
+    g.current = 0;
+    g.difficulty = "emperor".to_string();
+    let settler = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| g.units[unit].kind == "settler")
+        .unwrap();
+    g.found_city_for(0, g.units[&settler].pos, None);
+    g.remove_unit(settler);
+    // Half the clock: the native contract's `min(SCIENCE_CITY_TARGET_CAP)`
+    // is active from here on a Science seat.
+    g.turn = g.max_turns / 2;
+
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Science);
+    let off = ai.assess(&g, 0).desired_cities;
+    assert!(
+        off <= SCIENCE_CITY_TARGET_CAP,
+        "off, the shipped contract caps the seat at {SCIENCE_CITY_TARGET_CAP}: {off}"
+    );
+
+    ai.enable_expansion_scales_with_difficulty();
+    let on = ai.assess(&g, 0).desired_cities;
+    let rung = ai.expansion_wide_city_target(&g).unwrap();
+    assert_eq!(rung, 9, "Emperor's second target");
+    assert_eq!(
+        on, rung,
+        "on, the contract is raised to the rung's horizon rather than clamping it back to {SCIENCE_CITY_TARGET_CAP}"
+    );
+}

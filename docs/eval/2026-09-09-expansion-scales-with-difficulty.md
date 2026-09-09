@@ -93,9 +93,14 @@ Hooks: `AdvancedAi::expansion_deadline_turn`, `::expansion_cadence_horizon`,
 `::expansion_pace_now` and `::expansion_wide_city_target`. The first three are
 *exactly* `expansion_band_turn` and `expansion_pace` with the gene off; the
 fourth is `None`. `assess` raises `desired_cities` to the rung's horizon with a
-`max`, and every land-aware cap below it still runs afterwards —
-`city_target_meets_the_map`'s practical-site room and the Science lane cap
-both cut the number back down.
+`max`; `city_target_meets_the_map`'s practical-site room still cuts the number
+back down afterwards. The Science contract does **not**: `assess` applies
+`SCIENCE_CITY_TARGET_CAP` (6) as a `min` after every expansion arm, and a
+`min(6)` after a `max(9)` is 6 — the ordering that once swallowed a bare
+widening of `land_grab`. The ladder's default lane is Science, so the cap is
+raised to the rung's horizon (`cap.max(cities_by_hundred)`) while the gene is
+on and reads its shipped constant with it off. (Review fix; the draft applied
+the cap over the target and was inert on the ladder's own lane.)
 
 ### 2. A Settler cadence that reaches past the capital
 
@@ -163,7 +168,7 @@ condition; it never sends a Settler where the shipped code would refuse to.
 
 ## Tests
 
-`src/ai/advanced/expansion_scales_with_difficulty/tests.rs` (9):
+`src/ai/advanced/expansion_scales_with_difficulty/tests.rs` (10):
 
 - registry row is opt-in and ships off in both controllers; twin toggles
 - level and target at all eight rungs, and both caps
@@ -173,6 +178,8 @@ condition; it never sends a Settler where the shipped code would refuse to.
   after, and monotone at every turn in between
 - **off is byte-identical**: at five rungs × seven turns, deadline, horizon,
   pace, level, target, shortfall and both pipelines are the shipped values
+- **the Science contract is raised, not applied over the rung**: at Emperor,
+  half-clock, a Science seat plans 6 cities off and 9 on
 - `expansion-schedule` alone keeps its exact shipped schedule at Deity
 - the wide pipeline counts founded cities, stops at two slots, respects the
   city target as a hard cap and closes past the horizon
@@ -246,12 +253,14 @@ belongs to the continuous screen.
 1. **Chops are absent** (leg 3), so the production that funds eight to ten
    cities has to come from the cards, the Hall and the cities themselves. This
    is the largest single difference from the human answer the design cites.
-2. **The Science lane cap still applies.** `assess` clamps `desired_cities` to
-   `SCIENCE_CITY_TARGET_CAP` for a specialised Science seat *after* this gene
-   raises it, so on the default science lane the rung's horizon may be cut
-   back. `science-expansion-phase` is the existing counter-hypothesis and is a
-   separate, still-unscreened gene; composing the two was deliberately left
-   out of scope.
+2. **The probe ran with the Science cap applied over the gene.** The 12-game
+   fires probe below was played by the draft, in which `SCIENCE_CITY_TARGET_CAP`
+   clamped the rung's horizon back on any specialised Science seat; review
+   moved the cap to `cap.max(rung horizon)`. The probe still shows the gene
+   fires (its opening and cadence legs are cap-independent), but its numbers
+   are not the shipped code's, and it was never a measurement in any case.
+   `science-expansion-phase` remains a separate, still-unscreened
+   counter-hypothesis; composing the two is out of scope.
 3. **`WIDE_DEADLINE_TURNS_PER_LEVEL` is a judgement, not a measurement.** Ten
    standard turns per rung is argued from the live founding cadence, not fitted
    to it. It is the obvious first thing a screen should vary.

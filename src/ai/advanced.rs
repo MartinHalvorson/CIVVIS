@@ -11239,14 +11239,14 @@ impl AdvancedAi {
         // `expansion-scales-with-difficulty`: the 4-6 band is a King-level
         // reading, and each rung above Prince hands the rivals a percentage of
         // every yield and free Settlers. Raise the horizon by the rung, never
-        // lower it, and leave every land-aware cap below to cut it back down:
-        // `city_target_meets_the_map`'s practical-site room and the Science
-        // lane cap both still run after this. See
+        // lower it. `city_target_meets_the_map`'s practical-site room still
+        // cuts it back down below; the Science contract is raised to meet it
+        // instead (see the cap), because a `min` applied after this line
+        // would swallow the widening on the very lane the ladder plays. See
         // `advanced/expansion_scales_with_difficulty.rs`.
-        let desired_cities = match self.expansion_wide_city_target(g) {
-            Some(wide) => desired_cities.max(wide),
-            None => desired_cities,
-        };
+        let wide_city_target = self.expansion_wide_city_target(g);
+        let desired_cities =
+            wide_city_target.map_or(desired_cities, |wide| desired_cities.max(wide));
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -11295,6 +11295,12 @@ impl AdvancedAi {
             } else {
                 SCIENCE_CITY_TARGET_CAP
             };
+            // `expansion-scales-with-difficulty`: the rung's horizon is the
+            // floor of this cap, or the gene is inert on a Science seat —
+            // `SCIENCE_CITY_TARGET_CAP` (6) is below every rung target the
+            // gene sets (7 at Prince). `None` with the gene off, so the cap
+            // reads its shipped constant.
+            let cap = wide_city_target.map_or(cap, |wide| cap.max(wide));
             desired_cities.min(cap).max(cities.len())
         } else {
             desired_cities

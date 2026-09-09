@@ -123,9 +123,19 @@
 //!    escort and shelter genes, the housing and amenity floors, the threatened
 //!    city and barbarian-alarm skips, and the plan's own `desired_cities`
 //!    ceiling — which is still cut down afterwards by `city_target_meets_the_map`
-//!    (practical sites) and by the Science lane cap. This gene raises a target
-//!    and widens a condition; it never sends a Settler anywhere the shipped
-//!    code would refuse to send one.
+//!    (practical sites). This gene raises a target and widens a condition; it
+//!    never sends a Settler anywhere the shipped code would refuse to send one.
+//!
+//!    ⚠ The one cap that is *not* left to run over the top of the target is
+//!    the Science contract. `assess` applies `SCIENCE_CITY_TARGET_CAP` (6) as
+//!    a `min` *after* every expansion arm, and the same ordering once
+//!    swallowed a bare widening of `land_grab` whole: a `min(6)` after a
+//!    `max(9)` is 6. The ladder's default lane is Science, so a gene inert on
+//!    that lane would be inert where it is meant to play. The cap is
+//!    therefore raised to the rung's horizon, `cap.max(cities_by_hundred)`,
+//!    while the gene is on — the contract still binds an empire that is
+//!    already wider than the rung asks for, and it reads its shipped constant
+//!    with the gene off.
 //!
 //! ## Off
 //!
@@ -133,8 +143,9 @@
 //! [`AdvancedAi::expansion_deadline_turn`] returns exactly
 //! `AdvancedAi::expansion_band_turn`, [`AdvancedAi::expansion_pace_now`]
 //! returns exactly `AdvancedAi::expansion_pace`, the target is not raised, the
-//! cadence condition is the shipped conjunction, and both leg-4 gates read
-//! their shipped operands. No arithmetic runs that did not run before.
+//! Science cap reads its shipped constant, the cadence condition is the
+//! shipped conjunction, and both leg-4 gates read their shipped operands. No
+//! arithmetic runs that did not run before.
 
 use super::expansion_schedule::EXPANSION_BAND_FLOOR;
 use super::AdvancedAi;
@@ -186,13 +197,15 @@ pub const WIDE_SECOND_SHARE: f64 = 0.4;
 /// unlimited board.
 pub const WIDE_SECOND_STANDARD: u32 = 200;
 
-/// The most walkers the widened cadence will have in flight at once.
+/// The most Settlers the widened cadence will have open at once.
 ///
-/// Two, not more: the reservation this widens takes an *idle* city, and the
-/// second walker exists to stop the empire serializing behind the capital, not
-/// to open a settler factory. The pipeline width itself is still capped by
-/// `EXPANSION_PIPELINE_CEILING`, and the city target is still the hard cap
-/// above both.
+/// ⚠ "Open" is `EmpireCounts::settlers`: walkers on the map *plus* a Settler
+/// at the head of any city's queue, which is the count every pipeline caller
+/// passes. Two, not more: the reservation this widens takes an *idle* city,
+/// and the second slot exists to stop the empire serializing behind the
+/// capital, not to open a settler factory. The pipeline width itself is still
+/// capped by `EXPANSION_PIPELINE_CEILING`, and the city target is still the
+/// hard cap above both.
 pub const WIDE_PARALLEL_SETTLERS: usize = 2;
 
 /// How far above Prince this game's rung sits; zero at Prince and below.
@@ -295,9 +308,10 @@ impl AdvancedAi {
     ///
     /// This is the *second* target, not the opening one: `desired_cities` is a
     /// horizon the whole game plans against, while the pace above is what the
-    /// opening is measured by turn to turn. Every land-aware cap downstream —
-    /// `city_target_meets_the_map`'s practical-site room, the Science lane cap
-    /// — still applies on top of the number returned here.
+    /// opening is measured by turn to turn. `city_target_meets_the_map`'s
+    /// practical-site room still applies on top of the number returned here;
+    /// the Science contract is raised to meet it instead (the module doc says
+    /// why a `min` there would make the gene inert on the ladder's own lane).
     pub(super) fn expansion_wide_city_target(&self, g: &Game) -> Option<usize> {
         self.expansion_wide_level(g).map(cities_by_hundred)
     }
@@ -322,10 +336,10 @@ impl AdvancedAi {
         city_count: usize,
         settlers: usize,
     ) -> Option<usize> {
-        let level = self.expansion_wide_level(g)?;
+        self.expansion_wide_level(g)?;
         if g.turn > self.expansion_cadence_horizon(g)
             || city_count + settlers >= desired_cities
-            || city_count >= pace(g, Self::expansion_band_turn(g), level)
+            || city_count >= self.expansion_pace_now(g)
         {
             return None;
         }
@@ -341,24 +355,23 @@ impl AdvancedAi {
     /// unit or building, is not "busy" for this purpose — the shipped
     /// reservation reaches it perfectly well.
     pub(super) fn expansion_wide_capital_is_busy(g: &Game, pid: usize) -> bool {
-        g.player_city_ids(pid).into_iter().any(|cid| {
-            let city = &g.cities[&cid];
-            if !city.is_capital {
-                return false;
-            }
-            match city.queue.first() {
+        g.player_city_ids(pid)
+            .into_iter()
+            .map(|cid| &g.cities[&cid])
+            .find(|city| city.is_capital)
+            .is_some_and(|capital| match capital.queue.first() {
                 Some(Item::Unit { unit }) => unit == "settler",
                 Some(Item::District { .. }) => true,
                 _ => false,
-            }
-        })
+            })
     }
 
     /// Whether the widened cadence admits another Settler reservation while
-    /// `settlers` walkers are already in flight.
+    /// `settlers` are already open — `EmpireCounts::settlers`, walkers plus
+    /// queue heads, so a Settler queued in the capital already counts as one.
     ///
     /// Off, and whenever the capital is not the thing holding the cadence up,
-    /// this is the shipped rule: no reservation while any walker is alive.
+    /// this is the shipped rule: no reservation while any Settler is open.
     pub(super) fn expansion_wide_cadence_admits(
         &self,
         g: &Game,

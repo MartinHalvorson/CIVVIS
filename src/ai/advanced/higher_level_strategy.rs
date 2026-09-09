@@ -161,11 +161,14 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Item, Debt)> {
+        // `expansion-scales-with-difficulty` shares the Expansion arm with the
+        // `expansion-best-idle-city` family and supplies its horizon, pace and
+        // walker rule; all three are exactly the shipped ones while it is
+        // off. See `advanced/expansion_scales_with_difficulty.rs`.
+        let wide_cadence = self.expansion_wide_level(g).is_some();
         if !((self.builder_workforce_recovery || self.builder_workforce_recovery_2)
             || (self.culture_building_catchup || self.culture_building_catchup_2)
-            || (self.expansion_best_idle_city
-                || self.expansion_best_idle_city_2
-                || self.expansion_wide_level(g).is_some())
+            || (self.expansion_best_idle_city || self.expansion_best_idle_city_2 || wide_cadence)
             || (self.research_building_catchup || self.research_building_catchup_2)
             || (self.trade_building_before_bankruptcy || self.trade_building_before_bankruptcy_2))
             || self.base.minor
@@ -228,13 +231,7 @@ impl AdvancedAi {
             ),
             (
                 Debt::Expansion,
-                (self.expansion_best_idle_city
-                    || self.expansion_best_idle_city_2
-                    || self.expansion_wide_level(g).is_some())
-                    // `expansion-scales-with-difficulty` supplies the horizon,
-                    // the pace and the walker rule; all three are exactly the
-                    // shipped ones while it is off. See
-                    // `advanced/expansion_scales_with_difficulty.rs`.
+                (self.expansion_best_idle_city || self.expansion_best_idle_city_2 || wide_cadence)
                     && g.turn <= self.expansion_cadence_horizon(g)
                     && cities.len() < self.expansion_pace_now(g)
                     && cities.len() < self.settlement_target(plan)
@@ -272,10 +269,7 @@ impl AdvancedAi {
                         // city, and every other debt, still closes it, and
                         // `expansion_wide_cadence_admits` above has already
                         // capped how many walkers may be in flight at once.
-                        if *debt == Debt::Expansion
-                            && g.cities[cid].is_capital
-                            && self.expansion_wide_level(g).is_some()
-                        {
+                        if wide_cadence && *debt == Debt::Expansion && g.cities[cid].is_capital {
                             return false;
                         }
                         g.cities[cid].queue.iter().any(|item| debt.matches(g, item))
