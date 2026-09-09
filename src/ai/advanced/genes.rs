@@ -2140,6 +2140,8 @@ pub const GENES: &[Gene] = &[
     // read +0.42 techs at t150 (z +5.6) and -0.48 pp wins on the 2026-09-08
     // screen: more techs, the wrong ones. See `advanced/boost_research.rs`.
     Gene { tag: "boost-first-research-2", field: "boost_first_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_first_research_2, disable: AdvancedAi::disable_boost_first_research_2 },
+    // One safe first-slot Scout, independent of later recon replacement.
+    Gene { tag: "scout-first-opening", field: "scout_first_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_scout_first_opening, disable: AdvancedAi::disable_scout_first_opening },
     Gene { tag: "amani-follows-suzerainty", field: "amani_follows_suzerainty", kind: Kind::OptIn, enable: AdvancedAi::enable_amani_follows_suzerainty, disable: AdvancedAi::disable_amani_follows_suzerainty },
     Gene { tag: "liang-follows-builders", field: "liang_follows_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_liang_follows_builders, disable: AdvancedAi::disable_liang_follows_builders },
     Gene { tag: "magnus-follows-settlers", field: "magnus_follows_settlers", kind: Kind::OptIn, enable: AdvancedAi::enable_magnus_follows_settlers, disable: AdvancedAi::disable_magnus_follows_settlers },

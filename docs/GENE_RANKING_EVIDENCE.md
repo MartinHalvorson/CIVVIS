@@ -200,6 +200,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `research-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `research-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 | `reyna-follows-revenue` | off (unmeasured) | Opt-in governor relocation; see `governor_dividends`. | 1 \| 1 |
+| `scout-first-opening` | off (unmeasured) | Reserve the safe capital's first build for its first Scout. | 1 \| 1 |
 | `trade-building-before-bankruptcy` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `trade-building-before-bankruptcy-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 

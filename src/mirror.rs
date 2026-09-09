@@ -38,6 +38,9 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+mod host_deaths;
+pub use host_deaths::HostUnitDeath;
+
 use crate::{
     name::Name,
     setup::{GameSpeed, MapScript},
@@ -3190,6 +3193,9 @@ where
 /// The whole board as one `state` event described it.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
+    /// Confirmed combat deaths preceding this exported frame, never predicted kills.
+    #[serde(skip)]
+    pub confirmed_unit_deaths: Vec<HostUnitDeath>,
     pub turn: u32,
     /// 0 for the turn's opening board; N for the Nth mid-turn combat frame
     /// (`CivvisFrames` in the mod), on which the brain re-plans the same turn
@@ -6097,11 +6103,13 @@ pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
 pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<StateSnapshot> {
     let raw = std::fs::read_to_string(path).ok()?;
     let mut best: Option<StateSnapshot> = None;
+    let mut deaths = host_deaths::HostDeaths::default();
     // Identity rides in the `seat` event, which is emitted once at startup rather
     // than every turn, so it is collected separately and merged into whichever
     // state wins. Newest-wins here too: a run that reloads re-emits it.
     let mut seat: Option<Seat> = None;
     for line in raw.lines() {
+        deaths.observe(line);
         if line.contains("\"seat\"") {
             if let Ok(found) = serde_json::from_str::<Seat>(line) {
                 if !found.civ.is_empty() {
@@ -6112,7 +6120,7 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
         if !line.contains("\"state\"") {
             continue;
         }
-        let Ok(state) = state_from_json(line) else {
+        let Ok(mut state) = state_from_json(line) else {
             continue;
         };
         match turn {
@@ -6120,6 +6128,7 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
             _ => {}
         }
         if best.as_ref().map(|b| state.turn >= b.turn).unwrap_or(true) {
+            state.confirmed_unit_deaths = deaths.through(state.turn);
             best = Some(state);
         }
     }

@@ -1713,6 +1713,8 @@ impl SettlementAtlas {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TurnStartHostile {
     id: u32,
+    host_key: i64,
+    owner: usize,
     pos: Pos,
     /// Tiles the unit can enter next turn: its movement, rounded up.
     capture_reach: i32,
@@ -3265,6 +3267,8 @@ pub struct AdvancedAi {
     /// ordinary ranking fill the opening. The baseline governor owns the
     /// choice; this flag makes it a screenable AdvancedAI gene.
     pub capital_settler_after_completion: bool,
+    /// Build one opening Scout when the capital is safe and lacks recon.
+    pub scout_first_opening: bool,
     /// The pantheon that founds a city, and the Faith to reach it.
     ///
     /// ★★★★ THE LIVE SEAT'S ONLY EARLY FAITH IS A POLICY CARD IT THROWS AWAY.
@@ -6878,6 +6882,7 @@ mod wonder_sites;
 
 mod science_endgame;
 mod science_victory_drive;
+mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
@@ -7555,6 +7560,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             land_grab: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             expansion_hall: false,
             opening_settler_waits: false,
@@ -7918,6 +7924,8 @@ impl AdvancedAi {
             }
             self.turn_start_hostiles.push(TurnStartHostile {
                 id: unit.id,
+                host_key: hostile_memory_key(g, unit),
+                owner: unit.owner,
                 pos: unit.pos,
                 capture_reach: spec.moves.ceil() as i32,
                 strength: crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
