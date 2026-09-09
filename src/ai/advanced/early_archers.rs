@@ -185,6 +185,51 @@ impl AdvancedAi {
             .map(|(_, tech)| tech)
     }
 
+    /// A score bonus is never consulted while a forced economic beeline has
+    /// a legal step. Give the first ranged unlock its own bounded live goal.
+    pub(super) fn opening_archery_goal(&self, g: &Game, pid: usize) -> Option<Name> {
+        if !self.base.garrison_under_fire || !Self::early_archers_window_open(g, pid) {
+            return None;
+        }
+        let node = Self::early_archers_node(g, pid)?;
+        if g.players[pid].techs.contains(&node) {
+            return None;
+        }
+        let visible = g.player_vision_frame(pid);
+        let cities = g.player_city_ids(pid);
+        let near_home = |pos| {
+            cities
+                .iter()
+                .any(|cid| g.wdist(g.cities[cid].pos, pos) <= 6)
+        };
+        let raider = g.units.values().any(|unit| {
+            Some(unit.owner) == g.barb_pid
+                && g.rules.units[unit.kind].class == "military"
+                && matches!(
+                    g.rules.units[unit.kind].domain.as_deref(),
+                    None | Some("land")
+                )
+                && g.sees(&visible, unit.pos)
+                && near_home(unit.pos)
+        });
+        let camp = g
+            .barb_camps
+            .keys()
+            .any(|pos| g.players[pid].explored.contains(pos) && near_home(*pos));
+        // A Slinger already built for the opening remains an upgrade debt
+        // when its attackers briefly disappear into fog between research picks.
+        let waiting = g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.rules.units[unit.kind].has_ranged_attack()
+                && g.rules.units[unit.kind].range < EARLY_ARCHERS_MIN_RANGE
+                && g.rules.units[unit.kind].upgrade_to.is_some_and(|target| {
+                    let target = &g.rules.units[g.player_unit_replacement(pid, target)];
+                    Self::early_archers_shooter(target) && target.tech == Some(node)
+                })
+        });
+        (raider || camp || waiting).then_some(node)
+    }
+
     /// `early-archers`: what `tech` is worth in `tech_value` for leading to
     /// the shooter's node. Zero with the gene off, outside the window, and
     /// once the empire holds that node.
