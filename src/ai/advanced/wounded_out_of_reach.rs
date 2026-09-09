@@ -262,7 +262,7 @@ impl AdvancedAi {
             })
             .max_by(Self::refuge_cmp);
         match best {
-            Some(best) if Self::refuge_cmp(&best, &holding).is_gt() => {
+            Some(best) if Self::refuge_safety_cmp(&best, &holding).is_gt() => {
                 think!(self.journal(), Military, Detail, "{} steps out of reach", plain(&kind);
                        "{why}; {here:?} takes {:.0} at the top of the roll, {:?} {}",
                        holding.incoming, best.pos,
@@ -367,8 +367,10 @@ impl AdvancedAi {
         }
     }
 
-    /// Greater is the better refuge.
-    fn refuge_cmp(left: &Refuge, right: &Refuge) -> Ordering {
+    /// A withdrawal must improve safety. Healing rate, city distance and
+    /// coordinate ordering only break ties between destinations: moving for
+    /// those alone spends this turn's healing without escaping any threat.
+    fn refuge_safety_cmp(left: &Refuge, right: &Refuge) -> Ordering {
         left.clear
             .cmp(&right.clear)
             .then_with(|| right.incoming.total_cmp(&left.incoming))
@@ -380,6 +382,11 @@ impl AdvancedAi {
             .then(left.garrison.cmp(&right.garrison))
             .then(left.screened.cmp(&right.screened))
             .then(left.remembered_clearance.cmp(&right.remembered_clearance))
+    }
+
+    /// Greater is the better destination among reachable refuges.
+    fn refuge_cmp(left: &Refuge, right: &Refuge) -> Ordering {
+        Self::refuge_safety_cmp(left, right)
             .then(left.healing.cmp(&right.healing))
             .then(right.city_distance.cmp(&left.city_distance))
             .then_with(|| right.pos.cmp(&left.pos))

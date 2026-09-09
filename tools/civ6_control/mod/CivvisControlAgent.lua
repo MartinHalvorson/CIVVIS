@@ -16142,10 +16142,23 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 				return true, "path";
 			end
 		end
-		local baseMoves = tonumber(try(function()
-			local definition = GameInfo.Units[threat.unit:GetUnitType()];
-			return definition ~= nil and definition.BaseMoves;
-		end, nil)) or 2;
+		local definition = try(function()
+			return GameInfo.Units[threat.unit:GetUnitType()];
+		end, nil);
+		-- A distance fallback is not a naval path. In the native 20260909T064545Z
+		-- t29 export, a galley caused a land Settler to flee toward a hidden warrior.
+		-- Keep a positive host path above, and preserve city/district transitions
+		-- (including canals), water captures, and unavailable terrain information.
+		if definition ~= nil and definition.Domain == "DOMAIN_SEA" then
+			local plot = try(function() return Map.GetPlot(x, y); end, nil);
+			local water = try(function() return plot:IsWater(); end, nil);
+			local city = try(function() return plot:IsCity(); end, nil);
+			local district = tonumber(try(function() return plot:GetDistrictType(); end, nil));
+			if water == false and city == false and district ~= nil and district < 0 then
+				return false, "naval_land";
+			end
+		end
+		local baseMoves = tonumber(definition ~= nil and definition.BaseMoves) or 2;
 		local distance = tonumber(try(function()
 			return Map.GetPlotDistance(x, y, threat.x, threat.y);
 		end, -1)) or -1;

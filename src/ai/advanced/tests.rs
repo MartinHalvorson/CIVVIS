@@ -47936,3 +47936,49 @@ fn military_withdrawal_does_not_use_the_civilian_terrain_fallback() {
         "the last-sighting projection remains conservative in fog"
     );
 }
+
+#[test]
+fn remembered_threat_ties_do_not_trade_this_turns_healing_for_a_better_healing_tile() {
+    let (mut g, front, city, barbarian) = wounded_out_of_reach_board(91_629).unwrap();
+    let next = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| g.wdist(*p, city) > 1)
+        .unwrap();
+    let gun_at = g
+        .wdisk(front, 2)
+        .into_iter()
+        .find(|p| g.wdist(*p, front) == 2 && g.wdist(*p, next) == 2)
+        .unwrap();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("mountain");
+    }
+    for pos in [front, next, gun_at] {
+        g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
+    }
+    let cid = g.city_at(city).unwrap();
+    g.map.tiles.get_mut(&next).unwrap().owner_city = Some(cid);
+    let ours = g.spawn_test_unit("warrior", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 1;
+    let gun = g.spawn_test_unit("crossbowman", barbarian, gun_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(gun as i64)));
+    g.remove_unit(gun);
+    assert_eq!(g.reachable(ours), vec![next]);
+    assert!(g.healing_location(0, next).rate() > g.healing_location(0, front).rate());
+    for version in [1, 2] {
+        let mut policy = ai.clone();
+        if version == 2 {
+            policy.enable_wounded_out_of_reach_2();
+        }
+        let mut board = g.clone();
+        assert!(policy
+            .wounded_out_of_reach_step(&mut board, 0, ours)
+            .is_some());
+        assert_eq!(board.units[&ours].pos, front,
+            "an equally threatened tile is not a withdrawal, even if it would heal faster later (v{version})");
+    }
+}
