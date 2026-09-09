@@ -7024,6 +7024,7 @@ mod science_wonder_sites;
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
 
+mod science_endgame;
 mod science_victory_drive;
 pub use science_victory_drive::ScienceDrive;
 
@@ -13922,6 +13923,13 @@ impl AdvancedAi {
             } else {
                 None
             };
+            if let Some(goal) = self.science_endgame_research_goal(g, pid) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             // The rolling window protects unattended research from leaving
             // an old branch behind. An explicit Science target (or an
@@ -13962,6 +13970,7 @@ impl AdvancedAi {
                 None
             };
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
+            let endgame_goal = self.science_endgame_research_goal(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -14016,6 +14025,9 @@ impl AdvancedAi {
                 // field; `goal_pick` below walks its prerequisites.
                 _ if barbarian_military_goal.is_some() => barbarian_military_goal.as_deref(),
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
+                // Once the late launch chain is committed, finish its remaining
+                // research before optional economic and bargain detours.
+                _ if endgame_goal.is_some() => endgame_goal,
                 // `enter-the-prophet-race-2`: Astrology is a dead-end branch no
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
@@ -22177,14 +22189,24 @@ impl AdvancedAi {
         let completed = &g.players[pid].science_projects;
         let earth_satellite_started = !completed.contains("launch_earth_satellite")
             && Self::science_project_is_queued(g, pid, "launch_earth_satellite");
-        let desired = if self.science_drive_active() {
+        let desired = if self.science_drive_active()
+            || (self.victory_planning
+                && (self.space_race_lane(g, pid)
+                    || self.raced_target() == Some(VictoryTarget::Science)))
+        {
             // The drive starts its second pad as soon as the Earth Satellite
             // is underway, so it is ready for the later parallel laser phase.
-            Self::science_drive_desired_pads(completed).max(if earth_satellite_started {
-                2
-            } else {
-                1
-            })
+            Self::science_drive_desired_pads(completed).max(
+                if self.victory_planning
+                    && Self::science_project_is_queued(g, pid, "launch_mars_colony")
+                {
+                    3
+                } else if earth_satellite_started {
+                    2
+                } else {
+                    1
+                },
+            )
         } else if self.space_race_lane(g, pid)
             || self.raced_target() == Some(VictoryTarget::Science)
         {
@@ -22487,7 +22509,9 @@ impl AdvancedAi {
     /// the project's progress by its normal item key, repairs the launch site,
     /// and lets the next science pass resume the same rung.
     fn repair_stalled_science_project_queues(&self, g: &mut Game, pid: usize) {
-        if self.raced_target() != Some(VictoryTarget::Science) {
+        if self.raced_target() != Some(VictoryTarget::Science)
+            && !self.science_endgame_committed(g, pid)
+        {
             return;
         }
         let is_science_project = |project: &str| {
@@ -22551,6 +22575,10 @@ impl AdvancedAi {
     }
 
     fn science_production(&self, g: &mut Game, pid: usize) {
+        if self.schedule_science_endgame(g, pid) {
+            self.science_spaceport_production(g, pid);
+            return;
+        }
         // See `lane_space_race`: every gate below asks for an EXPLICITLY
         // assigned Science target, so the adaptive agent production ships —
         // which has no target at all — races the space race at one pad, and
@@ -22631,6 +22659,11 @@ impl AdvancedAi {
             }
         }
 
+        self.science_spaceport_production(g, pid);
+    }
+
+    fn science_spaceport_production(&self, g: &mut Game, pid: usize) {
+        let races_science = self.space_race_lane(g, pid);
         let city_ids = g.player_city_ids(pid);
         if Self::science_spaceport_commitments(g, pid) >= self.science_spaceport_target(g, pid) {
             return;
@@ -40153,7 +40186,10 @@ impl AdvancedAi {
             // See `lane_space_race`: the last disjunct opens the pass for an
             // empire racing Science that has not finished settling.
             if self.victory_planning
-                && (self.science_drive_opens(plan.strategy)
+                && (g.players[pid]
+                    .science_projects
+                    .contains("exoplanet_expedition")
+                    || self.science_drive_opens(plan.strategy)
                     || (specialization_active
                         && (plan.strategy == GrandStrategy::Science
                             || self.diplomatic_science_backup(g, pid, &plan)
