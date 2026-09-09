@@ -394,7 +394,7 @@ impl AdvancedAi {
                     if here == post {
                         return Some(false);
                     }
-                    if g.can_move(uid, post) && self.base.path_move(g, pid, uid, post) {
+                    if g.path_to(uid, post).is_some() && self.base.path_walk_to(g, pid, uid, post) {
                         think!(self.journal(), Military, Decision,
                                "Scout {uid} blocks a Settler's pass at {post:?}";
                                "a visible rival Settler is approaching this choke point; \

@@ -319,3 +319,46 @@ fn settler_picket_versions_are_independent_opt_ins() {
     ai.disable_pass_picket_2();
     assert!(ai.pass_picket);
 }
+
+#[test]
+fn a_scout_can_cross_its_own_column_to_block_the_pass_this_turn() {
+    let (mut game, walk, home, _) = corridor_board();
+    game.map.clear_rivers();
+    let scout = game.spawn_test_unit("scout", 0, home);
+    let mut ai = AdvancedAi::new();
+    ai.enable_pass_picket_2();
+    ai.recon_disruption_plan(&game, 0);
+    let post = ai.recon_disruption.post(1).unwrap().at;
+    let our_side = |distance| {
+        walk.iter()
+            .copied()
+            .find(|pos| {
+                game.wdist(*pos, post) == distance
+                    && game.wdist(*pos, home) < game.wdist(post, home)
+            })
+            .expect("the near-side corridor")
+    };
+    let start = our_side(2);
+    let middle = our_side(1);
+    let far_side = walk
+        .iter()
+        .copied()
+        .find(|pos| game.wdist(*pos, post) == 1 && game.wdist(*pos, home) > game.wdist(post, home))
+        .unwrap();
+    game.relocate(scout, start);
+    fresh(&mut game, scout);
+    game.spawn_test_unit("warrior", 0, middle);
+    game.spawn_test_unit("builder", 0, post);
+    game.spawn_test_unit("settler", 1, far_side);
+    assert!(ai.settler_at_picket(&game, 0, post));
+    assert!(
+        !game.can_move(scout, post),
+        "a single Move cannot cover two edges"
+    );
+    assert!(
+        game.path_to(scout, post).is_some(),
+        "the whole walk crosses the friendly warrior"
+    );
+    assert_eq!(ai.recon_disruption_step(&mut game, 0, scout), Some(true));
+    assert_eq!(game.units[&scout].pos, post);
+}
