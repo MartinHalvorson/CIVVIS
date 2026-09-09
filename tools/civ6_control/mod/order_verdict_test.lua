@@ -38,6 +38,7 @@ local EXPORTS = {
 	CivvisApplyOrder = true, CivvisVerify = true,
 }
 -- Real tables the agent indexes with real keys.
+CivvisControlConfig = { Play = true, CivvisDecides = false, EmergencyWallRadius = 3 }
 local LOG = {}
 Automation = { Log = function(line) LOG[#LOG + 1] = line end }
 UnitOperationTypes = { PARAM_X = "x", PARAM_Y = "y" }
@@ -110,6 +111,7 @@ local function cityObject(c)
 		GetBuildQueue = function()
 			return {
 				GetCurrentProductionTypeHash = function() return c.current or 0 end,
+				GetTurnsLeft = function() return c.turns or -1 end,
 				CanProduce = function(_, hash, exclusion)
 					if exclusion then return not (c.excluded and c.excluded[hash]) end
 					return not (c.unstartable and c.unstartable[hash])
@@ -512,6 +514,33 @@ local excluded, excludedWhy = applyOrder(player, PID,
 check("excluded explicit build refused", excluded, false)
 check("excluded explicit build reason", excludedWhy, "cannot_start_BUILDING_WALLS")
 check("excluded explicit build never reaches host", #host.cityOps, beforeExcluded)
+
+-- CivVis owns the siege decision in its mode, even when Walls are legal.
+CivvisControlConfig.CivvisDecides = true
+host.cities[42].excluded = nil
+host.cities[42].current = 101
+local civvisDefense, civvisDefenseWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "UNIT_ARCHER" }, 24)
+check("CivVis siege choice is accepted", civvisDefense, true)
+check("CivVis siege choice is not replaced by Walls", civvisDefenseWhy, "UNIT_ARCHER")
+check("CivVis siege choice reaches host", host.cities[42].current, 103)
+
+-- The bridge also cannot silently keep a finishing defender when CivVis
+-- explicitly chooses Walls. The legacy standalone controller may retain it.
+host.cities[42].turns = 1
+local civvisWalls, civvisWallsWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "BUILDING_WALLS" }, 25)
+check("CivVis can replace a finishing defender", civvisWalls, true)
+check("CivVis chosen wall is respected", civvisWallsWhy, "BUILDING_WALLS")
+check("CivVis chosen wall reaches host", host.cities[42].current, 104)
+
+CivvisControlConfig.CivvisDecides = false
+host.cities[42].current = 103
+local legacyDefender, legacyDefenderWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "BUILDING_WALLS" }, 26)
+check("standalone controller preserves finishing defender", legacyDefender, true)
+check("standalone preservation reason", legacyDefenderWhy, "finishing_defender_preserved")
+check("standalone finishing defender remains queued", host.cities[42].current, 103)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))

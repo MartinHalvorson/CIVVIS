@@ -13020,7 +13020,10 @@ local function applyOrder(player, pid, row, turn)
 		-- Archer with four-turn Walls let the attacker take Ostia before either
 		-- defense existed.  Returning here keeps both the current queue and the
 		-- fallback's remembered build untouched for the finishing turn.
-		if immediateThreat and finishingDefender then
+		-- CivVis already ranks local siege responses (besieged_city_item).
+		-- In its mode the bridge validates and actuates that decision; it
+		-- must not silently preserve or substitute a different build.
+		if not cfg.CivvisDecides and immediateThreat and finishingDefender then
 			emit("emergency_defender_preserved", {
 				turn = turn, city = cityId, requested = resolved,
 				current = currentUnit.UnitType or tostring(current),
@@ -13033,7 +13036,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		civvisBuild[cityId] = resolved;
 		local emergencyWall = false;
-		if resolved ~= "BUILDING_WALLS"
+		if not cfg.CivvisDecides and resolved ~= "BUILDING_WALLS"
 				and immediateThreat then
 			local wall = GameInfo.Types["BUILDING_WALLS"];
 			local wallCanOk, wallCan = false, false;
