@@ -207,6 +207,54 @@ the two findings arrived from opposite directions — that one from auditing the
 gate, this one from a hotspot that hid behind it — and because the pair is the
 concrete size of what a default map costs a measurement.
 
+### ⚠⚠⚠ Third time on this axis: the harness measured a TOPOLOGY no screen ran
+
+The two sections above are map *size* and map *script*. The third leg of the
+same trap is the map's **topology**, and it survived both audits because
+nothing ever read it.
+
+`gene_screen` builds its world through `GameOptions`, which carries a
+`map_topology` field it never sets — so every batch plays
+`MapTopology::default()`, which `src/setup.rs` marks `Flat`. `civvis simulate`
+defaults the other way: `map_topology()` in `src/main.rs` falls back to
+`MapTopology::Planet`, a closed geodesic globe. Neither `tools/speed_ab.py` nor
+`tools/profile_civvis.py` passed `--shape`. So **both** performance instruments
+spent every reading they ever took on a globe while the workload they exist to
+represent played a flat map.
+
+It is a different game, not a different rendering of one. Same binary, same
+seed, same 74x46 / 9CS row, one flag apart:
+
+```
+$ civvis simulate --seed 7 --players 3 --turns 8 --width 40 --height 26 --city-states 2
+94c6b617c557561f8b4bd47c56636f71
+$ civvis simulate --seed 7 --players 3 --turns 8 --width 40 --height 26 --city-states 2 --shape flat
+0fc97bf255d7ed0b5d0ecb2136fbe1db
+```
+
+And the topology decides which code exists at all, which is the sharpest form
+of the "the shape decides WHICH code is hot" argument the sections above make.
+`Sphere::distance` and `arc_is_clear` are globe-only: on a sampled globe run
+the visibility arc (`tile_has_visibility_line`) was 6.8% inclusive and
+`Sphere::distance` 2.85%, against 0.9% and **0.00%** on flat batch runs. A
+profiler pointed at the globe cannot see the batch's hot code, and it spends
+its readings ranking code the batch never executes.
+
+**Closed by adding the sixth leg to the shape, derived rather than pinned.**
+`profile_civvis.screen_topology()` reads `gene_screen`'s own `map_topology:` if
+it ever names one and otherwise the `#[default]` variant of `pub enum
+MapTopology`, so the screen changing its mind moves both instruments or turns
+them red. `GATE_SHAPE` gains `shape="flat"`, `speed.yml` passes `--shape flat`,
+and `test_speed_ab.py` pins the literal against that one derivation.
+
+⚠ **The recorded absolutes did not survive it.** `docs/speed_ledger.json`'s
+three readings were taken on the globe, so they are absolute costs for a
+different game. They are kept under `superseded_readings` with the reason
+rather than relabelled, and the first flat reading was taken to replace them:
+**0.09025 s/turn** on `mbp-m5-max-128`, ci profile, 5 pairs at 120 turns, load
+14.9 — recorded with a spread of 10.9pp, so it resolves only +/-7.2% and is a
+starting point rather than a budget.
+
 ## 2026-08-22: the movement flood stopped rescanning the world (−10.0%)
 
 Two whole-board facts were being recomputed inside the innermost movement
