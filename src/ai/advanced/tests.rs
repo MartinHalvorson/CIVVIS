@@ -47398,3 +47398,24 @@ fn hostile_memory_v2_does_not_apply_the_land_guard_rule_to_a_ship() {
         None
     );
 }
+
+#[test]
+fn scout_first_opening_registry_toggles_both_governors() {
+    let gene = crate::ai::GENES
+        .iter()
+        .find(|gene| gene.tag == "scout-first-opening")
+        .unwrap();
+    assert!(gene.opt_in());
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
+    assert!(!AdvancedAi::legacy().scout_first_opening);
+    ai.disable_recon_replacement();
+    (gene.enable)(&mut ai);
+    assert!(ai.scout_first_opening);
+    assert!(ai.base.scout_first_opening);
+    assert!(!ai.base.recon_replacement);
+    (gene.disable)(&mut ai);
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
+}

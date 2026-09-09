@@ -652,6 +652,166 @@ def tech_mark_columns(summary: dict) -> dict:
     return columns
 
 
+def _readable_metric(value) -> int | None:
+    """One host metric as a count, or None when the host could not be asked.
+
+    The control mod wraps every accessor in `try(...)` and falls back to `-1`;
+    an older mod omits the key entirely and the mirror substitutes NaN. Both
+    mean "unknown", and both have to read as unknown rather than as zero --
+    a culture bar of zero says nobody can win, which is the opposite of
+    "nobody asked". Bools are rejected because `True` is an `int` in Python
+    and no host metric is a flag.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or value < 0:  # NaN, or the mod's -1 fallback
+        return None
+    return int(value)
+
+
+def _culture_race(ours: dict, rivals: list) -> dict:
+    """The culture victory's standings from one `state` frame.
+
+    Civilization VI's culture victory is won when a player's VISITING tourists
+    (`GetCulture():GetTouristsTo()`) clear the highest DOMESTIC tourist count
+    -- staycationers -- among everyone else. So each contender is measured
+    against a bar it does not itself set, exactly as the control mod computes
+    it for its congress ballots:
+
+        CivvisControlAgent.lua:18377-18388
+            local against = ourDom;
+            for _, other in ipairs(candidates) do
+              if other.id ~= c.id and (other.domestic or 0) > against then
+                against = other.domestic or 0;
+              end
+            end
+            local culture = (against > 0) and (100 * tourists / against) or 0;
+
+    Returned: our own two counters, the leading rival's visiting tourists, and
+    both sides' progress as a percentage of the bar each must clear. A value is
+    None when the frame could not say -- never zero, which would read as a race
+    nobody is running.
+    """
+    our_tourists = _readable_metric(ours.get("foreign_tourists"))
+    our_domestic = _readable_metric(ours.get("domestic_tourists"))
+    seats = [
+        (_readable_metric(rival.get("foreign_tourists")),
+         _readable_metric(rival.get("domestic_tourists")))
+        for rival in rivals
+        if isinstance(rival, dict)
+    ]
+    rival_domestics = [domestic for _, domestic in seats if domestic is not None]
+    rival_tourists = [tourists for tourists, _ in seats if tourists is not None]
+
+    def progress(tourists: int | None, bar: int | None) -> float | None:
+        if tourists is None or bar is None:
+            return None
+        if bar <= 0:
+            # The mod's own fallback: with no staycationers anywhere there is
+            # no bar to clear yet, so the race has not started.
+            return 0.0
+        return round(100 * tourists / bar, 2)
+
+    # The bar a rival must clear excludes only its OWN staycationers, so it is
+    # the best of ours and every other rival's.
+    rival_percents = []
+    for index, (tourists, _) in enumerate(seats):
+        if tourists is None:
+            continue
+        others = [domestic
+                  for other, (_, domestic) in enumerate(seats)
+                  if other != index and domestic is not None]
+        bar = max([value for value in (our_domestic, *others) if value is not None],
+                  default=None)
+        percent = progress(tourists, bar)
+        if percent is not None:
+            rival_percents.append(percent)
+
+    return {
+        # Ours: the tourists we have drawn, and the bar we set for every rival.
+        "tourists": our_tourists,
+        "domestic": our_domestic,
+        # Theirs: the strongest visiting-tourist count on the board, and the
+        # closest any rival stands to the culture victory.
+        "rival_tourists": max(rival_tourists) if rival_tourists else None,
+        "rival_percent": max(rival_percents) if rival_percents else None,
+        # Our own standing in the same race, against the best rival bar.
+        "percent": progress(
+            our_tourists,
+            max(rival_domestics) if rival_domestics else None),
+    }
+
+
+def culture_marks(events_path: Path) -> dict | None:
+    """The culture race at t100 and t150, the shape `tech_marks` uses.
+
+    ``{100: {"tourists": n, "domestic": n, "rival_tourists": n,
+    "rival_percent": p, "percent": p}, 150: {...}}``; a mark is absent when the
+    run never reached it.
+
+    ⭐ WHY THIS ROW EXISTS. The Emperor record's rival victories are majority
+    CULTURE and they land EARLY -- t155 at the earliest against t182+ for the
+    science rivals -- so the culture clock, not the tech clock, is what ends
+    most of these games first. Every number needed to see it coming already
+    crossed the bridge (`StateSnapshot::foreign_tourists`,
+    `StateRival::domestic_tourists`) and reached the mirror, and not one ladder
+    column carried any of it: the gap could be read only by reopening each
+    run's `events.jsonl`. Two marks are enough to see the pace, and they share
+    a frame with `tech_marks` and `boost_totals` so the three readings describe
+    the same board.
+
+    The reading is the FIRST `state` frame whose turn is >= the mark, matching
+    `tech_marks`: the opening board of that turn, before the seat acted.
+
+    `None` when no `state` frame carried our own `foreign_tourists` at all --
+    a mod predating that export, which is silence rather than an empire no
+    tourist ever visited.
+    """
+    marks: dict = {}
+    seen_state = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "state":
+                continue
+            if "foreign_tourists" not in event:
+                continue
+            seen_state = True
+            turn = event.get("turn")
+            if not isinstance(turn, int):
+                continue
+            for mark in BOOST_MARK_TURNS:
+                if turn >= mark and mark not in marks:
+                    marks[mark] = _culture_race(
+                        event, event.get("rivals") or [])
+            if len(marks) == len(BOOST_MARK_TURNS):
+                break
+    return marks if seen_state else None
+
+
+def culture_mark_columns(summary: dict) -> dict:
+    """The four flat ledger columns from a summary's `culture_marks`.
+
+    The leading rival's share of the culture victory and the staycationer bar
+    we set against it, per mark: numerator and denominator of the race that
+    ends most of these games. Flat for the same reason `tech_mark_columns` is,
+    and both key spellings are accepted because JSON keys survive as strings.
+    """
+    marks = summary.get("culture_marks") or {}
+    columns = {}
+    for mark in BOOST_MARK_TURNS:
+        at = marks.get(mark) or marks.get(str(mark)) or {}
+        columns[f"rival_culture_at_{mark}"] = at.get("rival_percent")
+        columns[f"domestic_tourists_at_{mark}"] = at.get("domestic")
+    return columns
+
+
 def open_events(events_path: Path):
     """Text handle over `events.jsonl`, or its gzipped copy off the ledger branch."""
     if events_path.suffix == ".gz":
@@ -1295,6 +1455,12 @@ def entry_from(summary: dict) -> dict:
         # reopening events.jsonl. See `tech_marks`; None on a run that never
         # reached the mark or whose mod predates the state export.
         **tech_mark_columns(summary),
+        # ⭐ THE CULTURE CLOCK, PER GAME: `rival_culture_at_100`,
+        # `domestic_tourists_at_100` and the same pair at 150. The Emperor
+        # record's rival victories are majority culture and they arrive ~30
+        # turns before the science ones, so this is the clock that usually runs
+        # out first. See `culture_marks`.
+        **culture_mark_columns(summary),
     }
 
 

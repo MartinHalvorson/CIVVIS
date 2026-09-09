@@ -196,6 +196,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `hostile-memory-2` | off (unmeasured) | Version two retains civilian memory and prices a land escort's embarkation. | 1 \| 2 |
 | `research-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `research-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `scout-first-opening` | off (unmeasured) | Reserve the safe capital's first build for its first Scout. | 1 \| 1 |
 | `trade-building-before-bankruptcy` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `trade-building-before-bankruptcy-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
 
