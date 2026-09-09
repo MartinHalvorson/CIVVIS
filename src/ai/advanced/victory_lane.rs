@@ -94,7 +94,7 @@
 //! assigned target at all, so it races the space race at one pad and only in
 //! cities with nothing else queued. A seat whose `victory_focus` is Science
 //! is treated as a Science seat by all three, and the pass itself opens for
-//! it. `score_horizon` still refuses a race that cannot finish.
+//! it.
 //!
 //! **`competition-victory-points`.** A scored competition's first place pays
 //! Diplomatic Victory Points: 2 for the Climate Accords, Send Aid and Send
@@ -270,8 +270,7 @@ impl AdvancedAi {
     /// assigned target at all, so it races the space race at one pad and only
     /// in cities with nothing else queued. With this on, a seat whose
     /// `victory_focus` is Science is treated as a Science seat by all three,
-    /// and the pass itself opens for it — `score_horizon` still refuses a race
-    /// that cannot finish, and `Recovery` still refuses outright.
+    /// and the pass itself opens for it — `Recovery` still refuses outright.
     pub(super) fn space_race_lane(&self, g: &Game, pid: usize) -> bool {
         self.lane_space_race && self.victory_focus(g, pid).strategy == GrandStrategy::Science
     }

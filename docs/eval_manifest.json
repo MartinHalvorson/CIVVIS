@@ -1,24 +1,23 @@
 {
   "coverage": {
-    "named": 37,
-    "never_named": 3,
+    "named": 36,
+    "never_named": 2,
     "never_named_treatments": [
-      "enter-the-prophet-race",
       "relief-column-marches",
       "threatened-city-reserve"
     ],
-    "withholdable": 40
+    "withholdable": 38
   },
   "derived": {
     "firaxis_only_count": 32,
-    "live_bridge_count": 72,
-    "native_engine_repair_count": 40,
-    "withholdable_live_count": 40
+    "live_bridge_count": 70,
+    "native_engine_repair_count": 38,
+    "withholdable_live_count": 38
   },
   "genome_coverage": {
-    "capability_toggles": 309,
-    "measured_by_a_screen": 73,
-    "reachable_as_a_gene": 278,
+    "capability_toggles": 303,
+    "measured_by_a_screen": 72,
+    "reachable_as_a_gene": 272,
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 41,
     "unreachable_toggles": [
@@ -130,7 +129,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 16,
+      "declared_count": 14,
       "items": [
         "escort-unstick",
         "buildings-before-projects",
@@ -143,15 +142,13 @@
         "district-coverage",
         "slot-kind-tiebreak",
         "loyalty-rate-alarm",
-        "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
-        "culture-building-debt",
-        "enter-the-prophet-race"
+        "culture-building-debt"
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 40,
+      "declared_count": 38,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -185,14 +182,12 @@
         "district-coverage",
         "slot-kind-tiebreak",
         "loyalty-rate-alarm",
-        "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
         "culture-building-debt",
         "barbarian-settler-capture",
         "relief-column-marches",
-        "threatened-city-reserve",
-        "enter-the-prophet-race"
+        "threatened-city-reserve"
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
@@ -262,7 +257,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 72,
+      "declared_count": 70,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -296,7 +291,6 @@
         "district-coverage",
         "slot-kind-tiebreak",
         "loyalty-rate-alarm",
-        "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
         "culture-building-debt",
@@ -331,7 +325,6 @@
         "barbarian-settler-capture",
         "relief-column-marches",
         "threatened-city-reserve",
-        "enter-the-prophet-race",
         "live-barbarian-scouts-capture",
         "live-settler-capture-lessons",
         "live-move-refusal-break",

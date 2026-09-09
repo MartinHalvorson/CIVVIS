@@ -2268,7 +2268,8 @@ pub struct BasicAi {
     /// entry fee is paid and the winnings are discarded. This flag closes the
     /// reservation too, so the empire never opens the tab.
     ///
-    /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race`.
+    /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race-2`
+    /// and by `religion-race-is-closed`.
     pub(crate) skip_prophet_race: bool,
     /// Open the Great Prophet race on purpose: while this is set, the empire's
     /// FIRST Holy Site outranks every lane district in `pick_item`, so the
@@ -2278,7 +2279,7 @@ pub struct BasicAi {
     /// below is unchanged: a second Holy Site waits for a religion.
     ///
     /// Set per turn from `AdvancedAi::take_turn_inner` by the gene
-    /// `enter-the-prophet-race`, and only while `prophet_race_open_for` holds.
+    /// `enter-the-prophet-race-2`, and only while `prophet_race_open_for` holds.
     pub(crate) enter_prophet_race: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
@@ -11986,7 +11987,7 @@ impl BasicAi {
                 *weight *= 1.0 - depth * (have / total);
             }
         }
-        // `enter-the-prophet-race`: the empire's first Holy Site goes to the
+        // `enter-the-prophet-race-2`: the empire's first Holy Site goes to the
         // front while the race is open. The reservation below still limits
         // the empire to one site before a religion exists, and the unlock
         // check still waits for Astrology.
@@ -12014,7 +12015,7 @@ impl BasicAi {
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         for (family, _) in dpri {
             if family == "holy_site" && g.players[pid].religion.is_none() {
-                // `skip-the-prophet-race`: never open the tab. See the flag's
+                // `skip-the-prophet-race-2`: never open the tab. See the flag's
                 // doc comment — gating the prize without gating this costs
                 // strictly more than either pure choice.
                 if self.skip_prophet_race {

@@ -179,9 +179,7 @@ fn launched_flight_keeps_accelerating_even_at_the_turn_limit() {
     let (mut g, a, b) = board();
     g.max_turns = 100;
     g.turn = 99;
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-    ai.score_horizon = true;
-    assert!(ai.space_race_can_finish(&g, 0));
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.science_production(&mut g, 0);
     for city in [a, b] {
         assert_eq!(g.cities[&city].queue.first(), Some(&project(LASERS[0])));
@@ -342,33 +340,6 @@ fn repeated_parallel_lasers_finish_the_flight_before_the_old_one_queue_dispatch(
     assert!(
         new < old,
         "parallel dispatch must advance actual arrival, not just queue more projects"
-    );
-}
-
-#[test]
-fn nearly_complete_expedition_and_parallel_lasers_fit_the_real_deadline() {
-    let (mut g, a, _) = board();
-    g.players[0].science_projects.remove("exoplanet_expedition");
-    g.max_turns = 120;
-    g.turn = 100;
-    let launch = project("exoplanet_expedition");
-    g.apply(
-        0,
-        &Action::Produce {
-            city: a,
-            item: launch.clone(),
-        },
-    )
-    .unwrap();
-    g.cities.get_mut(&a).unwrap().production = g.item_cost_for_city(0, a, &launch) - 1.0;
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-    ai.score_horizon = true;
-    assert!(ai.science_endgame_launch_fits(&g, 0));
-    assert!(ai.space_race_can_finish(&g, 0));
-    g.max_turns = 102;
-    assert!(
-        !ai.science_endgame_launch_fits(&g, 0),
-        "the flight itself still takes time"
     );
 }
 
