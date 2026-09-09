@@ -1,1 +1,1 @@
-campus-through-expansion,city-campaign-2,early-conquest-opening,expansion-scales-with-difficulty,garrison-under-fire,rapid-city-expansion-2,science-expansion-phase,settler-walk-deadline,war-reinforcement
+campus-through-expansion,city-campaign-2,early-conquest-opening,expansion-scales-with-difficulty,garrison-under-fire,peacetime-deterrence,rapid-city-expansion-2,science-expansion-phase,settler-walk-deadline,war-reinforcement
