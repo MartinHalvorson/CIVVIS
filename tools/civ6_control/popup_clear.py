@@ -759,7 +759,9 @@ def click_target(kind, targets, width):
     not recognize well enough to find a left acknowledgement is left for the
     in-game closer or an operator rather than guessed at.
     """
-    if not targets:
+    if not targets or kind == "leader":
+        # Button geometry cannot distinguish accepting their capital from
+        # revealing ours. The mod reads the actual diplomacy statement.
         return None
     if kind == "advisor":
         return next((point for point in targets if point[0] < width * 0.50), None)
@@ -1170,6 +1172,8 @@ def main():
                         no_target_passes += 1
                     else:
                         no_target_passes = 0
+                elif kind == "leader":
+                    log("leader decision belongs to the statement-aware in-game handler")
                 elif (choice := click_target(kind, targets, window.size[0])) is None:
                     # ⚠⚠⚠ "LEAVING IT ALONE" MEANT LEAVING THE GAME DEAD.
                     #

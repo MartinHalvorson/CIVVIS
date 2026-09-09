@@ -2914,118 +2914,12 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
 
 
 def dismiss_leader_dialogue(clicks: int = 6) -> bool:
-    """Click through a leader conversation's dialogue options until it closes.
-
-    ⚠ THIS IS THE FOURTH APPROACH TO THIS SCREEN AND THE FIRST ONE THAT WORKS.
-    Verified by hand against a live stuck screen. The three that did not:
-
-    * `ExitConversationMode` — only acts `if ms_currentViewMode ==
-      CONVERSATION_MODE`, and a first-contact leader is CINEMA_MODE.
-    * `CloseFocusedState` — its cinema branch is gated on a fade animation being
-      stopped, and it never fired.
-    * Escape — does nothing at all on this screen. Twice, with focus confirmed.
-
-    A first-contact screen offers a stack of dialogue options in the lower-left of
-    the game window, and it closes only when one is chosen. Each click consumes
-    the option under the cursor and the stack shrinks, so clicking the same spot
-    repeatedly walks down it and the last one ends the conversation. That is
-    exactly what a person does.
-
-    Measured on this display: the stack sits at x ~= 123 pt and the bottom option
-    at y ~= 817 of 1117, so the position is taken as a fraction of the desktop
-    rather than hardcoded. `clicks` defaults to 4 because three options plus one
-    spare covers every first-contact screen seen so far.
-    """
-    # ⚠ MEASURE THE WINDOW, NOT THE DESKTOP.
-    #
-    # This first computed the position from the desktop size and GAME_FRACTION,
-    # which was right only while the game owned the left half at full height. The
-    # moment the operator asked for the game in the upper-right quadrant
-    # (864,33,864,542) those clicks landed on the TERMINAL instead, and a run sat
-    # stalled for ten minutes with the harness reporting "dialogue clicks sent".
-    # A position derived from an assumption about layout is a position that breaks
-    # when the layout changes; the window knows where it is.
-    rect = game_window()
-    if rect is None:
-        print("[dialogue] cannot read the game window; not guessing a position",
-              file=sys.stderr)
-        return False
-    wx, wy, ww, wh = rect
-    focus_game(GAME_SIDE, GAME_FRACTION)
-    time.sleep(1.0)
-    # ⚠ THESE SCREENS ARE NOT ALL THE SAME SHAPE, and assuming they were cost a
-    # run. A first-contact conversation offers a stack of dialogue options at the
-    # LOWER-LEFT; a trade proposal (`DiplomacyDealView`) offers Accept/Refuse near
-    # the TOP. Clicking the conversation position on a deal screen hits empty space,
-    # which is exactly what happened: the harness logged "dialogue clicks sent"
-    # while a peace offer from Wilhelmina sat unanswered for eleven minutes and the
-    # run burned its stall timeout.
-    #
-    # ⚠ REFUSE, NEVER ACCEPT. The refuse button is clicked first and deliberately.
-    # An accepted deal can cede cities, gold per turn or a peace treaty, and a peace
-    # treaty ends the war that domination depends on — the only victory route still
-    # open. Refusing an unseen offer costs nothing; accepting one can cost the game.
-    # ⚠ THREE DIFFERENT SHAPES, and missing the third cost a run 457 seconds.
-    #   * a trade proposal puts Accept/Refuse near the TOP
-    #   * a single-button leader ("That's a shame." / Goodbye) sits at ~0.91 DOWN
-    #   * a three-option conversation stack sits around 0.68-0.73
-    # The stack positions miss the single-button variant completely. Verified by
-    # hand: 0.172/0.913 recovered a run that had been stuck for 457s.
-    # ⚠ FOUR SHAPES NOW. A TWO-option first-contact screen sits between the bands
-    # already covered and was missed by all of them. Measured off `stalled-3.png`
-    # (run civvis-20260730T192135Z, turn 175, Cyrus): window (864,33,864,542), the
-    # two options at roughly (1011,492) and (1011,519) — fy 0.847 and 0.897, where
-    # the nearest existing target was 0.913 and the stack pair sat at 0.73/0.68.
-    # Thirty-five pixels of miss cost a run holding FIVE cities and score 209, the
-    # best of the day.
-    # ★★★★ SWEEP THE COLUMN, DO NOT ENUMERATE THE SHAPES.
-    #
-    # The list above this comment grew one entry per lost run — three shapes, then
-    # four, each added after a stall that a thirty-five pixel miss had caused. Run
-    # civvis-20260730T223506Z died the same way at turn 88 on a three-option
-    # delegation from John Curtin. Enumerating variants cannot converge: Civilization
-    # VI composes these screens from a variable number of options, so the Nth shape
-    # is always one run away.
-    #
-    # Every variant shares a geometry, and that is the thing worth encoding: the
-    # options are a VERTICAL STACK at the lower-left of the game window, x ~= 0.17.
-    # So sweep that column densely enough that no option can fall between two clicks.
-    # Measured off stalled-1.png of the run above: options at fy 0.828, 0.876 and
-    # 0.920, which a 0.02 step covers with room to spare.
-    #
-    # ⚠ Clicks that miss land on the leader art, which does nothing. This runs ONLY
-    # after a stall is confirmed and one of these screens is therefore up; it is not
-    # safe to sweep a live map, where a click can select a unit and the next can
-    # order it to move.
-    targets = [("refuse deal", 0.222, 0.174)]
-    step = 0.02
-    band = int(round((0.95 - 0.60) / step))
-    targets += [
-        ("stack sweep %.2f" % (0.60 + i * step), 0.170, 0.60 + i * step)
-        for i in range(band + 1)
-    ]
-    print(f"[dialogue] window {rect}")
-    # ⚠ EACH TARGET NEEDS SEVERAL CLICKS, NOT ONE. `clicks // len(targets)` gave
-    # exactly one click per position once the target list grew, and a leader
-    # conversation is a CHAIN: choosing an option can open the next statement, so one
-    # click opens a new question rather than ending anything. Measured on
-    # stalled-1.png of run civvis-20260730T200543Z — a three-option delegation offer
-    # that survived three full rescue rounds.
-    # ⚠ PASSES OUTSIDE, POSITIONS INSIDE. This used to click one position six times
-    # before moving on, which is the wrong order for a CHAIN: when an option is not
-    # at that spot the five extra clicks do nothing, and when one is, the statement it
-    # opens is somewhere else by the time the next click lands. Walking the whole
-    # column once per pass advances a chain one link per pass, which is what a person
-    # does. Same number of clicks, and the sweep now finishes in about 6s of a 240s
-    # stall budget instead of 46s.
-    passes = max(1, clicks // 2)
-    for attempt in range(passes):
-        print(f"[dialogue] pass {attempt + 1}/{passes} over {len(targets)} positions")
-        for name, fx, fy in targets:
-            x, y = int(wx + ww * fx), int(wy + wh * fy)
-            click_at(x, y)
-            time.sleep(0.1)
-    return True
+    """Leave leader decisions to the mod's statement-aware dialogue handler."""
+    # A coordinate sweep can select an invitation that reveals our capital.
+    # The visual fallback also refuses leader choices without statement data.
+    handled, reason = dismiss_visually_confirmed_popup()
+    print(f"[dialogue] {reason}")
+    return handled
 
 
 def dismiss_visually_confirmed_popup(*, diagnostic_path: Path | None = None) -> tuple[bool, str]:

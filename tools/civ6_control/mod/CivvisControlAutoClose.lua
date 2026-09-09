@@ -211,6 +211,46 @@ end
 if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
 if not haveScreen() then pcall(function() include(NAME); end); end
 
+-- First contact is an information decision. Capture the actual, filtered
+-- selections through the shipped handler (DiplomacyActionView.lua:566-605).
+-- DiplomacySelections FIRST_MEET_VISIT_RECIPIENT offers hospitality at THEIR
+-- city; NEAR_INITIATOR offers OUR city and NO_MANS offers mutual disclosure.
+local firstMeetChoice = nil;
+local firstMeetAnswered = false;
+if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
+    local stockApply = ApplyStatement;
+    ApplyStatement = function(handler, statementType, subType, toPlayer, statement)
+        firstMeetChoice = nil;
+        firstMeetAnswered = false;
+        stockApply(handler, statementType, subType, toPlayer, statement);
+        if type(statementType) ~= "string" or not string.find(statementType, "^FIRST_MEET_") then
+            return;
+        end
+        local parsed = handler.ExtractStatement(handler, statementType, subType,
+            statement.FromPlayer, GetStatementMood(statement.FromPlayer, statement.FromPlayerMood),
+            statement.Initiator);
+        local localPlayer = Game.GetLocalPlayer();
+        local otherPlayer = statement.FromPlayer == localPlayer and toPlayer or statement.FromPlayer;
+        handler.RemoveInvalidSelections(parsed, localPlayer, otherPlayer);
+        for _, selection in ipairs(parsed.Selections or {}) do
+            if not selection.IsDisabled then
+                -- Greeting their nearby scout reveals nothing; the follow-up
+                -- invitation is accepted. All exchanges and our invitation exit.
+                local safePositive = selection.Text == "LOC_DIPLO_CHOICE_FIRST_MEET_VISIT"
+                    or selection.Text == "LOC_DIPLO_CHOICE_FIRST_MEET_NEAR_RECIPIENT_POSITIVE";
+                if selection.Key == "CHOICE_EXIT" and firstMeetChoice == nil then
+                    firstMeetChoice = selection.Key;
+                elseif selection.Key == "CHOICE_POSITIVE" and safePositive then
+                    firstMeetChoice = selection.Key;
+                end
+            end
+        end
+    end;
+    for _, handler in pairs(StatementHandlers or {}) do
+        if handler.ApplyStatement == stockApply then handler.ApplyStatement = ApplyStatement; end
+    end
+end
+
 -- A stock diplomacy context can be visible before its own InitializeView has
 -- completed. In that state CloseFocusedState() calls Close(), but the stock
 -- UninitializeView() returns before ContextPtr:SetHide(true), so every native
@@ -396,6 +436,18 @@ end
 -- What a click on this screen's own button does. Everything shipped registers
 -- OnClose; the era review is the exception explained at the top.
 local function endScreen(attempt)
+    if NAME == "DiplomacyActionView" and firstMeetChoice ~= nil then
+        if not firstMeetAnswered then
+            -- Clear the flag before dispatch: AddResponse can synchronously
+            -- install the next statement through ApplyStatement.
+            firstMeetAnswered = true;
+            local choice = firstMeetChoice;
+            local ok = pcall(function() OnSelectConversationDiplomacyStatement(choice); end);
+            if not ok then firstMeetAnswered = false; end
+            report("first_meet_choice", string.format(',"choice":"%s","sent":%s', choice, tostring(ok)));
+        end
+        return true;
+    end
 	-- WonderBuiltPopup is a readable completion announcement, not a choice.
 	-- Keep its own Firaxis close path explicit: the shipped context defines
 	-- OnClose as a wrapper around Close(), and Close() also drains a queued
@@ -724,6 +776,8 @@ else
 	-- active deal hold is deliberately left alone: it is a real CIVVIS-owned
 	-- session and may have been armed before the view becomes visible.
 	local function resetShownAttemptState()
+        firstMeetChoice = nil;
+        firstMeetAnswered = false;
 		showing = false;
 		controllerPulseSeconds = 0;
 		remaining = 0;
