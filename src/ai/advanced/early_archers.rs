@@ -173,7 +173,7 @@ impl AdvancedAi {
     /// The technology that unlocks the cheapest shooter this civilization
     /// may train — the Pítati Archer's for Nubia, the Archer's for everyone
     /// else — read off the rules; `None` when the rules hold no such unit.
-    fn early_archers_node(g: &Game, pid: usize) -> Option<Name> {
+    pub(super) fn early_archers_node(g: &Game, pid: usize) -> Option<Name> {
         let civ = &g.players[pid].civ;
         g.rules
             .units
