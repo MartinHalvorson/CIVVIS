@@ -10930,13 +10930,41 @@ impl BasicAi {
                         "lagrange_laser_station" | "terrestrial_laser_station"
                     )
             })
-            .map(|(project, _)| Item::Project { project: *project })
-            .filter(|item| g.can_produce(pid, cid, item))
-            .min_by(|left, right| {
-                g.item_cost_for_city(pid, cid, left)
-                    .total_cmp(&g.item_cost_for_city(pid, cid, right))
-                    .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
+            .filter_map(|(project, spec)| {
+                let item = Item::Project { project: *project };
+                if !g.can_produce(pid, cid, &item) {
+                    return None;
+                }
+                // These yields accrue each turn as a percentage of Production,
+                // not only on completion. A cheap loyalty project cannot repair
+                // a deficit, and must not win an alphabetical tie over research.
+                let gold = spec.ongoing_yields.get("gold").copied().unwrap_or(0.0);
+                let output = spec
+                    .ongoing_yields
+                    .iter()
+                    .map(|(yield_type, value)| {
+                        let weight = match yield_type.as_str() {
+                            "production" => 5.0,
+                            "food" | "gold" => 3.0,
+                            "science" | "culture" => 2.0,
+                            _ => 1.0,
+                        };
+                        value.max(0.0) * weight
+                    })
+                    .sum::<f64>();
+                let cost = g.item_cost_for_city(pid, cid, &item);
+                let points = spec.completion_gpp.values().sum::<f64>() / cost.max(1.0);
+                Some((gold, output, points, cost, *project, item))
             })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.total_cmp(&right.1))
+                    .then_with(|| left.2.total_cmp(&right.2))
+                    .then_with(|| right.3.total_cmp(&left.3))
+                    .then_with(|| right.4.cmp(&left.4))
+            })
+            .map(|(_, _, _, _, _, item)| item)
     }
 
     fn minor_district_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
@@ -27969,3 +27997,6 @@ mod attack_envelope_key_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod recovery_project_tests;
