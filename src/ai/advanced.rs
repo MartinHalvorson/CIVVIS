@@ -3916,6 +3916,9 @@ pub struct AdvancedAi {
     ///
     /// Off everywhere by default; opt-in gene `early-contact-window`.
     pub early_contact_window: bool,
+    /// Version two spreads early recon across nearby land frontiers until
+    /// the first major contact, retaining the original Scout production value.
+    pub early_contact_window_2: bool,
 
     /// ★★★★ A GREAT PERSON THE EMPIRE HAS EARNED AND CANNOT USE IS A RACE
     /// LOST FOR NOTHING. With this on, a class whose points are at (or within
@@ -6855,6 +6858,7 @@ mod growth_to_settle;
 /// send the next Settler to the nearest viable discovered foreign landmass.
 /// See `advanced/island_expansion.rs`.
 mod island_expansion;
+mod neighbor_contact;
 
 /// `order-retry`: a refused order falls through to the next-best candidate
 /// the planner already ranked. One opt-in gene; see
@@ -7615,6 +7619,7 @@ impl AdvancedAi {
             holy_site_where_the_threat_is: false,
             enhancer_for_the_corps: false,
             early_contact_window: false,
+            early_contact_window_2: false,
             great_person_housing: false,
             opportunistic_war: false,
             opportunistic_war_2: false,
@@ -12672,13 +12677,16 @@ impl AdvancedAi {
     /// and both historical vetoes stand — when the flag is off, when the arm
     /// is already at `EARLY_CONTACT_SCOUT_MAX`, when this seat has adopted the
     /// civic that closes borders, or when every living city-state is already
-    /// on its contact ledger.
+    /// on its contact ledger. Both versions keep this production value;
+    /// version two also coordinates the direction of early recon.
     ///
     /// Reads only this seat's own civics and its own contact ledger; which
     /// city-states a rival has reached is not something it is entitled to
     /// know.
     fn early_contact_value(&self, g: &Game, pid: usize, counts: &EmpireCounts) -> f64 {
-        if !self.early_contact_window || counts.scouts >= EARLY_CONTACT_SCOUT_MAX {
+        if !(self.early_contact_window || self.early_contact_window_2)
+            || counts.scouts >= EARLY_CONTACT_SCOUT_MAX
+        {
             return 0.0;
         }
         // `early_empire` is the node that grants `open_borders`, and
@@ -12699,9 +12707,6 @@ impl AdvancedAi {
                     && !g.has_met(pid, minor.id)
             })
             .count();
-        if unmet == 0 {
-            return 0.0;
-        }
         // Each eye already out discounts the next: the second Scout opens
         // ground the first would have reached inside the window anyway, the
         // third less again.
@@ -37332,6 +37337,9 @@ impl AdvancedAi {
                         return self.base.fortify_or_stop(g, pid, uid);
                     }
                 }
+            }
+            if self.neighbor_contact_step(g, pid, uid) {
+                return true;
             }
             // `pass-picket`: a unit nothing above wanted takes its recon
             // order — the post toward a neighbour once nothing is left to

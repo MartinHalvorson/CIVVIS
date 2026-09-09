@@ -1,0 +1,54 @@
+{
+  "maps": 128,
+  "seats_per_arm": 768,
+  "seeds": [
+    91096001,
+    91096128
+  ],
+  "source_commit": "380b427bb",
+  "first_contact_censored_at_31": {
+    "v1": 19.69140625,
+    "v2": 19.740885416666668,
+    "difference_v2_minus_v1": 0.04947916666666667,
+    "paired_map_bootstrap_95_percent": [
+      -0.12630208333333337,
+      0.22786458333333337
+    ]
+  },
+  "contacts_by_30": {
+    "v1": 1.1796875,
+    "v2": 1.203125,
+    "difference_v2_minus_v1": 0.0234375,
+    "paired_map_bootstrap_95_percent": [
+      -0.010416666666666661,
+      0.057291666666666664
+    ]
+  },
+  "explored_by_30": {
+    "v1": 248.87369791666666,
+    "v2": 248.80208333333334,
+    "difference_v2_minus_v1": -0.07161458333333336,
+    "paired_map_bootstrap_95_percent": [
+      -1.65625,
+      1.5820312499999993
+    ]
+  },
+  "max_scouts_by_30": {
+    "v1": 1.0924479166666667,
+    "v2": 1.109375,
+    "difference_v2_minus_v1": 0.016927083333333332,
+    "paired_map_bootstrap_95_percent": [
+      -0.003906249999999999,
+      0.040364583333333336
+    ]
+  },
+  "earlier_same_later": [
+    54,
+    661,
+    53
+  ],
+  "met_by_30": {
+    "1": 646,
+    "2": 652
+  }
+}
