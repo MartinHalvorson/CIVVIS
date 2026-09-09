@@ -2229,6 +2229,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "expansion-best-idle-city-2", field: "expansion_best_idle_city_2", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_best_idle_city_2, disable: AdvancedAi::disable_expansion_best_idle_city_2 },
     Gene { tag: "research-building-catchup-2", field: "research_building_catchup_2", kind: Kind::OptIn, enable: AdvancedAi::enable_research_building_catchup_2, disable: AdvancedAi::disable_research_building_catchup_2 },
     Gene { tag: "trade-building-before-bankruptcy-2", field: "trade_building_before_bankruptcy_2", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_building_before_bankruptcy_2, disable: AdvancedAi::disable_trade_building_before_bankruptcy_2 },
+    // Reprice all strikers after each friendly kill; only a sequence whose
+    // surviving enemy replies spare every striker can become the final plan.
+    Gene { tag: "doomed-blow-veto-2", field: "doomed_blow_veto_2", kind: Kind::OptIn, enable: AdvancedAi::enable_doomed_blow_veto_2, disable: AdvancedAi::disable_doomed_blow_veto_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
