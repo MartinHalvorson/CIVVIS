@@ -35,13 +35,14 @@
 //! returns `None` before reading the board.
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
-use super::AdvancedAi;
+use super::{AdvancedAi, StrategicPlan};
 use crate::ai::{AttackEnvelopes, BasicAi, COMBAT_ROLL_MAX};
 use crate::game::{Action, ActionFamilies, Game};
 use crate::reasoning::plain;
 use crate::think;
 use crate::Pos;
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 /// `withdraw_hp`: the line the controller's own recovery uses. Kept as a
 /// constant here so this step reads the same line the recovery does without
@@ -67,6 +68,73 @@ struct Refuge {
 }
 
 impl AdvancedAi {
+    /// Reserve a selected withdrawal before the live finishing volley spends
+    /// the unit. The native turn executes the policy on its current board.
+    /// This forecast does not move anything in the authoritative mirror.
+    pub fn live_wounded_unit_reservations(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
+        if !self.wounded_out_of_reach {
+            return BTreeSet::new();
+        }
+        let policy = self.clone(); // Hypothetical moves keep a silent journal.
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let mut forecast = g.clone();
+                policy
+                    .wounded_out_of_reach_step(&mut forecast, pid, *uid)
+                    .is_some()
+            })
+            .collect()
+    }
+
+    /// Apply the selected policy before either native kill prepass. Preserve
+    /// the ordinary military path's bound escorts, civilian rescue priority,
+    /// and threatened-city exception. Returned units own the rest of their turn,
+    /// including a ship holding still that cannot issue a Fortify action.
+    pub(super) fn withdraw_before_kill_prepass(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> BTreeSet<u32> {
+        let mut reserved = BTreeSet::new();
+        if !self.wounded_out_of_reach {
+            return reserved;
+        }
+        let decline_settlers =
+            self.counts(g, pid).settlers > 0 || !self.base.has_practical_settle_site(g, pid);
+        for uid in g.player_unit_ids(pid) {
+            let unit = &g.units[&uid];
+            if self.guard_is_bound_to_any_settler(uid)
+                || plan.threatened_city.is_some_and(|cid| {
+                    g.cities
+                        .get(&cid)
+                        .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
+                })
+            {
+                continue;
+            }
+            let barb_rescue = if self.base.barbarian_settler_capture {
+                g.barb_pid
+            } else {
+                None
+            };
+            let unwanted_settler_adjacent = decline_settlers
+                && g.nbrs(unit.pos).into_iter().any(|position| {
+                    g.unit_ids_at(position).iter().any(|other| {
+                        let other = &g.units[other];
+                        other.owner != pid
+                            && g.is_at_war(pid, other.owner)
+                            && other.kind == "settler"
+                            && barb_rescue != Some(other.owner)
+                    })
+                });
+            if !unwanted_settler_adjacent && self.wounded_out_of_reach_step(g, pid, uid).is_some() {
+                reserved.insert(uid);
+            }
+        }
+        reserved
+    }
     /// The withdrawal, or `None` when the gene is off, the unit is not a
     /// land or sea combat unit with movement, it is garrisoned, nothing can
     /// strike its tile, none of the three triggers hold, or one attack
