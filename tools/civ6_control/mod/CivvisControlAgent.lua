@@ -13020,7 +13020,10 @@ local function applyOrder(player, pid, row, turn)
 		-- Archer with four-turn Walls let the attacker take Ostia before either
 		-- defense existed.  Returning here keeps both the current queue and the
 		-- fallback's remembered build untouched for the finishing turn.
-		if immediateThreat and finishingDefender then
+		-- CivVis already ranks local siege responses (besieged_city_item).
+		-- In its mode the bridge validates and actuates that decision; it
+		-- must not silently preserve or substitute a different build.
+		if not cfg.CivvisDecides and immediateThreat and finishingDefender then
 			emit("emergency_defender_preserved", {
 				turn = turn, city = cityId, requested = resolved,
 				current = currentUnit.UnitType or tostring(current),
@@ -13033,13 +13036,18 @@ local function applyOrder(player, pid, row, turn)
 		end
 		civvisBuild[cityId] = resolved;
 		local emergencyWall = false;
-		if resolved ~= "BUILDING_WALLS"
+		if not cfg.CivvisDecides and resolved ~= "BUILDING_WALLS"
 				and immediateThreat then
 			local wall = GameInfo.Types["BUILDING_WALLS"];
 			local wallCanOk, wallCan = false, false;
 			if wall ~= nil then
 				wallCanOk, wallCan = pcall(function()
-					return city:GetBuildQueue():CanProduce(wall.Hash, false, true);
+					local queue = city:GetBuildQueue();
+					-- ProductionPanel.lua:2026,2037-2038 first excludes unavailable
+					-- buildings, then asks whether a listed building can start.
+					-- The second predicate alone admitted Walls before Masonry.
+					return queue:CanProduce(wall.Hash, true) == true
+						and queue:CanProduce(wall.Hash, false, true) == true;
 				end);
 			end
 			if wallCanOk and wallCan == true then
@@ -13081,7 +13089,11 @@ local function applyOrder(player, pid, row, turn)
 		-- throw; the live Library loop showed that the engine can reject the build
 		-- while the bridge reports it applied on every turn.
 		local canOk, canStart, results = pcall(function()
-			return city:GetBuildQueue():CanProduce(row2.Hash, false, true);
+			local queue = city:GetBuildQueue();
+			if queue:CanProduce(row2.Hash, true) ~= true then
+				return false;
+			end
+			return queue:CanProduce(row2.Hash, false, true);
 		end);
 		if not canOk or canStart ~= true then
 			local refused = refusedByCity[cityId];

@@ -1304,7 +1304,7 @@ pub const GENES: &[Gene] = &[
     // and NO controller read it: `gold_purchase_score` divides the remaining
     // cost by the raw yield, so a Settler under Colonization looks slower
     // than it is and becomes a BETTER purchase — the shipped purchaser buys
-    // exactly what the deck already discounts. The four rows below each own
+    // exactly what the deck already discounts. The rows below each own
     // one decision, so the screen can price them apart; all in
     // `advanced/gold_and_cards.rs`. Appended at the END so a running screen
     // keeps its positional genome.
@@ -1314,12 +1314,6 @@ pub const GENES: &[Gene] = &[
     // bonus, capped at a doubling. A reorder, never a spend — a value at or
     // below zero is not raised.
     Gene { tag: "build-what-cards-boost", field: "build_what_cards_boost", kind: Kind::OptIn, enable: AdvancedAi::enable_build_what_cards_boost, disable: AdvancedAi::disable_build_what_cards_boost },
-    // "A new city will always have low production but has access to the
-    // same money as anywhere else": a purchase in a city below the empire's
-    // best producer earns a premium proportional to the deficit, +50% at
-    // zero output. The shipped scorer already prices turns at the city's
-    // raw yield; this is the explicit lean on top of it.
-    Gene { tag: "gold-for-the-young-city", field: "gold_for_the_young_city", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_for_the_young_city, disable: AdvancedAi::disable_gold_for_the_young_city },
     // `emergency_city_defense_purchase` is gated on `garrison_under_fire`,
     // which only the live bridge sets — on a native board it has never fired
     // once. Version one adds a broad native damage timestamp that remains
@@ -1384,15 +1378,6 @@ pub const GENES: &[Gene] = &[
     // END so a running screen keeps its positional genome. See
     // `advanced/boost_research.rs`.
     Gene { tag: "boost-first-research", field: "boost_first_research", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_first_research, disable: AdvancedAi::disable_boost_first_research },
-    // The other half of the same fact: `Game`'s boost loop credits a boost
-    // mid-research onto a node already being worked, and never onto one
-    // already finished -- so a long node collects its eureka late and a short
-    // one loses it outright. A node the empire would finish inside
-    // `BOOST_WAIT_HORIZON_TURNS`, whose boost is still earnable by something
-    // buildable, is docked the boost at risk scaled by how likely it is to
-    // beat its own trigger home. Appended at the END so a running screen keeps
-    // its positional genome. See `advanced/boost_research.rs`.
-    Gene { tag: "boost-wait-research", field: "boost_wait_research", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_wait_research, disable: AdvancedAi::disable_boost_wait_research },
     // Being intentional about earning the rest: `eureka-chasing-builder` and
     // `eureka-chasing-production` can only chase a trigger whose thing the
     // empire is already allowed to build, and nothing ever bought the
@@ -1545,17 +1530,6 @@ pub const GENES: &[Gene] = &[
     // ladder measures it directly and at high frequency -- the abandon rule it
     // targets fires on 45% of King games, ~46 of which run a day.
     Gene { tag: "escort-patience-runs-out", field: "escort_patience_runs_out", kind: Kind::HostOnly, enable: AdvancedAi::enable_escort_patience_runs_out, disable: AdvancedAi::disable_escort_patience_runs_out },
-    // `treasury-at-work` (2026-08-26): the live King seat banked 286 Gold by
-    // t36 at +7 a turn and bought nothing in 36 turns, as every live game of
-    // the last three days did — 250–330 Gold by t50 and 0–3 purchases in the
-    // first 100 turns across 130 runs. `advanced_gold_spending` keeps back
-    // 250 + 75 Gold per city under Expansion (325 with one city, 625 with
-    // five) and buys only what leaves that much behind, so a 160-Gold
-    // Settler or a 100-Gold Builder never clears; every Gold purchase on
-    // record came under Recovery's 75 + 25. The working reserve is one
-    // emergency defender plus ten turns of any deficit, never below an
-    // appointed war's bill. See `advanced/gold_and_cards.rs`.
-    Gene { tag: "treasury-at-work", field: "treasury_at_work", kind: Kind::OptIn, enable: AdvancedAi::enable_treasury_at_work, disable: AdvancedAi::disable_treasury_at_work },
     // Version two also buys one under-bought compounding asset ahead of the
     // argmax — the empire's first Builder, then a Monument where a city has
     // none — on `solvency-first-trade-slot`'s measured pattern (+4.65 pp for
@@ -2188,16 +2162,6 @@ pub const GENES: &[Gene] = &[
     // safest neighbour that strictly improves on staying. Appended at the
     // END, above the markers, so a running screen keeps its positional genome.
     Gene { tag: "standing-still-is-a-risk", field: "standing_still_is_a_risk", kind: Kind::OptIn, enable: AdvancedAi::enable_standing_still_is_a_risk, disable: AdvancedAi::disable_standing_still_is_a_risk },
-    // ⚠ A NARROW SUZERAINTY IS A SUBSCRIPTION, NOT A PURCHASE. `bank_envoys`
-    // brakes only the uncontested overstack and deliberately exempts a
-    // city-state within one envoy of a rival; live run
-    // `civvis-20260902T205532Z` defended exactly that narrow lead at Bologna
-    // seven times, spent 27 envoys, and lost it on t164 to Arabia — whom it
-    // had been at war with since t139 — which then levied Bologna and
-    // suspended every yield those envoys had bought. Peace with a levied
-    // city-state is refused by the engine, so the stake cannot be recovered.
-    // See `contested_suzerainty_brake`.
-    Gene { tag: "contested-suzerainty-brake", field: "contested_suzerainty_brake", kind: Kind::OptIn, enable: AdvancedAi::enable_contested_suzerainty_brake, disable: AdvancedAi::disable_contested_suzerainty_brake },
     // `detour-keeps-the-site-worth` (2026-09-02): the threat detour takes the
     // best site whose approach is SAFE, not a site of comparable worth. Over
     // 53 live Civ VI runs the median detour is +21% better, but 24% of them
@@ -2397,7 +2361,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("blind-objective-units", [Some(0), Some(-15), Some(-17)]),
     ("boost-first-research", [Some(8), Some(32), Some(-27)]),
     ("boost-unlock-research", [Some(6), Some(16), Some(26)]),
-    ("boost-wait-research", [Some(-1), Some(-14), Some(-27)]),
     ("boost-wait-research-2", [Some(2), Some(50), Some(17)]),
     ("boosted-bargain-first", [Some(-17), Some(-10), Some(-9)]),
     ("boosted-bargain-first-2", [Some(16), Some(-1), Some(5)]),
@@ -2447,7 +2410,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("congress-counter-leader", [Some(2), Some(20), Some(-11)]),
     ("connect-the-luxury", [Some(24), Some(-7), Some(20)]),
     ("contested-land-first", [Some(20), Some(5), Some(1)]),
-    ("contested-suzerainty-brake", [Some(-5), Some(-56), Some(-11)]),
     ("conversion-majority-alarm", [Some(0), Some(51), Some(30)]),
     ("conversion-majority-alarm-2", [Some(3), Some(-41), Some(8)]),
     ("coordinated-finish", [Some(-5), Some(7), Some(9)]),
@@ -2500,7 +2462,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("founder-temple", [Some(19), Some(-7), Some(9)]),
     ("frontier-massing-alarm", [Some(13), Some(-44), Some(-10)]),
     ("garrison-under-fire", [Some(3), Some(-1), Some(-6)]),
-    ("gold-for-the-young-city", [Some(-14), Some(16), Some(-16)]),
     ("gold-income-floor", [Some(-5), Some(21), Some(20)]),
     ("government-capacity-fallback", [Some(12), Some(2), Some(-4)]),
     ("government-ladder", [Some(10), Some(-11), Some(7)]),
@@ -2625,7 +2586,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("swap-rotation-2", [Some(-13), Some(14), Some(-3)]),
     ("threatened-city-reserve", [Some(15), Some(-25), Some(3)]),
     ("trade-route-network", [Some(31), Some(-18), Some(-3)]),
-    ("treasury-at-work", [Some(-22), Some(-8), Some(-4)]),
     ("treasury-at-work-2", [Some(55), Some(65), Some(36)]),
     ("unchosen-war-keeps-the-lane", [Some(3), Some(23), Some(15)]),
     ("unit-cost-efficiency", [Some(0), Some(17), Some(15)]),

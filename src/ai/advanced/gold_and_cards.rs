@@ -44,19 +44,14 @@
 //!    card is +25% value), capped at [`BUILD_BOOST_CAP`], so the queue leans
 //!    toward what the slotted deck makes cheap. It only reorders: a value at
 //!    or below zero is never raised.
-//! 3. **`gold-for-the-young-city`** — a Gold purchase in a city producing
-//!    less than the empire's best city earns a premium proportional to the
-//!    deficit, [`YOUNG_CITY_PREMIUM`] at zero output. The same money buys the
-//!    same item anywhere, and the city that cannot yet build is where it buys
-//!    the most turns.
-//! 4. **`native-emergency-purchase`** — the emergency defence purchase fires
+//! 3. **`native-emergency-purchase`** — the emergency defence purchase fires
 //!    on a native signal: a city that has lost health, was struck within the
 //!    last [`EMERGENCY_RECENT_TURNS`] turns. The confirmed damage remains
 //!    authoritative if the attacker has left the current board; it buys Walls
 //!    if the city can raise them, otherwise the best land defender — the live
 //!    doctrine's own choice — and it spends through the reserve exactly as
 //!    the live path does.
-//! 5. **`native-emergency-purchase-2`** — a narrower successor to version
+//! 4. **`native-emergency-purchase-2`** — a narrower successor to version
 //!    one. A host-confirmed hit in the current turn is enough on its own;
 //!    damage from the preceding turn still requires a currently visible,
 //!    at-war military unit whose legal attack envelope reaches the City
@@ -92,7 +87,7 @@
 //! smaller `100 + 25` runs only while the four-build opening book is in play,
 //! when the bank is still under 100.
 //!
-//! 5. **`treasury-at-work`** — the reserve is what an emergency costs plus
+//! 5. **`treasury-at-work-2`** — the reserve is what an emergency costs plus
 //!    what a deficit would drain before it can be corrected: the Gold price
 //!    of the dearest land ranged unit some city can build now (the dearest
 //!    land melee unit failing that, [`FALLBACK_DEFENDER_PRICE`] failing
@@ -104,25 +99,27 @@
 //!    also stays solvent: a unit whose upkeep would take the recurring
 //!    budget below zero is not bought (`unit_purchase_keeps_solvent`), so
 //!    the open reserve cannot buy the empire into the bankruptcy the King
-//!    autopsy of `civvis-20260826T112920Z` recorded from turn 85.
-//! 6. **`treasury-at-work-2`** — the same reserve, and before the purchase
-//!    argmax runs, one under-bought compounding asset is bought outright in
+//!    autopsy of `civvis-20260826T112920Z` recorded from turn 85. And before
+//!    the purchase argmax runs, one under-bought compounding asset is bought
+//!    outright in
 //!    the city producing the least: a Builder whenever the empire has none
 //!    and there is tile work, otherwise a Monument for a city without one.
 //!    One a turn, at the working reserve. This is
 //!    `solvency-first-trade-slot`'s measured pattern — reserving ONE Trader
 //!    priced +4.65 pp, reserving every slot −2.80 — applied to the two
-//!    assets the argmax prices lowest against a Settler.
+//!    assets the argmax prices lowest against a Settler. Version one
+//!    (`treasury-at-work`, the reserve alone) left the code on 2026-09-08
+//!    with version two shipping on.
 //!
 //! Replayed over turns 16–52 of the live run above (`--serve --fresh-board`,
 //! every other turn): the stock decider issues one purchase (a Scout at
-//! t46); `treasury-at-work` issues thirteen (Archers and Warriors for the
+//! t46); the reserve alone issued thirteen (Archers and Warriors for the
 //! threatened cities, a Settler at t40, a Granary at t50) at a reserve of
 //! 70 (Slinger) then 120 (Archer) Gold; version two sixteen, the Builder in
 //! the weakest city first. A fresh-board replay cannot carry a purchase
-//! forward, so those counts say the genes bind, not what a game spends.
+//! forward, so those counts say the gene binds, not what a game spends.
 //!
-//! Both are exact no-ops while off: the reserve helper returns the stock
+//! It is an exact no-op while off: the reserve helper returns the stock
 //! value untouched and the ladder is not consulted.
 
 use super::{AdvancedAi, StrategicPlan, CITY_MAX_HP};
@@ -141,36 +138,23 @@ pub const BUILD_BOOST_CAP: f64 = 1.0;
 /// an item a Congress treaty forbids building (multiplier 0) reads as a slow
 /// build rather than an infinite one.
 pub const PURCHASE_CARD_MULT_RANGE: (f64, f64) = (0.25, 4.0);
-/// Purchase premium for a city producing nothing; a city at half the best
-/// city's output earns half of it.
-pub const YOUNG_CITY_PREMIUM: f64 = 0.5;
 /// How recently a city must have been struck for the native emergency.
 pub const EMERGENCY_RECENT_TURNS: u32 = 4;
 /// Version two only reacts while the damage is still fresh: this turn or the
 /// immediately preceding turn. A longer-lived scar belongs to version one's
 /// deliberately broader experiment.
 pub const EMERGENCY_V2_FRESH_TURNS: u32 = 1;
-/// `treasury-at-work`: turns of a recurring deficit the working reserve
+/// `treasury-at-work-2`: turns of a recurring deficit the working reserve
 /// keeps in the bank, so a purchase never turns a deficit into bankruptcy
 /// before the deck or the army can be corrected.
 pub const DEFICIT_COVER_TURNS: f64 = 10.0;
-/// `treasury-at-work`: the Standard-speed Gold price of one emergency
+/// `treasury-at-work-2`: the Standard-speed Gold price of one emergency
 /// defender when no city can name one — an Archer's 60 Production at the
 /// shipped ×4 Gold purchase rate. Scaled by the game speed where it is used.
 pub const FALLBACK_DEFENDER_PRICE: f64 = 240.0;
 /// The Gold purchase rate per point of Production, the shipped
 /// `GOLD_PURCHASE_MULTIPLIER` `unit_purchase_cost_for_formation` applies.
 const GOLD_PER_PRODUCTION: f64 = 4.0;
-
-/// The premium a purchase earns in a city producing `here` when the empire's
-/// best city produces `best`. Exactly 1.0 at or above the best city.
-pub fn young_city_premium_from(here: f64, best: f64) -> f64 {
-    if best <= 0.0 {
-        return 1.0;
-    }
-    let deficit = (1.0 - here / best).clamp(0.0, 1.0);
-    1.0 + YOUNG_CITY_PREMIUM * deficit
-}
 
 /// The working reserve: one emergency defender at `defender` Gold plus
 /// [`DEFICIT_COVER_TURNS`] turns of any recurring deficit in `gold_per_turn`,
@@ -221,22 +205,6 @@ impl AdvancedAi {
             return value;
         }
         value * (1.0 + BUILD_BOOST_SHARE * bonus)
-    }
-
-    /// `gold-for-the-young-city`: the purchase premium for buying in this
-    /// city rather than in the empire's best producer. Exactly 1.0 while the
-    /// gene is off.
-    pub(super) fn young_city_premium(&self, g: &Game, pid: usize, cid: u32) -> f64 {
-        if !self.gold_for_the_young_city {
-            return 1.0;
-        }
-        let here = g.city_yields(cid).production.max(0.0);
-        let best = g
-            .player_city_ids(pid)
-            .into_iter()
-            .map(|city| g.city_yields(city).production)
-            .fold(0.0_f64, f64::max);
-        young_city_premium_from(here, best)
     }
 
     /// Whether either native emergency-purchase family member is armed.
@@ -327,11 +295,11 @@ impl AdvancedAi {
 }
 
 impl AdvancedAi {
-    /// `treasury-at-work`: the reserve `advanced_gold_spending` keeps back,
-    /// given the plan's stock reserve. Returns `stock` untouched while both
-    /// versions are off.
+    /// `treasury-at-work-2`: the reserve `advanced_gold_spending` keeps back,
+    /// given the plan's stock reserve. Returns `stock` untouched while the
+    /// gene is off.
     pub(super) fn working_treasury_reserve(&self, g: &Game, pid: usize, stock: f64) -> f64 {
-        if !(self.treasury_at_work || self.treasury_at_work_2) {
+        if !self.treasury_at_work_2 {
             return stock;
         }
         let defender = self
@@ -344,8 +312,8 @@ impl AdvancedAi {
         )
     }
 
-    /// `treasury-at-work`: whether buying `item` leaves the recurring budget
-    /// at or above zero. Always true while the family is off, and for
+    /// `treasury-at-work-2`: whether buying `item` leaves the recurring budget
+    /// at or above zero. Always true while the gene is off, and for
     /// anything that is not a unit with upkeep.
     pub(super) fn treasury_purchase_stays_solvent(
         &self,
@@ -353,7 +321,7 @@ impl AdvancedAi {
         pid: usize,
         item: &Item,
     ) -> bool {
-        if !(self.treasury_at_work || self.treasury_at_work_2) {
+        if !self.treasury_at_work_2 {
             return true;
         }
         let unit = match item {
@@ -564,24 +532,20 @@ mod tests {
         let ai = AdvancedAi::new();
         assert!(!ai.buy_what_cards_cannot_boost, "an opt-in ships off");
         assert!(!ai.build_what_cards_boost, "an opt-in ships off");
-        assert!(!ai.gold_for_the_young_city, "an opt-in ships off");
         assert!(!ai.native_emergency_purchase, "an opt-in ships off");
         assert!(!ai.native_emergency_purchase_2, "a successor ships off");
         let legacy = AdvancedAi::legacy();
         assert!(!legacy.buy_what_cards_cannot_boost);
         assert!(!legacy.build_what_cards_boost);
-        assert!(!legacy.gold_for_the_young_city);
         assert!(!legacy.native_emergency_purchase);
         assert!(!legacy.native_emergency_purchase_2);
 
         let mut ai = AdvancedAi::new();
         ai.enable_buy_what_cards_cannot_boost();
         ai.enable_build_what_cards_boost();
-        ai.enable_gold_for_the_young_city();
         ai.enable_native_emergency_purchase();
         assert!(ai.buy_what_cards_cannot_boost);
         assert!(ai.build_what_cards_boost);
-        assert!(ai.gold_for_the_young_city);
         assert!(ai.native_emergency_purchase);
         assert!(!ai.native_emergency_purchase_2);
         ai.enable_native_emergency_purchase_2();
@@ -595,12 +559,10 @@ mod tests {
         );
         ai.disable_buy_what_cards_cannot_boost();
         ai.disable_build_what_cards_boost();
-        ai.disable_gold_for_the_young_city();
         ai.disable_native_emergency_purchase();
         ai.disable_native_emergency_purchase_2();
         assert!(!ai.buy_what_cards_cannot_boost);
         assert!(!ai.build_what_cards_boost);
-        assert!(!ai.gold_for_the_young_city);
         assert!(!ai.native_emergency_purchase);
         assert!(!ai.native_emergency_purchase_2);
     }
@@ -726,29 +688,6 @@ mod tests {
             -100.0
         );
         assert_eq!(on.card_boosted_value(&g, 0, city, &settler(), 0.0), 0.0);
-    }
-
-    #[test]
-    fn the_young_city_premium_scales_with_the_deficit() {
-        assert_eq!(young_city_premium_from(10.0, 10.0), 1.0);
-        assert_eq!(young_city_premium_from(12.0, 10.0), 1.0, "never below one");
-        assert!((young_city_premium_from(5.0, 10.0) - 1.25).abs() < 1e-9);
-        assert!((young_city_premium_from(0.0, 10.0) - 1.5).abs() < 1e-9);
-        assert_eq!(
-            young_city_premium_from(0.0, 0.0),
-            1.0,
-            "no producer, no premium"
-        );
-        let (g, city) = board();
-        let off = AdvancedAi::new();
-        assert_eq!(off.young_city_premium(&g, 0, city), 1.0);
-        let mut on = AdvancedAi::new();
-        on.enable_gold_for_the_young_city();
-        assert_eq!(
-            on.young_city_premium(&g, 0, city),
-            1.0,
-            "the only city is the best city"
-        );
     }
 
     #[test]
@@ -887,17 +826,15 @@ mod tests {
     }
 
     #[test]
-    fn the_treasury_genes_ship_off_and_toggle() {
+    fn the_treasury_gene_ships_off_and_toggles() {
         let ai = AdvancedAi::new();
-        assert!(!ai.treasury_at_work, "an opt-in ships off");
         assert!(!ai.treasury_at_work_2, "an opt-in ships off");
+        assert!(!AdvancedAi::legacy().treasury_at_work_2);
         let mut ai = AdvancedAi::new();
-        ai.enable_treasury_at_work();
         ai.enable_treasury_at_work_2();
-        assert!(ai.treasury_at_work && ai.treasury_at_work_2);
-        ai.disable_treasury_at_work();
+        assert!(ai.treasury_at_work_2);
         ai.disable_treasury_at_work_2();
-        assert!(!ai.treasury_at_work && !ai.treasury_at_work_2);
+        assert!(!ai.treasury_at_work_2);
     }
 
     #[test]
@@ -936,7 +873,7 @@ mod tests {
         // On: the unit is declined at a deficit and allowed with the income
         // to carry it; a building is never a unit.
         let mut ai = AdvancedAi::new();
-        ai.enable_treasury_at_work();
+        ai.enable_treasury_at_work_2();
         assert!(!ai.treasury_purchase_stays_solvent(&g, 0, &archer));
         assert!(ai.treasury_purchase_stays_solvent(&g, 0, &monument));
         g.players[0].gold_per_turn = upkeep;
@@ -956,7 +893,7 @@ mod tests {
         );
 
         let mut ai = AdvancedAi::new();
-        ai.enable_treasury_at_work();
+        ai.enable_treasury_at_work_2();
         let reserve = ai.working_treasury_reserve(&g, 0, 325.0);
         // A fresh capital can build a Slinger, the ancient ranged unit, and
         // the reserve is exactly its Gold price: no city count anywhere.
@@ -971,18 +908,13 @@ mod tests {
             "one ranged defender, {reserve} vs {expected}"
         );
         assert!(reserve < 325.0, "far below the plan's 250 + 75 per city");
-
-        // Version two shares the reserve law.
-        let mut v2 = AdvancedAi::new();
-        v2.enable_treasury_at_work_2();
-        assert_eq!(v2.working_treasury_reserve(&g, 0, 325.0), expected);
     }
 
     #[test]
     fn a_deficit_raises_the_working_reserve_by_ten_turns_of_it() {
         let (mut g, _city) = board();
         let mut ai = AdvancedAi::new();
-        ai.enable_treasury_at_work();
+        ai.enable_treasury_at_work_2();
         let solvent = ai.working_treasury_reserve(&g, 0, 325.0);
         g.players[0].gold_per_turn = -6.0;
         let insolvent = ai.working_treasury_reserve(&g, 0, 325.0);
@@ -994,7 +926,7 @@ mod tests {
         let g = Game::new(2, 24, 16, 71, 250, 0);
         assert!(g.player_city_ids(0).is_empty());
         let mut ai = AdvancedAi::new();
-        ai.enable_treasury_at_work();
+        ai.enable_treasury_at_work_2();
         assert_eq!(
             ai.working_treasury_reserve(&g, 0, 325.0),
             g.game_speed.scale(FALLBACK_DEFENDER_PRICE)
