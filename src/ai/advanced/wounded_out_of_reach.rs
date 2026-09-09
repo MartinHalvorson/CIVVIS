@@ -206,7 +206,7 @@ impl AdvancedAi {
             return None;
         }
         let envelopes = self.base.enemy_attack_envelopes(g, pid);
-        let raiders = self.barbarian_reach(g, pid, here, REACH_SCAN_RADIUS);
+        let raiders = self.military_raider_reach(g, pid, here, REACH_SCAN_RADIUS);
         let threats = Self::threat_positions(g, &envelopes);
         let remembered_fire = self.remembered_ranged_reach(g, pid);
         let holding = self.refuge_at(
@@ -422,7 +422,7 @@ impl AdvancedAi {
                         .margin(&future, after)
                         > 0
                     && !self
-                        .barbarian_reach(&future, pid, after, REACH_SCAN_RADIUS)
+                        .military_raider_reach(&future, pid, after, REACH_SCAN_RADIUS)
                         .covers(&future, after)
             })
     }

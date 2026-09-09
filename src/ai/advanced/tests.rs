@@ -47890,9 +47890,11 @@ fn military_withdrawal_does_not_use_the_civilian_terrain_fallback() {
             g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
         }
     }
-    let observer = g.nbrs(lair).into_iter().find(|pos| {
-        g.wdist(*pos, front) > 2 && g.map.get(*pos).is_some()
-    }).unwrap();
+    let observer = g
+        .nbrs(lair)
+        .into_iter()
+        .find(|pos| g.wdist(*pos, front) > 2 && g.map.get(*pos).is_some())
+        .unwrap();
     g.spawn_test_unit("builder", 0, observer);
     let ours = g.spawn_test_unit("archer", 0, front);
     let raider = g.spawn_test_unit("man_at_arms", barbarian, lair);
@@ -47901,8 +47903,36 @@ fn military_withdrawal_does_not_use_the_civilian_terrain_fallback() {
     ai.enable_wounded_out_of_reach();
     assert!(g.sees(&g.player_vision_frame(0), lair));
     assert!(!g.threat_reach(raider).contains(&front));
-    assert!(ai.barbarian_reach(&g, 0, front, 8).covers(&g, front),
-        "the host civilian capture fallback remains conservative");
-    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None,
-        "a visible raider cannot force a military withdrawal through mountains");
+    assert!(
+        ai.barbarian_reach(&g, 0, front, 8).covers(&g, front),
+        "the host civilian capture fallback remains conservative"
+    );
+    assert_eq!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a visible raider cannot force a military withdrawal through mountains"
+    );
+    assert!(!ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+
+    let mut open = g.clone();
+    for pos in open.nbrs(front) {
+        if open.wdist(pos, lair) == 1 {
+            open.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
+        }
+    }
+    assert!(open.threat_reach(raider).contains(&front));
+    assert!(
+        ai.wounded_out_of_reach_step(&mut open, 0, ours).is_some(),
+        "an actual open route still forces the exposed shooter to withdraw"
+    );
+
+    ai.enable_hostile_memory();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(raider as i64)));
+    g.remove_unit(raider);
+    g.turn += 1;
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "the last-sighting projection remains conservative in fog"
+    );
 }
