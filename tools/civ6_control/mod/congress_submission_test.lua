@@ -82,7 +82,7 @@ turn = 234
 Players[0].IsTurnActive = function() return true end
 local config = upvalue(tick, "cfg")
 config.CivvisDecides = true
-config.SoftBlockerForfeitAttempts = 1
+config.SoftBlockerForfeitAttempts = 2
 config.MaxBlockedAttempts = 1
 upvalue(tick, "lastTurnSeen", turn)
 upvalue(tick, "softSeen", {})
@@ -109,6 +109,9 @@ end)
 local before = calls
 tick()
 assert(#errors == 0, table.concat(errors, "; "))
+assert(dismissed == 0 and ended == 0, "the hard attempt cap must also preserve a pending ballot")
+tick()
+assert(#errors == 0, table.concat(errors, "; "))
 assert(calls == before, "the first forfeit still waits for the popup ballot")
 assert(dismissed == 0, "waiting for the popup must not dismiss its notification")
 assert(ended == 0, "waiting for the popup must not submit an ordinary or forced end turn")
@@ -120,6 +123,7 @@ assert(dismissed == 1 and ended > 0, "a submitted ballot releases the blocker no
 
 -- An absent popup retains the existing bounded vote-and-submit fallback.
 turn = 254
+config.SoftBlockerForfeitAttempts = 1
 Game.GetWorldCongress = function() return nil end
 upvalue(tick, "lastTurnSeen", turn)
 upvalue(tick, "softSeen", {})
