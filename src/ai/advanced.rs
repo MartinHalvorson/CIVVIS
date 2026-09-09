@@ -26545,12 +26545,7 @@ impl AdvancedAi {
             Item::Unit { unit }
                 if unit == "settler"
                     && self.conquest_defers_the_settler(
-                        g,
-                        pid,
-                        cid,
-                        counts,
-                        city_count,
-                        threatened,
+                        g, pid, cid, counts, city_count, threatened,
                     ) =>
             {
                 -10_000.0

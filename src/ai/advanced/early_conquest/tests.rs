@@ -28,7 +28,10 @@ fn board(capitals: &[Pos]) -> Game {
         tile.improvement = None;
     }
     for (pid, pos) in capitals.iter().enumerate() {
-        assert!(game.map.tiles.get(pos).is_some(), "capital {pos:?} is on the map");
+        assert!(
+            game.map.tiles.get(pos).is_some(),
+            "capital {pos:?} is on the map"
+        );
         game.found_city_for(pid, *pos, None);
     }
     game.at_war.clear();
@@ -66,7 +69,14 @@ fn fresh(game: &mut Game, uid: u32) {
 }
 
 /// `count` of our warriors on the ring `radius` around `around`.
-fn bodies(game: &mut Game, pid: usize, kind: &str, around: Pos, radius: i32, count: usize) -> Vec<u32> {
+fn bodies(
+    game: &mut Game,
+    pid: usize,
+    kind: &str,
+    around: Pos,
+    radius: i32,
+    count: usize,
+) -> Vec<u32> {
     let ring: Vec<Pos> = game
         .wring(around, radius)
         .into_iter()
@@ -111,7 +121,11 @@ fn the_target_is_a_met_rivals_explored_city_in_reach_and_nothing_else() {
     let off = AdvancedAi::new();
 
     // Nothing met, nothing explored: no target for either controller.
-    assert_eq!(ai.conquest_target(&game, 0), None, "an unmet rival is no target");
+    assert_eq!(
+        ai.conquest_target(&game, 0),
+        None,
+        "an unmet rival is no target"
+    );
     assert_eq!(off.conquest_target(&game, 0), None);
 
     meet_and_explore(&mut game, 1);
@@ -121,7 +135,11 @@ fn the_target_is_a_met_rivals_explored_city_in_reach_and_nothing_else() {
         Some((1, city)),
         "the met rival's explored capital in reach is the target"
     );
-    assert_eq!(off.conquest_target(&game, 0), None, "off, there is never a target");
+    assert_eq!(
+        off.conquest_target(&game, 0),
+        None,
+        "off, there is never a target"
+    );
 
     // The far rival is met and explored too, and is still out of reach.
     meet_and_explore(&mut game, 2);
@@ -389,7 +407,8 @@ fn the_declaration_waits_for_the_assembly_share_and_then_for_the_bill() {
     let city = game.player_city_ids(1)[0];
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
     assert!(
-        (CONQUEST_RALLY_MIN..=CONQUEST_RALLY_MAX).contains(&game.wdist(rally, game.cities[&city].pos)),
+        (CONQUEST_RALLY_MIN..=CONQUEST_RALLY_MAX)
+            .contains(&game.wdist(rally, game.cities[&city].pos)),
         "the rally stands on the target's own ring"
     );
 
@@ -401,13 +420,18 @@ fn the_declaration_waits_for_the_assembly_share_and_then_for_the_bill() {
 
     // A force standing on the rally: assembled, and the bill is covered
     // because the rival's capital is empty.
-    bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.as_ref().unwrap();
     assert!(opening.assembled.is_some(), "the force stands at the rally");
-    assert!(
-        AdvancedAi::conquest_assembled_share(&game, opening) >= CONQUEST_ASSEMBLY_SHARE
-    );
+    assert!(AdvancedAi::conquest_assembled_share(&game, opening) >= CONQUEST_ASSEMBLY_SHARE);
     assert!(
         ai.conquest_preview_takes_the_city(&game, 0, opening),
         "an undefended capital's bill is covered by five bodies"
@@ -430,7 +454,14 @@ fn a_bill_the_force_cannot_cover_is_not_declared_on() {
     let mut ai = opened(&mut game);
     let city = game.player_city_ids(1)[0];
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
     // A garrison the five bodies cannot pay for.
     let centre = game.cities[&city].pos;
     bodies(&mut game, 1, "warrior", centre, 1, 6);
@@ -443,7 +474,10 @@ fn a_bill_the_force_cannot_cover_is_not_declared_on() {
         "the preview refuses a city the force cannot take"
     );
     assert!(!ai.conquest_declaration(&mut game, 0));
-    assert!(!game.is_at_war(0, 1), "no war is opened on a bill we cannot pay");
+    assert!(
+        !game.is_at_war(0, 1),
+        "no war is opened on a bill we cannot pay"
+    );
 }
 
 #[test]
@@ -452,7 +486,14 @@ fn a_force_that_never_covers_the_bill_releases_after_the_patience_window() {
     let mut ai = opened(&mut game);
     let city = game.player_city_ids(1)[0];
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
     let centre = game.cities[&city].pos;
     bodies(&mut game, 1, "warrior", centre, 1, 6);
     ai.maintain_conquest_opening(&mut game, 0);
@@ -499,7 +540,14 @@ fn a_strike_body_is_charged_for_a_tile_beside_unseen_ground_unless_a_friend_stan
     let mut game = board(&[at(6, 12), at(14, 12)]);
     let mut ai = opened(&mut game);
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    let force = bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+    let force = bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(
         ai.conquest_opening
@@ -565,7 +613,14 @@ fn a_war_that_pays_continues_and_one_that_does_not_asks_for_terms() {
     let mut ai = opened(&mut game);
     let city = game.player_city_ids(1)[0];
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_declaration(&mut game, 0));
 
@@ -577,7 +632,10 @@ fn a_war_that_pays_continues_and_one_that_does_not_asks_for_terms() {
         .as_ref()
         .expect("a paying campaign continues");
     assert_eq!(opening.taken, 1);
-    assert_eq!(opening.city, second, "it moves to the rival's next known city");
+    assert_eq!(
+        opening.city, second,
+        "it moves to the rival's next known city"
+    );
     assert_eq!(ai.campaign_objective_city(&game, 0, Some(1)), Some(second));
 
     // Now the same campaign, trading badly: three bodies lost, no kills.

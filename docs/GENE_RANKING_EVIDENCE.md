@@ -177,6 +177,14 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version \| Total versions |
+|---|---|---|---:|
+| `early-conquest-opening` | off (unmeasured) | Take a small neighbour's city in the opening: a met rival's known city within twelve tiles of the capital, the capital's production reserved for three shooters and two melee bodies ahead of the second Settler, the war declared once the force is assembled and the bill covered, and no strike-force body ending its move beside unseen ground. | 1 \| 1 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:

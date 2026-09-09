@@ -4101,9 +4101,6 @@ impl AdvancedAi {
         self.culture_threat_early = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
-    // ---- append: e-f ------------------------------------------------
     /// Take a small neighbour's city in the opening: a met rival's known
     /// city within twelve tiles of the capital, the capital's production
     /// reserved for three shooters and two melee bodies ahead of the second
@@ -4111,6 +4108,8 @@ impl AdvancedAi {
     /// covered, and no strike-force body ending its move beside unseen
     /// ground. See `advanced/early_conquest.rs`. Opt-in gene
     /// `early-conquest-opening`; off in production, opted into by name.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
     pub fn enable_early_conquest_opening(&mut self) {
         self.early_conquest_opening = true;
     }
@@ -4119,6 +4118,10 @@ impl AdvancedAi {
     pub fn disable_early_conquest_opening(&mut self) {
         self.early_conquest_opening = false;
     }
+
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
 

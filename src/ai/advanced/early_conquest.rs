@@ -360,8 +360,7 @@ impl AdvancedAi {
     fn conquest_reservation_open(&self, g: &Game) -> bool {
         self.early_conquest_opening
             && self.conquest_opening.as_ref().is_some_and(|opening| {
-                opening.declared.is_none()
-                    && g.turn < g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+                opening.declared.is_none() && g.turn < g.standard_duration(CONQUEST_COMMIT_DEADLINE)
             })
     }
 
@@ -599,9 +598,9 @@ impl AdvancedAi {
     /// Whether a friendly unit of ours stands beside `tile`, excluding the
     /// unit that is choosing it.
     fn conquest_friend_beside(g: &Game, pid: usize, uid: u32, tile: Pos) -> bool {
-        g.units.values().any(|other| {
-            other.owner == pid && other.id != uid && g.wdist(other.pos, tile) == 1
-        })
+        g.units
+            .values()
+            .any(|other| other.owner == pid && other.id != uid && g.wdist(other.pos, tile) == 1)
     }
 
     /// `early-conquest-opening`: what standing on `tile` costs a strike-force
@@ -878,11 +877,7 @@ impl AdvancedAi {
         if g.apply(pid, &action).is_err() {
             return false;
         }
-        let kills = g.players[pid]
-            .counters
-            .get("kills")
-            .copied()
-            .unwrap_or(0);
+        let kills = g.players[pid].counters.get("kills").copied().unwrap_or(0);
         if let Some(opening) = self.conquest_opening.as_mut() {
             opening.declared = Some(g.turn);
             opening.kills_at_war = kills;
