@@ -83,6 +83,21 @@ cross-platform: it gives every child `CREATE_NO_WINDOW` on Windows and holds a
 per-port lock, so re-registering a scheduled task around it is all a future
 Windows deploy needs.
 
+## The live seat's forced-on gene list
+
+`deploy/live-force-on.txt` is the versioned force-on list for the live
+Civilization VI seat: one comma-separated line of gene tags that
+`tools/ops/civvis-game-supervisor.sh` hands to `civvis_orders` as `--with`
+arms, and that every ladder row records under `forced`. It is read from the
+tree the supervisor builds, so every account and machine playing the same
+`main` plays the same arm. The supervisor resolves exactly one file per batch:
+`CIVVIS_WITH_FILE` if set; else a non-empty `~/.civvis-live-force-on` (a
+local operator override, logged as such); else this file. Change the list
+through a PR; every tag must be one the decider can seat (a ledger-held live
+treatment or held-off opt-in), because a tag it refuses makes the supervisor
+refuse every batch (`docs/LIVE_SCREEN.md`). `tools/test_ops_force_file.py`
+pins the file's shape and the resolution order.
+
 ## macOS / Linux (launchd)
 
 ```bash
