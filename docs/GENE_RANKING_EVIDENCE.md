@@ -190,6 +190,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-halfway` | off (unmeasured) | `campus-before-halfway` (OptIn): a Science seat's Campus keeps the lane's 170-point arm before the halfway clock instead of pricing at zero, and past the half-empire coverage cliff the Campus keeps asking in any city of `CAMPUS_EVERY_CITY_POP_FLOOR` (four) — the floor the 2026-08-19 repair named and left as a literal `false`. | 1 \| 1 |
 | `culture-building-catchup` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |
 | `culture-building-catchup-2` | off (unmeasured) | Disciplined investment variant; see `higher_level_strategy`. | — \| 2 |
+| `culture-threat-early` | off (unmeasured) | Arm the culture defence at 30 percent of the victory bar instead of version one's 50, refuse every sale to the threatening rival, and denounce it. | 1 \| 1 |
 | `doomed-blow-veto-2` | off (unmeasured) | Price survival after the complete friendly strike sequence. | 1 \| 2 |
 | `envoy-building-dividends` | off (unmeasured) | Price affordable 1/3/6 building packages independently of suzerainty. | 1 \| 1 |
 | `expansion-best-idle-city` | off (unmeasured) | Opt-in bottleneck reservation; see `higher_level_strategy`. | — \| 2 |

@@ -4024,9 +4024,22 @@ impl AdvancedAi {
         self.envoy_building_dividends = false;
     }
 
+    /// Arm the culture defence at 30 percent of the victory bar instead of
+    /// version one's 50, refuse every sale to the threatening rival, and
+    /// denounce it. See `advanced/culture_strategy.rs`. Opt-in gene
+    /// `culture-threat-early`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_culture_threat_early(&mut self) {
+        self.culture_threat_early = true;
+    }
+
+    /// The twin of `enable_culture_threat_early`.
+    pub fn disable_culture_threat_early(&mut self) {
+        self.culture_threat_early = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
-
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
