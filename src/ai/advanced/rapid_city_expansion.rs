@@ -1,9 +1,10 @@
 //! `rapid-city-expansion-2`: reach the opening band that wins, then let the
 //! ordinary city economy breathe.
 //!
-//! Version one is the worst row in the current standard-screen ranking:
-//! **-4.65 percentage points of wins** and roughly **+16%** compute/time. Its
-//! implementation asks for as many as fifteen cities immediately, opens three
+//! Version one (culled 2026-09-08 under the batch rule at -133/-209) was the
+//! worst row in the standard-screen ranking: **-4.65 percentage points of
+//! wins** and roughly **+16%** compute/time. Its
+//! implementation asked for as many as fifteen cities immediately, opened three
 //! Settler slots from the first city and widens to six, replaces non-empty
 //! peaceful queues, takes the closest legal site regardless of the travel
 //! premium, and converts an exhausted frontier into a Conquest plan.

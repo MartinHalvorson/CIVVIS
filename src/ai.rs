@@ -374,17 +374,6 @@ const HOST_SETTLER_MIN_POP: f64 = 2.0;
 /// at the genome's `settler_stop_turn`. See `BasicAi::land_grab`.
 const LAND_GRAB_SETTLE_HORIZON: u32 = 18;
 
-/// The rapid-expansion gene keeps this many Settlers in the shared pipeline
-/// before the empire's city count starts widening it further. Three walkers
-/// lets the first city seed the t25/t50 expansion wave without turning the
-/// target itself into an unbounded production order.
-pub(crate) const RAPID_EXPANSION_PIPELINE_BASE: usize = 3;
-
-/// Every two founded cities add one rapid-expansion pipeline seat. The
-/// ordinary land grab widens every three cities; this gene opens the next wave
-/// one city sooner so nearby safe sites are claimed before rivals take them.
-pub(crate) const RAPID_EXPANSION_PIPELINE_CITY_DIVISOR: usize = 2;
-
 /// One coordinated force as an observer sees it: what it is, where it is
 /// going, and how ready it is to fight when it gets there.
 #[derive(Clone, Debug, PartialEq)]
@@ -3100,20 +3089,10 @@ pub struct BasicAi {
     /// constructors and the frozen anchor keep the one-at-a-time gate and the
     /// gene. See `pick_item` and `AdvancedAi::land_grab`.
     pub(crate) land_grab: bool,
-    /// The native rapid-city-expansion gene's half of the baseline governor.
-    ///
-    /// It is deliberately distinct from `land_grab`: that bridge-only policy
-    /// prices an unconstrained Firaxis board, while this screenable native gene
-    /// drives a settler-first opening, a faster shared pipeline, the legal
-    /// population floor, the founding pantheon, and the same late settlement
-    /// horizon. `AdvancedAi` owns the target and the safe-site-to-conquest
-    /// handoff; this flag keeps the governor that actually queues Settlers in
-    /// step with it.
-    pub(crate) rapid_city_expansion: bool,
     /// The baseline-governor half of `rapid-city-expansion-2`.
     ///
-    /// Unlike version one, this never rewrites the opening book, pantheon, or
-    /// site ranking. It reserves the capital's next empty production choice,
+    /// Unlike the culled version one, this never rewrites the opening book,
+    /// pantheon, or site ranking. It reserves the capital's next empty production choice,
     /// uses the measured opening-band pipeline, and keeps the legal
     /// population and payback gates in step with the strategic controller.
     pub(crate) rapid_city_expansion_2: bool,
@@ -4986,7 +4965,6 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
-            rapid_city_expansion: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
             expansion_pantheon: false,
@@ -5024,20 +5002,8 @@ impl BasicAi {
         self.land_grab = true;
     }
 
-    /// Enable the baseline half of the native rapid-city-expansion gene.
-    pub(crate) fn enable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion_2 = false;
-        self.rapid_city_expansion = true;
-    }
-
-    /// Disable the baseline half of the native rapid-city-expansion gene.
-    pub(crate) fn disable_rapid_city_expansion(&mut self) {
-        self.rapid_city_expansion = false;
-    }
-
     /// Enable the baseline half of the selective rapid-expansion rewrite.
     pub(crate) fn enable_rapid_city_expansion_2(&mut self) {
-        self.rapid_city_expansion = false;
         self.rapid_city_expansion_2 = true;
     }
 
@@ -5451,7 +5417,6 @@ impl BasicAi {
             parallel_settlers: false,
             host_settler_pop: false,
             land_grab: false,
-            rapid_city_expansion: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
             expansion_pantheon: false,
@@ -7830,7 +7795,7 @@ impl BasicAi {
             // free Settler in the capital and Fertility Rites a free Builder,
             // and Divine Spark — the shipped first choice, taken in 40 of 40
             // recorded live runs — pays nothing until a district stands.
-            let prefix: &[&str] = if self.expansion_pantheon || self.rapid_city_expansion {
+            let prefix: &[&str] = if self.expansion_pantheon {
                 &[
                     "religious_settlements",
                     "fertility_rites",
@@ -9353,10 +9318,7 @@ impl BasicAi {
                     // fifth build. Frozen controllers retain their genes.
                     let missing_opening_recon =
                         self.book_pos == 0 && self.recon_is_the_missing_arm(g, pid);
-                    let rapid_opening_settler = self.rapid_city_expansion && self.book_pos == 0;
-                    let gene = if rapid_opening_settler {
-                        3.0 // OPENING_MENU[3] is Settler.
-                    } else if missing_opening_recon {
+                    let gene = if missing_opening_recon {
                         0.0 // OPENING_MENU[0] is Scout.
                     } else {
                         [self.w.open0, self.w.open1, self.w.open2, self.w.open3][self.book_pos]
@@ -9367,16 +9329,6 @@ impl BasicAi {
                         continue; // "pass" gene: fall back to evaluation
                     }
                     let name = OPENING_MENU[i];
-                    // The rapid gene's opening is one committed Settler, not
-                    // four book slots spent on a Warrior, Builder, and
-                    // Monument before the capital can start city two. If
-                    // population one refuses it, the pending-book path starts
-                    // it the instant the legal population floor is reached;
-                    // ending the book prevents a duplicate scripted Settler
-                    // from serialising the same opening.
-                    if rapid_opening_settler {
-                        self.book_pos = 4;
-                    }
                     if name == "settler" && !self.has_practical_settle_site(g, pid) {
                         continue;
                     }
@@ -9385,7 +9337,7 @@ impl BasicAi {
                     // the next slot plays now, and the Settler takes the queue
                     // the turn the city grows.
                     if name == "settler"
-                        && (self.opening_settler_waits || self.rapid_city_expansion)
+                        && self.opening_settler_waits
                         && (g.cities[cid].pop as f64) < HOST_SETTLER_MIN_POP
                     {
                         self.book_settler_pending = true;
@@ -11746,10 +11698,7 @@ impl BasicAi {
             // same width for the strategic governor.
             let seats_short =
                 (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
-            let pipeline = if self.rapid_city_expansion && seats_short > 0 {
-                (RAPID_EXPANSION_PIPELINE_BASE + n_cities / RAPID_EXPANSION_PIPELINE_CITY_DIVISOR)
-                    .min(seats_short)
-            } else if self.rapid_city_expansion_2 && seats_short > 0 {
+            let pipeline = if self.rapid_city_expansion_2 && seats_short > 0 {
                 advanced::rapid_city_expansion::pipeline_width(
                     g,
                     n_cities + seats_short,
@@ -11786,10 +11735,7 @@ impl BasicAi {
             // Civilization VI starts a Settler at population 2, and the live
             // genome's 2.456 held a food-poor capital at one city for forty
             // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop
-                || self.rapid_city_expansion
-                || self.rapid_city_expansion_2
-            {
+            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion_2 {
                 self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
             } else {
                 self.w.settler_min_pop
@@ -11798,7 +11744,7 @@ impl BasicAi {
             // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
             // REPAY, not until the genome's turn. See `land_grab`.
             let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || ((self.land_grab || self.rapid_city_expansion || self.rapid_city_expansion_2)
+                || ((self.land_grab || self.rapid_city_expansion_2)
                     && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
@@ -13252,23 +13198,7 @@ impl BasicAi {
                 (pos, score)
             })
             .collect();
-        if self.rapid_city_expansion {
-            // The first phase is a land race for easy cities, not a search
-            // for the prettiest distant capital site.  A four-to-six tile
-            // seat that can be founded this wave compounds sooner than a
-            // slightly richer eight-tile seat that leaves the next city idle.
-            // Value remains the deterministic tiebreak among equally quick
-            // sites; once no nearby seat remains, the normal global fallback
-            // below still lets the empire cross the remaining frontier.
-            candidates.sort_by(|a, b| {
-                g.wdist(from, a.0)
-                    .cmp(&g.wdist(from, b.0))
-                    .then_with(|| b.1.partial_cmp(&a.1).unwrap())
-                    .then(a.0.cmp(&b.0))
-            });
-        } else {
-            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
-        }
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         Self::first_reachable_settle_site(g, uid, &candidates)
     }
 
@@ -13324,18 +13254,10 @@ impl BasicAi {
             // Shipbuilding stranded settlers whose only site was farther than
             // the local radius on the same landmass.
             let global = self.best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height);
-            if self.rapid_city_expansion {
-                // Settle the closest easy ring completely before spending a
-                // wave walking toward a harder site.  `global` is only a
-                // fallback when that ring is truly empty, not an override for
-                // a higher-yield distant tile.
-                local.or(global)
-            } else {
-                match (local, global) {
-                    (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
-                    (Some(local), _) => Some(local),
-                    (None, global) => global,
-                }
+            match (local, global) {
+                (Some(local), Some(global)) if global.1 > local.1 + 4.0 => Some(global),
+                (Some(local), _) => Some(local),
+                (None, global) => global,
             }
             .map(|(target, _)| {
                 self.settler_targets.insert(uid, target);
