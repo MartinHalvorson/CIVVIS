@@ -16624,6 +16624,61 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 			end
 		end
 	end
+	-- civvis-20260909T143651Z t15: the Builder's retreat was held, but
+	-- its stacked Scout was allowed to leave. The adjacent Slinger then
+	-- captured the stationary Builder. A refused move is not protection:
+	-- retain a co-located guard when the current tile is exposed and the
+	-- Builder has no accepted departure. Recompute from the live stack on
+	-- every frame, including batches that do not mention the Builder.
+	local departing = {};
+	for _, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and row._civvis_builder_barbarian_capture_hold ~= true then
+			local id = tonumber(row.subject);
+			if id ~= nil and held[id] == nil and departing[id] == nil then departing[id] = row; end
+		end
+	end
+	eachUnit(player, function(builder)
+		if unitTypeName(builder) ~= "UNIT_BUILDER" then return; end
+		local builderId = tonumber(try(function() return builder:GetID(); end, nil));
+		local x = tonumber(try(function() return builder:GetX(); end, nil));
+		local y = tonumber(try(function() return builder:GetY(); end, nil));
+		if builderId == nil or x == nil or y == nil or onOwnCity(x, y) then return; end
+		local departure = departing[builderId];
+		if departure ~= nil then
+			local dx, dy = tonumber(departure.x), tonumber(departure.y);
+			if dx ~= nil and dy ~= nil then
+				local capped = CivvisBoard.capToTurn(builder, dx, dy);
+				if type(capped) == "table" then dx, dy = capped.x, capped.y; end
+				if capped ~= false and (dx ~= x or dy ~= y)
+						and CivvisBoard.reachesThisTurn(builder, dx, dy) then return; end
+			end
+		end
+		local currentThreat = nil;
+		for _, threat in ipairs(threats) do
+			if threatReaches(threat, x, y) then currentThreat = threat; break; end
+		end
+		if currentThreat == nil then return; end
+		eachUnit(player, function(guard)
+			if not CivvisBoard.isCombatEscort(guard) then return; end
+			local guardId = tonumber(try(function() return guard:GetID(); end, nil));
+			if guardId == nil or try(function() return guard:GetX(); end, nil) ~= x
+					or try(function() return guard:GetY(); end, nil) ~= y then return; end
+			CivvisBoard.escortHolds[guardId] = true;
+			for _, row in ipairs(rows) do
+				local verb = tostring(row.verb or "");
+				if tostring(row.kind or "") == "unit" and tonumber(row.subject) == guardId
+						and (verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE") then
+					row._civvis_builder_barbarian_guard_hold = true;
+				end
+			end
+			emit("builder_barbarian_guard_hold", {
+				turn = turn, builder = builderId, guard = guardId, at = { x, y },
+				hostile = currentThreat.id, hostile_type = currentThreat.name,
+				hostile_pos = { currentThreat.x, currentThreat.y },
+			});
+		end);
+	end);
 	-- A Builder can receive a follow-up MOVE_TO in a later replan frame.  Mark
 	-- every move for a held Builder, not only the first row that established the
 	-- threat, so a second frame cannot reintroduce the same exposed leg.
@@ -17043,6 +17098,11 @@ local function applyOrders(player, pid, turn, rows)
 		local subject = tonumber(row.subject);
 		local shadow = row._civvis_escort_shadow == true;
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if row._civvis_builder_barbarian_guard_hold == true then
+			countRefusal(kind, "builder_barbarian_guard_hold");
+			ordered[index] = true;
+			return false, "builder_barbarian_guard_hold";
+		end
 		if row._civvis_builder_barbarian_capture_hold == true then
 			countRefusal(kind, "builder_barbarian_capture_hold");
 			ordered[index] = true;
