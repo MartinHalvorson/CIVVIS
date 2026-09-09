@@ -573,7 +573,7 @@ impl AdvancedAi {
                     && spec.domain.as_deref() != Some("air")
                     && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
                         && self.base.has_exploration_target(g, pid, *uid))
-                    && !self.guard_is_bound_to_any_settler(*uid)
+                    && !self.guard_is_reserved_for_civilian(*uid)
                     && unit.linked_to.is_none()
             })
             .collect();
