@@ -594,6 +594,7 @@ pub const GENES: &[Gene] = &[
     // to first contact closes once and never reopens; see
     // `AdvancedAi::early_contact_window`.
     Gene { tag: "early-contact-window", field: "early_contact_window", kind: Kind::OptIn, enable: AdvancedAi::enable_early_contact_window, disable: AdvancedAi::disable_early_contact_window },
+    Gene { tag: "early-contact-window-2", field: "early_contact_window_2", kind: Kind::OptIn, enable: AdvancedAi::enable_early_contact_window_2, disable: AdvancedAi::disable_early_contact_window_2 },
     // A Great Person earned and blocked is a race forfeited: build the slot
     // space ahead of the person, sell duplicate works when nothing can be
     // built; see `AdvancedAi::great_person_housing`.
