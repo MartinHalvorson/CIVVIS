@@ -988,9 +988,16 @@ class ProtectedInstallTest(unittest.TestCase):
         # defines OnPass as well as OnAccept — raises it before it closes.
         for closer in ("OnPass", "OnAccept"):
             rung = shim.split(f'if NAME == "WorldCongressPopup" and type({closer}) == "function" then', 1)[1].split("return true;", 1)[0]
-            self.assertIn("LuaEvents.CivvisCongressBallot()", rung, closer)
-            self.assertLess(rung.index("LuaEvents.CivvisCongressBallot()"), rung.index(f"{closer}();"),
+            self.assertIn("requestCongressBallot()", rung, closer)
+            self.assertLess(rung.index("requestCongressBallot()"), rung.index(f"{closer}();"),
                             f"the ballot goes in before {closer}")
+        guard = shim.split("local function requestCongressBallot()", 1)[1].split(
+            "-- What a click", 1)[0]
+        self.assertIn("Game.GetCurrentTurnSegment()", guard)
+        self.assertIn('DB.MakeHash("TURNSEG_WORLDCONGRESS_1")', guard)
+        self.assertIn('DB.MakeHash("TURNSEG_WORLDCONGRESS_2")', guard)
+        self.assertIn("if ok and voting then", guard)
+        self.assertIn("LuaEvents.CivvisCongressBallot()", guard)
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         # One shared ballot, two triggers: the core's own stage-1 event and the
         # shim's popup event; once per turn, only latched when something was cast.
