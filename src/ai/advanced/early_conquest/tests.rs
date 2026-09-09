@@ -518,6 +518,253 @@ fn a_force_that_never_covers_the_bill_releases_after_the_patience_window() {
         "the reservation is released when the patience window closes"
     );
     assert!(!game.is_at_war(0, 1));
+
+    // And that was the game's one attempt: the next turn, still inside the
+    // commit window, does not name the same city again and re-open the
+    // reservation that was just released.
+    assert!(
+        ai.conquest_closed,
+        "an assembled opening that released is closed"
+    );
+    game.turn += 1;
+    assert!(game.turn < game.standard_duration(CONQUEST_COMMIT_DEADLINE));
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.conquest_opening.is_none(),
+        "a released opening does not come back and hold the Settler again"
+    );
+    let capital = game.player_city_ids(0)[0];
+    assert!(!ai.conquest_defers_the_settler(&game, 0, capital, &EmpireCounts::default(), 2, false));
+}
+
+/// A force that assembled, declared and then died: the opening asks for
+/// terms and stands down, so a dead force cannot pin the campaign to a city
+/// nobody is marching on for the rest of the game.
+#[test]
+fn a_force_that_is_wholly_lost_asks_for_terms_and_releases() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    let force = bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(ai.conquest_owns_the_campaign());
+
+    for uid in force {
+        game.remove_unit(uid);
+    }
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(
+        ai.conquest_opening.as_ref().map(|opening| opening.losses),
+        None,
+        "the opening is released once the whole force is gone"
+    );
+    assert!(
+        ai.peace_offers.contains(&1),
+        "and it asks the peace desk for terms"
+    );
+    assert!(!ai.conquest_owns_the_campaign());
+    assert!(ai.conquest_closed);
+}
+
+/// The war ends by a road the opening did not choose — a peace accepted by
+/// the shipped desk, a truce — and the opening ends with it, instead of
+/// owning the campaign plan forever with no war to fight.
+#[test]
+fn an_opening_whose_war_has_ended_releases() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_declaration(&mut game, 0));
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.conquest_owns_the_campaign(),
+        "at war, the opening owns the plan"
+    );
+
+    game.at_war.remove(&(0, 1));
+    game.at_war.remove(&(1, 0));
+    assert!(!game.is_at_war(0, 1));
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "peace releases the opening");
+    assert!(!ai.conquest_owns_the_campaign());
+    assert!(ai.conquest_closed, "and the game has had its attempt");
+}
+
+/// A rival that becomes a friend while the force is still being raised is
+/// no longer a target, and the reservation goes with it rather than holding
+/// the Settler for a war that can no longer be declared.
+#[test]
+fn a_rival_that_stops_being_a_legal_target_releases_the_reservation() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let until = game.turn + 30;
+    game.players[0].friends_until.insert(1, until);
+    game.players[1].friends_until.insert(0, until);
+    assert!(game.are_friends(0, 1));
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.conquest_opening.is_none(),
+        "a friend is not a target, and the reservation is released"
+    );
+    assert!(
+        !ai.conquest_closed,
+        "an opening released before it assembled leaves the door open"
+    );
+}
+
+/// The gene's flag alone does not hand the shared campaign plan to
+/// `city_campaign.rs`: until the opening has DECLARED, the shipped
+/// maintenance clears the plan exactly as it does with the gene off, and
+/// never runs city-campaign v1's own planner.
+#[test]
+fn the_flag_alone_does_not_switch_on_the_shipped_campaign_planner() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let mut off = AdvancedAi::new();
+    assert!(!ai.conquest_owns_the_campaign(), "nothing declared yet");
+    assert!(
+        !ai.city_campaign_active(),
+        "the family predicate is the shipped one until the opening declares"
+    );
+    assert!(!off.city_campaign_active());
+
+    ai.maintain_city_campaign(&mut game, 0);
+    off.maintain_city_campaign(&mut game, 0);
+    assert_eq!(
+        ai.campaign, None,
+        "the opening's flag draws no campaign plan"
+    );
+    assert_eq!(off.campaign, None);
+    assert!(!ai.city_campaign_stands(&game, 0));
+    assert_eq!(ai.campaign_target(&game, 0), None);
+
+    // Declared, the opening owns the plan and the predicate accepts it.
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(ai.city_campaign_active());
+    assert!(ai.city_campaign_stands(&game, 0));
+    ai.maintain_city_campaign(&mut game, 0);
+    assert!(
+        ai.campaign.is_some(),
+        "the shipped maintenance leaves the pinned plan alone"
+    );
+}
+
+/// A guard bound to a Settler is never a strike body, so the vision guard
+/// never scores an escort's tiles and the assembly share never waits on it.
+#[test]
+fn a_settlers_bound_guard_is_never_in_the_force() {
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    // Four bodies on the rally and one more, the nearest of all, that is a
+    // Settler's guard.
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE - 1,
+    );
+    let settler = game.spawn_test_unit("settler", 0, rally);
+    let guard = game.spawn_test_unit("warrior", 0, rally);
+    fresh(&mut game, guard);
+    ai.settler_guards.insert(settler, guard);
+
+    ai.maintain_conquest_opening(&mut game, 0);
+    let force = &ai.conquest_opening.as_ref().unwrap().force;
+    assert!(!force.contains(&guard), "the escort is not conscripted");
+    assert_eq!(force.len(), CONQUEST_RANGED + CONQUEST_MELEE - 1);
+    let blind = crate::world::TileBits::default();
+    let lone = game
+        .wring(rally, 6)
+        .into_iter()
+        .find(|pos| game.unit_ids_at(*pos).is_empty() && game.city_at(*pos).is_none())
+        .expect("an empty tile far from the force");
+    assert_eq!(
+        ai.conquest_blind_tile_penalty(&game, 0, guard, lone, &blind),
+        0.0,
+        "an escort is never scored by the vision guard"
+    );
+}
+
+/// The declaration honours the shipped vetoes: `one-war-at-a-time` holds it
+/// while another major war burns, and `war-needs-a-treasury` holds it while
+/// the treasury cannot carry a war. Both are exact no-ops off.
+#[test]
+fn the_declaration_honours_one_war_at_a_time_and_the_treasury() {
+    let mut game = board(&[at(6, 12), at(14, 12), at(30, 12)]);
+    let mut ai = opened(&mut game);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert!(opening.assembled.is_some());
+    assert!(ai.conquest_preview_takes_the_city(&game, 0, &opening));
+
+    // A war with seat 2 already burning, and one war at a time.
+    game.players[0].met.insert(2);
+    game.players[2].met.insert(0);
+    game.at_war.insert((0, 2));
+    game.at_war.insert((2, 0));
+    ai.enable_one_war_at_a_time();
+    ai.one_war_observe(&game, 0);
+    assert!(ai.one_war_holds_declaration(&game, 0, 1));
+    assert!(
+        !ai.conquest_declaration(&mut game, 0),
+        "held: one war at a time"
+    );
+    assert!(!game.is_at_war(0, 1));
+    ai.disable_one_war_at_a_time();
+    game.at_war.remove(&(0, 2));
+    game.at_war.remove(&(2, 0));
+
+    // An empty treasury running a deficit, and a war that needs one.
+    ai.enable_war_needs_a_treasury();
+    game.players[0].gold = 17.0;
+    game.players[0].gold_per_turn = -7.0;
+    assert!(!ai.war_is_affordable(&game, 0));
+    assert!(!ai.conquest_declaration(&mut game, 0), "held: no treasury");
+    assert!(!game.is_at_war(0, 1));
+    ai.disable_war_needs_a_treasury();
+
+    // Both vetoes lifted: the same board declares.
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
 }
 
 #[test]

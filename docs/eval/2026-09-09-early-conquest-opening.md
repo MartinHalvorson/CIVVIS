@@ -241,6 +241,54 @@ is exactly the cost a conquest opening should be expected to charge; every one
 of them is well inside its own interval, so none of it is measured either.
 Nothing here is a price.
 
+## Senior review (same day)
+
+The draft was reviewed to the design brief before it shipped. What changed,
+each a rule the code now states and a test now checks:
+
+- **The flag alone was switching on city-campaign v1's planner.**
+  `city_campaign_active()` had been widened with `|| early_conquest_opening`,
+  so with the gene on and nothing declared `maintain_city_campaign` no longer
+  cleared the plan and fell through to `plan_city_campaign`. The predicate
+  now widens only while the opening *owns* the plan
+  (`conquest_owns_the_campaign()`, a declared war); off, it is the shipped
+  predicate to the byte. Test: `the_flag_alone_does_not_switch_on_the_shipped_campaign_planner`,
+  which fails on the previous predicate (checked by mutation).
+- **A declared opening could never end.** After a peace was accepted, or the
+  whole force died, the opening stayed declared, owned the campaign plan for
+  the rest of the game, and kept `maintain_city_campaign` out. It now
+  releases when the war ends by any road, and a wholly lost force asks for
+  terms and releases. Tests: `an_opening_whose_war_has_ended_releases`,
+  `a_force_that_is_wholly_lost_asks_for_terms_and_releases`.
+- **A released opening re-opened the next turn.** Inside the commit window,
+  a patience-window abandon (or a post-capture close) was followed by a
+  fresh opening against the same city and a fresh Settler hold. An opening
+  that assembled or declared now closes the door (`conquest_closed`); one
+  released before it assembled — the rival died, became a friend, lost the
+  city to someone else — leaves the door open. Tests extend
+  `a_force_that_never_covers_the_bill_releases_after_the_patience_window`
+  and add `a_rival_that_stops_being_a_legal_target_releases_the_reservation`.
+- **The declaration now honours the shipped vetoes** — `one-war-at-a-time`'s
+  hold and `war-needs-a-treasury`'s solvency test — beside the
+  `campaign_target_legal` mask it already checked. The Denounce filter was a
+  copy of `raid_opening`; the copy is gone and `raid_opening` is shared.
+  Test: `the_declaration_honours_one_war_at_a_time_and_the_treasury`.
+- **A Settler's bound guard is never a strike body**, so the vision guard
+  never scores an escort and the assembly share never waits on one. Test:
+  `a_settlers_bound_guard_is_never_in_the_force`.
+- Doc fixes: `conquest_peace` claimed to close a war "even before a
+  capture" while the code (rightly) waits for the first capture; the
+  module doc now states why the vision guard cannot strand a body and that
+  it only receives a frame while `battlefront_observation` is on (it is, in
+  both controllers). Unused parameters and a doubled scan removed.
+
+**The probe above ran on the pre-review build.** Its ON arm therefore also
+ran city-campaign v1's planner and could never release a declared opening;
+it is not the code that ships. It still does what a fires probe is for —
+every paired statistic is non-zero — but it is one more reason its win
+column is not evidence, and the first continuous screen at the Emperor
+shape is the first measurement of this gene.
+
 ## What was decided
 
 **Nothing is priced and nothing is deployed.** `early-conquest-opening` ships
@@ -273,3 +321,6 @@ wide to read a sign off.
 - **The handoff makes `city-campaign-2` a no-op while the opening's war
   runs.** The two are compatible (the guard is one early return), but a
   screen that turns both on measures the opening, not the pair.
+- **The probe measured a build the review then changed** (see "Senior
+  review"): the fires ratchet is satisfied, the win column is not a
+  measurement of the shipped code.

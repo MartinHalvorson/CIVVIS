@@ -71,7 +71,14 @@
 //!    to the force: it is a term in the deployed mover's tile score, the
 //!    same seam `close-as-a-body` uses, and it is worth
 //!    [`CONQUEST_BLIND_TILE_PENALTY`] — more than any one tile of objective
-//!    progress can pay, less than a certain death.
+//!    progress can pay, less than a certain death. It cannot strand a body:
+//!    the charge is one flat number on every blind candidate, so a unit
+//!    whose every option is blind still ranks them by the rest of the score
+//!    and moves, and a unit's own sight (radius two) means every tile one
+//!    step away has a seen ring. The mover only supplies the frame while
+//!    `battlefront_observation` is on, which it is in both controllers. A
+//!    Settler's bound guard is never in the force, so an escort is never
+//!    scored by it.
 //! 5. **After the first capture** ([`AdvancedAi::conquest_continuation`]).
 //!    While the war's own kills per loss is at least
 //!    [`CONQUEST_KILLS_PER_LOSS_FLOOR`], the campaign extends to the next
@@ -84,7 +91,20 @@
 //! Abandonment: if the bill is still not covered
 //! [`CONQUEST_ABANDON_TURNS`] standard turns after the force first
 //! assembled, the reservation is released, the target is dropped, and the
-//! reason is journalled.
+//! reason is journalled. Once the war is open the opening also closes when
+//! the war ends by any road (a peace accepted, the rival dead) and when the
+//! whole strike force is gone — a dead force sues for terms rather than
+//! pinning the campaign to a city nobody is marching on. An opening that
+//! got as far as assembling is this game's one attempt: it is never
+//! re-opened, so a released reservation cannot come back and hold the
+//! Settler again. An opening released before it assembled (the rival died,
+//! the city changed hands, the rival became a friend) leaves the door open
+//! for another target while the window lasts.
+//!
+//! The declaration honours the shipped vetoes an elective war honours:
+//! `campaign_target_legal` (never a friend or ally), `one-war-at-a-time`'s
+//! hold, and `war-needs-a-treasury`'s solvency test. Each of those is its
+//! own gene's decision, unchanged here.
 //!
 //! ## What it deliberately does not do
 //!
@@ -96,7 +116,7 @@
 
 use super::city_campaign::{CampaignPlan, CAMPAIGN_MIN_BODIES};
 use super::{AdvancedAi, EmpireCounts};
-use crate::game::{Action, ActionFamilies, Game};
+use crate::game::{Action, Game};
 use crate::name::Name;
 use crate::rules::UnitSpec;
 use crate::think;
@@ -523,8 +543,16 @@ impl AdvancedAi {
     /// The strike force: our field army, nearest the rally first, capped at
     /// the bodies this opening reserved. Deterministic — ties break on unit
     /// id — so the same force is named every turn a unit has not moved.
+    /// A guard bound to a Settler or a Builder is not a strike body: the
+    /// vision guard would otherwise score an escort's tiles, and the
+    /// assembly share would count a unit that is walking the other way.
     fn conquest_force(&self, g: &Game, pid: usize, rally: Pos) -> BTreeSet<u32> {
-        let mut army: Vec<u32> = self.campaign_field_army(g, pid);
+        let guards = self.all_reserved_civilian_guards();
+        let mut army: Vec<u32> = self
+            .campaign_field_army(g, pid)
+            .into_iter()
+            .filter(|uid| !guards.contains(uid))
+            .collect();
         army.sort_by_key(|uid| (g.wdist(g.units[uid].pos, rally), *uid));
         army.truncate(CONQUEST_RANGED + CONQUEST_MELEE);
         army.into_iter().collect()
@@ -574,12 +602,11 @@ impl AdvancedAi {
             return false;
         }
         let force: Vec<u32> = opening.force.iter().copied().collect();
-        let strength = Self::campaign_strength_of(g, &force);
-        let average_body = if force.is_empty() {
+        if force.is_empty() {
             return false;
-        } else {
-            strength / force.len() as f64
-        };
+        }
+        let strength = Self::campaign_strength_of(g, &force);
+        let average_body = strength / force.len() as f64;
         let requirement =
             self.campaign_city_requirement(g, pid, opening.city, &appraisal, average_body);
         let has_capturer = force
@@ -661,14 +688,13 @@ impl AdvancedAi {
     /// `campaign_objective_city`. This is the whole handoff: from here the
     /// shipped force groups, staging ring, siege train and pillage step are
     /// aimed at this city and nothing re-aims them.
-    fn conquest_pin_the_campaign(&mut self, g: &Game, pid: usize) {
+    fn conquest_pin_the_campaign(&mut self, g: &Game) {
         let Some(opening) = self.conquest_opening.as_ref() else {
             return;
         };
         let force: Vec<u32> = opening.force.iter().copied().collect();
         let strength = Self::campaign_strength_of(g, &force);
         let bodies = force.len().max(CAMPAIGN_MIN_BODIES);
-        let _ = pid;
         self.campaign = Some(CampaignPlan {
             target: opening.target,
             cities: vec![opening.city],
@@ -682,7 +708,9 @@ impl AdvancedAi {
 
     /// Count the bodies of ours that left the board since the last turn
     /// boundary, and refresh the roster. Only the strike force is counted:
-    /// this rate is the campaign's, not the empire's.
+    /// this rate is the campaign's, not the empire's. A body that is no
+    /// longer in `g.units` is a loss whatever removed it — a kill, a capture,
+    /// a disband — because the campaign has lost it either way.
     fn conquest_count_losses(&mut self, g: &Game) {
         let Some(opening) = self.conquest_opening.as_mut() else {
             return;
@@ -699,12 +727,18 @@ impl AdvancedAi {
         opening.force.retain(|uid| g.units.contains_key(uid));
     }
 
-    /// Drop the opening and journal why.
-    fn conquest_release(&mut self, g: &Game, pid: usize, why: &str) {
+    /// Drop the opening and journal why. An opening that got as far as
+    /// assembling — or declaring — was this game's one attempt: it closes
+    /// the door behind it so the next turn cannot name the same city again,
+    /// re-open the reservation, and hold the Settler until the deadline.
+    /// One released earlier leaves the door open for another target.
+    fn conquest_release(&mut self, g: &Game, why: &str) {
         let Some(opening) = self.conquest_opening.take() else {
             return;
         };
-        let _ = pid;
+        if opening.assembled.is_some() || opening.declared.is_some() {
+            self.conquest_closed = true;
+        }
         think!(self.journal(), Military, Strategy,
                "Releasing the conquest opening on {}", g.players[opening.target].civ;
                "{why}");
@@ -719,6 +753,7 @@ impl AdvancedAi {
     pub(crate) fn maintain_conquest_opening(&mut self, g: &mut Game, pid: usize) {
         if !self.early_conquest_opening {
             self.conquest_opening = None;
+            self.conquest_closed = false;
             return;
         }
         self.conquest_count_losses(g);
@@ -732,21 +767,39 @@ impl AdvancedAi {
                 .get(&opening.city)
                 .is_some_and(|city| city.owner == opening.target);
             if !target_alive {
-                self.conquest_release(g, pid, "the rival is no longer in the game");
+                self.conquest_release(g, "the rival is no longer in the game");
                 return;
             }
             if !still_theirs {
                 self.conquest_after_a_capture(g, pid);
                 return;
             }
-            if opening.declared.is_none() {
+            if opening.declared.is_some() {
+                // The war is open. It ends by any road — a peace accepted, a
+                // truce imposed — and the opening ends with it; and a force
+                // that is wholly gone has nothing left to pin the campaign
+                // with, so it asks for terms and stands down.
+                if !g.is_at_war(pid, opening.target) {
+                    self.conquest_release(g, "the war has ended");
+                    return;
+                }
+                if opening.force.is_empty() {
+                    let target = opening.target;
+                    self.conquest_sue_for_peace(g, pid, target);
+                    self.conquest_release(g, "the whole strike force is gone");
+                    return;
+                }
+            } else {
+                if !self.campaign_target_legal(g, pid, opening.target) {
+                    self.conquest_release(g, "the rival is no longer a legal target");
+                    return;
+                }
                 if let Some(assembled) = opening.assembled {
                     if g.turn.saturating_sub(assembled)
                         >= g.standard_duration(CONQUEST_ABANDON_TURNS)
                     {
                         self.conquest_release(
                             g,
-                            pid,
                             "the force has stood at the rally for the whole patience window \
                              without covering the city's bill",
                         );
@@ -758,7 +811,6 @@ impl AdvancedAi {
                 {
                     self.conquest_release(
                         g,
-                        pid,
                         "the commit deadline passed before the force ever assembled",
                     );
                     return;
@@ -770,14 +822,15 @@ impl AdvancedAi {
         }
         self.conquest_refresh_force(g, pid);
         if self.conquest_owns_the_campaign() {
-            self.conquest_pin_the_campaign(g, pid);
+            self.conquest_pin_the_campaign(g);
         }
     }
 
     /// Name a target and open. Nothing happens once the commit deadline has
-    /// passed: an opening is an opening.
+    /// passed, or once an assembled opening has been released: an opening
+    /// is an opening, and this game has had its attempt.
     fn conquest_open(&mut self, g: &mut Game, pid: usize) {
-        if g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE) {
+        if self.conquest_closed || g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE) {
             return;
         }
         let Some((target, city)) = self.conquest_target(g, pid) else {
@@ -790,14 +843,15 @@ impl AdvancedAi {
         let Some(rally) = Self::conquest_rally_tile(g, home, g.cities[&city].pos) else {
             return;
         };
+        let known = Self::conquest_known_cities(g, pid, target).len();
         think!(self.journal(), Military, Strategy,
                "Opening a conquest against {}", g.players[target].civ;
                "{} is {} tiles from the capital and they hold {} known cit{}; \
                 the capital reserves {} shooters and {} melee bodies and rallies at the ring",
                g.cities[&city].name,
                g.wdist(home, g.cities[&city].pos),
-               Self::conquest_known_cities(g, pid, target).len(),
-               if Self::conquest_known_cities(g, pid, target).len() == 1 { "y" } else { "ies" },
+               known,
+               if known == 1 { "y" } else { "ies" },
                CONQUEST_RANGED, CONQUEST_MELEE;
                rally);
         self.conquest_opening = Some(ConquestOpening {
@@ -843,6 +897,14 @@ impl AdvancedAi {
     /// Called from `advanced_diplomacy` beside the shipped campaign's own
     /// peace desk. Returns whether it spent this turn's one declaration.
     /// Exact no-op with the gene off.
+    ///
+    /// The gate, in order: the war is not yet open; the force has assembled
+    /// and still stands at the rally; the preview covers the city's bill;
+    /// the rival is still a legal target (`campaign_target_legal` — never a
+    /// friend or an ally); `one-war-at-a-time` is not holding the
+    /// declaration for a war already burning; `war-needs-a-treasury` finds
+    /// the treasury able to carry it. Then `raid_opening`: a casus belli if
+    /// one is free, else the surprise war, never a `Denounce`.
     pub(crate) fn conquest_declaration(&mut self, g: &mut Game, pid: usize) -> bool {
         if !self.early_conquest_opening {
             return false;
@@ -871,7 +933,19 @@ impl AdvancedAi {
         if !self.campaign_target_legal(g, pid, opening.target) {
             return false;
         }
-        let Some(action) = self.conquest_war_opening(g, pid, opening.target) else {
+        if self.one_war_holds_declaration(g, pid, opening.target) {
+            think!(self.journal(), Military, Detail,
+                   "Holding the conquest force at the rally";
+                   "one war at a time, and a major war is already being fought");
+            return false;
+        }
+        if !self.war_is_affordable(g, pid) {
+            think!(self.journal(), Military, Detail,
+                   "Holding the conquest force at the rally";
+                   "the treasury cannot carry the war it would open");
+            return false;
+        }
+        let Some(action) = self.raid_opening(g, pid, opening.target) else {
             return false;
         };
         if g.apply(pid, &action).is_err() {
@@ -888,24 +962,8 @@ impl AdvancedAi {
                share * 100.0,
                g.cities.get(&opening.city).map(|city| city.name.clone())
                    .unwrap_or_else(|| String::from("the objective")));
-        self.conquest_pin_the_campaign(g, pid);
+        self.conquest_pin_the_campaign(g);
         true
-    }
-
-    /// The cheapest legal war: a casus belli when one happens to be free,
-    /// otherwise the surprise war. Exactly `raid_opening`'s rule, and for
-    /// the same reason — `preferred_war_opening` can answer with a
-    /// `Denounce` (the Formal War clock), which is not a declaration and
-    /// must not be mistaken for one by a force that is already assembled.
-    fn conquest_war_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
-        if let Some(action) = self.preferred_war_opening(g, pid, target) {
-            if matches!(action, Action::DeclareWarWithCasusBelli { .. }) {
-                return Some(action);
-            }
-        }
-        g.legal_actions_within(pid, ActionFamilies::DIPLOMACY)
-            .into_iter()
-            .find(|action| matches!(action, Action::DeclareWar { player } if *player == target))
     }
 
     /// After the first capture: extend to the rival's next known city while
@@ -919,7 +977,7 @@ impl AdvancedAi {
             .get(&opening.city)
             .is_some_and(|city| city.owner == pid);
         if !ours {
-            self.conquest_release(g, pid, "the objective city changed hands to a third party");
+            self.conquest_release(g, "the objective city changed hands to a third party");
             return;
         }
         let taken = opening.taken + 1;
@@ -933,7 +991,7 @@ impl AdvancedAi {
                    if taken == 1 { "y" } else { "ies" },
                    rate, CONQUEST_KILLS_PER_LOSS_FLOOR);
             self.conquest_sue_for_peace(g, pid, opening.target);
-            self.conquest_release(g, pid, "the campaign stopped paying and asked for terms");
+            self.conquest_release(g, "the campaign stopped paying and asked for terms");
             return;
         }
         let next = Self::conquest_known_cities(g, pid, opening.target)
@@ -950,7 +1008,7 @@ impl AdvancedAi {
                    g.players[opening.target].civ;
                    "trading at {:.2} kills per loss; asking for terms", rate);
             self.conquest_sue_for_peace(g, pid, opening.target);
-            self.conquest_release(g, pid, "no further known city of the rival remains");
+            self.conquest_release(g, "no further known city of the rival remains");
             return;
         };
         think!(self.journal(), Military, Strategy,
@@ -961,7 +1019,7 @@ impl AdvancedAi {
             opening.taken = taken;
             opening.city = next;
         }
-        self.conquest_pin_the_campaign(g, pid);
+        self.conquest_pin_the_campaign(g);
     }
 
     /// The peace desk this gene shares with the shipped campaign: one offer
@@ -997,7 +1055,12 @@ impl AdvancedAi {
         );
     }
 
-    /// A war that stopped paying is closed even before a capture.
+    /// Between captures, a war that has stopped paying asks for terms
+    /// without waiting for the next city to fall. Only once a city has been
+    /// taken: before the first capture the preview is what decided the war,
+    /// and the rate — which reads at its kill count with no losses and at
+    /// zero after the first loss with no kill — would close every siege on
+    /// its first casualty.
     fn conquest_peace(&mut self, g: &mut Game, pid: usize, opening: &ConquestOpening) {
         if opening.taken == 0 || opening.kills_per_loss(g, pid) >= CONQUEST_KILLS_PER_LOSS_FLOOR {
             return;
