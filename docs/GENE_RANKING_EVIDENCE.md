@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `boost-planner` | off (unmeasured) | Plan the next six technologies' and four civics' boosts: classify each trigger by what it costs the plan and turn the cheap ones into at most three deadlined side objectives, each a share-of-value premium on the one production or Builder choice that fires it. | 1 \| 1 |
+| `expansion-scales-with-difficulty` | off (unmeasured) | Scale the opening city target, the opening deadline, the Settler cadence and the expansion cards with the difficulty rung: the measured 4-6 band is a King-level reading and every rung above it widens the rival field. | 1 \| 1 |
 
 ## Removed from the code
 

@@ -5263,6 +5263,11 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// Scale the opening city target, its deadline, the Settler cadence and
+    /// the expansion cards with the difficulty rung. Opt-in gene
+    /// `expansion-scales-with-difficulty`; see
+    /// `advanced/expansion_scales_with_difficulty.rs`.
+    expansion_scales_with_difficulty: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     expansion_best_idle_city: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -6859,6 +6864,13 @@ mod culture_strategy;
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
 mod victory_lane;
 
+/// `expansion-scales-with-difficulty`: the measured 4-6 city opening band
+/// was read off a King-level field, and every rung above King hands the
+/// rivals a percentage of every yield and free Settlers. The city target,
+/// the opening deadline, the Settler cadence and the expansion cards all
+/// scale with the rung. One opt-in gene; see
+/// `advanced/expansion_scales_with_difficulty.rs`.
+mod expansion_scales_with_difficulty;
 /// `expansion-schedule`: while the opening is behind the pace every recorded
 /// win came from, open the settler pipeline by the shortfall. One opt-in
 /// gene; see `advanced/expansion_schedule.rs`.
@@ -7794,6 +7806,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            expansion_scales_with_difficulty: false,
             expansion_best_idle_city: false,
             expansion_best_idle_city_2: false,
             envoy_building_dividends: false,
@@ -11240,6 +11253,17 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
+        // `expansion-scales-with-difficulty`: the 4-6 band is a King-level
+        // reading, and each rung above Prince hands the rivals a percentage of
+        // every yield and free Settlers. Raise the horizon by the rung, never
+        // lower it. `city_target_meets_the_map`'s practical-site room still
+        // cuts it back down below; the Science contract is raised to meet it
+        // instead (see the cap), because a `min` applied after this line
+        // would swallow the widening on the very lane the ladder plays. See
+        // `advanced/expansion_scales_with_difficulty.rs`.
+        let wide_city_target = self.expansion_wide_city_target(g);
+        let desired_cities =
+            wide_city_target.map_or(desired_cities, |wide| desired_cities.max(wide));
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -11288,6 +11312,12 @@ impl AdvancedAi {
             } else {
                 SCIENCE_CITY_TARGET_CAP
             };
+            // `expansion-scales-with-difficulty`: the rung's horizon is the
+            // floor of this cap, or the gene is inert on a Science seat —
+            // `SCIENCE_CITY_TARGET_CAP` (6) is below every rung target the
+            // gene sets (7 at Prince). `None` with the gene off, so the cap
+            // reads its shipped constant.
+            let cap = wide_city_target.map_or(cap, |wide| cap.max(wide));
             desired_cities.min(cap).max(cities.len())
         } else {
             desired_cities
@@ -15339,7 +15369,13 @@ impl AdvancedAi {
         // the normal map-capacity treatment would turn this portfolio arm
         // on.  Without it, the gene starts its second wave at the full price
         // even after Early Empire unlocks Colonization.
-        if self.wide_map_capacity || self.rapid_city_expansion_2 {
+        // `expansion-scales-with-difficulty` needs the same timely Settler
+        // card for the same reason: its target is deliberately active before
+        // the map-capacity treatment would arm this portfolio arm.
+        if self.wide_map_capacity
+            || self.rapid_city_expansion_2
+            || self.expansion_scales_with_difficulty
+        {
             let settler_queued = city_ids.iter().any(|city| {
                 matches!(
                     g.cities[city].queue.first(),
@@ -26033,11 +26069,17 @@ impl AdvancedAi {
         }
         // `expansion_schedule`: the opening's own pace answers first, and
         // only while the empire is behind it. See
-        // `advanced/expansion_schedule.rs`.
-        if let Some(width) =
-            self.expansion_schedule_pipeline(g, desired_cities, city_count, settlers)
-        {
-            return width;
+        // `advanced/expansion_schedule.rs`. `expansion-scales-with-difficulty`
+        // answers beside it on the rung's own pace and its own founded-city
+        // count; when both speak the wider of the two wins, because each is
+        // already bounded by the same `desired_cities` hard cap. Both are
+        // `None` with their genes off, so this is the shipped fall-through.
+        let scheduled = self.expansion_schedule_pipeline(g, desired_cities, city_count, settlers);
+        let wide = self.expansion_wide_pipeline(g, desired_cities, city_count, settlers);
+        match (scheduled, wide) {
+            (Some(scheduled), Some(wide)) => return scheduled.max(wide),
+            (Some(width), None) | (None, Some(width)) => return width,
+            (None, None) => {}
         }
         let stalled_expansion = self.settlement_safety
             && self
@@ -27176,7 +27218,16 @@ impl AdvancedAi {
                     // See `expansion_hall`: the Ancestral Hall's free Builder in
                     // every new city and +50% Settlers, priced while the land
                     // grab is still short of seats.
-                    let expansion_hall = if self.expansion_hall && self.land_grab && !spec.wonder {
+                    // `expansion-scales-with-difficulty` is the second gate on
+                    // this term: the Hall's +50% Settlers and its free Builder
+                    // in every new city are exactly what a rung-scaled target
+                    // has to be funded with. The `scale` below already fades
+                    // the whole term to zero once the empire is no longer
+                    // short, so neither gate needs its own shortfall test.
+                    let expansion_hall = if ((self.expansion_hall && self.land_grab)
+                        || self.expansion_scales_with_difficulty)
+                        && !spec.wonder
+                    {
                         let seats_short = self
                             .settlement_target(plan)
                             .saturating_sub(city_count + counts.settlers)

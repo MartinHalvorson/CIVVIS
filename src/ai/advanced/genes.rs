@@ -2171,6 +2171,13 @@ pub const GENES: &[Gene] = &[
     // shows that pricing every reachable trigger instead measures negative.
     // See `advanced/boost_planner.rs`.
     Gene { tag: "boost-planner", field: "boost_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner, disable: AdvancedAi::disable_boost_planner },
+    // `expansion-scales-with-difficulty` (2026-09-09): the measured 4-6 city
+    // opening band was read off a King-level field. Above King the rivals take
+    // +16/+24/+32 percent of every yield and free Settlers every era, so the
+    // target, its deadline, the Settler cadence and the expansion cards scale
+    // with the rung. Appended above the markers, so a running screen keeps its
+    // positional genome. See `advanced/expansion_scales_with_difficulty.rs`.
+    Gene { tag: "expansion-scales-with-difficulty", field: "expansion_scales_with_difficulty", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_scales_with_difficulty, disable: AdvancedAi::disable_expansion_scales_with_difficulty },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
