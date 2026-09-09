@@ -28,10 +28,11 @@ building valuation alone. A single live trace cannot establish typical strength.
 
 ## First intervention
 
-Replaying turn 150 through all six named victory targets initially made
-Mediolanum choose a Spy despite a legal Workshop. That city already had its
-Library and University; the generic Spy bid outranked industrial investment.
-A larger industrial score alone did not solve the actual queue choice.
+At the first turn-145 state, Mediolanum was idle after finishing its Industrial
+Zone and had a legal Workshop. The recorded live Science run chose a Spy
+(visible under construction in the first turn-146 state). The city already
+held its Library and University. A fixture reproduces a Spy's higher generic
+bid; industrial scoring alone does not ensure the foundation is built.
 
 Idle, safe cities in named lanes now reserve a legal industrial building when
 its projected production return repays its remaining cost before the clock.
@@ -63,6 +64,27 @@ Implementation: `src/ai/advanced/production_compounding.rs`; fixtures live in
 its `tests.rs`. They test valuation, all six named lanes, terminal and unlimited
 clocks, regional reach, and actual queue selection. Fixtures and one-turn replay
 do not establish a production-curve or win-rate improvement.
+
+## Validation of this intervention
+
+- `cargo test --profile ci --locked`: 3,216 passed; 45 library tests and four
+  documentation examples ignored; no failures.
+- `python3 tools/rust_quality.py --base origin/main --head HEAD`: changed lines
+  formatted and warning-free.
+- Eight focused `production_compounding` tests passed.
+- A byte-for-byte prefix of the recorded `events.jsonl` through the **first**
+  turn-145 state was replayed with `civvis_orders --serve --fresh-board
+  --victory <lane> --explain`, supplying `145` on stdin and closing stdin.
+  All six lane replies selected `BUILDING_WORKSHOP` for city `262147`
+  (Mediolanum). The Science journal reports the industrial payback reservation.
+  This emits proposed orders only; it does not actuate the live game.
+- Replay input SHA-256: `0799e9d7da7987803f15abd16db7409451b894c0609baafbb40aeae82a295558`.
+
+Use the persistent replay mode for this check: its mid-game restart skips the
+opening book. A one-shot invocation at a late turn is not equivalent and was
+excluded from the result. The prefix stops at the idle decision, before that
+turn's subsequent orders can turn the test into a committed-queue comparison.
+These are choice and compatibility checks, not measured production growth.
 
 ## Remaining outcome work
 
