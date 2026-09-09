@@ -177,6 +177,14 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version \| Total versions |
+|---|---|---|---:|
+| `science-threat-denial` | off (unmeasured) | Deny a rival the science victory rather than only race it: the diplomatic refusals and the denunciation, the espionage disruption of the launch pad, the two-soldier pillage raid on it, and the bounded war that opens the raid. | 1 \| 1 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:

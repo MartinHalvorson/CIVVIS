@@ -4931,6 +4931,8 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// The denial war `science_threat_denial` opened and has not yet closed.
+    denial_war: Option<science_threat_denial::DenialWar>,
     /// Arm the culture defence at 30 percent of the victory bar instead of
     /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
     /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
@@ -6042,8 +6044,6 @@ pub struct AdvancedAi {
     /// Opt-in gene `science-threat-denial`; see
     /// `advanced/science_threat_denial.rs`.
     science_threat_denial: bool,
-    /// The denial war `science_threat_denial` opened and has not yet closed.
-    denial_war: Option<science_threat_denial::DenialWar>,
     /// The safe-step guard's last resort never prices the tile the unit is
     /// standing on. When a Settler's route step is over
     /// `SETTLER_STEP_RISK_LIMIT`, `settlement_unit_step_toward_safe` looks
@@ -7735,6 +7735,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            denial_war: None,
             culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,
@@ -7883,7 +7884,6 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             science_threat_denial: false,
-            denial_war: None,
             standing_still_is_a_risk: false,
             strike_reach: false,
             safest_stand: false,
