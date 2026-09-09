@@ -16,7 +16,7 @@ The note `war_unit_finishing_survival_rejections=N` records rejections. With bot
 
 ## Controls
 
-The exposed-melee control failed before the check was implemented; its no-archer control passed. The first six focused controls then passed: unsafe finisher, safe finisher, version-one coverage, unsafe melee reserve, safe reserve, and a complete volley whose final kill rescues the wounded first shooter's otherwise unsafe prefix.
+The exposed-melee control failed before the check was implemented; its no-archer control passed. Seven focused controls pass. Six isolate the policy: unsafe finisher, safe finisher, version-one coverage, unsafe melee reserve, safe reserve, and a complete volley whose final kill rescues the wounded first shooter's otherwise unsafe prefix. The seventh exercises `decide` and ensures the ordinary planner does not restore the rejected wounded follow-up.
 
 ## Recorded frame replay
 
@@ -35,7 +35,13 @@ Replay binary SHA-256: `4b6582cc36964d2ee3632321c4d24fb686127a26fdf508f79c8a365d
 
 A second recorded failure, `civvis-20260909T002110Z` turn 82/frame 0, had archer 983047 shoot bombard 3342344, then warrior 131073 die attacking it. The revised default replay still sends those two attacks. With version 2 enabled, the replay rejects the pre-pass, sends the city strike at (54,23), and fortifies warrior 131073 instead. The archer takes a promotion. This removes the recorded fatal melee order; whether the city shot kills the bombard in the real host remains unproven.
 
-Final validation will be recorded after completion.
+## Validation
+
+- Seven focused `civvis_orders` survival tests passed, including the before/after regression and full `decide` coverage.
+- `cargo test --profile ci --locked` passed after integration with main.
+- `rustfmt --check` on both changed Rust files and `git diff --check origin/main...HEAD` passed.
+- Same-binary default/version-one/version-two turn-30 replay and default/version-two turn-82 replay; native simulation of both turn-30 strike orders.
+- No new native-engine soak: this change wires an existing policy into the live-order pre-pass; it changes no engine mechanics or deployment defaults.
 
 ## Limits
 
