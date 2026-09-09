@@ -237,7 +237,7 @@ mod tests {
         let (game, center, target) = galapagos_ring_three_board();
         let stock = AdvancedAi::new();
         let mut gene = AdvancedAi::new();
-        gene.enable_wonder_adjacent_sites();
+        gene.enable_wonder_adjacent_sites_2();
 
         assert_eq!(
             gene.water_science_wonder_ring_three_science(&game, 0, center),
@@ -274,7 +274,7 @@ mod tests {
     fn water_science_wonder_credit_requires_known_workable_unowned_water() {
         let (game, center, target) = galapagos_ring_three_board();
         let mut gene = AdvancedAi::new();
-        gene.enable_wonder_adjacent_sites();
+        gene.enable_wonder_adjacent_sites_2();
         assert!(gene.water_science_wonder_site_value(&game, 0, center) > 0.0);
 
         let mut fog = game.clone();
@@ -345,7 +345,7 @@ mod tests {
         }
 
         let mut gene = AdvancedAi::new();
-        gene.enable_wonder_adjacent_sites();
+        gene.enable_wonder_adjacent_sites_2();
         assert_eq!(
             gene.water_science_wonder_ring_three_science(&game, 0, center),
             vec![10.0, 10.0],

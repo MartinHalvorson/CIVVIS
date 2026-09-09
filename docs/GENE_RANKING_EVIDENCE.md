@@ -10,7 +10,7 @@ This is a reporting-only publication: the selected deployment genome contains ex
 
 ### What the posterior resolves
 
-Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**; **52 straddle zero**. Those are evidence states, not automatic deployment calls.
+Of 72 priced genes the interval clears zero for **20 upward** and **0 downward**; **52 straddle zero**. Those are evidence states, not automatic deployment calls.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Default | Evidence call |
 |---|---:|---:|---:|---|---|
@@ -32,7 +32,6 @@ Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**
 | `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | off | **on** |
 | `recon-replacement` | +51 [+30, +72] | 100.0% | 5 | off | **on** |
 | `recorded-tactical-step` | +17 [+0, +33] | 97.5% | 5 | off | **on** |
-| `score-horizon` | +17 [+0, +34] | 97.6% | 5 | off | **on** |
 | `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | off | **on** |
 | `wide-map-capacity` | +61 [+28, +93] | 100.0% | 5 | on | **on** |
 
@@ -42,8 +41,8 @@ Of 73 priced genes the interval clears zero for **21 upward** and **0 downward**
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 3 | 92,604 | 73 |
-| legacy | 7 | 132,440 | 46 |
+| standard | 3 | 92,604 | 72 |
+| legacy | 7 | 132,440 | 45 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
 
@@ -81,7 +80,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `recorded-tactical-step` | +15 [-8, +37] | +19 [-6, +44] | +17 [+0, +33] | 0 | yes |
 | `relief-targets-the-siege` | +4 [-18, +27] | +17 [-11, +45] | +10 [-7, +26] | 0 | yes |
 | `religion-sues-peace` | +19 [-3, +41] | -9 [-33, +15] | +7 [-11, +24] | 7 | yes |
-| `score-horizon` | +18 [-4, +41] | +15 [-10, +40] | +17 [+0, +34] | 0 | yes |
 | `settle-sooner` | +41 [+5, +76] | +31 [+7, +56] | +35 [+14, +55] | 0 | yes |
 | `settler-guard-holds` | +2 [-20, +24] | +6 [-25, +38] | +3 [-13, +19] | 0 | yes |
 | `settler-target-hysteresis` | +4 [-18, +26] | -2 [-37, +32] | +0 [-16, +16] | 0 | yes |
@@ -260,6 +258,8 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `settle-plan-ahead` | -33 | 16.34% | 16.99% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `siege-role` | -39 | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `research-floor-holds` | -40 | 16.27% | 17.07% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `wonder-adjacent-sites` | -42 | 16.25% | 17.01% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
+| `chop-into-the-queue` | -45 | 16.22% | 16.82% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `builder-reward-survey` | -46 | 16.21% | 17.13% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `contested-suzerainty-brake` | -46 | 16.21% | 16.82% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `naval-production-policy` | -51 | 16.16% | 17.17% | `2026-08-24-standard-continuous-38160-total-seats.json` |
@@ -267,12 +267,16 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `loyalty-policy-defence` | -54 | 16.13% | 17.20% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `contact-posture` | -60 | 16.06% | 17.27% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `gold-for-the-young-city` | -65 | 16.02% | 16.89% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
+| `flip-nearby-city-states` | -66 | 16.01% | 16.88% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
+| `skip-the-prophet-race` | -81 | 15.86% | 17.01% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `boost-wait-research` | -91 | 15.76% | 17.05% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `score-horizon` | -98 | 15.68% | 16.99% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `governor-victory-lanes` | -110 | 15.57% | 17.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `governor-every-lane` | -173 | 14.93% | 18.38% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `enter-the-prophet-race` | -181 | 14.86% | 17.43% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 
 ## How to read this
 
@@ -324,6 +328,8 @@ The observations below remain useful, but they do not implement the deployment r
 **`solvency-first-trade-slot-2` left the code on 2026-09-01 under the batch rule, and it is the only one of the ledger's six `remove` decisions that did.** Its three batch columns read **-33, -50, -49** at the cull (and **-61, -33, -50** under the 5,424-seat batch then in flight as PR #2939) -- below the rule's -10 bar in every window it was ever priced, with the version-1 head `solvency-first-trade-slot` at **+108/+111/+136** carrying the family. Its field, toggles, registry row, gated branches and fires probe left the code; the reservation and Trader-step arms were restored to version one's shape exactly. The other five `remove` rows did NOT leave: `rapid-city-expansion` is deliberately retained while the live seat's force-on arm (`~/.civvis-live-force-on`) is running it, and `boost-wait-research`, `opening-warrior-recon`, `settler-factory-coordination` and `skip-the-prophet-race` were re-priced out of `remove` (newest windows -8, +4, +7 and +2) by the in-flight batch -- exactly the "screen in flight or unmerged" check the rule below this note prescribes, and the mechanism that made #2266's cull wrong. They stay in the code, `off`.
 
 **Four bottom-of-the-table genes left the code on 2026-09-08 as directive removals** (operator convention: the bottom of `GENE_HEURISTIC_RANKING.md` leaves the code). `boost-wait-research` (rank 253, P(>0) 3.7%, Diff **-0.76 pp**, science pace -0.10) and `treasury-at-work` (rank 243, P 10.2%, **-0.54 pp**) were dominated version ones whose siblings ship as the family head: `boost-wait-research-2` at rank 41 (+0.55 pp) and `treasury-at-work-2` at rank 5 (+1.83 pp) keep every hook, and the shared paths (`boost_wait_penalty`, `working_treasury_reserve`, `treasury_purchase_stays_solvent`) now gate on version two alone -- byte-equivalent with version one off. `gold-for-the-young-city` (rank 250, P 6.0%, **-0.71 pp**) and `contested-suzerainty-brake` (rank 247, P 8.0%, **-0.65 pp**, batch columns -5/-56) were singletons below the 8% bar; the purchase premium and the contested envoy race penalty left with them. Fields, toggles, registry rows, gated branches, gene-specific tests and fires probes are gone; their rows enter the **Removed from the code** table, and the three display batches that price them record the reporting-build exception (`reporting_batches[].unverified`) per the #2944 precedent.
+
+**Six research-and-religion genes left the code on 2026-09-09: four under the batch rule and two by the bottom-of-the-table directive.** The batch-rule removals are the ledger's own `rules.batch_decisions` `remove` verdicts, three batches all below the -10 bar: `skip-the-prophet-race` (**-31, -41, -24**; Diff -1.34 pp), `chop-into-the-queue` (**-23, -22, -11**; Diff -0.89 pp), `score-horizon` (**-11, -50, -25**; a `Repair(Economy)` gene the ledger already held off on every deployed seat) and `wonder-adjacent-sites` (**-12, -19, -19**; Diff -0.69 pp). The directive removals are the bottom of the table: `enter-the-prophet-race` (rank 267, Diff -1.99 pp, science pace -0.62 techs at z -8.9) and `flip-nearby-city-states` (rank 260, P(>0) 1.5%, Diff -0.97 pp). Each family's version 2 ships on and keeps the shared mechanism, gated on itself alone: `skip-the-prophet-race-2` (Diff +0.54 pp) keeps the last-call withdrawal, `enter-the-prophet-race-2` (rank 6) the admitted race, `wonder-adjacent-sites-2` the projection plus the footprint credit. Fields, toggles, registry rows, gated branches, tests and fires probes left the code; `advanced/field_craft.rs` (the one gene's module) is gone; and `score-horizon` took the two turn-limit horizons with it (`space_race_can_finish`, `nuclear_lane_can_finish`) and, behind them, the science drive's own race-fits estimator, which was reachable only through the culled gate. The three display batches price the six, so each records the explicit reporting-build exception (`reporting_batches[].unverified`) and their rows stay as history in the **Removed from the code** table (-81, -45, -98, -42, -181 and -66 wins/10k at their last measurement). The deployment genome is unchanged at 98 genes: every removed row was off.
 
 *The legacy share axis already showed the disagreement.* P10 priced this gene at win z **+2.46** and score-share z **-15.92** -- a recorded `conflict`. The later standard win reading was z -15.37, within half a sigma of that legacy share reading. This is evidence for publishing both axes, not a rule that either axis may silently rewrite a default.
 
