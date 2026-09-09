@@ -999,8 +999,8 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("if ok and voting then", guard)
         self.assertIn("LuaEvents.CivvisCongressBallot()", guard)
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
-        # One shared ballot, two triggers: the core's own stage-1 event and the
-        # shim's popup event; once per turn, only latched when something was cast.
+        # The popup owns submission. Stage 1 is observable but must not consume
+        # the ballot before that callback; the Lua suite exercises the order.
         self.assertIn("local function castBallot(trigger)", source)
         ballot = source.split("local function castBallot(trigger)", 1)[1].split("if not envoyTally.ballot_hooked then", 1)[0]
         self.assertIn("voteWorldCongress(ballotPid)", ballot)
@@ -1008,9 +1008,11 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("favor_before = before", ballot)
         self.assertIn('LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);', source)
         self.assertIn('Events.WorldCongressStage1.Add(function(playerID)', source)
-        self.assertIn('castBallot("stage1")', source)
+        stage = source.split("Events.WorldCongressStage1.Add(function(playerID)", 1)[1].split("end);", 1)[0]
+        self.assertNotIn("castBallot(", stage)
+        self.assertIn('why = "awaiting_popup"', stage)
         self.assertIn('emit("wc_ballot_hooked"', source)
-        # The blocker path defers to the triggers and falls back a cycle later.
+        # The blocker path defers to the popup and falls back a cycle later.
         blocker = source.split('if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"', 1)[1].split("local parked = UNIT_BLOCKERS[name]", 1)[0]
         self.assertIn("if envoyTally.ballot_turn == turn then", blocker)
         self.assertIn("elseif seen.forfeits >= 2 then", blocker)
