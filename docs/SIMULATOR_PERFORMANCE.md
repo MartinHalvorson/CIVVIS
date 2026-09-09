@@ -159,12 +159,34 @@ guess dressed as a measurement.
 what #3200 removes (−1.02% paired, after the soundness fix). That is the profile
 agreeing with a change already in flight rather than pointing at a new one.
 
-**So the honest next move on this axis is not another micro-optimization.** It is
-either to improve attribution — reduce folding further, or sample with a tool that
-walks full stacks — or to spend the effort elsewhere until there is a signal worth
-acting on. Today's record is the argument: of six paired changes, the two that
-paid were ones whose loop could be named exactly, and four aimed at leaf shares
-were neutral or slower.
+**So the honest next move on this axis is not another micro-optimization.**
+Today's record is the argument: of six paired changes, the two that paid were the
+ones whose loop could be named exactly, and four aimed at leaf shares were neutral
+or slower.
+
+⚠⚠ **And do not try to reduce the folding — that experiment is already run and
+recorded.** An earlier draft of this section suggested it; `profile_civvis.py`'s
+own header disposes of it in five builds, and its whole point is to stop the next
+reader re-trying it:
+
+    baseline (the `ci` profile as it ships)                 32.54%
+    -C link-arg=-Wl,-no_deduplicate                         31.10%
+    -no_deduplicate  -C strip=none                          32.59%
+    CARGO_PROFILE_CI_STRIP=none                             31.59%
+    CARGO_PROFILE_CI_DEBUG=1  CARGO_PROFILE_CI_STRIP=none   30.35%
+
+Keeping debug info quadruples the symbol table, 35,810 entries to 114,047, and
+still leaves 30% folded. Whatever merges those bodies is upstream of the link, and
+`-Z merge-functions=disabled` is nightly-only while this fleet is on stable.
+
+**The tool's answer to folding is `folded_by_caller`, not a build flag** — a
+folded leaf still sits in the call graph with its parents intact, and the parent is
+named. That is the `--parents` run above, and it is already the best this sampler
+can do. Improving on it means a different sampler that walks full stacks, not
+another link flag.
+
+So the realistic choice is to spend the effort elsewhere until there is a signal
+worth acting on.
 
 ### ⭐ What five measurements say about where to look
 
