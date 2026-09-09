@@ -1,203 +1,204 @@
 # research-alliance-first: the alliance an Emperor handicap cannot deny us
 
-Opt-in gene, `Kind::OptIn`, off by default. Off it is byte-identical.
-Code: `src/ai/advanced/research_alliance.rs`; tests in
-`src/ai/advanced/research_alliance/tests.rs`; fires probe in
-`docs/gene_screens/fires/2026-09-09-research-alliance-first.json`.
+Opt-in gene, `Kind::OptIn`, off by default. Off it is byte-identical: every
+hook the stock desk and the route valuation call returns the identity
+(`off_the_gene_is_inert`). Code: `src/ai/advanced/research_alliance.rs`;
+tests in `src/ai/advanced/research_alliance/tests.rs`; fires probe in
+`docs/gene_screens/fires/2026-09-09-research-alliance-first.json`, with
+its raw rows and the paired off-run beside it (`.jsonl`).
 
-**Read the probe section before this gene is priced.** The 36-seat probe is
-negative on score share in every version that was run, and the win axis is
-noise at this size. This round is a design and a measurement, not a case for
-turning the gene on.
+**This round is two things.** A gene, and a diagnosis of why its first
+version cost 3.5 points of score share — a cost that turned out to be two
+unrelated things stacked, one of them the screen's own seat draw. Read the
+diagnosis before pricing anything alliance-shaped.
 
 ## The alliance model, as this simulator actually has it
 
 Every claim below is a line in this repository, not a memory of Civ VI.
 
-- **Kinds are strings, not an enum.** `AllianceState { kind: String, points:
-  f64, level: i32, ends: u32 }` (`src/game.rs:3766-3772`), held symmetrically
-  in `Player.alliances: BTreeMap<usize, AllianceState>` (`src/game.rs:4777`).
-  The five legal kinds are `research | cultural | economic | military |
-  religious` (`src/game/actions.rs:8819-8822`). An empire holds at most one
-  alliance of each kind.
-- **Legality.** `Game::do_propose_deal` (`src/game/actions.rs:8818-8841`)
-  requires a valid kind, the civic `civil_service` on **both** trees, the kind
-  free on both sides, peace, no denouncement, and — for `research` only —
-  `tree_effect(pid, "research_agreements") > 0.0` on both, which comes from
-  the tech `scientific_theory` (`data/tree_effects.json:20`).
+- **Kinds are strings**, `research | cultural | economic | military |
+  religious` (`src/game/actions.rs:8819-8822`), state `AllianceState { kind,
+  points, level, ends }` (`src/game.rs:3766-3772`), held in
+  `Player.alliances: BTreeMap<usize, AllianceState>` — **one alliance per
+  partner**, of at most one kind each per empire.
+- **Legality** (`Game::do_propose_deal`, `src/game/actions.rs:8774-8841`): a
+  valid kind, `civil_service` on **both** trees, the kind free on both sides,
+  peace, no denouncement, and for `research` only
+  `tree_effect(pid, "research_agreements") > 0.0` on both — the tech
+  `scientific_theory` (`data/tree_effects.json:20`).
 - **A declared friendship is NOT an engine prerequisite.** Nothing in
-  `do_propose_deal` reads `friends_until`. The friendship gate is the
-  controllers': `src/ai.rs:8511` makes the Basic controller wait for
-  `are_friends` before attaching an alliance kind, and the Advanced
-  controller bundles `friendship: true` into every alliance proposal
-  (`src/ai/advanced.rs:16455-16470`). This gene keeps the two-step because
-  the operator's design asks for it; whether the bundled one-step lands more
-  often is an open question this round did not answer.
-- **Levels come from points, and routes feed them.**
-  `Game::process_diplomacy` (`src/game/actions.rs:11034-11112`), once per
-  pair per turn: `points += 1.0 + 0.25 (an outgoing route to a partner city)
-  + 0.25 (an incoming one) + 0.25 per side for Democracy or Wisselbanken +
-  0.5 same secret society + 0.5 a Sumerian joint war`. Then `level = 3 if
-  points >= 240, 2 if >= 80, else 1`. So one route each way is up to **50
-  percent faster levelling**.
-- **What a Research Alliance pays.** Level 2, every
-  `standard_duration(30)` turns: `share_research_alliance_boosts`
-  (`src/game/actions.rs:8042`) hands the partner's cheapest unboosted tech to
-  whichever side lacks it. Level 3: `sci += 10 percent of the sum of the
-  ally's city science` (`src/game.rs:32180-32189`, the Cultural tier's twin
-  at `:32171`).
-- **Routes to an ally are already priced.**
-  `trade_route_destination_value_from` (`src/ai/advanced.rs:33601-33625`)
-  adds a research ally's `+2` Science, a flat `45.0` for the first connection
-  in a direction, and `+18.0` for a cultural ally at level 2 — there is no
-  level-aware twin on the research arm.
-- **Two cards pay science on an international route.**
-  `trade_confederation` (`+1`) and `market_economy` (`+2`), through
-  `international_trade_science`, read at `src/game/city.rs:4082` and owned by
-  no other card in the tree, so no domestic route earns it.
+  `do_propose_deal` reads `friends_until`. The stock Advanced desk bundles
+  `friendship: true` into the alliance proposal itself.
+- **Points and levels** (`Game::process_diplomacy`,
+  `src/game/actions.rs:11034-11112`): `+1.0` a turn, `+0.25` per route each
+  way, `+0.25` a side for Democracy/Wisselbanken; level 2 at `80.0`, level 3
+  at `240.0`. One route each way is up to 50 percent faster levelling.
+- **What Research pays.** Level 2: `share_research_alliance_boosts` every
+  `standard_duration(30)` turns (`src/game/actions.rs:8042`). Level 3:
+  `sci += 10%` of the ally's city science (`src/game.rs:32180-32189`).
+- **What the Basic controller answers.** `src/ai.rs:8319`: a friendship,
+  alliance or passage proposal is accepted whenever grievance is under 75 and
+  the proposer is not 1.8× its power. The desk's proposals land.
 
-**What the genome did not price.** `propose_strategic_alliance`
-(`src/ai/advanced.rs:16315`) picks its kind from the grand strategy on a
-twelve-turn cadence (`g.turn % 12 != pid % 12`), and its ranking term for a
-research partner is the count of techs the partner holds and we do not — a
-measure of what we can copy once, not of the science still flowing at level
-3. `coalition.rs` proposes alliances early, but only military ones and only
-in front of a war.
+## The design (what shipped after review)
 
-## The design
+The whole gene runs **through** `propose_strategic_alliance`, the stock
+desk, so the desk's own exclusions — `denied_partner`, the
+`rival_victory_pressure(other).progress < 82` ceiling, grievance under 75, an
+open proposal either way — apply unchanged. On:
 
-1. **Ranking.** Met, living majors, not at war, not denounced either way,
-   grievance under `ALLY_GRIEVANCE_CEILING` (75), not already allied with us,
-   and neither the current culture threat (`culture_trade_threats`) nor the
-   current science threat. Score = `ALLY_SCIENCE_WEIGHT` x the partner's
-   science share of ours + `ALLY_FRIENDSHIP_READY` (180) if a friendship
-   stands + `ALLY_RESEARCH_LEGAL` (60) if a Research Alliance is legal, minus
-   our grievance. `ALLY_MIN_SCIENCE_SHARE` (0.6) keeps trivial partners out:
-   at level 3 the share is 10 percent of the partner's output, so a partner
-   at 0.6 of us is worth 6 percent of our own science and one at 0.2 is worth
-   2 — inside the noise of a single Library.
-2. **The science threat.** No twin of `culture_trade_threats` exists on main
-   (`grep science_threat` hits one test name). `research_alliance_science_
-   threat` is built from the same public signal the denial layer reads:
-   `rival_victory_pressure(g, rival).strategy == Science && progress >=
-   ALLY_SCIENCE_THREAT_PROGRESS (30)` — deliberately
-   `CULTURE_THREAT_PRESSURE_EARLY`'s bar.
-3. **Sequence.** One proposal a turn. The partner is **sticky**: chosen once
-   and kept until they stop being a candidate at all, because a ranking
-   re-read every turn canvasses every major, and a declared friendship is not
-   free (it forbids denouncing and war, and breaking one carries grievance).
-   Friendship first; then, once Civil Service stands on both trees, the
-   Research Alliance; and only if that is unavailable the free kind whose
-   model yield is closest to science (`ALLY_FALLBACK_KINDS = [cultural,
-   economic, religious, military]`, ordered by the yields above), journalled.
-   A refusal is answered by the `ALLY_RETRY_TURNS` (10) cool-down, not by
-   moving on — the model exposes no refusal event. Once the Research Alliance
-   stands the desk stops proposing entirely.
-4. **Routes.** `ALLY_ROUTE_PREMIUM` (30) on the first route to an ally whose
-   level is still below 3 — the real accrual is what it buys, so it stops at
-   the second route (the `+0.25` is already collected) and at level 3 (a
-   further point buys nothing). Capped to `ALLY_ROUTE_PREMIUM_OPENING_CAP`
-   (10) while the empire holds fewer than `ALLY_ROUTE_OPENING_BAND_CITIES`
-   (6) cities, so an internal food or production route in the opening band is
-   not displaced.
-5. **Card.** The best offered card of `[market_economy,
-   trade_confederation]`, spliced to the front of the desired deck exactly as
-   `culture_defense_cards` is, while a non-threat alliance stands.
-6. **Guard.** A culture or science threat is never proposed to, never carries
-   the route premium, and never justifies the card. A standing alliance with
-   a partner who becomes a threat is **not broken** — breaking one costs
-   grievance and the science is still real; only the objective is dropped.
+1. **The kind is Research**, whatever the grand strategy names, while
+   `research_alliance_lane` says one is worth waiting for: none held, and
+   level 2 still reachable before the turn limit
+   (`level_two_reachable`: `80 / 1.5` = 54 turns left). While our own tree
+   lacks `scientific_theory` the desk **waits** — proposes no other kind — so
+   the best partner's one slot is not spent on a cultural or economic
+   alliance that would make the Research Alliance impossible with them.
+   Past the horizon the stock kind resumes.
+2. **The twelve-turn cadence is bypassed** for the research ask; a refused
+   partner is not re-asked for `ALLY_RETRY_TURNS` (10).
+3. **The partner score gains `ALLY_SCIENCE_WEIGHT` (110) × the partner's
+   science share of ours.** The stock terms stay.
+4. **A culture threat is barred** (the proposal bundles passage, +25 percent
+   tourism against us).
+5. **The first route to the research ally carries `ALLY_ROUTE_PREMIUM` (30)**
+   below level 3, capped to `ALLY_ROUTE_PREMIUM_OPENING_CAP` (10) under
+   `ALLY_ROUTE_OPENING_BAND_CITIES` (6). The cap is applied in
+   `route_premium`, pure, and the premium reaches
+   `trade_route_destination_value_from` next to the stock `45.0` first-
+   connection term (`the_route_premium_reaches_the_valuation_for_a_research_
+   ally_only`).
 
-## ⚠ Civil Service lands past turn 140, and it is the binding constraint
+Removed from the first version, with the reason: the **declared friendship
+ahead of the alliance** (the whole share cost — below); the **fallback
+kinds** (they consumed the partner's only slot, which is why the first
+version never once held a Research Alliance); the **sticky partner** (it was
+not sticky: a seated fallback alliance released it, and the desk went on to
+befriend and ally the next major, ending with three alliances of three
+kinds and four friendships); the **science-threat bar at 30 percent** (a
+research alliance with the science leader hands the *follower* the larger
+share and the boosts — the stock 82 percent ceiling is the right bar); the
+**card splice** (`market_economy` is already in the Science deck at position
+8; splicing it to the head put a +2-per-route card ahead of `rationalism`);
+the **minimum science share** (a weak partner is the stock desk's business).
 
-Measured on this model at the screen's own size (6 majors, 74x46, Standard,
-250 turns, seed 26081900, whole game played through `run_game_observed`): our
-own `civil_service` at **turn 143**, the first rival's at **144**. The typed
-alliance the engine will not seat without it therefore has about a hundred
-turns left. At `+1.25` points a turn with one route each way that reaches
-level 2 (80 points) and **never** level 3 (240). On a 250-turn clock this
-gene buys the shared tech boosts and not the 10 percent science share.
+## ⚠⚠ The diagnosis: what −3.5 pp of share actually was
 
-That measurement came out of a defect this round nearly shipped. The first
-version gated the *whole* ranking on Civil Service, so the desk's first ask
-was turn 144 and the probe was flat. A unit test that proposes on a
-hand-built board proves only that the board was built right;
-`the_desk_reaches_a_real_game_and_asks` plays a whole game at the screen's
-size and requires a counter to have moved. Its first form used 4 majors on
-44x30 over 160 turns — where **nobody ever reaches Civil Service** — and it
-failed, which is how the gate was found. Lifting Civil Service off the
-friendship stage moved the desk's first ask from turn 144 to **turn 16**.
+The junior's probe (12 games, 36 seats, seeds 26081900..26081911) read a
+score-share cost of about −3.5 pp at |z| 2–3.3 in all three versions. It was
+two things stacked.
 
-A second finding from the same instrument: in that whole game no seat ever
-ended holding a `research` alliance. `scientific_theory` is late enough that
-the fallback kinds take the sequence in practice. A gene called
-`research-alliance-first` that mostly seats cultural and religious alliances
-is doing something, but not the thing it is named for.
+### 1. The early friendship deleted the opening's campaign target
 
-## Fires probe — not a measurement
+An ablation on seeds 26081900/26081901 (seat 0 on, every other major stock,
+default rung) with temporary switches inside the module:
 
-`gene_screen --games 12 --jobs 4 --genes research-alliance-first --p-on 0.5
---difficulty emperor --rivals firaxis-mix --handicap rivals --rival-chairs 3`
-(12 games, 36 measured seats, 14 on / 22 off, seeds 26081900..26081911). This
-run resolves a win delta of +/-27.6 pp at 80 percent power, so the win axis
-carries no information at all here (`docs/GENE_SCREEN.md`, "A probe's win
-delta is not a measurement of the gene"). Three versions were run on the
-same seeds:
+| variant | seat 0 share (seed 900 / 901) |
+|---|---:|
+| off | 0.178 / 0.150 |
+| full first version | 0.120 / 0.092 |
+| friendships only, no alliances | 0.120 / 0.092 |
+| alliances, no card, no premium | 0.120 / 0.092 |
+| no early friendship | **0.178 / 0.150 — byte-identical to off** |
 
-| version | win delta | z | share delta | z | techs@end | science/turn |
-|---|---:|---:|---:|---:|---:|---:|
-| v1 (Civil Service gated the ranking; canvassing) | -11.0 pp | -1.12 | **-3.66 pp** | **-3.00** | -6.65 (z -2.05) | -72.2 (z -2.06) |
-| v2 (friendship ungated; canvassing) | +7.8 pp | +0.68 | **-3.36 pp** | **-2.12** | -3.78 (z -0.83) | -49.0 (z -1.32) |
-| v3 (shipped: friendship ungated; sticky partner) | -15.6 pp | -1.43 | **-3.59 pp** | **-3.29** | -3.96 (z -1.15) | -20.6 (z -0.66) |
+The friendship alone was the whole cost. A per-turn observer put the first
+divergence at **turn 20**: the warrior moves `(0,29)→(−1,29)` off and
+`(0,29)→(1,28)` on, the world otherwise identical. Cloning the turn-20 world,
+stripping `friends_until` from one copy and replaying a *fresh stock*
+controller on both reproduced the split — and printed why:
 
-The gene fires (`tools/gene_fires.py --max 0` green, 279 reachable genes
-covered, this gene not among the eight zero-width rows).
+```
+strip_friendship=false  plan strategy=Expansion target=None    city=None     legal3=false
+strip_friendship=true   plan strategy=Expansion target=Some(3) city=Some(56) legal3=true
+```
 
-**The honest read.** The win column swings 23 pp between versions that differ
-in one rule — that is the +/-27.6 pp resolution talking, and no version's
-interval excludes zero. The score-share column does not swing: **every**
-version costs about 3.5 points of score share at |z| between 2 and 3.3. That
-is the one signal in this probe with any consistency, and it is negative.
-Pricing belongs to the continuous screen, but a reviewer should treat this
-gene as "shows a persistent share cost, unexplained" and not as neutral.
+`campaign_target_legal` (`src/ai/advanced.rs:12071`) refuses a friend. The
+t16 friendship with the highest-science neighbour — the nearest strong civ —
+removed the opening plan's only campaign target, and the opening posture
+hangs off it: the befriended seat sat at **one city until past turn 80**
+(off: two at t40, three at t100, four at t150), science at t150 10.7 vs 24.2,
+and ended 19 techs to 29, 12 civics to 17, 21 buildings to 44.
 
-Three hypotheses for the share cost, none tested here:
-1. The desk runs *before* `propose_strategic_alliance` in `advanced_diplomacy`
-   and its pending deal blocks the stock proposal for that partner, so the
-   gene may be displacing the stock alliance rather than adding to it.
-2. Unlike `propose_strategic_alliance`, the desk honours neither
-   `denied_partner` (the victory-denial exclusion) nor that function's
-   `rival_victory_pressure(other).progress < 82` ceiling. It can ally a
-   runaway.
-3. The card splice puts an *economic*-slot card at the head of the desired
-   deck for the rest of the game; on a Science plan that evicts something.
+### 2. The rest was the seat draw
 
-## Tests
+The redesigned gene, on the junior's exact probe command, still reads
+**share −3.66 pp, z −1.99** unpaired. Rerunning the same 12 seeds with
+`--p-on 0.01` (every seat off) and pairing each measured seat with itself:
 
-16 in `src/ai/advanced/research_alliance/tests.rs`: registry row opt-in and
-toggles are twins; the science share as a ratio, including a silent empire;
-the route premium's cap and its two stopping conditions, pure; every ranking
-exclusion (science floor, war, denouncement both ways, grievance ceiling,
-unmet, already allied) and the deliberate *non*-exclusion of Civil Service;
-the culture and science threat guards, the bar, and the lane switch; ranking
-by science and the friendship's weight; friendship-then-alliance with the
-cool-down; the friendship leading and waiting for Civil Service; a refusal
-answered by the cool-down and a released partner's place going to the
-next-best; the fallback ladder by model yield, for a taken slot and for a
-missing tech; the objective dropped without the alliance being broken; the
-route premium reaching the real valuation and zero off; the card only while a
-non-threat alliance stands; the off path inert; and a whole 250-turn
-screen-size game in which the desk must actually ask somebody.
+| paired, same seed and seat, n=14 on-seats | Δ | se | z |
+|---|---:|---:|---:|
+| score share | **−0.56 pp** | 0.71 | −0.78 |
+| techs at end | +0.57 | 1.20 | +0.48 |
+| science at end | −16.5 | 21.0 | −0.78 |
+| cities | −0.21 | 0.91 | −0.23 |
+| wins | 2 of 14 on, 3 of 14 off | | |
+
+The 22 off-seats moved −0.05 pp (z −0.19) between the runs. The unpaired
+−3.66 is the 14 drawn seats standing ~3 pp below the other 22 *with the gene
+off too* — `--p-on 0.5` draws the same seats from the same seeds in every
+version, which is why three different designs all read "≈ −3.5". **A probe's
+unpaired share column is not a measurement of the gene when the seat draw is
+fixed by the seed**; pair it against an off-run of the same seeds.
+
+The gene does act: 9 of the 12 games diverge between the on-run and the
+off-run (26081902, 26081905 and 26081907 are identical).
+
+## Whole-game instrument: is a Research Alliance reached at all?
+
+`research_alliance_whole_game_instrument` (`#[ignore]`) plays the screen's
+own setup — 6 majors, 74×46, 250 turns, Emperor, seats 0-2 measured with the
+gene on and exempt from the handicap, seats 3-5 stock rivals with it — and
+reports per major the turn `civil_service` and `scientific_theory` landed,
+the first turn a Research Alliance stood, and the desk's counter.
+
+Three seeds, nine measured seats:
+
+| seed | measured seat | `civil_service` | `scientific_theory` | Research Alliance |
+|---|---|---:|---:|---|
+| 26081900 | Gran Colombia | 181 | — | — (military L1, a rival's ask) |
+| 26081900 | England | 189 | — | — (military L1, a rival's ask) |
+| 26081900 | **France** | 114 | **217** | **asked once, stood from t231 with Babylon, L1 at t251** |
+| 26081901 | Rome / Gaul / Netherlands | 149 / 129 / 229 | — | — |
+| 26081902 | Canada / Ottomans / Egypt | 130 / — / — | — | — (game ended t172) |
+
+The rivals, playing Emperor's bonuses, reached `scientific_theory` at
+t169, t174 and t195. **A Research Alliance is reached — in 1 of 9 measured
+seats, twenty turns before the clock, at level 1.** On a 250-turn clock it
+pays nothing: level 2 needs 54 turns with a route each way. The binding
+constraint is not the desk but our own pace to `scientific_theory` (best
+t217 against the rivals' t169), which is the `science_pace` axis every
+science gene here is fighting. The gene's payoff, if it has one, is on the
+live clock; the screen can say only that it does not hurt.
+
+⚠ The first version's instrument (and my first rerun of it) played
+default-rung, all-Advanced worlds, where `scientific_theory` reaches 2 of 18
+majors by turn 250 and a Research Alliance is unreachable. That is not the
+screen: the screen's Emperor rivals push a science victory at t155–t243, and
+its seats hold 46–77 techs at the end. An instrument that does not mirror the
+screen's difficulty measures a different game.
+
+## Tests (`src/ai/advanced/research_alliance/tests.rs`, 14 + 1 ignored)
+
+Registry row opt-in and toggles are twins; the science share as a clamped
+ratio; the route premium's cap and its two stopping conditions, pure; the
+level-2 horizon, pure; the lane (`Stock`/`Research`/`Wait`, and `Stock`
+again when held or past the horizon); the desk asking for Research off
+cadence whatever the plan says, with the counter and the cool-down recorded;
+the desk waiting for Scientific Theory on the cadence turn where the stock
+desk seats an economic alliance, and resuming the stock kind past the
+horizon; the science term picking the partner with the science where stock
+breaks the tie by id; a refusal answered by the cool-down and the next-best
+asked meanwhile; a culture threat barred and `denied_partner` honoured under
+the gene; a held Research Alliance ending the gene's asking; the premium
+reaching the valuation for a research ally only, zero for a cultural one and
+zero off; every hook the identity off; and the whole-game instrument.
 
 ## Validation
 
-- `cargo test --profile ci --locked` — exit 0 (3177 lib tests, 47 ignored;
-  all other targets green)
+- `cargo test --profile ci --locked` — exit 0 (3212 lib tests, 48 ignored;
+  every other target green)
+- `tools/rust_quality.py --base <merge-base> --head HEAD` — "the changed
+  lines are formatted and warning-free"
 - `tools/genes.py check`, `tools/eval_manifest.py --check`,
   `tools/genome_cost.py check`, `tools/gene_fires.py --max 0`,
-  `tools/test_genes.py`, `tools/test_eval_manifest.py`,
-  `tools/test_gene_fires.py`, `tools/test_treatment_append_points.py` — green
-- `tools/rust_quality.py` — "the changed lines are formatted and
-  warning-free"
-- `docs/gene_ledger.json` regenerates with churn unrelated to this gene (main
-  has drifted from the checked-in file), so it is left at `origin/main`.
+  `tools/test_genes.py`, `tools/test_treatment_append_points.py` — green

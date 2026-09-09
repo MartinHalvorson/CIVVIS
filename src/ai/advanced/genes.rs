@@ -2175,13 +2175,14 @@ pub const GENES: &[Gene] = &[
     // with the rung. Appended above the markers, so a running screen keeps its
     // positional genome. See `advanced/expansion_scales_with_difficulty.rs`.
     Gene { tag: "expansion-scales-with-difficulty", field: "expansion_scales_with_difficulty", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_scales_with_difficulty, disable: AdvancedAi::disable_expansion_scales_with_difficulty },
-    // Rank met majors by science and alliance feasibility, lead with the
-    // declared friendship, take the Research Alliance the moment it is legal,
-    // pay a premium for the first route to that ally while its level still
-    // climbs, and want the international-route science card. At Emperor and
-    // above every rival yield carries a +16..+32 percent handicap; an
-    // alliance's shared tech boosts and its level-three 10 percent of the
-    // ally's science do not. See `advanced/research_alliance.rs`.
+    // The stock alliance desk asks for a Research Alliance on any turn, ranks
+    // the partner by science, holds the slot for it while Scientific Theory
+    // is still short, and pays a premium for the first route to that ally
+    // while its level still climbs. At Emperor and above every rival yield
+    // carries a +16..+32 percent handicap; an alliance's shared tech boosts
+    // and its level-three 10 percent of the ally's science do not. No declared
+    // friendship is proposed ahead of it: that cost 3.5 points of score share.
+    // See `advanced/research_alliance.rs`.
     Gene { tag: "research-alliance-first", field: "research_alliance_first", kind: Kind::OptIn, enable: AdvancedAi::enable_research_alliance_first, disable: AdvancedAi::disable_research_alliance_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

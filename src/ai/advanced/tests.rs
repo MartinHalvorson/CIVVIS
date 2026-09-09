@@ -8219,7 +8219,7 @@ fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
         assessed_turn: game.turn,
         rush: false,
     };
-    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     assert!(game.legal_actions(0).iter().any(|action| {
         matches!(
             action,
