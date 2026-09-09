@@ -6817,8 +6817,8 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
-mod higher_level_strategy;
 mod governor_dividends;
+mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
 /// build a Settler, the citizens work food. One opt-in gene; see

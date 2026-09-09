@@ -86,6 +86,7 @@ fn research_and_revenue_relocations_change_real_orders_and_pay_after_establishme
         ai.relocate_governors_for_dividends(&mut g, 0, &plan);
         assert_eq!(g.players[0].governor_roster[governor].city, Some(new));
         assert_eq!(g.players[0].governor_roster[governor].assigned_turn, g.turn);
+        assert!(AdvancedAi::governor_dividend_reading(&g, 0, governor) < before);
         g.turn += g.standard_duration(g.rules.governors[governor].establish_turns);
         assert!(AdvancedAi::governor_dividend_reading(&g, 0, governor) > before);
     }
@@ -133,6 +134,11 @@ fn unit_governors_arrive_before_the_existing_job_finishes() {
             g.cities[&new].queue, queue,
             "a move does not replace production"
         );
+        if governor == "magnus" {
+            assert!(g.settler_consumes_population(0, new));
+        } else {
+            assert_eq!(g.governor_effect(0, new, "builder_charges"), 0.0);
+        }
         g.turn += g.standard_duration(g.rules.governors[governor].establish_turns);
         if governor == "magnus" {
             assert!(!g.settler_consumes_population(0, new));
