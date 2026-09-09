@@ -27921,10 +27921,40 @@ impl Game {
             for &neighbor_index in neighbors.as_slice() {
                 let neighbor_index = neighbor_index as usize;
                 let n = map_tiles[neighbor_index].pos;
+                let index = neighbor_index;
+                // ⭐ SKIP THE ARRIVALS THAT CANNOT WIN, BEFORE PAYING FOR THEM.
+                // An arrival never carries more movement than the tile it came
+                // from: `unit_step_cost` ends `cost.max(0.0)` and asserts that
+                // "a step never grants movement", `(rem - cost).max(0.0)` is at
+                // most `rem` because `rem > 0` is already guaranteed above,
+                // `.min(capped_moves_at(..))` only lowers it, and every
+                // `FloodArrival::arrival` either keeps that value or zeroes it
+                // for a zone of control. So `score <= rem`, and a tile already
+                // holding `rem` or better can never lose the strict `>` test
+                // below.
+                //
+                // Every interior tile is reached from all six of its neighbours
+                // and re-pushed on each improvement, so roughly half of those
+                // arrivals come from a tile nearer the source and are discarded
+                // — after paying `passable`, `unit_step_cost`, `capped_moves_at`
+                // and the zone-of-control walk. `in_enemy_zoc_for` alone visits
+                // all six neighbours of the arrival, every unit standing on
+                // them, and a `zone_of_control` effect lookup per neighbour.
+                //
+                // ⚠ This skips only where the improvement test is PROVABLY
+                // false, so it writes nothing the test below would have written
+                // and pushes nothing it would have pushed: the LIFO order, the
+                // `nbrs` order and the strict `>` that together decide which
+                // parent `path_to` returns are all untouched. The sibling BFS
+                // above already skips on the same argument. Do not weaken `>=`
+                // to `>` here — equal scores must still fall through to the
+                // test, which rejects them.
+                if scratch.movement_seen[index] && scratch.movement_score[index] >= rem {
+                    continue;
+                }
                 if !passable(cur, n) {
                     continue;
                 }
-                let index = neighbor_index;
                 let cost = self.unit_step_cost(uid, cur, n);
                 let fresh = cur == start && rem >= max_moves;
                 if rem < cost && !fresh {
