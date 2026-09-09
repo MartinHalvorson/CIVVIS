@@ -1713,6 +1713,8 @@ impl SettlementAtlas {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TurnStartHostile {
     id: u32,
+    host_key: i64,
+    owner: usize,
     pos: Pos,
     /// Tiles the unit can enter next turn: its movement, rounded up.
     capture_reach: i32,
@@ -6869,6 +6871,7 @@ mod wonder_sites;
 
 mod science_endgame;
 mod science_victory_drive;
+mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
@@ -7905,6 +7908,8 @@ impl AdvancedAi {
             }
             self.turn_start_hostiles.push(TurnStartHostile {
                 id: unit.id,
+                host_key: hostile_memory_key(g, unit),
+                owner: unit.owner,
                 pos: unit.pos,
                 capture_reach: spec.moves.ceil() as i32,
                 strength: crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
