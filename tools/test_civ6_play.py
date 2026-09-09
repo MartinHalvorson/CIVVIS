@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import io
+import ast
 import builtins
 import json
 import os
 import re
 import sys
+import subprocess
 import tempfile
 import time
 import unittest
@@ -47,6 +49,59 @@ def args(**changes):
     }
     values.update(changes)
     return SimpleNamespace(**values)
+
+
+class SharedDesktopRescueTests(unittest.TestCase):
+    def test_marker_and_foreground_control_optional_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.popup_clear, "frontmost") as front:
+            self.assertFalse(civ6_play.shared_desktop_in_use())
+            front.assert_not_called()
+            (Path(tmp) / ".civvis-shared-desktop").touch()
+            for name, deferred in (("Google Chrome", True), ("Terminal", True),
+                                   ("", True), ("Civ6_Exe_Child", False)):
+                front.return_value = name
+                self.assertEqual(civ6_play.shared_desktop_in_use(), deferred)
+            front.side_effect = subprocess.TimeoutExpired("osascript", 5)
+            self.assertTrue(civ6_play.shared_desktop_in_use())
+
+    def test_real_event_handler_preserves_events_without_gui_or_budget_work(self):
+        # Execute the actual nested callback; no game or GUI bootstrap is needed.
+        tree = ast.parse(Path(civ6_play.__file__).read_text())
+        callback = next(n for n in ast.walk(tree)
+                        if isinstance(n, ast.FunctionDef) and n.name == "record")
+        code = compile(ast.Module(body=[callback], type_ignores=[]),
+                       civ6_play.__file__, "exec")
+        ledger = io.StringIO()
+        with patch.object(civ6_play, "shared_desktop_in_use", return_value=True) as shared, \
+             patch.object(civ6_play.popup_clear, "capture_pause_reason") as capture, \
+             patch.object(civ6_play, "DESKTOP_RESCUE_BUDGET") as budget, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "dismiss_visually_confirmed_popup") as dialogue, \
+             patch.object(civ6_play, "dismiss_world_congress_between_turns") as congress, \
+             patch.object(civ6_play, "press_escape") as escape:
+            namespace = dict(vars(civ6_play), events=ledger, state={"turn": 24},
+                             run_dir=Path("/unused"))
+            exec(code, namespace)
+            for kind in ("autoclose_desktop", "autoclose_stuck"):
+                for screen in ("DiplomacyActionView", "WorldCongressBetweenTurns",
+                               "ChooseArtifact"):
+                    namespace["record"]({"kind": kind, "screen": screen})
+            rows = [json.loads(line) for line in ledger.getvalue().splitlines()]
+            self.assertEqual(len(rows), 6)
+            self.assertTrue(all("utc" in row for row in rows))
+            self.assertEqual(shared.call_count, 6)
+            for action in (capture, screenshot, dialogue, congress, escape):
+                action.assert_not_called()
+            budget.spend.assert_not_called()
+            shared.return_value = False
+            budget.spend.return_value = (True, "capture available")
+            dialogue.return_value = (False, "no safe visible dialogue (map)")
+            namespace["record"]({"kind": "autoclose_desktop",
+                                  "screen": "DiplomacyActionView", "attempts": 4})
+            dialogue.assert_called_once()
+            budget.spend.assert_called_once()
 
 
 class SharedDesktopFocusTests(unittest.TestCase):
