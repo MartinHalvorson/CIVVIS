@@ -11024,12 +11024,70 @@ impl BasicAi {
                 return Some(wall);
             }
         }
+        // Once the city is already taking damage, a range-one Slinger is
+        // not the emergency fallback. Walls retain priority, then a missing
+        // Archer; before Archery, retain the melee rescue.
+        if let Some(shooter) = self.early_local_shooter_item(g, pid, cid) {
+            if matches!(&shooter, Item::Unit { unit } if g.rules.units[unit].range >= 2) {
+                return Some(shooter);
+            }
+        }
         // This damage-only path is live-bridge-only, so choose the local land
         // defender rather than the highest-bombard siege unit.
         let defender = self.best_military(g, pid, cid, Some(false));
         defender.map(|unit| Item::Unit {
             unit: Name::new(&unit),
         })
+    }
+
+    /// The live opening needs a shooter at home even when its Warrior escorts
+    /// a Settler. Prefer a range-two defender; before its unlock, train one
+    /// Slinger to defend now and upgrade later. Existing local shooters and
+    /// nearby shooter queues satisfy this bounded request.
+    fn early_local_shooter_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !self.garrison_under_fire || !advanced::AdvancedAi::early_archers_window_open(g, pid) {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        let shooter = |spec: &crate::rules::UnitSpec| {
+            spec.class == "military"
+                && matches!(spec.domain.as_deref(), None | Some("land"))
+                && spec.promotion_class != "recon"
+                && !spec.siege
+                && spec.has_ranged_attack()
+        };
+        if g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.wdist(unit.pos, city.pos) <= 2
+                && shooter(&g.rules.units[unit.kind])
+        }) || g.cities.values().any(|other| {
+            other.owner == pid
+                && other.id != cid
+                && g.wdist(other.pos, city.pos) <= 4
+                && other.queue.first().is_some_and(|item| match item {
+                    Item::Unit { unit } | Item::Formation { unit, .. } => {
+                        shooter(&g.rules.units[unit])
+                    }
+                    _ => false,
+                })
+        }) {
+            return None;
+        }
+        g.rules
+            .units
+            .iter()
+            .filter(|(_, spec)| shooter(spec))
+            .filter_map(|(unit, spec)| {
+                let item = Item::Unit { unit: *unit };
+                g.can_produce(pid, cid, &item).then_some((
+                    spec.range >= 2,
+                    spec.ranged_attack_strength(),
+                    *unit,
+                    item,
+                ))
+            })
+            .max_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)))
+            .map(|(_, _, _, item)| item)
     }
 
     /// Land defenders that can answer a barbarian raid from this city's tile.
@@ -11097,7 +11155,8 @@ impl BasicAi {
     }
 
     /// The local defenders `barbarian_defense_gap` credits. Under
-    /// `siege-preempts-the-queue` a recon unit is not one of them: a Scout
+    /// `siege-preempts-the-queue` or the live garrison policy, a recon unit
+    /// is not one of them: a Scout
     /// is class `military` and was counted, so on live run
     /// civvis-20260901T193130Z t36 a Scout bought two turns earlier made the
     /// gap read zero with a barbarian Slinger adjacent to the capital, and
@@ -11112,7 +11171,7 @@ impl BasicAi {
             return 0;
         };
         let defenders = Self::barbarian_local_defenders(g, pid, city);
-        if !self.siege_preempts_the_queue {
+        if !self.siege_preempts_the_queue && !self.garrison_under_fire {
             return defenders;
         }
         let recon = g
@@ -11141,6 +11200,10 @@ impl BasicAi {
             || !self.barbarian_local_alarm_for_controller(g, pid, cid)
         {
             return None;
+        }
+        // A local body count does not replace the first city-defense shooter.
+        if let Some(shooter) = self.early_local_shooter_item(g, pid, cid) {
+            return Some(shooter);
         }
         if self.barbarian_defense_gap(g, pid, cid) > 0 {
             // A ring of shooters wants a shooter back. See
@@ -15022,23 +15085,27 @@ impl BasicAi {
         } else {
             None
         };
+        let opening_wonder_recon = self.garrison_under_fire
+            && g.player_city_ids(pid).len() <= 2
+            && advanced::AdvancedAi::early_archers_window_open(g, pid);
         // Visible hostiles at war with us: ground around them is not a goal.
         // Live vision only — a threat the seat cannot see does not steer it.
-        let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
-            let visible = g.player_vision_frame(pid);
-            g.units
-                .values()
-                .filter(|unit| {
-                    unit.owner != pid
-                        && g.is_at_war(pid, unit.owner)
-                        && g.rules.units[unit.kind].class == "military"
-                        && g.sees(&visible, unit.pos)
-                })
-                .map(|unit| unit.pos)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let threats: Vec<Pos> =
+            if (self.explore_commit || opening_wonder_recon) && !g.players[pid].is_barbarian {
+                let visible = g.player_vision_frame(pid);
+                g.units
+                    .values()
+                    .filter(|unit| {
+                        unit.owner != pid
+                            && g.is_at_war(pid, unit.owner)
+                            && g.rules.units[unit.kind].class == "military"
+                            && g.sees(&visible, unit.pos)
+                    })
+                    .map(|unit| unit.pos)
+                    .collect()
+            } else {
+                Vec::new()
+            };
         let threatened = |pos: Pos| {
             threats
                 .iter()
@@ -15048,9 +15115,9 @@ impl BasicAi {
         // walked before any frontier, held goal or not. V1 clears every nearby
         // wonder's unseen pocket nearest-tile first; V2 preserves every trigger
         // and allows at most one extra tile to reveal more of that pocket.
-        if self.wonder_ring_recon || self.wonder_ring_recon_2 {
+        if self.wonder_ring_recon || self.wonder_ring_recon_2 || opening_wonder_recon {
             let reserved = self.reserved_explore_goals(g, pid, uid);
-            let wonder_goal = if self.wonder_ring_recon_2 {
+            let wonder_goal = if self.wonder_ring_recon_2 || opening_wonder_recon {
                 self.wonder_ring_goal_2(g, pid, uid, dry_only, &dead, &threats, &reserved)
             } else {
                 self.wonder_ring_goal(g, pid, uid, dry_only, &dead, &threats, &reserved)
@@ -22669,6 +22736,70 @@ mod tests {
                 .any(|progress| (*progress - 9.0).abs() < f64::EPSILON),
             "the delayed Settler keeps its accumulated production"
         );
+    }
+
+    #[test]
+    fn live_opening_trains_a_shooter_before_more_settlers_despite_a_scout() {
+        for (archery, expected) in [(false, "slinger"), (true, "archer")] {
+            let (mut g, city, _) = barbarian_at_the_gates_game(91_504);
+            for uid in g.player_unit_ids(0) {
+                g.remove_unit(uid);
+            }
+            let home = g.cities[&city].pos;
+            g.spawn_test_unit("scout", 0, home);
+            g.cities.get_mut(&city).unwrap().pop = 2;
+            if archery {
+                g.players[0].techs.insert(crate::name!("archery"));
+            }
+            let settler = Item::Unit {
+                unit: crate::name!("settler"),
+            };
+            g.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: settler,
+                },
+            )
+            .unwrap();
+            g.cities.get_mut(&city).unwrap().production = 9.0;
+            let mut ai = BasicAi::new();
+            ai.garrison_under_fire = true;
+            assert_eq!(ai.barbarian_local_defenders_for_controller(&g, 0, city), 0);
+            ai.cities(&mut g, 0);
+            assert_eq!(
+                g.cities[&city].queue.first(),
+                Some(&Item::Unit {
+                    unit: Name::new(expected)
+                })
+            );
+            assert!(g.cities[&city]
+                .production_progress
+                .values()
+                .any(|p| (*p - 9.0).abs() < f64::EPSILON));
+        }
+    }
+
+    #[test]
+    fn live_shooter_request_is_local_bounded_and_not_a_siege_piece() {
+        let (mut g, city, _) = barbarian_at_the_gates_game(91_505);
+        g.players[0].techs.insert(crate::name!("archery"));
+        g.players[0].techs.insert(crate::name!("engineering"));
+        let mut ai = BasicAi::new();
+        assert!(ai.early_local_shooter_item(&g, 0, city).is_none());
+        ai.garrison_under_fire = true;
+        let archer = Item::Unit {
+            unit: crate::name!("archer"),
+        };
+        assert_eq!(ai.barbarian_defense_item(&g, 0, city), Some(archer.clone()));
+        g.cities.get_mut(&city).unwrap().hp = 100;
+        assert_eq!(ai.besieged_city_item(&g, 0, city), Some(archer));
+        let home = g.cities[&city].pos;
+        let uid = g.spawn_test_unit("archer", 0, home);
+        assert!(ai.early_local_shooter_item(&g, 0, city).is_none());
+        g.remove_unit(uid);
+        g.players[0].techs.insert(crate::name!("machinery"));
+        assert!(ai.early_local_shooter_item(&g, 0, city).is_none());
     }
 
     #[test]
