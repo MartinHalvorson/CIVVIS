@@ -240,6 +240,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `settler-site-agreement` | -14 | 16.53% | 16.80% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `wonder-ring-settle-value` | -14 | 16.53% | 17.08% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `barbarian-capture-priority` | -16 | 16.51% | 16.83% | `2026-08-24-standard-continuous-38160-total-seats.json` |
+| `settler-second-look` | -17 | 16.49% | 17.18% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `fortify-idle-units` | -18 | 16.49% | 16.84% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `spread-campaign-persists` | -19 | 16.48% | 16.86% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `war-patience` | -19 | 16.47% | 16.86% | `2026-08-24-standard-continuous-38160-total-seats.json` |
@@ -258,6 +259,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `siege-role` | -39 | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `research-floor-holds` | -40 | 16.27% | 17.07% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `wonder-adjacent-sites` | -42 | 16.25% | 17.01% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
+| `improvement-housing-value` | -43 | 16.24% | 16.81% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `chop-into-the-queue` | -45 | 16.22% | 16.82% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `builder-reward-survey` | -46 | 16.21% | 17.13% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `contested-suzerainty-brake` | -46 | 16.21% | 16.82% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
@@ -271,11 +273,15 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `boost-wait-research` | -91 | 15.76% | 17.05% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `score-horizon` | -98 | 15.68% | 16.99% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
+| `district-planning-2` | -103 | 15.64% | 16.86% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `settler-screen` | -108 | 15.59% | 17.01% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `governor-victory-lanes` | -110 | 15.57% | 17.78% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `opening-warrior-recon` | -127 | 15.40% | 17.20% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 | `governor-every-lane` | -173 | 14.93% | 18.38% | `2026-08-24-standard-continuous-38160-total-seats.json` |
 | `enter-the-prophet-race` | -181 | 14.86% | 17.43% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
+| `rapid-city-expansion` | -407 | 12.60% | 18.36% | `2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json` |
 
 ## How to read this
 
@@ -325,6 +331,8 @@ The observations below remain useful, but they do not implement the deployment r
 **Four research-planning genes joined that historical record under the same explicit criterion.** At 38,160 seats, `chain-tech-lookahead` read **-0.531591 pp**, `research-floor-holds` **-0.564379 pp**, `research-grants-first` **-0.181882 pp**, and `science-payback-horizon` **-0.232622 pp**. All were off-default, and their fields, flags, registry rows, probes, and focused tests left the code on 2026-08-24. Their screen rows remain in the ranking's **Removed from the code** table so the cull is auditable without keeping their runtime branches alive.
 
 **`solvency-first-trade-slot-2` left the code on 2026-09-01 under the batch rule, and it is the only one of the ledger's six `remove` decisions that did.** Its three batch columns read **-33, -50, -49** at the cull (and **-61, -33, -50** under the 5,424-seat batch then in flight as PR #2939) -- below the rule's -10 bar in every window it was ever priced, with the version-1 head `solvency-first-trade-slot` at **+108/+111/+136** carrying the family. Its field, toggles, registry row, gated branches and fires probe left the code; the reservation and Trader-step arms were restored to version one's shape exactly. The other five `remove` rows did NOT leave: `rapid-city-expansion` is deliberately retained while the live seat's force-on arm (`~/.civvis-live-force-on`) is running it, and `boost-wait-research`, `opening-warrior-recon`, `settler-factory-coordination` and `skip-the-prophet-race` were re-priced out of `remove` (newest windows -8, +4, +7 and +2) by the in-flight batch -- exactly the "screen in flight or unmerged" check the rule below this note prescribes, and the mechanism that made #2266's cull wrong. They stay in the code, `off`.
+
+**Six expansion-side genes left the code on 2026-09-08 (PR #3256).** Two are the ledger's own `rules.batch_decisions` `remove` verdicts (three batch columns all below `batch_rule_remove_below` = -10): `rapid-city-expansion` (version one, **-133/-209**, science pace -3.41 techs at z -60; its sibling `rapid-city-expansion-2`, rank 2, ships on and keeps every behaviour it used -- the shared `advanced/rapid_city_expansion.rs` module, the baseline governor's pipeline and population floor, and the settler-target floor) and `settler-second-look` (**-11/-27**, Diff -0.53 pp). Three are operator-directive removals from the bottom of the table (each P(>0) <= 1.5% and pooled Diff <= -0.98 pp): `settler-screen` (rank 263, P 0.5%, Diff -1.15 pp -- the `pass-picket` half of `advanced/recon_disruption.rs` stays), `opening-warrior-recon` (version one, rank 266, P 0.0%, Diff -1.61 pp; `opening-warrior-recon-2` ships on) and `improvement-housing-value` (rank 261, P 1.5%, Diff -0.98 pp). One is the gene version policy's third-best drop named by `python3 tools/genes.py versions`: `district-planning-2` (rank 248, +11/-70, Diff -0.68 pp; `district-planning` ships on, `district-planning-3` stays). Every gated branch collapsed to its gene-off shape, each gene's fires probe was deleted, and the rows enter the ranking's **Removed from the code** table; the historical `docs/gene_screens/` batch files still name the tags by design.
 
 **Four bottom-of-the-table genes left the code on 2026-09-08 as directive removals** (operator convention: the bottom of `GENE_HEURISTIC_RANKING.md` leaves the code). `boost-wait-research` (rank 253, P(>0) 3.7%, Diff **-0.76 pp**, science pace -0.10) and `treasury-at-work` (rank 243, P 10.2%, **-0.54 pp**) were dominated version ones whose siblings ship as the family head: `boost-wait-research-2` at rank 41 (+0.55 pp) and `treasury-at-work-2` at rank 5 (+1.83 pp) keep every hook, and the shared paths (`boost_wait_penalty`, `working_treasury_reserve`, `treasury_purchase_stays_solvent`) now gate on version two alone -- byte-equivalent with version one off. `gold-for-the-young-city` (rank 250, P 6.0%, **-0.71 pp**) and `contested-suzerainty-brake` (rank 247, P 8.0%, **-0.65 pp**, batch columns -5/-56) were singletons below the 8% bar; the purchase premium and the contested envoy race penalty left with them. Fields, toggles, registry rows, gated branches, gene-specific tests and fires probes are gone; their rows enter the **Removed from the code** table, and the three display batches that price them record the reporting-build exception (`reporting_batches[].unverified`) per the #2944 precedent.
 

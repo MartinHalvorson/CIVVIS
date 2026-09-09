@@ -924,7 +924,6 @@ pub const GENES: &[Gene] = &[
     // against us for `ONE_WAR_TIDE_PATIENCE` turns. See
     // `AdvancedAi::one_war_observe` and `advanced/one_war.rs`.
     Gene { tag: "one-war-at-a-time", field: "one_war_at_a_time", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_at_a_time, disable: AdvancedAi::disable_one_war_at_a_time },
-    Gene { tag: "settler-screen", field: "settler_screen", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_screen, disable: AdvancedAi::disable_settler_screen },
     Gene { tag: "pass-picket", field: "pass_picket", kind: Kind::OptIn, enable: AdvancedAi::enable_pass_picket, disable: AdvancedAi::disable_pass_picket },
     // Run civvis-20260824T204654Z opened trade capacity around turn 17 and
     // still held zero Traders and zero routes at turn 65, by then at -6 Gold
@@ -1018,21 +1017,10 @@ pub const GENES: &[Gene] = &[
     // 30 turns at (10, 29), 3 charges, work 5 tiles away on its own landmass.
     // The gene tries the next-nearest candidate instead of the turn.
     Gene { tag: "builder-tries-the-next-tile", field: "builder_tries_the_next_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_tries_the_next_tile, disable: AdvancedAi::disable_builder_tries_the_next_tile },
-    // Before the capital exists, move the starting Warrior before the Settler
-    // and score only city footprints that the player's sight has fully
-    // observed. The target cache is invalidated after that recon turn, so a
-    // later opening turn can improve the choice with new terrain too.
-    // Appended at the END so a running screen keeps its positional genome.
-    Gene { tag: "opening-warrior-recon", field: "opening_warrior_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon, disable: AdvancedAi::disable_opening_warrior_recon },
     // Version two pays for only an actual opening escort's fresh vision and
     // leaves the normal settlement candidate filter intact. It replaces v1
     // within a seat, so a screen can compare their distinct mechanisms.
     Gene { tag: "opening-warrior-recon-2", field: "opening_warrior_recon_2", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon_2, disable: AdvancedAi::disable_opening_warrior_recon_2 },
-    // A Settler normally has two movement points. After its first actual move,
-    // throw away its cached destination and choose the remaining leg from the
-    // newly current board without discarding long-lived safety history.
-    // Appended at the END so a running screen keeps its positional genome.
-    Gene { tag: "settler-second-look", field: "settler_second_look", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_second_look, disable: AdvancedAi::disable_settler_second_look },
     // ⚠ Settlers are lost by CAPTURE — a raider stepping onto the tile —
     // and in a native game the settler's capture model is a geometric disk
     // priced as a soft score under the MILITARY model, its retreat block and
@@ -1166,16 +1154,6 @@ pub const GENES: &[Gene] = &[
     // Live King seat, 2026-08-25: 3,094 of 36,975 city-turns before turn 104
     // carried no production item at all, 8.4% of the early empire's output.
     Gene { tag: "never-an-empty-queue", field: "never_an_empty_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_never_an_empty_queue, disable: AdvancedAi::disable_never_an_empty_queue },
-    // `BasicAi::best_improvement` pays `spec.housing * 2.0`; the advanced
-    // chooser the deployed agent uses never reads `spec.housing` at all, so it
-    // is strictly blinder than the baseline about the thing that caps a city's
-    // growth. Seventeen improvements carry Housing, counted within three tiles
-    // of the centre whether or not the tile is worked. Population is the
-    // largest single source of a city's science -- 3.5 of 9.3 beakers on the
-    // live seat, against the Campus's own 2.1 -- and 88% of standard Emperor
-    // games end on science. Live King seat: 58% of cities at their housing
-    // ceiling at turn 100, 13% of owned land improved.
-    Gene { tag: "improvement-housing-value", field: "improvement_housing_value", kind: Kind::OptIn, enable: AdvancedAi::enable_improvement_housing_value, disable: AdvancedAi::disable_improvement_housing_value },
     // Two Builder quotas exist and the measured one is not the one that binds.
     // `production_builder_floor` raises 0.5 to 0.75 inside `delegated_cities`,
     // the baseline governor the strategic path reaches only for a city it has
@@ -1259,15 +1237,6 @@ pub const GENES: &[Gene] = &[
     // code on 2026-09-09 under the batch rule (-12/-19/-19).
     Gene { tag: "wonder-adjacent-sites-2", field: "wonder_adjacent_sites_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_adjacent_sites_2, disable: AdvancedAi::disable_wonder_adjacent_sites_2 },
     Gene { tag: "wonder-ring-recon", field: "wonder_ring_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_ring_recon, disable: AdvancedAi::disable_wonder_ring_recon },
-    // ⭐ RAPID CITY EXPANSION (recovered 2026-08-25 from the branch stranded by
-    // #2306; the implementation landed 21 minutes after that PR was closed as
-    // "empty" and was never reviewed). Settler-first at the legal population
-    // floor, a shared multi-Settler pipeline, safe nearby sites before any war,
-    // and Conquest only once that practical frontier is full. Registered here
-    // because `advanced/treatments.rs`, which the branch wrote its row into,
-    // was deleted by the 2026-08-23 registry cleanup. Appended at the END so a
-    // running screen keeps its positional genome.
-    Gene { tag: "rapid-city-expansion", field: "rapid_city_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_rapid_city_expansion, disable: AdvancedAi::disable_rapid_city_expansion },
     // Three site terms run from every neighbour (six a tile under six from
     // a foreign city, four a tile for rival ground within three, isolation
     // on top) and nothing pays for the one thing the ground between two
@@ -1820,16 +1789,15 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "settler-site-gate", field: "settler_site_gate", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_site_gate, disable: AdvancedAi::disable_settler_site_gate },
     // `settler-target-floor` (live autopsy, 2026-09-01): a Settler is never
     // sent to a site not worth the walk. Run 182050Z changed settler targets
-    // on 61 of 100 marching turns; once the four-tile ring was empty,
-    // `rapid-city-expansion` took the global best with no premium and no
-    // floor and marched Settlers 14–18 tiles to sites worth −35.0, −4.1 and
+    // on 61 of 100 marching turns; once the four-tile ring was empty, the
+    // (since culled) first rapid-expansion version took the global best with
+    // no premium and no floor and marched Settlers 14–18 tiles to sites worth −35.0, −4.1 and
     // 17.7 (founded sites: 96–140); two were lost on those roads. Candidates
     // are charged the walk beyond eight tiles at the extra-travel price and
     // must clear a floor of 10 to be a target, in the ranked and the
     // exhaustion search alike. See `advanced/settler_target_floor.rs`.
     Gene { tag: "settler-target-floor", field: "settler_target_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_target_floor, disable: AdvancedAi::disable_settler_target_floor },
     Gene { tag: "spaceport-surplus-veto", field: "spaceport_surplus_veto", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_surplus_veto, disable: AdvancedAi::disable_spaceport_surplus_veto },
-    Gene { tag: "district-planning-2", field: "district_planning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_2, disable: AdvancedAi::disable_district_planning_2 },
     Gene { tag: "district-planning-3", field: "district_planning_3", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning_3, disable: AdvancedAi::disable_district_planning_3 },
     Gene { tag: "air-surge-2", field: "air_surge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_2, disable: AdvancedAi::disable_air_surge_2 },
     // `commitment-owner-acts` (operator, 2026-08-27, "decisions are slow to
@@ -2393,7 +2361,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("district-coverage", [Some(12), Some(-5), Some(-18)]),
     ("district-coverage-2", [Some(-7), Some(49), Some(-6)]),
     ("district-planning", [Some(-10), Some(59), Some(10)]),
-    ("district-planning-2", [Some(11), Some(-70), Some(-16)]),
     ("district-planning-3", [Some(-3), Some(-12), Some(-1)]),
     ("domination-city-count", [Some(7), Some(19), Some(-12)]),
     ("doomed-blow-veto", [Some(7), Some(-14), Some(-14)]),
@@ -2440,7 +2407,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("hostile-memory", [Some(-29), Some(-45), Some(-9)]),
     ("housing-research", [Some(-5), Some(72), Some(-22)]),
     ("idle-faith-patronage", [Some(-15), Some(13), Some(6)]),
-    ("improvement-housing-value", [Some(-30), Some(-10), Some(-11)]),
     ("industrial-chain-debt", [Some(9), Some(7), Some(6)]),
     ("island-exploration", [Some(-14), Some(-51), Some(4)]),
     ("lane-culture-spending", [Some(-8), Some(26), Some(-1)]),
@@ -2470,7 +2436,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("one-launch-pad", [Some(-4), Some(25), Some(3)]),
     ("one-shot-recovery", [Some(-3), Some(24), Some(3)]),
     ("one-war-at-a-time", [Some(-12), Some(11), Some(-6)]),
-    ("opening-warrior-recon", [Some(-36), Some(13), Some(-38)]),
     ("opening-warrior-recon-2", [Some(28), Some(16), Some(26)]),
     ("opportunistic-war", [Some(-25), Some(9), Some(-8)]),
     ("order-retry", [Some(-8), Some(-5), Some(5)]),
@@ -2488,7 +2453,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("quest-production", [Some(13), Some(7), Some(6)]),
     ("quest-trade-route", [Some(24), Some(-6), Some(1)]),
     ("raid-pillage-prizes", [Some(-9), Some(-15), Some(-26)]),
-    ("rapid-city-expansion", [Some(-133), Some(-209), Some(-120)]),
     ("rapid-city-expansion-2", [Some(105), Some(148), Some(67)]),
     ("recon-replacement", [Some(-3), Some(-35), Some(-11)]),
     ("recorded-tactical-step", [Some(-2), Some(-27), Some(-20)]),
@@ -2522,8 +2486,6 @@ pub(super) const BATCH_COLUMNS: &[(&str, [Option<i32>; 3])] = &[
     ("settler-guard-holds", [Some(-15), Some(-39), Some(10)]),
     ("settler-guard-holds-2", [Some(18), Some(18), Some(1)]),
     ("settler-never-idles", [Some(18), Some(1), Some(16)]),
-    ("settler-screen", [Some(-18), Some(-5), Some(-26)]),
-    ("settler-second-look", [Some(-11), Some(-27), Some(-13)]),
     ("settler-site-gate", [Some(-5), Some(41), Some(-4)]),
     ("settler-target-floor", [Some(8), Some(48), Some(6)]),
     ("settler-target-hysteresis", [Some(1), Some(11), Some(-18)]),
