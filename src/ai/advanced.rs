@@ -2307,6 +2307,7 @@ pub struct AdvancedAi {
     /// unit: a second Settler must not walk into the same blocked corridor
     /// while the first one takes a safe alternate. See `settler_threat_detour`.
     settler_threat_deferrals: BTreeMap<Pos, u32>,
+    wonder_clearance: BTreeMap<u32, wonder_clearance::Clearance>,
     /// Sites a settler stood on and could not found, each with the turn its
     /// retirement expires. A set rather than the single `settler_avoid` slot:
     /// the stall counter overwrites that slot, and a doomed frontier is usually
@@ -6900,6 +6901,7 @@ pub(crate) mod city_state_quests;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
 /// settlement forecast's second ring remains a purchasable city asset.
 mod science_wonder_sites;
+mod wonder_clearance;
 /// `wonder-adjacent-sites-2` prices a settle site beside a natural wonder
 /// the way the engine pays it; `wonder-ring-recon` sends an explorer to the
 /// unseen ring of a natural wonder near home before it picks a frontier. Two
@@ -7285,6 +7287,7 @@ impl AdvancedAi {
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
         self.settler_threat_deferrals.clear();
+        self.wonder_clearance.clear();
         self.settler_dead_sites.clear();
         self.settler_last_seen.clear();
         self.early_settler_homes.clear();
@@ -7326,6 +7329,19 @@ impl AdvancedAi {
                 .collect()
         };
         self.settler_targets = remap(&self.settler_targets);
+        self.wonder_clearance = self
+            .wonder_clearance
+            .iter()
+            .filter_map(|(uid, request)| {
+                let mut request = request.clone();
+                request.units = request
+                    .units
+                    .iter()
+                    .filter_map(|id| map.get(id).copied())
+                    .collect();
+                map.get(uid).map(|id| (*id, request))
+            })
+            .collect();
         // A settler the rebuilt board no longer carries has founded or been
         // taken; its last position is kept for `resolve_vanished_settlers`,
         // which tells the two apart once it can see the cities.
@@ -7539,6 +7555,7 @@ impl AdvancedAi {
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_threat_deferrals: BTreeMap::new(),
+            wonder_clearance: BTreeMap::new(),
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
             settler_walk_started: BTreeMap::new(),
@@ -13854,9 +13871,11 @@ impl AdvancedAi {
             } else {
                 None
             };
+            let opening_archery_goal = self.opening_archery_goal(g, pid);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let forced_goal = match objective {
+                _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
                 }) =>
@@ -14050,7 +14069,9 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            if barbarian_military_goal.as_deref() == Some(goal) {
+                            if opening_archery_goal.as_deref() == Some(goal) {
+                                format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
+                            } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the cheapest step toward {}, needed to catch a nearby barbarian army",
                                     plain(goal)
@@ -30448,6 +30469,9 @@ impl AdvancedAi {
         local_radius: i32,
         avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
+        if let Some(site) = self.wonder_clearance_site(g, pid, uid) {
+            return Some((site, self.settle_value(g, pid, site)));
+        }
         let mut score_cache = BTreeMap::new();
         let local = self.best_reachable_settle_site_except_cached(
             g,
@@ -30571,6 +30595,9 @@ impl AdvancedAi {
             return None;
         }
 
+        if self.reserve_wonder_clearance(g, pid, uid, target) {
+            return None;
+        }
         let until = g.turn + g.standard_duration(SETTLER_THREAT_DETOUR_TURNS);
         let previous = self.settler_threat_deferrals.insert(target, until);
         let avoid = self.settler_avoid.get(&uid).map(|(position, _)| *position);
@@ -37242,7 +37269,12 @@ impl AdvancedAi {
             let xp_farm_reading = self.base.has_harmless_naval_xp_shot(g, pid, uid);
             if self.base.barbarian_tactics_enabled()
                 && !enemies.contains(&barb)
-                && (camp_reading || xp_farm_reading)
+                && (camp_reading
+                    || xp_farm_reading
+                    || self.wonder_clearance.iter().any(|(settler, r)| {
+                        r.units.contains(&uid)
+                            && self.wonder_clearance_site(g, pid, *settler).is_some()
+                    }))
             {
                 enemies.push(barb);
             }
@@ -37813,6 +37845,11 @@ impl AdvancedAi {
         // struck has no movement left. This spends only movement the march
         // below would not use. See `advanced/city_campaign.rs`.
         if let Some(acted) = self.campaign_pillage_step(g, pid, uid, plan, group.as_ref()) {
+            return acted;
+        }
+
+        if let Some(acted) = self.wonder_clearance_step(g, pid, uid) {
+            self.force_groups_dirty |= acted;
             return acted;
         }
 
@@ -38751,6 +38788,7 @@ impl AdvancedAi {
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.builder_support.clear();
         self.base.begin_movement_turn(g, pid);
+        self.refresh_wonder_clearance(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
         // loop below handles it. Firaxis exports an idle Trader with zero
         // walking movement but still permits TradeRoute from the city it
