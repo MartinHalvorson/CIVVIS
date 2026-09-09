@@ -46,3 +46,30 @@ land frontiers, preserving v1's production incentive. Its results must be measur
 on new seeds. These files describe the rejected extra-Scout implementation only.
 The original 12-game extra-Scout family screen was deliberately terminated before
 any game completed when the mechanism was revised; it supplies no outcome evidence.
+
+## Routing revision at 380b427bb
+
+The routing revision keeps v1's production value. It spreads existing Scouts
+across known nearby land frontiers with distinct directional preferences when
+multiple Scouts exist, avoids visible hostile units, and does not redirect
+Settler guards. The same diagnostic on new seeds 91095001..91095024 produced:
+
+| Metric | V1 | Routing V2 | V2 minus V1, paired-map bootstrap 95% interval |
+|---|---:|---:|---:|
+| First contact, capped at 31 | 19.701 | 19.556 | -0.146 [-0.799, +0.389] turns |
+| Major contacts by t30 | 1.236 | 1.236 | 0.000 [-0.069, +0.083] |
+| Explored tiles by t30 | 253.910 | 258.514 | +4.604 [-0.347, +10.389] |
+| Maximum simultaneously alive Scouts by t30 | 1.069 | 1.083 | +0.014 [-0.021, +0.056] |
+
+123/144 v1 seats met a major by t30, versus 124/144 v2 seats. Twelve seats made
+contact earlier, 117 were unchanged, and fifteen later. This is an inconclusive
+opening result: the point estimate is slightly earlier, but the interval includes
+no improvement and aggregate contact counts are equal. It is not proof that the
+routing revision improves discovery or wins games.
+
+Before further tuning, a fixed 128-map disjoint confirmation is registered at
+seeds 91096001..91096128 using this same unchanged revision and diagnostic.
+The raw routing observations and their summary are retained beside this note.
+The revised standard family firing screen separately uses twelve full Emperor
+games at seeds 91091013..91091024. Neither diagnostic is a ledger source, and a
+small firing probe alone must not select a deployment default.
