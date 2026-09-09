@@ -314,6 +314,7 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod movement_risk;
 mod scout_first;
+mod scout_inference;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
@@ -15275,12 +15276,12 @@ impl BasicAi {
                 )
             })
         } else if self.explore_commit {
-            // The most revealing goal, and among those the one farthest from
-            // home: the walk sweeps outward and along the frontier instead of
-            // hugging the fringe nearest the unit. See `explore_commit`.
+            // Information gain plus a bounded, charted-terrain rival prior.
+            // Distance from home breaks ties so explorers fan outward.
             candidates.into_iter().max_by_key(|target| {
                 (
-                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    Self::frontier_reveal_value(g, pid, uid, *target) as i32 * 4
+                        + Self::rival_frontier_prior(g, pid, uid, *target, home),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
                     std::cmp::Reverse(*target),
