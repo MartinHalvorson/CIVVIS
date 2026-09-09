@@ -648,11 +648,16 @@ than the field, so an old file is byte for byte what it was:
 (`Seats::contrast`: the regression on `[1, sign]`, errors clustered by game)
 — no new estimator. The JSON carries three blocks per gene, each
 `{diff, se, z, n_on, n_off}` on the same arms the win column counts:
-`science_pace` (`techs_150`), `techs_end` (`techs`) and `science_end`. A file
-whose rows lack a field reads **`null`** there, never a Δ of zero; one row
-without it is enough. The printed analysis adds a `science pace` block after
-the decisiveness block, sorted by |z| of `techs@150Δ`, only when the rows carry
-it.
+`science_pace` (`techs_150`), `techs_end` (`techs`) and `science_end`, and two
+more of the same shape for the **boosted share** — `techs_boosted_share_pp`
+(`techs_boosted / techs_researched`, in points) and `civics_inspired_share_pp`
+(`civics_inspired / civics_adopted`) — the direct read of a boost gene, the one
+that says whether its plan fired at all, which win and pace cannot (a seat
+that researched nothing reads zero; a file whose rows all lack the census reads
+`null`). A file whose rows lack a field reads **`null`** there, never a Δ of
+zero; one row without it is enough. The printed analysis adds a `science pace` block after
+the decisiveness block, sorted by |z| of `techs@150Δ`, and a `boosted share`
+block after that, each only when the rows carry it.
 
 **The ranking.** `GENE_HEURISTIC_RANKING.md` does not display a science-pace
 column. The `science_pace` JSON block and the printed analysis remain available

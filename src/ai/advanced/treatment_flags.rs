@@ -4101,6 +4101,22 @@ impl AdvancedAi {
         self.culture_threat_early = false;
     }
 
+    /// Plan the next six technologies' and four civics' boosts: classify each
+    /// trigger by what it costs the plan and turn the cheap ones into at most
+    /// three deadlined side objectives, each a share-of-value premium on the
+    /// one production or Builder choice that fires it. See
+    /// `advanced/boost_planner.rs`. Opt-in gene `boost-planner`. Filed here
+    /// rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_boost_planner(&mut self) {
+        self.boost_planner = true;
+    }
+
+    /// The twin of `enable_boost_planner`.
+    pub fn disable_boost_planner(&mut self) {
+        self.boost_planner = false;
+    }
+
     /// Take a small neighbour's city in the opening: a met rival's known
     /// city within twelve tiles of the capital, the capital's production
     /// reserved for three shooters and two melee bodies ahead of the second
@@ -4132,6 +4148,36 @@ impl AdvancedAi {
     /// The twin of `enable_expansion_scales_with_difficulty`.
     pub fn disable_expansion_scales_with_difficulty(&mut self) {
         self.expansion_scales_with_difficulty = false;
+    }
+
+    /// Deny a rival the science victory rather than only race it: the
+    /// diplomatic refusals, the denunciation and one spy's disruption of the
+    /// launch pad. See `advanced/science_threat_denial.rs`. Opt-in gene
+    /// `science-threat-denial`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_threat_denial(&mut self) {
+        self.science_threat_denial = true;
+    }
+
+    /// The twin of `enable_science_threat_denial`. The war rung's own flag
+    /// is left as it is; it is inert without this one.
+    pub fn disable_science_threat_denial(&mut self) {
+        self.science_threat_denial = false;
+    }
+
+    /// The pad raid and the bounded war that opens it, on top of the base
+    /// denial. Opt-in gene `science-denial-war`; it REQUIRES
+    /// `science-threat-denial` and arms it, so the tag fires on its own and a
+    /// seat that drew the war without the base still plays the whole ladder.
+    /// See `advanced/science_threat_denial.rs`.
+    pub fn enable_science_denial_war(&mut self) {
+        self.science_threat_denial = true;
+        self.science_denial_war = true;
+    }
+
+    /// The twin of `enable_science_denial_war`: the base stays as it was.
+    pub fn disable_science_denial_war(&mut self) {
+        self.science_denial_war = false;
     }
 
     /// The stock alliance desk asks for a Research Alliance on any turn,

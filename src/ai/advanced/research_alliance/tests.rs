@@ -488,7 +488,9 @@ fn research_alliance_whole_game_instrument() {
         crate::ai::run_game_observed(&mut world, &mut ais, |g| {
             for pid in 0..6 {
                 if civil_service[pid].is_none()
-                    && g.players[pid].civics.contains(&crate::name!("civil_service"))
+                    && g.players[pid]
+                        .civics
+                        .contains(&crate::name!("civil_service"))
                 {
                     civil_service[pid] = Some(g.turn);
                 }

@@ -2162,6 +2162,15 @@ pub const GENES: &[Gene] = &[
     // Version two also withdraws healthy units exposed to a nominal lethal
     // shot from one recently observed gun; v1 remains the deployed control.
     Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
+    // A short, deadlined plan for the Eurekas and Inspirations the beeline is
+    // about to walk past: the next six technologies and four civics, a trigger
+    // cost table, and at most three cheap side objectives carrying the turn
+    // they expire, each a share-of-value premium on the one production or
+    // Builder choice that fires it. The live ladder triggers 13-40 percent of
+    // tech boosts and 0-26 percent of civic boosts, and `chase-every-boost-2`
+    // shows that pricing every reachable trigger instead measures negative.
+    // See `advanced/boost_planner.rs`.
+    Gene { tag: "boost-planner", field: "boost_planner", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner, disable: AdvancedAi::disable_boost_planner },
     // Take a small neighbour's city in the opening. The live seat has never
     // won at Emperor: rivals there take +16% on every yield and a free
     // Settler an era, our combat trades at 0.45 kills per loss, and 234 of
@@ -2175,6 +2184,21 @@ pub const GENES: &[Gene] = &[
     // with the rung. Appended above the markers, so a running screen keeps its
     // positional genome. See `advanced/expansion_scales_with_difficulty.rs`.
     Gene { tag: "expansion-scales-with-difficulty", field: "expansion_scales_with_difficulty", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_scales_with_difficulty, disable: AdvancedAi::disable_expansion_scales_with_difficulty },
+    // Deny a rival the science victory instead of only racing it, rungs 1-2:
+    // no new alliance, passage or Great Work to a science threat and a
+    // denunciation; one spy posted to the threat's launch city to disrupt
+    // the pad. At Emperor the rivals finish the space race at t213-228 while
+    // we stand at one to three of four launches; the Immortal and Deity
+    // handicaps make speeding our own launch insufficient on its own. See
+    // `advanced/science_threat_denial.rs`.
+    Gene { tag: "science-threat-denial", field: "science_threat_denial", kind: Kind::OptIn, enable: AdvancedAi::enable_science_threat_denial, disable: AdvancedAi::disable_science_threat_denial },
+    // Rungs 3-4 of the denial, priced apart: a two-soldier raid that
+    // pillages the pad at war, and the cheapest legal war opened for that
+    // raid when the threat is inside DENIAL_WAR_LAUNCH_HORIZON of finishing,
+    // we are outside it, and a soldier can walk to the pad. Requires and
+    // arms `science-threat-denial`. The first probe of all four rungs as one
+    // tag opened 13 wars for 2 pillaged pads (2026-09-09).
+    Gene { tag: "science-denial-war", field: "science_denial_war", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_war, disable: AdvancedAi::disable_science_denial_war },
     // The stock alliance desk asks for a Research Alliance on any turn, ranks
     // the partner by science, holds the slot for it while Scientific Theory
     // is still short, and pays a premium for the first route to that ally
