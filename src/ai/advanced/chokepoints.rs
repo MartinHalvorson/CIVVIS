@@ -101,8 +101,8 @@
 //!   the approach to one of our cities and fortifies there.
 //!
 //! ⚠ **The garrison holds ground in peace and never in a major war.** A
-//! stand-still posture screened NEGATIVELY at 38,160 seats and
-//! `advanced/field_craft.rs` records the reason in its own header — "a unit
+//! stand-still posture screened NEGATIVELY at 38,160 seats (the ranking's
+//! *Removed from the code* table records the unit-tactics trio) — "a unit
 //! that stands still in a major war is a unit that is not at the siege, and
 //! the whole regime is decided by tempo". So the step sits exactly where
 //! `pass-picket`'s does, on the peacetime tail of
@@ -127,7 +127,7 @@
 //! - **River crossings and high ground.** Real chokepoints in Civilization VI,
 //!   but the engine prices them as a combat modifier on an ordinary tile, not
 //!   as ground that may or may not be entered. They belong to the tactical
-//!   arm (`advanced/field_craft.rs`), not to map control.
+//!   arm, not to map control.
 //! - **Blockading a rival's strait far from home.** Everything here is scoped
 //!   to ground our own cities can reach, because the seat cannot hold what it
 //!   cannot supply, and because a unit posted across the map is a unit that

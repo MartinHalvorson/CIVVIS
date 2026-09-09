@@ -283,11 +283,6 @@
         22,
         6
       ],
-      "chop-into-the-queue": [
-        -23,
-        -22,
-        -11
-      ],
       "city-campaign": [
         -19,
         -45,
@@ -453,6 +448,11 @@
         59,
         10
       ],
+      "district-planning-2": [
+        11,
+        -70,
+        -16
+      ],
       "district-planning-3": [
         -3,
         -12,
@@ -517,11 +517,6 @@
         11,
         25,
         1
-      ],
-      "enter-the-prophet-race": [
-        -40,
-        41,
-        -54
       ],
       "enter-the-prophet-race-2": [
         30,
@@ -608,11 +603,6 @@
         6,
         -10
       ],
-      "flip-nearby-city-states": [
-        -26,
-        13,
-        -16
-      ],
       "founder-temple": [
         19,
         -7,
@@ -692,6 +682,11 @@
         -15,
         13,
         6
+      ],
+      "improvement-housing-value": [
+        -30,
+        -10,
+        -11
       ],
       "industrial-chain-debt": [
         9,
@@ -838,6 +833,11 @@
         11,
         -6
       ],
+      "opening-warrior-recon": [
+        -36,
+        13,
+        -38
+      ],
       "opening-warrior-recon-2": [
         28,
         16,
@@ -922,6 +922,11 @@
         -9,
         -15,
         -26
+      ],
+      "rapid-city-expansion": [
+        -133,
+        -209,
+        -120
       ],
       "rapid-city-expansion-2": [
         105,
@@ -1043,11 +1048,6 @@
         40,
         13
       ],
-      "score-horizon": [
-        -11,
-        -50,
-        -25
-      ],
       "screen-the-shooters": [
         11,
         -9,
@@ -1092,6 +1092,16 @@
         18,
         1,
         16
+      ],
+      "settler-screen": [
+        -18,
+        -5,
+        -26
+      ],
+      "settler-second-look": [
+        -11,
+        -27,
+        -13
       ],
       "settler-site-gate": [
         -5,
@@ -1147,11 +1157,6 @@
         6,
         15,
         -23
-      ],
-      "skip-the-prophet-race": [
-        -31,
-        -41,
-        -24
       ],
       "skip-the-prophet-race-2": [
         2,
@@ -1288,11 +1293,6 @@
         65,
         17
       ],
-      "wonder-adjacent-sites": [
-        -12,
-        -19,
-        -19
-      ],
       "wonder-adjacent-sites-2": [
         -3,
         43,
@@ -1371,7 +1371,6 @@
       "chokepoint-claim": "on",
       "chokepoint-garrison": "off",
       "chokepoint-siting": "on",
-      "chop-into-the-queue": "remove",
       "city-campaign": "off",
       "city-campaign-2": "off",
       "city-target-meets-the-map": "on",
@@ -1405,6 +1404,7 @@
       "district-coverage": "off",
       "district-coverage-2": "off",
       "district-planning": "on",
+      "district-planning-2": "off",
       "district-planning-3": "off",
       "domination-city-count": "off",
       "doomed-blow-veto": "off",
@@ -1418,7 +1418,6 @@
       "enemy-of-my-enemy": "on",
       "engine-faith-price": "on",
       "enhancer-for-the-corps": "on",
-      "enter-the-prophet-race": "off",
       "enter-the-prophet-race-2": "on",
       "escort-cap-holds": "off",
       "escort-unstick": "on",
@@ -1436,7 +1435,6 @@
       "first-granary-reserve": "off",
       "first-luxury-first": "on",
       "first-research-building-reserve": "off",
-      "flip-nearby-city-states": "off",
       "founder-temple": "off",
       "frontier-massing-alarm": "off",
       "garrison-under-fire": "off",
@@ -1453,6 +1451,7 @@
       "hostile-memory": "off",
       "housing-research": "off",
       "idle-faith-patronage": "off",
+      "improvement-housing-value": "off",
       "industrial-chain-debt": "on",
       "island-exploration": "off",
       "lane-culture-spending": "off",
@@ -1482,6 +1481,7 @@
       "one-launch-pad": "on",
       "one-shot-recovery": "on",
       "one-war-at-a-time": "off",
+      "opening-warrior-recon": "off",
       "opening-warrior-recon-2": "on",
       "opportunistic-war": "off",
       "order-retry": "off",
@@ -1499,6 +1499,7 @@
       "quest-production": "on",
       "quest-trade-route": "off",
       "raid-pillage-prizes": "off",
+      "rapid-city-expansion": "remove",
       "rapid-city-expansion-2": "on",
       "recon-replacement": "off",
       "recorded-tactical-step": "off",
@@ -1523,7 +1524,6 @@
       "science-opening-band": "off",
       "science-victory-drive": "off",
       "science-victory-drive-2": "on",
-      "score-horizon": "remove",
       "screen-the-shooters": "off",
       "settle-sooner": "off",
       "settlement-gap-target": "off",
@@ -1533,6 +1533,8 @@
       "settler-guard-holds": "off",
       "settler-guard-holds-2": "on",
       "settler-never-idles": "on",
+      "settler-screen": "off",
+      "settler-second-look": "remove",
       "settler-site-gate": "off",
       "settler-target-floor": "on",
       "settler-target-hysteresis": "off",
@@ -1544,7 +1546,6 @@
       "siege-is-progress-3": "off",
       "siege-preempts-the-queue": "on",
       "siege-train": "off",
-      "skip-the-prophet-race": "remove",
       "skip-the-prophet-race-2": "on",
       "slot-kind-tiebreak": "off",
       "solvency-first-trade-slot": "on",
@@ -1572,7 +1573,6 @@
       "war-reinforcement": "off",
       "whole-turn-backtrack-guard": "off",
       "wide-map-capacity": "on",
-      "wonder-adjacent-sites": "remove",
       "wonder-adjacent-sites-2": "on",
       "wonder-ring-recon": "off",
       "wonder-ring-recon-2": "off",
@@ -1865,6 +1865,7 @@
         "ships": "district-planning",
         "versions": {
           "district-planning": 0.244584,
+          "district-planning-2": null,
           "district-planning-3": null
         }
       },
@@ -1886,17 +1887,6 @@
         "versions": {
           "early-project-restraint": null,
           "early-project-restraint-2": null
-        }
-      },
-      "enter-the-prophet-race": {
-        "rule_on": [
-          "enter-the-prophet-race-2"
-        ],
-        "head": null,
-        "ships": "enter-the-prophet-race-2",
-        "versions": {
-          "enter-the-prophet-race": null,
-          "enter-the-prophet-race-2": null
         }
       },
       "eureka-chasing-builder": {
@@ -1996,6 +1986,17 @@
           "never-an-empty-queue-3": null
         }
       },
+      "opening-warrior-recon": {
+        "rule_on": [
+          "opening-warrior-recon-2"
+        ],
+        "head": null,
+        "ships": "opening-warrior-recon-2",
+        "versions": {
+          "opening-warrior-recon": null,
+          "opening-warrior-recon-2": null
+        }
+      },
       "power-the-laboratory": {
         "rule_on": [],
         "head": "power-the-laboratory",
@@ -2003,6 +2004,17 @@
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
+        }
+      },
+      "rapid-city-expansion": {
+        "rule_on": [
+          "rapid-city-expansion-2"
+        ],
+        "head": null,
+        "ships": "rapid-city-expansion-2",
+        "versions": {
+          "rapid-city-expansion": null,
+          "rapid-city-expansion-2": null
         }
       },
       "recovery-reads-the-war": {
@@ -2067,17 +2079,6 @@
           "settler-target-hysteresis-2": null
         }
       },
-      "skip-the-prophet-race": {
-        "rule_on": [
-          "skip-the-prophet-race-2"
-        ],
-        "head": null,
-        "ships": "skip-the-prophet-race-2",
-        "versions": {
-          "skip-the-prophet-race": null,
-          "skip-the-prophet-race-2": null
-        }
-      },
       "swap-rotation": {
         "rule_on": [],
         "head": null,
@@ -2094,17 +2095,6 @@
         "versions": {
           "trade-building-before-bankruptcy": null,
           "trade-building-before-bankruptcy-2": null
-        }
-      },
-      "wonder-adjacent-sites": {
-        "rule_on": [
-          "wonder-adjacent-sites-2"
-        ],
-        "head": null,
-        "ships": "wonder-adjacent-sites-2",
-        "versions": {
-          "wonder-adjacent-sites": null,
-          "wonder-adjacent-sites-2": null
         }
       },
       "wonder-ring-recon": {
@@ -2403,7 +2393,7 @@
         "complete_seats": 13938,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake, which left the code on 2026-09-08 as bottom-of-the-ranking removals (dominated versions whose siblings ship as the family head, or singletons at P(>0) <= 8%), so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     },
     {
       "path": "docs/gene_screens/2026-09-08-standard-continuous-2460-total-seats-20260908-unified-current-build.json",
@@ -2440,7 +2430,7 @@
         "complete_seats": 2460,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake, which left the code on 2026-09-08 as bottom-of-the-ranking removals (dominated versions whose siblings ship as the family head, or singletons at P(>0) <= 8%), so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     },
     {
       "path": "docs/gene_screens/2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json",
@@ -2484,13 +2474,13 @@
         "complete_seats": 18768,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake, which left the code on 2026-09-08 as bottom-of-the-ranking removals (dominated versions whose siblings ship as the family head, or singletons at P(>0) <= 8%), so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     }
   ],
   "counts": {
     "helps": 16,
     "hurts": 0,
-    "unresolved": 57,
+    "unresolved": 56,
     "default_on": 98
   },
   "genes": [
@@ -2517,7 +2507,7 @@
         "win_z": 4.063,
         "share_delta_pp": 0.523,
         "share_z": 5.915,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -2967,7 +2957,7 @@
         "win_z": 2.094,
         "share_delta_pp": 0.296,
         "share_z": 3.353,
-        "read": "helps * \u00b7 share helps *",
+        "read": "helps * · share helps *",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3597,7 +3587,7 @@
         "win_z": 2.017,
         "share_delta_pp": 0.197,
         "share_z": 2.463,
-        "read": "helps * \u00b7 share helps *",
+        "read": "helps * · share helps *",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -3732,7 +3722,7 @@
         "win_z": 3.464,
         "share_delta_pp": 0.375,
         "share_z": 4.121,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4182,7 +4172,7 @@
         "win_z": 3.229,
         "share_delta_pp": 0.341,
         "share_z": 4.381,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4362,7 +4352,7 @@
         "win_z": 3.564,
         "share_delta_pp": 0.482,
         "share_z": 5.452,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4542,7 +4532,7 @@
         "win_z": 2.907,
         "share_delta_pp": 0.337,
         "share_z": 4.293,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4632,7 +4622,7 @@
         "win_z": 3.94,
         "share_delta_pp": 0.407,
         "share_z": 4.569,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -4677,7 +4667,7 @@
         "win_z": 3.362,
         "share_delta_pp": 0.418,
         "share_z": 4.632,
-        "read": "helps * \u00b7 share HELPS **",
+        "read": "helps * · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -5010,51 +5000,6 @@
             "win_delta_pp": 0.029,
             "win_z": 0.053,
             "win_se_pp": 0.551
-          }
-        ]
-      }
-    },
-    {
-      "tag": "score-horizon",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 5,
-      "wins_prior_10k": 18,
-      "wins_third_10k": 24,
-      "win_diff_pp": 0.322285,
-      "posterior_pp": 16.89195,
-      "posterior_se_pp": 8.532299,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 28570,
-        "n_off": 9590,
-        "win_delta_pp": 0.2,
-        "win_z": 0.451,
-        "share_delta_pp": 0.139,
-        "share_z": 1.524,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.5,
-            "win_z": -0.807,
-            "win_se_pp": 0.62
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.971,
-            "win_z": 1.538,
-            "win_se_pp": 0.631
           }
         ]
       }
@@ -5622,7 +5567,7 @@
         "win_z": 4.325,
         "share_delta_pp": 1.141,
         "share_z": 12.467,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {
@@ -5757,7 +5702,7 @@
         "win_z": 5.21,
         "share_delta_pp": 0.577,
         "share_z": 6.468,
-        "read": "HELPS ** \u00b7 share HELPS **",
+        "read": "HELPS ** · share HELPS **",
         "source": "2026-08-24-standard-continuous-38160-total-seats.json",
         "win_tranches": [
           {

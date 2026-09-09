@@ -9059,13 +9059,6 @@ mod tests {
             "the named fogged-capacity control must hold it off"
         );
 
-        assert!(ai.score_horizon);
-        withhold_live_treatment(&mut ai, "score-horizon")
-            .expect("the score-horizon control arm is registered");
-        assert!(
-            !ai.score_horizon,
-            "the named score-horizon control must hold it off"
-        );
         assert!(ai.one_launch_pad);
         withhold_live_treatment(&mut ai, "one-launch-pad")
             .expect("the one-launch-pad control arm is registered");
