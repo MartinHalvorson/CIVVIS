@@ -2156,6 +2156,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-threat-early", field: "culture_threat_early", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_threat_early, disable: AdvancedAi::disable_culture_threat_early },
     // Retain hostile sightings for civilians and a land escort about to embark.
     Gene { tag: "hostile-memory-2", field: "hostile_memory_2", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_2, disable: AdvancedAi::disable_hostile_memory_2 },
+    // Version two also withdraws healthy units exposed to a nominal lethal
+    // shot from one recently observed gun; v1 remains the deployed control.
+    Gene { tag: "wounded-out-of-reach-2", field: "wounded_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_out_of_reach_2, disable: AdvancedAi::disable_wounded_out_of_reach_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2273,12 +2273,24 @@ impl AdvancedAi {
     /// turn inside a raider's reach without a melee unit beside it. See
     /// `advanced/wounded_out_of_reach.rs`. Opt-in gene `wounded-out-of-reach`.
     pub fn enable_wounded_out_of_reach(&mut self) {
+        self.wounded_out_of_reach_2 = false;
         self.wounded_out_of_reach = true;
     }
 
     /// The twin of `enable_wounded_out_of_reach`.
     pub fn disable_wounded_out_of_reach(&mut self) {
         self.wounded_out_of_reach = false;
+    }
+
+    /// Version two retains the original withdrawal and also considers a
+    /// nominal lethal shot from a recently observed gun. One version plays.
+    pub fn enable_wounded_out_of_reach_2(&mut self) {
+        self.wounded_out_of_reach = false;
+        self.wounded_out_of_reach_2 = true;
+    }
+
+    pub fn disable_wounded_out_of_reach_2(&mut self) {
+        self.wounded_out_of_reach_2 = false;
     }
 
     /// An improvement that completes an unresearched technology's or civic's
