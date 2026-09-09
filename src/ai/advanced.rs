@@ -4780,10 +4780,10 @@ pub struct AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
     /// Plan the next six technologies' and four civics' boosts: classify each
-    /// trigger by what it costs the plan, turn the cheap ones into at most
-    /// three deadlined side objectives, and defer a node whose committed
-    /// boost lands within three turns. Opt-in gene `boost-planner`; see
-    /// `advanced/boost_planner.rs`.
+    /// trigger by what it costs the plan and turn the cheap ones into at most
+    /// three deadlined side objectives, each a 15 percent premium on the one
+    /// production or Builder choice that fires it. Opt-in gene
+    /// `boost-planner`; see `advanced/boost_planner.rs`.
     boost_planner: bool,
     /// The per-turn memo behind `boost_planner`: the live side objectives and
     /// the set already written to the journal.
@@ -6745,8 +6745,8 @@ mod chase_every_boost;
 
 /// A short, deadlined plan for the Eurekas and Inspirations the beeline is
 /// about to walk past: a six-technology, four-civic horizon, a trigger cost
-/// table, at most three side objectives, and a three-turn research deferral.
-/// Opt-in gene `boost-planner`; see `advanced/boost_planner.rs`.
+/// table and at most three committed side objectives. Opt-in gene
+/// `boost-planner`; see `advanced/boost_planner.rs`.
 mod boost_planner;
 
 mod site_lookahead;
@@ -14082,27 +14082,6 @@ impl AdvancedAi {
                         .unwrap_or(ordinary)
                 })
             };
-            // `boost-planner`: a node whose committed boost lands within
-            // `BOOST_DEFER_TURNS` yields its slot to another node on the same
-            // beeline, so the discount is banked before the node is bought at
-            // full price. `None` with the gene off. See
-            // `advanced/boost_planner.rs`.
-            let pick = pick.map(|chosen| {
-                match self.boost_planner_defer_pick(g, pid, &available, &chosen, forced_goal, true)
-                {
-                    Some(deferral) => {
-                        think!(self.journal(), Research, Decision,
-                               "Deferring {} for its boost", plain(chosen.as_str());
-                               "{} fires within {:.0} turns and pays 40 percent of the node; \
-                                researching {} first",
-                               deferral.trigger,
-                               boost_planner::BOOST_DEFER_TURNS,
-                               plain(deferral.pick.as_str()));
-                        deferral.pick
-                    }
-                    None => chosen,
-                }
-            });
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
@@ -14269,27 +14248,6 @@ impl AdvancedAi {
                         )
                         .unwrap_or(ordinary)
                     })
-            });
-            // `boost-planner`: a node whose committed boost lands within
-            // `BOOST_DEFER_TURNS` yields its slot to another node on the same
-            // beeline, so the discount is banked before the node is bought at
-            // full price. `None` with the gene off. See
-            // `advanced/boost_planner.rs`.
-            let pick = pick.map(|chosen| {
-                match self.boost_planner_defer_pick(g, pid, &available, &chosen, forced_goal, false)
-                {
-                    Some(deferral) => {
-                        think!(self.journal(), Research, Decision,
-                               "Deferring {} for its boost", plain(chosen.as_str());
-                               "{} fires within {:.0} turns and pays 40 percent of the node; \
-                                researching {} first",
-                               deferral.trigger,
-                               boost_planner::BOOST_DEFER_TURNS,
-                               plain(deferral.pick.as_str()));
-                        deferral.pick
-                    }
-                    None => chosen,
-                }
             });
             if let Some(civic) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
@@ -28836,10 +28794,6 @@ impl AdvancedAi {
         // return 0.0 with their gene off. See `advanced/chokepoints.rs`.
         value += self.chokepoint_site_bonus(g, pid, pos);
         value += self.canal_city_bonus(g, pid, pos);
-        // `boost-planner`: a live coastal-city side objective, as a share of
-        // the site's own value. Zero with the gene off. See
-        // `advanced/boost_planner.rs`.
-        value += self.boost_planner_site_premium(g, pid, pos, value);
         value
     }
 

@@ -43,19 +43,26 @@
 //!    `Expensive` or `ImpossibleNow`. Only `Cheap` becomes a side objective.
 //! 3. **Side objectives with deadlines**
 //!    ([`AdvancedAi::boost_side_objectives`]). A cheap trigger becomes a
-//!    [`BOOST_PREMIUM_PCT`] premium on the exact production, improvement or
-//!    placement choice that satisfies it, expiring at the node's deadline. The
-//!    premium is a share of the choice's *own* value, so it re-orders
-//!    near-equals and can never invent a reason to build something.
-//! 4. **Research deferral** ([`AdvancedAi::boost_planner_defer_pick`]). A node
-//!    whose boost is committed and about to land within [`BOOST_DEFER_TURNS`]
-//!    turns, and which the empire would otherwise finish first, yields its
-//!    slot to another node **on the same beeline** costing no more than those
-//!    three turns — so the lane's next unlock is never pushed back further
-//!    than the boost window itself.
-//! 5. **Journal.** Every creation, satisfaction, expiry and deferral is
-//!    written with the boost's own name, so a run's `why.log` says what the
-//!    planner committed to and whether it collected.
+//!    [`BOOST_PREMIUM_PCT`] premium on the exact production or Builder choice
+//!    that satisfies it, expiring at the node's deadline. The premium is a
+//!    share of the choice's *own* positive value, so it re-orders
+//!    near-equals and can never invent a reason to build something — and
+//!    stacked on `chase-every-boost`'s own capped share it stays one (see
+//!    [`AdvancedAi::boost_premium_on`]).
+//! 4. **Journal.** Every creation, satisfaction and expiry is written with
+//!    the boost's own name, so a run's `why.log` says what the planner
+//!    committed to and whether it collected.
+//!
+//! Two things were designed and cut in review (2026-09-09), and the reasons
+//! are recorded so they are not rebuilt by accident. A *research deferral*
+//! — yield the picked node when its committed boost lands within three turns
+//! — could only ever fire when the node itself cost at most those three
+//! turns, so it defended at most 1.2 turns of research and asked the picker
+//! to trust that any Builder with a charge, anywhere, would spend it next
+//! turn. A *settle-site premium* for `coastal_city` (Sailing's 20-beaker
+//! Eureka) would have moved a city site, the empire's least reversible
+//! decision, for the smallest payout in the tree. Both classes now read
+//! `Expensive`: a decision that must win on its own merits.
 //!
 //! Off, every entry point returns before reading anything and every path is
 //! byte-identical.
@@ -91,24 +98,11 @@ pub(super) const BOOST_CIVIC_HORIZON: usize = 4;
 /// worth single digits. A relative premium cannot do that.
 pub(super) const BOOST_PREMIUM_PCT: f64 = 15.0;
 
-/// How many side objectives may be live at once. Three: a Builder charge, a
-/// production slot and a settle site are about as many independent decisions
-/// as an empire makes in a turn, and a planner holding more of them is
-/// chasing again.
+/// How many side objectives may be live at once. Three: a Builder charge and
+/// a production slot or two are about as many independent decisions as an
+/// empire makes in a turn, and a planner holding more of them is chasing
+/// again.
 pub(super) const BOOST_MAX_ACTIVE: usize = 3;
-
-/// The deferral window, in turns. A boost committed and landing inside three
-/// turns is worth waiting for; beyond that the engine's own mid-research
-/// credit reaches the node anyway (`Game::do_research` credits a boost that
-/// lands on a node already being worked), and a longer wait is
-/// `boost-wait-research` version one's mistake — a six-turn window that
-/// repeatedly delayed useful prerequisites for a trigger that never arrived.
-pub(super) const BOOST_DEFER_TURNS: f64 = 3.0;
-
-/// A Builder improvement is assumed to land this many turns out once a
-/// Builder with charges is standing: the charge is spent the turn the job is
-/// chosen. Named so the deferral's arithmetic is not a bare `1.0`.
-const BOOST_BUILDER_FIRE_TURNS: f64 = 1.0;
 
 /// What one horizon node's boost trigger costs the plan.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,8 +134,6 @@ pub(super) enum BoostAction {
     Unit(String),
     /// One more district of this family.
     District(String),
-    /// The next city, placed on the coast.
-    CoastalCity,
 }
 
 /// What the tile under a chased improvement must carry, in the spelling
@@ -202,17 +194,6 @@ pub(super) struct BoostPlannerFrame {
     objectives: Vec<BoostSideObjective>,
     /// Whether the empire-wide stand-down (defence) is in force this turn.
     defence_stand_down: bool,
-}
-
-/// The deferral the research picker is offered.
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct BoostDeferral {
-    /// The node to research instead.
-    pub pick: Name,
-    /// The node whose boost is being waited for.
-    pub node: Name,
-    /// That boost's trigger, for the journal.
-    pub trigger: String,
 }
 
 impl AdvancedAi {
@@ -335,10 +316,10 @@ impl AdvancedAi {
 
     /// What satisfying `boost` would cost the plan.
     ///
-    /// The cheap classes are exactly the four kinds of work the empire is
+    /// The cheap classes are exactly the three kinds of work the empire is
     /// already doing, and each is guarded by a test that it is *already* doing
     /// it — an improvement type it has built before, a unit type it already
-    /// fields, a district family it already builds, a Settler already walking.
+    /// fields, a district family it already builds.
     /// Everything the empire would have to *start* doing is `Expensive`,
     /// including buildings: `chase-every-boost` and
     /// `eureka-chasing-production` already price those, and this gene
@@ -411,20 +392,6 @@ impl AdvancedAi {
                 BoostTriggerClass::Expensive
             };
         }
-        if trigger == "coastal_city" {
-            // "A city on the coast we are about to found": cheap only while a
-            // Settler is already walking. With none, this is a whole extra
-            // city, which is not a boost decision.
-            let settling = g
-                .units
-                .values()
-                .any(|unit| unit.owner == pid && unit.kind.as_str() == "settler");
-            return if settling {
-                BoostTriggerClass::Cheap(BoostAction::CoastalCity)
-            } else {
-                BoostTriggerClass::Expensive
-            };
-        }
         if Self::boost_trigger_is_strategic_spending(trigger) {
             return BoostTriggerClass::Expensive;
         }
@@ -472,13 +439,16 @@ impl AdvancedAi {
     }
 
     /// The triggers that name real strategic spending — a wonder, a war act, a
-    /// religion, a great person, a national park, a themed museum. Each is a
-    /// decision that must win on its own merits; a boost is never the reason
-    /// to take one.
+    /// religion, a great person, a national park, a themed museum, a city
+    /// site (`coastal_city`, Sailing's Eureka: where the next city stands is
+    /// the empire's least reversible decision, and a 20-beaker boost never
+    /// moves it). Each is a decision that must win on its own merits; a boost
+    /// is never the reason to take one.
     fn boost_trigger_is_strategic_spending(trigger: &str) -> bool {
         matches!(
             trigger,
-            "wonders"
+            "coastal_city"
+                | "wonders"
                 | "wonder_era"
                 | "war"
                 | "received_dow"
@@ -508,7 +478,10 @@ impl AdvancedAi {
 
     /// The live side objectives, at most [`BOOST_MAX_ACTIVE`] of them, ranked
     /// by the research at stake. Empty with the gene off. Memoised per turn
-    /// and player; the journal lines are written by the refresh.
+    /// and player; the journal lines are written by the refresh. The tests'
+    /// window onto the frame: the premium seams read it in place through
+    /// [`AdvancedAi::boost_planner_names`] rather than cloning it.
+    #[cfg(test)]
     pub(super) fn boost_side_objectives(&self, g: &Game, pid: usize) -> Vec<BoostSideObjective> {
         if !self.boost_planner {
             return Vec::new();
@@ -618,9 +591,13 @@ impl AdvancedAi {
         let mut kept: Vec<BoostSideObjective> = Vec::new();
         let mut dropped: Vec<BoostSideObjective> = Vec::new();
         for standing in carried {
+            // The window is read each turn; the commitment keeps the deadline
+            // it was given, so an extension never outlives the study it came
+            // from.
+            let window = self.boost_commitment_deadline(g, pid, &standing);
             match self.boost_objective_for(g, pid, standing.node, standing.techs, standing.deadline)
             {
-                Some(fresh) if g.turn <= standing.deadline => kept.push(fresh),
+                Some(fresh) if g.turn <= window => kept.push(fresh),
                 _ => dropped.push(standing),
             }
         }
@@ -650,6 +627,37 @@ impl AdvancedAi {
             objectives,
             defence_stand_down,
         };
+    }
+
+    /// A standing commitment's window this turn: the one it was given, or —
+    /// once its node has come under study — the projected completion turn,
+    /// because the engine credits a boost that lands mid-research. A node not
+    /// yet begun carries its *start* turn as its deadline; without this the
+    /// commitment would expire on the very turn its node started, which is
+    /// the turn the trigger is worth most, and be re-taken a turn later from
+    /// the horizon under a fresh deadline. Read every turn and never written
+    /// back: the turn research moves off the node, the given deadline is the
+    /// window again.
+    fn boost_commitment_deadline(
+        &self,
+        g: &Game,
+        pid: usize,
+        standing: &BoostSideObjective,
+    ) -> u32 {
+        let studying = if standing.techs {
+            g.players[pid].research.as_deref()
+        } else {
+            g.players[pid].civic.as_deref()
+        };
+        if studying != Some(standing.node.as_str()) {
+            return standing.deadline;
+        }
+        // With a node under study the horizon's first entry is that node and
+        // its deadline is the projected completion turn.
+        self.boost_horizon(g, pid, standing.techs, 1)
+            .first()
+            .filter(|step| step.node == standing.node)
+            .map_or(standing.deadline, |step| step.deadline.max(standing.deadline))
     }
 
     /// Say what was taken up, and what was collected or let go.
@@ -743,30 +751,6 @@ impl AdvancedAi {
         Self::boost_premium_on(value)
     }
 
-    /// The premium a live coastal-city objective pays on a settle site.
-    pub(super) fn boost_planner_site_premium(
-        &self,
-        g: &Game,
-        pid: usize,
-        pos: Pos,
-        value: f64,
-    ) -> f64 {
-        if !self.boost_planner {
-            return 0.0;
-        }
-        if !self.boost_planner_names(g, pid, |action| *action == BoostAction::CoastalCity) {
-            return 0.0;
-        }
-        let coastal = g
-            .nbrs(pos)
-            .iter()
-            .any(|nb| g.map.get(*nb).is_some_and(|tile| g.rules.is_water(tile)));
-        if !coastal || self.boost_planner_stands_down(g, pid, None) {
-            return 0.0;
-        }
-        Self::boost_premium_on(value)
-    }
-
     /// Does any live side objective name this decision? The frame is read in
     /// place rather than cloned: every premium seam asks this question for
     /// every candidate it prices.
@@ -789,6 +773,16 @@ impl AdvancedAi {
     /// rated within 15 % of each other and can do nothing else — in
     /// particular it can never lift a choice the planner priced at or below
     /// zero.
+    ///
+    /// `chase-every-boost` ships on and prices the same production and
+    /// Builder seams, so on the deployment genome the two stack. That is by
+    /// design — v1 is the shallow *coverage* of every trigger, this is the
+    /// deep *commitment* to at most three — and it stays a share: v1's
+    /// premium is held under `CHASE_PRODUCTION_RAW_FRACTION` /
+    /// `CHASE_BUILDER_VALUE_FRACTION` (one half) of the same positive base,
+    /// so the stack is at most 65 % of the choice's own value and is zero
+    /// wherever the choice is worth nothing. The two cannot compound: each
+    /// reads the raw value, never the other's premium.
     fn boost_premium_on(value: f64) -> f64 {
         value.max(0.0) * BOOST_PREMIUM_PCT / 100.0
     }
@@ -796,9 +790,9 @@ impl AdvancedAi {
     /// Does building `item` advance this objective?
     fn boost_item_satisfies(g: &Game, action: &BoostAction, item: &Item) -> bool {
         match (action, item) {
-            (BoostAction::Unit(kind), Item::Unit { unit } | Item::Formation { unit, .. }) => {
-                unit.as_str() == kind
-            }
+            // The plain unit only: a Corps or Army from the queue is a
+            // later-era build the ancient `units_of:` triggers never name.
+            (BoostAction::Unit(kind), Item::Unit { unit }) => unit.as_str() == kind,
             (BoostAction::District(family), Item::District { district, .. }) => {
                 g.district_family(*district).as_str() == family
             }
@@ -837,9 +831,9 @@ impl AdvancedAi {
     ///    behind its winning pace (`expansion_band_turn` / `expansion_pace`;
     ///    every recorded win came from four to six cities by turn 60), the
     ///    *production* premium stands down, so a trigger can never take a
-    ///    Settler's slot. Builder charges and settle sites are untouched —
-    ///    they do not compete with a Settler, and the opening is where a
-    ///    Eureka is worth most.
+    ///    Settler's slot. Builder charges are untouched — a charge does not
+    ///    compete with a Settler, and the opening is where a Eureka is worth
+    ///    most.
     /// 3. **Victory-project reservations.** In the science drive's launch
     ///    city the queue belongs to the space projects; no premium is paid
     ///    there at all.
@@ -870,128 +864,6 @@ impl AdvancedAi {
     fn boost_planner_opening_band(g: &Game, pid: usize) -> bool {
         g.turn <= Self::expansion_band_turn(g)
             && g.cities.values().filter(|city| city.owner == pid).count() < Self::expansion_pace(g)
-    }
-
-    // ---- research deferral -------------------------------------------
-
-    /// A node to research *instead of* `ordinary`, so a committed boost lands
-    /// before the empire pays full price for the node it belongs to.
-    ///
-    /// The whole rule, and every bound on it:
-    ///
-    /// - `ordinary` must itself be a live side objective's node — so its
-    ///   trigger is cheap, in the horizon, and inside its deadline.
-    /// - That trigger must be **in progress**, not merely possible: a unit,
-    ///   building or district at the front of an owned city queue
-    ///   (`boost_trigger_is_queued`, the strict test
-    ///   `boost-wait-research-2` uses), or an improvement with a Builder
-    ///   standing that has a charge to spend.
-    /// - The boost must land within [`BOOST_DEFER_TURNS`], and the empire
-    ///   must be about to finish `ordinary` first — otherwise the engine's
-    ///   own mid-research credit reaches it and nothing needs deferring.
-    /// - The replacement must be **on the same beeline**: when the lane forced
-    ///   a goal, it must lead to that goal, so the lane loses nothing but
-    ///   order. And it must cost no more than [`BOOST_DEFER_TURNS`] of
-    ///   research, which is the bound the design asks for — the lane's next
-    ///   unlock is never pushed back further than the boost window itself.
-    ///
-    /// `None` with the gene off, so the picker is byte-identical.
-    pub(super) fn boost_planner_defer_pick(
-        &self,
-        g: &Game,
-        pid: usize,
-        available: &[Name],
-        ordinary: &Name,
-        goal: Option<&str>,
-        techs: bool,
-    ) -> Option<BoostDeferral> {
-        if !self.boost_planner {
-            return None;
-        }
-        let objective = self
-            .boost_side_objectives(g, pid)
-            .into_iter()
-            .find(|objective| objective.techs == techs && objective.node == *ordinary)?;
-        let fire_turns = self.boost_trigger_fire_turns(g, pid, &objective)?;
-        if fire_turns > BOOST_DEFER_TURNS {
-            return None;
-        }
-        let rate = Self::research_rate(g, pid, techs);
-        let finish_turns = self.boost_effective_cost(g, pid, ordinary.as_str(), techs) / rate;
-        if finish_turns > fire_turns {
-            // The node outlives its own trigger; the mid-research credit lands
-            // on it and there is nothing to defer.
-            return None;
-        }
-        let pick = available
-            .iter()
-            .filter(|node| *node != ordinary)
-            .filter(|node| match goal {
-                Some(goal) if techs => self.tech_leads_to(g, node.as_str(), goal),
-                Some(goal) => self.civic_leads_to(g, node.as_str(), goal),
-                None => true,
-            })
-            .filter(|node| {
-                self.boost_effective_cost(g, pid, node.as_str(), techs) / rate <= BOOST_DEFER_TURNS
-            })
-            .min_by(|left, right| {
-                self.beeline_step_cost(g, pid, left.as_str(), techs)
-                    .total_cmp(&self.beeline_step_cost(g, pid, right.as_str(), techs))
-                    .then_with(|| left.cmp(right))
-            })
-            .copied()?;
-        Some(BoostDeferral {
-            pick,
-            node: objective.node,
-            trigger: objective.trigger,
-        })
-    }
-
-    /// How many turns until this objective's trigger fires, if the empire has
-    /// actually committed to it; `None` when it has not.
-    fn boost_trigger_fire_turns(
-        &self,
-        g: &Game,
-        pid: usize,
-        objective: &BoostSideObjective,
-    ) -> Option<f64> {
-        match &objective.action {
-            BoostAction::Improvement { .. } => {
-                // A Builder with a charge spends it on the job it is offered
-                // this turn, and the premium above is what offers this one.
-                let ready = g.units.values().any(|unit| {
-                    unit.owner == pid && unit.kind.as_str() == "builder" && unit.charges > 0
-                });
-                ready.then_some(BOOST_BUILDER_FIRE_TURNS)
-            }
-            BoostAction::Unit(_) | BoostAction::District(_) => {
-                Self::boost_trigger_is_queued(g, pid, &objective.trigger)
-                    .then(|| self.boost_queued_trigger_turns(g, pid, &objective.trigger))
-                    .flatten()
-            }
-            // A city is founded when the Settler arrives, which is not a
-            // schedule research may wait on.
-            BoostAction::CoastalCity => None,
-        }
-    }
-
-    /// The build turns left on the queue front that carries this trigger, over
-    /// every city holding one; the soonest wins.
-    fn boost_queued_trigger_turns(&self, g: &Game, pid: usize, trigger: &str) -> Option<f64> {
-        g.cities
-            .values()
-            .filter(|city| city.owner == pid)
-            .filter_map(|city| {
-                let item = city.queue.first()?;
-                let key = Self::item_trigger_key(g, item)?;
-                (key == trigger).then(|| {
-                    let production = (g.city_yields(city.id).production
-                        * g.item_prod_mult(pid, city.id, Some(item)))
-                    .max(1.0);
-                    g.item_remaining_cost_for_city(pid, city.id, item) / production
-                })
-            })
-            .min_by(f64::total_cmp)
     }
 }
 

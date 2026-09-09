@@ -106,7 +106,7 @@ fn the_horizon_walks_the_beeline_pickers_own_comparator_forward() {
     }
 
     // Nothing is held back with the gene off: the horizon is a read of the
-    // board, and it is the premium and the deferral that the flag gates.
+    // board, and it is the premium that the flag gates.
     assert_eq!(
         AdvancedAi::new().boost_horizon(&game, 0, true, BOOST_HORIZON),
         horizon,
@@ -307,7 +307,7 @@ fn a_district_trigger_is_cheap_only_for_a_family_we_already_build() {
 }
 
 #[test]
-fn a_coastal_city_trigger_is_cheap_only_while_a_settler_is_walking() {
+fn a_city_site_is_never_a_boost_decision() {
     let mut game = capital_board(71_015);
     let spec = trigger("coastal_city", 1);
     if ai_class(&game, &spec) == BoostTriggerClass::Satisfied {
@@ -318,14 +318,13 @@ fn a_coastal_city_trigger_is_cheap_only_while_a_settler_is_walking() {
     assert_eq!(
         ai_class(&game, &spec),
         BoostTriggerClass::Expensive,
-        "a whole extra city is not a boost decision"
+        "where the next city stands is not a boost decision"
     );
+    // Not even with a Settler already walking: the site seam was cut in
+    // review, and the class must not come back with it.
     let capital = game.cities[&game.player_city_ids(0)[0]].pos;
     game.spawn_unit("settler", 0, capital);
-    assert_eq!(
-        ai_class(&game, &spec),
-        BoostTriggerClass::Cheap(BoostAction::CoastalCity)
-    );
+    assert_eq!(ai_class(&game, &spec), BoostTriggerClass::Expensive);
 }
 
 #[test]
@@ -495,6 +494,51 @@ fn a_collected_boost_ends_its_own_objective() {
     );
 }
 
+#[test]
+fn a_commitment_whose_node_comes_under_study_keeps_its_window_to_completion() {
+    let mut game = capital_board(71_023);
+    game.turn = 10;
+    game.players[0].techs.insert(name!("archery"));
+    let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+    game.spawn_unit("archer", 0, capital);
+    game.spawn_unit("archer", 0, capital);
+    let ai = armed();
+    // Committed with the deadline a not-yet-started node carries: its
+    // projected start turn.
+    *ai.boost_planner_frame.borrow_mut() = BoostPlannerFrame {
+        stamp: Some((10, 0)),
+        objectives: vec![objective_named("machinery", 500.0, 12)],
+        defence_stand_down: false,
+    };
+    // The empire starts Machinery on the deadline turn and is still on it
+    // the turn after: the engine credits a boost mid-research, so the
+    // commitment stands to the projected completion rather than expiring on
+    // the very turn it became most valuable.
+    game.players[0].research = Some("machinery".to_string());
+    game.players[0].research_progress = 0.0;
+    game.turn = 13;
+    let live = ai.boost_side_objectives(&game, 0);
+    let standing = live
+        .iter()
+        .find(|objective| objective.node == name!("machinery"))
+        .expect("a commitment under study is kept past its start-turn deadline");
+    assert_eq!(standing.deadline, 12, "the commitment keeps the deadline it was given");
+    let completion = ai.boost_horizon(&game, 0, true, 1)[0].deadline;
+    assert!(completion > 13, "an opening empire takes many turns over Machinery");
+    assert_eq!(ai.boost_commitment_deadline(&game, 0, standing), completion);
+
+    // Once research moves on, the old start-turn window is what is left,
+    // and it has passed.
+    game.players[0].research = Some("mining".to_string());
+    game.turn = 14;
+    assert!(
+        !ai.boost_side_objectives(&game, 0)
+            .iter()
+            .any(|objective| objective.node == name!("machinery")),
+        "a node no longer under study falls back to the window it was given"
+    );
+}
+
 // ---- the premium ------------------------------------------------------
 
 #[test]
@@ -531,6 +575,77 @@ fn the_premium_is_a_share_of_the_choice_and_only_of_a_named_one() {
         0.0,
         "a premium never lifts a choice the planner priced at or below zero"
     );
+}
+
+/// `chase-every-boost` ships on and prices the same seams. Stacked, the two
+/// premiums are each a share of the same positive base — v1 held under half
+/// of it, this gene at fifteen percent — so together they never exceed 65 %
+/// of the choice's own value and pay nothing on a choice worth nothing.
+#[test]
+fn stacked_on_chase_every_boost_the_premium_stays_a_bounded_share() {
+    use super::super::chase_every_boost::{
+        CHASE_BUILDER_VALUE_FRACTION, CHASE_PRODUCTION_RAW_FRACTION,
+    };
+    let mut game = capital_board(71_033);
+    game.turn = AdvancedAi::expansion_band_turn(&game) + 1;
+    game.players[0].techs.insert(name!("archery"));
+    game.players[0].techs.insert(name!("mining"));
+    let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+    game.spawn_unit("archer", 0, capital);
+    game.spawn_unit("archer", 0, capital);
+    let pos = improve(&mut game, "mine");
+    let cid = game.player_city_ids(0)[0];
+    let mut ai = armed();
+    ai.enable_chase_every_boost();
+    *ai.boost_planner_frame.borrow_mut() = BoostPlannerFrame {
+        stamp: Some((game.turn, 0)),
+        objectives: vec![
+            objective_named("machinery", 500.0, game.turn + 20),
+            BoostSideObjective {
+                node: name!("apprenticeship"),
+                techs: true,
+                trigger: "improvement:mine".to_string(),
+                action: BoostAction::Improvement {
+                    improvement: "mine".to_string(),
+                    on: TileRequirement::Any,
+                },
+                deadline: game.turn + 20,
+                payout: 100.0,
+            },
+        ],
+        defence_stand_down: false,
+    };
+    let archer = Item::Unit {
+        unit: name!("archer"),
+    };
+    let planner_share = BOOST_PREMIUM_PCT / 100.0;
+    for raw in [1.0, 40.0, 200.0, 5_000.0] {
+        let stacked = ai.production_boost_premium(&game, 0, cid, &archer, raw)
+            + ai.boost_planner_production_premium(&game, 0, cid, &archer, raw, &plan());
+        assert!(
+            stacked <= raw * (CHASE_PRODUCTION_RAW_FRACTION + planner_share) + 1e-9,
+            "production: {stacked} on a value of {raw}"
+        );
+        let stacked = ai.builder_boost_premium(&game, pos, "mine", raw)
+            + ai.boost_planner_builder_premium(&game, pos, "mine", raw);
+        assert!(
+            stacked <= raw * (CHASE_BUILDER_VALUE_FRACTION + planner_share) + 1e-9,
+            "builder: {stacked} on a value of {raw}"
+        );
+    }
+    for raw in [0.0, -1.0, -500.0] {
+        assert_eq!(
+            ai.production_boost_premium(&game, 0, cid, &archer, raw)
+                + ai.boost_planner_production_premium(&game, 0, cid, &archer, raw, &plan()),
+            0.0,
+            "a choice worth nothing is lifted by neither premium"
+        );
+        assert_eq!(
+            ai.builder_boost_premium(&game, pos, "mine", raw)
+                + ai.boost_planner_builder_premium(&game, pos, "mine", raw),
+            0.0
+        );
+    }
 }
 
 #[test]
@@ -652,230 +767,6 @@ fn defence_the_opening_band_and_a_launch_city_all_outrank_a_boost() {
     );
 }
 
-// ---- research deferral -------------------------------------------------
-
-/// A capital rich enough that an ancient node is a two-turn purchase, which
-/// is the only regime in which deferring for a boost changes anything: below
-/// it the node outlives its own trigger and the engine's mid-research credit
-/// lands on it anyway.
-fn fast_research_board(seed: u64) -> (Game, Name) {
-    let mut game = capital_board(seed);
-    game.turn = 40;
-    let cid = game.player_city_ids(0)[0];
-    game.cities.get_mut(&cid).unwrap().pop = 40;
-    game.players[0].techs.insert(name!("archery"));
-    let capital = game.cities[&cid].pos;
-    game.spawn_unit("archer", 0, capital);
-    game.spawn_unit("archer", 0, capital);
-    let rate = AdvancedAi::research_rate(&game, 0, true);
-    let ordinary = game
-        .available_techs(0)
-        .into_iter()
-        .min_by(|a, b| {
-            game.tech_cost(a.as_str())
-                .total_cmp(&game.tech_cost(b.as_str()))
-        })
-        .expect("the tree offers a node");
-    assert!(
-        game.tech_cost(ordinary.as_str()) / rate <= BOOST_DEFER_TURNS,
-        "the board must buy the cheapest node inside the deferral window"
-    );
-    (game, ordinary)
-}
-
-fn commit(ai: &AdvancedAi, node: Name, turn: u32, action: BoostAction, trigger: &str) {
-    *ai.boost_planner_frame.borrow_mut() = BoostPlannerFrame {
-        stamp: Some((turn, 0)),
-        objectives: vec![BoostSideObjective {
-            node,
-            techs: true,
-            trigger: trigger.to_string(),
-            action,
-            deadline: turn + 20,
-            payout: 500.0,
-        }],
-        defence_stand_down: false,
-    };
-}
-
-fn commit_mine(ai: &AdvancedAi, node: Name, turn: u32) {
-    commit(
-        ai,
-        node,
-        turn,
-        BoostAction::Improvement {
-            improvement: "mine".to_string(),
-            on: TileRequirement::Any,
-        },
-        "improvement:mine",
-    );
-}
-
-fn commit_archer(ai: &AdvancedAi, node: Name, turn: u32) {
-    commit(
-        ai,
-        node,
-        turn,
-        BoostAction::Unit("archer".to_string()),
-        "units_of:archer",
-    );
-}
-
-/// Queue an Archer in the capital and invest production until it is `turns`
-/// turns from done; returns the turns the queue front actually needs.
-fn queue_archer_within(game: &mut Game, turns: f64) -> f64 {
-    let cid = game.player_city_ids(0)[0];
-    let archer = Item::Unit {
-        unit: name!("archer"),
-    };
-    let city = game.cities.get_mut(&cid).unwrap();
-    city.queue = vec![archer.clone()];
-    city.production = 0.0;
-    let per_turn =
-        (game.city_yields(cid).production * game.item_prod_mult(0, cid, Some(&archer))).max(1.0);
-    let outstanding = game.item_remaining_cost_for_city(0, cid, &archer);
-    game.cities.get_mut(&cid).unwrap().production = (outstanding - turns * per_turn).max(0.0);
-    game.item_remaining_cost_for_city(0, cid, &archer) / per_turn
-}
-
-#[test]
-fn the_deferral_waits_only_for_a_committed_trigger_inside_its_window() {
-    let (mut game, ordinary) = fast_research_board(71_040);
-    let capital = game.cities[&game.player_city_ids(0)[0]].pos;
-    let ai = armed();
-    let available: Vec<Name> = game.available_techs(0);
-    let rate = AdvancedAi::research_rate(&game, 0, true);
-    let finish_turns = game.tech_cost(ordinary.as_str()) / rate;
-
-    // No Builder stands, so the improvement is possible and not in progress.
-    commit_mine(&ai, ordinary, game.turn);
-    assert_eq!(
-        ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, None, true),
-        None,
-        "a merely possible trigger is not a commitment"
-    );
-
-    // A Builder does commit the charge, but this node outlives it: the boost
-    // lands mid-research and the engine credits it, so nothing is deferred.
-    game.spawn_unit("builder", 0, capital);
-    assert!(finish_turns > BOOST_BUILDER_FIRE_TURNS);
-    commit_mine(&ai, ordinary, game.turn);
-    assert_eq!(
-        ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, None, true),
-        None,
-        "a node the trigger beats home needs no deferral"
-    );
-
-    // A queued Archer landing inside the window, after the node would have
-    // been bought outright: this is the one case the deferral exists for.
-    let fire_turns = queue_archer_within(&mut game, finish_turns + 0.5);
-    assert!(
-        finish_turns < fire_turns && fire_turns <= BOOST_DEFER_TURNS,
-        "the board must put the trigger after the node and inside the window: \
-         node {finish_turns:.2}, trigger {fire_turns:.2}"
-    );
-    commit_archer(&ai, ordinary, game.turn);
-    let deferral = ai
-        .boost_planner_defer_pick(&game, 0, &available, &ordinary, None, true)
-        .expect("a committed trigger inside the window defers");
-    assert_eq!(deferral.node, ordinary);
-    assert_eq!(deferral.trigger, "units_of:archer");
-    assert_ne!(deferral.pick, ordinary);
-    // The replacement costs no more than the window it buys — the bound that
-    // keeps the lane's next unlock from slipping past the boost's own wait.
-    assert!(
-        game.tech_cost(deferral.pick.as_str()) / rate <= BOOST_DEFER_TURNS,
-        "the lane's next unlock is never pushed back past the boost window"
-    );
-
-    // The same trigger, pushed past the window, is not waited for.
-    let far = queue_archer_within(&mut game, BOOST_DEFER_TURNS + 2.0);
-    assert!(far > BOOST_DEFER_TURNS);
-    commit_archer(&ai, ordinary, game.turn);
-    assert_eq!(
-        ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, None, true),
-        None,
-        "a trigger landing after the window is not worth a deferral"
-    );
-
-    // Off, the picker is untouched.
-    queue_archer_within(&mut game, finish_turns + 0.5);
-    let plain_ai = AdvancedAi::new();
-    commit_archer(&plain_ai, ordinary, game.turn);
-    assert_eq!(
-        plain_ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, None, true),
-        None
-    );
-}
-
-#[test]
-fn the_deferral_replacement_must_stay_on_the_lanes_own_beeline() {
-    let (mut game, ordinary) = fast_research_board(71_041);
-    let rate = AdvancedAi::research_rate(&game, 0, true);
-    let want = game.tech_cost(ordinary.as_str()) / rate + 0.5;
-    queue_archer_within(&mut game, want);
-    let ai = armed();
-    let available: Vec<Name> = game.available_techs(0);
-    commit_archer(&ai, ordinary, game.turn);
-    assert!(
-        ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, None, true)
-            .is_some(),
-        "with no forced goal the deferral fires on this board"
-    );
-
-    // With a forced lane goal, the replacement leads to that goal or there is
-    // no deferral: the lane loses order, never progress.
-    for goal in [
-        "mining",
-        "pottery",
-        "animal_husbandry",
-        "currency",
-        "writing",
-    ] {
-        if let Some(deferral) =
-            ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, Some(goal), true)
-        {
-            assert!(
-                ai.tech_leads_to(&game, deferral.pick.as_str(), goal),
-                "{} does not lead to {goal}",
-                deferral.pick
-            );
-        }
-    }
-    // A goal nothing available leads to leaves the pick alone.
-    assert_eq!(
-        ai.boost_planner_defer_pick(
-            &game,
-            0,
-            &available,
-            &ordinary,
-            Some("a_goal_no_tech_leads_to"),
-            true
-        ),
-        None
-    );
-}
-
-#[test]
-fn a_node_that_outlives_its_own_trigger_is_never_deferred() {
-    let mut game = capital_board(71_042);
-    game.turn = 40;
-    let capital = game.cities[&game.player_city_ids(0)[0]].pos;
-    game.spawn_unit("builder", 0, capital);
-    let ai = armed();
-    let available: Vec<Name> = game.available_techs(0);
-    let ordinary = name!("machinery");
-    commit_mine(&ai, ordinary, game.turn);
-    // Machinery is a long node against an opening empire's beakers, so the
-    // engine's own mid-research credit reaches it and nothing is deferred.
-    let rate = AdvancedAi::research_rate(&game, 0, true);
-    assert!(game.tech_cost("machinery") / rate > BOOST_DEFER_TURNS);
-    assert_eq!(
-        ai.boost_planner_defer_pick(&game, 0, &available, &ordinary, None, true),
-        None
-    );
-}
-
 // ---- off, nothing moves ------------------------------------------------
 
 #[test]
@@ -901,21 +792,6 @@ fn off_every_entry_point_returns_before_reading_anything() {
     assert_eq!(
         plain_ai.boost_planner_builder_premium(&game, pos, "mine", 40.0),
         0.0
-    );
-    assert_eq!(
-        plain_ai.boost_planner_site_premium(&game, 0, capital, 100.0),
-        0.0
-    );
-    assert_eq!(
-        plain_ai.boost_planner_defer_pick(
-            &game,
-            0,
-            &game.available_techs(0),
-            &name!("machinery"),
-            None,
-            true
-        ),
-        None
     );
     // Nothing was memoised either: the flag is checked before the frame.
     assert_eq!(plain_ai.boost_planner_frame.borrow().stamp, None);

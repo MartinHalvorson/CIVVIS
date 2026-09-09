@@ -1,10 +1,15 @@
 # `boost-planner`, 2026-09-09
 
 An opt-in gene that plans the Eurekas and Inspirations the beeline is about to
-walk past — a six-technology, four-civic horizon, a trigger cost table, at most
-three committed side objectives carrying the turn they expire, and a
-three-turn research deferral. Off by default; off, every path is
-byte-identical.
+walk past — a six-technology, four-civic horizon, a trigger cost table, and at
+most three committed side objectives carrying the turn they expire, each a
+share-of-value premium on the one production or Builder choice that fires it.
+Off by default; off, every path is byte-identical.
+
+Reviewed 2026-09-09 (senior review, same PR): the research deferral and the
+`coastal_city` settle-site seam were cut, a commitment-expiry defect was fixed,
+the `chase-every-boost` stacking bound was stated and tested, and the screen
+gained the `boosted_share` read this gene is measured by. See *Review* below.
 
 Code: `src/ai/advanced/boost_planner.rs`, tests in
 `src/ai/advanced/boost_planner/tests.rs`.
@@ -71,14 +76,14 @@ Breadth is not the missing thing. **Commitment with a deadline** is.
    `BoostSpec` is read through the engine's own `Game::boost_progress` — the
    same arm `boost_met` compares — and classified:
    - `Satisfied`: `have >= need`.
-   - `Cheap(action)`: **work the empire already does**, and only four forms:
+   - `Cheap(action)`: **work the empire already does**, and only three forms:
      an improvement type it has already put on the ground, a unit kind it
-     already fields and needs exactly one more of, a district family it already
-     builds, or a coastal city while a Settler is already walking. Each guard
-     is the "already" half; a trigger the empire would have to *start* doing is
-     not cheap.
+     already fields and needs exactly one more of, or a district family it
+     already builds. Each guard is the "already" half; a trigger the empire
+     would have to *start* doing is not cheap.
    - `Expensive`: wonders, war acts, kills, religion, pantheons, great people,
-     national parks, themed museums — and **buildings**, deliberately:
+     national parks, themed museums, a city site (`coastal_city`) — and
+     **buildings**, deliberately:
      `chase-every-boost` and `eureka-chasing-production` already price those
      and both ship on, so this gene adds nothing on top of a premium that
      already exists.
@@ -97,13 +102,28 @@ Breadth is not the missing thing. **Commitment with a deadline** is.
    which re-prices every reachable trigger every turn and therefore follows the
    beeline's every wobble.
 
-   The premium is 15 % of the candidate's **own positive value**, at three
-   seams: production (`production_value`), Builder work
-   (`improvement_value_with_appeal`) and placement (`settle_value_visible`).
-   Being a share rather than a sum, it can re-order two choices the planner
-   already rated within 15 % of each other and can do nothing else — in
-   particular it can never lift a choice priced at or below zero. That is the
-   direct answer to the two absolute-premium negatives above.
+   The premium is 15 % of the candidate's **own positive value**, at two
+   seams: production (`production_value`) and Builder work
+   (`improvement_value_with_appeal`). Being a share rather than a sum, it can
+   re-order two choices the planner already rated within 15 % of each other
+   and can do nothing else — in particular it can never lift a choice priced
+   at or below zero. That is the direct answer to the two absolute-premium
+   negatives above.
+
+   **Stacking with `chase-every-boost`**, which ships on and prices the same
+   two seams: by design (v1 is the shallow coverage of every trigger, this is
+   the deep commitment to at most three), and bounded. v1's premium is held
+   under `CHASE_PRODUCTION_RAW_FRACTION` / `CHASE_BUILDER_VALUE_FRACTION`
+   (one half) of the same positive base, so the stack is at most 65 % of the
+   choice's own value, is zero wherever the choice is worth nothing, and
+   cannot compound — each reads the raw value, never the other's premium.
+   Tested (`stacked_on_chase_every_boost_the_premium_stays_a_bounded_share`).
+
+   A commitment whose node comes under study keeps its window to the
+   projected completion turn (`boost_commitment_deadline`), because the
+   engine credits a boost mid-research; the window is read each turn and
+   never written back, so the turn research moves off the node the given
+   deadline is the window again.
 
 4. **The three things a boost never outranks** (`boost_planner_stands_down`).
    - **Defence.** While any owned city is under real pressure
@@ -112,38 +132,60 @@ Breadth is not the missing thing. **Commitment with a deadline** is.
    - **Settlers in the opening band.** Inside the expansion band and behind its
      winning pace (`expansion_band_turn` / `expansion_pace`; every recorded win
      came from four to six cities by turn 60), the *production* premium stands
-     down, so a trigger can never take a Settler's slot. Builder charges and
-     settle sites are untouched — they do not compete with a Settler, and the
-     opening is where a Eureka is worth most.
+     down, so a trigger can never take a Settler's slot. Builder charges are
+     untouched — a charge does not compete with a Settler, and the opening is
+     where a Eureka is worth most.
    - **Victory-project reservations.** In the science drive's launch city
      (`science_drive_launch_city`) the queue belongs to the space projects and
      no premium is paid there at all.
 
-5. **Research deferral** (`boost_planner_defer_pick`, `BOOST_DEFER_TURNS` = 3).
-   The node the picker chose yields its slot when, and only when:
-   - it is itself a live side objective's node;
-   - that trigger is **in progress**, not merely possible — a unit, building or
-     district at the front of an owned city queue (`boost_trigger_is_queued`,
-     the strict test `boost-wait-research-2` uses), or an improvement with a
-     Builder standing that has a charge to spend;
-   - the boost lands within three turns; and
-   - the empire would otherwise finish the node **first** — if the node
-     outlives its own trigger the engine's mid-research credit reaches it and
-     nothing needs deferring.
+5. **Journal.** Creation, collection and expiry are written at `Research` /
+   `Decision` with the boost's own trigger and deadline, so a run's `why.log`
+   says what the planner committed to and whether it collected.
 
-   The replacement must be on the same beeline (when the lane forced a goal, it
-   must lead to that goal) and must cost no more than three turns of research.
-   Those two bounds together are the design's requirement that the lane's next
-   unlock is never pushed back further than the boost window itself: the lane
-   loses order, never progress.
+## Review (2026-09-09)
 
-6. **Journal.** Creation, collection, expiry and each deferral are written at
-   `Research` / `Decision` with the boost's own trigger and deadline, so a
-   run's `why.log` says what the planner committed to and whether it collected.
+What the senior review changed, and why, so it is not rebuilt by accident:
+
+- **The research deferral was cut.** As written it could only fire when the
+  picked node itself cost at most the three-turn window
+  (`finish_turns <= fire_turns <= 3`), so it defended at most 40 % of a
+  three-turn node — about 1.2 turns of research — and its Builder half took
+  any charged Builder anywhere in the empire as "fires next turn". Two picker
+  hunks in `advanced.rs`, two `pub(super)` widenings
+  (`boost_trigger_is_queued`, `item_trigger_key`), three methods and two
+  constants went with it. The engine's own mid-research credit already covers
+  the case the deferral was for.
+- **The `coastal_city` settle-site seam was cut.** It was the only placement
+  objective, it paid on `settle_value_visible` — the empire's least
+  reversible decision — and its whole payout is Sailing's 20-beaker Eureka.
+  The class now reads `Expensive` (a site wins on its own merits), and the
+  test asserts it stays so with a Settler walking.
+- **A commitment no longer expires the turn its node starts.** A not-started
+  node's deadline is its projected *start* turn; the refresh dropped the
+  commitment the turn after research began — the turn the trigger is worth
+  most — and re-took it from the horizon a turn later under a fresh deadline.
+  `boost_commitment_deadline` now reads the window to projected completion
+  while the node is under study, without writing it back.
+- **`Item::Formation` no longer satisfies a `Unit` objective**: a Corps from
+  the queue is a later-era build the ancient `units_of:` triggers never name;
+  the premium attaches to the exact satisfying choice only.
+- **The stacking bound with `chase-every-boost` is stated and tested** (see
+  *Design* 3): at most 65 % of the choice's own value, zero at or below zero.
+- **The screen now exports the gene's own metric.** The junior's note that
+  "the screen does not export a `boost_totals` column" was half right: every
+  row has carried `techs_researched` / `techs_boosted` / `civics_adopted` /
+  `civics_inspired` since `chase-every-boost`'s probe of 2026-09-01, but
+  `--analyze` had no contrast on them. `gene_screen --analyze` now reports
+  `techs_boosted_share_pp` and `civics_inspired_share_pp` per gene — the
+  on − off Δ, in points, of the share of researched techs (adopted civics)
+  that arrived boosted, from the same clustered contrast as the win column —
+  and prints a `boosted share` block. Tested
+  (`boosted_share_is_the_on_minus_off_share_of_nodes_that_arrived_boosted`).
 
 ## Tests
 
-`cargo test --profile ci --locked --lib boost_planner` — 20 tests:
+`cargo test --profile ci --locked --lib boost_planner` — 19 tests:
 
 - the gene is a native opt-in, off in both controllers;
 - the horizon respects prerequisites, never repeats, never moves its start
@@ -156,26 +198,25 @@ Breadth is not the missing thing. **Commitment with a deadline** is.
   (`improvement:`, `improvement_on_resource:`, `improve_resource:`) and
   `ImpossibleNow` without the gating technology; unit cheap only at one owned
   and exactly one more (zero owned → expensive, two more → expensive, third →
-  satisfied); district cheap only for a family already built; coastal city
-  cheap only while a Settler walks; fifteen strategic-spending triggers
+  satisfied); district cheap only for a family already built; a city site
+  never cheap, Settler walking or not; fifteen strategic-spending triggers
   expensive and twelve unreachable ones impossible; **and a sweep over every
   shipped boost row in both trees asserting none classifies cheap on an empty
   opening board**;
 - the cap keeps at most three and keeps the richest; a commitment stands on its
   deadline turn and is dropped the turn after; a collected boost ends its own
-  objective;
+  objective; a commitment whose node comes under study is kept to the
+  projected completion and falls back to its given window when research moves
+  off the node;
 - the premium is 15 % of the choice's own value, zero for an item no objective
-  names, zero on a non-positive value; the Builder premium respects the tile
-  requirement (resource, bare tile, wrong improvement);
+  names, zero on a non-positive value; stacked on `chase-every-boost` the two
+  premiums stay under 65 % of the value and pay nothing at or below zero; the
+  Builder premium respects the tile requirement (resource, bare tile, wrong
+  improvement);
 - the three stand-downs: the opening band silences production but not Builder
   work, a threatened city silences production, the empire-wide defence
   stand-down silences both;
-- the deferral: a merely possible trigger is not a commitment; a node the
-  trigger beats home is not deferred; a queued trigger landing after the node
-  and inside the window defers, and the replacement costs ≤ 3 turns; the same
-  trigger pushed past the window does not; with a forced goal the replacement
-  always leads to that goal, and a goal nothing leads to leaves the pick alone;
-- off, every entry point returns zero/`None` and nothing is memoised.
+- off, every entry point returns zero and nothing is memoised.
 
 ## Fires probe (not a ledger source)
 

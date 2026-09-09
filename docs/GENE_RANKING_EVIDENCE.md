@@ -183,7 +183,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
-| `boost-planner` | off (unmeasured) | Plan the next six technologies' and four civics' boosts: classify each trigger by what it costs the plan, turn the cheap ones into at most three deadlined side objectives, and defer a node whose committed boost lands within three turns. | 1 \| 1 |
+| `boost-planner` | off (unmeasured) | Plan the next six technologies' and four civics' boosts: classify each trigger by what it costs the plan and turn the cheap ones into at most three deadlined side objectives, each a share-of-value premium on the one production or Builder choice that fires it. | 1 \| 1 |
 
 ## Removed from the code
 
