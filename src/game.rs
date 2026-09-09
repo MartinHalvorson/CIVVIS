@@ -6541,6 +6541,12 @@ pub struct Game {
     /// empty, so nothing about simulated play changes.
     #[serde(default)]
     pub blocked_policies: Arc<BTreeSet<Name>>,
+    /// Current policy eligibility observed from a host, scoped to its mirrored
+    /// seat. Unlike historical refusals this is replaced on each observation:
+    /// government changes and Congress bans can make a card available again.
+    /// An absent seat entry preserves ordinary simulation rules.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub host_policy_choices: BTreeMap<usize, BTreeSet<Name>>,
     /// Pantheon beliefs a HOST has already granted to another player, for the same
     /// reasons and with the same emptiness in an ordinary game as
     /// [`Game::blocked_city_sites`].
@@ -7347,6 +7353,7 @@ impl From<GameSer> for Game {
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
+            host_policy_choices: BTreeMap::new(),
             blocked_pantheons: Arc::new(BTreeSet::new()),
             blocked_districts: Arc::new(BTreeMap::new()),
             host_district_sites: Arc::new(BTreeMap::new()),
@@ -8045,6 +8052,7 @@ impl Game {
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
+            host_policy_choices: BTreeMap::new(),
             blocked_pantheons: Arc::new(BTreeSet::new()),
             blocked_districts: Arc::new(BTreeMap::new()),
             host_district_sites: Arc::new(BTreeMap::new()),
@@ -18243,6 +18251,7 @@ impl Game {
                     // A card the HOST ruleset has retired, learned from its own
                     // refusals. Empty in an ordinary game; see `blocked_policies`.
                     && !self.blocked_policies.contains(*name)
+                    && self.host_policy_choices.get(&pid).is_none_or(|choices| choices.contains(*name))
                     && s.offered(&p.age, self.world_era)
                     && s.civic
                         .as_ref()

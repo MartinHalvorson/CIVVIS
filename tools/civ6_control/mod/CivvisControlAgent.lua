@@ -76,6 +76,35 @@ CivvisPolicy = {
 	attempt_turn = -1,
 	pending = nil,
 };
+-- Match GovernmentScreen_Expansion2.lua:IsPolicyAvailable. Unlocked is not
+-- sufficient: government exclusives and Congress bans can still reject a card.
+CivvisPolicy.isAvailable = function(culture, hash)
+	local ok, value = pcall(function()
+		local banned = culture:IsPolicyBanned(hash);
+		local slottable = culture:CanPolicyBeSlotted(hash);
+		local obsolete = culture:IsPolicyObsolete(hash);
+		if type(banned) ~= "boolean" or type(slottable) ~= "boolean"
+				or type(obsolete) ~= "boolean" then return nil; end
+		return not banned and slottable and not obsolete;
+	end);
+	if ok then return value; end
+	return nil;
+end;
+CivvisPolicy.availableNames = function(culture)
+	local ok, names = pcall(function()
+		local result = {};
+		for card in GameInfo.Policies() do
+			local available = CivvisPolicy.isAvailable(culture, card.Hash);
+			-- An incomplete observation is unknown, not an empty legal slate.
+			if available == nil then return nil; end
+			if available then result[#result + 1] = card.PolicyType; end
+		end
+		table.sort(result);
+		return result;
+	end);
+	if ok then return names; end
+	return nil;
+end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -8422,6 +8451,7 @@ local function exportState(player, pid, turn, frame)
 		religions = religions,
 		prophet_pending = prophet_pending,
 		policies = policies,
+		available_policies = CivvisPolicy.availableNames(pcult),
 		policy_slots = policy_slots,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
@@ -12333,6 +12363,9 @@ local function applyOrder(player, pid, row, turn)
 			end
 			if not try(function() return culture:IsPolicyUnlocked(card.Hash); end, false) then
 				return false, "locked_" .. resolved;
+			end
+			if CivvisPolicy.isAvailable(culture, card.Hash) == false then
+				return false, "unavailable_" .. resolved;
 			end
 			if not seen[card.Index] then
 				desired[#desired + 1] = card;
