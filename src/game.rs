@@ -21016,7 +21016,24 @@ impl Game {
     }
 
     fn regional_building_effects_uncached(&self, city: &City) -> (Yields, f64) {
-        let mut groups: BTreeMap<String, (Yields, f64)> = BTreeMap::new();
+        // ⭐ BORROWED KEYS, NOT OWNED ONES. This map was keyed by `String` and
+        // every active building allocated one to look its group up: either
+        // `spec.regional_group.clone()` or `building.to_string()`. The function
+        // runs once per city per amenity derivation, over every building of
+        // every city, so that is one allocation and one copy per building per
+        // call, feeding the allocator and `memmove` leaves that a batch profile
+        // shows at roughly 17% and 3.5% of running samples.
+        //
+        // ⚠⚠ THE KEY TYPE HAD TO KEEP ITS ORDER. The fold at the end of this
+        // function sums `f64` yields over `groups.values()`, so the map's
+        // iteration order is part of the answer -- switching to a `Name` id key
+        // would reorder the summation and perturb the result. `Ord for &str` is
+        // `Ord for String`'s own implementation, byte for byte, so a
+        // `BTreeMap<&str, _>` holds these keys in exactly the same order and the
+        // fold is bit-identical. `Name::as_str` returns `&'static str` (the
+        // interning registry leaks its text) and `spec.regional_group` lives as
+        // long as the `&self` borrow, so both sources outlive the map.
+        let mut groups: BTreeMap<&str, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
             self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
         // ⭐ HOISTED, LIKE `integrate_industry` ABOVE IT. Mexico City's suzerain
@@ -21066,11 +21083,11 @@ impl Game {
                 if regional_range <= 0 || self.wdist(origin, city.pos) > regional_range {
                     continue;
                 }
-                let group = if !spec.regional_group.is_empty() {
-                    spec.regional_group.clone()
+                let group: &str = if !spec.regional_group.is_empty() {
+                    spec.regional_group.as_str()
                 } else {
                     spec.replaces
-                        .map_or_else(|| building.to_string(), |name| name.to_string())
+                        .map_or_else(|| building.as_str(), |name| name.as_str())
                 };
                 let integrate_this_group = integrate_industry
                     && spec.district.is_some_and(|district| {
@@ -28007,6 +28024,28 @@ impl Game {
                 // identical and hands `path_to` a different walk to a
                 // destination under a zone of control.
                 let score = arrival.remaining();
+                // ⭐ THE SKIP ABOVE IS AN ARITHMETIC ARGUMENT, SO CHECK IT.
+                // The guard at the top of this body drops an arrival whose tile
+                // already holds `rem` or better, on the grounds that no arrival
+                // can carry more movement than the tile it came from:
+                // `unit_step_cost` ends `cost.max(0.0)`, `rem > 0` is guaranteed
+                // above, `(rem - cost).max(0.0) <= rem`, `.min(capped_moves_at)`
+                // only lowers it, and both `FloodArrival::arrival` impls keep
+                // that value or zero it for a zone of control. Nothing in the
+                // suite tested that chain -- it held by reading, and a later
+                // change to any link would silently turn the skip into a
+                // wrong answer that only a paired A/B would notice.
+                //
+                // `[profile.ci]` sets `debug-assertions = true` precisely so
+                // guards like this run in the build that gates a merge, so this
+                // is a real check on every one of the ~3,200 tests and costs
+                // nothing in `release`.
+                debug_assert!(
+                    score <= rem,
+                    "movement arrival at {n:?} kept {score} of the {rem} it \
+                     came from: a step granted movement, which makes the \
+                     unimprovable-arrival skip above unsound"
+                );
                 if !scratch.movement_seen[index] || score > scratch.movement_score[index] {
                     if !scratch.movement_seen[index] {
                         scratch.movement_seen[index] = true;

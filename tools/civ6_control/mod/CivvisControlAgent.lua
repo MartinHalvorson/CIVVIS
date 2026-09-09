@@ -10305,8 +10305,17 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	local session = trade.sessions[other];
 	if session == nil then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
-	local sessionID = type(kVariants) == "table" and kVariants.SessionID or nil;
-	if session.sessionID == nil and sessionID ~= nil then session.sessionID = sessionID; end
+	-- Firaxis dispatches by StatementType and separates a MAKE_DEAL opening
+	-- acknowledgement from evaluation (DiplomacyActionView.lua:2547-2559,
+	-- 2757-2761). A greeting or another session must not consume this offer.
+	if type(kVariants) ~= "table" then return; end
+	local sessionID = kVariants.SessionID;
+	if sessionID == nil or (session.sessionID ~= nil and session.sessionID ~= sessionID) then return; end
+	local statementType = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementType);
+	end, nil);
+	if statementType ~= "MAKE_DEAL" then return; end
+	if session.sessionID == nil then session.sessionID = sessionID; end
 	if not session.sent then
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
@@ -10320,7 +10329,14 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
-	local dealAction = type(kVariants) == "table" and kVariants.DealAction or nil;
+	local dealAction = kVariants.DealAction;
+	if dealAction == nil then return; end
+	local opening = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementSubType) == "NONE"
+			and (kVariants.ResponseType == DiplomacyResponseTypes.INITIAL
+				or kVariants.ResponseType == DiplomacyResponseTypes.ACKNOWLEDGE);
+	end, false);
+	if opening then return; end
 	trade.unanswered = 0;
 	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
 		session = session.sessionID or -1, deal_action = tostring(dealAction) });
