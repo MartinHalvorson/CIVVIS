@@ -4935,6 +4935,10 @@ pub struct AdvancedAi {
     /// to. `None` whenever the gene is off. See
     /// `advanced/early_conquest.rs`.
     conquest_opening: Option<early_conquest::ConquestOpening>,
+    /// `early-conquest-opening`: an opening that assembled or declared has
+    /// been released, and this game has had its one attempt. `false`
+    /// whenever the gene is off.
+    conquest_closed: bool,
     /// Arm the culture defence at 30 percent of the victory bar instead of
     /// 50, sell nothing to the threatening rival, and denounce it. Opt-in
     /// gene `culture-threat-early`; see `advanced/culture_strategy.rs`.
@@ -7741,6 +7745,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             conquest_opening: None,
+            conquest_closed: false,
             culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,

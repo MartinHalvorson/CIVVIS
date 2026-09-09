@@ -243,11 +243,15 @@ impl AdvancedAi {
     /// treatment toggles make the versions exclusive, but spelling the family
     /// predicate here keeps every consumer of the plan on the same contract.
     fn city_campaign_active(&self) -> bool {
-        // `early-conquest-opening` hands its declared campaign to this module
+        // `early-conquest-opening` hands its DECLARED campaign to this module
         // by writing the plan directly, so the plan readers below — which are
-        // what `assess` consults — must accept it. Exactly the shipped
-        // predicate with that gene off. See `advanced/early_conquest.rs`.
-        self.city_campaign || self.city_campaign_2 || self.early_conquest_opening
+        // what `assess` consults — must accept it. The predicate widens only
+        // while that opening owns the plan, not whenever its flag is on: a
+        // bare flag here would send `maintain_city_campaign` below into
+        // `plan_city_campaign`, and the gene would ship city-campaign v1's
+        // planner with it. Exactly the shipped predicate with the gene off.
+        // See `advanced/early_conquest.rs`.
+        self.city_campaign || self.city_campaign_2 || self.conquest_owns_the_campaign()
     }
 
     /// Whether a plan stands to read: the gene is on, the rival is alive and
