@@ -1248,8 +1248,8 @@ mod tests {
             ),
             ("air-surge-2", "air-surge-2", "air-surge"),
             (
-                "district-planning-2",
-                "district-planning-2",
+                "district-planning-3",
+                "district-planning-3",
                 "district-planning",
             ),
             ("battle-planner-2", "battle-planner-2", "battle-planner"),

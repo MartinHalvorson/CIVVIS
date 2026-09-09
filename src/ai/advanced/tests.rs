@@ -2793,7 +2793,6 @@ fn the_land_grab_wants_the_land_not_a_rung() {
     // These independently selected expansion treatments take precedence over
     // `land_grab`'s target. Withhold them so this fixture measures the land
     // grab against its era-paced control alone.
-    live.disable_rapid_city_expansion();
     live.disable_rapid_city_expansion_2();
     live.disable_city_target_meets_the_map();
     assert!(
@@ -2804,7 +2803,6 @@ fn the_land_grab_wants_the_land_not_a_rung() {
     raw_land_grab.shared_city_target = false;
     let mut rungs = AdvancedAi::new();
     rungs.enable_live_bridge();
-    rungs.disable_rapid_city_expansion();
     rungs.disable_rapid_city_expansion_2();
     rungs.disable_city_target_meets_the_map();
     rungs.disable_land_grab();
@@ -3186,258 +3184,11 @@ fn the_land_grab_settles_past_the_assigned_lanes_cutoff() {
     assert!(!targeted.settler_expansion_window_open(&game, 0, capital));
 }
 
-/// The rapid gene is deliberately stronger than the live-only land grab at
-/// the opening: it has room for the three walkers that make three cities by
-/// t25 physically possible, then widens every two founded cities toward the
-/// twelve-to-fifteen-city midgame horizon. The safe-site and hard-target caps
-/// still bound every one of those walkers.
+/// The culled version one turned an exhausted safe-site search into a
+/// Conquest plan. Version two never manufactures a war merely because the
+/// settlement frontier is full.
 #[test]
-fn rapid_city_expansion_versions_are_separate_end_to_end() {
-    let mut ai = AdvancedAi::new();
-    assert!(!ai.rapid_city_expansion);
-    assert!(!ai.rapid_city_expansion_2);
-    assert!(!ai.base.rapid_city_expansion);
-    assert!(!ai.base.rapid_city_expansion_2);
-
-    ai.enable_rapid_city_expansion();
-    assert!(ai.rapid_city_expansion);
-    assert!(ai.base.rapid_city_expansion);
-    assert!(!ai.rapid_city_expansion_2);
-    assert!(!ai.base.rapid_city_expansion_2);
-
-    ai.enable_rapid_city_expansion_2();
-    assert!(!ai.rapid_city_expansion);
-    assert!(!ai.base.rapid_city_expansion);
-    assert!(ai.rapid_city_expansion_2);
-    assert!(ai.base.rapid_city_expansion_2);
-
-    ai.enable_rapid_city_expansion();
-    assert!(ai.rapid_city_expansion);
-    assert!(ai.base.rapid_city_expansion);
-    assert!(!ai.rapid_city_expansion_2);
-    assert!(!ai.base.rapid_city_expansion_2);
-}
-
-#[test]
-fn rapid_city_expansion_opens_the_milestone_pipeline() {
-    let mut game = Game::new_full(2, 74, 46, 11_191, 250, 0, false);
-    game.game_speed = crate::setup::GameSpeed::Online;
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .expect("each major starts with a settler");
-        let position = game.units[&settler].pos;
-        game.found_city_for(pid, position, None);
-        game.remove_unit(settler);
-    }
-    game.current = 0;
-
-    let mut ai = AdvancedAi::new();
-    assert!(!ai.rapid_city_expansion);
-    assert!(!ai.base.rapid_city_expansion);
-    ai.enable_rapid_city_expansion();
-    assert!(ai.rapid_city_expansion);
-    assert!(ai.base.rapid_city_expansion);
-
-    for (turn, milestone) in [(25, 3), (50, 8), (100, 12)] {
-        game.turn = turn;
-        let target = ai.assess(&game, 0).desired_cities;
-        assert!(
-            target >= milestone,
-            "t{turn}: the rapid target {target} cannot support the {milestone}-city milestone"
-        );
-        assert!(
-            target <= RAPID_EXPANSION_CITY_CEILING,
-            "t{turn}: the gene must retain its bounded fifteen-city horizon"
-        );
-    }
-    assert_eq!(
-        ai.settler_in_flight_allowed(&game, 15, 1, 0),
-        3,
-        "the opening has room for the two cities needed by t25 plus the next wave"
-    );
-    assert_eq!(
-        ai.settler_in_flight_allowed(&game, 15, 2, 0),
-        4,
-        "the t50 expansion wave starts before the third city is fully developed"
-    );
-    assert_eq!(
-        ai.settler_in_flight_allowed(&game, 15, 6, 0),
-        6,
-        "the t80 expansion wave widens with the empire"
-    );
-    assert_eq!(
-        ai.settler_in_flight_allowed(&game, 15, 14, 0),
-        1,
-        "the hard city target still caps the final Settler"
-    );
-}
-
-/// The turn-fifty expansion wave cannot afford to leave a Settler standing on
-/// a legal city tile until its next turn. Founding after the final movement
-/// point must reuse the normal arrival checks and finish in this same step.
-#[test]
-fn rapid_city_expansion_founds_when_a_settler_reaches_its_target() {
-    let (mut game, _capital, home) = empire_with_a_capital(11_195);
-    game.at_war.clear();
-    for unit in game.player_unit_ids(1) {
-        game.remove_unit(unit);
-    }
-
-    let sites: Vec<Pos> = game
-        .map
-        .tiles
-        .keys()
-        .copied()
-        .filter(|position| game.wdist(*position, home) == 5)
-        .collect();
-    let target = sites
-        .into_iter()
-        .find(|position| {
-            let probe = game.spawn_test_unit("settler", 0, *position);
-            let legal = game.can_found_city(probe);
-            game.remove_unit(probe);
-            legal
-        })
-        .expect("fixture needs a legal target five tiles from the capital");
-    let source = game
-        .nbrs(target)
-        .into_iter()
-        .find(|position| {
-            game.map
-                .get(*position)
-                .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
-                && game.city_at(*position).is_none()
-                && game.unit_ids_at(*position).is_empty()
-        })
-        .expect("fixture needs an open doorstep beside the target");
-    let settler = game.spawn_test_unit("settler", 0, source);
-    assert_eq!(
-        game.route_step(settler, target, 0),
-        Some(target),
-        "the doorstep has a direct legal route to the city tile"
-    );
-    assert!(game.can_move(settler, target));
-
-    let cities_before = game.player_city_ids(0).len();
-    let mut ai = AdvancedAi::new();
-    ai.enable_rapid_city_expansion();
-    ai.settler_targets.insert(settler, target);
-
-    assert!(ai.advanced_settler_step(&mut game, 0, settler));
-    assert_eq!(game.player_city_ids(0).len(), cities_before + 1);
-    assert!(
-        game.city_at(target).is_some(),
-        "the doorstep becomes a city"
-    );
-    assert!(
-        !game.units.contains_key(&settler),
-        "the Settler is consumed on the movement turn"
-    );
-}
-
-/// In the settlement phase, the rapid gene takes a reachable nearby site
-/// before a richer distant one.  That short route is what lets every new city
-/// join the next Settler wave instead of making the empire wait on walkers.
-#[test]
-fn rapid_city_expansion_fills_nearby_easy_sites_first() {
-    let (mut game, capital, home) = empire_with_a_capital(11_193);
-    let settler = game.spawn_test_unit("settler", 0, game.cities[&capital].pos);
-    let mut ai = BasicAi::new();
-    ai.enable_rapid_city_expansion();
-
-    let nearest = game
-        .wdisk(home, 6)
-        .into_iter()
-        .filter(|position| ai.valid_settle_site(&game, 0, *position))
-        .filter(|position| game.route_step(settler, *position, 0).is_some())
-        .map(|position| game.wdist(home, position))
-        .min()
-        .expect("fixture needs a reachable local settlement site");
-    let chosen = ai
-        .best_reachable_settle_site(&game, 0, settler, 6)
-        .expect("the rapid settler finds that local site")
-        .0;
-
-    assert_eq!(
-        game.wdist(home, chosen),
-        nearest,
-        "rapid expansion prioritizes the nearest reachable easy city"
-    );
-
-    // AdvancedAi owns normal Settler movement, so pin its strategic selector
-    // as well as the baseline fallback it composes over.
-    let mut strategic = AdvancedAi::new();
-    strategic.enable_rapid_city_expansion();
-    let strategic_chosen = strategic
-        .best_settler_target(&game, 0, settler, 8, None)
-        .expect("the strategic settler finds that local site")
-        .0;
-    assert_eq!(
-        game.wdist(home, strategic_chosen),
-        nearest,
-        "the advanced Settler path also keeps the rapid wave local"
-    );
-}
-
-/// The rapid wave sits after the ordinary governor so an already queued
-/// peacetime utility build cannot consume a legal open Settler seat.
-#[test]
-fn rapid_city_expansion_reclaims_a_peacetime_queue_for_its_settler_wave() {
-    let (mut game, capital, _) = empire_with_a_capital(11_194);
-    game.at_war.clear();
-    game.cities.get_mut(&capital).unwrap().pop = 2;
-    game.cities.get_mut(&capital).unwrap().queue = vec![Item::Unit {
-        unit: crate::name!("builder"),
-    }];
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Expansion,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: RAPID_EXPANSION_CITY_CEILING,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    let mut ai = AdvancedAi::new();
-    ai.enable_rapid_city_expansion();
-    assert!(ai.base.has_practical_settle_site(&game, 0));
-
-    ai.rapid_expansion_settler_wave(&mut game, 0, &plan);
-
-    assert!(
-        matches!(
-            game.cities[&capital].queue.first(),
-            Some(Item::Unit { unit }) if unit == "settler"
-        ),
-        "an open rapid-settlement pipeline owns this peaceful utility queue"
-    );
-
-    // Version two retains the positive empty-capital reservation but never
-    // replaces work already underway. The measured-band pipeline waits for a
-    // genuinely empty queue instead of making every peaceful build disposable.
-    game.cities.get_mut(&capital).unwrap().queue = vec![Item::Unit {
-        unit: crate::name!("builder"),
-    }];
-    ai.enable_rapid_city_expansion_2();
-    ai.rapid_expansion_settler_wave(&mut game, 0, &plan);
-    assert!(
-        matches!(
-            game.cities[&capital].queue.first(),
-            Some(Item::Unit { unit }) if unit == "builder"
-        ),
-        "v2 leaves a non-empty queue intact"
-    );
-}
-
-/// Once the practical safe-site search is exhausted, rapid expansion stops
-/// manufacturing stranded Settlers and changes the plan to take the next
-/// cities from a reachable rival. It must not trigger while a Settler is still
-/// walking or before the three-city home ring exists.
-#[test]
-fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
+fn rapid_city_expansion_2_does_not_switch_to_conquest_after_easy_sites_are_full() {
     let (mut game, _capital, _) = empire_with_a_capital(11_192);
     game.at_war.clear();
     let rival_settler = game
@@ -3459,22 +3210,6 @@ fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
     }
 
     let mut ai = AdvancedAi::new();
-    ai.enable_rapid_city_expansion();
-    let plan = ai.assess(&game, 0);
-    assert_eq!(plan.strategy, GrandStrategy::Conquest);
-    assert_eq!(plan.target_player, Some(1));
-    assert!(plan.target_city.is_some());
-
-    let last_site = game.player_city_ids(0)[0];
-    let settler = game.spawn_test_unit("settler", 0, game.cities[&last_site].pos);
-    let with_walker = ai.assess(&game, 0);
-    assert_ne!(
-        with_walker.strategy,
-        GrandStrategy::Conquest,
-        "a Settler already carrying the last viable city must finish its job first"
-    );
-    game.remove_unit(settler);
-
     ai.enable_rapid_city_expansion_2();
     let selective = ai.assess(&game, 0);
     assert_ne!(
@@ -3482,89 +3217,6 @@ fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
         GrandStrategy::Conquest,
         "v2 does not manufacture a war merely because the settlement frontier is full"
     );
-}
-
-/// End-to-end tempo regression for the rapid-city-expansion gene. Geography,
-/// rival contact, and early war legitimately vary individual seats, so this
-/// fixed four-map check asserts the requested per-map bands after the treated
-/// seat has completed each named turn: at least three cities at t25, at least
-/// eight at t50, and 12--15 at t100.
-///
-/// Run with `cargo test --release --lib rapid_city_expansion_tempo_census -- --ignored --nocapture`.
-#[test]
-#[ignore = "whole-game tempo census; run explicitly with --nocapture"]
-fn rapid_city_expansion_tempo_census() {
-    const CHECKPOINTS: [u32; 3] = [25, 50, 100];
-    const MAPS: u64 = 4;
-    const MINIMUMS: [usize; 3] = [3, 8, 12];
-    const MAXIMUMS: [usize; 3] = [usize::MAX, 15, 15];
-    let mut totals = [0usize; CHECKPOINTS.len()];
-    let mut observed = [0usize; CHECKPOINTS.len()];
-
-    for seed in 11_300..11_300 + MAPS {
-        let mut game = Game::new_full(4, 74, 46, seed, 250, 0, false);
-        game.game_speed = crate::setup::GameSpeed::Online;
-        game.set_fog_memory(false);
-        let mut ais: Vec<AdvancedAi> = (0..game.players.len())
-            .map(|pid| {
-                let mut ai = AdvancedAi::new();
-                if pid == 0 {
-                    ai.enable_rapid_city_expansion();
-                }
-                ai
-            })
-            .collect();
-        let mut seen = [false; CHECKPOINTS.len()];
-        while game.winner.is_none() && game.turn <= *CHECKPOINTS.last().unwrap() {
-            let pid = game.current;
-            ais[pid].take_turn(&mut game, pid);
-            if game.winner.is_none() && game.current == pid {
-                let _ = game.apply(pid, &Action::EndTurn);
-            }
-            for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
-                // A world-turn boundary is reached after the previous seat
-                // ends its turn, before player 0 has acted on the new one.
-                // The requested "by turn N" milestone is player 0's state
-                // after it has had its Nth opportunity to found a city.
-                if pid == 0 && game.turn >= *checkpoint && !seen[slot] {
-                    let cities = game.player_city_ids(0).len();
-                    totals[slot] += cities;
-                    observed[slot] += 1;
-                    seen[slot] = true;
-                    println!("  seed {seed} t{checkpoint}: {cities} cities");
-                    assert!(
-                        cities >= MINIMUMS[slot] && cities <= MAXIMUMS[slot],
-                        "seed {seed} t{checkpoint}: {cities} cities must stay in the requested {}..={} band",
-                        MINIMUMS[slot],
-                        MAXIMUMS[slot]
-                    );
-                }
-            }
-        }
-    }
-
-    for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
-        assert_eq!(
-            observed[slot], MAPS as usize,
-            "every fixed map must reach the t{checkpoint} checkpoint"
-        );
-        let count = observed[slot];
-        let minimum_total = MINIMUMS[slot] * count;
-        let maximum_total = MAXIMUMS[slot].saturating_mul(count);
-        assert!(
-            totals[slot] >= minimum_total && totals[slot] <= maximum_total,
-            "t{checkpoint}: {:.2} cities over {count} maps must stay in the requested {}..={} aggregate band",
-            totals[slot] as f64 / count as f64,
-            MINIMUMS[slot],
-            MAXIMUMS[slot]
-        );
-        println!(
-            "  rapid-city-expansion t{checkpoint}: {:.2} cities over {}/{} maps",
-            totals[slot] as f64 / count as f64,
-            observed[slot],
-            MAPS
-        );
-    }
 }
 
 #[test]
@@ -37363,27 +37015,6 @@ fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
     assert_eq!(score, None, "two adjacency is not worth Gold");
 }
 
-/// `district-planning-2` is version 2 of `district-planning`: a registered
-/// reversible opt-in whose flag also carries the shared planning behaviour
-/// through `district_planning_on`.
-#[test]
-fn district_planning_2_is_a_registered_reversible_opt_in() {
-    assert!(GENES.iter().any(|gene| gene.opt_in()
-        && gene.field == "district_planning_2"
-        && gene.tag == "district-planning-2"));
-    let mut ai = AdvancedAi::new();
-    assert!(!ai.district_planning_2, "production ships it off");
-    assert!(!ai.district_planning_on());
-    ai.enable_district_planning_2();
-    assert!(ai.district_planning_2);
-    assert!(
-        ai.district_planning_on(),
-        "version 2 carries the planning behaviour on its own"
-    );
-    ai.disable_district_planning_2();
-    assert!(!ai.district_planning_2);
-}
-
 /// Version 3 is an independent screenable arm. Every district-planning
 /// version carries the shared site/menu planner, but only one can own the
 /// purchase policy at a time.
@@ -37400,19 +37031,16 @@ fn district_planning_3_is_a_native_opt_in_off_and_versions_are_exclusive() {
     let mut ai = AdvancedAi::new();
     ai.enable_district_planning();
     assert!(ai.district_planning);
-    ai.enable_district_planning_2();
-    assert!(!ai.district_planning);
-    assert!(ai.district_planning_2);
     ai.enable_district_planning_3();
-    assert!(!ai.district_planning && !ai.district_planning_2);
+    assert!(!ai.district_planning);
     assert!(ai.district_planning_3 && ai.district_planning_on());
     ai.enable_district_planning();
-    assert!(ai.district_planning && !ai.district_planning_2 && !ai.district_planning_3);
+    assert!(ai.district_planning && !ai.district_planning_3);
 }
 
 /// Version 3 funds only the plan's current head for an idle city. It removes
 /// version 1's extra 200-Gold headroom, but leaves the full normal reserve in
-/// place instead of version 2's half-reserve spend.
+/// place.
 #[test]
 fn version_three_buys_only_an_idle_high_quality_head_above_full_reserve() {
     let (mut game, city, center) = planning_capital();
@@ -37480,8 +37108,8 @@ fn version_three_buys_only_an_idle_high_quality_head_above_full_reserve() {
     );
 }
 
-/// The relaxed adjacency-2/edge-1 admission was specific to v2. Version 3
-/// keeps version 1's quality bar while changing only the funding timing.
+/// Version 3 keeps version 1's quality bar while changing only the funding
+/// timing.
 #[test]
 fn version_three_refuses_the_two_mountain_site() {
     let (mut game, city, center) = planning_capital();
@@ -37516,366 +37144,6 @@ fn version_three_refuses_the_two_mountain_site() {
         ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache),
         None,
         "version 3 keeps the adjacency-3 quality bar"
-    );
-}
-
-/// The high-Science tile and bridge route is deliberately a version-2
-/// experiment. Version 3 limits itself to district sites that the idle city
-/// can immediately start, rather than treating a general yield tile as one.
-#[test]
-fn version_three_does_not_chase_v2s_exceptional_science_asset() {
-    let (mut game, city, center) = planning_capital();
-    let target = game
-        .wdisk(center, 2)
-        .into_iter()
-        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
-        .expect("an unowned ring-two plot");
-    game.players[0].explored.insert(target);
-    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
-        target,
-        Yields {
-            science: 10.0,
-            ..Yields::default()
-        },
-    );
-    let cost = game
-        .plot_purchase_cost(0, city, target)
-        .expect("the engine quotes ring-two ground");
-    let action = Action::BuyPlot {
-        city,
-        pos: target,
-        cost,
-    };
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-    ai.enable_district_planning_3();
-    assert_eq!(
-        ai.exceptional_science_plot_score(&game, 0, &district_planning_lane(game.turn), &action),
-        None,
-        "v3 does not buy a general high-Science asset outside the district plan"
-    );
-}
-
-/// Version 2 lowers the purchase bars: the two-mountain plot version 1
-/// calls "not worth Gold" clears the adjacency-2 bar and the score floor.
-#[test]
-fn version_two_buys_the_two_mountain_ground_version_one_refuses() {
-    let (mut game, city, center) = planning_capital();
-    let target = game
-        .wdisk(center, 2)
-        .into_iter()
-        .find(|pos| {
-            game.wdist(*pos, center) == 2
-                && game.map.tiles[pos].owner_city.is_none()
-                && game
-                    .nbrs(*pos)
-                    .into_iter()
-                    .filter(|n| game.wdist(*n, center) == 3)
-                    .count()
-                    == 3
-        })
-        .expect("a ring-two corner plot");
-    raise_mountains_beside(&mut game, target, 2, |g, pos| g.wdist(pos, center) == 3);
-    game.players[0].explored.insert(target);
-    game.players[0].gold = 1_500.0;
-    let plan = district_planning_lane(game.turn);
-    let cost = game
-        .plot_purchase_cost(0, city, target)
-        .expect("the engine quotes ring-two ground");
-
-    let mut v1 = AdvancedAi::new();
-    v1.enable_district_planning();
-    let counts = v1.counts(&game, 0);
-    let mut cache = DistrictPlanCache::default();
-    let refused =
-        v1.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
-    assert_eq!(refused, None, "version 1 holds the adjacency-3 bar");
-
-    let mut v2 = AdvancedAi::new();
-    v2.enable_district_planning_2();
-    let counts = v2.counts(&game, 0);
-    let mut cache = DistrictPlanCache::default();
-    let score =
-        v2.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
-    assert!(
-        score.is_some_and(|s| s >= 120.0),
-        "version 2 admits adjacency 2 and the floor still clears: {score:?}"
-    );
-}
-
-/// The version-2 buy spends into the reserve — never below half of it —
-/// where version 1 demands 200 Gold of surplus headroom above the whole
-/// reserve. With the treasury between the two thresholds, version 1 leaves
-/// the three-mountain nest unowned and version 2 annexes it.
-#[test]
-fn the_plans_buy_spends_into_the_reserve_only_under_version_two() {
-    let (mut game, city, center) = planning_capital();
-    let target = game
-        .wdisk(center, 2)
-        .into_iter()
-        .find(|pos| {
-            game.wdist(*pos, center) == 2
-                && game.map.tiles[pos].owner_city.is_none()
-                && game
-                    .nbrs(*pos)
-                    .into_iter()
-                    .filter(|n| game.wdist(*n, center) == 3)
-                    .count()
-                    == 3
-        })
-        .expect("a ring-two corner plot");
-    let raised = raise_mountains_beside(&mut game, target, 3, |g, pos| g.wdist(pos, center) == 3);
-    assert_eq!(raised, 3, "three ring-three mountains ring the target");
-    game.players[0].explored.insert(target);
-    let cost = game
-        .plot_purchase_cost(0, city, target)
-        .expect("the engine quotes ring-two ground");
-    let plan = district_planning_lane(game.turn);
-    // Science reserve for one city is 300; version 1 needs 500 + cost of
-    // Gold before it will buy, version 2 needs 150 + cost. Sit in between.
-    game.players[0].gold = 300.0 + cost;
-    let mut v1_game = game.clone();
-    let mut v2_game = game;
-
-    let mut v1 = AdvancedAi::new();
-    v1.enable_district_planning();
-    v1.advanced_gold_spending(&mut v1_game, 0, &plan);
-    assert_eq!(
-        v1_game.map.tiles[&target].owner_city, None,
-        "version 1 waits for surplus headroom that never comes"
-    );
-
-    let mut v2 = AdvancedAi::new();
-    v2.enable_district_planning_2();
-    assert!(
-        v2.advanced_gold_spending(&mut v2_game, 0, &plan),
-        "the version-2 plan finds the buy"
-    );
-    assert_eq!(
-        v2_game.map.tiles[&target].owner_city,
-        Some(city),
-        "the nest is annexed out of the reserve"
-    );
-    assert!(
-        v2_game.players[0].gold >= 150.0 - f64::EPSILON,
-        "half the reserve is never spent"
-    );
-}
-
-/// A workable five-plus-Science tile is an asset in a Science race, not
-/// fallback ground. The host correction models Setia's Bermuda Triangle
-/// tiles: the normal plot scorer never reaches them while a unit or building
-/// exists and also requires 200 Gold above the whole reserve.
-#[test]
-fn version_two_promotes_an_exceptional_science_tile_above_the_general_reserve() {
-    let (mut game, city, center) = planning_capital();
-    let target = game
-        .wdisk(center, 2)
-        .into_iter()
-        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
-        .expect("an unowned ring-two plot");
-    game.players[0].explored.insert(target);
-    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
-        target,
-        Yields {
-            science: 10.0,
-            ..Yields::default()
-        },
-    );
-    let cost = game
-        .plot_purchase_cost(0, city, target)
-        .expect("the engine quotes ring-two ground");
-    // This still permits an ordinary Gold purchase, but is well below the
-    // Science reserve plus the generic plot path's extra 200-Gold headroom.
-    game.players[0].gold = cost + 200.0;
-    let plan = district_planning_lane(game.turn);
-    let action = Action::BuyPlot {
-        city,
-        pos: target,
-        cost,
-    };
-
-    let plain = AdvancedAi::targeting(VictoryTarget::Science);
-    assert!(
-        plain
-            .legal_purchase_actions(&game, 0)
-            .iter()
-            .any(|candidate| !matches!(candidate, Action::BuyPlot { .. })),
-        "the tile must beat a real non-plot candidate rather than only fill an empty menu"
-    );
-    let mut plain_game = game.clone();
-    plain.advanced_gold_spending(&mut plain_game, 0, &plan);
-    assert_eq!(
-        plain_game.map.tiles[&target].owner_city, None,
-        "without version two, the generic reserve keeps the high-science tile out"
-    );
-
-    let mut v2 = AdvancedAi::targeting(VictoryTarget::Science);
-    v2.enable_district_planning_2();
-    let counts = v2.counts(&game, 0);
-    let mut cache = DistrictPlanCache::default();
-    assert_eq!(
-        v2.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache),
-        None,
-        "flat ground is not a district-plan purchase; the science asset path is distinct"
-    );
-    assert!(
-        v2.exceptional_science_plot_score(&game, 0, &plan, &action)
-            .is_some(),
-        "the host-observed ten-Science tile clears the strategic score"
-    );
-    assert!(
-        v2.advanced_gold_spending(&mut game, 0, &plan),
-        "the exceptional tile competes in the main purchase ranking"
-    );
-    assert_eq!(
-        game.map.tiles[&target].owner_city,
-        Some(city),
-        "the science city annexes the exceptional tile"
-    );
-    assert!(
-        game.players[0].gold < 300.0,
-        "the buy is allowed to draw through the broad Science reserve"
-    );
-}
-
-/// Civ VI sells only connected plots. Setia's closest Bermuda tile was in its
-/// third ring, so the first legal purchase was a worthless-looking second-ring
-/// coast tile. Version two prices that bridge with the science tile it unlocks,
-/// then buys the science tile on the following purchase pass.
-#[test]
-fn version_two_buys_the_bridge_to_an_exceptional_science_tile() {
-    let (mut game, city, center) = planning_capital();
-    for pos in game.wdisk(center, 3) {
-        game.players[0].explored.insert(pos);
-    }
-    // Discover the connected route with an unconstrained counterfactual;
-    // the test sets the deliberately tight real treasury below.
-    game.players[0].gold = 1_000.0;
-    let mut route = None;
-    for bridge in game
-        .wdisk(center, 2)
-        .into_iter()
-        .filter(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
-    {
-        let Some(bridge_cost) = game.plot_purchase_cost(0, city, bridge) else {
-            continue;
-        };
-        let mut after = game.speculative_clone();
-        after
-            .apply(
-                0,
-                &Action::BuyPlot {
-                    city,
-                    pos: bridge,
-                    cost: bridge_cost,
-                },
-            )
-            .expect("the bridge quote is legal");
-        let target = after.nbrs(bridge).into_iter().find(|target| {
-            after.wdist(*target, center) == 3
-                && after.map.tiles[target].owner_city.is_none()
-                && game.plot_purchase_cost(0, city, *target).is_none()
-                && after.plot_purchase_cost(0, city, *target).is_some()
-        });
-        if let Some(target) = target {
-            let target_cost = after
-                .plot_purchase_cost(0, city, target)
-                .expect("the bridge opens the third-ring target");
-            route = Some((bridge, bridge_cost, target, target_cost));
-            break;
-        }
-    }
-    let (bridge, bridge_cost, target, target_cost) = route.expect("a ring-two bridge route");
-    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
-        target,
-        Yields {
-            science: 10.0,
-            ..Yields::default()
-        },
-    );
-    // Both quotes fit, but their 125-Gold remainder is well inside the
-    // ordinary Science reserve; a bridge has no generic-yield case to make.
-    game.players[0].gold = bridge_cost + target_cost + 125.0;
-    let plan = district_planning_lane(game.turn);
-    let bridge_action = Action::BuyPlot {
-        city,
-        pos: bridge,
-        cost: bridge_cost,
-    };
-    assert_eq!(
-        game.plot_purchase_cost(0, city, target),
-        None,
-        "the science tile cannot be bought before its bridge"
-    );
-
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-    ai.enable_district_planning_2();
-    assert!(
-        ai.exceptional_science_plot_score(&game, 0, &plan, &bridge_action)
-            .is_some(),
-        "the low-yield bridge inherits the value of the science tile it opens"
-    );
-    assert!(
-        ai.advanced_gold_spending(&mut game, 0, &plan),
-        "the first purchase pass takes the bridge"
-    );
-    assert!(
-        game.nbrs(target)
-            .into_iter()
-            .any(|pos| game.map.tiles[&pos].owner_city == Some(city)),
-        "the chosen bridge now opens the science tile"
-    );
-    assert_eq!(game.map.tiles[&target].owner_city, None);
-    assert!(
-        ai.advanced_gold_spending(&mut game, 0, &plan),
-        "the now-connected science tile is bought on the next pass"
-    );
-    assert_eq!(
-        game.map.tiles[&target].owner_city,
-        Some(city),
-        "the city reaches its exceptional science terrain"
-    );
-}
-
-/// Drawing through the broad reserve does not mean spending the money a
-/// threatened city needs for an immediate defender.
-#[test]
-fn exceptional_science_tile_keeps_the_threatened_city_defender_floor() {
-    let (mut game, city, center) = planning_capital();
-    let target = game
-        .wdisk(center, 2)
-        .into_iter()
-        .find(|pos| game.wdist(*pos, center) == 2 && game.map.tiles[pos].owner_city.is_none())
-        .expect("an unowned ring-two plot");
-    game.players[0].explored.insert(target);
-    std::sync::Arc::make_mut(&mut game.observed_tile_yield_adjustments).insert(
-        target,
-        Yields {
-            science: 10.0,
-            ..Yields::default()
-        },
-    );
-    let cost = game
-        .plot_purchase_cost(0, city, target)
-        .expect("the engine quotes ring-two ground");
-    let mut plan = district_planning_lane(game.turn);
-    plan.threatened_city = Some(city);
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-    ai.enable_district_planning_2();
-    ai.enable_threatened_city_reserve();
-    let floor = ai.threatened_city_gold_floor(&game, 0, &plan);
-    assert!(floor > 0.0, "the threatened city has a defender price");
-    game.players[0].gold = cost + floor - 1.0;
-    let action = Action::BuyPlot {
-        city,
-        pos: target,
-        cost,
-    };
-
-    assert_eq!(
-        ai.exceptional_science_plot_score(&game, 0, &plan, &action),
-        None,
-        "the exceptional purchase may not leave less than the defender floor"
     );
 }
 
@@ -42734,41 +42002,6 @@ fn the_chain_payback_window_stops_the_science_debt_decaying_to_nothing() {
     );
 }
 
-/// A Builder that can see the Housing it lays outranks one that cannot, and
-/// only where the improvement actually carries Housing. See
-/// `AdvancedAi::improvement_housing_value`.
-#[test]
-fn the_builder_sees_the_housing_an_improvement_carries() {
-    let (game, _capital, _home) = empire_with_a_capital(71_403);
-    let farm = "farm";
-    let mine = "mine";
-    assert!(
-        game.rules.improvements[farm].housing > 0.0,
-        "the Farm is one of the seventeen improvements that carry Housing"
-    );
-    assert_eq!(
-        game.rules.improvements[mine].housing, 0.0,
-        "the Mine carries none, which is what makes it the control"
-    );
-
-    let pos = game.map.tiles.keys().copied().next().expect("a tile");
-    let mut seeing = AdvancedAi::new();
-    seeing.enable_improvement_housing_value();
-    let blind = AdvancedAi::new();
-
-    let seen = seeing.improvement_value(&game, pos, farm, GrandStrategy::Expansion);
-    let unseen = blind.improvement_value(&game, pos, farm, GrandStrategy::Expansion);
-    assert!(
-        seen > unseen,
-        "the Farm's Housing is a yield the shipped chooser cannot see: {seen} vs {unseen}"
-    );
-    assert_eq!(
-        seeing.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
-        blind.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
-        "an improvement with no Housing is priced identically by both"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Camp tile buyout. See `advanced/camp_buyout.rs`.
 // ---------------------------------------------------------------------------
@@ -45482,9 +44715,8 @@ fn the_science_lane_widens_natively_but_live_verification_stays_bounded() {
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
     live.enable_science_expansion_phase();
-    // `rapid-city-expansion` versions are independent deployment treatments
-    // whose targets precede `land_grab`; withhold both to isolate this phase.
-    live.disable_rapid_city_expansion();
+    // `rapid-city-expansion-2` is an independent deployment treatment whose
+    // target precedes `land_grab`; withhold it to isolate this phase.
     live.disable_rapid_city_expansion_2();
     // The horizon is tested here; the map-cap test owns the practical-site
     // safety behavior separately.

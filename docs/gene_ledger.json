@@ -448,11 +448,6 @@
         59,
         10
       ],
-      "district-planning-2": [
-        11,
-        -70,
-        -16
-      ],
       "district-planning-3": [
         -3,
         -12,
@@ -683,11 +678,6 @@
         13,
         6
       ],
-      "improvement-housing-value": [
-        -30,
-        -10,
-        -11
-      ],
       "industrial-chain-debt": [
         9,
         7,
@@ -833,11 +823,6 @@
         11,
         -6
       ],
-      "opening-warrior-recon": [
-        -36,
-        13,
-        -38
-      ],
       "opening-warrior-recon-2": [
         28,
         16,
@@ -922,11 +907,6 @@
         -9,
         -15,
         -26
-      ],
-      "rapid-city-expansion": [
-        -133,
-        -209,
-        -120
       ],
       "rapid-city-expansion-2": [
         105,
@@ -1092,16 +1072,6 @@
         18,
         1,
         16
-      ],
-      "settler-screen": [
-        -18,
-        -5,
-        -26
-      ],
-      "settler-second-look": [
-        -11,
-        -27,
-        -13
       ],
       "settler-site-gate": [
         -5,
@@ -1404,7 +1374,6 @@
       "district-coverage": "off",
       "district-coverage-2": "off",
       "district-planning": "on",
-      "district-planning-2": "off",
       "district-planning-3": "off",
       "domination-city-count": "off",
       "doomed-blow-veto": "off",
@@ -1451,7 +1420,6 @@
       "hostile-memory": "off",
       "housing-research": "off",
       "idle-faith-patronage": "off",
-      "improvement-housing-value": "off",
       "industrial-chain-debt": "on",
       "island-exploration": "off",
       "lane-culture-spending": "off",
@@ -1481,7 +1449,6 @@
       "one-launch-pad": "on",
       "one-shot-recovery": "on",
       "one-war-at-a-time": "off",
-      "opening-warrior-recon": "off",
       "opening-warrior-recon-2": "on",
       "opportunistic-war": "off",
       "order-retry": "off",
@@ -1499,7 +1466,6 @@
       "quest-production": "on",
       "quest-trade-route": "off",
       "raid-pillage-prizes": "off",
-      "rapid-city-expansion": "remove",
       "rapid-city-expansion-2": "on",
       "recon-replacement": "off",
       "recorded-tactical-step": "off",
@@ -1533,8 +1499,6 @@
       "settler-guard-holds": "off",
       "settler-guard-holds-2": "on",
       "settler-never-idles": "on",
-      "settler-screen": "off",
-      "settler-second-look": "remove",
       "settler-site-gate": "off",
       "settler-target-floor": "on",
       "settler-target-hysteresis": "off",
@@ -1866,7 +1830,6 @@
         "ships": "district-planning",
         "versions": {
           "district-planning": 0.244584,
-          "district-planning-2": null,
           "district-planning-3": null
         }
       },
@@ -1987,17 +1950,6 @@
           "never-an-empty-queue-3": null
         }
       },
-      "opening-warrior-recon": {
-        "rule_on": [
-          "opening-warrior-recon-2"
-        ],
-        "head": null,
-        "ships": "opening-warrior-recon-2",
-        "versions": {
-          "opening-warrior-recon": null,
-          "opening-warrior-recon-2": null
-        }
-      },
       "power-the-laboratory": {
         "rule_on": [],
         "head": "power-the-laboratory",
@@ -2005,17 +1957,6 @@
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
-        }
-      },
-      "rapid-city-expansion": {
-        "rule_on": [
-          "rapid-city-expansion-2"
-        ],
-        "head": null,
-        "ships": "rapid-city-expansion-2",
-        "versions": {
-          "rapid-city-expansion": null,
-          "rapid-city-expansion-2": null
         }
       },
       "recovery-reads-the-war": {
@@ -2394,7 +2335,7 @@
         "complete_seats": 13938,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     },
     {
       "path": "docs/gene_screens/2026-09-08-standard-continuous-2460-total-seats-20260908-unified-current-build.json",
@@ -2431,7 +2372,7 @@
         "complete_seats": 2460,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     },
     {
       "path": "docs/gene_screens/2026-09-04-standard-continuous-18768-total-seats-20260904T030858Z-adf2.json",
@@ -2475,7 +2416,7 @@
         "complete_seats": 18768,
         "partial": true
       },
-      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults."
+      "unverified": "Immutable report-only display batches from clean pre-cull commits; they price boost-wait-research, treasury-at-work, gold-for-the-young-city and contested-suzerainty-brake (left the code on 2026-09-08 as bottom-of-the-ranking removals, #3261) and chop-into-the-queue, score-horizon, skip-the-prophet-race, wonder-adjacent-sites (batch-rule removals, below -10 in all three batches), enter-the-prophet-race and flip-nearby-city-states (bottom-of-the-ranking directive removals), which left the code on 2026-09-09, so their rows are retained as history, not as sources of runtime defaults. They also price district-planning-2, improvement-housing-value, opening-warrior-recon, rapid-city-expansion, settler-screen and settler-second-look, which left the code on 2026-09-08 in PR #3256 (rapid-city-expansion and settler-second-look under the batch rule, settler-screen, opening-warrior-recon and improvement-housing-value by operator directive from the bottom of the table, district-planning-2 under the gene version policy)."
     }
   ],
   "counts": {
