@@ -71,6 +71,14 @@ PROFILE = {
 # and defense for the named lane.
 STOCK_ONLINE_MAX_TURNS = 250
 
+# A generic Play Now game hands its control mod to ``Network.HostGame``, then
+# the real Rome / Emperor lobby builds a map before it can publish its first
+# turn.  That pre-turn transition is not a silent wedge: in the 2026-09-04
+# recovery it had already written a verified rehost receipt and attached the
+# worker while still reporting ``turn=-1``.  Give that one bounded phase time
+# to finish; once a turn exists, the ordinary quick silence watchdog resumes.
+REHOST_HANDOFF_SILENCE_S = 600.0
+
 STOP_REQUESTED = False
 
 
@@ -360,6 +368,7 @@ def monitor_player(
     events: Path,
     *,
     silence_s: float,
+    startup_silence_s: float | None = None,
     frozen_turn_s: float | None = None,
     popup_stuck_s: float | None = None,
     poll_s: float,
@@ -370,12 +379,14 @@ def monitor_player(
     """Wait for a player, escalating after a silent or turn-frozen game.
 
     A turn can be slow, but a healthy game keeps publishing state, await, or
-    blocker records.  A silent stream is therefore a wedge.  Conversely, a
-    native popup close ladder may keep publishing heartbeats forever while the
-    turn never changes; that is a separate wedge.  When the ladder explicitly
-    says it is exhausted, a shorter grace window is safe: a new turn clears it,
-    while a persistent popup returns control to the supervisor without visual
-    or blind-input recovery.
+    blocker records.  A silent stream is therefore a wedge -- except for the
+    bounded initial rehost handoff, which has no turn to report while Civ VI
+    constructs the hosted game.  Once a turn is published, ``silence_s`` is
+    again the ordinary watchdog. Conversely, a native popup close ladder may
+    keep publishing heartbeats forever while the turn never changes; that is a
+    separate wedge. When the ladder explicitly says it is exhausted, a shorter
+    grace window is safe: a new turn clears it, while a persistent popup
+    returns control to the supervisor without visual or blind-input recovery.
     """
     last_mtime = event_mtime(events)
     last_activity = now()
@@ -403,7 +414,9 @@ def monitor_player(
                 last_turn_progress = last_activity
                 popup_stuck_since = None
         current = now()
-        if current - last_activity >= silence_s:
+        silence_limit = (startup_silence_s if last_turn is None
+                         and startup_silence_s is not None else silence_s)
+        if current - last_activity >= silence_limit:
             return "wedge"
         if (frozen_turn_s is not None and last_turn is not None
                 and current - last_turn_progress >= frozen_turn_s):
@@ -472,6 +485,7 @@ def run_once(args: argparse.Namespace, index: int) -> tuple[bool, str, str]:
         player = start_attached_player(args, tag, run_dir, orders_db)
         reason = monitor_player(
             player, run_dir / "events.jsonl", silence_s=args.wedge_silence,
+            startup_silence_s=REHOST_HANDOFF_SILENCE_S,
             frozen_turn_s=args.frozen_turn_seconds,
             popup_stuck_s=args.popup_stuck_seconds, poll_s=args.poll,
         )

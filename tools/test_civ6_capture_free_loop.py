@@ -153,6 +153,48 @@ class SilenceRecoveryTests(unittest.TestCase):
         self.assertEqual(reason, "wedge")
         self.assertEqual(ticks[0], 4.0)
 
+    def test_pre_turn_rehost_handoff_gets_its_own_patient_silence_window(self):
+        ticks = [0.0]
+
+        class FinishingPlayer:
+            returncode = None
+
+            def poll(self):
+                if ticks[0] >= 5.0:
+                    self.returncode = 0
+                return self.returncode
+
+        def now():
+            return ticks[0]
+
+        def sleep(seconds):
+            ticks[0] += seconds
+
+        reason = loop.monitor_player(
+            FinishingPlayer(), Path("/definitely/missing/events.jsonl"),
+            silence_s=2.0, startup_silence_s=6.0, poll_s=1.0,
+            should_stop=lambda: False, now=now, sleep=sleep,
+        )
+        self.assertEqual(reason, "completed")
+        self.assertEqual(ticks[0], 5.0)
+
+    def test_pre_turn_handoff_still_ends_at_its_bounded_patience_limit(self):
+        ticks = [0.0]
+
+        def now():
+            return ticks[0]
+
+        def sleep(seconds):
+            ticks[0] += seconds
+
+        reason = loop.monitor_player(
+            _Player(), Path("/definitely/missing/events.jsonl"),
+            silence_s=2.0, startup_silence_s=4.0, poll_s=1.0,
+            should_stop=lambda: False, now=now, sleep=sleep,
+        )
+        self.assertEqual(reason, "wedge")
+        self.assertEqual(ticks[0], 4.0)
+
     def test_operator_stop_returns_without_a_recovery_action(self):
         reason = loop.monitor_player(
             _Player(), Path("/definitely/missing/events.jsonl"),
