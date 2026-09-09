@@ -1813,6 +1813,15 @@
           "border-parity-3": null
         }
       },
+      "builder-workforce-recovery": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "builder-workforce-recovery": null,
+          "builder-workforce-recovery-2": null
+        }
+      },
       "campus-adjacency-threshold": {
         "rule_on": [],
         "head": "campus-adjacency-threshold",
@@ -1892,6 +1901,15 @@
           "conversion-majority-alarm-2": null
         }
       },
+      "culture-building-catchup": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-building-catchup": null,
+          "culture-building-catchup-2": null
+        }
+      },
       "diplomatic-lane-forecast": {
         "rule_on": [],
         "head": null,
@@ -1962,6 +1980,15 @@
         "versions": {
           "eureka-chasing-builder": null,
           "eureka-chasing-builder-2": null
+        }
+      },
+      "expansion-best-idle-city": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "expansion-best-idle-city": null,
+          "expansion-best-idle-city-2": null
         }
       },
       "first-builder-reserve": {
@@ -2081,6 +2108,15 @@
           "recovery-reads-the-war-2": null
         }
       },
+      "research-building-catchup": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "research-building-catchup": null,
+          "research-building-catchup-2": null
+        }
+      },
       "science-victory-drive": {
         "rule_on": [
           "science-victory-drive-2"
@@ -2143,6 +2179,15 @@
         "versions": {
           "swap-rotation": null,
           "swap-rotation-2": null
+        }
+      },
+      "trade-building-before-bankruptcy": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "trade-building-before-bankruptcy": null,
+          "trade-building-before-bankruptcy-2": null
         }
       },
       "treasury-at-work": {

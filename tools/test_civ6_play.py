@@ -2628,6 +2628,42 @@ class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):
         self.assertNotIn("save_label = Path(args.load_save).stem", source)
 
 
+class ConnectionIssueAcknowledgement(unittest.TestCase):
+    def labels(self):
+        return {
+            "Connection Issue": [(1297, 325)],
+            "A connection to Civilization VI could not be established.": [(1296, 346)],
+            "OK": [(1297, 379)],
+        }
+
+    def dismiss(self, labels):
+        with patch.object(civ6_play, "_observed_label_points",
+                          side_effect=lambda path, text, bounds: labels.get(text, [])), \
+             patch.object(civ6_play, "click_at") as click:
+            result = civ6_play.dismiss_connection_issue(Path("connection.png"), (864, 33, 864, 542))
+        return result, click
+
+    def test_clicks_only_the_read_acknowledgement(self):
+        result, click = self.dismiss(self.labels())
+        self.assertTrue(result)
+        click.assert_called_once_with(1297, 379)
+
+    def test_incomplete_or_ambiguous_dialog_is_left_alone(self):
+        for label in self.labels():
+            for points in ([], [(1297, 325), (1298, 326)]):
+                with self.subTest(label=label, points=points):
+                    labels = self.labels(); labels[label] = points
+                    result, click = self.dismiss(labels)
+                    self.assertFalse(result); click.assert_not_called()
+
+    def test_ok_above_title_or_far_from_dialog_is_not_clicked(self):
+        for button in ((1297, 300), (900, 379), (1297, 600)):
+            with self.subTest(button=button):
+                labels = self.labels(); labels["OK"] = [button]
+                result, click = self.dismiss(labels)
+                self.assertFalse(result); click.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 
