@@ -72,28 +72,39 @@ absent from this table have never been completed by anyone here.
 
 ## How the harness ended games, per day (last 14 days)
 
-Attempts by their recorded `reason`, per UTC day of the row's `utc`,
-over the fourteen days ending on the newest attempt. `killed` is the
-wedge watchdog or the supervisor stopping a parked game;
+GAMES by the recorded `reason` of the row that ended them, per UTC
+day, over the fourteen days ending on the newest game. `killed` is
+the wedge watchdog or the supervisor stopping a parked game;
 `operator_retired` a human ending it; `abandoned` the harness's own
 early-stop policy; `stopped` the game reaching its end — a win ends
 `stopped` too, so `won` is carried beside it. When the first two
 columns carry most of a day, the harness decided the record, not
 the game.
 
-| day | killed | operator_retired | abandoned | stopped | game exited | timeout | other | total | won |
-|---|---|---|---|---|---|---|---|---|---|
-| 2026-08-27 | 0 | 0 | 5 | 4 | 6 | 0 | 0 | 15 | 0 |
-| 2026-08-28 | 0 | 0 | 1 | 2 | 0 | 0 | 1 | 4 | 0 |
-| 2026-08-29 | 0 | 0 | 18 | 2 | 2 | 0 | 0 | 22 | 0 |
-| 2026-08-30 | 1 | 0 | 3 | 0 | 1 | 0 | 0 | 5 | 0 |
-| 2026-08-31 | 19 | 12 | 0 | 1 | 0 | 0 | 0 | 32 | 0 |
-| 2026-09-01 | 20 | 9 | 6 | 4 | 1 | 0 | 0 | 40 | 1 |
-| 2026-09-02 | 34 | 8 | 3 | 8 | 1 | 0 | 0 | 54 | 0 |
-| 2026-09-03 | 30 | 5 | 0 | 9 | 2 | 0 | 1 | 47 | 0 |
-| 2026-09-04 | 0 | 2 | 0 | 0 | 0 | 0 | 1 | 3 | 0 |
-| 2026-09-08 | 15 | 1 | 0 | 8 | 0 | 0 | 0 | 24 | 0 |
-| 2026-09-09 | 0 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 |
+⚠ ONE GAME IS ONE ROW HERE, WHICH IT WAS NOT BEFORE. A parked game
+reloaded from its autosave writes a ledger row per segment: the
+parked segment ends `killed`, then `<tag>-cont1` plays on and ends
+however the game really ended. Counting rows put every restart in
+the `killed` column — 119 rows against 31 games on the committed
+ledger, 74% of them restarts — and made this table read as though
+the harness ended most of the record when per game it is the
+smallest ending of the five. The restarts are real harness cost, so
+they keep their own column instead of being folded into an ending
+they did not produce.
+
+| day | killed | operator_retired | abandoned | stopped | game exited | timeout | other | games | restarts | won |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-08-27 | 0 | 0 | 5 | 4 | 6 | 0 | 0 | 15 | 0 | 0 |
+| 2026-08-28 | 0 | 0 | 1 | 2 | 0 | 0 | 1 | 4 | 0 | 0 |
+| 2026-08-29 | 0 | 0 | 18 | 2 | 2 | 0 | 0 | 22 | 0 | 0 |
+| 2026-08-30 | 1 | 0 | 3 | 0 | 1 | 0 | 0 | 5 | 0 | 0 |
+| 2026-08-31 | 16 | 11 | 0 | 1 | 0 | 0 | 0 | 28 | 4 | 0 |
+| 2026-09-01 | 6 | 9 | 6 | 4 | 1 | 0 | 0 | 26 | 14 | 1 |
+| 2026-09-02 | 3 | 8 | 3 | 8 | 1 | 0 | 0 | 23 | 31 | 0 |
+| 2026-09-03 | 5 | 5 | 0 | 9 | 1 | 0 | 1 | 21 | 26 | 0 |
+| 2026-09-04 | 0 | 2 | 0 | 0 | 0 | 0 | 1 | 3 | 0 | 0 |
+| 2026-09-08 | 0 | 1 | 0 | 8 | 0 | 0 | 0 | 9 | 15 | 0 |
+| 2026-09-09 | 0 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 | 0 |
 
 ## Every attempt
 
