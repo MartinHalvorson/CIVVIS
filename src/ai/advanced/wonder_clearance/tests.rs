@@ -71,7 +71,9 @@ fn blocked_wonder_retains_its_site_and_assigns_a_real_force_without_the_board() 
         2
     );
     assert_eq!(
-        ai.best_settler_target(&g, 0, settler, 8, None).unwrap().0,
+        ai.best_settler_target(&g, 0, settler, 8, Some(site))
+            .unwrap()
+            .0,
         site
     );
     // The actual military path must spend an assigned archer on the blocker.
@@ -190,4 +192,20 @@ fn known_camp_keeps_opening_archery_urgent_without_a_visible_raider() {
     assert!(ai.opening_archery_goal(&g, 0).is_none());
     g.players[0].explored.insert(camp);
     assert_eq!(ai.opening_archery_goal(&g, 0).as_deref(), Some("archery"));
+}
+
+#[test]
+fn clearing_force_advances_after_the_blocker_is_removed() {
+    let (mut g, mut ai, settler, site, raider) = board();
+    assert!(ai.reserve_wonder_clearance(&g, 0, settler, site));
+    g.remove_unit(raider);
+    let archer = ai.wonder_clearance[&settler]
+        .units
+        .iter()
+        .copied()
+        .find(|uid| g.units[uid].kind == "archer")
+        .unwrap();
+    let before = g.wdist(g.units[&archer].pos, site);
+    assert_eq!(ai.wonder_clearance_step(&mut g, 0, archer), Some(true));
+    assert!(g.wdist(g.units[&archer].pos, site) < before);
 }
