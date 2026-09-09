@@ -36,6 +36,16 @@
 //!
 //! What the gene does, all of it inert while the flag is off:
 //!
+//! ⚠ **Civil Service lands past turn 140.** Measured on this model at the
+//! screen's own size (6 majors, 74x46, Standard, seed 26081900): the empire
+//! adopts `civil_service` at turn 143 and the first rival at 144, and the
+//! alliance the engine will not seat without it therefore has around a
+//! hundred turns left. At `+1.25` points a turn with one route each way that
+//! reaches level 2 (`80.0`) and never level 3 (`240.0`) — so on a 250-turn
+//! clock this gene buys the shared tech boosts and not the 10 percent
+//! science share. The declared friendship needs no civic at all, which is
+//! why the sequence leads with it and holds it until the alliance is legal.
+//!
 //! 1. **A partner ranking.** Among met, living majors we are not at war with
 //!    and who are neither the current culture threat nor the current science
 //!    threat, rank by the partner's science measured against our own
@@ -50,13 +60,17 @@
 //!    journal which. A partner asked is not asked again for
 //!    [`ALLY_RETRY_TURNS`] turns. The stock cadence is not waited for.
 //!
-//!    The objective is **one** Research Alliance: once it stands the desk
-//!    stops proposing entirely and only the routes and the card keep
-//!    working. Until then the ranking simply names the best partner who is
-//!    not already pending or cooling down, so a turn spent waiting for one
-//!    answer is spent asking the next partner rather than idling — a
-//!    friendship costs nothing to hold and is the prerequisite either of
-//!    them would need.
+//!    The objective is **one** Research Alliance with **one** partner. The
+//!    partner is sticky: chosen once from the ranking and kept until they
+//!    stop being a candidate at all — war, death, a denouncement, a
+//!    threat, an alliance in place, or a science output under the floor.
+//!    A ranking re-read every turn would canvass every major instead, and a
+//!    declared friendship is not free: it forbids denouncing and war, and
+//!    breaking one carries grievance. A refusal is answered by the
+//!    [`ALLY_RETRY_TURNS`] cool-down, not by moving on — the model exposes
+//!    no refusal event, so the same partner is simply asked again when the
+//!    cool-down expires. Once the Research Alliance stands the desk stops
+//!    proposing entirely and only the routes and the card keep working.
 //!
 //!    ⚠ The engine does **not** require a declared friendship for an
 //!    alliance: `Game::do_propose_deal` (`src/game/actions.rs:8818-8841`)
@@ -158,8 +172,7 @@ pub(crate) const ALLY_TOP_LEVEL: i32 = 3;
 /// district, Great Scientists included (`src/game.rs:15595`). `economic` pays
 /// the largest route yield (`+4` Gold) and gold buys Campus buildings.
 /// `religious` pays Faith, which buys none. `military` pays no yield at all.
-pub(crate) const ALLY_FALLBACK_KINDS: [&str; 4] =
-    ["cultural", "economic", "religious", "military"];
+pub(crate) const ALLY_FALLBACK_KINDS: [&str; 4] = ["cultural", "economic", "religious", "military"];
 
 /// Science per international trade route, by card, best first. Both are
 /// ordinary economic-slot cards; the deck machinery drops whichever is not
@@ -172,6 +185,11 @@ pub(crate) const ALLY_ROUTE_CARDS: [&str; 2] = ["market_economy", "trade_confede
 /// on the next turn. Present only while the gene is on.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ResearchAllianceDesk {
+    /// The one partner the sequence is running with. Sticky: a ranking that
+    /// re-picked every turn would canvass every major, and a declared
+    /// friendship is not free — it forbids denouncing and war, and breaking
+    /// one carries grievance.
+    pub(crate) partner: Option<usize>,
     /// Partners asked for a friendship or an alliance, by the turn last asked.
     pub(crate) asked: BTreeMap<usize, u32>,
 }
@@ -214,8 +232,7 @@ impl AdvancedAi {
             return false;
         }
         let focus = self.rival_victory_pressure(g, rival);
-        focus.strategy == GrandStrategy::Science
-            && focus.progress >= ALLY_SCIENCE_THREAT_PROGRESS
+        focus.strategy == GrandStrategy::Science && focus.progress >= ALLY_SCIENCE_THREAT_PROGRESS
     }
 
     /// The guard: a rival racing us to a culture or a science finish is never
@@ -234,6 +251,19 @@ impl AdvancedAi {
             .into_iter()
             .map(|city| g.city_yields(city).science)
             .sum()
+    }
+
+    /// Civil Service on both trees is the engine's gate on any typed
+    /// alliance (`Game::do_propose_deal`, `src/game/actions.rs:8818-8841`).
+    /// It gates the alliance and **not** the declared friendship, which is
+    /// why the sequence leads with the friendship: Civil Service is a
+    /// Medieval civic and lands past turn 140 on a Standard clock, while the
+    /// alliance needs every turn after it to climb towards the level that
+    /// shares science.
+    fn research_alliance_legal_between(g: &Game, pid: usize, partner: usize) -> bool {
+        let civil_service = crate::name!("civil_service");
+        g.players[pid].civics.contains(&civil_service)
+            && g.players[partner].civics.contains(&civil_service)
     }
 
     /// Is a typed alliance of this kind free on both sides? An empire holds
@@ -270,13 +300,6 @@ impl AdvancedAi {
             || !g.has_met(pid, other)
             || g.is_at_war(pid, other)
             || g.alliance_with(pid, other).is_some()
-        {
-            return None;
-        }
-        // Civil Service is the engine's gate on any typed alliance; without it
-        // on both trees a proposal is refused before it is valued.
-        let civil_service = crate::name!("civil_service");
-        if !g.players[pid].civics.contains(&civil_service) || !player.civics.contains(&civil_service)
         {
             return None;
         }
@@ -326,7 +349,10 @@ impl AdvancedAi {
         Some(science + friendship + research - grievance(pid, other))
     }
 
-    /// The best partner this turn, cool-down and open proposals applied.
+    /// The best partner this turn, the per-partner cool-down applied. A
+    /// partner inside the cool-down is not a candidate at all, so a refusal
+    /// hands the top place to the next-best empire for the next
+    /// [`ALLY_RETRY_TURNS`] turns.
     pub(crate) fn research_alliance_partner(&self, g: &Game, pid: usize) -> Option<usize> {
         let turn = g.turn;
         let asked_recently = |partner: usize| {
@@ -335,17 +361,10 @@ impl AdvancedAi {
                 .and_then(|desk| desk.asked.get(&partner).copied())
                 .is_some_and(|asked| turn < asked.saturating_add(ALLY_RETRY_TURNS))
         };
-        let pending_with = |partner: usize| {
-            g.pending_deals.iter().any(|deal| {
-                deal.expires >= turn
-                    && ((deal.from == pid && deal.to == partner)
-                        || (deal.from == partner && deal.to == pid))
-            })
-        };
         g.players
             .iter()
             .map(|other| other.id)
-            .filter(|other| !asked_recently(*other) && !pending_with(*other))
+            .filter(|other| !asked_recently(*other))
             .filter_map(|other| {
                 self.research_alliance_partner_score(g, pid, other)
                     .map(|score| (score, other))
@@ -358,6 +377,61 @@ impl AdvancedAi {
             .map(|(_, other)| other)
     }
 
+    /// Let the sticky partner go when they stop being a candidate at all —
+    /// war, death, a denouncement, a threat, an alliance already in place, or
+    /// a science output that fell under the floor. A refusal does **not**
+    /// release them: the cool-down is the answer to a refusal, and the
+    /// partner is asked again when it expires.
+    fn research_alliance_release_partner(&mut self, g: &Game, pid: usize) {
+        let Some(partner) = self
+            .research_alliance
+            .as_ref()
+            .and_then(|desk| desk.partner)
+        else {
+            return;
+        };
+        if self
+            .research_alliance_partner_score(g, pid, partner)
+            .is_some()
+        {
+            return;
+        }
+        if let Some(desk) = self.research_alliance.as_mut() {
+            desk.partner = None;
+        }
+    }
+
+    /// Is this partner inside the cool-down on our last ask of them?
+    fn research_alliance_cooling_down(&self, g: &Game, partner: usize) -> bool {
+        self.research_alliance
+            .as_ref()
+            .and_then(|desk| desk.asked.get(&partner).copied())
+            .is_some_and(|asked| g.turn < asked.saturating_add(ALLY_RETRY_TURNS))
+    }
+
+    /// Is one of this desk's own asks still outstanding? The sequence runs
+    /// one partner at a time, so a turn spent waiting for an answer is not
+    /// spent canvassing the next empire.
+    fn research_alliance_ask_outstanding(&self, g: &Game, pid: usize) -> bool {
+        let Some(desk) = self.research_alliance.as_ref() else {
+            return false;
+        };
+        g.pending_deals.iter().any(|deal| {
+            deal.expires >= g.turn && deal.from == pid && desk.asked.contains_key(&deal.to)
+        })
+    }
+
+    /// Is a proposal already open between us and this partner, in either
+    /// direction? A second one would be refused by the engine and would spend
+    /// the turn.
+    fn research_alliance_pending_with(g: &Game, pid: usize, partner: usize) -> bool {
+        g.pending_deals.iter().any(|deal| {
+            deal.expires >= g.turn
+                && ((deal.from == pid && deal.to == partner)
+                    || (deal.from == partner && deal.to == pid))
+        })
+    }
+
     /// The alliance kind to ask this partner for: `"research"` when it is
     /// legal, else the free kind whose model yield is closest to science.
     /// `None` when every kind is taken on one side or the other.
@@ -367,6 +441,9 @@ impl AdvancedAi {
         pid: usize,
         partner: usize,
     ) -> Option<&'static str> {
+        if !Self::research_alliance_legal_between(g, pid, partner) {
+            return None;
+        }
         if Self::research_alliance_research_legal(g, pid, partner) {
             return Some("research");
         }
@@ -403,8 +480,14 @@ impl AdvancedAi {
             .filter(|partner| self.research_alliance_excluded(g, pid, *partner))
             .collect();
         if let Some(desk) = self.research_alliance.as_mut() {
-            for partner in dropped {
-                desk.asked.remove(&partner);
+            for partner in &dropped {
+                desk.asked.remove(partner);
+            }
+            if desk
+                .partner
+                .is_some_and(|partner| dropped.contains(&partner))
+            {
+                desk.partner = None;
             }
         }
         // The objective is one Research Alliance. Once it stands the desk is
@@ -413,14 +496,46 @@ impl AdvancedAi {
         if Self::research_alliance_held(g, pid) {
             return;
         }
-        let Some(partner) = self.research_alliance_partner(g, pid) else {
+        // The sequence is one partner's, not a canvass: while an ask of ours
+        // is outstanding the turn is spent on nothing rather than on the
+        // next-best empire. A friendship is not free — it forbids denouncing
+        // and war, and breaking one carries grievance — so holding one with
+        // every major is a cost the alliance does not pay for.
+        if self.research_alliance_ask_outstanding(g, pid) {
             return;
+        }
+        // The sticky partner, unless they have gone: refused us, become
+        // ineligible, or been dropped above.
+        self.research_alliance_release_partner(g, pid);
+        let partner = match self
+            .research_alliance
+            .as_ref()
+            .and_then(|desk| desk.partner)
+        {
+            Some(partner) => partner,
+            None => {
+                let Some(partner) = self.research_alliance_partner(g, pid) else {
+                    return;
+                };
+                self.research_alliance
+                    .get_or_insert_with(ResearchAllianceDesk::default)
+                    .partner = Some(partner);
+                partner
+            }
         };
+        if self.research_alliance_cooling_down(g, partner)
+            || Self::research_alliance_pending_with(g, pid, partner)
+        {
+            return;
+        }
         let friends = g.are_friends(pid, partner);
         let kind = if friends {
             match self.research_alliance_kind(g, pid, partner) {
                 Some(kind) => Some(kind),
-                // Friendship stands and every kind is taken: nothing to ask.
+                // The friendship stands and the alliance is not available —
+                // Civil Service still short on one tree, or every kind
+                // taken. Wait with the friendship in hand rather than spend
+                // the turn on a proposal the engine would refuse.
                 None => return,
             }
         } else {

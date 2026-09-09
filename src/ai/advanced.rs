@@ -6982,15 +6982,15 @@ mod first_luxury;
 /// to its ending, with what became of it counted. Infrastructure, not a
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
+/// The alliance an Emperor handicap cannot deny us: rank met majors by
+/// science, lead with the declared friendship, take the Research Alliance,
+/// and feed its level with routes. Opt-in gene `research-alliance-first`.
+mod research_alliance;
 /// A unit the next blow could remove leaves the reach of whatever can
 /// strike it; a shooter or scout does not end the turn inside a raider's
 /// reach without a melee unit beside it. Opt-in gene `wounded-out-of-reach`.
 /// See `advanced/wounded_out_of_reach.rs`.
 mod wounded_out_of_reach;
-/// The alliance an Emperor handicap cannot deny us: rank met majors by
-/// science, lead with the declared friendship, take the Research Alliance,
-/// and feed its level with routes. Opt-in gene `research-alliance-first`.
-mod research_alliance;
 use research_alliance::ResearchAllianceDesk;
 
 impl AdvancedAi {

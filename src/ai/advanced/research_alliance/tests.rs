@@ -20,7 +20,9 @@ fn board() -> Game {
         g.players[pid].gold = 1_000.0;
         g.players[pid].civics.insert(crate::name!("early_empire"));
         g.players[pid].civics.insert(crate::name!("civil_service"));
-        g.players[pid].techs.insert(crate::name!("scientific_theory"));
+        g.players[pid]
+            .techs
+            .insert(crate::name!("scientific_theory"));
     }
     g.current = 0;
     g.turn = 60;
@@ -101,7 +103,8 @@ fn answer(g: &mut Game, recipient: usize, deal: u32, accept: bool) {
     } else {
         Action::RejectDeal { deal }
     };
-    g.apply(recipient, &action).expect("the deal can be answered");
+    g.apply(recipient, &action)
+        .expect("the deal can be answered");
     g.current = previous;
 }
 
@@ -147,7 +150,10 @@ fn the_science_share_is_a_ratio_and_survives_a_silent_empire() {
 fn the_route_premium_is_capped_in_the_band_and_stops_when_it_buys_nothing() {
     let band = ALLY_ROUTE_OPENING_BAND_CITIES;
     // Inside the band: capped.
-    assert_eq!(route_premium(1, false, band - 1), ALLY_ROUTE_PREMIUM_OPENING_CAP);
+    assert_eq!(
+        route_premium(1, false, band - 1),
+        ALLY_ROUTE_PREMIUM_OPENING_CAP
+    );
     assert_eq!(route_premium(1, false, 1), ALLY_ROUTE_PREMIUM_OPENING_CAP);
     // Out of the band: the full premium.
     assert_eq!(route_premium(1, false, band), ALLY_ROUTE_PREMIUM);
@@ -159,7 +165,7 @@ fn the_route_premium_is_capped_in_the_band_and_stops_when_it_buys_nothing() {
     assert_eq!(route_premium(ALLY_TOP_LEVEL, false, band), 0.0);
     assert_eq!(route_premium(ALLY_TOP_LEVEL + 1, false, band), 0.0);
     // The cap is a cap, not a second premium.
-    assert!(ALLY_ROUTE_PREMIUM_OPENING_CAP <= ALLY_ROUTE_PREMIUM);
+    const { assert!(ALLY_ROUTE_PREMIUM_OPENING_CAP <= ALLY_ROUTE_PREMIUM) };
 }
 
 // --------------------------------------------------------------- exclusions
@@ -200,12 +206,16 @@ fn the_ranking_excludes_every_infeasible_partner() {
     assert!(ai.research_alliance_partner_score(&g, 0, 1).is_none());
     g.players[0].grievances.clear();
 
-    // No Civil Service on the partner's tree, then on ours.
+    // Civil Service is NOT a ranking exclusion: it gates the alliance, not
+    // the declared friendship the sequence leads with, and it lands past
+    // turn 140 on a Standard clock.
     g.players[1].civics.remove(&crate::name!("civil_service"));
-    assert!(ai.research_alliance_partner_score(&g, 0, 1).is_none());
+    assert!(ai.research_alliance_partner_score(&g, 0, 1).is_some());
+    assert_eq!(ai.research_alliance_kind(&g, 0, 1), None);
     g.players[1].civics.insert(crate::name!("civil_service"));
     g.players[0].civics.remove(&crate::name!("civil_service"));
-    assert!(ai.research_alliance_partner_score(&g, 0, 1).is_none());
+    assert!(ai.research_alliance_partner_score(&g, 0, 1).is_some());
+    assert_eq!(ai.research_alliance_kind(&g, 0, 1), None);
     g.players[0].civics.insert(crate::name!("civil_service"));
 
     // Not met.
@@ -283,7 +293,12 @@ fn the_ranking_prefers_science_and_a_friendship_already_in_place() {
                 && g.map.tiles[position].owner_city.is_none()
                 && g.city_at(*position).is_none()
         })
-        .max_by_key(|position| (g.wdist(*position, g.cities[&g.player_city_ids(2)[0]].pos), *position))
+        .max_by_key(|position| {
+            (
+                g.wdist(*position, g.cities[&g.player_city_ids(2)[0]].pos),
+                *position,
+            )
+        })
         .expect("open land somewhere");
     g.found_city_for(2, seat, None);
     assert!(
@@ -300,6 +315,39 @@ fn the_ranking_prefers_science_and_a_friendship_already_in_place() {
 }
 
 // ----------------------------------------------------------------- cadence
+
+/// Without Civil Service the friendship is still proposed and the alliance
+/// is not: the sequence waits with the friendship in hand rather than
+/// spending turns on a proposal the engine would refuse.
+#[test]
+fn the_friendship_leads_and_waits_for_civil_service() {
+    let mut g = board();
+    let mut ai = ally_ai();
+    for pid in 0..4 {
+        g.players[pid].civics.remove(&crate::name!("civil_service"));
+    }
+    ai.research_alliance_step(&mut g, 0);
+    assert_eq!(proposals_from(&g, 0), vec![(1, None, true)]);
+
+    let deal = open_proposals(&g, 0)[0].id;
+    answer(&mut g, 1, deal, true);
+    assert!(g.are_friends(0, 1));
+
+    // The friendship stands, Civil Service does not: no further proposal.
+    for turn in 61..80 {
+        g.turn = turn;
+        ai.research_alliance_step(&mut g, 0);
+        assert!(proposals_from(&g, 0).is_empty(), "waiting at turn {turn}");
+    }
+    // Both trees adopt it: the alliance follows at once.
+    g.players[0].civics.insert(crate::name!("civil_service"));
+    g.players[1].civics.insert(crate::name!("civil_service"));
+    ai.research_alliance_step(&mut g, 0);
+    assert_eq!(
+        proposals_from(&g, 0),
+        vec![(1, Some("research".to_string()), true)]
+    );
+}
 
 /// The friendship comes first, the alliance once it stands, one proposal a
 /// turn, and a partner asked is not asked again inside the cool-down.
@@ -326,13 +374,11 @@ fn the_sequence_is_friendship_then_alliance_with_a_cool_down() {
         Some(&60)
     );
 
-    // The pending partner is not asked again; the waiting turn goes to the
-    // next-best partner instead of idling.
+    // While that answer is outstanding nobody is asked — not the same
+    // partner, and not the next-best empire either.
     g.turn += 1;
     ai.research_alliance_step(&mut g, 0);
-    let waiting = proposals_from(&g, 0);
-    assert_eq!(waiting.len(), 2);
-    assert_eq!(waiting[1], (2, None, true));
+    assert_eq!(proposals_from(&g, 0).len(), 1);
 
     // The friendship is accepted; the alliance follows on the next ask.
     let deal = open_proposals(&g, 0)[0].id;
@@ -369,7 +415,7 @@ fn a_refused_partner_waits_out_the_cool_down() {
     silence_science(&mut g, 2);
     silence_science(&mut g, 3);
     ai.research_alliance_step(&mut g, 0);
-    assert_eq!(proposals_from(&g, 0).len(), 1);
+    assert_eq!(proposals_from(&g, 0), vec![(1, None, true)]);
     let deal = open_proposals(&g, 0)[0].id;
     answer(&mut g, 1, deal, false);
     assert!(proposals_from(&g, 0).is_empty());
@@ -384,7 +430,34 @@ fn a_refused_partner_waits_out_the_cool_down() {
     }
     g.turn = 60 + ALLY_RETRY_TURNS;
     ai.research_alliance_step(&mut g, 0);
-    assert_eq!(proposals_from(&g, 0).len(), 1);
+    assert_eq!(
+        proposals_from(&g, 0),
+        vec![(1, None, true)],
+        "a refusal is answered by the cool-down, not by moving on"
+    );
+
+    // The sequence moves on only when the partner stops being a candidate:
+    // a war releases them and the next-best empire takes the place, with no
+    // canvassing in between.
+    let mut moved_on = board();
+    let mut moved_on_ai = ally_ai();
+    silence_science(&mut moved_on, 3);
+    moved_on_ai.research_alliance_step(&mut moved_on, 0);
+    assert_eq!(proposals_from(&moved_on, 0), vec![(1, None, true)]);
+    let deal = open_proposals(&moved_on, 0)[0].id;
+    answer(&mut moved_on, 1, deal, false);
+    // One turn later, with the partner still a candidate, nobody is asked.
+    moved_on.turn = 61;
+    moved_on_ai.research_alliance_step(&mut moved_on, 0);
+    assert!(proposals_from(&moved_on, 0).is_empty());
+    // War releases them; the next-best empire is asked at once.
+    moved_on.at_war.insert((0, 1));
+    moved_on_ai.research_alliance_step(&mut moved_on, 0);
+    assert_eq!(
+        proposals_from(&moved_on, 0),
+        vec![(2, None, true)],
+        "a released partner's place goes to the next-best empire"
+    );
 }
 
 /// A Research Alliance already taken on either side falls back to the free
@@ -409,10 +482,14 @@ fn an_unavailable_research_alliance_falls_back_by_model_yield() {
 
     // Research is unavailable for want of the tech, not the slot.
     let mut g = board();
-    g.players[1].techs.remove(&crate::name!("scientific_theory"));
+    g.players[1]
+        .techs
+        .remove(&crate::name!("scientific_theory"));
     assert_eq!(ai.research_alliance_kind(&g, 0, 1), Some("cultural"));
     let mut g = board();
-    g.players[0].techs.remove(&crate::name!("scientific_theory"));
+    g.players[0]
+        .techs
+        .remove(&crate::name!("scientific_theory"));
     assert_eq!(ai.research_alliance_kind(&g, 0, 1), Some("cultural"));
 }
 
@@ -423,14 +500,23 @@ fn the_objective_is_dropped_but_the_alliance_is_never_broken() {
     let mut g = board();
     let mut ai = ally_ai();
     ai.research_alliance_step(&mut g, 0);
-    assert!(ai.research_alliance.as_ref().unwrap().asked.contains_key(&1));
+    assert!(ai
+        .research_alliance
+        .as_ref()
+        .unwrap()
+        .asked
+        .contains_key(&1));
 
     seat_alliance(&mut g, 0, 1, "research", 2);
     make_culture_threat(&mut g, 1);
     g.turn += 1;
     ai.research_alliance_step(&mut g, 0);
     assert!(
-        !ai.research_alliance.as_ref().unwrap().asked.contains_key(&1),
+        !ai.research_alliance
+            .as_ref()
+            .unwrap()
+            .asked
+            .contains_key(&1),
         "the objective is dropped"
     );
     assert!(
@@ -531,4 +617,45 @@ fn off_the_gene_is_inert() {
         .counters
         .keys()
         .all(|key| !key.starts_with("research_alliance:")));
+}
+
+/// ★ A UNIT TEST THAT PROPOSES ON A HAND-BUILT BOARD PROVES ONLY THAT THE
+/// BOARD WAS BUILT RIGHT. This plays a whole game at the screen's own size
+/// with the gene on and requires the desk to have actually asked somebody:
+/// the preconditions it waits for — a met major inside the science floor, no
+/// denouncement, and for the alliance itself Civil Service on two trees —
+/// all have to arrive on their own. Written after the first version of this
+/// gene measured a flat probe: at 4 majors on a 44x30 board over 160 turns
+/// nobody ever reaches Civil Service, so the desk never fired at all and the
+/// screen was pricing seat assignment.
+#[test]
+fn the_desk_reaches_a_real_game_and_asks() {
+    let mut world = Game::new_full(6, 74, 46, 26_081_900, 250, 9, true);
+    let mut ais: Vec<AdvancedAi> = (0..world.players.len())
+        .map(|pid| {
+            if world.players[pid].is_minor || world.players[pid].is_barbarian {
+                AdvancedAi::new()
+            } else {
+                ally_ai()
+            }
+        })
+        .collect();
+    crate::ai::run_game(&mut world, &mut ais);
+    let asked: i64 = world
+        .players
+        .iter()
+        .flat_map(|player| {
+            [
+                "research_alliance:friendships_proposed",
+                "research_alliance:alliances_proposed",
+            ]
+            .into_iter()
+            .filter_map(|key| player.counters.get(key).copied())
+        })
+        .sum();
+    assert!(
+        asked > 0,
+        "the desk never asked anybody in a whole game: the gene cannot be \
+         priced by a screen it does not reach"
+    );
 }
