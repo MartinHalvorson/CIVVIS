@@ -6849,6 +6849,13 @@ mod culture_strategy;
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
 mod victory_lane;
 
+/// `expansion-scales-with-difficulty`: the measured 4-6 city opening band
+/// was read off a King-level field, and every rung above King hands the
+/// rivals a percentage of every yield and free Settlers. The city target,
+/// the opening deadline, the Settler cadence and the expansion cards all
+/// scale with the rung. One opt-in gene; see
+/// `advanced/expansion_scales_with_difficulty.rs`.
+mod expansion_scales_with_difficulty;
 /// `expansion-schedule`: while the opening is behind the pace every recorded
 /// win came from, open the settler pipeline by the shortfall. One opt-in
 /// gene; see `advanced/expansion_schedule.rs`.
@@ -6857,13 +6864,6 @@ mod victory_lane;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
-/// `expansion-scales-with-difficulty`: the measured 4-6 city opening band
-/// was read off a King-level field, and every rung above King hands the
-/// rivals a percentage of every yield and free Settlers. The city target,
-/// the opening deadline, the Settler cadence and the expansion cards all
-/// scale with the rung. One opt-in gene; see
-/// `advanced/expansion_scales_with_difficulty.rs`.
-mod expansion_scales_with_difficulty;
 mod governor_dividends;
 mod higher_level_strategy;
 

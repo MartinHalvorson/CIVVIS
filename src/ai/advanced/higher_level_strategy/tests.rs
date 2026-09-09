@@ -551,16 +551,24 @@ fn a_capital_busy_with_a_district_is_busy_too_and_an_idle_one_is_not() {
         .copied()
         .find(|p| *p != g.cities[&capital].pos)
         .unwrap();
-    g.cities.get_mut(&capital).unwrap().queue.push(Item::District {
-        district: crate::name!("campus"),
-        pos,
-    });
+    g.cities
+        .get_mut(&capital)
+        .unwrap()
+        .queue
+        .push(Item::District {
+            district: crate::name!("campus"),
+            pos,
+        });
     assert!(AdvancedAi::expansion_wide_capital_is_busy(&g, 0));
     // A cheap building in the capital is not the stall this gene clears.
     g.cities.get_mut(&capital).unwrap().queue.clear();
-    g.cities.get_mut(&capital).unwrap().queue.push(Item::Building {
-        building: crate::name!("monument"),
-    });
+    g.cities
+        .get_mut(&capital)
+        .unwrap()
+        .queue
+        .push(Item::Building {
+            building: crate::name!("monument"),
+        });
     assert!(!AdvancedAi::expansion_wide_capital_is_busy(&g, 0));
     // And with the capital idle, both genes agree on the capital itself.
     g.cities.get_mut(&capital).unwrap().queue.clear();
@@ -581,13 +589,9 @@ fn the_cadence_admits_at_most_two_walkers_and_only_behind_a_busy_capital() {
     assert!(off.expansion_wide_cadence_admits(&g, 0, 0));
     // One walker and an idle capital: the shipped rule stands.
     assert!(!ai.expansion_wide_cadence_admits(&g, 0, 1));
-    g.cities
-        .get_mut(&capital)
-        .unwrap()
-        .queue
-        .push(Item::Unit {
-            unit: crate::name!("settler"),
-        });
+    g.cities.get_mut(&capital).unwrap().queue.push(Item::Unit {
+        unit: crate::name!("settler"),
+    });
     assert!(ai.expansion_wide_cadence_admits(&g, 0, 1), "the stall case");
     assert!(
         !ai.expansion_wide_cadence_admits(&g, 0, WIDE_PARALLEL_SETTLERS),
@@ -607,7 +611,9 @@ fn the_cadence_pauses_when_no_safe_site_is_left() {
         unit: crate::name!("settler"),
     });
     assert!(
-        wide().higher_level_investment_target(&g, 0, &plan).is_some(),
+        wide()
+            .higher_level_investment_target(&g, 0, &plan)
+            .is_some(),
         "the site gate passes on an open board"
     );
     // Drown everything outside the two cities' own rings. There is now no
@@ -627,12 +633,12 @@ fn the_cadence_pauses_when_no_safe_site_is_left() {
         tile.resource = None;
     }
     assert!(
-        g.player_city_ids(0)
-            .into_iter()
-            .all(|cid| AdvancedAi::new()
-                .settler_site_gate(&g, 0, g.cities[&cid].pos, 0)
-                .is_err()),
+        g.player_city_ids(0).into_iter().all(|cid| AdvancedAi::new()
+            .settler_site_gate(&g, 0, g.cities[&cid].pos, 0)
+            .is_err()),
         "no seat is left to walk to"
     );
-    assert!(wide().higher_level_investment_target(&g, 0, &plan).is_none());
+    assert!(wide()
+        .higher_level_investment_target(&g, 0, &plan)
+        .is_none());
 }
