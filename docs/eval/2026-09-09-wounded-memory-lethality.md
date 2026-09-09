@@ -43,8 +43,18 @@ turn 167 frame 0, changes the Chariot's turn 166 and 167 orders from ATTACK at
 Source `0d20ae5082c76e638c0146afbddba966fd311120` and both binary hashes are in
 the local evidence artifact `memory-lethality-provenance.json`.
 
-A standard 12-game, 72-seat full-gene screen is running on disjoint seeds
+The standard 12-game, 72-seat full-gene screen completed on disjoint seeds
 916731000–916731011, six-player Continents, Online, 250 turns, Emperor, all
-victory types. Its result is pending. The host's CPU headroom governor pauses
-background screens while any cargo test is active; the original screen
-process is retained. No win-rate or rescued-host-game claim is made.
+victory types. Its full result is committed as
+`docs/gene_screens/fires/2026-09-09-wounded-memory-lethality.json`.
+The family drew 26 off seats, 28 version-one seats, and 18 version-two seats.
+Version two minus version one measured +11.51 percentage points wins
+(standard error 13.44); version two minus off measured +2.99 points
+(standard error 13.74). Both contrasts are inconclusive. With the full gene
+pool varying, these small-sample differences do not isolate the new trigger;
+the persistent replay supplies the direct evidence of its changed decision.
+No deployment promotion or rescued-host-game claim is made.
+
+The PR's five-pair cost check passed: median +1.02% per completed turn,
+with identical default-policy games on every tested seed. The screen kept
+its original process through the host governor's pauses for local validation.
