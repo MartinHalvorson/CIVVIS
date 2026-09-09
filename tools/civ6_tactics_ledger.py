@@ -1221,7 +1221,7 @@ def render(report: dict[str, Any]) -> str:
         lines.append(
             f"           {evacuation['deaths']} of ours killed by a unit: "
             f"{evacuation['deaths_wounded_at_turn_start']} began that turn at or below "
-            f"{WOUNDED_HP} hp, {evacuation['deaths_after_unexecuted_move']} had a MOVE_TO that "
+            f"{WOUNDED_HP} hp, {evacuation['deaths_after_unexecuted_move']} had a MOVE_TO "
             f"on that turn or the one before with no subsequent observed movement before death; host answered "
             f"{evacuation['move_noop']} no-op legs with {evacuation['move_fallback']} fallback steps"
         )
