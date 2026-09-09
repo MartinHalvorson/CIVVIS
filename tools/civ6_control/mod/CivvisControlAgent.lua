@@ -17147,6 +17147,8 @@ local function applyOrders(player, pid, turn, rows)
 	-- correctly, and `data/governments.json` matches `Government_SlotCounts` for
 	-- all 13 governments — checked before touching anything, because the obvious
 	-- read is that the deck chooser is broken and it is not.
+	-- Request order alone is insufficient: the policy handler also waits for
+	-- the asynchronous government change to become observable before clearing cards.
 	for index, row in ipairs(rows) do
 		if not ordered[index] and tostring(row.kind or "") == "government" then
 			runOrder(index, row);
