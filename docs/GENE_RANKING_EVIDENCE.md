@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `early-conquest-opening` | off (unmeasured) | Take a small neighbour's city in the opening: a met rival's known city within twelve tiles of the capital, the capital's production reserved for three shooters and two melee bodies ahead of the second Settler, the war declared once the force is assembled and the bill covered, and no strike-force body ending its move beside unseen ground. | 1 \| 1 |
+| `expansion-scales-with-difficulty` | off (unmeasured) | Scale the opening city target, the opening deadline, the Settler cadence and the expansion cards with the difficulty rung: the measured 4-6 band is a King-level reading and every rung above it widens the rival field. | 1 \| 1 |
 
 ## Removed from the code
 
