@@ -2268,6 +2268,17 @@
           "wonder-ring-recon": null,
           "wonder-ring-recon-2": null
         }
+      },
+      "wounded-out-of-reach": {
+        "rule_on": [
+          "wounded-out-of-reach"
+        ],
+        "head": null,
+        "ships": "wounded-out-of-reach",
+        "versions": {
+          "wounded-out-of-reach": null,
+          "wounded-out-of-reach-2": null
+        }
       }
     },
     "posterior_shapes": [

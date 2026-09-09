@@ -47758,13 +47758,12 @@ fn a_wounded_ship_may_finish_the_only_visible_shore_gun() {
     );
 }
 
-#[test]
-fn withdrawal_v2_remembers_the_gun_that_can_kill_a_healthy_chariot() {
+fn remembered_chariot_gun_fixture(gun_kind: &str) -> (Game, AdvancedAi, u32, Pos, usize) {
     let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_631).unwrap();
     let gun_at = far_side_of(&g, front, refuge).unwrap();
     let ours = g.spawn_test_unit("heavy_chariot", 0, front);
     g.units.get_mut(&ours).unwrap().hp = 80;
-    let gun = g.spawn_test_unit("field_cannon", barbarian, gun_at);
+    let gun = g.spawn_test_unit(gun_kind, barbarian, gun_at);
     g.turn = 165;
     let mut ai = AdvancedAi::new();
     ai.enable_hostile_memory();
@@ -47773,8 +47772,109 @@ fn withdrawal_v2_remembers_the_gun_that_can_kill_a_healthy_chariot() {
     assert!(ai.hostile_last_seen.contains_key(&(gun as i64)));
     g.remove_unit(gun);
     g.turn = 167;
+    (g, ai, ours, gun_at, barbarian)
+}
+
+#[test]
+fn withdrawal_v2_remembers_the_gun_that_can_kill_a_healthy_chariot() {
+    let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture("field_cannon");
+    let front = g.units[&ours].pos;
     assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+    assert!(!ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
     ai.enable_wounded_out_of_reach_2();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
     assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some());
     assert_ne!(g.units[&ours].pos, front);
+}
+
+#[test]
+fn withdrawal_v2_does_not_invent_lethal_memory_from_weak_or_missing_guns() {
+    for mode in ["weak", "unseen", "expired", "off", "memory-off", "peace"] {
+        let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture(if mode == "weak" {
+            "archer"
+        } else {
+            "field_cannon"
+        });
+        ai.enable_wounded_out_of_reach_2();
+        match mode {
+            "unseen" => ai.hostile_last_seen.clear(),
+            "expired" => g.turn = 170,
+            "off" => ai.disable_wounded_out_of_reach_2(),
+            "memory-off" => ai.disable_hostile_memory(),
+            "peace" => {
+                assert!(!g.is_at_war(0, 1));
+                for record in ai.hostile_last_seen.values_mut() {
+                    record.owner = 1;
+                }
+            }
+            _ => {}
+        }
+        assert_eq!(
+            ai.wounded_out_of_reach_step(&mut g, 0, ours),
+            None,
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn withdrawal_v2_prices_one_remembered_gun_instead_of_summing_a_stale_army() {
+    let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture("archer");
+    let record = ai.hostile_last_seen.values().next().unwrap().clone();
+    for key in 100_000..100_010 {
+        ai.hostile_last_seen.insert(key, record.clone());
+    }
+    ai.enable_wounded_out_of_reach_2();
+    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+}
+
+#[test]
+fn withdrawal_v2_keeps_known_defenses_and_the_shore_guns_naval_penalty() {
+    for naval in [false, true] {
+        let (mut g, mut ai, ours, _, barbarian) = remembered_chariot_gun_fixture("field_cannon");
+        let front = g.units[&ours].pos;
+        if naval {
+            g.units.get_mut(&ours).unwrap().kind = crate::name!("galley");
+            g.map.tiles.get_mut(&front).unwrap().terrain = crate::name!("coast");
+        } else {
+            let unit = g.units.get_mut(&ours).unwrap();
+            unit.hp = 100;
+            unit.fortify_turns = 2;
+            let tile = g.map.tiles.get_mut(&front).unwrap();
+            tile.hills = true;
+            tile.feature = Some(crate::name!("forest"));
+        }
+        let nominal = g
+            .nominal_ranged_damage_from_kind(crate::name!("field_cannon"), barbarian, ours, front)
+            .unwrap();
+        assert!(nominal * crate::ai::COMBAT_ROLL_MAX < f64::from(g.units[&ours].hp));
+        ai.enable_wounded_out_of_reach_2();
+        assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+    }
+}
+
+#[test]
+fn withdrawal_v2_nominal_shot_matches_an_unmodified_observed_guns_combat_price() {
+    for (gun_kind, defender_kind, sea) in [
+        ("field_cannon", "heavy_chariot", false),
+        ("field_cannon", "galley", true),
+        ("catapult", "heavy_chariot", false),
+    ] {
+        let (mut g, _, ours, gun_at, barbarian) = remembered_chariot_gun_fixture(gun_kind);
+        g.units.get_mut(&ours).unwrap().kind = defender_kind.into();
+        let front = g.units[&ours].pos;
+        if sea {
+            g.map.tiles.get_mut(&front).unwrap().terrain = crate::name!("coast");
+        }
+        let gun = g.spawn_test_unit(gun_kind, barbarian, gun_at);
+        let (attack, defense) = g.ranged_strike_strengths(gun, ours, front).unwrap();
+        let actual_price = crate::game::expected_damage(attack, defense);
+        let nominal = g
+            .nominal_ranged_damage_from_kind(gun_kind.into(), barbarian, ours, front)
+            .unwrap();
+        assert!(
+            (actual_price - nominal).abs() < 1e-9,
+            "{gun_kind} into {defender_kind}: {actual_price} vs {nominal}"
+        );
+    }
 }

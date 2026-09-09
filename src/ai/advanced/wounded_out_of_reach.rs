@@ -57,6 +57,8 @@ struct Refuge {
     clear: bool,
     /// The roll-top total of everything visible that reaches it.
     incoming: f64,
+    /// V2 only: the roll-top nominal shot of the strongest covering memory.
+    remembered_incoming: f64,
     /// Nonpositive distance to the nearest remembered firing envelope's edge.
     /// When none of the reachable tiles escapes it, less negative is better.
     remembered_clearance: i32,
@@ -73,15 +75,34 @@ struct Refuge {
 /// A last-seen ranged unit can fire across a shoreline. The civilian capture
 /// envelope answers where it can stand, which misses that danger on water.
 /// These projections contain only observed positions and static unit rules.
-struct RememberedRangedReach(Vec<(Pos, i32)>);
+struct RememberedRangedThreat {
+    pos: Pos,
+    radius: i32,
+    kind: crate::name::Name,
+    owner: usize,
+}
+
+struct RememberedRangedReach(Vec<RememberedRangedThreat>);
 
 impl RememberedRangedReach {
     fn margin(&self, g: &Game, pos: Pos) -> i32 {
         self.0
             .iter()
-            .map(|(from, radius)| g.wdist(*from, pos) - radius)
+            .map(|threat| g.wdist(threat.pos, pos) - threat.radius)
             .min()
             .unwrap_or(i32::MAX)
+    }
+
+    /// Price one possible gun, not a speculative sum of stale army positions.
+    fn strongest_nominal_shot(&self, g: &Game, uid: u32, pos: Pos) -> f64 {
+        self.0
+            .iter()
+            .filter(|threat| g.wdist(threat.pos, pos) <= threat.radius)
+            .filter_map(|threat| {
+                g.nominal_ranged_damage_from_kind(threat.kind, threat.owner, uid, pos)
+            })
+            .fold(0.0, f64::max)
+            * COMBAT_ROLL_MAX
     }
 }
 
@@ -204,8 +225,10 @@ impl AdvancedAi {
         }
         let wounded = hp <= WOUNDED_LINE;
         let roll_top_lethal = holding.incoming >= hp;
+        let remembered_lethal =
+            self.wounded_out_of_reach_2 && holding.incoming + holding.remembered_incoming >= hp;
         let exposed_shooter = shooter && !holding.screened;
-        if !(wounded || roll_top_lethal || exposed_shooter) {
+        if !(wounded || roll_top_lethal || remembered_lethal || exposed_shooter) {
             return None;
         }
         if self.attack_clears_the_reach(g, pid, uid) {
@@ -213,6 +236,8 @@ impl AdvancedAi {
         }
         let why = if roll_top_lethal {
             "the top of the roll on everything that reaches its tile meets its hit points"
+        } else if remembered_lethal {
+            "visible incoming plus one nominal remembered shot meets its hit points"
         } else if wounded {
             "it is under the withdrawal line on a tile a hostile can strike"
         } else {
@@ -329,6 +354,11 @@ impl AdvancedAi {
             pos,
             clear,
             incoming,
+            remembered_incoming: if self.wounded_out_of_reach_2 {
+                remembered_fire.strongest_nominal_shot(g, uid, pos)
+            } else {
+                0.0
+            },
             remembered_clearance: remembered_margin.min(0),
             garrison,
             screened: shooter && Self::shooter_screened(g, pid, pos, threats, raiders),
@@ -342,6 +372,11 @@ impl AdvancedAi {
         left.clear
             .cmp(&right.clear)
             .then_with(|| right.incoming.total_cmp(&left.incoming))
+            .then_with(|| {
+                right
+                    .remembered_incoming
+                    .total_cmp(&left.remembered_incoming)
+            })
             .then(left.garrison.cmp(&right.garrison))
             .then(left.screened.cmp(&right.screened))
             .then(left.remembered_clearance.cmp(&right.remembered_clearance))
@@ -444,7 +479,12 @@ impl AdvancedAi {
                     return None;
                 }
                 let radius = spec.moves.ceil() as i32 + (g.turn - record.when) as i32 + spec.range;
-                Some((record.pos, radius.max(1)))
+                Some(RememberedRangedThreat {
+                    pos: record.pos,
+                    radius: radius.max(1),
+                    kind: record.kind,
+                    owner: record.owner,
+                })
             })
             .collect();
         RememberedRangedReach(projections)

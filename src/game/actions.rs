@@ -1973,17 +1973,56 @@ impl Game {
         {
             att_base -= 17.0;
         }
+        Some((
+            effective_strength(att_base, shooter.hp),
+            self.ranged_defender_strength(defender, target, shooter.owner),
+        ))
+    }
+
+    fn ranged_defender_strength(&self, defender: &Unit, target: Pos, attacker_owner: usize) -> f64 {
         let def_base = self.unit_strength(defender, true)
             + self.ranged_defense_bonus(defender, false)
-            + if defender_spec.domain.as_deref() == Some("air") {
+            + if self.rules.units[defender.kind].domain.as_deref() == Some("air") {
                 0.0
             } else {
                 self.tile_defense_bonus(target)
             }
-            + self.vs_bonus(defender.owner, shooter.owner);
-        Some((
-            effective_strength(att_base, shooter.hp),
-            effective_strength(def_base, defender.hp),
+            + self.vs_bonus(defender.owner, attacker_owner);
+        effective_strength(def_base, defender.hp)
+    }
+
+    /// A memory-policy estimate using a full-health, unpromoted unit type,
+    /// not an unseen unit's actual combat state. Known defender bonuses use
+    /// the same arithmetic as a real shot. This is not a maximum-damage bound.
+    pub(crate) fn nominal_ranged_damage_from_kind(
+        &self,
+        kind: Name,
+        attacker_owner: usize,
+        did: u32,
+        target: Pos,
+    ) -> Option<f64> {
+        let spec = &self.rules.units[kind];
+        if !spec.has_ranged_attack() {
+            return None;
+        }
+        let mut defender = self.units.get(&did)?.clone();
+        if defender.pos != target {
+            defender.pos = target;
+            defender.fortify_turns = 0;
+        }
+        let defender_is_sea = self.rules.units[defender.kind].domain.as_deref() == Some("sea");
+        let mut attack = spec.ranged_strength.max(spec.bombard_strength)
+            + self.vs_bonus(attacker_owner, defender.owner);
+        if (spec.bombard_strength > 0.0 && !defender_is_sea)
+            || (spec.ranged_strength > 0.0
+                && spec.domain.as_deref() != Some("sea")
+                && defender_is_sea)
+        {
+            attack -= 17.0;
+        }
+        Some(expected_damage(
+            attack,
+            self.ranged_defender_strength(&defender, target, attacker_owner),
         ))
     }
 
