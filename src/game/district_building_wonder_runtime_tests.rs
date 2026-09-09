@@ -464,6 +464,18 @@ fn routes_level_per_tile_and_engineers_lay_railroads() {
     }
     let warrior = game.spawn_unit("warrior", 0, a);
     assert!((game.unit_step_cost(warrior, a, b) - 2.0).abs() < 1e-9);
+    // A route on the destination alone does not flatten an off-road entry.
+    // Live Pikeman 2818080 stopped on this first hill of a two-step retreat;
+    // pricing it at one point invented movement toward the final refuge.
+    for level in 1..=5 {
+        game.map.tiles.get_mut(&b).unwrap().road = level;
+        assert_eq!(game.unit_step_cost(warrior, a, b), 2.0,
+            "road level {level} cannot discount an off-road origin");
+        let mut moved = game.clone();
+        moved.units.get_mut(&warrior).unwrap().moves_left = 2.0;
+        moved.apply(0, &Action::Move { unit: warrior, to: b }).unwrap();
+        assert_eq!(moved.units[&warrior].moves_left, 0.0);
+    }
     // The shipped ladder, per tile: Ancient/Medieval 1 MP, Industrial
     // 0.75, Modern 0.5, Railroad 0.25.
     for (level, expected) in [(1, 1.0), (2, 1.0), (3, 0.75), (4, 0.5), (5, 0.25)] {
