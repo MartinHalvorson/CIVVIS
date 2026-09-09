@@ -639,7 +639,7 @@ impl AdvancedAi {
             .find(|card| {
                 g.rules
                     .policies
-                    .get(*card)
+                    .get(card)
                     .is_some_and(|policy| policy.offered(&g.players[pid].age, g.world_era))
             })
             .into_iter()
