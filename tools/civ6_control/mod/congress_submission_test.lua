@@ -75,3 +75,73 @@ assert(calls == 3, "an unreadable attempt must leave a later retry available")
 hooks.popup()
 assert(calls == 3, "a retried ballot must not be sent twice")
 print("all Congress submission ordering checks passed")
+
+-- Run the actual blocker ladder. A pending ballot must survive both the
+-- notification dismissal and the ordinary end-turn path, not just UserForced.
+turn = 234
+Players[0].IsTurnActive = function() return true end
+local config = upvalue(tick, "cfg")
+config.CivvisDecides = true
+config.SoftBlockerForfeitAttempts = 2
+config.MaxBlockedAttempts = 1
+upvalue(tick, "lastTurnSeen", turn)
+upvalue(tick, "softSeen", {})
+upvalue(tick, "settleTurn", function() return true end)
+upvalue(tick, "currentBlocker", function() return 77 end)
+upvalue(tick, "blockerName", function() return "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION" end)
+upvalue(tick, "answerBlocker", function() return "civvis_complete" end)
+CivvisFrames.repairProduction = function() return false end
+local dismissed, ended, errors = 0, 0, {}
+local fallbackVotes = 0
+NotificationManager = {
+    FindEndTurnBlocking = function()
+        return { GetPlayerID = function() return 0 end, GetID = function() return 9 end }
+    end,
+    Dismiss = function() dismissed = dismissed + 1 end,
+}
+CivvisQueue.requestEndTurn = function() ended = ended + 1 end
+upvalue(tick, "emit", function(kind, data)
+    if kind == "error" then errors[#errors + 1] = data.error end
+    if kind == "wc_vote" and data.source == "blocker" and data.why == "no_congress" then
+        fallbackVotes = fallbackVotes + 1
+    end
+end)
+local before = calls
+tick()
+assert(#errors == 0, table.concat(errors, "; "))
+assert(dismissed == 0 and ended == 0, "the hard attempt cap must also preserve a pending ballot")
+tick()
+assert(#errors == 0, table.concat(errors, "; "))
+assert(calls == before, "the first forfeit still waits for the popup ballot")
+assert(dismissed == 0, "waiting for the popup must not dismiss its notification")
+assert(ended == 0, "waiting for the popup must not submit an ordinary or forced end turn")
+hooks.popup()
+assert(calls == before + 1, "the preserved popup gets its submission attempt")
+tick()
+assert(#errors == 0, table.concat(errors, "; "))
+assert(dismissed == 1 and ended > 0, "a submitted ballot releases the blocker normally")
+
+-- An absent popup retains the existing bounded vote-and-submit fallback.
+turn = 254
+config.SoftBlockerForfeitAttempts = 1
+Game.GetWorldCongress = function() return nil end
+upvalue(tick, "lastTurnSeen", turn)
+upvalue(tick, "softSeen", {})
+dismissed, ended = 0, 0
+before = calls
+tick()
+assert(dismissed == 0 and ended == 0, "the later session also preserves its first retry")
+tick()
+assert(#errors == 0, table.concat(errors, "; "))
+assert(fallbackVotes == 1, "the second forfeit attempts the real bounded fallback, even if unreadable")
+assert(dismissed == 1 and ended > 0, "fallback exhaustion still releases the session")
+-- The guard belongs only to the voting session, not every soft reminder.
+turn = 274
+upvalue(tick, "lastTurnSeen", turn)
+upvalue(tick, "softSeen", {})
+upvalue(tick, "blockerName", function() return "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" end)
+dismissed, ended = 0, 0
+tick()
+assert(#errors == 0, table.concat(errors, "; "))
+assert(dismissed == 1 and ended > 0, "other soft blockers still release on their usual first forfeit")
+print("all Congress pending blocker checks passed")
