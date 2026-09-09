@@ -47878,3 +47878,31 @@ fn withdrawal_v2_nominal_shot_matches_an_unmodified_observed_guns_combat_price()
         );
     }
 }
+
+#[test]
+fn military_withdrawal_does_not_use_the_civilian_terrain_fallback() {
+    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_641).unwrap();
+    let lair = far_side_of(&g, front, refuge).unwrap();
+    // Every two-step path crosses a mountain. A Builder on the far side
+    // supplies current sight without screening the Archer from the raider.
+    for pos in g.nbrs(front) {
+        if g.wdist(pos, lair) == 1 {
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+        }
+    }
+    let observer = g.nbrs(lair).into_iter().find(|pos| {
+        g.wdist(*pos, front) > 2 && g.map.get(*pos).is_some()
+    }).unwrap();
+    g.spawn_test_unit("builder", 0, observer);
+    let ours = g.spawn_test_unit("archer", 0, front);
+    let raider = g.spawn_test_unit("man_at_arms", barbarian, lair);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_settler_capture_lessons();
+    ai.enable_wounded_out_of_reach();
+    assert!(g.sees(&g.player_vision_frame(0), lair));
+    assert!(!g.threat_reach(raider).contains(&front));
+    assert!(ai.barbarian_reach(&g, 0, front, 8).covers(&g, front),
+        "the host civilian capture fallback remains conservative");
+    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None,
+        "a visible raider cannot force a military withdrawal through mountains");
+}
