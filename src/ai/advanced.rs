@@ -6837,6 +6837,8 @@ mod gold_and_cards;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
+mod production_compounding;
+
 /// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
 /// move before the capital is founded. One opt-in gene; see
 /// `advanced/opening_settlement.rs`.
@@ -12555,9 +12557,10 @@ impl AdvancedAi {
     /// passes can fill an idle city with an Envoy district, Aerodrome, or
     /// another unrelated one-off. The ordinary Advanced production reserve is
     /// intentionally later in the turn; this narrow early pass exists only
-    /// for an explicit Science target and preserves the same cheapest-rung
-    /// ordering in every city that already owns a Campus.
-    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize) {
+    /// for an explicit Science target. The cheapest owed research rung competes
+    /// with legal industrial buildings so the production foundation can win
+    /// this reservation too; unrelated construction remains excluded.
+    fn reserve_targeted_research_buildings(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         for cid in g.player_city_ids(pid) {
             if !g.cities[&cid].queue.is_empty() {
                 continue;
@@ -12565,7 +12568,13 @@ impl AdvancedAi {
             let Some(building) = Self::first_owed_campus_building(g, pid, cid) else {
                 continue;
             };
-            let item = Item::Building { building };
+            let item = self.research_or_industrial_foundation(
+                g,
+                pid,
+                cid,
+                Item::Building { building },
+                plan,
+            );
             if !g.can_produce(pid, cid, &item)
                 || g.apply(
                     pid,
@@ -12582,7 +12591,7 @@ impl AdvancedAi {
                 let city_name = g.cities[&cid].name.clone();
                 think!(self.journal(), Research, Decision,
                     "{} reserves {} for the Science lane", city_name, Self::plain_item(&item);
-                    "the Campus chain is owed before ancillary production claims this idle queue");
+                    "research and its industrial foundation precede ancillary production in this idle queue");
             }
         }
     }
@@ -24609,15 +24618,21 @@ impl AdvancedAi {
             }
             // An explicit Science target makes the same contract as the
             // opt-in reserve: once a city has paid for a Campus, finish its
-            // cheapest owed Campus-family building before the generic scorer
-            // can spend the queue on a Theater Square or another unrelated
+            // cheapest owed Campus-family building or a higher-valued industrial
+            // foundation before spending the queue on a Theater Square or another unrelated
             // item. Adaptive seats still need the independently screenable
             // gene; only a named Science lane gets this invariant for free.
             if committed.is_none() && (self.first_research_building_reserve || science_specialized)
             {
                 let owed = Self::first_owed_campus_building(g, pid, cid);
                 if let Some(building) = owed {
-                    let item = Item::Building { building };
+                    let item = self.research_or_industrial_foundation(
+                        g,
+                        pid,
+                        cid,
+                        Item::Building { building },
+                        plan,
+                    );
                     if g.can_produce(pid, cid, &item)
                         && g.apply(
                             pid,
@@ -26890,15 +26905,29 @@ impl AdvancedAi {
                             .is_some_and(|family| family.as_str() == "industrial_zone")
                         && Self::city_holds_district_family(g, city, "industrial_zone")
                     {
-                        INDUSTRIAL_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
-                            + self.regional_production_reach(
-                                g,
-                                pid,
-                                city,
-                                building,
-                                spec,
-                                plan.strategy,
-                            )
+                        let regional = self.regional_production_reach(
+                            g,
+                            pid,
+                            city,
+                            building,
+                            spec,
+                            plan.strategy,
+                        );
+                        if self.active_victory_target(g).is_some() {
+                            (INDUSTRIAL_BUILDING_DEBT + regional)
+                                * self.industrial_investment_horizon(
+                                    g,
+                                    pid,
+                                    cid,
+                                    item,
+                                    spec,
+                                    regional,
+                                    plan.strategy,
+                                )
+                        } else {
+                            INDUSTRIAL_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
+                                + regional
+                        }
                     } else {
                         0.0
                     };
@@ -39606,7 +39635,7 @@ impl AdvancedAi {
                 // The named research chain owns an idle Campus city before
                 // ancillary reservations such as Envoy infrastructure, so a
                 // one-off district cannot hide the Library/University debt.
-                self.reserve_targeted_research_buildings(g, pid);
+                self.reserve_targeted_research_buildings(g, pid, &plan);
             }
             // Reserve one reachable diplomatic stage before baseline queues fill.
 
