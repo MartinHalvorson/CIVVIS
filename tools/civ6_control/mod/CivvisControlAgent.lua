@@ -14521,61 +14521,13 @@ CivvisSelectCongressLeader = function(candidates)
 	return leader, leaderPoints, leaderScore;
 end
 
--- ★★★★ THE ASK IS PRICED AGAINST BOTH TABLES THE HOST MIGHT CHARGE.
---
--- Every multi-vote ballot this seat ever sent saturated the bank the host's
--- own `GetVotesandFavorCost` table said it could afford — 14/16/18/20 votes
--- across civvis-20260819T004405Z, 13 at t162 of T175125Z — and all 17 were
--- refused whole while all 95 one-vote ballots registered. That table is the
--- ONLINE curve: the k-th extra vote costs 4k, cumulative `2n(n-1)`. The
--- Standard curve the game was written against charges 10k, cumulative
--- `5n(n-1)` — the same 780-for-13-votes this file's own #2039 comment quotes
--- from the shipped ladder. A core that CHARGES Standard while the accessor
--- REPORTS Online refuses every ask this seat has ever made as unaffordable,
--- and none of the 112 verdict rows can tell, because no ballot ever asked a
--- count small enough to fit both tables. So cap the ask by both: when the
--- theory is wrong this asks fewer votes than the bank affords on a ballot
--- that today registers ONE, which cannot lose a vote we are getting; when it
--- is right, the first session past the cap finally registers a bank. The
--- verdict's `budget` field carries both walks so the session that decides it
--- is attributable.
---
--- ★★★★★ 2026-08-23: THE PROBE CAME BACK AND THE THEORY IS DEAD.
---
--- #2108 pre-registered its own falsifier -- "watch the first
--- `wc_ballot_verdict` with `asked = 3`; `recorded 1` kills the affordability
--- theory too" -- and then nobody read it. Read now, over every run under
--- `~/civvis-civ6-runs/control/`: **802 verdict rows, 139 multi-vote asks, 0
--- registered.** Twenty-three of those are the three-vote probe, across nine
--- separate post-#2108 runs, and every one recorded ONE. Three votes cost 12
--- Favor on the Online table and 30 on the Standard one against banks of
--- 169-427, with `MaxVotes` 9-15 and this walk's own budget reading host 9-15
--- and standard 6-9 -- affordable on BOTH tables at once, which
--- is the exact ask no ballot had ever made when the theory was written. A
--- core charging Standard while reporting Online would have honoured it.
---
--- Fourteen of the thirty-one probe ballots were cast with
--- `in_congress_segment = true`, from inside `TURNSEG_WORLDCONGRESS_*`, so
--- the moment theory is dead beside it. And the option is NOT what is being
--- refused: `option_asked == option_recorded` on 82.8% of one-vote rows and
--- 73.4% of multi-vote rows, so the ballot registers and only its COUNT is
--- clamped.
---
--- The dual-table cap below is therefore known to be answering a question
--- with a settled negative answer. It is kept, not removed, for the reason
--- its own paragraph gives: when the theory is wrong the cap asks fewer votes
--- on a ballot that registers one either way, so removing it would change no
--- outcome and would only churn a file that cannot be tested without a live
--- game. What is NOT kept is the impression that the question is open.
---
--- ⚠ What remains is host-side and unreachable from this file. The run that
--- would settle it is a single live game with the popup driven by hand for
--- one resolution -- a human clicking two votes -- next to an agent ballot
--- asking two on the same seat, comparing `wc_outcome`. That needs the live
--- harness, which is under an operator halt; do not start one to answer this.
---
--- Exposed for the offline Lua regression. Must remain a bare global -- another
--- file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+-- Price the request against the host table and the conservative Standard
+-- table. This existing budgeting policy is independent of ballot verification.
+-- Historical count-only `registered` totals did not establish that options or
+-- targets matched, and therefore cannot prove that only vote counts failed.
+-- Later live readbacks include both successful multi-vote counts and wrong
+-- single-vote options. Diagnose the full selection before changing submission.
+-- Exposed for offline regression; a bare global avoids the chunk-local limit.
 CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	local bank = tonumber(favor) or 0;
 	local cap = tonumber(maxVotes) or 1;
@@ -14596,6 +14548,31 @@ CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	local votes = (host < standard) and host or standard;
 	return votes, host, standard;
 end
+
+-- A ballot is verified against all three native selection fields, not just
+-- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
+-- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
+-- A matching free-vote count previously concealed the opposite option in
+-- civvis-20260909T003711Z at turn 161. Missing target evidence is unknown,
+-- never a successful match. Exported globally to stay below the chunk limit.
+CivvisCongressBallotVerdict = function(ask, observed)
+	ask = type(ask) == "table" and ask or {};
+	observed = type(observed) == "table" and observed or {};
+	local asked, recorded = tonumber(ask.votes), tonumber(observed.votes);
+	local optionAsked, optionRecorded = tonumber(ask.option), tonumber(observed.option);
+	local targetAsked = ask.target ~= nil and tostring(ask.target) or nil;
+	local targetRecorded = observed.target ~= nil and tostring(observed.target) or nil;
+	local countMatches = asked ~= nil and asked > 0 and recorded == asked;
+	local optionMatches = (optionAsked == 1 or optionAsked == 2)
+		and optionRecorded == optionAsked;
+	local targetMatches = targetAsked ~= nil and targetRecorded == targetAsked;
+	return {
+		registered = countMatches and optionMatches and targetMatches,
+		count_matches = countMatches, option_matches = optionMatches,
+		target_matches = targetMatches,
+		target_asked = targetAsked, target_recorded = targetRecorded,
+	};
+end;
 
 -- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
 --
@@ -17577,8 +17554,12 @@ local function beginTurn(player, pid, turn)
 						local votes = tonumber(sel.Votes) or 0;
 						local option = tonumber(sel.OptionChosen) or 0;
 						if option == 1 then a = a + votes; else b = b + votes; end
-						voters[#voters + 1] = { player = who, option = option, votes = votes };
-						if who == pid then ours = { option = option, votes = votes }; end
+						local target = sel.ResolutionTarget;
+						voters[#voters + 1] = { player = who, option = option, votes = votes,
+							target = target };
+						if who == pid then
+							ours = { option = option, votes = votes, target = target };
+						end
 					end
 				end
 				local won = a > b and 1 or (b > a and 2 or 0);
@@ -17660,10 +17641,17 @@ local function beginTurn(player, pid, turn)
 				if type(ask) == "table" and type(r.ours) == "table" then
 					local recorded = tonumber(r.ours.votes) or 0;
 					local asked = tonumber(ask.votes) or 0;
+					local verdict = CivvisCongressBallotVerdict(ask, r.ours);
 					emit("wc_ballot_verdict", {
-						turn = turn, resolution = r.type,
+						turn = turn, resolution = r.type, verification_version = 2,
 						asked = asked, recorded = recorded,
-						registered = recorded >= asked,
+						registered = verdict.registered,
+						count_matches = verdict.count_matches,
+						option_matches = verdict.option_matches,
+						target_matches = verdict.target_matches,
+						target_asked = verdict.target_asked,
+						target_recorded = verdict.target_recorded,
+						selection_asked = ask.selection,
 						option_asked = ask.option, option_recorded = r.ours.option,
 						favor_at_ballot = envoyTally.ballot_favor_now,
 						favor_entering_congress = envoyTally.ballot_favor_entering,
@@ -17671,6 +17659,9 @@ local function beginTurn(player, pid, turn)
 						max_votes = envoyTally.ballot_max_votes,
 						costs = envoyTally.ballot_costs,
 						votes_sent = (type(envoyTally.ballot_sent) == "table")
+							and envoyTally.ballot_sent[r.type] or nil,
+						-- Legacy votes_sent counts operation calls, not votes.
+						request_calls = (type(envoyTally.ballot_sent) == "table")
 							and envoyTally.ballot_sent[r.type] or nil,
 						-- Both affordability walks behind the ask (host table
 						-- and Standard-priced), so the session that finally
@@ -18567,39 +18558,9 @@ local function tick()
 					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
 					params[PlayerOperations.PARAM_RESOLUTION_OPTION] = option;
 					params[PlayerOperations.PARAM_RESOLUTION_SELECTION] = selection - 1;
-					-- ★★★★★ NINETY-FIVE OF NINETY-FIVE ONE-VOTE BALLOTS REGISTER.
-					-- SEVENTEEN OF SEVENTEEN MULTI-VOTE BALLOTS DO NOT.
-					--
-					-- 112 `wc_ballot_verdict` rows over four runs, and the split
-					-- is perfect in both directions: no ballot asking one vote
-					-- was ever refused, and no ballot asking more than one was
-					-- ever recorded above one. It does not depend on the moment
-					-- (one-vote ballots register from the `stage1` trigger and
-					-- from the `popup` trigger alike), on the option (both
-					-- register and flip as asked), or on affordability -- run
-					-- `civvis-20260818T175125Z` t162 asked thirteen votes at a
-					-- charged 312 Favor holding 352, inside `MaxVotes = 13`, and
-					-- the host recorded one.
-					--
-					-- Every explanation the mod controls is now eliminated:
-					-- parameters match the shipped `OnAccept` exactly, both
-					-- triggers fire, the option registers, the budget is not the
-					-- difference (#2039: `favor_entering_congress` equals
-					-- `GetFavor` on every row), and the ask is affordable and
-					-- within the cap. What is left is the count parameter
-					-- itself: `PARAM_WORLD_CONGRESS_VOTES > 1` is never honoured
-					-- through this path.
-					--
-					-- #2045 tried one vote per operation, repeated, on the theory
-					-- that the core might accumulate them. The experiment came
-					-- back on run civvis-20260819T004405Z: `votes_sent 20,
-					-- recorded 1` on every multi-vote session — the operation
-					-- SETS the seat's ballot rather than adding to it, so a
-					-- repeat leaves the LAST write's single vote standing. Back
-					-- to one operation carrying the whole count, exactly as the
-					-- shipped `OnAccept` sends it; what changed instead is the
-					-- count itself, now priced by `CivvisCongressVoteBudget`
-					-- against both tables the host might charge.
+					-- Match the shipped OnAccept request: one operation carries the
+					-- complete vote count. A successful pcall records a request,
+					-- not acceptance; GetReview verifies the complete selection.
 					local sent = pcall(function()
 						UI.RequestPlayerOperation(pid,
 							PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
@@ -18611,7 +18572,8 @@ local function tick()
 					-- review can be compared with it rather than trusted. `pcall`
 					-- reports only that the call did not raise; the host's own
 					-- `PlayerSelections` is the only thing that reports a vote.
-					envoyTally.ballot_ask[rtype] = { votes = votes, option = option };
+					envoyTally.ballot_ask[rtype] = { votes = votes, option = option,
+						selection = selection - 1, target = targets[selection] };
 				end
 			end
 			pcall(function()
@@ -18678,25 +18640,10 @@ local function tick()
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
-			-- ★★★★★ `spent` IS WHAT THE BALLOT ASKED FOR. IT IS NOT WHAT WAS TAKEN.
-			--
-			-- `voteWorldCongress` returns its own model of the stake: it walks
-			-- the host's cost table, decrements a local bank, and adds the
-			-- charge for every vote it requested. The host charges for the
-			-- votes it RECORDS, and it has never recorded more than one --
-			-- 139 of 139 multi-vote asks came back `recorded 1` across the
-			-- whole `wc_ballot_verdict` corpus. So every `spent` above zero
-			-- this ledger has ever carried is Favor that never moved, and the
-			-- reader had to join two sessions of `wc_ballot_verdict` to find
-			-- that out.
-			--
-			-- `favor_before` was already read here; reading the bank back
-			-- costs one more accessor and makes the row self-describing.
-			-- ⚠ A player operation is queued, not applied inline, so a real
-			-- charge may land after this read: treat `favor_after` as a lower
-			-- bound on what was taken, and `wc_ballot_verdict.favor_now` at
-			-- the next review as the settled figure. The two together are
-			-- still strictly more than `spent` alone, which is a forecast.
+			-- `spent` is the modeled request cost, not a confirmed charge.
+			-- Player operations are queued: the immediate Favor read can precede
+			-- a charge. The subsequent review verifies count, option, and target;
+			-- its Favor read supplies the later balance without inventing a cost.
 			local after = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
 			                  favor_asked = spent,

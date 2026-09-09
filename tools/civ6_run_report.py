@@ -169,13 +169,14 @@ def crossover(rows: Sequence[dict]) -> dict | None:
 
 
 def ballots(events: Path) -> dict:
-    """Congress ballots the seat asked for, and what the host recorded.
+    """Keep count matches separate from complete, versioned selections.
 
-    `wc_ballot_verdict` exists because `wc_vote` reported Favor it never spent;
-    the two numbers side by side are the whole point of the row.
+    Legacy ``registered`` flags checked only counts. Recompute from observed
+    fields instead of trusting that flag as proof of the chosen option/target.
     """
-    asked_multi = registered = total = 0
-    worst = None
+    asked_multi = count_matches = total = 0
+    selection_verdicts = selection_matches = legacy = 0
+    worst = first_selection_mismatch = None
     with events.open(errors="ignore") as handle:
         for line in handle:
             if '"wc_ballot_verdict"' not in line:
@@ -185,14 +186,30 @@ def ballots(events: Path) -> dict:
             except json.JSONDecodeError:
                 continue
             total += 1
-            if (row.get("asked") or 0) > 1:
+            asked, recorded = row.get("asked") or 0, row.get("recorded")
+            if asked > 1:
                 asked_multi += 1
-                if row.get("registered"):
-                    registered += 1
+                if recorded == asked:
+                    count_matches += 1
                 elif worst is None:
                     worst = row
+            if (row.get("verification_version") or 1) < 2:
+                legacy += 1
+                continue
+            selection_verdicts += 1
+            option, target = row.get("option_asked"), row.get("target_asked")
+            complete = (asked > 0 and recorded == asked
+                        and option in (1, 2) and option == row.get("option_recorded")
+                        and target is not None and row.get("target_recorded") is not None
+                        and str(target) == str(row["target_recorded"]))
+            if complete:
+                selection_matches += 1
+            elif first_selection_mismatch is None:
+                first_selection_mismatch = row
     return {"verdicts": total, "multi_vote_ballots": asked_multi,
-            "multi_vote_registered": registered, "first_unregistered": worst}
+            "multi_vote_count_matches": count_matches, "first_count_mismatch": worst,
+            "selection_verdicts": selection_verdicts, "selection_matches": selection_matches,
+            "legacy_verdicts": legacy, "first_selection_mismatch": first_selection_mismatch}
 
 
 def settler_holds(run: Path) -> dict:
@@ -445,13 +462,16 @@ def render(data: dict) -> str:
     ball = data["ballots"]
     if ball["verdicts"]:
         lines.append("")
-        lines.append(f"  congress: {ball['multi_vote_registered']}/"
-                     f"{ball['multi_vote_ballots']} purchased-vote ballots registered "
+        lines.append(f"  congress: {ball['multi_vote_count_matches']}/"
+                     f"{ball['multi_vote_ballots']} purchased-vote counts matched "
                      f"({ball['verdicts']} verdicts)")
-        worst = ball["first_unregistered"]
+        lines.append(f"  complete selections verified: {ball['selection_matches']}/"
+                     f"{ball['selection_verdicts']}; {ball['legacy_verdicts']} legacy "
+                     "verdicts lack complete verification")
+        worst = ball["first_count_mismatch"]
         if worst:
-            lines.append(f"    first refused: t{worst.get('turn')} asked "
-                         f"{worst.get('asked')} sent {worst.get('votes_sent')} "
+            lines.append(f"    first count mismatch: t{worst.get('turn')} asked "
+                         f"{worst.get('asked')} requests {worst.get('request_calls', worst.get('votes_sent'))} "
                          f"recorded {worst.get('recorded')} "
                          f"favor {worst.get('favor_at_ballot')}")
     race = data.get("space_race") or {}
@@ -539,7 +559,8 @@ def aggregate(root: Path, every: int) -> dict:
     by_cities: dict[int, list[bool]] = {}
     crossovers: list[int] = []
     never_led = wins = completed = skipped_unfinished = skipped_short = 0
-    ballots_multi = ballots_registered = 0
+    ballots_multi = ballot_count_matches = 0
+    ballot_selections = ballot_selection_matches = ballot_legacy = 0
     # ⚠ Tallied over runs that REACHED the endgame, not over completed runs:
     # the launch chain cannot start before the industrial era, so counting a
     # game abandoned at turn 40 as one that failed to launch would say the
@@ -554,7 +575,10 @@ def aggregate(root: Path, every: int) -> dict:
             skipped_unfinished += 1
             continue
         ballots_multi += data["ballots"]["multi_vote_ballots"]
-        ballots_registered += data["ballots"]["multi_vote_registered"]
+        ballot_count_matches += data["ballots"]["multi_vote_count_matches"]
+        ballot_selections += data["ballots"]["selection_verdicts"]
+        ballot_selection_matches += data["ballots"]["selection_matches"]
+        ballot_legacy += data["ballots"]["legacy_verdicts"]
         race = data.get("space_race") or {}
         if race and data["turns"] >= RACE_ENDGAME_TURN:
             race_seen += 1
@@ -611,7 +635,10 @@ def aggregate(root: Path, every: int) -> dict:
             "refused": race_refused_runs, "drove": race_drove,
         },
         "multi_vote_ballots": ballots_multi,
-        "multi_vote_registered": ballots_registered,
+        "multi_vote_count_matches": ballot_count_matches,
+        "selection_verdicts": ballot_selections,
+        "selection_matches": ballot_selection_matches,
+        "legacy_ballot_verdicts": ballot_legacy,
     }
 
 
@@ -662,10 +689,13 @@ def render_aggregate(data: dict) -> str:
         for start in sorted(data["crossover_bands"]):
             lines.append(f"    t{start:>3}-{start + 24:<4} "
                          f"{data['crossover_bands'][start]:>4}")
-    if data["multi_vote_ballots"]:
+    if data["multi_vote_ballots"] or data["selection_verdicts"] or data["legacy_ballot_verdicts"]:
         lines.append("")
-        lines.append(f"  purchased-vote ballots registered: "
-                     f"{data['multi_vote_registered']}/{data['multi_vote_ballots']}")
+        lines.append(f"  purchased-vote counts matched: "
+                     f"{data['multi_vote_count_matches']}/{data['multi_vote_ballots']}")
+        lines.append(f"  complete selections verified: {data['selection_matches']}/"
+                     f"{data['selection_verdicts']}; {data['legacy_ballot_verdicts']} legacy "
+                     "verdicts lack complete verification")
     return "\n".join(lines)
 
 
