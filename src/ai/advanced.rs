@@ -2245,6 +2245,8 @@ pub struct AdvancedAi {
     /// live bridge's fresh-board rebuild via `remap_unit_memory` rather than
     /// depending on Firaxis reporting a formation that does not exist.
     settler_guards: BTreeMap<u32, u32>,
+    /// Shared builder/guard intentions, rebuilt from the observed board each frame.
+    builder_support: BTreeMap<u32, civilian_coordination::BuilderSupport>,
     /// The naval half of an overseas Settler expedition. It is deliberately
     /// separate from `settler_guards`: land and sea military units occupy
     /// different stacking layers, so both can protect the civilian while it
@@ -6712,6 +6714,7 @@ mod surprise_defense;
 mod air_surge;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
+mod civilian_coordination;
 /// Settlers and builders out of a barbarian's reach: flee it, never step
 /// into it, stack with a summoned guard when they must. Opt-in gene
 /// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
@@ -7303,6 +7306,7 @@ impl AdvancedAi {
     /// [`BasicAi::remap_unit_memory`] for why forgetting it is what makes settlers
     /// wander and what makes the livelock detector unreachable in the Civ 6 bridge.
     pub fn remap_unit_memory(&mut self, map: &BTreeMap<u32, u32>) {
+        self.builder_support.clear();
         self.base.remap_unit_memory(map);
         // Recovery follows the host unit through a fresh-board rebuild. An
         // old native id can now belong to a healthy survivor, while a missing
@@ -7521,6 +7525,7 @@ impl AdvancedAi {
             escort_unstick: false,
             live_formationless_settler_shadow: false,
             settler_guards: BTreeMap::new(),
+            builder_support: BTreeMap::new(),
             settler_sea_guards: BTreeMap::new(),
             settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
@@ -30654,11 +30659,12 @@ impl AdvancedAi {
             .any(|bound| *bound == guard)
     }
 
-    fn all_bound_settler_guards(&self) -> BTreeSet<u32> {
+    fn all_reserved_civilian_guards(&self) -> BTreeSet<u32> {
         self.settler_guards
             .values()
             .chain(self.settler_sea_guards.values())
             .copied()
+            .chain(self.builder_support.values().map(|support| support.guard))
             .collect()
     }
 
@@ -30926,7 +30932,7 @@ impl AdvancedAi {
         // can reach this water body, the safety floor keeps the expedition
         // stopped rather than exposing it.
         if afloat && !self.settler_sea_guards.contains_key(&uid) {
-            let taken = self.all_bound_settler_guards();
+            let taken = self.all_reserved_civilian_guards();
             let sea_guard = g
                 .player_unit_ids(pid)
                 .into_iter()
@@ -30969,7 +30975,7 @@ impl AdvancedAi {
             }
         }
         if !self.settler_guards.contains_key(&uid) {
-            let taken = self.all_bound_settler_guards();
+            let taken = self.all_reserved_civilian_guards();
             let threatened = self.plan.as_ref().and_then(|plan| plan.threatened_city);
             let holds_threatened_city = |position: Pos| {
                 threatened.is_some_and(|city| {
@@ -32999,6 +33005,9 @@ impl AdvancedAi {
         uid: u32,
         strategy: GrandStrategy,
     ) -> bool {
+        if let Some(acted) = self.builder_support_step(g, pid, uid) {
+            return acted;
+        }
         let current = g.units[&uid].pos;
         if let Some(retreated) = self.builder_retreat_from_barbarian_capture(g, pid, uid) {
             return retreated;
@@ -34389,6 +34398,7 @@ impl AdvancedAi {
                 let field_unit = matches!(spec.class.as_str(), "military" | "support")
                     && spec.domain.as_deref() != Some("air");
                 field_unit
+                    && !self.builder_guard_reserved(*uid)
                     && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
                         && self.base.has_exploration_target(g, pid, *uid))
             })
@@ -35657,7 +35667,7 @@ impl AdvancedAi {
                 .enumerate()
                 .filter_map(|(order, action)| {
                     let (uid, target) = Self::unit_strike_actor_and_target(action)?;
-                    (!spent.contains(&uid))
+                    (!spent.contains(&uid) && !self.builder_guard_reserved(uid))
                         .then(|| self.immediate_kill_value(g, pid, action, plan))
                         .flatten()
                         .map(|(value, eliminated)| (value, eliminated, target, uid, order, action))
@@ -36999,6 +37009,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         decline_settlers: bool,
     ) -> bool {
+        if self.builder_guard_reserved(uid) {
+            return self.base.fortify_or_stop(g, pid, uid);
+        }
         // `battle-planner`: a unit the plan has already struck with, moved
         // or rotated out this turn stays where the plan put it. Always
         // false with the gene off. See `advanced/battle_planner.rs`.
@@ -38708,6 +38721,7 @@ impl AdvancedAi {
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        self.builder_support.clear();
         self.base.begin_movement_turn(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
         // loop below handles it. Firaxis exports an idle Trader with zero
@@ -38797,6 +38811,11 @@ impl AdvancedAi {
                 }
                 settled_first.push(uid);
             }
+        }
+        // Reserve civilian support before any military pre-pass can spend it.
+        self.plan_builder_support(g, pid);
+        if !self.builder_support.is_empty() {
+            self.rebuild_force_groups(g, pid, plan);
         }
         // A direct kill is a local opportunity, not a new campaign objective.
         // Resolve those exact, positive exchanges before the remaining unit
@@ -39493,6 +39512,7 @@ impl Ai for AdvancedAi {
 
 impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
         // Before anything in this turn is priced. Every science term downstream
