@@ -436,8 +436,11 @@ impl AdvancedAi {
     }
 
     /// The declaration itself: a casus belli if one happens to be legal (a
-    /// matured denouncement, a reconquest), otherwise the surprise war.
-    fn raid_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
+    /// matured denouncement, a reconquest), otherwise the surprise war. Never
+    /// a `Denounce`: `preferred_war_opening` answers with one to start the
+    /// Formal War clock, and that is not a declaration. Shared with
+    /// `early-conquest-opening`, whose assembled force wants the same rule.
+    pub(super) fn raid_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
         let legal = g.legal_actions_within(pid, ActionFamilies::DIPLOMACY);
         if let Some(action) = self.preferred_war_opening(g, pid, target) {
             if matches!(action, Action::DeclareWarWithCasusBelli { .. }) {
