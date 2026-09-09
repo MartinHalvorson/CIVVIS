@@ -64,9 +64,12 @@ DirectionTypes = {
 -- Plot index = y * 100 + x on this fake map.
 local function plotIndex(x, y) return y * 100 + x end
 local featurePlots = {}
+local terrainPlots = {}
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2) return math.max(math.abs(x1 - x2), math.abs(y1 - y2)) end,
 	GetPlot = function(x, y)
+		local terrain = terrainPlots[plotIndex(x, y)]
+		if terrain ~= nil then return terrain end
 		local feature = featurePlots[plotIndex(x, y)]
 		if feature == nil then return nil end
 		return { GetFeatureType = function() return feature end }
@@ -92,6 +95,9 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	end
 	if k == "Units" then
 		return setmetatable({}, { __index = function(_, name)
+			if name == "UNIT_GALLEY" then
+				return { UnitType = name, Combat = 30, RangedCombat = 0, BaseMoves = 3, Domain = "DOMAIN_SEA" }
+			end
 			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER" or name == "UNIT_TRADER" then
 				return { UnitType = name, Combat = 0, RangedCombat = 0 }
 			end
@@ -252,6 +258,7 @@ local function reset()
 	host.units, host.cities, host.barbarians, host.hidden, host.ops, host.cmds, host.paths,
 		host.queued, host.blocked, LOG = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 	featurePlots = {}
+	terrainPlots = {}
 	config.SettlerEscortCapSync = nil
 	queue.reset(7); board.reset()
 end
@@ -741,6 +748,37 @@ applyOrders(player, PID, 7, { row(52, "MOVE_TO", 2, 1) })
 check("two-step fallback reach: setter stays out of capture leg", ops(52), "")
 check("two-step fallback reach: distance names the threat", has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile":103')
 	and has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile_reach":"base_moves"'), true)
+
+-- A galley's distance-only envelope cannot capture a civilian on ordinary
+-- land. This false threat redirected the t29 settler in 20260909T064545Z.
+-- Keep native path proof and water/city/district or unknown-terrain behavior.
+for _, case in ipairs({
+ { name = "plain land", water = false, city = false, district = -1, held = false },
+ { name = "water", water = true, city = false, district = -1, held = true },
+ { name = "city", water = false, city = true, district = -1, held = true },
+ { name = "district", water = false, city = false, district = 5, held = true },
+ { name = "unknown", held = true },
+ { name = "native path", water = false, city = false, district = -1, path = true, held = true },
+}) do
+ reset()
+ host.units[53] = { id = 53, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+ host.barbarians[104] = { id = 104, kind = "UNIT_GALLEY", x = 4, y = 1, moves = 0 }
+ if case.water ~= nil then
+  terrainPlots[plotIndex(2, 1)] = {
+   IsWater = function() return case.water end,
+   IsCity = function() return case.city end,
+   GetDistrictType = function() return case.district end,
+  }
+ end
+ host.paths["53:" .. plotIndex(2, 1)] = {
+  plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+ if case.path then
+  host.paths["104:" .. plotIndex(2, 1)] = {
+   plots = { plotIndex(4, 1), plotIndex(3, 1), plotIndex(2, 1) }, turns = { 0, 1, 1 } }
+ end
+ applyOrders(player, PID, 7, { row(53, "MOVE_TO", 2, 1) })
+ check("naval capture " .. case.name, ops(53), case.held and "" or "UNITOPERATION_MOVE_TO@2,1")
+end
 
 -- A visible combat unit outside the adjacent-capture geometry does not freeze
 -- normal expansion movement.
