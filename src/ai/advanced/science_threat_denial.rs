@@ -117,6 +117,13 @@ pub(crate) const DENIAL_WAR_LAUNCH_HORIZON: u32 = 40;
 /// that has not reached the pad in this many standard turns is not going to.
 pub(crate) const DENIAL_WAR_MAX_TURNS: u32 = 25;
 
+/// Of the [`DENIAL_WAR_MAX_TURNS`] a denial war lasts, this share is the
+/// march: the rest is the pillage itself and the peace the engine's minimum
+/// war length holds us to. A declaration whose objective cannot be walked to
+/// inside it buys the grievances and none of the denial — the first probe of
+/// this gene opened 13 wars and pillaged 2 pads without this gate.
+pub(crate) const DENIAL_MARCH_SHARE: f64 = 0.6;
+
 /// The projects the science victory is made of, in the order they are built.
 /// `Game::victory_races` counts exactly these four.
 const SPACE_PROJECTS: [&str; 4] = [
@@ -385,6 +392,46 @@ impl AdvancedAi {
         party.into_iter().map(|(_, uid)| uid).collect()
     }
 
+    /// Whether the raid this war is declared for could actually walk to
+    /// `pad` before the war is over.
+    ///
+    /// The route is read on a speculative board with the declaration already
+    /// applied, for the reason `opportunistic-war` version two reads it there:
+    /// before the war the target's closed borders make every route to its
+    /// interior look impassable, and a distance on the map is not a route
+    /// across an ocean at all. A soldier qualifies when its route to the pad
+    /// is inside what it can march in [`DENIAL_MARCH_SHARE`] of
+    /// [`DENIAL_WAR_MAX_TURNS`].
+    fn science_denial_raid_can_reach(
+        &self,
+        g: &Game,
+        pid: usize,
+        pad: Pos,
+        opening: &Action,
+    ) -> bool {
+        let mut board = g.speculative_clone();
+        if board.apply(pid, opening).is_err() {
+            return false;
+        }
+        let march =
+            (g.standard_duration(DENIAL_WAR_MAX_TURNS) as f64 * DENIAL_MARCH_SHARE) as usize;
+        g.player_unit_ids(pid).into_iter().any(|uid| {
+            let unit = &g.units[&uid];
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military"
+                || spec.domain.as_deref() == Some("air")
+                || spec.domain.as_deref() == Some("sea")
+                || Self::lone_garrison(g, pid, uid)
+            {
+                return false;
+            }
+            let reach = (g.unit_max_moves(uid).floor().max(1.0) as usize) * march;
+            board
+                .route_distance(uid, pad, 0)
+                .is_some_and(|steps| steps <= reach)
+        })
+    }
+
     /// Rung 3: this unit's step in the pad raid — pillage the pad it stands
     /// on, else one step toward it. `None` when the unit has no part in the
     /// raid this turn, which leaves the rest of the ladder untouched.
@@ -563,6 +610,11 @@ impl AdvancedAi {
         let Some((_, pad)) = threat.pad else {
             return false;
         };
+        // The war exists for rung 3. If nothing of ours can walk to the pad
+        // inside it, the declaration buys grievances and no denial.
+        if !self.science_denial_raid_can_reach(g, pid, pad, &action) {
+            return false;
+        }
         think!(self.journal(), Military, Strategy,
                "Declaring war on {} to deny the space race", g.players[threat.rival].civ;
                "they have landed {} of {} space projects and lead us by {} tech{}; \

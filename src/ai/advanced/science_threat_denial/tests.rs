@@ -661,6 +661,18 @@ fn the_declaration_waits_for_the_formal_war_clock_and_then_opens() {
     let (_, pad) = give_pad(&mut g, 1);
     let launch = g.player_city_ids(1)[0];
     bank_space_progress(&mut g, 1, launch, 1.0);
+    // The war exists for the raid, so it needs a soldier that can walk to
+    // the pad. See `science_denial_raid_can_reach`.
+    let staging = g
+        .wdisk(pad, 2)
+        .into_iter()
+        .find(|pos| {
+            g.wdist(*pos, pad) == 2
+                && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+                && g.city_at(*pos).is_none()
+        })
+        .expect("the fixture has a staging tile beside the pad");
+    g.spawn_test_unit("warrior", 0, staging);
 
     // With no casus belli and no standing denouncement, `preferred_war_opening`
     // answers with the denouncement. That is rung 1's action, not a
@@ -690,11 +702,52 @@ fn the_declaration_waits_for_the_formal_war_clock_and_then_opens() {
     assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
 }
 
+/// A board where seat 1 is a threat about to finish and the Formal War clock
+/// against it has already run, so `preferred_war_opening` answers with a
+/// declaration rather than a denouncement. Returns the pad.
+fn war_ready_board(ai: &mut AdvancedAi) -> (Game, Pos) {
+    let mut g = board();
+    let (_, pad) = give_pad(&mut g, 1);
+    let launch = g.player_city_ids(1)[0];
+    bank_space_progress(&mut g, 1, launch, 1.0);
+    // The first pass denounces; the clock runs; the declaration is then legal.
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    g.turn += g.standard_duration(20);
+    assert!(g.players[0].denounced_until[&1] > g.turn);
+    (g, pad)
+}
+
+#[test]
+fn no_war_is_declared_for_a_pad_no_soldier_can_walk_to() {
+    let mut ai = denier();
+    let (mut g, pad) = war_ready_board(&mut ai);
+
+    // No army at all: the declaration would buy grievances and no denial.
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+    assert_eq!(ai.denial_war, None);
+
+    // The lone garrison of our own city does not count as the march either.
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    let garrison = g.spawn_test_unit("warrior", 0, home);
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+
+    // A second soldier frees the first, and the war opens.
+    g.spawn_test_unit("warrior", 0, home);
+    let _ = garrison;
+    assert!(ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(g.is_at_war(0, 1));
+    assert_eq!(ai.denial_war.map(|war| war.pad), Some(pad));
+}
+
 #[test]
 fn the_denial_war_is_refused_by_the_existing_war_gates() {
-    let mut g = board();
-    give_pad(&mut g, 1);
     let mut ai = denier();
+    let (mut g, _) = war_ready_board(&mut ai);
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    g.spawn_test_unit("warrior", 0, home);
+    g.spawn_test_unit("warrior", 0, home);
     ai.enable_war_needs_a_treasury();
     // A treasury already running dry refuses every war, this one included.
     g.players[0].gold = 0.0;
