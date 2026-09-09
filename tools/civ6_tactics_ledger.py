@@ -522,15 +522,44 @@ def evacuation_section(
     }
 
 
-def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
+def roster_section(
+    events: list[dict[str, Any]], unit_orders: list | tuple = (),
+    local_player: int | None = None,
+) -> dict[str, Any]:
     states = _states(events)
     turns = sorted(states)
     gone: collections.Counter = collections.Counter()
     gone_by_kind: collections.Counter = collections.Counter()
     salvageable = 0
+    formed = 0
+    formations: dict[int, dict[int, set[tuple[str, Any, Any]]]] = {}
+    for turn, _, subject, verb, owner, partner in unit_orders:
+        if verb in ("FORM_CORPS", "FORM_ARMY"):
+            formations.setdefault(turn, {}).setdefault(subject, set()).add((verb, owner, partner))
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
+        # A planned merge alone is not proof: the partner must disappear and
+        # the surviving subject must gain the requested military formation.
+        # Restrict to consecutive turns so an old order cannot explain a later loss.
+        combined = set()
+        if turns[i + 1] == turn + 1 and local_player is not None:
+            for subject, attempts in formations.get(turn, {}).items():
+                # Multiple different partners leave the consumed donor ambiguous.
+                if len(attempts) != 1:
+                    continue
+                verb, owner, partner = next(iter(attempts))
+                tier = {"FORM_CORPS": 1, "FORM_ARMY": 2}[verb]
+                if owner != local_player:
+                    continue
+                before, after = now.get(subject, {}), nxt.get(subject, {})
+                donor = now.get(partner, {})
+                before_tier = before.get("formation")
+                if (subject != partner and donor and partner not in nxt
+                        and before.get("kind") == donor.get("kind") == after.get("kind")
+                        and isinstance(before_tier, int) and before_tier < tier
+                        and after.get("formation") == tier):
+                    combined.add(partner)
         hostiles = _hostile_plots(states[turn])
         gold = states[turn].get("gold")
         for uid, unit in now.items():
@@ -538,6 +567,10 @@ def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
                 continue
             kind = str(unit.get("kind") or "?")
             gone_by_kind[kind] += 1
+            if uid in combined:
+                formed += 1
+                gone["confirmed_formation"] += 1
+                continue
             pos = (int(unit["x"]), int(unit["y"]))
             near = any(hex_distance(pos, plot) <= 2 for plot in hostiles)
             if (unit.get("hp") or 0) <= SALVAGEABLE_HP:
@@ -548,15 +581,14 @@ def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
                 gone["hostile_within_2"] += 1
             else:
                 gone["no_visible_threat"] += 1
-    lost = sum(gone.values())
+    total = sum(gone.values())
+    lost = total - formed
     return {
-        "military_units_gone": lost,
-        # ⭐ HOW MANY OF THEM THE SEAT SAW COMING. A unit last seen at or
-        # below `SALVAGEABLE_HP` is one the controller had a turn's warning
-        # about and could have rotated, withdrawn or healed out of; the rest
-        # were killed from a health it had no reason to act on. The two are
-        # different failures and only one of them is worth a preservation
-        # change. The arena reports the same share as `salvag.`.
+        "military_units_gone": total,
+        "confirmed_formation_removals": formed,
+        "unattributed_removals": lost,
+        # Unattributed removals are potential losses, not proven combat deaths.
+        # Confirmed corps/army donors must not inflate the rescue opportunity.
         "lost_when_salvageable": salvageable,
         "salvageable_share": round(salvageable / lost, 2) if lost else None,
         "context_at_last_sight": dict(gone),
@@ -1057,7 +1089,7 @@ def ledger(run_dir: Path, hof: Path | None = None) -> dict[str, Any]:
         "arrival": arrival_section(events, unit_orders),
         "combat": combat_section(events, local_player),
         "evacuation": evacuation_section(events, local_player),
-        "roster": roster_section(events),
+        "roster": roster_section(events, unit_orders, local_player),
         "hover": hover_section(events, unit_orders),
         "engagement": engagement_section(events, local_player),
     }
@@ -1194,10 +1226,10 @@ def render(report: dict[str, Any]) -> str:
         f"  roster   {roster['military_units_gone']} military units left the board: "
         + ", ".join(f"{k} {n}" for k, n in roster["context_at_last_sight"].items())
     )
-    if roster["military_units_gone"]:
+    if roster["unattributed_removals"]:
         lines.append(
             f"           {roster['lost_when_salvageable']} were last seen at or below "
-            f"{SALVAGEABLE_HP} hp ({_fmt_share(roster['salvageable_share'])}) — the losses the "
+            f"{SALVAGEABLE_HP} hp ({_fmt_share(roster['salvageable_share'])} of unattributed removals) — potential losses the "
             f"seat had a turn's warning of"
         )
     hover = report["hover"]
