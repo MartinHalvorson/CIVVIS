@@ -313,6 +313,7 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
 mod movement_risk;
+mod scout_first;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
@@ -3104,6 +3105,8 @@ pub struct BasicAi {
     /// emergency choices remain authoritative. Set through
     /// `AdvancedAi::enable_capital_settler_after_completion`.
     pub(crate) capital_settler_after_completion: bool,
+    /// Independent first-slot exploration experiment.
+    pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -4968,6 +4971,7 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -5420,6 +5424,7 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -9211,6 +9216,11 @@ impl BasicAi {
                 continue;
             }
             if !g.cities[cid].queue.is_empty() {
+                continue;
+            }
+            // Reserve the first slot before population-two Settler genes can
+            // claim it. Successful production consumes exactly one book slot.
+            if self.play_scout_first_opening(g, pid, *cid) {
                 continue;
             }
             // The normal production picker sits after the scripted opening
