@@ -2277,9 +2277,9 @@ pub const GENES: &[Gene] = &[
     // and `can_survive_by_attacking` still keeps a unit whose own shot ends the
     // threat. Off; screen it.
     Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
+    Gene { tag: "domination-capital-focus", field: "domination_capital_focus", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_capital_focus, disable: AdvancedAi::disable_domination_capital_focus },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
-    Gene { tag: "domination-capital-focus", field: "domination_capital_focus", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_capital_focus, disable: AdvancedAi::disable_domination_capital_focus },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------

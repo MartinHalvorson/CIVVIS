@@ -11672,7 +11672,11 @@ impl AdvancedAi {
                 .unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
-        let domination_capital = self.domination_capital_target(g, pid);
+        let domination_capital = if self.domination_capital_focus {
+            None
+        } else {
+            self.domination_capital_target(g, pid)
+        };
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
@@ -11804,9 +11808,8 @@ impl AdvancedAi {
             .or_else(|| self.campaign_objective_city(g, pid, target_player))
             .or_else(|| {
                 let capital = if self.domination_capital_focus {
-                    target_player.and_then(|target| {
-                        self.domination_capital_target_for(g, pid, Some(target))
-                    })
+                    target_player
+                        .and_then(|target| self.domination_capital_target_for(g, pid, Some(target)))
                 } else {
                     domination_capital
                 };
