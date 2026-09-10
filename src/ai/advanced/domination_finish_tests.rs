@@ -124,7 +124,7 @@ fn team_completion_keeps_its_own_capitals_and_only_needs_opponents_to_lose_their
 }
 
 #[test]
-fn a_teammates_banked_type_can_make_the_capital_capture_terminal_for_the_side() {
+fn team_require_n_uses_the_engines_first_qualifying_member() {
     let (mut g, _, target) = board();
     g.players[0].team = Some(1);
     g.players[2].team = Some(1);
@@ -140,8 +140,15 @@ fn a_teammates_banked_type_can_make_the_capital_capture_terminal_for_the_side() 
         .entry(2)
         .or_default()
         .insert("science".into());
+    assert!(!AdvancedAi::capture_completes_domination(&g, 0, target));
+    assert_eq!(take(g.clone(), target).winner, None);
+    g.victories_won
+        .entry(0)
+        .or_default()
+        .insert("science".into());
     assert!(AdvancedAi::capture_completes_domination(&g, 0, target));
+    assert!(AdvancedAi::capture_completes_domination(&g, 2, target));
     let result = take(g, target);
-    assert_eq!(result.winner, Some(2));
-    assert!(result.winning_players().contains(&0));
+    assert_eq!(result.winner, Some(0));
+    assert!(result.winning_players().contains(&2));
 }

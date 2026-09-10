@@ -13,8 +13,9 @@ unfounded opponent remains unresolved; Domination must be an effective enabled
 lane; and its new milestone must satisfy the remaining victory-type count.
 An already banked Domination type cannot be counted twice. Team games use the
 engine's separate rule that each member retains its own capital and every
-opponent has lost theirs; a teammate with the required banked types can finish
-for the side. Finished and played-on games do not borrow a terminal shortcut.
+opponent has lost theirs; Require-N uses the first qualifying team member, as the engine does.
+Its domination check returns after banking that member's milestone, even if
+a later teammate already has another victory type banked. Finished and played-on games do not borrow a terminal shortcut.
 
 The ordinary loyalty threshold, support-city choices, liberation and last-city
 exceptions remain in place. A real final capture can still win immediately

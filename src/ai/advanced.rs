@@ -39808,15 +39808,22 @@ impl AdvancedAi {
             return false;
         }
         let required = g.effective_required_victories();
-        if required > 1
-            && !g.team_members(pid).iter().any(|member| {
-                let banked = g.victories_won.get(member);
-                g.players[*member].alive
-                    && !banked.is_some_and(|types| types.contains("domination"))
-                    && banked.map_or(0, |types| types.len()) + 1 >= required
-            })
-        {
-            return false;
+        if required > 1 {
+            // check_domination returns after the first qualifying candidate,
+            // even when set_winner only banks a Require-N milestone. Team
+            // members satisfy the same capital condition, so read the first
+            // living member's bank rather than pooling their achievements.
+            let candidate = g
+                .team_members(pid)
+                .into_iter()
+                .find(|member| g.players[*member].alive)
+                .unwrap_or(pid);
+            let banked = g.victories_won.get(&candidate);
+            if banked.is_some_and(|types| types.contains("domination"))
+                || banked.map_or(0, |types| types.len()) + 1 < required
+            {
+                return false;
+            }
         }
         let majors: Vec<_> = g
             .players
