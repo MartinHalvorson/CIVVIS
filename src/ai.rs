@@ -1,5 +1,7 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
+pub mod finishing;
+pub mod player;
 use crate::game::{
     effective_strength, expected_damage, Action, ActionFamilies, Game, Item, PolicyReadSet,
     TraversalClass,
@@ -473,6 +475,10 @@ pub struct PlanReport {
 }
 
 pub trait Ai {
+    /// Whether this controller needs last-seen world memory for deliberation.
+    fn uses_player_observation(&self) -> bool {
+        false
+    }
     fn take_turn(&mut self, g: &mut Game, pid: usize);
 
     fn strategy_label(&self) -> Option<&'static str> {
@@ -513,6 +519,9 @@ pub trait Ai {
 }
 
 impl<T: Ai + ?Sized> Ai for Box<T> {
+    fn uses_player_observation(&self) -> bool {
+        (**self).uses_player_observation()
+    }
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         (**self).take_turn(g, pid);
     }
@@ -559,13 +568,10 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
 /// loop takes a visitor. `run_game` is this with a visitor that does nothing,
 /// so headless play is byte for byte what it was.
 pub fn run_game_observed<A: Ai>(g: &mut Game, ais: &mut [A], mut observe: impl FnMut(&Game)) {
-    // A headless rollout never serializes a player observation between
-    // actions. Explored ground, contacts and Natural-Wonder discovery remain
-    // gameplay state and are still maintained; only the large last-seen tile
-    // and city copies used to render fog are omitted. Interactive server
-    // stepping does not use `run_game`, so spectator and player displays keep
-    // complete observation memory.
-    g.set_fog_memory(false);
+    // Production players deliberate from last-seen memory even in headless
+    // tournaments. Historical controllers that do not read it keep the old
+    // rollout cost and replay contract.
+    g.set_fog_memory(ais.iter().any(Ai::uses_player_observation));
     // Same reasoning for the narrated war ledger: no observer reads a
     // half-finished headless turn, so the per-action re-sync buys nothing.
     // Declarations, peaces, and turn boundaries still sync it, so the ledger

@@ -703,6 +703,12 @@ class Decider:
             print(f"[brain] IGNORING non-response line on the decider's stdout: "
                   f"{line.strip()[:160]}", flush=True)
             return self.ask(turn)
+        if "decision" in payload:
+            # Preserve the native action plan AND the final emitted orders.
+            # SQLite rows can be replaced by a later frame or a reload; this
+            # append-only record retains the exact answer that was considered.
+            from civ6_decision_trace import record_decision
+            record_decision(self.run_dir, payload, str(self.binary))
         rows = [
             (str(o.get("kind", "")), o.get("subject"), o.get("verb"),
              o.get("x"), o.get("y"))
