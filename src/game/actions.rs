@@ -4090,6 +4090,55 @@ impl Game {
         operations
     }
 
+    /// What [`Self::do_builder_operation`] would pay for `operation` on `pos`,
+    /// as `(yield type, amount)` rows.
+    ///
+    /// The executor calls this, so an agent that prices a chop before ordering
+    /// one reads the number it is actually going to be paid. Keeping the two
+    /// on one function is the point: a separate estimate in the controller is
+    /// free to drift from the rule, and would drift silently.
+    ///
+    /// Shipped bases: `Feature_Removes` (Forest 20 Production, Jungle 10
+    /// Production + 10 Food, Marsh 20 Food) and `Resource_Harvests`, both read
+    /// out of `data/*.json`. They scale with the world era, and Magnus'
+    /// `harvest_pct` applies to removals and harvests alike.
+    pub(crate) fn builder_operation_payout(
+        &self,
+        pid: usize,
+        pos: Pos,
+        operation: &str,
+    ) -> Vec<(String, f64)> {
+        let Some(tile) = self.map.get(pos) else {
+            return Vec::new();
+        };
+        let Some(cid) = tile.owner_city else {
+            return Vec::new();
+        };
+        let scale = (self.world_era as f64 + 1.0)
+            * (1.0 + self.governor_effect(pid, cid, "harvest_pct") / 100.0);
+        match operation {
+            "chop_woods" | "chop_rainforest" | "clear_marsh" => tile
+                .feature
+                .as_deref()
+                .and_then(|feature| self.rules.features.get(feature))
+                .map(|spec| {
+                    spec.chop
+                        .iter()
+                        .map(|(yield_type, base)| (yield_type.clone(), base * scale))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            "harvest_resource" => tile
+                .resource
+                .as_deref()
+                .and_then(|resource| self.rules.resources.get(resource))
+                .and_then(|spec| spec.harvest.as_ref())
+                .map(|harvest| vec![(harvest.yield_type.clone(), harvest.amount * scale)])
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
     pub(super) fn do_builder_operation(
         &mut self,
         pid: usize,
@@ -4108,17 +4157,16 @@ impl Game {
             return Err("builder cannot perform that operation".into());
         }
         let cid = self.map.tiles[&unit.pos].owner_city.unwrap();
-        // The shipped Feature_Removes and Resource_Harvests base yields scale
-        // with the era, and Magnus applies to harvests and removals alike.
-        let scale = (self.world_era as f64 + 1.0)
-            * (1.0 + self.governor_effect(pid, cid, "harvest_pct") / 100.0);
         let removed_feature = self.map.tiles[&unit.pos].feature;
-        let mut payouts: Vec<(String, f64)> = Vec::new();
+        // ⭐ ONE RULE, TWO READERS. The payout is computed by the same
+        // function an agent prices the operation with, so a controller that
+        // chooses to chop cannot be reading a different number from the one
+        // this pays. See `builder_operation_payout`.
+        let payouts = self.builder_operation_payout(pid, unit.pos, operation);
         match operation {
             "chop_woods" | "chop_rainforest" | "clear_marsh" => {
-                let feature = removed_feature.ok_or_else(|| "no feature to clear".to_string())?;
-                for (yield_type, base) in &self.rules.features[feature].chop {
-                    payouts.push((yield_type.clone(), base * scale));
+                if removed_feature.is_none() {
+                    return Err("no feature to clear".into());
                 }
                 self.map.tiles.get_mut(&unit.pos).unwrap().feature = None;
             }
@@ -4126,22 +4174,14 @@ impl Game {
                 self.map.tiles.get_mut(&unit.pos).unwrap().feature = Some(crate::name!("forest"));
             }
             "harvest_resource" => {
-                let resource = self
-                    .map
-                    .tiles
-                    .get_mut(&unit.pos)
-                    .unwrap()
-                    .resource
-                    .take()
-                    .unwrap();
-                let harvest = self.rules.resources[resource]
-                    .harvest
-                    .clone()
-                    .ok_or_else(|| "that resource cannot be harvested".to_string())?;
-                payouts.push((harvest.yield_type.clone(), harvest.amount * scale));
+                // `builder_operations` only offers this on a resource with a
+                // shipped `Resource_Harvests` row whose technology is in hand,
+                // and the gate above proves this operation came from it.
+                self.map.tiles.get_mut(&unit.pos).unwrap().resource = None;
             }
             _ => return Err("unknown builder operation".into()),
         }
+        let payouts_total: f64 = payouts.iter().map(|(_, amount)| *amount).sum();
         for (yield_type, amount) in payouts {
             match yield_type.as_str() {
                 "production" => self.cities.get_mut(&cid).unwrap().production += amount,
@@ -4153,11 +4193,7 @@ impl Game {
             self.congress_effect_active("deforestation_treaty", "A", feature)
         }) && matches!(operation, "chop_woods" | "chop_rainforest" | "clear_marsh")
         {
-            let total: f64 = removed_feature
-                .as_deref()
-                .map(|feature| self.rules.features[feature].chop.values().sum::<f64>() * scale)
-                .unwrap_or(0.0);
-            self.players[pid].gold += total;
+            self.players[pid].gold += payouts_total;
         }
         let builder = self.units.get_mut(&uid).unwrap();
         builder.charges -= 1;
