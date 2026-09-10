@@ -50,3 +50,15 @@ rule selects it; a mechanism test alone is not promotion evidence.
   source and the standard 6p 74×46 Continents/Online/250t/9CS contract.
   Results pending; neither this probe nor the mechanism tests promote it.
 
+
+A second matched eight-seed probe held `domination-lane-hands-over` on in both
+arms and changed only siege research, using seeds 109106000–109106007, three
+players, 36×22, Online 250. The merged source was `7b2fa2d5c`. Each arm
+completed one Domination victory; all eight reported terminal summaries were
+identical. This probe also provides no outcome-benefit evidence. Identical
+summaries do not prove every intermediate action was identical.
+
+After merging main, the full Rust suite passed 3,582 tests (52 ignored). The
+three research regressions also passed after moving them into their dedicated
+test module, and the 14 append-point tests passed. Generated gene and manifest
+checks remain current.
