@@ -24326,6 +24326,38 @@ impl AdvancedAi {
         }
     }
 
+    /// The threshold used by the idle-city Entertainment Complex path. Keep
+    /// it in one place instead of repeating the empire-wide deficit rule.
+    fn widespread_amenity_crisis(g: &Game, pid: usize) -> bool {
+        let city_ids = g.player_city_ids(pid);
+        if city_ids.len() < 4 {
+            return false;
+        }
+        let mut short_cities = 0;
+        let mut total_shortfall = 0;
+        for cid in &city_ids {
+            let shortfall = (-g.city_amenity_surplus(&g.cities[cid])).max(0);
+            short_cities += usize::from(shortfall > 0);
+            total_shortfall += shortfall;
+        }
+        short_cities * 2 >= city_ids.len() && total_shortfall >= city_ids.len() as i64
+    }
+
+    /// An amenity repair in a city that is still short is a live emergency
+    /// commitment. Entertainment Complex districts have no direct amenity in
+    /// their district spec, so identify that family explicitly alongside the
+    /// direct Arena/Zoo/Stadium buildings.
+    fn amenity_repair_queue_item(g: &Game, item: &Item) -> bool {
+        match item {
+            Item::District { district, .. } => {
+                g.district_family(*district) == "entertainment_complex"
+                    || g.rules.districts[district].amenity > 0.0
+            }
+            Item::Building { building } => g.rules.buildings[building].amenity > 0.0,
+            _ => false,
+        }
+    }
+
     /// Give one idle city the next Entertainment Complex stage when a
     /// host-observed deficit is widespread. The existing crisis handoff
     /// intentionally leaves Conquest and active wars alone because it would
@@ -24350,6 +24382,9 @@ impl AdvancedAi {
         }
 
         let city_ids = g.player_city_ids(pid);
+        if !Self::widespread_amenity_crisis(g, pid) {
+            return;
+        }
         let shortfalls: Vec<(u32, i64)> = city_ids
             .iter()
             .map(|cid| (*cid, (-g.city_amenity_surplus(&g.cities[cid])).max(0)))
@@ -24359,16 +24394,6 @@ impl AdvancedAi {
             .filter(|(_, shortfall)| *shortfall > 0)
             .count();
         let total_shortfall: i64 = shortfalls.iter().map(|(_, shortfall)| *shortfall).sum();
-        // A one-city local problem is for the normal queue scoring and policy
-        // deck. This is the observed shape at t250 of
-        // `civvis-20260815T164852Z`: all eight cities short, eleven Amenities
-        // missing in total, and every ordinary queue choosing something else.
-        if city_ids.len() < 4
-            || short_cities * 2 < city_ids.len()
-            || total_shortfall < city_ids.len() as i64
-        {
-            return;
-        }
 
         let is_direct_entertainment_repair = |item: &Item| match item {
             Item::Building { building } => {
@@ -24772,6 +24797,23 @@ impl AdvancedAi {
                 });
             if committed.is_some() {
                 self.clear_idle_production_streak(cid);
+            }
+            // The amenity handoffs run immediately before this governor and
+            // intentionally claim an otherwise idle city. The normal review
+            // margin could then see that emergency as a fresh Builder or Spy
+            // opportunity and replace it in the same turn, which is exactly
+            // the live t177/t180/t183 failure. Keep the amenity chain through
+            // this pass; the later defense authority may still reclaim a
+            // genuinely threatened city.
+            if !economic_recovery
+                && plan.strategy != GrandStrategy::Recovery
+                && self.amenity_project_preemption_on()
+                && g.city_amenity_surplus(&g.cities[&cid]) < 0
+                && committed
+                    .as_ref()
+                    .is_some_and(|(_, item)| Self::amenity_repair_queue_item(g, item))
+            {
+                continue;
             }
             // Recovery preserves useful commitments. Targeted science may
             // bank an upkeep-heavy queue below when it deepens the deficit.
