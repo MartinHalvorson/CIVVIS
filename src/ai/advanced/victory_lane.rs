@@ -83,9 +83,13 @@
 //! of them.
 //!
 //! **`lane-culture-spending`.** `culture_spending` — the Naturalist that
-//! founds a National Park, the Rock Bands that tour — runs only when
-//! `plan.strategy == Culture`, and the Faith reserve that keeps a Naturalist
-//! affordable is chosen by the same value. Both follow the race instead.
+//! founds a National Park, the Rock Bands that tour — runs on a named Culture
+//! plan or when an adaptive seat's public focus selects Culture, and the Faith
+//! reserve that keeps a Naturalist affordable is chosen by the same value. An
+//! adaptive seat has no assigned target to carry into that pass, so the
+//! deployed controller follows its public Culture focus there; the opt-in
+//! remains the switch for a targeted seat whose current plan has not named
+//! Culture.
 //!
 //! **`lane-space-race`.** Every gate in `science_production` asks for an
 //! **explicitly assigned** `VictoryTarget::Science`: the pad count (1 rather
@@ -220,7 +224,9 @@ impl AdvancedAi {
     }
 
     /// `lane-culture-spending`: the lane the Culture Faith pass and its
-    /// reserve read.
+    /// reserve read. Adaptive seats derive this from their public victory
+    /// focus; the opt-in remains available for an explicitly targeted seat
+    /// whose current plan has not named Culture.
     ///
     /// ⚠ **NOT `lane_or_plan`, and the difference is the whole gene.** The
     /// three genes above choose between options the empire is picking anyway,
@@ -231,18 +237,27 @@ impl AdvancedAi {
     /// Rock Band, and the `Expansion` window shuts at
     /// `standard_duration(175)` — turn ~87 at Online. Restricted to
     /// Expansion, this gene was **strictly inert**: 0 of 4
-    /// `victory_eval --target culture` games diverged. What is actually
-    /// missing is not the settling turns; it is that an ADAPTIVE seat holds
-    /// the Culture plan for 5.0% of its turns, so the Culture lane's only
-    /// Faith purchases are all but unreachable without an assigned target.
+    /// `victory_eval --target culture` games diverged. What was actually
+    /// missing was not the settling turns; it was that an ADAPTIVE seat holds
+    /// the Culture plan for only 5.0% of its turns, so the Culture lane's
+    /// Faith purchases were all but unreachable without an assigned target.
     ///
     /// `Recovery` still refuses: an empire losing ground at home has better
     /// uses for its Faith than a Rock Band, and `military_faith_spending`
     /// runs after this.
-    pub(super) fn culture_lane_spends(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
-        self.lane_culture_spending
+    fn adaptive_culture_lane_spends(&self, plan: &StrategicPlan, culture_focus: bool) -> bool {
+        self.victory_planning
+            && self.victory_target.is_none()
             && plan.strategy != GrandStrategy::Recovery
-            && self.victory_focus(g, pid).strategy == GrandStrategy::Culture
+            && culture_focus
+    }
+
+    pub(super) fn culture_lane_spends(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        let culture_focus = self.victory_focus(g, pid).strategy == GrandStrategy::Culture;
+        plan.strategy != GrandStrategy::Recovery
+            && culture_focus
+            && (self.lane_culture_spending
+                || self.adaptive_culture_lane_spends(plan, culture_focus))
     }
 
     /// The lane the Culture Faith reserve is sized for: `Culture` when this
@@ -422,6 +437,40 @@ mod tests {
             armed.culture_faith_lane(&g, 0, &plan),
             GrandStrategy::Culture
         );
+    }
+
+    /// Native production seats are adaptive rather than targetless by
+    /// accident: when public tourism says Culture, the Faith pass must stay
+    /// reachable even while the plan is still Expansion. An explicitly
+    /// targeted seat keeps the opt-in boundary for that same plan posture.
+    #[test]
+    fn adaptive_culture_racer_opens_the_faith_pass_without_the_opt_in() {
+        let mut g = game();
+        g.players[0].tourism_lifetime = 100_000.0;
+        g.players[1].culture_lifetime = 100.0;
+        let plan = expansion_plan();
+
+        let adaptive = AdvancedAi::new();
+        assert_eq!(
+            adaptive.victory_focus(&g, 0).strategy,
+            GrandStrategy::Culture
+        );
+        assert!(adaptive.culture_lane_spends(&g, 0, &plan));
+        assert_eq!(
+            adaptive.culture_faith_lane(&g, 0, &plan),
+            GrandStrategy::Culture
+        );
+
+        let targeted = AdvancedAi::targeting(VictoryTarget::Culture);
+        assert!(!targeted.culture_lane_spends(&g, 0, &plan));
+        assert_eq!(
+            targeted.culture_faith_lane(&g, 0, &plan),
+            GrandStrategy::Expansion
+        );
+
+        let mut science_target = AdvancedAi::targeting(VictoryTarget::Science);
+        science_target.enable_lane_culture_spending();
+        assert!(!science_target.culture_lane_spends(&g, 0, &plan));
     }
 
     /// A war posture is a decision, not a gap: the policy-deck gene leaves it
