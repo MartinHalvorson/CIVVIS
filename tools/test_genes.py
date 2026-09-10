@@ -273,6 +273,22 @@ class OneShape(unittest.TestCase):
                 self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
                 self.assertIn(next(iter(leg)), gene_ledger.shape_gap(gene_ledger.profile_of(probe)))
 
+    def test_a_fidelity_run_is_refused_as_a_source_with_no_escape(self):
+        """⚠⚠ `--deployment-genome` screens NOTHING: every seat plays the
+        shipped genome, so no seat has a gene off to price it against. It is
+        the shape `civ6_trajectory_fidelity.py` compares with the live seat,
+        and it must never be mistaken for a screen. `--legacy-shape` does not
+        let it in either — there is nothing to excuse, only nothing to read."""
+        run = analysis([{"tag": "a"}])
+        run["deployment_genome"] = True
+        for legacy in (False, True):
+            with self.subTest(legacy_shape=legacy):
+                with self.assertRaises(SystemExit) as refusal:
+                    self.sources(run, legacy_shape=legacy)
+                self.assertIn("prices nothing", str(refusal.exception))
+        # The same file without the flag is the ordinary screen again.
+        self.assertEqual(len(self.sources(analysis([{"tag": "a"}]))), 1)
+
     def test_the_three_reporting_columns_must_have_played_one_field(self):
         """⚠⚠ The cost of the rung NOT being a shape leg, paid at the ranking.
 
