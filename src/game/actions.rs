@@ -9543,6 +9543,18 @@ impl Game {
         if family == "city_center" {
             return true;
         }
+        // Most buildings sit in the district named directly by their spec.
+        // Prove that positive answer with one indexed lookup before walking
+        // replacement families. A pillaged/missing exact match must still
+        // fall through: another instance or a unique replacement can be active.
+        if city
+            .districts
+            .positions(family)
+            .iter()
+            .any(|&position| self.district_is_active(city, family, position))
+        {
+            return true;
+        }
         let wanted = self.district_family(family);
         city.districts.iter().any(|(district, position)| {
             self.district_family(*district) == wanted
