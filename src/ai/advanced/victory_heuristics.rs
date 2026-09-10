@@ -144,7 +144,7 @@ impl AdvancedAi {
             {
                 return None;
             }
-        } else if pressure.progress < 78 || (!urgent && pressure.progress < own_progress + 15) {
+        } else if !urgent && (pressure.progress < 78 || pressure.progress < own_progress + 15) {
             return None;
         }
 
