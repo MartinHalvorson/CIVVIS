@@ -1652,7 +1652,12 @@ fn viewer_masthead_offers_home_and_no_other_game_mode() {
         );
     }
     let landing = include_str!("../../beta/landing.html");
-    for gone in ["map=battlefield", "Tactics", "id=\"battle-catalog\"", "class=\"row-nav\""] {
+    for gone in [
+        "map=battlefield",
+        "Tactics",
+        "id=\"battle-catalog\"",
+        "class=\"row-nav\"",
+    ] {
         assert!(
             !landing.contains(gone),
             "the home page still offers Tactics through {gone}"
@@ -1741,7 +1746,10 @@ fn the_home_page_offers_the_full_game_watched_and_played() {
         "class=\"row-label\"",
         "map=battlefield",
     ] {
-        assert!(!landing.contains(gone), "the home page still carries {gone}");
+        assert!(
+            !landing.contains(gone),
+            "the home page still carries {gone}"
+        );
     }
     assert!(
         !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
