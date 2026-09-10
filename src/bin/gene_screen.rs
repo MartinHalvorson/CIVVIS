@@ -757,6 +757,28 @@ const SCIENCE_PACE_STANDARD_TURN: u32 = 150;
 /// That is the whole reason for the column.
 const OPENING_BAND_STANDARD_TURN: u32 = 60;
 
+/// ⭐ THE MARKS THE LIVE LADDER ACTUALLY READS, IN RAW GAME TURNS.
+///
+/// The two constants above are converted through `Game::standard_duration`,
+/// so an Online batch reads them at turns 39 and 99. That is right for
+/// comparing screens with each other: a Standard-speed probe and an Online
+/// screen then read the same *content*.
+///
+/// It is wrong for comparing with the live seat, and that mismatch published
+/// two false gaps before it was caught. `civ6_play::OPENING_TEMPO_TURN` is 60
+/// RAW game turns and `civ6_ladder::tech_marks` reads the first frame at or
+/// after RAW turn 150 — no speed conversion on either. So the live figures
+/// were being read 21 and 51 turns later than the simulated ones, and were
+/// larger for that reason alone: 46 techs against 22, a "2.09x research gap"
+/// that was entirely the clock.
+///
+/// Both corpora run Online, so a raw turn is the same moment on each side.
+/// These columns are read at the raw turn and exist only for that comparison;
+/// `civ6_trajectory_fidelity.py` uses them and nothing else does.
+const LIVE_BAND_GAME_TURN: u32 = 60;
+/// The live tech mark, in raw game turns. See `LIVE_BAND_GAME_TURN`.
+const LIVE_PACE_GAME_TURN: u32 = 150;
+
 /// One seat of one screened game, written to the JSONL file and read back by
 /// `--analyze`. A game yields one row per major seat.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -865,6 +887,14 @@ struct Row {
     /// "opened with none".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cities_60: Option<usize>,
+    /// Cities at RAW game turn `LIVE_BAND_GAME_TURN`, the mark the live
+    /// ladder reads. Only `civ6_trajectory_fidelity.py` consumes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cities_at_game_turn_60: Option<usize>,
+    /// Techs at RAW game turn `LIVE_PACE_GAME_TURN`, the mark the live ladder
+    /// reads. Only `civ6_trajectory_fidelity.py` consumes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    techs_at_game_turn_150: Option<usize>,
     /// Science per turn over this seat's cities at the end of the game
     /// (`Game::city_yields`, the read `victory_eval` prints). `None` as above.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2066,6 +2096,10 @@ fn play_game(
     // `OPENING_BAND_STANDARD_TURN`.
     let band_turn = world.standard_duration(OPENING_BAND_STANDARD_TURN);
     let mut cities_at_band: Option<Vec<usize>> = None;
+    // The same two readings at the RAW turns the live ladder uses, for the
+    // fidelity ledger. See `LIVE_BAND_GAME_TURN`.
+    let mut cities_at_live_band: Option<Vec<usize>> = None;
+    let mut techs_at_live_pace: Option<Vec<usize>> = None;
     let mut trajectories = vec![Vec::new(); world.players.len()];
     run_game_observed(&mut world, &mut ais, |g| {
         if g.turn.is_multiple_of(25) {
@@ -2083,6 +2117,17 @@ fn play_game(
                     .map(|p| g.player_city_ids(p.id).len())
                     .collect(),
             );
+        }
+        if cities_at_live_band.is_none() && g.turn >= LIVE_BAND_GAME_TURN {
+            cities_at_live_band = Some(
+                g.players
+                    .iter()
+                    .map(|p| g.player_city_ids(p.id).len())
+                    .collect(),
+            );
+        }
+        if techs_at_live_pace.is_none() && g.turn >= LIVE_PACE_GAME_TURN {
+            techs_at_live_pace = Some(g.players.iter().map(|p| p.techs.len()).collect());
         }
     });
     let secs = started.elapsed().as_secs_f64();
@@ -2120,6 +2165,12 @@ fn play_game(
                     .as_ref()
                     .map_or_else(|| world.player_city_ids(seat).len(), |counts| counts[seat]),
             );
+            // ⚠ `None` rather than the final count when the game ended before
+            // the mark: the live side records nothing for a run that never
+            // reached it, and a fallback here would compare a finished game
+            // with an unfinished one.
+            row.cities_at_game_turn_60 = cities_at_live_band.as_ref().map(|counts| counts[seat]);
+            row.techs_at_game_turn_150 = techs_at_live_pace.as_ref().map(|counts| counts[seat]);
             row.cities_taken = Some(
                 world.players[seat]
                     .counters
@@ -2291,6 +2342,8 @@ fn row_for_seat(
         // took the mid-game science-pace and opening-band reads.
         techs_150: None,
         cities_60: None,
+        cities_at_game_turn_60: None,
+        techs_at_game_turn_150: None,
         cities_taken: None,
         cities_lost: None,
         victories_off: Vec::new(),
@@ -6592,6 +6645,8 @@ mod tests {
             techs: 0,
             techs_150: None,
             cities_60: None,
+            cities_at_game_turn_60: None,
+            techs_at_game_turn_150: None,
             cities_taken: None,
             cities_lost: None,
             science_end: None,
@@ -7047,6 +7102,61 @@ mod tests {
             estimate_costs(&header, &rows).is_empty(),
             "secs are 0.0 in test rows"
         );
+    }
+
+    /// ⚠ No fallback to the final count on these two, unlike `cities_60`.
+    /// The live side records NOTHING for a run that never reached the mark, so
+    /// a fallback here would set a finished game beside an unfinished one.
+    #[test]
+    fn a_live_mark_is_absent_rather_than_guessed_when_the_game_ended_first() {
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.cities_at_game_turn_60, None);
+        assert_eq!(old.techs_at_game_turn_150, None);
+        let text = serde_json::to_string(&old).unwrap();
+        assert!(
+            !text.contains("cities_at_game_turn_60") && !text.contains("techs_at_game_turn_150"),
+            "an old row stays byte for byte what it was: {text}"
+        );
+        let mut row = test_row(0, 0, "10", true);
+        row.cities_at_game_turn_60 = Some(4);
+        row.techs_at_game_turn_150 = Some(31);
+        let back: Row = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        assert_eq!(back.cities_at_game_turn_60, Some(4));
+        assert_eq!(back.techs_at_game_turn_150, Some(31));
+    }
+
+    /// The whole point: a live mark is read at the RAW turn, with no speed
+    /// conversion, because the live ladder records it that way. A
+    /// `standard_duration` creeping onto either read would silently restore
+    /// the mismatch that published two false gaps.
+    #[test]
+    fn a_live_mark_is_read_without_a_speed_conversion() {
+        assert_eq!(LIVE_BAND_GAME_TURN, 60, "civ6_play::OPENING_TEMPO_TURN");
+        assert_eq!(LIVE_PACE_GAME_TURN, 150, "civ6_ladder::tech_marks");
+        let source = include_str!("gene_screen.rs");
+        for constant in ["LIVE_BAND_GAME_TURN", "LIVE_PACE_GAME_TURN"] {
+            let reads: Vec<&str> = source
+                .lines()
+                .filter(|line| line.contains(constant) && line.contains("g.turn >="))
+                .collect();
+            assert_eq!(reads.len(), 1, "{constant} is read once: {reads:?}");
+            assert!(
+                !reads[0].contains("standard_duration"),
+                "{constant} must be a raw turn: {}",
+                reads[0]
+            );
+        }
+        // And the Standard-scaled marks ARE converted, which is why they are
+        // a different reading and stay on the row for the science-pace table.
+        for constant in ["OPENING_BAND_STANDARD_TURN", "SCIENCE_PACE_STANDARD_TURN"] {
+            assert!(
+                source.contains(&format!("standard_duration({constant})")),
+                "{constant} is converted"
+            );
+        }
     }
 
     #[test]

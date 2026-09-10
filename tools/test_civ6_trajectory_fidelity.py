@@ -280,37 +280,47 @@ class AMismatchedMarkIsNeverCompared(unittest.TestCase):
     """The most dangerous shape a ledger can have is two numbers that are
     readings of different things, because it looks like an answer."""
 
-    def test_a_subsystem_with_a_mark_mismatch_reports_the_reason(self):
-        marked = [s for s in fidelity.SUBSYSTEMS if s.incomparable]
-        self.assertTrue(marked, "the known mark mismatches are declared")
-        for subsystem in marked:
+    def test_no_subsystem_is_left_comparing_different_moments(self):
+        """The two known mismatches are fixed at the source: the screen now
+        reads both marks at the RAW game turn the live ladder uses. Any
+        subsystem still declared incomparable must say why in its own words."""
+        for subsystem in fidelity.SUBSYSTEMS:
             with self.subTest(subsystem=subsystem.name):
-                self.assertIn("turn", subsystem.incomparable)
+                if subsystem.incomparable:
+                    self.assertGreater(len(subsystem.incomparable), 20)
 
-    def test_it_produces_no_divergence_even_when_both_sides_have_a_value(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            live = fidelity.live_records(
-                write_live(
-                    [live_row(score=100, rival_best=200, cities_at_60=9)], tmp
-                )
-            )
-            sim = fidelity.sim_records(
-                write_sim(
-                    [[{"score": 100, "cities_60": 1}, {"score": 200, "cities_60": 1}]],
-                    tmp,
-                    handicap="rivals",
-                ),
-                fidelity.map_sizes(),
-            )
-            report = fidelity.ledger(live, sim)
-        band = report["matched_cells"][0]["subsystems"]["opening_band"]
-        self.assertFalse(band["available"], "9 against 1 must not become a 9x gap")
-        self.assertEqual(band["why"], "incomparable")
-        self.assertIn("turn 39", band["incomparable"])
-        self.assertNotIn("opening_band", fidelity.worst_divergences(report))
-        text = fidelity.render(report)
-        self.assertIn("not compared", text)
+    def test_the_mechanism_still_works_for_the_next_mismatch(self):
+        probe = fidelity.Subsystem(
+            "probe", "_a", "_b", "a probe", incomparable="different moments"
+        )
+        self.assertTrue(probe.incomparable)
+
+    def test_an_incomparable_subsystem_produces_no_divergence(self):
+        report = {
+            "live_runs": 1,
+            "sim_seats": 1,
+            "host_only_genes": [],
+            "live_only": [],
+            "sim_only": [],
+            "matched_cells": [
+                {
+                    "cell": ["prince", "online", "small", "n/a"],
+                    "live_runs": 1,
+                    "sim_seats": 1,
+                    "subsystems": {
+                        "probe": {
+                            "available": False,
+                            "why": "incomparable",
+                            "incomparable": "different moments",
+                        }
+                    },
+                }
+            ],
+        }
+        self.assertEqual(fidelity.worst_divergences(report), {})
+        # `render` walks SUBSYSTEMS, so a synthetic name is not printed; what
+        # matters is that an incomparable body never becomes a divergence.
+        self.assertNotIn("probe", fidelity.worst_divergences(report))
 
 
 class TheLedgerDisclosesItsOwnBound(unittest.TestCase):
@@ -338,12 +348,12 @@ class TheLedgerDisclosesItsOwnBound(unittest.TestCase):
         self.assertIn("inert here", head)
 
 
-class TheOpeningBandIsReadButNotCompared(unittest.TestCase):
-    """Turn 60 is where this corpus's strongest result lives, and BOTH sides
-    now record it — but at different moments, so the ledger reads them and
-    refuses to divide one by the other. See `Subsystem.incomparable`."""
+class TheOpeningBandIsComparedAtTheLiveMark(unittest.TestCase):
+    """Turn 60 is where this corpus's strongest result lives. Both sides now
+    read it at the same RAW game turn — the mark `civ6_play.OPENING_TEMPO_TURN`
+    uses — so it can finally be compared."""
 
-    def test_both_sides_are_projected_even_though_they_are_not_compared(self):
+    def test_both_sides_are_read_at_the_same_game_turn_and_compared(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             live = fidelity.live_records(
@@ -351,18 +361,30 @@ class TheOpeningBandIsReadButNotCompared(unittest.TestCase):
             )
             sim = fidelity.sim_records(
                 write_sim(
-                    [[{"score": 100, "cities_60": 4}, {"score": 200, "cities_60": 6}]],
+                    [
+                        [
+                            {"score": 100, "cities_at_game_turn_60": 4},
+                            {"score": 200, "cities_at_game_turn_60": 6},
+                        ]
+                    ],
                     tmp,
                     handicap="rivals",
                 ),
                 fidelity.map_sizes(),
             )
         self.assertAlmostEqual(live[0]["cities_at_60"], 5.0, msg="live side read")
-        self.assertAlmostEqual(sim[0]["cities_60"], 4.0, msg="sim side read")
-        # Reading both is what makes the mismatch fixable later; comparing them
-        # is what the ledger refuses today.
+        self.assertAlmostEqual(
+            sim[0]["cities_at_game_turn_60"], 4.0, msg="sim side, same raw turn"
+        )
         band = next(s for s in fidelity.SUBSYSTEMS if s.name == "opening_band")
-        self.assertTrue(band.incomparable)
+        self.assertIsNone(
+            band.incomparable, "both sides read raw game turn 60, so it compares"
+        )
+        report = fidelity.ledger(live, sim)
+        cell = report["matched_cells"][0]["subsystems"]["opening_band"]
+        self.assertTrue(cell["available"])
+        self.assertAlmostEqual(cell["live"], 5.0)
+        self.assertAlmostEqual(cell["sim"], 5.0, msg="median of 4 and 6")
 
 
 class TheCityLedgerIsComparable(unittest.TestCase):

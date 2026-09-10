@@ -147,21 +147,20 @@ SUBSYSTEMS = [
     # and someone fixes it. The fix is a sim column at the LIVE mark — both
     # corpora run Online, so raw turn 150 on each side is the same moment —
     # not a conversion of the live figure, which was recorded raw.
+    # Both sides now read RAW game turn 150, which is the same moment because
+    # both corpora run Online. The Standard-scaled `techs_150` stays on the row
+    # for the science-pace table and is deliberately NOT what is compared here.
     Subsystem(
         "research_pace",
         "techs_at_150",
-        "techs_150",
-        "own techs at turn 150",
-        incomparable="live reads game turn 150; the screen reads Standard turn "
-        "150, which is turn 99 on an Online clock",
+        "techs_at_game_turn_150",
+        "own techs at game turn 150",
     ),
     Subsystem(
         "rival_research_pace",
         "rival_techs_at_150",
-        "_rival_techs_150",
-        "the best rival's techs at turn 150",
-        incomparable="live reads game turn 150; the screen reads Standard turn "
-        "150, which is turn 99 on an Online clock",
+        "_rival_techs_at_game_turn_150",
+        "the best rival's techs at game turn 150",
     ),
     # ⚠⚠ The same mismatch, and it is MY error: `cities_60` (#3433) mirrored
     # `techs_150`'s Standard-turn conversion without checking what the live
@@ -172,10 +171,8 @@ SUBSYSTEMS = [
     Subsystem(
         "opening_band",
         "cities_at_60",
-        "cities_60",
-        "cities held at turn 60",
-        incomparable="live reads game turn 60; the screen reads Standard turn "
-        "60, which is turn 39 on an Online clock",
+        "cities_at_game_turn_60",
+        "cities held at game turn 60",
     ),
     Subsystem(
         "cities_taken", "_cities_taken", "cities_taken", "cities conquered by the end"
@@ -437,9 +434,9 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
                 if isinstance(seat.get("score"), (int, float))
             ]
             techs = [
-                float(seat["techs_150"])
+                float(seat["techs_at_game_turn_150"])
                 for seat in game
-                if isinstance(seat.get("techs_150"), (int, float))
+                if isinstance(seat.get("techs_at_game_turn_150"), (int, float))
             ]
             for seat in game:
                 if seat.get("kind") != "game":
@@ -449,17 +446,17 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
                     value = seat.get(key)
                     if isinstance(value, (int, float)):
                         record[key] = float(value)
-                band = seat.get("cities_60")
+                band = seat.get("cities_at_game_turn_60")
                 if isinstance(band, (int, float)):
-                    record["cities_60"] = float(band)
-                value = seat.get("techs_150")
+                    record["cities_at_game_turn_60"] = float(band)
+                value = seat.get("techs_at_game_turn_150")
                 if isinstance(value, (int, float)):
-                    record["techs_150"] = float(value)
+                    record["techs_at_game_turn_150"] = float(value)
                     # The best OTHER seat in this game, which is what the live
                     # row's `rival_*` fields mean.
                     others = [t for t in techs if t is not value]
                     if others:
-                        record["_rival_techs_150"] = max(others)
+                        record["_rival_techs_at_game_turn_150"] = max(others)
                 own = seat.get("score")
                 others = [s for s in scores if s != own] or scores
                 if isinstance(own, (int, float)) and others and max(others) > 0:
