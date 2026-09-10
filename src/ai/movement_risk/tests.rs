@@ -161,6 +161,53 @@ fn movement_risk_route_escapes_fire_instead_of_holding_to_heal() {
 }
 
 #[test]
+fn movement_risk_route_escapes_a_quiet_proven_livelock() {
+    let (mut g, _) = board();
+    let start = *g
+        .map
+        .tiles
+        .keys()
+        .find(|position| g.wdisk(**position, 3).len() == 37)
+        .expect("fixture needs an interior tile");
+    let target = (start.0 + 3, start.1);
+    let unit = g.spawn_test_unit("warrior", 0, start);
+    let direct: Vec<_> = g
+        .nbrs(start)
+        .into_iter()
+        .filter(|position| g.wdist(*position, target) < g.wdist(start, target))
+        .collect();
+    for position in direct {
+        g.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("mountain");
+    }
+    let detour = g
+        .route_step(unit, target, 0)
+        .expect("the mountain wedge leaves a route through one detour");
+    for position in g.nbrs(start) {
+        if position != detour {
+            g.map.tiles.get_mut(&position).unwrap().terrain = crate::name!("mountain");
+        }
+    }
+
+    let mut ai = BasicAi::new();
+    for position in [start, detour, start, detour, start, detour, start] {
+        g.units.get_mut(&unit).unwrap().pos = position;
+        ai.begin_movement_turn(&g, 0);
+        g.turn += 1;
+    }
+    assert!(ai.live_livelock_route_escape(unit));
+    assert!(
+        !ai.path_move(&mut g, 0, unit, detour),
+        "ordinary pathing keeps the exhausted footprint tabu"
+    );
+
+    assert_eq!(
+        ai.risk_aware_route_step(&mut g, 0, unit, target, 0),
+        Some(true)
+    );
+    assert_eq!(g.units[&unit].pos, detour);
+}
+
+#[test]
 fn movement_risk_tactical_advance_avoids_a_burning_shortcut() {
     let (mut g, pos) = board();
     let ours = g.spawn_test_unit("warrior", 0, pos);

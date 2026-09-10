@@ -254,15 +254,17 @@ impl BasicAi {
             .into_iter()
             .filter(|pos| g.can_move(uid, *pos))
             .collect();
-        if !std::iter::once(&here)
-            .chain(candidates.iter())
-            .any(|pos| Self::anything_can_reach(g, pid, *pos, &risk.envelopes))
-        {
-            return None;
-        }
         let routed = g
             .route_step(uid, target, stop_range)
             .filter(|pos| g.can_move(uid, *pos));
+        let route_escape = self.live_livelock_route_escape(uid) && routed.is_some();
+        if !std::iter::once(&here)
+            .chain(candidates.iter())
+            .any(|pos| Self::anything_can_reach(g, pid, *pos, &risk.envelopes))
+            && !route_escape
+        {
+            return None;
+        }
         if let Some(pos) = routed {
             if !candidates.contains(&pos) {
                 candidates.push(pos);
@@ -285,6 +287,11 @@ impl BasicAi {
                     0.0
                 }
                 + self.livelock_penalty(uid, pos)
+                + if route_escape && Some(pos) == routed {
+                    super::LIVELOCK_ESCAPE_VALUE
+                } else {
+                    0.0
+                }
         };
         let stay = score(here);
         candidates.sort_by(|a, b| score(*b).total_cmp(&score(*a)).then(a.cmp(b)));
@@ -294,6 +301,12 @@ impl BasicAi {
             .collect();
         for pos in candidates {
             if self.path_move(g, pid, uid, pos) {
+                return Some(true);
+            }
+            if route_escape
+                && Some(pos) == routed
+                && self.tactical_apply_livelock_route_escape(g, pid, uid, pos)
+            {
                 return Some(true);
             }
         }
