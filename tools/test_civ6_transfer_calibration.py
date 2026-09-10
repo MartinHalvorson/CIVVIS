@@ -1,8 +1,35 @@
 import unittest
-from civ6_transfer_calibration import finite, quantiles, summarize
+import json
+import tempfile
+from pathlib import Path
+from civ6_transfer_calibration import finite, native_samples, quantiles, summarize
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_different_information_contracts_cannot_be_pooled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / "epochs.jsonl"
+            file.write_text('\n'.join(json.dumps({"kind": "header", "player_contract": contract})
+                                      for contract in ("legacy", "observed-player-v1")))
+            with self.assertRaisesRegex(ValueError, "mix player contracts"):
+                list(native_samples([file]))
+
+    def test_repeated_inputs_deduplicate_without_erasing_other_difficulties(self):
+        with tempfile.TemporaryDirectory() as directory:
+            files = []
+            for difficulty in ("prince", "emperor"):
+                file = Path(directory) / f"{difficulty}.jsonl"
+                header = {"kind": "header", "speed": "online", "difficulty": difficulty,
+                          "build": {"binary_sha256": "same-build"}}
+                rows = [header, {"kind": "game", "seed": 1, "seat": 0,
+                                 "player_target": "science", "trajectory": [{"turn": 25, "cities": 3}]}]
+                file.write_text("".join(json.dumps(row) + "\n" for row in rows))
+                files.append(file)
+            samples = list(native_samples(files + files))
+        self.assertEqual(len(samples), 2)
+        self.assertEqual({s["cohort"][1] for s in samples}, {"prince", "emperor"})
+        self.assertEqual(len({s["run"] for s in samples}), 2)
+
     def test_missing_values_are_not_zero(self):
         self.assertEqual(quantiles([]), {"n": 0})
         for missing in (None, -1, float("nan"), float("inf"), True):

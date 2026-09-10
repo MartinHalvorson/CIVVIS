@@ -48,9 +48,11 @@ corrections and blocked-action facts remain the execution adapter's inputs.
 
 The live brain appends `decisions.jsonl` before publishing a response. Each
 record contains the native actions, finishing lines, native/host ID maps, final
-transport orders, frame, contract, binary path, and a content digest. Records
+transport orders, frame, contract, binary path/on-disk SHA-256, and a content digest. Records
 are explicitly `not_observed`: an emitted order is not proof of execution.
 Existing host verification and combat ledgers remain the outcome evidence.
+The disk digest is not loaded-process attestation if an executable is replaced
+while its old process remains alive.
 
 For independently captured, causally isolated transition fixtures:
 

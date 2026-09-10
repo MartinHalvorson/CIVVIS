@@ -62,3 +62,18 @@ fn unknown_rival_research_and_treasury_are_not_exposed() {
     assert_ne!(view.players[1].gold, 12345.0);
     assert!(!view.observed_public_empire_stats.contains_key(&1));
 }
+
+#[test]
+fn public_rivals_do_not_disclose_private_accumulators_or_camp_timers() {
+    let mut game = Game::new_full(2, 30, 20, 812, 40, 0, false);
+    game.players[0].met.insert(1);
+    game.players[1].culture_lifetime = 12345.0;
+    game.players[1].tourism_lifetime = 9876.0;
+    let visible = game.units[&game.player_unit_ids(0)[0]].pos;
+    game.barb_camps.insert(visible, 17);
+    let view = game.player_decision_view(0);
+    assert_eq!(view.players[1].culture_lifetime, 0.0);
+    assert_eq!(view.players[1].tourism_lifetime, 0.0);
+    assert_eq!(view.domestic_tourists(1), game.domestic_tourists(1));
+    assert_eq!(view.barb_camps.get(&visible), Some(&0));
+}

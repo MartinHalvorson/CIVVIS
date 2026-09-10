@@ -11,7 +11,21 @@ import argparse
 import json
 import math
 import os
+from functools import lru_cache
 from pathlib import Path
+
+
+@lru_cache(maxsize=8)
+def _binary_digest(filename: str, identity: tuple) -> str:
+    # Cache by file identity, not path alone: the brain can refresh its binary.
+    digest = hashlib.sha256()
+    with open(filename, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+        status = os.fstat(stream.fileno())
+    if identity != (status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns):
+        raise ValueError("decision binary changed while recording provenance")
+    return digest.hexdigest()
 
 
 def record_decision(run_dir: Path, payload: dict, binary: str) -> dict:
@@ -22,7 +36,13 @@ def record_decision(run_dir: Path, payload: dict, binary: str) -> dict:
         raise ValueError("decision trace requires a nonnegative frame")
     if not isinstance(decision.get("native_actions"), list) or not isinstance(payload.get("orders"), list):
         raise ValueError("decision trace requires actions and emitted orders")
-    record = {"run": Path(run_dir).name, "binary": binary,
+    filename = str(Path(binary).resolve(strict=True))
+    status = os.stat(filename)
+    identity = (status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns)
+    record = {"run": Path(run_dir).name, "binary": filename,
+              # This identifies disk bytes at recording time, not the loaded
+              # process image if an external actor replaced the executable.
+              "binary_on_disk_sha256": _binary_digest(filename, identity),
               "decision": decision, "orders": payload["orders"],
               "execution_status": "not_observed"}
     encoded = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -37,7 +57,7 @@ def record_decision(run_dir: Path, payload: dict, binary: str) -> dict:
 def compare_transition(case: dict) -> dict:
     """Check a causally isolated action against independently recorded facts.
 
-    `predictions` are model point values or [low, high] bounds, not fitted to
+    `predictions` are model point values or {low, high} bounds, not fitted to
     these observations. Missing facts and non-isolated frame intervals are
     coverage gaps. A caller cannot obtain a passing report with no comparison.
     """

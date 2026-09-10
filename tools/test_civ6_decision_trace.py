@@ -1,4 +1,5 @@
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,12 +12,17 @@ class TraceTests(unittest.TestCase):
         payload = {"turn": 12, "orders": [{"kind": "unit", "subject": 9, "verb": "MOVE_TO", "x": 3, "y": 4}],
                    "decision": {"schema": 1, "turn": 12, "frame": 2, "native_actions": [{"type": "move", "unit": 5, "to": [1, 4]}]}}
         with tempfile.TemporaryDirectory() as directory:
-            first = record_decision(Path(directory), payload, "test-binary")
-            second = record_decision(Path(directory), payload, "test-binary")
+            binary = Path(directory) / "test-binary"
+            binary.write_bytes(b"first revision")
+            first = record_decision(Path(directory), payload, str(binary))
+            binary.write_bytes(b"second revision")
+            second = record_decision(Path(directory), payload, str(binary))
             rows = [json.loads(line) for line in (Path(directory) / "decisions.jsonl").read_text().splitlines()]
         self.assertEqual(rows, [first, second])
         self.assertEqual(first["execution_status"], "not_observed")
         self.assertEqual(first["orders"], payload["orders"])
+        self.assertEqual(first["binary_on_disk_sha256"], hashlib.sha256(b"first revision").hexdigest())
+        self.assertNotEqual(first["binary_on_disk_sha256"], second["binary_on_disk_sha256"])
 
     def test_unobserved_or_confounded_transitions_never_pass(self):
         for case in ({}, {"same_turn": False, "intervening_actions": 0},

@@ -132,8 +132,9 @@ impl Game {
                     .collect();
                 player.dvp = source.dvp;
                 player.diplomatic_favor = source.diplomatic_favor;
-                player.culture_lifetime = source.culture_lifetime;
-                player.tourism_lifetime = source.tourism_lifetime;
+                // The victory panel exposes tourist counts, not the exact
+                // hidden accumulators behind their next threshold. Counts
+                // are provided through observed_public_empire_stats below.
                 player.science_projects = source.science_projects.clone();
                 player.exoplanet_distance = source.exoplanet_distance;
                 // These are bilateral facts known by the observing party.
@@ -194,6 +195,10 @@ impl Game {
         view.unit_move_trails.clear();
         view.nuclear_strikes.clear();
         view.barb_camps.retain(|pos, _| visible.contains(pos));
+        for cooldown in view.barb_camps.values_mut() {
+            // A visible camp does not disclose its next spawn countdown.
+            *cooldown = 0;
+        }
         view.barb_naval_camps.retain(|pos| visible.contains(pos));
         view.barb_camp_guards.clear();
         view.barb_scout_homes.clear();

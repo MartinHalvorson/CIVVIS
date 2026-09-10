@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import math
 import statistics
@@ -76,20 +77,28 @@ def live_samples(directory):
 
 def native_samples(files):
     seen = set()
+    contracts = set()
     for file in files:
         header = None
         for row in records(file):
             if row.get("kind") == "header":
                 header = row
+                contracts.add(header.get("player_contract") or "legacy")
+                if len(contracts) != 1:
+                    raise ValueError("native inputs mix player contracts; calibrate each epoch separately")
+                # A binary/seed pair is not a game identity: difficulty,
+                # profile, contract and target mixture can all differ.
+                header_id = hashlib.sha256(json.dumps(header, sort_keys=True, allow_nan=False).encode()).hexdigest()
                 continue
             if row.get("kind") != "game": continue
             if header is None: raise ValueError(f"{file}: seat before header")
             for sample in row.get("trajectory", []):
-                key = (header.get("build", {}).get("binary_sha256"), row["seed"], row["seat"], sample["turn"])
+                key = (header_id, row.get("difficulty"), row["seed"], row["seat"],
+                       row.get("player_target"), sample["turn"])
                 if key in seen: continue
                 seen.add(key)
                 yield {"cohort": (header.get("speed", "unknown"), row.get("difficulty") or header.get("difficulty") or "prince", sample["turn"]),
-                       "source": "native", "run": f"{file}:{row['seed']}", "seat": row["seat"],
+                       "source": "native", "run": f"{header_id}:{row.get('difficulty')}:{row['seed']}", "seat": row["seat"],
                        "target": row.get("player_target") or "unrecorded",
                        "values": {k: sample[k] for k in METRICS if finite(sample.get(k))}}
 
