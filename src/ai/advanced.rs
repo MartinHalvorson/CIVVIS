@@ -4951,6 +4951,10 @@ pub struct AdvancedAi {
     /// target by the visible garrison before the rival's capital, so it aims
     /// at a city the opening force can actually take.
     conquest_takes_the_soft_city: bool,
+    /// `counter-culture-by-conquest`: a rival about to win a culture victory
+    /// is answered with war aimed at its Great Works, the way every other lane
+    /// already answers a leader, instead of only by racing it.
+    counter_culture_by_conquest: bool,
     /// `chop-for-expansion`: while a city is building a Settler, a Builder
     /// spends a charge clearing a feature or harvesting a resource for the
     /// Production instead of improving a tile. Off ships the shipped
@@ -7829,6 +7833,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             conquest_takes_the_soft_city: false,
+            counter_culture_by_conquest: false,
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
@@ -35980,9 +35985,16 @@ impl AdvancedAi {
                         + if captures { 30.0 } else { 0.0 }
                 }
                 Some(survivor) => {
-                    (hp - survivor.hp).max(0) as f64 * (1.0 + strength / 100.0)
-                        + if siege { 18.0 } else { 0.0 }
-                        + if captures { 6.0 } else { 0.0 }
+                    let damage = (hp - survivor.hp).max(0) as f64;
+                    // District attacks leave the garrison unharmed. Its role
+                    // is valuable only when this blow actually damages it.
+                    if damage > 0.0 {
+                        damage * (1.0 + strength / 100.0)
+                            + if siege { 18.0 } else { 0.0 }
+                            + if captures { 6.0 } else { 0.0 }
+                    } else {
+                        0.0
+                    }
                 }
             };
         }
@@ -36018,21 +36030,32 @@ impl AdvancedAi {
                 let wall_damage = (wall_hp - after_city.wall_hp).max(0) as f64;
                 let city_damage = (city_hp - after_city.hp).max(0) as f64;
                 let progress = wall_damage * 1.35 + city_damage;
-                value += progress
-                    + if progress > 0.0 && plan.target_city == Some(city) {
-                        35.0
-                    } else {
-                        0.0
-                    };
+                // A depleted city needs a melee taker. A finite zero still
+                // earns target/focus bonuses and siege attack incentives in
+                // the picker, wasting another shot on a city that cannot fall.
+                value += if progress > 0.0 {
+                    progress
+                        + if plan.target_city == Some(city) {
+                            35.0
+                        } else {
+                            0.0
+                        }
+                } else {
+                    f64::NEG_INFINITY
+                };
             }
         } else if let Some(city) = target_encampment {
             let (wall_hp, encampment_hp, pillaged) =
                 encampment_before.expect("a target encampment has pre-attack state");
             let after_city = &after.cities[&city];
-            value += (wall_hp - after_city.encampment_wall_hp).max(0) as f64 * 1.35
+            let progress = (wall_hp - after_city.encampment_wall_hp).max(0) as f64 * 1.35
                 + (encampment_hp - after_city.encampment_hp).max(0) as f64;
             if !pillaged && after_city.encampment_pillaged {
-                value += 180.0;
+                value += progress + 180.0;
+            } else if progress > 0.0 {
+                value += progress;
+            } else {
+                value = f64::NEG_INFINITY;
             }
         }
         (
