@@ -14888,6 +14888,13 @@ impl AdvancedAi {
         let Some(target) = self.victory_target else {
             return false;
         };
+        // Accumulated tourists lag the infrastructure and Faith that enable
+        // a Culture finish. Comparing that stock with a rival at midgame
+        // cannot justify replacing an assigned Culture goal with Score:
+        // doing so drops Conservation and the tourism civic chain itself.
+        if target == VictoryTarget::Culture {
+            return false;
+        }
         if (g.turn as f64) < g.max_turns.max(1) as f64 * LANE_VERDICT_SHARE {
             return false;
         }

@@ -697,3 +697,40 @@ fn early_defense_refuses_the_threats_open_borders_proposal() {
     bystander.from = 2;
     assert_eq!(ai.incoming_deal_value(&g, 0, &bystander, &plan), off);
 }
+
+#[test]
+fn an_assigned_culture_racer_keeps_conservation_while_behind_on_visitors() {
+    let mut g = board();
+    g.turn = 150;
+    let withheld = ["conservation", "capitalism"];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].civic = None;
+    assert!(g
+        .available_civics(0)
+        .contains(&crate::name!("conservation")));
+    assert!(g.victory_races(1, 0).culture > g.victory_races(0, 0).culture);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_lane_release_when_hopeless();
+    ai.lane_lost = ai.assigned_lane_is_lost(&g, 0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("conservation"));
+    assert!(
+        !ai.lane_lost,
+        "low accumulated tourism is not a verdict on an assigned Culture finish"
+    );
+}
