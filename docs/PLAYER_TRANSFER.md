@@ -54,6 +54,22 @@ Existing host verification and combat ledgers remain the outcome evidence.
 The disk digest is not loaded-process attestation if an executable is replaced
 while its old process remains alive.
 
+For a dedicated diagnostic run, `civ6_play.py --action-transitions` enables
+full before/after observations around each host request. The flag enables
+state export and must be read back in the seat report. Diagnostic snapshots
+have distinct event names, so they cannot wake the brain mid-batch. Replay:
+
+```sh
+cargo run --profile ci --locked --features developer-tools --bin live_divergence -- /path/to/events.jsonl --actions
+```
+
+The replay emits JSONL cases for the transition checker below. Initial coverage
+is research, civics, walking, founding, and fortifying; other requests emit
+explicit coverage gaps. Predictions come from applying the request to a rebuilt
+pre-action board, never from the observed after-state. Request-boundary movement
+and combat can still be asynchronous: a discrepancy is not yet a settled-result
+rule error. These diagnostics do not establish full actuation parity.
+
 For independently captured, causally isolated transition fixtures:
 
 ```sh

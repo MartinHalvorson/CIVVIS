@@ -642,6 +642,7 @@ local function survey()
 		-- strike) is exported again and the same turn re-planned, up to
 		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		action_transitions = cfg.ActionTransitions == true,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
 		-- deltas, not only with the periodic sweep. See CivvisTiles.
 		tile_delta = cfg.TileDelta ~= false,
@@ -5970,7 +5971,7 @@ CivvisGreatPersonActivationPlots = function(unit, gp, pid, gwSurvey, openPlots)
 	return activationPlots;
 end;
 
-local function exportState(player, pid, turn, frame)
+local function exportState(player, pid, turn, frame, eventKind)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
 	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a
@@ -8420,7 +8421,7 @@ local function exportState(player, pid, turn, frame)
 			end);
 		end
 	end
-	emit("state", {
+	emit(eventKind or "state", {
 		turn = turn,
 		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
 		-- (see CivvisFrames). The brain re-plans the same turn on a frame.
@@ -14561,6 +14562,29 @@ end
 -- Exposed solely for the Lua 5.1 regression.  A bare global is required: the
 -- Civilization VI UI sandbox has no `_G` table.  Reusing the existing local
 -- handler avoids consuming another main-chunk register.
+-- Opt-in request-boundary evidence. These exports deliberately are NOT
+-- `state` events: the brain must never wake on a half-executed order batch.
+-- A request can enqueue asynchronous work, so these are issue-time readings,
+-- never an assertion that movement/combat has settled.
+CivvisTransitions = { sequence = 0, apply = applyOrder };
+applyOrder = function(player, pid, row, turn)
+	if cfg.ActionTransitions ~= true then
+		return CivvisTransitions.apply(player, pid, row, turn);
+	end
+	CivvisTransitions.sequence = CivvisTransitions.sequence + 1;
+	local sequence = CivvisTransitions.sequence;
+	local frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0;
+	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = frame,
+		order = { kind = row.kind, subject = row.subject, verb = row.verb, x = row.x, y = row.y } });
+	local before = pcall(function() exportState(player, pid, turn, frame, "action_transition_before"); end);
+	local safe, accepted, why = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
+	local after = pcall(function() exportState(player, pid, turn, frame, "action_transition_after"); end);
+	emit("action_transition_end", { sequence = sequence, turn = turn, frame = frame,
+		accepted = safe and accepted == true, why = tostring(why or ""),
+		before_export = before, after_export = after, phase = "request_boundary", threw = not safe });
+	if not safe then error(accepted); end
+	return accepted, why;
+end;
 CivvisApplyOrder = applyOrder;
 CivvisResolveActions = resolveActions;
 CivvisOrdersReady = ordersReady;
