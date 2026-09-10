@@ -11203,6 +11203,55 @@ fn victory_specialization_starts_at_the_game_halfway_point() {
 }
 
 #[test]
+fn culture_buildup_keeps_the_city_target_while_starting_the_culture_plan() {
+    let mut game = Game::new_full(2, 44, 28, 76_008, 250, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let all: Vec<_> = game.map.tiles.keys().copied().collect();
+    game.players[0].explored.extend(all);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.city_target_floor = 4;
+    game.turn = 83;
+    assert_eq!(ai.assess(&game, 0).strategy, GrandStrategy::Expansion);
+    game.turn = 84;
+    let plan = ai.assess(&game, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Culture);
+    assert!(
+        plan.desired_cities >= 4,
+        "buildup must keep asking for a larger empire"
+    );
+}
+
+#[test]
+fn assigned_culture_starts_buildup_before_the_shared_halfway_boundary() {
+    let mut game = Game::new(2, 24, 16, 76_007, 250, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    game.turn = 83;
+    assert!(!culture.phase_specialization_active(&game));
+    game.turn = 84;
+    assert!(
+        culture.phase_specialization_active(&game),
+        "Culture needs time to accumulate tourism"
+    );
+    assert!(!science.phase_specialization_active(&game));
+    assert!(!AdvancedAi::new().phase_specialization_active(&game));
+    game.max_turns = 650;
+    assert!(
+        culture.phase_specialization_active(&game),
+        "an extended verification cap must not delay buildup"
+    );
+    game.turn = 125;
+    assert!(science.phase_specialization_active(&game));
+}
+
+#[test]
 fn extending_an_online_verification_game_does_not_delay_specialization() {
     let mut game = Game::new(2, 24, 16, 76_005, 650, 0);
     game.game_speed = crate::setup::GameSpeed::Online;

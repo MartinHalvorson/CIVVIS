@@ -21910,12 +21910,18 @@ impl AdvancedAi {
         }
     }
 
-    /// Current production planners wait for the shared clock before they
-    /// specialize. The frozen `advanced_v1` controller predates that policy,
+    /// Assigned Culture games begin their tourism buildup earlier; other
+    /// lanes keep the shared clock. The frozen `advanced_v1` predates that policy,
     /// so it retains its historical always-specialized behavior and therefore
     /// keeps its pinned decision stream.
     fn phase_specialization_active(&self, g: &Game) -> bool {
-        !self.victory_planning || Self::victory_specialization_active(g)
+        // An assigned Culture lane needs time to fill museums and accumulate
+        // tourism before its finishing purchases. Start that buildup after
+        // the first third; other lanes retain the shared halfway clock.
+        let culture_buildup = self.victory_target == Some(VictoryTarget::Culture)
+            && g.max_turns > 0
+            && g.turn.saturating_mul(3) >= g.max_turns.min(g.game_speed.turn_limit());
+        !self.victory_planning || culture_buildup || Self::victory_specialization_active(g)
     }
 
     /// Count completed and queued Harbors so the late Science lane can see a
