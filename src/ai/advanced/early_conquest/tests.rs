@@ -949,3 +949,170 @@ fn the_opening_is_dropped_the_moment_the_gene_is_switched_off() {
     assert_eq!(ai.conquest_opening, None);
     assert!(!ai.conquest_owns_the_campaign());
 }
+
+// ---------------------------------------------------------------------
+// `conquest-takes-the-soft-city`
+// ---------------------------------------------------------------------
+
+fn soft_city_armed() -> AdvancedAi {
+    let mut ai = armed();
+    ai.enable_conquest_takes_the_soft_city();
+    ai
+}
+
+#[test]
+fn conquest_takes_the_soft_city_is_a_native_opt_in_off_in_both_controllers() {
+    opt_in_off_in_both_controllers("conquest-takes-the-soft-city", |ai| {
+        ai.conquest_takes_the_soft_city
+    });
+}
+
+/// A rival capital with a garrison, and a bare second city beside it.
+///
+/// Both are explored, both in reach, and the rival holds two cities — inside
+/// `CONQUEST_MAX_RIVAL_CITIES`.
+fn defended_capital_and_bare_second_city() -> (Game, u32, u32) {
+    let mut game = board(&[at(6, 12), at(12, 12)]);
+    meet_and_explore(&mut game, 1);
+    let capital = game.player_city_ids(1)[0];
+    let second = at(13, 13);
+    game.found_city_for(1, second, None);
+    let second = game.city_at(second).expect("the second city was founded");
+    // Three Warriors on the capital, nothing on the second city.
+    for _ in 0..3 {
+        game.spawn_test_unit("warrior", 1, game.cities[&capital].pos);
+    }
+    let tiles: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    game.players[0].explored.extend(tiles);
+    (game, capital, second)
+}
+
+#[test]
+fn the_shipped_ranking_takes_the_defended_capital() {
+    let (game, capital, _) = defended_capital_and_bare_second_city();
+    assert_eq!(
+        armed().conquest_target(&game, 0),
+        Some((1, capital)),
+        "off, the capital outranks an undefended city whatever stands in it"
+    );
+}
+
+#[test]
+fn the_gene_takes_the_city_the_opening_force_can_actually_take() {
+    let (game, capital, second) = defended_capital_and_bare_second_city();
+    assert_ne!(capital, second);
+    assert_eq!(
+        soft_city_armed().conquest_target(&game, 0),
+        Some((1, second)),
+        "on, the bare city outranks the garrisoned capital"
+    );
+}
+
+/// The ordering follows the cost, in both directions: a satellite dearer than
+/// the capital does not win, so this is a ranking and not a blanket
+/// "never the capital" rule.
+#[test]
+fn a_satellite_dearer_than_the_capital_does_not_win() {
+    let mut game = board(&[at(6, 12), at(12, 12)]);
+    meet_and_explore(&mut game, 1);
+    let capital = game.player_city_ids(1)[0];
+    let second_pos = at(13, 13);
+    game.found_city_for(1, second_pos, None);
+    let second = game.city_at(second_pos).expect("the second city founded");
+    let tiles: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    game.players[0].explored.extend(tiles);
+    // The strength the mirror read off each banner: this is the live seat's
+    // own path through `city_strength`, and it makes the satellite the dearer
+    // city.
+    game.observed_city_strength =
+        std::sync::Arc::new([(capital, 20.0), (second, 60.0)].into_iter().collect());
+    assert!(
+        game.city_strength(second) > game.city_strength(capital),
+        "the observed strengths make the satellite the dearer city"
+    );
+    assert_eq!(
+        soft_city_armed().conquest_target(&game, 0),
+        Some((1, capital)),
+        "so the capital is both the cheaper city and the better prize"
+    );
+}
+
+/// The Palace alone separates two otherwise identical cities, which is why
+/// the gene does not need a visible garrison to fire.
+#[test]
+fn the_palace_is_enough_to_rank_the_capital_as_the_dearer_city() {
+    let mut game = board(&[at(6, 12), at(12, 12)]);
+    meet_and_explore(&mut game, 1);
+    let capital = game.player_city_ids(1)[0];
+    let second_pos = at(13, 13);
+    game.found_city_for(1, second_pos, None);
+    let second = game.city_at(second_pos).expect("the second city founded");
+    let tiles: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    game.players[0].explored.extend(tiles);
+    assert!(
+        game.city_strength(capital) > game.city_strength(second),
+        "the Palace makes the capital the dearer city with no garrison at all"
+    );
+    assert_eq!(
+        armed().conquest_target(&game, 0),
+        Some((1, capital)),
+        "off, capital-ness leads"
+    );
+    assert_eq!(
+        soft_city_armed().conquest_target(&game, 0),
+        Some((1, second)),
+        "on, the cheaper city leads"
+    );
+}
+
+/// The garrison term keeps its fog-honest filter: a unit this seat cannot see
+/// never enters the ranking.
+#[test]
+fn an_unseen_unit_is_not_counted_in_the_visible_garrison() {
+    let (game, capital, _) = defended_capital_and_bare_second_city();
+    let visible = armed().battlefront_visibility(&game, 0);
+    assert_eq!(
+        AdvancedAi::conquest_visible_garrison(&game, 0, capital, &visible),
+        0.0,
+        "with nothing of ours on the board, no rival unit is visible"
+    );
+}
+
+/// Off reads `garrison`; on reads `defence`. Tie-breaks are shared.
+#[test]
+fn the_two_orderings_differ_only_in_which_question_leads() {
+    let dear_capital = TargetRank {
+        not_the_capital: 0,
+        garrison: 0,
+        defence: 90,
+        distance: 4,
+        city: 1,
+    };
+    let cheap_satellite = TargetRank {
+        not_the_capital: 1,
+        garrison: 0,
+        defence: 20,
+        distance: 4,
+        city: 2,
+    };
+    assert!(dear_capital.key(false) < cheap_satellite.key(false));
+    assert!(cheap_satellite.key(true) < dear_capital.key(true));
+
+    // Distance and id still break ties under both orderings.
+    let near = TargetRank {
+        not_the_capital: 1,
+        garrison: 10,
+        defence: 10,
+        distance: 3,
+        city: 9,
+    };
+    let far = TargetRank {
+        not_the_capital: 1,
+        garrison: 10,
+        defence: 10,
+        distance: 8,
+        city: 2,
+    };
+    assert!(near.key(false) < far.key(false));
+    assert!(near.key(true) < far.key(true));
+}

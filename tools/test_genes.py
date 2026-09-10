@@ -105,6 +105,22 @@ class Merging(unittest.TestCase):
             # prices them, so the batch rule reads every one as off.
             return gene_ledger.build_ledger(paths, filter_known=False)
 
+    def test_observed_epoch_replaces_pooled_evidence_not_historical_source_files(self):
+        old = analysis([{"tag": "a", "wins": 400, "win": 4.0}])
+        new = analysis([{"tag": "a", "wins": -200, "win": -2.0}],
+                       player_contract="observed-player-v1", target_mix="science,culture",
+                       native_competitions=True)
+        ledger = self.build([old, new])
+        self.assertEqual(len(ledger["sources"]), 2, "history remains recorded")
+        row = ledger["genes"][0]
+        self.assertEqual(row["win_diff_pp"], -2.0)
+        self.assertEqual(row["posterior_screens"], 1)
+        self.assertIsNone(row["wins_prior_10k"])
+        history = [gene_ledger.measurements_from_source(data, name, "standard")["a"]
+                   for data, name in ((old, "old"), (new, "new"), (old, "display-old"))]
+        self.assertEqual(gene_ledger.pooled_win_diff_pp(history), -2.0)
+        self.assertEqual(len(gene_ledger.current_player_evidence(history)), 1)
+
     def test_the_newest_screen_that_priced_a_gene_supplies_its_verdict(self):
         ledger = self.build([
             analysis([
@@ -256,6 +272,17 @@ class OneShape(unittest.TestCase):
                 probe = analysis([{"tag": "a"}], **leg)
                 self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
                 self.assertIn(next(iter(leg)), gene_ledger.shape_gap(gene_ledger.profile_of(probe)))
+
+    def test_observed_player_standard_requires_competitions_without_reserved_seats(self):
+        profile = gene_ledger.profile_of(analysis([{"tag": "a"}],
+            player_contract="observed-player-v1", native_competitions=True))
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        profile["native_competitions"] = False
+        self.assertEqual(gene_ledger.shape_of(profile), "legacy")
+        self.assertIn("native_competitions", gene_ledger.shape_gap(profile))
+        profile["native_competitions"] = True
+        profile["contested_field"] = "diplomatic"
+        self.assertEqual(gene_ledger.shape_of(profile), "legacy")
 
     def test_the_retired_paired_field_is_not_a_contested_board(self):
         """⚠ `field` was already taken. Every header the paired designs wrote

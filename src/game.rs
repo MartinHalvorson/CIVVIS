@@ -1,5 +1,6 @@
 //! Core turn engine (mirrors civvis/game.py — same mechanics and action protocol).
 use serde::ser::SerializeMap;
+mod player_view;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
