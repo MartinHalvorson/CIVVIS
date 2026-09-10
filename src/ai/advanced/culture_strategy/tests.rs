@@ -33,6 +33,60 @@ fn board() -> Game {
 }
 
 #[test]
+fn culture_researches_a_government_its_chooser_will_adopt() {
+    let mut g = board();
+    let withheld = [
+        "conservation",
+        "class_struggle",
+        "suffrage",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("monarchy".to_string());
+    g.players[0].civic = None;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = false;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    assert!(g.available_civics(0).contains(&crate::name!("suffrage")));
+    let mut capacity = g.clone();
+    ai.government_capacity_fallback = true;
+    ai.advanced_research(&mut capacity, 0, &plan);
+    assert_eq!(capacity.players[0].civic.as_deref(), Some("class_struggle"));
+    ai.government_capacity_fallback = false;
+    let mut matching = g.clone();
+    matching.players[2].government = Some("communism".to_string());
+    ai.advanced_research(&mut matching, 0, &plan);
+    assert_eq!(
+        matching.players[0].civic.as_deref(),
+        Some("class_struggle"),
+        "matching the leading Culture defender remains an eligible goal"
+    );
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("suffrage"));
+    g.players[0].civics.insert(crate::name!("suffrage"));
+    ai.strategic_government(&mut g, 0, GrandStrategy::Recovery);
+    assert_eq!(g.players[0].government.as_deref(), Some("democracy"));
+}
+
+#[test]
 fn cold_war_window_keeps_the_opening_and_resumes_the_culture_chain() {
     let mut g = board();
     let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);

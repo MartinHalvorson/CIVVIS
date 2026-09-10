@@ -14459,7 +14459,7 @@ impl AdvancedAi {
             return None;
         }
         if self.government_ladder_2 {
-            return self.government_ladder_rung(g, pid);
+            return self.government_ladder_rung(g, pid, objective);
         }
         if g.turn as f64 > g.max_turns.max(1) as f64 * GOVERNMENT_LADDER_WINDOW {
             return None;
@@ -14504,7 +14504,12 @@ impl AdvancedAi {
     /// on slots: [`GOVERNMENT_LADDER_WINDOW`] normally, and
     /// [`GOVERNMENT_LADDER_BEHIND_WINDOW`] while some living major plays a
     /// government with more capacity than ours.
-    fn government_ladder_rung(&self, g: &Game, pid: usize) -> Option<&'static str> {
+    fn government_ladder_rung(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: GrandStrategy,
+    ) -> Option<&'static str> {
         let capacity = |name: &str| {
             g.rules.governments.get(name).map_or(0, |spec| {
                 spec.slots.military
@@ -14529,9 +14534,16 @@ impl AdvancedAi {
         if g.turn as f64 > g.max_turns.max(1) as f64 * window {
             return None;
         }
+        let priorities = Self::government_priorities(objective, false);
+        let culture_match = Self::culture_government_match(g, pid, objective);
         g.rules
             .governments
             .iter()
+            .filter(|(name, _)| {
+                self.government_capacity_fallback
+                    || priorities.contains(&name.as_str())
+                    || culture_match.as_deref() == Some(name.as_str())
+            })
             .filter(|(name, _)| capacity(name.as_str()) > ours)
             .filter_map(|(_, spec)| spec.civic.as_ref())
             .filter(|civic| !g.players[pid].civics.contains(civic))
@@ -14948,51 +14960,13 @@ impl AdvancedAi {
         !(in_recovery || runs_dry)
     }
 
-    fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
-        let unlocked = |government: &str| {
-            g.rules.governments.get(government).is_some_and(|spec| {
-                spec.civic
-                    .as_ref()
-                    .is_none_or(|civic| g.players[pid].civics.contains(civic))
-            })
-        };
-
-        // Matching the leading Culture defender removes the full -40%
-        // Gathering Storm penalty between distinct Tier 3/4 governments.
-        // Lower-tier governments have zero intolerance and do not justify
-        // giving up the stronger late-game government effects.
-        let culture_match = (objective == GrandStrategy::Culture)
-            .then(|| {
-                g.players
-                    .iter()
-                    .filter(|rival| {
-                        rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
-                    })
-                    .max_by_key(|rival| (g.domestic_tourists(rival.id), rival.id))
-                    .and_then(|rival| rival.government.clone())
-            })
-            .flatten()
-            .filter(|government| {
-                matches!(
-                    government.as_str(),
-                    "communism"
-                        | "democracy"
-                        | "fascism"
-                        | "corporate_libertarianism"
-                        | "digital_democracy"
-                        | "synthetic_technocracy"
-                ) && unlocked(government)
-            });
-
-        let faith_mobilization =
-            matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
-                && g.players[pid].faith >= 600.0
-                && unlocked("theocracy");
-        let priorities: &[&str] = match objective {
+    /// Research and adoption share candidate governments. Otherwise the
+    /// capacity ladder buys civics for a government the lane will not use.
+    fn government_priorities(
+        objective: GrandStrategy,
+        faith_mobilization: bool,
+    ) -> &'static [&'static str] {
+        match objective {
             GrandStrategy::Culture | GrandStrategy::Diplomacy => &[
                 "digital_democracy",
                 "democracy",
@@ -15068,7 +15042,59 @@ impl AdvancedAi {
                 "classical_republic",
                 "chiefdom",
             ],
+        }
+    }
+
+    fn culture_government_match(g: &Game, pid: usize, objective: GrandStrategy) -> Option<String> {
+        (objective == GrandStrategy::Culture)
+            .then(|| {
+                g.players
+                    .iter()
+                    .filter(|rival| {
+                        rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+                    })
+                    .max_by_key(|rival| (g.domestic_tourists(rival.id), rival.id))
+                    .and_then(|rival| rival.government.clone())
+            })
+            .flatten()
+            .filter(|government| {
+                matches!(
+                    government.as_str(),
+                    "communism"
+                        | "democracy"
+                        | "fascism"
+                        | "corporate_libertarianism"
+                        | "digital_democracy"
+                        | "synthetic_technocracy"
+                )
+            })
+    }
+
+    fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy);
+        let unlocked = |government: &str| {
+            g.rules.governments.get(government).is_some_and(|spec| {
+                spec.civic
+                    .as_ref()
+                    .is_none_or(|civic| g.players[pid].civics.contains(civic))
+            })
         };
+
+        // Matching the leading Culture defender removes the full -40%
+        // Gathering Storm penalty between distinct Tier 3/4 governments.
+        // Lower-tier governments have zero intolerance and do not justify
+        // giving up the stronger late-game government effects.
+        let culture_match = Self::culture_government_match(g, pid, objective)
+            .filter(|government| unlocked(government));
+
+        let faith_mobilization =
+            matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+                && g.players[pid].faith >= 600.0
+                && unlocked("theocracy");
+        let priorities = Self::government_priorities(objective, faith_mobilization);
         let choice = culture_match.or_else(|| {
             priorities
                 .iter()
