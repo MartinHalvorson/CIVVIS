@@ -3941,6 +3941,17 @@ impl AdvancedAi {
     /// hammers with a requirement and a deadline — and served by persistent
     /// task forces, in place of proximity force groups and the posture
     /// ladder; `force_groups` is built from the forces. See `objective_board`.
+    /// `chop-for-expansion`: a Builder turns a forest into a Settler. See
+    /// `advanced/chop_for_expansion.rs`.
+    pub fn enable_chop_for_expansion(&mut self) {
+        self.chop_for_expansion = true;
+    }
+
+    /// The twin of `enable_chop_for_expansion`.
+    pub fn disable_chop_for_expansion(&mut self) {
+        self.chop_for_expansion = false;
+    }
+
     pub fn enable_objective_board(&mut self) {
         self.objective_board = true;
     }

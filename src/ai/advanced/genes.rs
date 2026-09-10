@@ -2211,6 +2211,15 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "research-alliance-first", field: "research_alliance_first", kind: Kind::OptIn, enable: AdvancedAi::enable_research_alliance_first, disable: AdvancedAi::disable_research_alliance_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    // The engine has modelled `Feature_Removes` and `Resource_Harvests` the
+    // whole time — `builder_operations` offers them and `do_builder_operation`
+    // pays them — and no controller has ever asked for one: `chop_woods` and
+    // `harvest_resource` appeared nowhere in `src/ai.rs` or `src/ai/advanced/`
+    // before this row. `expansion-scales-with-difficulty` recorded the leg as
+    // unavailable off a grep of `src/game.rs` taken after #2668 had moved the
+    // action layer to `src/game/actions.rs`. While a city builds a Settler, a
+    // Builder clears the best-paying feature in reach instead of improving.
+    Gene { tag: "chop-for-expansion", field: "chop_for_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_for_expansion, disable: AdvancedAi::disable_chop_for_expansion },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
