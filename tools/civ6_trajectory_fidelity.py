@@ -123,6 +123,12 @@ SUBSYSTEMS = [
         "the best rival's techs at Standard turn 150",
     ),
     Subsystem(
+        "opening_band",
+        "cities_at_60",
+        "cities_60",
+        "cities held at Standard turn 60",
+    ),
+    Subsystem(
         "boost_coverage",
         "_boost_share",
         "_boost_share",
@@ -259,7 +265,7 @@ def live_records(path: Path) -> list[dict]:
         if None in cell:
             continue
         record = {"_cell": cell}
-        for key in ("techs_at_150", "rival_techs_at_150"):
+        for key in ("techs_at_150", "rival_techs_at_150", "cities_at_60"):
             value = row.get(key)
             if isinstance(value, (int, float)):
                 record[key] = float(value)
@@ -331,6 +337,9 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
             ]
             for seat in game:
                 record = {"_cell": cell}
+                band = seat.get("cities_60")
+                if isinstance(band, (int, float)):
+                    record["cities_60"] = float(band)
                 value = seat.get("techs_150")
                 if isinstance(value, (int, float)):
                     record["techs_150"] = float(value)
