@@ -538,8 +538,9 @@ impl Game {
                         to: destination,
                     });
                 }
-                if spec.class == "military" && !embarked {
-                    if spec.has_ranged_attack()
+                if spec.class == "military" {
+                    if !embarked
+                        && spec.has_ranged_attack()
                         && u.attacks_left > 0
                         && (!spec.siege
                             || !u.moved
@@ -584,12 +585,7 @@ impl Game {
                     }
                     if spec.is_melee_capable() && u.attacks_left > 0 {
                         for pos in self.nbrs(u.pos) {
-                            if self.map.tiles.contains_key(&pos)
-                                && self.enemy_combat_target_at(pid, pos)
-                                && self.unit_can_melee_target_domain(uid, pos)
-                                && self.can_pay_melee_entry(uid, pos)
-                                && !self.strike_blocked(uid, pos)
-                            {
+                            if self.melee_order_is_legal(pid, uid, pos) {
                                 acts.push(Action::Attack {
                                     unit: uid,
                                     target: pos,
@@ -1875,7 +1871,11 @@ impl Game {
             return false;
         };
         self.rules.units[unit.kind].is_melee_capable()
-            && !self.is_embarked(unit)
+            && (!self.is_embarked(unit)
+                || self
+                    .map
+                    .get(target)
+                    .is_some_and(|tile| !self.rules.is_water(tile)))
             && unit.moves_left > 0.0
             && unit.attacks_left > 0
             && self.wdist(unit.pos, target) == 1
@@ -1883,6 +1883,27 @@ impl Game {
             && self.unit_can_melee_target_domain(uid, target)
             && self.can_pay_melee_entry(uid, target)
             && !self.strike_blocked(uid, target)
+    }
+
+    /// City melee strengths shared by the resolver and capture estimates.
+    /// Embarked units attack with their land strength and a landing penalty;
+    /// their embarked defensive strength is not an attack strength.
+    pub(crate) fn city_melee_exchange_strengths(&self, uid: u32, cid: u32) -> Option<(f64, f64)> {
+        let attacker = self.units.get(&uid)?;
+        let city = self.cities.get(&cid)?;
+        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let mut attack =
+            self.unit_unembarked_strength(attacker) + self.vs_bonus(attacker.owner, city.owner);
+        if self.is_embarked(attacker) && unamphibious {
+            attack -= 10.0;
+        }
+        let defense = self.city_strength(cid)
+            + if self.crosses_river(attacker.pos, city.pos) && unamphibious {
+                5.0
+            } else {
+                0.0
+            };
+        Some((effective_strength(attack, attacker.hp), defense))
     }
 
     /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
@@ -3410,20 +3431,7 @@ impl Game {
                 let defender = self.cities[&cid].owner;
                 self.record_war_unit_participation(&attacker, defender);
                 self.record_war_city_garrison_participation(cid, attacker.owner);
-                let mut att_base = self.unit_unembarked_strength(&attacker)
-                    + self.vs_bonus(pid, self.cities[&cid].owner);
-                if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
-                    att_base -= 10.0;
-                }
-                let att = effective_strength(att_base, attacker.hp);
-                let cs = self.city_strength(cid)
-                    + if self.crosses_river(u.pos, target)
-                        && self.promotion_effect(&attacker, "amphibious") == 0.0
-                    {
-                        5.0
-                    } else {
-                        0.0
-                    };
+                let (att, cs) = self.city_melee_exchange_strengths(uid, cid).unwrap();
                 let dmg_out = damage(att, cs, &mut self.rng);
                 let dmg_in = damage(cs, att, &mut self.rng);
                 // battering ram: full melee damage vs ancient walls;

@@ -357,11 +357,13 @@ fn siege_support_adjacent(g: &Game, pid: usize, city_pos: Pos) -> (bool, bool) {
 /// attacker's strength at its hit points against `city_strength`, at the
 /// centre of the roll, routed through the wall pool.
 pub(super) fn taker_blow(g: &Game, pid: usize, uid: u32, cid: u32) -> f64 {
-    let (Some(unit), Some(city)) = (g.units.get(&uid), CityView::of(g, cid)) else {
+    let (Some((att, defense)), Some(city)) = (
+        g.city_melee_exchange_strengths(uid, cid),
+        CityView::of(g, cid),
+    ) else {
         return 0.0;
     };
-    let att = effective_strength(g.unit_strength(unit, false), unit.hp);
-    let mean = expected_damage(att, g.city_strength(cid));
+    let mean = expected_damage(att, defense);
     let (_, tower) = siege_support_adjacent(g, pid, city.pos);
     city.through(mean, tower)
 }
@@ -773,7 +775,22 @@ impl AdvancedAi {
         if !self.siege_train && !self.anvil {
             return None;
         }
-        if arm_of(g, uid) == Arm::Other || self.guard_is_reserved_for_civilian(uid) {
+        if self.guard_is_reserved_for_civilian(uid) {
+            return None;
+        }
+        // An adjacent landing capture does not require a dry siege-ring post.
+        // Keep embarked units out of the ordinary shooter and screen roles.
+        if self.siege_train && g.units.get(&uid).is_some_and(|unit| g.is_embarked(unit)) {
+            if let Some(city) = plan.target_city.and_then(|cid| CityView::of(g, cid)) {
+                if city.wall_hp <= 0
+                    && g.melee_order_is_legal(pid, uid, city.pos)
+                    && f64::from(city.hp) <= taker_blow(g, pid, uid, city.id)
+                {
+                    return Some(self.taker_step(g, pid, uid, &city));
+                }
+            }
+        }
+        if arm_of(g, uid) == Arm::Other {
             return None;
         }
         let group = self
@@ -1659,6 +1676,9 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod capture_tests;
+
+#[cfg(test)]
+mod landing_tests;
 
 #[cfg(test)]
 mod tests {
