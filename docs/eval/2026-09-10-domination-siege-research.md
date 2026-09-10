@@ -29,4 +29,24 @@ upgrades, and whether that unit is strong enough for later defenses remain
 separate decisions. The gene stays off unless the normal measured deployment
 rule selects it; a mechanism test alone is not promotion evidence.
 
-Validation and fixed-size native screen results pending.
+## Validation and probes
+
+- Full `cargo test --profile ci --locked`: 3,576 passed, 52 ignored, zero
+  failures. The three mechanism tests include a real prewar Engineering
+  research order and unknown, observed and stale wall reports.
+- `cargo clippy --profile ci --locked --lib --message-format=json`: no
+  compiler or Clippy diagnostics. Formatting, generated-document checks and
+  all 14 append-point tests pass after preserving registry ordinals.
+- Matched `victory_eval` probe on clean source
+  `5487f7f9458263e89c30340de2835d4fbe245a47`: eight three-player games,
+  36×22, Online, 250 turns, seeds 109105000–109105007, explicit Domination
+  targets in every seat. One leg uses `--with domination-siege-research`,
+  the other `--without domination-siege-research`. Each completed Domination
+  in 3/8 games, with identical reported terminal summaries on all eight seeds.
+  This probe establishes no outcome improvement; it cannot establish that
+  every intermediate decision was identical.
+- A separate fixed-size 24-game standard screen, Emperor, two workers, seeds
+  109104000–109104023, is running. Its build header records the same clean
+  source and the standard 6p 74×46 Continents/Online/250t/9CS contract.
+  Results pending; neither this probe nor the mechanism tests promote it.
+
