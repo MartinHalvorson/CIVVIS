@@ -2277,6 +2277,14 @@ pub const GENES: &[Gene] = &[
     // and `can_survive_by_attacking` still keeps a unit whose own shot ends the
     // threat. Off; screen it.
     Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
+    // `domination-lane-hands-over` (2026-09-10): the assigned lane keeps
+    // answering Expansion while `cities < desired_cities`, and that target
+    // scales with difficulty — 6, then 10 — on a four-civ Tiny Pangaea that
+    // holds five or six. The live seat reached 8 and then 9 cities still reading
+    // Expansion and declared no war in three Emperor games. With the gene on, a
+    // Domination lane with `DOMINATION_HANDOVER_CITIES` (4, the opening band's
+    // floor) in hand follows its lane. Off; screen it; forced on the live seat.
+    Gene { tag: "domination-lane-hands-over", field: "domination_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_lane_hands_over, disable: AdvancedAi::disable_domination_lane_hands_over },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
