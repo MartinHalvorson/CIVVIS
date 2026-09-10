@@ -3952,6 +3952,17 @@ impl AdvancedAi {
         self.chop_for_expansion = false;
     }
 
+    /// `counter-culture-by-conquest`: answer a culture leader with war aimed
+    /// at its Great Works. See `advanced/victory_heuristics.rs`.
+    pub fn enable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = true;
+    }
+
+    /// The twin of `enable_counter_culture_by_conquest`.
+    pub fn disable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = false;
+    }
+
     pub fn enable_objective_board(&mut self) {
         self.objective_board = true;
     }
