@@ -48267,6 +48267,28 @@ fn city_bombardment_does_not_credit_damage_to_its_unharmed_garrison() {
         (200 - progressing.cities[&city].hp) as f64 + 35.0
     );
 
+    // Ordinary ranged attacks stop at one HP; siege can remove that last HP.
+    // Do not confuse that useful final siege shot with another empty volley.
+    for (kind, remaining_hp) in [("archer", 1), ("catapult", 0)] {
+        let mut last_hit = game.clone();
+        last_hit.cities.get_mut(&city).unwrap().hp = 1;
+        last_hit.remove_unit(attacker);
+        let shooter = last_hit.spawn_test_unit(kind, 0, staging);
+        let (result, applied) = AdvancedAi::tactical_attack_result_in(
+            &mut last_hit,
+            0,
+            shooter,
+            &Action::Ranged {
+                unit: shooter,
+                target: origin,
+            },
+            &plan,
+        );
+        assert!(matches!(applied, AppliedAttack::Applied));
+        assert_eq!(last_hit.cities[&city].hp, remaining_hp);
+        assert_eq!(result.value.is_finite(), remaining_hp == 0);
+    }
+
     // Finishing with melee is still valuable, even though no HP remain.
     let mut captured = game.clone();
     captured.cities.get_mut(&city).unwrap().hp = 0;
