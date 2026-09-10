@@ -6789,6 +6789,7 @@ mod civilian_safety;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
+mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
 mod deity_habits;
@@ -14012,10 +14013,12 @@ impl AdvancedAi {
                 None
             };
             let opening_archery_goal = self.opening_archery_goal(g, pid);
+            let defensive_walls_goal = self.culture_defensive_walls_goal(g, pid, plan);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
+                _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
                 }) =>
@@ -14211,6 +14214,8 @@ impl AdvancedAi {
                         (Some(goal), Some(_)) => {
                             if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
+                            } else if defensive_walls_goal.as_deref() == Some(goal) {
+                                "unlock Ancient Walls during Culture wartime recovery before the longer army upgrade path".to_string()
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the cheapest step toward {}, needed to catch a nearby barbarian army",
