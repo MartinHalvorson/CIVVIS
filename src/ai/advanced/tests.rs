@@ -8747,7 +8747,7 @@ fn expansion_dispatch_and_late_window_are_independent_on_online() {
 }
 
 #[test]
-fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
+fn a_requested_city_state_campaign_preserves_its_suzerain() {
     let mut game = Game::new_full(2, 30, 18, 711, 300, 1, false);
     for pid in 0..2 {
         let settler = game
@@ -8774,7 +8774,10 @@ fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
         game.spawn_test_unit("giant_death_robot", 1, rival_capital);
     }
 
-    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    // A requested city-state front can override capital priority, but it
+    // still cannot turn our own suzerained city-state into a legal target.
+    ai.forced_target_player = Some(minor);
     let exposed = ai.assess(&game, 0);
     assert_eq!(exposed.strategy, GrandStrategy::Conquest);
     assert_eq!(exposed.target_player, Some(minor));
