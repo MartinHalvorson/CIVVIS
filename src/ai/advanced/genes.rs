@@ -2269,6 +2269,14 @@ pub const GENES: &[Gene] = &[
     // screen it, and force it on the live seat with `conversion-majority-alarm-2`
     // so the religious clock is actually read.
     Gene { tag: "denial-outranks-expansion", field: "denial_outranks_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_outranks_expansion, disable: AdvancedAi::disable_denial_outranks_expansion },
+    // `ranged-hp-reserve` (2026-09-10, operator: "asymmetric damage with
+    // archers while not taking fatal hits"): a ranged, non-siege unit reads
+    // the lethal pool with 20 hp in hand, so it leaves a tile the enemy's exact
+    // next-turn attacks would nearly kill it on and shoots again from the next.
+    // The lethal-pool test only; the healing line stays `one_shot_recovery`'s,
+    // and `can_survive_by_attacking` still keeps a unit whose own shot ends the
+    // threat. Off; screen it.
+    Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
