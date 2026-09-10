@@ -3130,6 +3130,11 @@ pub struct HostUnitFacts {
     /// this identity instead of by the transient CIVVIS id.
     #[serde(default)]
     pub civ6_id: Option<i64>,
+    /// Firaxis Rock Band activation highlights, in axial coordinates. An empty
+    /// set means no host-legal concert destination; None keeps model behavior
+    /// for headless games and older or unreadable exports.
+    #[serde(default)]
+    pub concert_plots: Option<BTreeSet<Pos>>,
     #[serde(default)]
     pub upgrade: Option<HostUnitUpgrade>,
     /// `UnitManager.GetUnitMaintenance` (or the Corps/Army accessor) for the

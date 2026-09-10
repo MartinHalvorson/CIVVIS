@@ -1799,6 +1799,80 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class ExitConfirmationTests(unittest.TestCase):
+    """★★★★★ THE POLITE QUIT ASKS A QUESTION AND NOTHING WAS ANSWERING IT.
+
+    `civ6_env.request_macos_quit()` clicks *Quit Civilization VI* in the game's
+    own menu. From inside a game or the Create Game screen that raises an
+    in-engine modal — EXIT TO DESKTOP / OK · Cancel — rather than exiting. The
+    SIGTERM that follows cannot get through a modal and `quit_game` rightly
+    will not escalate to SIGKILL, so the process sits there and the supervisor
+    reports `LANE STALLED ... it needs an operator`. It needed one twice on
+    2026-09-10 and both times the fix was one click.
+    """
+
+    BOUNDS = (0, 33, 864, 542)
+
+    def _confirm(self, points):
+        clicks = []
+
+        def labels(shot, label, bounds, strip=None):
+            return points.get(label, [])
+
+        with mock.patch.object(civ6_play, "game_window", return_value=self.BOUNDS), \
+             mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_observed_label_points", labels), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "click_at",
+                               side_effect=lambda x, y: clicks.append((x, y))):
+            answered = civ6_play.confirm_exit_dialog()
+        return answered, clicks
+
+    def test_ok_is_cancel_mirrored_about_the_heading(self):
+        """⚠⚠ OK CANNOT BE FOUND BY OCR — the readers demand an exact match
+        under ten characters and `OK` is two. These are real coordinates from
+        the two live stalls: heading x=433 with Cancel (480, 334) gives
+        (386, 334), and heading x=431 gives (382, 334). Both exited the game.
+        `(385 + 480) / 2 = 432.5` lands on the heading, which is what makes the
+        mirror a rule rather than a lucky constant."""
+        for heading_x, expected in ((433, 386), (431, 382)):
+            with self.subTest(heading_x=heading_x):
+                answered, clicks = self._confirm({
+                    "Exit To Desktop": [(heading_x, 294)],
+                    "Cancel": [(480, 334)],
+                })
+                self.assertTrue(answered)
+                self.assertEqual(clicks, [(expected, 334)])
+
+    def test_no_dialog_means_no_click(self):
+        for points in ({}, {"Exit To Desktop": [(433, 294)]}, {"Cancel": [(480, 334)]}):
+            with self.subTest(points=sorted(points)):
+                answered, clicks = self._confirm(points)
+                self.assertFalse(answered)
+                self.assertEqual(clicks, [])
+
+    def test_a_mirror_outside_the_game_window_is_not_this_dialog(self):
+        """Cancel far to the left of the heading mirrors to a point off the
+        window. That is not a symmetric dialog, so nothing is clicked."""
+        answered, clicks = self._confirm({
+            "Exit To Desktop": [(60, 294)],
+            "Cancel": [(840, 334)],
+        })
+        self.assertFalse(answered)
+        self.assertEqual(clicks, [])
+
+    def test_an_unreadable_frame_is_not_a_guessed_click(self):
+        with mock.patch.object(civ6_play, "game_window", return_value=self.BOUNDS), \
+             mock.patch.object(civ6_play, "screenshot", return_value=False), \
+             mock.patch.object(civ6_play, "click_at") as click:
+            self.assertFalse(civ6_play.confirm_exit_dialog())
+        click.assert_not_called()
+        with mock.patch.object(civ6_play, "game_window", return_value=None), \
+             mock.patch.object(civ6_play, "click_at") as click:
+            self.assertFalse(civ6_play.confirm_exit_dialog())
+        click.assert_not_called()
+
+
 class MapPickerTests(unittest.TestCase):
     """★★★★★ THE MAP ROW OPENS A BROWSER, NOT A DROPDOWN.
 
@@ -1815,7 +1889,7 @@ class MapPickerTests(unittest.TestCase):
     BOUNDS = (0, 33, 864, 542)
 
     def _drive(self, *, current, frames, commit=(432, 566),
-               verified=("Pangaea.lua", (432, 300))):
+               verified=("Pangaea.lua", (432, 300)), pages=None):
         """Run the picker against a scripted screen; return what it did.
 
         ``frames`` is one list of caption points per wheel step: an empty list
@@ -1830,6 +1904,17 @@ class MapPickerTests(unittest.TestCase):
         def picker_open(path, bounds):
             # Still in the browser unless the commit click has been sent.
             return commit is None or (432, 566) not in clicks
+
+        # Each frame shows a different page unless a test says otherwise, so the
+        # end-of-list stop does not fire in tests that are about something else.
+        page = iter(pages if pages is not None
+                    else (frozenset({f"page{n}"}) for n in range(1000)))
+
+        def page_labels(path, bounds):
+            try:
+                return next(page)
+            except StopIteration:
+                return frozenset()
 
         def labels(path, bounds, label):
             if label == "Select Map":
@@ -1846,7 +1931,9 @@ class MapPickerTests(unittest.TestCase):
 
         with mock.patch.object(civ6_play, "screenshot", return_value=True), \
              mock.patch.object(civ6_play, "_map_picker_labels", labels), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]), \
              mock.patch.object(civ6_play, "_map_picker_open", side_effect=picker_open), \
+             mock.patch.object(civ6_play, "_map_picker_page_labels", page_labels), \
              mock.patch.object(civ6_play, "_setup_current_value", current_value), \
              mock.patch.object(civ6_play, "focus_game"), \
              mock.patch.object(civ6_play, "park_setup_pointer"), \
@@ -1892,6 +1979,36 @@ class MapPickerTests(unittest.TestCase):
         self.assertGreater(civ6_play.MAP_PICKER_SCROLL_RESET, 0, "rewind scrolls UP")
         self.assertLess(civ6_play.MAP_PICKER_SCROLL_AMOUNT, 0, "walking scrolls DOWN")
 
+    def test_one_wheel_tick_per_step_because_a_tick_is_about_three_rows(self):
+        """⚠⚠ THIS WAS -3 AND IT STEPPED CLEAN OVER THE MAP IT WANTED.
+
+        Measured live on run civvis-20260910T182338Z: the rewind landed on the
+        top of the roster and ONE -3 step landed on the very bottom — every
+        later frame identical, the list already at its end. `Pangaea` lives
+        exactly in the gap between Fractal and Seven Seas that the single step
+        jumped, so it was never on any frame.
+
+        A frame shows five rows and one tick moves about three of them, so
+        consecutive frames overlap and no caption can hide between two.
+        """
+        self.assertEqual(civ6_play.MAP_PICKER_SCROLL_AMOUNT, -1)
+
+    def test_the_walk_stops_when_the_grid_stops_moving(self):
+        """A page that cannot move has nothing left to show. Without this the
+        walk photographed the same bottom-of-list page twenty-three times and
+        then reported a map it had genuinely never seen — which reads like
+        flaky OCR rather than a wheel that overshot."""
+        stuck = frozenset({"seven seas", "shuffle", "terra"})
+        chosen, clicks, wheel = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[] for _ in range(civ6_play.MAP_PICKER_SCROLL_STEPS)],
+            pages=[frozenset({"top of list"}), stuck, stuck, stuck])
+        self.assertFalse(chosen)
+        # Rewind, then one step off the first page, then one off the repeat that
+        # proved the list had settled. It stops there, not at step 24.
+        self.assertEqual(len(wheel), 3)
+        self.assertNotIn((500, 430), clicks)
+
     def test_a_caption_that_never_appears_is_refused_rather_than_guessed(self):
         """No tile is clicked and no coordinate is invented; the caller refuses
         to start, which is what kept a wrong map off the ledger."""
@@ -1915,17 +2032,88 @@ class MapPickerTests(unittest.TestCase):
         # now and must not be clicked on the way out.
         self.assertNotIn((700, 120), clicks)
 
+    def test_a_lone_heading_is_never_taken_for_the_commit_button(self):
+        """⚠⚠ "LOWEST WINS" IS ONLY RIGHT WHILE BOTH ARE LEGIBLE.
+
+        On run civvis-20260910T184530Z only the heading was read — the button is
+        small and sits BELOW the grid crop, so only the 1x full-desktop pass can
+        reach it and that pass missed it. The lowest of one match is the
+        heading; the click landed on the title, the browser never closed, and
+        the run reported `Pangaea was committed but the row still reads
+        Lakes.lua`. Position decides now, not order.
+        """
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(431, 122)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
+            self.assertIsNone(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS))
+
+    def test_the_commit_button_is_found_in_the_panels_foot(self):
+        """The button reads reliably only in its own enlarged crop, which the
+        grid crop cannot cover: it is at ~0.98 of the window and the grid strip
+        stops at 0.94. Real coordinates from the live frames."""
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(431, 122)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip",
+                               return_value=[(432, 566)]):
+            self.assertEqual(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS),
+                (432, 566))
+        # The foot threshold separates them: 122 is 0.16 of the window, 566 is 0.98.
+        y, h = self.BOUNDS[1], self.BOUNDS[3]
+        self.assertLess((122 - y) / h, civ6_play.MAP_PICKER_COMMIT_MIN_Y)
+        self.assertGreater((566 - y) / h, civ6_play.MAP_PICKER_COMMIT_MIN_Y)
+
+    def test_the_row_is_not_read_through_a_browser_that_is_still_open(self):
+        """⚠⚠ With the panel up there is no `Choose Map Type` heading on screen,
+        so `_setup_current_value` falls through to its overlapping band fallback
+        and returns a TILE CAPTION. That is how a run with nothing committed
+        reported the row as `Lakes.lua`."""
+        reads = []
+
+        def never_closes(path, bounds):
+            return True
+
+        def current_value(path, bounds, name):
+            reads.append(path.name)
+            return ("Lakes.lua", (432, 219))
+
+        with mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_map_picker_labels",
+                               side_effect=lambda p, b, l: {"Select Map": [(432, 566)],
+                                                            "Back": [(700, 120)]}.get(l, [])), \
+             mock.patch.object(civ6_play, "_map_picker_tile_point",
+                               return_value=(500, 430)), \
+             mock.patch.object(civ6_play, "_map_picker_commit_point",
+                               return_value=(432, 566)), \
+             mock.patch.object(civ6_play, "_map_picker_open", never_closes), \
+             mock.patch.object(civ6_play, "_setup_current_value",
+                               side_effect=[("Continents.lua", (432, 300))] + [None] * 8), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "park_setup_pointer"), \
+             mock.patch.object(civ6_play, "press_escape"), \
+             mock.patch.object(civ6_play, "click_at"), \
+             mock.patch.object(civ6_play.macos_input, "move"), \
+             mock.patch.object(civ6_play.macos_input, "scroll"), \
+             mock.patch.object(civ6_play.time, "sleep"):
+            self.assertFalse(civ6_play.select_requested_map(
+                self.BOUNDS, "Pangaea.lua", Path("/tmp")))
+        # The verification frames were never handed to the row reader.
+        self.assertNotIn("map-picker-selected.png", reads)
+
     def test_the_commit_button_is_the_lowest_select_map_on_screen(self):
         """⚠⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS. `SELECT MAP`
         titles the panel and `Select Map` commits it, and `_normalized_label`
         casefolds both to one string — so taking the first match clicks the
         heading, which does nothing, and the game never starts."""
         with mock.patch.object(civ6_play, "_map_picker_labels",
-                               return_value=[(432, 120), (432, 566), (432, 300)]):
+                               return_value=[(432, 120), (432, 566), (432, 300)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
             self.assertEqual(
                 civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS),
                 (432, 566))
-        with mock.patch.object(civ6_play, "_map_picker_labels", return_value=[]):
+        with mock.patch.object(civ6_play, "_map_picker_labels", return_value=[]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
             self.assertIsNone(
                 civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS))
 

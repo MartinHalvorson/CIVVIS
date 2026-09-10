@@ -21,6 +21,23 @@ import re
 from pathlib import Path
 
 METRICS = ("cities", "techs", "science", "culture", "military")
+PROFILE_KEYS = ("map", "width", "height", "players", "city_states", "ruleset", "modes", "native_competitions")
+
+
+def canonical_profile(profile):
+    profile = {key: (profile or {}).get(key) for key in PROFILE_KEYS}
+    if isinstance(profile["modes"], list) and all(isinstance(mode, str) for mode in profile["modes"]):
+        profile["modes"] = sorted(set(profile["modes"]))
+    return profile
+
+
+def complete_profile(profile):
+    return (all(isinstance(profile[key], str) and profile[key] not in ("", "unknown")
+                for key in ("map", "ruleset"))
+            and all(type(profile[key]) is int and profile[key] > 0 for key in ("width", "height", "players"))
+            and type(profile["city_states"]) is int and profile["city_states"] >= 0
+            and type(profile["native_competitions"]) is bool
+            and isinstance(profile["modes"], list) and all(isinstance(mode, str) for mode in profile["modes"]))
 
 
 def finite(value):
@@ -96,9 +113,9 @@ def native_samples(files):
         for row in records(file):
             if row.get("kind") == "header":
                 header = row
-                contracts.add(header.get("player_contract") or "legacy")
+                contracts.add((header.get("player_contract") or "legacy", header.get("target_mix")))
                 if len(contracts) != 1:
-                    raise ValueError("native inputs mix player contracts; calibrate each epoch separately")
+                    raise ValueError("native inputs mix player contracts or target mixtures; calibrate each epoch separately")
                 # A binary/seed pair is not a game identity: difficulty,
                 # profile, contract and target mixture can all differ.
                 header_id = hashlib.sha256(json.dumps(header, sort_keys=True, allow_nan=False).encode()).hexdigest()
@@ -129,26 +146,44 @@ def native_samples(files):
 
 def summarize(samples):
     groups = collections.defaultdict(list)
+    unique = {}
     for sample in samples:
-        groups[tuple(sample["cohort"])].append(sample)
+        profile = canonical_profile(sample.get("profile"))
+        profile_id = json.dumps(profile, sort_keys=True, allow_nan=False)
+        key = (sample["source"], sample["run"], sample["seat"], tuple(sample["cohort"]),
+               profile_id, sample.get("model_build"))
+        if key in unique:
+            if sample["values"] != unique[key]["values"] or sample["target"] != unique[key]["target"]:
+                raise ValueError("conflicting observations for one game/seat/turn; select one authoritative continuation")
+            continue
+        unique[key] = sample
+        groups[(tuple(sample["cohort"]), profile_id)].append(sample)
     cohorts = []
-    for cohort, rows in sorted(groups.items()):
+    for (cohort, profile_id), rows in sorted(groups.items()):
+        profile = json.loads(profile_id)
         live = [r for r in rows if r["source"] == "live"]
         native = [r for r in rows if r["source"] == "native"]
+        builds = {r.get("model_build") for r in native}
+        status = ("unmatched_cohort" if not live or not native else
+                  "incomplete_profile" if not complete_profile(profile) else
+                  "unidentified_or_mixed_native_builds" if len(builds) != 1 or None in builds else
+                  "comparable_pace")
         metrics = {}
         for metric in METRICS:
             observed = [r["values"][metric] for r in live if metric in r["values"]]
             modeled = [r["values"][metric] for r in native if metric in r["values"]]
             metrics[metric] = {"live": quantiles(observed), "native": quantiles(modeled),
-                               "median_gap": statistics.median(modeled) - statistics.median(observed) if observed and modeled else None}
+                               "median_gap": statistics.median(modeled) - statistics.median(observed)
+                               if status == "comparable_pace" and observed and modeled else None}
         targets = {}
         for target in sorted({r["target"] for r in native}):
             targets[target] = {metric: quantiles([r["values"][metric] for r in native if r["target"] == target and metric in r["values"]]) for metric in METRICS}
         cohorts.append({"speed": cohort[0], "difficulty": cohort[1], "turn": cohort[2],
+                        "profile": profile,
                         "live_runs": len({r["run"] for r in live}), "native_games": len({r["run"] for r in native}),
-                        "status": "comparable_pace" if live and native else "unmatched_cohort",
+                        "status": status,
                         "metrics": metrics, "native_targets": targets})
-    return {"schema": 1, "scope": "public rival pace; not causal policy identification",
+    return {"schema": 2, "scope": "profile-matched public rival pace; not causal policy identification",
             "selection": "met live rivals; known eliminated seats excluded from pace only; older missing survival readings remain unknown; no winner-only filtering",
             "production_policy_changed": False, "cohorts": cohorts}
 
