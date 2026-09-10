@@ -415,7 +415,19 @@ fn designate_taker(g: &Game, city: &CityView, force: &[u32]) -> Option<u32> {
     let candidates: Vec<u32> = force
         .iter()
         .copied()
-        .filter(|uid| arm_of(g, *uid) == Arm::Melee && g.units[uid].attacks_left > 0)
+        .filter(|uid| {
+            let unit = &g.units[uid];
+            let arm = arm_of(g, *uid);
+            // A hybrid keeps firing during the reduction. Once the city is
+            // ready, its melee capability can finish a siege too; treating
+            // every shooter as unable to capture stranded lone robots at 1 HP.
+            let hybrid_finisher = arm == Arm::Shooter
+                && g.rules.units[unit.kind].is_melee_capable()
+                && unit.moves_left > 0.0
+                && city.wall_hp <= 0
+                && f64::from(city.hp) <= taker_blow(g, unit.owner, *uid, city.id);
+            unit.attacks_left > 0 && (arm == Arm::Melee || hybrid_finisher)
+        })
         .collect();
     let rank = |uid: &u32| {
         let unit = &g.units[uid];
@@ -639,7 +651,7 @@ fn siege_posts(
     let mut melee: Vec<u32> = force
         .iter()
         .copied()
-        .filter(|uid| arm_of(g, *uid) == Arm::Melee)
+        .filter(|uid| arm_of(g, *uid) == Arm::Melee || Some(*uid) == taker)
         .collect();
     melee.sort_by_key(|uid| (g.wdist(g.units[uid].pos, city.pos), *uid));
     for uid in &melee {
@@ -693,6 +705,7 @@ fn siege_posts(
     let mut guns: Vec<u32> = force
         .iter()
         .copied()
+        .filter(|uid| Some(*uid) != taker)
         .filter(|uid| matches!(arm_of(g, *uid), Arm::Siege | Arm::Shooter))
         .collect();
     guns.sort_by_key(|uid| {
@@ -1645,6 +1658,9 @@ impl AdvancedAi {
 }
 
 #[cfg(test)]
+mod capture_tests;
+
+#[cfg(test)]
 mod tests {
     use super::super::GrandStrategy;
     use super::*;
@@ -1652,7 +1668,7 @@ mod tests {
 
     /// `the_storming`'s board with its army removed: a 200-hit-point city
     /// of player 1 behind 100 points of wall, and nothing else.
-    fn walled_city() -> (Game, u32) {
+    pub(super) fn walled_city() -> (Game, u32) {
         let mut g = build(position("the_storming").expect("known"), 3).expect("buildable");
         let seeded: Vec<u32> = (0..2).flat_map(|pid| g.player_unit_ids(pid)).collect();
         for uid in seeded {
@@ -1664,7 +1680,7 @@ mod tests {
         (g, cid)
     }
 
-    fn plan_against(g: &Game, cid: u32) -> StrategicPlan {
+    pub(super) fn plan_against(g: &Game, cid: u32) -> StrategicPlan {
         StrategicPlan {
             strategy: GrandStrategy::Conquest,
             target_player: Some(1),
@@ -1689,7 +1705,7 @@ mod tests {
     }
 
     /// The ring tiles of a city, sorted.
-    fn ring_of(g: &Game, cid: u32) -> Vec<Pos> {
+    pub(super) fn ring_of(g: &Game, cid: u32) -> Vec<Pos> {
         let pos = g.cities[&cid].pos;
         let mut ring: Vec<Pos> = g
             .wdisk(pos, 1)
@@ -1701,7 +1717,7 @@ mod tests {
     }
 
     /// Tiles at exactly `distance` from the city, sorted.
-    fn at_distance(g: &Game, cid: u32, distance: i32) -> Vec<Pos> {
+    pub(super) fn at_distance(g: &Game, cid: u32, distance: i32) -> Vec<Pos> {
         let pos = g.cities[&cid].pos;
         let mut out: Vec<Pos> = g
             .wring(pos, distance)
@@ -1740,7 +1756,7 @@ mod tests {
     }
 
     /// One unit through the doctrine alone, the rest of the force standing.
-    fn step_unit(ai: &mut AdvancedAi, g: &mut Game, pid: usize, uid: u32, plan: &StrategicPlan) {
+    pub(super) fn step_unit(ai: &mut AdvancedAi, g: &mut Game, pid: usize, uid: u32, plan: &StrategicPlan) {
         ai.rebuild_force_groups(g, pid, plan);
         for _ in 0..8 {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
