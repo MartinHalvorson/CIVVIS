@@ -2220,6 +2220,15 @@ pub const GENES: &[Gene] = &[
     // action layer to `src/game/actions.rs`. While a city builds a Settler, a
     // Builder clears the best-paying feature in reach instead of improving.
     Gene { tag: "chop-for-expansion", field: "chop_for_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_for_expansion, disable: AdvancedAi::disable_chop_for_expansion },
+    // Appended above the markers, so a running screen keeps its positional
+    // gene index and the append points stay free at the tail.
+    // `TargetRank` leads with `not_the_capital`, so the early conquest opening
+    // aims at the one city on the board that is reliably defended and the
+    // garrison field below it only breaks ties. 2 cities taken against 65 lost
+    // over 111 Emperor games. This ranks by the visible garrison first and
+    // demotes capital-ness to the field under it — same fields, same
+    // tie-breaks, so the capital still wins among equally garrisoned cities.
+    Gene { tag: "conquest-takes-the-soft-city", field: "conquest_takes_the_soft_city", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_takes_the_soft_city, disable: AdvancedAi::disable_conquest_takes_the_soft_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
