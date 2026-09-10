@@ -11568,7 +11568,14 @@ impl AdvancedAi {
                 // target the map cannot meet.
                 && !(self.domination_lane_hands_over
                     && target == VictoryTarget::Domination
-                    && cities.len() >= DOMINATION_HANDOVER_CITIES)
+                    && cities.len() >= DOMINATION_HANDOVER_CITIES
+                    // ⚠ And only with an army that can win the war it opens. Game 6
+                    // (2026-09-10) handed over at t100 with power 198 against the
+                    // strongest rival's 384: Recovery by t116, one city by t170 —
+                    // a t270 victory-clock loss turned into a t170 suicide. The bar
+                    // is the same one the elective-war branch below has always
+                    // used against the weakest living rival.
+                    && my_power > weakest_rival * 1.80 + 20.0)
             {
                 (
                     GrandStrategy::Expansion,
