@@ -21078,8 +21078,25 @@ impl AdvancedAi {
             .values()
             .filter(|unit| unit.owner == pid && unit.kind == "rock_band")
             .count();
-        if active_bands >= 2 || !g.players[pid].civics.contains(&crate::name!("cold_war")) {
+        if !g.players[pid].civics.contains(&crate::name!("cold_war")) {
             return;
+        }
+        if active_bands >= 2 {
+            // An assigned Culture race spends its affordable Faith on usable
+            // tours. A fixed two-band ceiling can strand the whole treasury
+            // while both bands travel; an absent venue should still hold it.
+            let usable_tour = self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                && g.units.values().any(|unit| {
+                    unit.owner == pid
+                        && unit.kind == "rock_band"
+                        && g.map.tiles.keys().any(|position| {
+                            g.rock_concert_ai_value(pid, unit.id, *position).is_some()
+                                && g.route_distance(unit.id, *position, 0).is_some()
+                        })
+                });
+            if !usable_tour {
+                return;
+            }
         }
         for city in g.player_city_ids(pid) {
             // Same correction as the religious units above: the shipped rules
