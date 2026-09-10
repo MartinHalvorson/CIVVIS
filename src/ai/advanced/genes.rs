@@ -2279,6 +2279,7 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    Gene { tag: "domination-siege-research", field: "domination_siege_research", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research, disable: AdvancedAi::disable_domination_siege_research },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
