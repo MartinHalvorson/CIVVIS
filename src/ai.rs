@@ -6754,8 +6754,8 @@ impl BasicAi {
         // `ranged-hp-reserve` adds to the same margin: an archer reads the pool
         // as lethal while it would still be left standing, and leaves.
         let margin = self.veteran_hp_margin(g, uid) + self.ranged_hp_reserve(g, uid);
-        let lethal = holding.incoming > 0.0
-            && holding.incoming + f64::from(margin) >= f64::from(hp);
+        let lethal =
+            holding.incoming > 0.0 && holding.incoming + f64::from(margin) >= f64::from(hp);
         if remembered.is_none() && !lethal {
             return None;
         }
@@ -9773,8 +9773,12 @@ impl BasicAi {
         if !self.ranged_hp_reserve {
             return 0;
         }
-        let Some(unit) = g.units.get(&uid) else { return 0 };
-        let Some(spec) = g.rules.units.get(unit.kind.as_str()) else { return 0 };
+        let Some(unit) = g.units.get(&uid) else {
+            return 0;
+        };
+        let Some(spec) = g.rules.units.get(unit.kind.as_str()) else {
+            return 0;
+        };
         if spec.has_ranged_attack() && !spec.siege && spec.domain.as_deref() != Some("air") {
             RANGED_HP_RESERVE
         } else {
@@ -18724,7 +18728,10 @@ mod tests {
             ai
         };
         assert_eq!(controller(false).ranged_hp_reserve(&game, ours), 0);
-        assert_eq!(controller(true).ranged_hp_reserve(&game, ours), RANGED_HP_RESERVE);
+        assert_eq!(
+            controller(true).ranged_hp_reserve(&game, ours),
+            RANGED_HP_RESERVE
+        );
 
         // A fresh controller per reading: `retreat_step` remembers danger it has
         // seen, and a memory from a low-hp reading would make a healthy one leave.
@@ -18746,7 +18753,10 @@ mod tests {
         );
         // At full health it holds its ground and takes the duel: the reserve is
         // for breaking off early, not for refusing to fight.
-        assert!(!leaves(true, 100), "a full-health archer must still stand and shoot");
+        assert!(
+            !leaves(true, 100),
+            "a full-health archer must still stand and shoot"
+        );
     }
 
     #[test]
@@ -18754,11 +18764,21 @@ mod tests {
         let (mut game, ours, front, _home) = a_warrior_under_one_archer();
         let mut ai = BasicAi::new();
         ai.ranged_hp_reserve = true;
-        assert_eq!(ai.ranged_hp_reserve(&game, ours), 0, "a warrior trades blows");
+        assert_eq!(
+            ai.ranged_hp_reserve(&game, ours),
+            0,
+            "a warrior trades blows"
+        );
         game.remove_unit(ours);
         let catapult = game.spawn_test_unit("catapult", 0, front);
-        assert!(game.rules.units["catapult"].siege && game.rules.units["catapult"].has_ranged_attack());
-        assert_eq!(ai.ranged_hp_reserve(&game, catapult), 0, "a siege piece must sit under the walls");
+        assert!(
+            game.rules.units["catapult"].siege && game.rules.units["catapult"].has_ranged_attack()
+        );
+        assert_eq!(
+            ai.ranged_hp_reserve(&game, catapult),
+            0,
+            "a siege piece must sit under the walls"
+        );
     }
 
     /// `modernize-before-spending`: the same Gold goes to the promoted unit
