@@ -87,3 +87,23 @@ fielded nor queued land siege unit; 98 had siege units but none within six
 hexes. These are repeated post-turn observations, not independent samples or
 proof of a production/pathfinding defect. They include the cost of staging,
 and the distance test does not establish reachability or firing capability.
+
+## Existing siege-commitment follow-up
+
+An exploratory replay enabling the existing `siege-commitment` gene completed
+Domination twice in the eight seeds, versus once in the control. That small
+result did not carry into a predeclared, disjoint 40-seed comparison
+(109107000–109107039; same source and shape, handover on and siege research off
+in both arms). Siege commitment completed Domination in **5/40** worlds versus
+**10/40** without it. The paired seeds lost five completions and gained none;
+26 terminal records were identical. The two-sided exact test on the five
+discordant outcomes is p=0.0625, so this is negative evidence for the proposed
+use, not a precise universal effect estimate.
+
+Active-war walled-objective observations were 1,349 with commitment and 1,127
+without it. Of these, no fielded or queued land siege unit was present in
+216 versus 80 observations; a fielded siege unit existed but none was within
+six hexes in 486 versus 402. These different trajectories do not isolate the
+cause of the lost completions. A stickier target is not itself a remedy for
+an unexecutable siege. No deployment default changed. The census artifact
+includes every paired terminal record, protocol and observer source.
