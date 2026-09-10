@@ -1009,6 +1009,9 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_civvis_decision_mode_always_enables_state_export(self) -> None:
         self.assertTrue(civ6_play.state_export_enabled(
+            SimpleNamespace(export_state=False, civvis_decides=False, action_transitions=True)
+        ))
+        self.assertTrue(civ6_play.state_export_enabled(
             SimpleNamespace(export_state=False, civvis_decides=True)
         ))
         self.assertTrue(civ6_play.state_export_enabled(
@@ -1069,6 +1072,11 @@ class Civ6PlayTest(unittest.TestCase):
             setter.call_args_list,
             [
                 call((100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary),
+                     panel=None, panel_out=mock.ANY),
+                # The map is a required row like any other: the panel is the only
+                # place it can be set, and a seat that starts alone on Continents
+                # cannot play a domination lane.
+                call((100, 33, 756, 480), "map_type", "Continents.lua", Path(temporary),
                      panel=None, panel_out=mock.ANY),
                 call((100, 33, 756, 480), "map_size", "MAPSIZE_SMALL", Path(temporary),
                      panel=None, panel_out=mock.ANY),
@@ -1787,6 +1795,94 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class MapSelectionTests(unittest.TestCase):
+    """★★★★★ THE MAP WAS THE ONE LOBBY ROW THE PANEL NEVER SET.
+
+    `MapScript` in the baked config is ignored — the FrontEnd context that reads
+    it never loads on this install — so a game plays what the Create Game panel
+    says, and the panel was never told. Every run was Continents, on which a seat
+    can start ALONE: one reached turn 118 with `met = 0` and first contact at
+    turn 130, far too late for a domination lane that needs three capitals.
+
+    An earlier attempt clicked a guessed row index, broke setup outright (four
+    attempts, no `seat` event) and was reverted with two conditions written down:
+    OCR the dropdown rows, or read the selection back before Start Game.
+    `set_dropdown` does both for every row, so the map goes through the same
+    verified path as difficulty, size and speed — no special case, and no
+    special refusal.
+    """
+
+    @staticmethod
+    def _args(**changes):
+        values = dict(difficulty="DIFFICULTY_EMPEROR", map="Pangaea.lua",
+                      map_size="MAPSIZE_TINY", speed="GAMESPEED_STANDARD",
+                      leader="LEADER_SIMON_BOLIVAR")
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    def _rows_driven(self, args):
+        """The (row, value) pairs `configure_and_start` drives, in order.
+
+        The leader step answers False so the call stops immediately after the
+        dropdown loop: this is about which rows are set, not about the rest of
+        the Create Game flow.
+        """
+        driven = []
+
+        def record(bounds, name, value, run_dir, panel=None, panel_out=None):
+            driven.append((name, value))
+            return True
+
+        with mock.patch.object(civ6_play, "set_dropdown", record), \
+             mock.patch.object(civ6_play, "select_requested_leader",
+                               return_value=False):
+            started = civ6_play.configure_and_start(
+                (0, 0, 864, 528), args, Path("/tmp"))
+        self.assertFalse(started)
+        return driven
+
+    def test_the_requested_map_is_driven_like_every_other_setup_row(self):
+        self.assertIn(("map_type", "Pangaea.lua"), self._rows_driven(self._args()))
+
+    def test_the_map_is_chosen_before_the_size_it_constrains(self):
+        """The size list is the one the chosen script offers, so the size is
+        verified against the final map rather than against the outgoing one."""
+        rows = [name for name, _ in self._rows_driven(self._args())]
+        self.assertLess(rows.index("map_type"), rows.index("map_size"))
+
+    def test_a_non_default_map_is_no_longer_refused_outright(self):
+        """The refusal this replaces returned False before touching the panel,
+        so `--map Pangaea.lua` could not start a game at all."""
+        self.assertEqual(len(self._rows_driven(self._args())), 4)
+        source = (Path(civ6_play.__file__)).read_text(encoding="utf-8")
+        self.assertNotIn("map selection is disabled pending verification", source)
+
+    def test_the_map_the_game_generated_is_what_makes_a_seat_configured(self):
+        """The check on the far side of the click: the mod reports
+        `MapConfiguration.GetScript()` and a seat that generated another script
+        is not `configured`, so a missed selection ends the attempt instead of
+        quietly playing the wrong world for three hours."""
+        args = self._args(game_mode=[], ruleset="RULESET_EXPANSION_2")
+        seat = {"difficulty": "DIFFICULTY_EMPEROR", "size": "MAPSIZE_TINY",
+                "speed": "GAMESPEED_STANDARD", "map": "Pangaea.lua",
+                "leader": "LEADER_SIMON_BOLIVAR", "modes": [],
+                "ruleset": "RULESET_EXPANSION_2"}
+        self.assertTrue(civ6_play.seat_matches_requested(seat, args)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            {**seat, "map": "Continents.lua"}, args)[0])
+
+    def test_the_command_line_refuses_a_map_the_panel_cannot_be_driven_to(self):
+        """Rejected at argparse, where the cost is a message — not inside
+        `set_dropdown`, minutes into a launched game."""
+        self.assertIn("Pangaea.lua", civ6_play.OPTIONS["map_type"])
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr), \
+                self.assertRaises(SystemExit) as refused:
+            civ6_play.main(["--map", "Atlantis.lua"])
+        self.assertEqual(refused.exception.code, 2)
+        self.assertIn("--map", stderr.getvalue())
+
+
 class DialogueCloseConfigTests(unittest.TestCase):
     @staticmethod
     def _config(dialogue_seconds):
@@ -2280,6 +2376,22 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
     def test_the_asked_for_ruleset_matches(self):
         self.assertEqual(
             civ6_play.seat_matches_requested(self._seat(), args()), (True, True, True))
+
+    def test_action_capture_must_be_read_back_when_requested(self):
+        requested = args(action_transitions=True)
+        self.assertFalse(civ6_play.seat_matches_requested(self._seat(), requested)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            self._seat(action_transitions=False), requested)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self._seat(action_transitions=True), requested)[0])
+
+    def test_isolated_probes_must_be_read_back_when_requested(self):
+        requested = args(isolated_action_probes=True)
+        self.assertFalse(civ6_play.seat_matches_requested(self._seat(), requested)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=False), requested)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=True), requested)[0])
 
     def test_a_vanilla_game_is_refused_and_fails_the_whole_config(self):
         configured, modes, ruleset = civ6_play.seat_matches_requested(

@@ -79,6 +79,12 @@ import computer_control as desktop_control  # noqa: E402
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
 from civ6_play import ROMAN_LEADER, VICTORY_LANES, resolve_live_leader  # noqa: E402
+from civ6_play import OPTIONS as SETUP_OPTIONS  # noqa: E402
+
+# The map scripts `civ6_play` can drive the Create Game panel to. Taken from
+# that module rather than restated here: a list copied into a second file is
+# complete on the day it is written and silently wrong afterwards.
+MAP_SCRIPTS = list(SETUP_OPTIONS["map_type"])
 # The run's supplied binary can come from another checkout than this bridge.
 # Reuse the same provenance and digest helpers the brain writes into
 # `runtime_updates.jsonl`, so the human-facing climb log and the durable dossier
@@ -2054,6 +2060,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--tag", tag,
          "--orders-db", str(orders_db),
          "--difficulty", args.difficulty,
+         "--map", args.map,
          "--map-size", args.map_size,
          "--speed", args.speed,
          "--leader", resolve_live_leader(getattr(args, "leader", None))]
@@ -2426,7 +2433,15 @@ def main() -> int:
                     help="allow prompt-clearing when --envoys is enabled; use "
                          "--no-envoy-consider for an isolated run")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER")
+    # The map script the Create Game panel is driven to. It was never forwarded
+    # from here, so every ladder game played the `civ6_play` default whatever a
+    # host's policy asked for; on Continents a seat can start alone, which a
+    # domination lane cannot recover from. `civ6_play` verifies the choice twice
+    # -- on the panel, and against `MapConfiguration.GetScript()` in the `seat`
+    # event -- so forwarding it is safe to do and visible when it misses.
+    ap.add_argument("--map", default="Continents.lua", choices=MAP_SCRIPTS)
     # Six players, because the size IS the player count — see `civ6_play.py`.
+    # MAPSIZE_TINY is four, MAPSIZE_DUEL two.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)

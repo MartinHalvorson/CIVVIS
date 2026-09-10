@@ -3,13 +3,17 @@
 -- already-running game's limit. WorldRankings.lua:1053 reads GetMaxGameTurns.
 -- Run: lua5.1 tools/civ6_control/mod/turn_limit_test.lua
 local here = arg[0]:match("(.*)/[^/]*$") or "."
-local function stub()
-    return setmetatable({}, {
-        __index = function() return stub() end,
-        __call = function() return stub() end,
-        __newindex = function() end,
-    })
-end
+-- Keep mocked engine handles rooted, as the host does. Allocating fresh
+-- closures on every missing lookup exposes a Lua 5.1 GC use-after-free
+-- (reproduced with AddressSanitizer in luaD_precall), unrelated to the turn
+-- horizon under test. Do not disable collection or skip the startup checks.
+local handle = {}
+setmetatable(handle, {
+    __index = function() return handle end,
+    __call = function() return handle end,
+    __newindex = function() end,
+})
+local function stub() return handle end
 setmetatable(_G, { __index = function() return stub() end })
 CivvisControlConfig = { MaxTurns = 650, StartAfterTicks = 0, Survey = true }
 local configured, native = 250, 250
