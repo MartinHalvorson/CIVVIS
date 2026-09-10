@@ -212,9 +212,9 @@ jobs:
         if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
         run: cargo nextest run --cargo-profile ci --locked
 
-      - name: Tournament runner settings and provenance regressions
+      - name: Tournament settings, provenance, and isolated live-action regressions
         if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
-        run: cargo test --profile ci --locked --features developer-tools --bin gene_screen
+        run: cargo test --profile ci --locked --features developer-tools --bin gene_screen --bin live_divergence
 
       # ⚠ The worktree audit is the only guard against a whole class of loss
       # that is invisible to every other gate here: finished work left unstaged
@@ -272,6 +272,14 @@ jobs:
       # fleet Mac, where `ship` validation runs it.
       - name: Rules data matches the shipped Civilization VI database
         run: python3 tools/civ6_fidelity.py --check --max 0
+      # Rules parity is not trajectory parity. `civ6_fidelity.py` proves the
+      # constants match; this proves a game played under them goes the same
+      # way, per subsystem, and only inside a configuration BOTH corpora
+      # populate. Its evidence is `docs/civ6_ladder.json` and
+      # `docs/gene_screens/`, both committed, so unlike the rules check this
+      # one is a real number on a hosted runner too.
+      - name: The simulator's trajectories match the live seat's
+        run: python3 tools/civ6_trajectory_fidelity.py --check --max 0
       # The ledger (`docs/gene_ledger.json`), the verdict block at the end of
       # `src/ai/advanced/genes.rs` and `GENE_HEURISTIC_RANKING.md` are all
       # derived from the same screen sources by one tool; a change that edits

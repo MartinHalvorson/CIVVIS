@@ -1125,6 +1125,7 @@ impl AdvancedAi {
     /// `gene_screen` starts here and sets each gene to its drawn state; the
     /// membership tests read this body. Deployment is `enable_live_bridge`.
     pub fn enable_live_bridge_universe(&mut self) {
+        self.observed_player = true;
         // Every `live()` gene in the registry: the repairs and the host-only
         // adapters. The reason each exists is on its row in `genes.rs`.
         for gene in super::GENES.iter().filter(|gene| gene.live()) {
@@ -1132,45 +1133,11 @@ impl AdvancedAi {
         }
         self.apply_shared_city_target_contract();
     }
-
-    /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
-    /// without the deployment-profile treatments that do not apply to native
-    /// CIVVIS evaluation.
-    ///
-    /// ★★★★★ THE WHOLE BUNDLE HAS NEVER BEEN PRICED NATIVELY. The bridge set
-    /// grew one measured repair at a time, and each was gated "live-bridge
-    /// only" so the frozen `advanced_v1` anchor and the recorded ladders kept
-    /// running the controller they were rated with. That is a versioning
-    /// decision, not a finding about strength — and the defects themselves are
-    /// properties of *this* engine's rules, every one of them measured on
-    /// native CIVVIS runs: an army admitted at `command_radius` and judged at
-    /// half of it, so it never clears its own muster gate (5/85 turns); a siege
-    /// that walks away from a city at 25 hp and is refunded 200 hp of healing;
-    /// a relief column that marches at the besieger nearest *itself* rather
-    /// than the one killing the city; an army target that never asks how strong
-    /// the rival is (94 of 188 war turns already "satisfied").
-    ///
-    /// `live` has only ever been compared with its own `live_without_*`
-    /// ablations, so what the bundle is worth against the production
-    /// `advanced` incumbent is simply unmeasured. Ablation cannot answer it
-    /// either, because these repairs are *serially coupled*: readiness gates
-    /// the march, the march gates the siege, the siege gates the capture, and
-    /// the army target decides whether there is anything to march with.
-    /// Removing one from a bundle that still contains the other forty prices a
-    /// link in a chain that is otherwise whole; it does not price the chain
-    /// against no chain at all.
-    ///
-    /// The core Firaxis adapters are deliberately excluded:
-    ///
-    /// | excluded | why |
-    /// |---|---|
-    /// | `live_trader_route_adapter` | adapts a live Trader's zero walking movement to a distinct route-start action; no native game has that action |
-    /// | `live_religious_purchase_guard` | enforces Firaxis' city-majority purchase rule, which is not a CIVVIS rule |
-    /// | `solvent_faith_army` | prices a faith-bought soldier's GOLD upkeep under Firaxis' economy |
-    ///
-    /// `enable_live_bridge` is therefore this function plus the host-only
-    /// genes (`Kind::HostOnly` in `genes.rs`). Both bundles are loops over the
-    /// one registry, so they cannot drift apart.
+    /// The deployment player under native execution. This is intentionally
+    /// the same fixed policy bundle and ledger as `enable_live_bridge`.
+    /// Historically the host-only flags were omitted here, including several
+    /// strategic safeguards; that made a tournament genome a different player.
+    /// True host representation adapters remain inert without their host facts.
     pub fn enable_engine_repairs(&mut self) {
         self.enable_engine_repairs_universe();
         self.apply_gene_ledger();
@@ -1181,9 +1148,7 @@ impl AdvancedAi {
     /// repairs, so this production-profile policy remains fixed across every
     /// tournament genome. See `enable_live_bridge_universe`.
     pub fn enable_engine_repairs_universe(&mut self) {
-        self.enable_engine_repairs_war();
-        self.enable_engine_repairs_economy();
-        self.apply_shared_city_target_contract();
+        self.enable_live_bridge_universe();
     }
 
     /// The military half of [`AdvancedAi::enable_engine_repairs`]: force
@@ -2036,7 +2001,7 @@ impl AdvancedAi {
     /// Reserve the first empty trade route slot ahead of ordinary production in
     /// any city that can start a safe route. A barbarian alarm at a remote city
     /// no longer vetoes the whole empire. See
-    /// `BasicAi::solvency_first_trade_slot`; opt-in gene
+    /// `BasicAi::solvency_first_trade_slot`; production gene
     /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
     /// append-point check reads a method line's first identifier.
     pub fn enable_solvency_first_trade_slot(&mut self) {
@@ -3952,6 +3917,17 @@ impl AdvancedAi {
         self.chop_for_expansion = false;
     }
 
+    /// `conquest-takes-the-soft-city`: rank the early conquest target by what
+    /// can be taken before what is worth most. See `advanced/early_conquest.rs`.
+    pub fn enable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = true;
+    }
+
+    /// The twin of `enable_conquest_takes_the_soft_city`.
+    pub fn disable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = false;
+    }
+
     /// `counter-culture-by-conquest`: answer a culture leader with war aimed
     /// at its Great Works. See `advanced/victory_heuristics.rs`.
     pub fn enable_counter_culture_by_conquest(&mut self) {
@@ -3963,6 +3939,10 @@ impl AdvancedAi {
         self.counter_culture_by_conquest = false;
     }
 
+    /// The army's turn planned from a ranked Objective Board — rows valued in
+    /// hammers with a requirement and a deadline — and served by persistent
+    /// task forces, in place of proximity force groups and the posture
+    /// ladder; `force_groups` is built from the forces. See `objective_board`.
     pub fn enable_objective_board(&mut self) {
         self.objective_board = true;
     }

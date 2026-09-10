@@ -186,9 +186,7 @@ impl AdvancedAi {
             // bar as the other lanes, and `victory_suppression_city` aims the
             // campaign at the Great Works. The actionable pass still has to
             // agree the war is executable, exactly as it does for Science.
-            GrandStrategy::Culture if self.counter_culture_by_conquest => {
-                GrandStrategy::Conquest
-            }
+            GrandStrategy::Culture if self.counter_culture_by_conquest => GrandStrategy::Conquest,
             GrandStrategy::Culture => GrandStrategy::Culture,
             GrandStrategy::Religion if g.players[pid].religion.is_some() => GrandStrategy::Religion,
             GrandStrategy::Religion => GrandStrategy::Conquest,
@@ -698,5 +696,4 @@ mod tests {
             Some(rival_city)
         );
     }
-
 }

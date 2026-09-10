@@ -1,0 +1,6 @@
+{
+  "note": "Worst per-subsystem divergence between the live corpus and the simulator, in matched configurations. Written only by `civ6_trajectory_fidelity.py --write`; a tolerance may tighten and never loosens.",
+  "tolerances": {
+    "standing": 1.9307
+  }
+}

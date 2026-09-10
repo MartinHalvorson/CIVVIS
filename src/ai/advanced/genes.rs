@@ -67,9 +67,9 @@ pub enum Kind {
     /// An engine repair the Civilization VI seat ships and a native board can
     /// play: on in the genome's universe, screenable, withholdable live.
     Repair(Axis),
-    /// Shipped by the Civilization VI seat but reading host state a native
-    /// board does not have: inert in a headless game, so never screened;
-    /// withholdable live.
+    /// Fixed bridge-era behavior, enabled in both production adapters. Some
+    /// rows adapt host-only representation; others are strategic safeguards.
+    /// Kept out of the variable genome for bit-order compatibility.
     HostOnly,
     /// Production ships it on before the ledger says anything (the stock
     /// agent carries it).
@@ -117,7 +117,8 @@ impl Gene {
     pub const fn opt_in(&self) -> bool {
         matches!(self.kind, Kind::OptIn)
     }
-    /// On after `enable_engine_repairs_universe`: the genome's universe.
+    /// On after setup among the variable genes. HostOnly rows are fixed on
+    /// outside the variable genome in both production adapters.
     pub const fn universe_on(&self) -> bool {
         self.repair() || self.production()
     }
@@ -937,7 +938,11 @@ pub const GENES: &[Gene] = &[
     // usable empty slot after immediate local defence and test the producing
     // origin itself; ordinary and frozen controllers keep the global veto.
     // Appended at the END so a running screen keeps its positional genome.
-    Gene { tag: "solvency-first-trade-slot", field: "solvency_first_trade_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_solvency_first_trade_slot, disable: AdvancedAi::disable_solvency_first_trade_slot },
+    // Promoted 2026-09-10: the three latest standard screens keep this gene
+    // first, at +92/+101/+104 scaled wins per 10,000 seats, with a +5.17 pp
+    // aggregate on/off difference over 47,640 measured seats. The local fire
+    // above still pins the remote-alarm safety boundary.
+    Gene { tag: "solvency-first-trade-slot", field: "solvency_first_trade_slot", kind: Kind::Production, enable: AdvancedAi::enable_solvency_first_trade_slot, disable: AdvancedAi::disable_solvency_first_trade_slot },
     // 2026-08-24 operator goal: "much stronger tactical smarts and planning
     // for taking enemy cities, particularly for weaker enemies … analyze
     // neighboring enemies' military strength (public information) and their
@@ -2222,6 +2227,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "chop-for-expansion", field: "chop_for_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_for_expansion, disable: AdvancedAi::disable_chop_for_expansion },
     // Appended above the markers, so a running screen keeps its positional
     // gene index and the append points stay free at the tail.
+    // `TargetRank` leads with `not_the_capital`, so the early conquest opening
+    // aims at the one city on the board that is reliably defended and the
+    // garrison field below it only breaks ties. 2 cities taken against 65 lost
+    // over 111 Emperor games. This ranks by the visible garrison first and
+    // demotes capital-ness to the field under it — same fields, same
+    // tie-breaks, so the capital still wins among equally garrisoned cities.
+    Gene { tag: "conquest-takes-the-soft-city", field: "conquest_takes_the_soft_city", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_takes_the_soft_city, disable: AdvancedAi::disable_conquest_takes_the_soft_city },
     // Every arm of `denial_response_for_pressure` reaches Conquest except
     // Culture, which answers a rival about to win by racing it and has no gene
     // to choose otherwise — and culture is the lane the live ladder loses to,
