@@ -2101,7 +2101,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          # frame was never forwarded here, so no ladder run has played it.
          "--combat-frames", str(args.combat_frames),
          "--replan-frames", str(args.replan_frames),
-         "--window-side", "right",
+         "--window-side", "left",
          "--window-frac", "0.5", "--window-vfrac", "0.5"]
     )
 

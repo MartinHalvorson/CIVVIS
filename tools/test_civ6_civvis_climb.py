@@ -2288,6 +2288,16 @@ class BatchRefreshSecondsTests(unittest.TestCase):
                 leader = cmd.index("--leader")
                 self.assertEqual(cmd[leader + 1], climb.ROMAN_LEADER)
 
+    def test_new_and_resumed_games_keep_firaxis_in_the_upper_left(self):
+        for save in (None, Path("AutoSave.Civ6Save")):
+            with self.subTest(save=save):
+                cmd = climb.play_command(self._play_args(), "t",
+                                         Path("orders.sqlite"), Path("civvis_orders"),
+                                         load_save=save)
+                for flag, expected in (("--window-side", "left"),
+                                       ("--window-frac", "0.5"), ("--window-vfrac", "0.5")):
+                    self.assertEqual(cmd[cmd.index(flag) + 1], expected)
+
     def test_the_mid_turn_frames_reach_the_play_command(self):
         """The combat frame (#2132) was never forwarded by the climb, so no
         ladder run ever played it; both frame counts now cross verbatim, the
