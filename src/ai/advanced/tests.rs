@@ -15201,6 +15201,34 @@ fn a_culture_target_reaches_the_theater_building_debt() {
         owed > unowed,
         "a Culture-targeted seat reaches the debt instead of the non-Culture veto: {owed} vs {unowed}"
     );
+
+    // An explicit Culture contract still has to open the district while the
+    // war planner is temporarily in Recovery. The normal district value is
+    // present in both arms; this larger gap pins the targeted lane's recovery
+    // handoff rather than merely proving that Culture is valued when the plan
+    // already says Culture.
+    let district_city = found_test_city(&mut game, 0);
+    let theater_site = game
+        .district_sites(district_city, crate::name!("theater_square"))
+        .into_iter()
+        .next()
+        .expect("the second city has a legal Theater Square site");
+    let theater = Item::District {
+        district: crate::name!("theater_square"),
+        pos: theater_site,
+    };
+    let recovery = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan
+    };
+    let targeted_recovery =
+        treated.production_value(&game, 0, district_city, &theater, &recovery, &counts);
+    let untargeted_recovery =
+        AdvancedAi::new().production_value(&game, 0, district_city, &theater, &recovery, &counts);
+    assert!(
+        targeted_recovery > untargeted_recovery + 10.0,
+        "the explicit Culture target preserves a strong Theater district bid during Recovery: {targeted_recovery} vs {untargeted_recovery}"
+    );
 }
 
 #[test]
