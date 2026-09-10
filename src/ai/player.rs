@@ -151,34 +151,39 @@ fn execute_frame<'a>(
     finishing: &super::finishing::WarFinishingVolley,
     ordinary: impl Iterator<Item = &'a (usize, Action)>,
 ) -> bool {
+    let mut changed = false;
     for (target, actions) in &finishing.execution {
         if game.units.contains_key(target) {
             for action in actions {
-                if execute_observed_action(game, pid, action) {
-                    return true;
+                match execute_observed_action(game, pid, action) {
+                    Some(refresh) => changed |= refresh,
+                    None => return true,
                 }
             }
         }
     }
-    // This tail assumes the projected finishing result. Never reach it after
-    // a refusal, discovery or actual combat roll changed those premises.
+    // Complete the conditional volley as a batch, then observe its actual
+    // result before ordinary movement. The frame budget is NOT an attack cap.
+    if changed {
+        return true;
+    }
     for (seat, action) in ordinary {
-        if *seat == pid
-            && !matches!(action, Action::EndTurn)
-            && execute_observed_action(game, pid, action)
-        {
-            return true;
+        if *seat == pid && !matches!(action, Action::EndTurn) {
+            match execute_observed_action(game, pid, action) {
+                Some(refresh) => changed |= refresh,
+                None => return true,
+            }
         }
     }
-    false
+    changed
 }
 
-/// True means the rest of this projected batch must not execute. Replanning
-/// is bounded by the same frame budget as the live adapter; unused projected
-/// actions are not permission to execute against facts we know are stale.
-fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> bool {
+/// None stops a refused/terminal batch immediately. Some(true) requests a
+/// fresh observation AFTER the batch, preserving the live adapter's bounded
+/// batch cadence instead of silently limiting an army to three attacks.
+fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Option<bool> {
     if game.current != pid || game.winner.is_some() {
-        return true;
+        return None;
     }
     let explored = game.players[pid].explored.len();
     let allocator = game.next_id;
@@ -187,21 +192,23 @@ fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> bool
             .counters
             .entry("player:refused".into())
             .or_default() += 1;
-        return true;
+        return None;
     }
-    game.current != pid
-        || game.winner.is_some()
-        || game.players[pid].explored.len() != explored
-        || game.next_id != allocator
-        || matches!(
-            action,
-            Action::Attack { .. }
-                | Action::Ranged { .. }
-                | Action::CityStrike { .. }
-                | Action::EncampmentStrike { .. }
-                | Action::AirStrike { .. }
-                | Action::TheologicalAttack { .. }
-        )
+    Some(
+        game.current != pid
+            || game.winner.is_some()
+            || game.players[pid].explored.len() != explored
+            || game.next_id != allocator
+            || matches!(
+                action,
+                Action::Attack { .. }
+                    | Action::Ranged { .. }
+                    | Action::CityStrike { .. }
+                    | Action::EncampmentStrike { .. }
+                    | Action::AirStrike { .. }
+                    | Action::TheologicalAttack { .. }
+            ),
+    )
 }
 
 #[cfg(test)]
