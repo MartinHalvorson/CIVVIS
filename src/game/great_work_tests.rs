@@ -77,7 +77,14 @@ fn archaeologists_extract_housed_artifacts_and_consume_sites() {
         tile.pillaged = false;
     }
 
+    // Natural History can reveal a site beneath an existing improvement.
+    // Digging extracts the artifact without replacing or repairing that tile.
+    game.map.tiles.get_mut(&sites[0]).unwrap().improvement = Some(crate::name!("mine"));
+    game.map.tiles.get_mut(&sites[1]).unwrap().improvement = Some(crate::name!("farm"));
+    game.map.tiles.get_mut(&sites[1]).unwrap().pillaged = true;
     for position in sites.iter().take(3).copied() {
+        let improvement_before = game.map.tiles[&position].improvement;
+        let pillaged_before = game.map.tiles[&position].pillaged;
         assert!(game
             .valid_improvements(0, position)
             .contains(&crate::name!("archaeological_dig")));
@@ -91,7 +98,8 @@ fn archaeologists_extract_housed_artifacts_and_consume_sites() {
         )
         .unwrap();
         assert!(game.map.tiles[&position].resource.is_none());
-        assert!(game.map.tiles[&position].improvement.is_none());
+        assert_eq!(game.map.tiles[&position].improvement, improvement_before);
+        assert_eq!(game.map.tiles[&position].pillaged, pillaged_before);
     }
     assert_eq!(game.players[0].counters["great_work:artifact"], 3);
     assert_eq!(game.housed_great_works(0)[&city].get("artifact"), Some(&3));

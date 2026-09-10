@@ -568,15 +568,10 @@ impl AdvancedAi {
             return;
         }
         let expired = age >= g.standard_duration(RAID_MAX_TURNS);
-        let prizes_left = if expired {
-            0
+        let prize_left = if expired {
+            false
         } else {
-            let strikers = self.raid_strikers(g, pid);
-            self.raid_prizes_against(g, pid, raid.target, &strikers)
-                .into_iter()
-                .filter(|prize| !matches!(prize, RaidPrize::Pillage { .. }))
-                .count()
-                + self.pillage_tiles_under_our_soldiers(g, pid, raid.target)
+            self.raid_has_survivable_prize(g, pid, plan, raid.target)
         };
         // A raid that turned into a real war — the plan now wants that
         // city — is the elective machinery's to finish.
@@ -587,7 +582,7 @@ impl AdvancedAi {
                 .and_then(|cid| g.cities.get(&cid))
                 .is_some_and(|city| city.owner == raid.target)
             && self.last_campaign_progress >= raid.declared;
-        if prizes_left > 0 || campaign_wants_it {
+        if prize_left || campaign_wants_it {
             return;
         }
         let peace_pending = g.pending_deals.iter().any(|deal| {
@@ -603,7 +598,7 @@ impl AdvancedAi {
                "Offering peace to {}", g.players[raid.target].civ;
                "the raid that opened the war on turn {} has {}; {} Settler{}, {} Builder{} and {} pillage tile{} were its prizes",
                raid.declared,
-               if expired { "run its course" } else { "nothing left in reach" },
+               if expired { "run its course" } else { "no survivable prize step left" },
                raid.settlers, if raid.settlers == 1 { "" } else { "s" },
                raid.builders, if raid.builders == 1 { "" } else { "s" },
                raid.pillage_tiles, if raid.pillage_tiles == 1 { "" } else { "s" });
@@ -622,20 +617,62 @@ impl AdvancedAi {
         );
     }
 
-    /// Pillage tiles of the raid target within one turn of our soldiers.
-    fn pillage_tiles_under_our_soldiers(&self, g: &Game, pid: usize, target: usize) -> usize {
-        let strikers: Vec<RaidStriker> = self
-            .raid_strikers(g, pid)
-            .into_iter()
-            .map(|striker| RaidStriker {
-                reach: striker.reach / RAID_STRIKE_TURNS,
-                ..striker
+    /// A visible prize keeps the raid open only while some striker has a
+    /// legal step to it that the visible response is expected to let survive.
+    /// This mirrors the lethal pursuit gate in `raid_prize_step`: once every
+    /// remaining prize is either unreachable or suicidal, holding the war
+    /// open only spends turns waiting for a move the unit will never take.
+    fn raid_has_survivable_prize(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        target: usize,
+    ) -> bool {
+        let strikers = self.raid_strikers(g, pid);
+        let prizes = self.raid_prizes_against(g, pid, target, &strikers);
+        if prizes.is_empty() {
+            return false;
+        }
+        let mut danger = super::battle_planner::DangerField::new(g, pid);
+        prizes.into_iter().any(|prize| {
+            strikers.iter().any(|striker| {
+                let Some(unit) = g.units.get(&striker.uid) else {
+                    return false;
+                };
+                if plan.threatened_city.is_some_and(|cid| {
+                    g.cities
+                        .get(&cid)
+                        .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
+                }) {
+                    return false;
+                }
+                if matches!(prize, RaidPrize::Pillage { .. }) && striker.lone_garrison {
+                    return false;
+                }
+                if matches!(prize, RaidPrize::Pillage { .. })
+                    && unit.pos == prize.pos()
+                    && g.pillageable_at(pid, unit.pos)
+                {
+                    return true;
+                }
+                let reach = if matches!(prize, RaidPrize::Pillage { .. }) {
+                    striker.reach / RAID_STRIKE_TURNS
+                } else {
+                    striker.reach
+                };
+                if g.wdist(unit.pos, prize.pos()) > reach {
+                    return false;
+                }
+                let Some(next) = g
+                    .route_step(striker.uid, prize.pos(), 0)
+                    .filter(|next| g.can_move(striker.uid, *next))
+                else {
+                    return false;
+                };
+                danger.danger(next, striker.uid) < f64::from(unit.hp)
             })
-            .collect();
-        self.raid_prizes_against(g, pid, target, &strikers)
-            .into_iter()
-            .filter(|prize| matches!(prize, RaidPrize::Pillage { .. }))
-            .count()
+        })
     }
 
     /// The raid's unit step: pillage under our feet, or walk to the nearest
