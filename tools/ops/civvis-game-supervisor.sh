@@ -294,6 +294,19 @@ EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
 # not become another copy of it. Set `CIVVIS_VICTORY` to pin a different lane.
 VICTORY=${CIVVIS_VICTORY:-}
 LEADER=${CIVVIS_LEADER:-LEADER_TRAJAN}
+# The lobby: which world the seat plays, how many majors are in it, and how fast
+# the clock runs. This service passed NONE of the three, so every visual
+# verification game silently took `civ6_civvis_climb`'s own defaults — Continents
+# at Small (six players) on Online — whatever a host's policy said. The defaults
+# below ARE those inherited values, so a host that sets nothing keeps playing
+# exactly the game it played before this line existed.
+#
+# ⚠ THE MAP SIZE IS THE PLAYER COUNT (Duel 2, Tiny 4, Small 6, Standard 8); see
+# `civ6_play.py`. There is no separate player knob to set, and asking for one
+# here would be inventing a setting the game does not have.
+MAP=${CIVVIS_MAP:-Continents.lua}
+MAPSIZE=${CIVVIS_MAP_SIZE:-MAPSIZE_SMALL}
+SPEED=${CIVVIS_SPEED:-GAMESPEED_ONLINE}
 # ⚠⚠ ONE EXPANSION PER WORD IN THE INVOCATION BELOW. zsh does not word-split an
 # unquoted `${VAR:+--flag "$VAR"}`: with the knob set it reaches the climb as
 # ONE argument, `--victory science`, which argparse rejects as "unrecognized
@@ -911,6 +924,12 @@ while true; do
     if [[ -n "$SCREEN_GENE" ]]; then
       say "capture-free batch skips screen gene '$SCREEN_GENE' (no desktop capture)"
     fi
+    # The profile below is fixed on purpose. Say so when a host's lobby policy
+    # asks for something else, rather than letting the ledger carry rows that
+    # quietly played a different world from the one the policy names.
+    if [[ "$MAP" != Continents.lua || "$MAPSIZE" != MAPSIZE_SMALL || "$SPEED" != GAMESPEED_ONLINE ]]; then
+      say "capture-free batch ignores lobby policy ${MAP}/${MAPSIZE}/${SPEED}; its profile is fixed at Continents.lua/MAPSIZE_SMALL/GAMESPEED_ONLINE"
+    fi
     CIVVIS_MIRROR_COMMIT="$HEAD_REVISION" \
     CIVVIS_MIRROR_COMMIT_TIME="$HEAD_COMMIT_TIME" \
     python3 -u tools/civ6_capture_free_loop.py --attempts "$ATTEMPTS" \
@@ -934,6 +953,9 @@ while true; do
         --refresh-seconds 0 \
         --difficulty "$DIFFICULTY" \
         --leader "$LEADER" \
+        --map "$MAP" \
+        --map-size "$MAPSIZE" \
+        --speed "$SPEED" \
         "${WITHOUT_ARGS[@]}" \
         "${WITH_ARGS[@]}" \
         "${SCREEN_ARGS[@]}" \

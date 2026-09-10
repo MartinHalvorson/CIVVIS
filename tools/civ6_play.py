@@ -1021,26 +1021,30 @@ OPTIONS = {
               "GAMESPEED_EPIC", "GAMESPEED_MARATHON"],
     "map_size": ["MAPSIZE_DUEL", "MAPSIZE_TINY", "MAPSIZE_SMALL",
                  "MAPSIZE_STANDARD", "MAPSIZE_LARGE", "MAPSIZE_HUGE"],
-    # ⚠ THIS ORDER IS A HYPOTHESIS, AND IT IS VERIFIED RATHER THAN TRUSTED.
+    # ⚠ THIS IS A MEMBERSHIP SET, NOT A CLICK ORDER. Nothing indexes it.
     #
     # Setting the map through config does NOT work: `CivvisControlSetup.lua` never
     # runs because the FrontEnd context does not load on this install, so
-    # `MapScript` is ignored and every game so far has been Continents. That
-    # matters more than it sounds: on Continents a seat can start ALONE. Run
+    # `MapScript` is ignored and a game plays whatever the panel says. That matters
+    # more than it sounds: on Continents a seat can start ALONE. Run
     # settler-20260730T045551Z reached turn 118 with `met = 0` after 415 explore
     # orders, and first contact came at turn 130 — far too late for domination,
     # which needs three capitals.
     #
-    # The dropdown is the only route that works, and it needs an index.
-    # `vision.py` reads row POSITIONS, not text, so the name cannot be matched on
-    # screen. This order is the scripted maps from the shipped `Maps` table sorted
-    # by SortIndex (Continents 10, Fractal 20, InlandSea 25, Island_Plates 30,
-    # Lakes 35, Pangaea 40, ...), on the assumption that fixed-size static maps are
-    # filtered out at Tiny.
+    # This list once carried a guessed row order, because the dropdown was clicked
+    # by index: the scripted maps from the shipped `Maps` table sorted by SortIndex
+    # (Continents 10, Fractal 20, InlandSea 25, Island_Plates 30, Lakes 35,
+    # Pangaea 40, ...), assuming fixed-size static maps are filtered out at Tiny.
+    # Clicking a guessed index broke setup outright and was reverted. `set_dropdown`
+    # no longer needs one: `_observed_label_point` finds the option by its rendered
+    # TEXT and `_setup_current_value` reads the choice back off the closed box, so
+    # these entries are only the values a row may legally hold and the count of
+    # rows an open list covers (`option_strip`). Reordering them changes nothing;
+    # removing one makes that map unselectable and unreadable.
     #
-    # The `seat` event reports the script the game ACTUALLY generated, so a wrong
-    # guess is caught on the first run rather than silently played for hours —
-    # which is exactly how "we have been asking for Pangaea and playing Continents"
+    # The `seat` event reports the script the game ACTUALLY generated, so a miss is
+    # caught on the first run rather than silently played for hours — which is
+    # exactly how "we have been asking for Pangaea and playing Continents"
     # survived this long.
     "map_type": ["Continents.lua", "Fractal.lua", "InlandSea.lua",
                  "Island_Plates.lua", "Lakes.lua", "Pangaea.lua",
@@ -2372,7 +2376,36 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     # of one capture is paid once, so a row that is already right costs neither
     # a capture nor a recognizer pass. The first row takes its own capture.
     panel: dict = {"shot": None}
+    # ★★★★★ THE MAP IS SET HERE, AND IT IS SET THE SAME WAY AS EVERY OTHER ROW.
+    #
+    # `MapScript` in the baked config is ignored -- the FrontEnd context that would
+    # read it never loads on this install -- so a game plays whatever the Create Game
+    # panel says, and for a long time that was Continents for every run whatever was
+    # asked for. On Continents a seat can start ALONE: one run reached turn 118 with
+    # `met = 0` and first contact at turn 130, which is far too late for domination,
+    # a lane that needs three capitals.
+    #
+    # An earlier attempt at this WAS reverted, and correctly: it clicked a guessed
+    # row index, four consecutive attempts logged "no game started", and no `seat`
+    # event ever arrived. The revert asked for two things before it came back --
+    # "OCR on the dropdown rows, or reading the selected value back off the screen
+    # before committing to Start Game". `set_dropdown` now does BOTH, for every row:
+    # it locates the option by its rendered label (`_observed_label_point`, which
+    # matches text, not a position), it re-reads the closed box afterwards
+    # (`_setup_current_value`, anchored on the row's own heading), and it refuses to
+    # click an unverified coordinate rather than guess one. So map type is not a
+    # special case any more and does not get a special path.
+    #
+    # The map is also the axis with the strongest check on the far side: the mod
+    # reports `MapConfiguration.GetScript()` in the `seat` event and
+    # `seat_matches_requested` compares it to `--map`, so a game that generated a
+    # different script is `configured = False` and is refused from inside the
+    # running game on the first attempt.
+    #
+    # Map type is chosen BEFORE map size: the size list is the one the chosen script
+    # offers, so ordering it this way verifies the size against the final map.
     for name, value in (("difficulty", args.difficulty),
+                        ("map_type", args.map),
                         ("map_size", args.map_size),
                         ("speed", args.speed)):
         if not set_dropdown(bounds, name, value, run_dir, panel=panel["shot"],
@@ -2383,29 +2416,6 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     if not select_requested_leader(bounds, args.leader, run_dir, panel=panel["shot"],
                                    panel_out=panel, hint_dir=run_dir.parent):
         print("[setup] requested leader was NOT selected; refusing to start", flush=True)
-        return False
-    # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
-    # because the FrontEnd context that would read it never loads, so every game so
-    # far has been Continents whatever was asked for. On Continents a seat can start
-    # alone: one run reached turn 118 with `met = 0`, and first contact at turn 130 is
-    # too late for domination. The `seat` event reports the script the game actually
-    # generated, so a wrong row shows up as a run that says so.
-    # ⚠ REVERTED, AND LEFT REVERTED UNTIL IT CAN BE VERIFIED.
-    #
-    # Selecting the map here broke setup outright: four consecutive attempts logged
-    # "no game started" and no `seat` event ever arrived, where the same path had
-    # been reliable for hours. The dropdown row is an unverified guess (`vision.py`
-    # reads row POSITIONS, not text, so "Pangaea" cannot be matched on screen), and
-    # an unverified guess that breaks a working path is not worth keeping.
-    #
-    # The problem it was aimed at is REAL and still open: `MapScript` in the baked
-    # config is ignored because the FrontEnd context never loads, so every game is
-    # Continents, and on Continents a seat can start ALONE — one run reached turn 118
-    # with `met = 0`. Fixing it properly needs OCR on the dropdown rows, or reading
-    # the selected value back off the screen before committing to Start Game.
-    if args.map != "Continents.lua":
-        print(f"map selection is disabled pending verification; refusing to claim "
-              f"the default Continents map is {args.map}", file=sys.stderr)
         return False
     setup_shot = run_dir / "setup.png"
     captured = screenshot(setup_shot)
@@ -4698,7 +4708,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="enable an optional game mode (repeatable; default none). "
                          "CIVVIS models none of them, so a run with one on is not "
                          "measuring the game CIVVIS is compared against.")
-    ap.add_argument("--map", default="Continents.lua")
+    # Constrained to the scripted maps the panel can be driven to. A value
+    # outside this set has no rendered label to click and no legal read-back, so
+    # `set_dropdown` would refuse it -- after a game launch. Refuse it here, at
+    # the command line, where the cost is a message instead of an attempt.
+    ap.add_argument("--map", default="Continents.lua", choices=OPTIONS["map_type"])
     # ★★★★ THE MAP SIZE IS THE PLAYER COUNT, so this is the lobby, not a detail.
     #
     # Civilization VI derives majors and city-states from the size — Duel 2, Tiny 4,
