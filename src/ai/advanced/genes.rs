@@ -2263,6 +2263,14 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
+    // `ranged-hp-reserve` (2026-09-10, operator: "asymmetric damage with
+    // archers while not taking fatal hits"): a ranged, non-siege unit reads
+    // the lethal pool with 20 hp in hand, so it leaves a tile the enemy's exact
+    // next-turn attacks would nearly kill it on and shoots again from the next.
+    // The lethal-pool test only; the healing line stays `one_shot_recovery`'s,
+    // and `can_survive_by_attacking` still keeps a unit whose own shot ends the
+    // threat. Off; screen it.
+    Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

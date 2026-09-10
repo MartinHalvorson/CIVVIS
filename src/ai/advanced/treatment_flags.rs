@@ -3901,6 +3901,15 @@ impl AdvancedAi {
     pub fn disable_veteran_retreat_margin(&mut self) {
         self.base.veteran_retreat_margin = false;
     }
+    /// A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal
+    /// pool. See `BasicAi::ranged_hp_reserve`; opt-in gene `ranged-hp-reserve`.
+    pub fn enable_ranged_hp_reserve(&mut self) {
+        self.base.ranged_hp_reserve = true;
+    }
+    /// The twin of `enable_ranged_hp_reserve`.
+    pub fn disable_ranged_hp_reserve(&mut self) {
+        self.base.ranged_hp_reserve = false;
+    }
 
     /// `chop-for-expansion`: a Builder turns a forest into a Settler. See
     /// `advanced/chop_for_expansion.rs`.
