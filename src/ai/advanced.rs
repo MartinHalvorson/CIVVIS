@@ -24823,16 +24823,18 @@ impl AdvancedAi {
             // opportunity and replace it in the same turn, which is exactly
             // the live t177/t180/t183 failure. A city can recover one amenity
             // between those passes while the empire remains broadly short;
-            // keep the chain through that transition as well. The later
-            // defense authority may still reclaim a genuinely threatened
-            // city.
-            if !economic_recovery
-                && plan.strategy != GrandStrategy::Recovery
-                && self.amenity_project_preemption_on()
+            // keep the chain through that transition as well. A broad crisis
+            // also overrides the Recovery and treasury-recovery exceptions:
+            // at t136, Ephesus started an Entertainment Complex for 3 of 6
+            // cities short and the same review replaced it with a Builder.
+            let amenity_repair_committed = self.amenity_project_preemption_on()
                 && (g.city_amenity_surplus(&g.cities[&cid]) < 0 || widespread_amenity_pressure)
                 && committed
                     .as_ref()
-                    .is_some_and(|(_, item)| Self::amenity_repair_queue_item(g, item))
+                    .is_some_and(|(_, item)| Self::amenity_repair_queue_item(g, item));
+            if amenity_repair_committed
+                && (widespread_amenity_pressure
+                    || (!economic_recovery && plan.strategy != GrandStrategy::Recovery))
             {
                 continue;
             }
