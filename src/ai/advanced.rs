@@ -11530,7 +11530,10 @@ impl AdvancedAi {
             // `denial-outranks-expansion`: the same answer the branch below
             // gives, reached before the lane can say "keep expanding". A
             // rival at match point does not wait for our sixth city.
-            (counter, "countering a rival close to winning, ahead of the lane")
+            (
+                counter,
+                "countering a rival close to winning, ahead of the lane",
+            )
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
                 (

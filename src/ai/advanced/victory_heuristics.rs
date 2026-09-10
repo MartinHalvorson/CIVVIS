@@ -606,7 +606,11 @@ mod tests {
         lane.enable_denial_outranks_expansion();
         let plan = lane.assess(&game, 0);
         assert_eq!(plan.strategy, GrandStrategy::Conquest);
-        assert_eq!(plan.target_player, Some(3), "the denial is answered ahead of the lane");
+        assert_eq!(
+            plan.target_player,
+            Some(3),
+            "the denial is answered ahead of the lane"
+        );
     }
     // -----------------------------------------------------------------
     // `counter-culture-by-conquest`
