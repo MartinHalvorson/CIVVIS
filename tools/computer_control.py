@@ -17,7 +17,7 @@ Every verb here exists because ad-hoc control of this host already failed in a
 measured way (2026-08-07, macOS 26.5.1, the session the Steam reinstall forced):
 
 - **Windows drift.** The operator's standing layout is quadrants — terminal
-  lower-left, CIVVIS upper-left, Civilization VI upper-right, lower-right kept
+  lower-left, CIVVIS upper-right, Civilization VI upper-left, lower-right kept
   free for the operator — and only the game's own placement was scripted
   (`civ6_play --window-side left`). The rest was hand osascript, re-derived
   every session, and one wrong `key code` opened Mission Control over the game.
