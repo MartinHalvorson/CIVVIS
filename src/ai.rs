@@ -11323,6 +11323,62 @@ impl BasicAi {
         None
     }
 
+    fn live_great_person_military_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        need: &crate::game::LiveGreatPersonActivationNeed,
+    ) -> Option<Item> {
+        if !matches!(need.kind.as_str(), "general" | "admiral") {
+            return None;
+        }
+
+        // A host-required Encampment or Harbor must be finished before the
+        // body can activate the person. A queued or map-founded district is
+        // handled by the earlier district path and must not cause a unit to
+        // be parked ahead of its infrastructure.
+        if let Some(family) = need.required_district.as_deref() {
+            let district_ready = family == "city_center"
+                || g.player_city_ids(pid)
+                    .into_iter()
+                    .any(|city| g.city_has_district_family(&g.cities[&city], Name::new(family)));
+            if !district_ready {
+                return None;
+            }
+        }
+
+        match need.kind.as_str() {
+            "general" => {
+                let land_queued = g.player_city_ids(pid).into_iter().any(|city| {
+                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
+                        if g.rules.units[unit].class == "military"
+                            && g.rules.units[unit].domain.as_deref() != Some("sea"))
+                });
+                if land_queued {
+                    return None;
+                }
+                self.best_military(g, pid, cid, None)
+                    .map(|unit| Item::Unit {
+                        unit: Name::new(&unit),
+                    })
+            }
+            "admiral" => {
+                let navy_queued = g.player_city_ids(pid).into_iter().any(|city| {
+                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
+                        if g.rules.units[unit].class == "military"
+                            && g.rules.units[unit].domain.as_deref() == Some("sea"))
+                });
+                if navy_queued {
+                    return None;
+                }
+                self.best_naval_unit(g, pid, cid)
+                    .map(|unit| Item::Unit { unit })
+            }
+            _ => None,
+        }
+    }
+
     /// Production that turns an already-owned physical Great Person into a
     /// usable action. Ordinary/headless games never enter this path because
     /// their mirror-only need list is empty.
@@ -11380,35 +11436,8 @@ impl BasicAi {
 
             // Formation and promotion people can have infrastructure yet no
             // eligible body. Create one instead of parking the person forever.
-            let no_special_district = need
-                .required_district
-                .as_deref()
-                .is_none_or(|family| family == "city_center");
-            if no_special_district && need.kind == "general" {
-                let land_queued = g.player_city_ids(pid).into_iter().any(|city| {
-                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
-                        if g.rules.units[unit].class == "military"
-                            && g.rules.units[unit].domain.as_deref() != Some("sea"))
-                });
-                if !land_queued {
-                    if let Some(unit) = self.best_military(g, pid, cid, None) {
-                        return Some(Item::Unit {
-                            unit: Name::new(&unit),
-                        });
-                    }
-                }
-            }
-            if no_special_district && need.kind == "admiral" {
-                let navy_queued = g.player_city_ids(pid).into_iter().any(|city| {
-                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
-                        if g.rules.units[unit].class == "military"
-                            && g.rules.units[unit].domain.as_deref() == Some("sea"))
-                });
-                if !navy_queued {
-                    if let Some(unit) = self.best_naval_unit(g, pid, cid) {
-                        return Some(Item::Unit { unit });
-                    }
-                }
+            if let Some(item) = self.live_great_person_military_item(g, pid, cid, need) {
+                return Some(item);
             }
         }
         None
@@ -11517,6 +11546,9 @@ impl BasicAi {
                         return Some(item);
                     }
                 }
+            }
+            if let Some(item) = self.live_great_person_military_item(g, pid, cid, need) {
+                return Some(item);
             }
         }
         None
@@ -19321,6 +19353,113 @@ mod tests {
             game.cities[&city].queue.first(),
             Some(Item::Building { building })
                 if game.building_is_family(building, crate::name!("amphitheater"))
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_general_builds_a_body_after_encampment() {
+        let mut game = Game::new_full(1, 20, 14, 41_112, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let encampment = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&encampment).unwrap().district = Some(crate::name!("encampment"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("encampment"), encampment);
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "general".to_string(),
+                individual: Some("sun_tzu".to_string()),
+                required_district: Some("encampment".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit })
+                if game.rules.units[unit].class == "military"
+                    && game.rules.units[unit].domain.as_deref() != Some("sea")
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_general_can_bank_a_safe_queue_for_a_body() {
+        let mut game = Game::new_full(1, 20, 14, 41_113, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let mut specialty_tiles = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| *position != game.cities[&city].pos);
+        let encampment = specialty_tiles.next().unwrap();
+        let theater = specialty_tiles.next().unwrap();
+        game.map.tiles.get_mut(&encampment).unwrap().district = Some(crate::name!("encampment"));
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("encampment"), encampment);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        let repeatable_project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        assert!(
+            game.can_produce(0, city, &repeatable_project),
+            "the fixture must expose a safe repeatable queue"
+        );
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: repeatable_project,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 11.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "general".to_string(),
+                individual: Some("sun_tzu".to_string()),
+                required_district: Some("encampment".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit })
+                if game.rules.units[unit].class == "military"
+                    && game.rules.units[unit].domain.as_deref() != Some("sea")
         ));
     }
 
