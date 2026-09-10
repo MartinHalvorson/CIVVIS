@@ -1,5 +1,49 @@
 use super::*;
 
+#[derive(Clone, Copy)]
+struct CountedName<'a> {
+    name: Name,
+    reads: &'a std::cell::Cell<usize>,
+}
+
+impl crate::name::AsName for CountedName<'_> {
+    fn as_name(self) -> Name {
+        self.reads.set(self.reads.get() + 1);
+        self.name
+    }
+}
+
+#[test]
+fn clear_pillage_flag_skips_the_family_query_entirely() {
+    let (mut game, cid, positions) = board();
+    let reads = std::cell::Cell::new(0);
+    let district = CountedName {
+        name: crate::name!("encampment"),
+        reads: &reads,
+    };
+    game.map.tiles.get_mut(&positions[0]).unwrap().pillaged = false;
+    game.cities.get_mut(&cid).unwrap().encampment_pillaged = false;
+    assert!(game.district_is_active(&game.cities[&cid], district, positions[0]));
+    assert_eq!(
+        reads.get(),
+        0,
+        "clear flag must not even resolve the district name"
+    );
+
+    game.cities.get_mut(&cid).unwrap().encampment_pillaged = true;
+    assert!(!game.district_is_active(&game.cities[&cid], district, positions[0]));
+    assert_eq!(reads.get(), 1, "set flag must consult the district family");
+
+    reads.set(0);
+    game.map.tiles.get_mut(&positions[0]).unwrap().pillaged = true;
+    assert!(!game.district_is_active(&game.cities[&cid], district, positions[0]));
+    assert_eq!(
+        reads.get(),
+        0,
+        "tile pillage remains the first short circuit"
+    );
+}
+
 /// The pre-optimization scan, retained as an independent oracle.
 fn scanned_activity(game: &Game, city: &City, building: Name) -> bool {
     let Some(family) = game.rules.buildings[building].district else {
