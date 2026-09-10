@@ -40138,7 +40138,8 @@ impl AdvancedAi {
         // plan's peace offer. The planning clone clears `at_war` immediately
         // when that offer is applied; running this handoff afterward made the
         // major-war branch disappear on exactly the turn a threatened city
-        // needed it.
+        // needed it. The final queue-authority reapply runs after production
+        // below, once every ordinary queue writer has had its turn.
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
@@ -40334,6 +40335,14 @@ impl AdvancedAi {
         // whose observed Loyalty clock expires before it can use that Settler
         // must bank the queue for a stabilizing build instead.
         self.redirect_loyalty_endangered_settler_queues(g, pid, &plan);
+        // The first defense handoff above must run before diplomacy so an
+        // offered peace cannot erase the active-war evidence it needs. Every
+        // production route runs after that handoff, however, and can replace
+        // the same city's wall or defender in the same turn. Reapply the
+        // already-confirmed defense after those writers and after the final
+        // queue rescue, so a wounded city cannot finish the turn on a campus,
+        // project, or unrelated unit.
+        self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         if active_victory_target.is_some() && self.war_plan.is_none() && !surprise_defense_purchase
         {
             let counts = self.counts(g, pid);
