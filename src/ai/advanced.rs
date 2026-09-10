@@ -39833,6 +39833,81 @@ impl AdvancedAi {
         (10.0 * (domestic - foreign) / (domestic.min(foreign) + 0.5)).clamp(-20.0, 20.0)
     }
 
+    /// Only waive occupation safety when keeping this capture actually ends
+    /// the game. Match check_domination and set_winner: our own original
+    /// capital, enabled lanes and Require-N milestones are part of the win.
+    fn capture_completes_domination(g: &Game, pid: usize, city_id: u32) -> bool {
+        if g.players
+            .get(pid)
+            .is_none_or(|player| !player.alive || player.is_minor || player.is_barbarian)
+            || !g.effective_victory_conditions().domination
+            || g.is_finished()
+            || g.played_on()
+        {
+            return false;
+        }
+        let required = g.effective_required_victories();
+        if required > 1 {
+            // check_domination returns after the first qualifying candidate,
+            // even when set_winner only banks a Require-N milestone. Team
+            // members satisfy the same capital condition, so read the first
+            // living member's bank rather than pooling their achievements.
+            let candidate = g
+                .team_members(pid)
+                .into_iter()
+                .find(|member| g.players[*member].alive)
+                .unwrap_or(pid);
+            let banked = g.victories_won.get(&candidate);
+            if banked.is_some_and(|types| types.contains("domination"))
+                || banked.map_or(0, |types| types.len()) + 1 < required
+            {
+                return false;
+            }
+        }
+        let majors: Vec<_> = g
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .collect();
+        if majors.len() < 2 {
+            return false;
+        }
+        let owner_after = |capital: &crate::game::City| {
+            if capital.id == city_id {
+                pid
+            } else {
+                capital.owner
+            }
+        };
+        if g.players[pid].team.is_some() {
+            return g.team_members(pid).iter().all(|member| {
+                g.cities.values().any(|capital| {
+                    capital.is_capital
+                        && capital.original_owner == *member
+                        && owner_after(capital) == *member
+                })
+            }) && majors
+                .iter()
+                .filter(|player| player.id != pid && !g.same_team(pid, player.id))
+                .all(|player| {
+                    g.cities
+                        .values()
+                        .find(|capital| capital.is_capital && capital.original_owner == player.id)
+                        .is_none_or(|capital| owner_after(capital) != player.id)
+                });
+        }
+        majors.iter().all(|player| {
+            match g
+                .cities
+                .values()
+                .find(|capital| capital.is_capital && capital.original_owner == player.id)
+            {
+                Some(capital) => owner_after(capital) == pid || (g.is_arena() && !player.alive),
+                None => player.id == pid || !player.alive,
+            }
+        })
+    }
+
     /// A city that cannot be razed or liberated should not be captured merely
     /// to hand it back through Loyalty and attack it again. Wait only when the
     /// projected revolt is imminent; eliminating the defender or completing
@@ -39852,24 +39927,7 @@ impl AdvancedAi {
             return false;
         }
 
-        let completes_domination = g
-            .players
-            .iter()
-            .filter(|candidate| {
-                !candidate.is_minor && !candidate.is_barbarian && !g.same_team(pid, candidate.id)
-            })
-            .all(|original_owner| {
-                if original_owner.id == pid {
-                    return true;
-                }
-                g.cities
-                    .values()
-                    .find(|candidate| {
-                        candidate.is_capital && candidate.original_owner == original_owner.id
-                    })
-                    .is_none_or(|capital| capital.id == city_id || capital.owner == pid)
-            });
-        if completes_domination {
+        if Self::capture_completes_domination(g, pid, city_id) {
             return false;
         }
 
@@ -40764,6 +40822,9 @@ mod amphibious_staging;
 
 #[cfg(test)]
 mod domination_solvency_tests;
+
+#[cfg(test)]
+mod domination_finish_tests;
 
 mod science_scaling;
 
