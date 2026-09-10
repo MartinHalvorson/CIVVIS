@@ -181,6 +181,48 @@ class TheRatchetOnlyTightens(unittest.TestCase):
         self.assertTrue(any("no tolerance recorded" in note for note in notes))
 
 
+class TheOpeningBandIsComparable(unittest.TestCase):
+    """Turn 60 is where the live corpus's strongest result lives: every one of
+    its nine recorded wins had four to six cities there and nothing outside the
+    band won. The simulator recorded nothing comparable until `cities_60`."""
+
+    def test_the_band_is_read_off_a_screen_seat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            live = fidelity.live_records(
+                write_live([live_row(score=100, rival_best=200, cities_at_60=5)], tmp)
+            )
+            sim = fidelity.sim_records(
+                write_sim(
+                    [[{"score": 100, "cities_60": 4}, {"score": 200, "cities_60": 6}]],
+                    tmp,
+                    handicap="rivals",
+                ),
+                fidelity.map_sizes(),
+            )
+            report = fidelity.ledger(live, sim)
+        band = report["matched_cells"][0]["subsystems"]["opening_band"]
+        self.assertTrue(band["available"])
+        self.assertAlmostEqual(band["live"], 5.0)
+        self.assertAlmostEqual(band["sim"], 5.0, msg="median of 4 and 6")
+        self.assertAlmostEqual(band["divergence"], 1.0)
+
+    def test_a_screen_written_before_the_column_says_so_by_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            live = fidelity.live_records(
+                write_live([live_row(score=100, rival_best=200, cities_at_60=5)], tmp)
+            )
+            sim = fidelity.sim_records(
+                write_sim([[{"score": 100}, {"score": 200}]], tmp, handicap="rivals"),
+                fidelity.map_sizes(),
+            )
+            report = fidelity.ledger(live, sim)
+        band = report["matched_cells"][0]["subsystems"]["opening_band"]
+        self.assertFalse(band["available"])
+        self.assertEqual(band["why"], "sim", "the live side recorded it")
+
+
 class TheHandicapIsPartOfTheConfiguration(unittest.TestCase):
     """The rung says how big the bonus is; the handicap mode says who gets it.
 
