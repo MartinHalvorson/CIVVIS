@@ -11690,6 +11690,11 @@ impl AdvancedAi {
                             self.campaign_target(g, pid)
                                 .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
                         })
+                        // The next Domination war must advance an original
+                        // capital still missing from our holdings. Ordinary
+                        // rival value can prefer a defeated capital's former
+                        // owner, who no longer holds any victory objective.
+                        .or_else(|| domination_capital.map(|(owner, _)| owner))
                         .or_else(|| {
                             let mut candidates: Vec<_> = major_rivals
                                 .iter()
@@ -11799,8 +11804,8 @@ impl AdvancedAi {
             // hands. See `advanced/city_campaign.rs`.
             .or_else(|| self.campaign_objective_city(g, pid, target_player))
             .or_else(|| {
-                domination_capital
-                    .filter(|(target, _)| target_player == Some(*target))
+                target_player
+                    .and_then(|target| self.domination_capital_target_for(g, pid, Some(target)))
                     .map(|(_, capital)| capital)
             })
             .or_else(|| {
