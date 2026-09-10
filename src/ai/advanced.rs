@@ -7009,12 +7009,12 @@ mod science_victory_drive;
 mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
+mod domination_research;
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
 /// Keeping that routing out of the controller avoids growing another shared
 /// treatment/flag anchor. See `advanced/victory_heuristics.rs`.
 mod victory_heuristics;
-mod domination_research;
 
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
