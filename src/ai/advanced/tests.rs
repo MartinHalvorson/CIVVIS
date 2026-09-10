@@ -18605,6 +18605,46 @@ fn culture_production_trains_one_archaeologist_for_available_artifact_slots() {
     );
 
     game.cities.get_mut(&city).unwrap().queue.clear();
+    let recovery = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan.clone()
+    };
+    ai.advanced_production(&mut game, 0, &recovery, false);
+    assert!(
+        matches!(game.cities[&city].queue.first(), Some(Item::Unit { unit }) if unit == "archaeologist"),
+        "an assigned Culture target should fill its museum from a domestic site when no city is threatened; queued {:?}",
+        game.cities[&city].queue.first()
+    );
+    game.cities.get_mut(&city).unwrap().queue.clear();
+    for (target, threat, domestic) in [
+        (VictoryTarget::Science, None, true),
+        (VictoryTarget::Culture, Some(city), true),
+        (VictoryTarget::Culture, None, false),
+    ] {
+        let mut held = game.clone();
+        if !domestic {
+            // Map generation may have placed additional antiquity sites.
+            // Remove every domestic option, not just the fixture's one.
+            for (position, _) in held.excavation_sites(0) {
+                held.map.tiles.get_mut(&position).unwrap().owner_city = None;
+                held.cities
+                    .get_mut(&city)
+                    .unwrap()
+                    .owned_tiles
+                    .retain(|p| *p != position);
+            }
+        }
+        let mut held_ai = AdvancedAi::targeting(target);
+        let held_plan = StrategicPlan {
+            threatened_city: threat,
+            ..recovery.clone()
+        };
+        held_ai.advanced_production(&mut held, 0, &held_plan, false);
+        assert!(
+            !matches!(held.cities[&city].queue.first(), Some(Item::Unit { unit }) if unit == "archaeologist"),
+            "Recovery must hold archaeology for {target:?}, threat {threat:?}, domestic {domestic}"
+        );
+    }
     game.spawn_test_unit("archaeologist", 0, game.cities[&city].pos);
     ai.advanced_production(&mut game, 0, &plan, false);
     assert!(!matches!(

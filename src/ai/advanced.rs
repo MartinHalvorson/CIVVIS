@@ -27198,8 +27198,25 @@ impl AdvancedAi {
                     .units
                     .values()
                     .any(|unit| unit.owner == pid && unit.kind == "archaeologist");
-                let sites = g.excavation_sites(pid).len();
-                if plan.strategy == GrandStrategy::Culture && !active && sites > 0 {
+                let sites = g.excavation_sites(pid);
+                // Global military inferiority can leave a Culture seat in
+                // Recovery even without a threatened city. Its safe museums
+                // can still fill from their own territory; a local alarm or
+                // any threatened city keeps the ordinary recovery hold.
+                let domestic_recovery = plan.strategy == GrandStrategy::Recovery
+                    && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                    && plan.threatened_city.is_none()
+                    && !threatened
+                    && sites.iter().any(|(position, _)| {
+                        g.map.get(*position).is_some_and(|tile| {
+                            tile.owner_city == Some(cid) && !g.rules.is_water(tile)
+                        })
+                    });
+                let sites = sites.len();
+                if (plan.strategy == GrandStrategy::Culture || domestic_recovery)
+                    && !active
+                    && sites > 0
+                {
                     2_700.0 + sites.min(3) as f64 * 180.0
                 } else {
                     -10_000.0
