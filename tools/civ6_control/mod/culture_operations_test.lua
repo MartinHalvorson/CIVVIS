@@ -47,3 +47,21 @@ for _, verb in ipairs({ 'EXCAVATE', 'DESIGNATE_PARK', 'TOURISM_BOMB' }) do
     assert(requests == before + 1, verb .. ' refused action must not request')
 end
 print('Culture operations: accepted and refused native requests passed')
+
+local highlighted = { 17, 23 }
+unit.GetRockBand = function() return {
+    GetActivationHighlightPlots = function() return highlighted end,
+} end
+Map = { GetPlotByIndex = function(index)
+    return { GetX = function() return index end, GetY = function() return 3 end }
+end }
+local sites = CivvisRockBandConcertPlots(unit, 'UNIT_ROCK_BAND')
+assert(#sites == 2 and sites[1].x == 17 and sites[2].x == 23 and sites[2].y == 3)
+assert(CivvisRockBandConcertPlots(unit, 'UNIT_BUILDER') == nil)
+highlighted = {}
+assert(#CivvisRockBandConcertPlots(unit, 'UNIT_ROCK_BAND') == 0)
+highlighted = nil
+assert(CivvisRockBandConcertPlots(unit, 'UNIT_ROCK_BAND') == nil)
+unit.GetRockBand = function() error('API unavailable') end
+assert(CivvisRockBandConcertPlots(unit, 'UNIT_ROCK_BAND') == nil)
+print('Rock Band highlights: coordinates, empty and unavailable readings passed')

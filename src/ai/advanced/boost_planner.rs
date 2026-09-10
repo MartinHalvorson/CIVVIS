@@ -134,6 +134,12 @@ pub(super) enum BoostAction {
     Unit(String),
     /// One more district of this family.
     District(String),
+    /// One more of this building, in a city that can already build it.
+    ///
+    /// Only reached with `boost-planner-builds` on: without that gene every
+    /// `building:` trigger is `Expensive` and no objective of this shape is
+    /// ever made.
+    Building(String),
 }
 
 /// What the tile under a chased improvement must carry, in the spelling
@@ -388,6 +394,33 @@ impl AdvancedAi {
                 .any(|have| g.district_family(*have).as_str() == family);
             return if built {
                 BoostTriggerClass::Cheap(BoostAction::District(family.to_string()))
+            } else {
+                BoostTriggerClass::Expensive
+            };
+        }
+        if let Some(building) = trigger
+            .strip_prefix("building:")
+            .filter(|_| self.boost_planner_builds)
+        {
+            // "A building a city of ours can start right now": the district it
+            // sits on already stands somewhere we own, and `Game::can_produce`
+            // agrees. Same admission as the `district:` class above — an
+            // ordinary next step in a city we already run, not a new
+            // investment — and the same one-more test as `units_of:`.
+            //
+            // ⚠ `building_near_mountain:` and `themed_buildings` are NOT this
+            // class and keep their `Expensive` reading: the first needs a
+            // particular site and the second needs Great Works, so neither is
+            // an ordinary build.
+            let item = Item::Building {
+                building: Name::new(building),
+            };
+            let buildable = g
+                .player_city_ids(pid)
+                .into_iter()
+                .any(|cid| g.can_produce(pid, cid, &item));
+            return if buildable && need - have == 1 {
+                BoostTriggerClass::Cheap(BoostAction::Building(building.to_string()))
             } else {
                 BoostTriggerClass::Expensive
             };
@@ -798,6 +831,7 @@ impl AdvancedAi {
             (BoostAction::District(family), Item::District { district, .. }) => {
                 g.district_family(*district).as_str() == family
             }
+            (BoostAction::Building(want), Item::Building { building }) => building.as_str() == want,
             _ => false,
         }
     }

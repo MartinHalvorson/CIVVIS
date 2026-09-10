@@ -4641,6 +4641,14 @@ impl Game {
         position: Pos,
     ) -> Option<(f64, i32, u32)> {
         if let Some(unit) = band {
+            if self
+                .host_unit_facts
+                .get(&unit.id)
+                .and_then(|facts| facts.concert_plots.as_ref())
+                .is_some_and(|plots| !plots.contains(&position))
+            {
+                return None;
+            }
             if self.players[pid]
                 .counters
                 .get(&format!(

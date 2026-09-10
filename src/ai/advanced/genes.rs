@@ -2245,6 +2245,15 @@ pub const GENES: &[Gene] = &[
     // the same Conquest answer on the same urgency bar, and aims
     // `victory_suppression_city` at the Theatre Square.
     Gene { tag: "counter-culture-by-conquest", field: "counter_culture_by_conquest", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_culture_by_conquest, disable: AdvancedAi::disable_counter_culture_by_conquest },
+    // `boost-planner` can only ever make an objective of three trigger
+    // families — `improvement*`, `units_of:` and `district:`. `building:` is
+    // the LARGEST family in the two trees, 21 of the 115 boost rows, and it is
+    // classed as strategic spending beside wonders, war and religion, so the
+    // planner never plans one. An ordinary building in a city that already has
+    // its district is the same kind of decision as the next district, which is
+    // planned. This admits exactly that case; `building_near_mountain:` and
+    // `themed_buildings` keep their Expensive reading.
+    Gene { tag: "boost-planner-builds", field: "boost_planner_builds", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner_builds, disable: AdvancedAi::disable_boost_planner_builds },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
