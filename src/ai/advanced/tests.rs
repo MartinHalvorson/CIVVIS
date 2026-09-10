@@ -2111,7 +2111,17 @@ fn visible_border_staging_fills_one_local_garrison_without_preemption() {
     let settler = Item::Unit {
         unit: crate::name!("settler"),
     };
-    committed.cities.get_mut(&ours).expect("capital").queue = vec![settler.clone()];
+    // This is a legal commitment, not a population-one blocked Settler.
+    committed.cities.get_mut(&ours).expect("capital").pop = 2;
+    committed
+        .apply(
+            0,
+            &Action::Produce {
+                city: ours,
+                item: settler.clone(),
+            },
+        )
+        .unwrap();
     ai.advanced_production(&mut committed, 0, &plan, false);
     assert_eq!(
         committed.cities[&ours].queue.first(),
@@ -32711,7 +32721,7 @@ fn envoy_income_census() {
 /// A fixture that can legally build a named wonder: three cities so the
 /// lane guards are satisfied, the buildings and adjacent district the
 /// wonder requires, and one owned tile shaped to its terrain sheet.
-fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
+pub(super) fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     let mut game = Game::new_with(crate::game::GameOptions {
         barbarians: false,
         ..crate::game::GameOptions::new(2, 40, 28, seed, 250, 6)
@@ -32739,7 +32749,7 @@ fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
             {
                 break;
             }
-            game.units.remove(&settler);
+            game.remove_unit(settler);
         }
     }
 
@@ -32804,7 +32814,7 @@ fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     (game, city)
 }
 
-fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
+pub(super) fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
     StrategicPlan {
         strategy,
         target_player: None,
