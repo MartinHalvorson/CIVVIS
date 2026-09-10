@@ -313,8 +313,11 @@ impl Game {
         position: Pos,
     ) -> bool {
         !self.map.tiles[&position].pillaged
-            && !(self.district_is_family(district, crate::name!("encampment"))
-                && city.encampment_pillaged)
+            // Resolve the family only when the city-wide encampment flag
+            // could disable it. Yield and upkeep queries ask this for every
+            // district/building, almost always with the flag clear.
+            && !(city.encampment_pillaged
+                && self.district_is_family(district, crate::name!("encampment")))
     }
 
     pub(super) fn city_has_active_district_family(&self, city: &City, family: impl AsName) -> bool {
