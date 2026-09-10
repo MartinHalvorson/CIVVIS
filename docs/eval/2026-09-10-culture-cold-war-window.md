@@ -64,8 +64,7 @@ Commands (the process returns success only when all requested Culture games
 finish as Culture):
 
 ```sh
-cargo build --profile ci --locked --features developer-tools \
-  --bin gene_screen --bin victory_eval
+cargo build --profile ci --locked --features developer-tools --bin gene_screen --bin victory_eval
 target/ci/victory_eval --target culture --deployment --games 4 \
   --players 6 --width 74 --height 46 --turns 250 --speed online \
   --start-seed 910131000 --without culture-cold-war-window
@@ -124,3 +123,9 @@ supervisor recovered from the turn-68 autosave on its second continuation,
 which passed turn 105 with eight cities and 12 tourism per turn. These are
 segments of the same game family, not independent trials. No completed
 post-fix outcome is available at this checkpoint.
+
+At exact turn 150, the same continuation reported eight cities, eleven Great
+Works, 18 tourism per turn, 122.461 culture per turn, and zero foreign
+tourists. This confirms better conversion of recruited people into works;
+it does not establish competitive tourism or a victory. The raw state is
+retained in `civvis-culture-evidence-20260910/post-fix-turn150-state.json`.
