@@ -5,12 +5,12 @@ use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::{Game, Item, QuickDeal};
 use std::collections::BTreeSet;
 
-/// An explicit Culture target must keep opening Theater Squares while the
-/// temporary war posture is Expansion, Conquest or Recovery. Those postures
-/// are allowed to price defense and expansion first, but letting them erase
-/// the district's lane bonus leaves the target with buildings to finish and
-/// no new tourism sources to host them.
-const CULTURE_TARGETED_THEATER_DISTRICT_BONUS: f64 = 850.0;
+/// An explicit Culture target must keep valuing Theater Squares and their
+/// buildings while the temporary war posture is Expansion, Conquest or
+/// Recovery. Those postures are allowed to price defense and expansion first,
+/// but letting them erase the theater lane leaves the target with no new
+/// tourism sources to host its existing chain.
+const CULTURE_TARGETED_THEATER_POSTURE_BONUS: f64 = 850.0;
 
 /// Version one prepares at half the culture-victory bar. The Emperor ladder
 /// (`docs/civ6_ladder.json`) lost most of its games to a rival culture
@@ -170,6 +170,14 @@ impl AdvancedAi {
                     .district
                     .is_some_and(|d| g.district_family(d) == "theater_square");
                 let chain = if theater {
+                    let posture_bonus = if self.active_victory_target(g)
+                        == Some(VictoryTarget::Culture)
+                        && strategy != GrandStrategy::Culture
+                    {
+                        CULTURE_TARGETED_THEATER_POSTURE_BONUS
+                    } else {
+                        0.0
+                    };
                     420.0
                         + spec.great_work_slots.values().sum::<i32>().max(0) as f64 * 60.0
                         + ["writer", "artist", "musician"]
@@ -177,6 +185,7 @@ impl AdvancedAi {
                             .map(|kind| spec.great_person_points.get(*kind).copied().unwrap_or(0.0))
                             .sum::<f64>()
                             * 80.0
+                        + posture_bonus
                 } else {
                     0.0
                 };
@@ -186,7 +195,7 @@ impl AdvancedAi {
                 let posture_bonus = if self.active_victory_target(g) == Some(VictoryTarget::Culture)
                     && strategy != GrandStrategy::Culture
                 {
-                    CULTURE_TARGETED_THEATER_DISTRICT_BONUS
+                    CULTURE_TARGETED_THEATER_POSTURE_BONUS
                 } else {
                     0.0
                 };

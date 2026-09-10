@@ -201,6 +201,38 @@ fn culture_chain_stays_valuable_during_expansion_but_must_finish_in_time() {
 }
 
 #[test]
+fn explicit_culture_target_keeps_theater_buildings_through_recovery() {
+    let mut g = board();
+    for pid in 1..3 {
+        Arc::make_mut(&mut g.observed_public_empire_stats)
+            .get_mut(&pid)
+            .unwrap()
+            .foreign_tourists = Some(0);
+    }
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let culture_lane =
+        ai.culture_race_production_bonus(&g, 0, &amphitheater, GrandStrategy::Culture, 5.0);
+    let recovery_lane =
+        ai.culture_race_production_bonus(&g, 0, &amphitheater, GrandStrategy::Recovery, 5.0);
+    let science_lane = AdvancedAi::targeting(VictoryTarget::Science).culture_race_production_bonus(
+        &g,
+        0,
+        &amphitheater,
+        GrandStrategy::Recovery,
+        5.0,
+    );
+    assert_eq!(
+        recovery_lane - culture_lane,
+        CULTURE_TARGETED_THEATER_POSTURE_BONUS,
+        "Recovery keeps the explicit Culture building lane at its full posture premium"
+    );
+    assert_eq!(science_lane, 0.0);
+}
+
+#[test]
 fn science_defense_lifts_the_culture_building_veto_without_switching_victory() {
     let mut g = board();
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
