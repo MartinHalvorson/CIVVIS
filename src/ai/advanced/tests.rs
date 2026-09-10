@@ -33083,6 +33083,33 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
             .collect(),
     );
     assert!(live.victory_pressure_is_urgent(&game, 1, rising));
+    assert_eq!(
+        live.denial_response_for_pressure(&game, 0, 100, 1, rising),
+        Some(GrandStrategy::Culture),
+        "the projected alarm must reach the response, even with an assigned lane's 100 preference"
+    );
+    let diplomacy = VictoryFocus {
+        strategy: GrandStrategy::Diplomacy,
+        progress: 60,
+    };
+    assert_eq!(
+        live.denial_response_for_pressure(&game, 0, 100, 1, diplomacy),
+        Some(GrandStrategy::Diplomacy)
+    );
+
+    let mut targeted = AdvancedAi::targeting(VictoryTarget::Culture);
+    targeted.enable_live_bridge();
+    targeted.deny_while_targeted = true;
+    targeted.stock_pressure_history = live.stock_pressure_history.clone();
+    assert_eq!(
+        targeted.actionable_victory_denial_with_culture_pressures(
+            &game,
+            0,
+            &BTreeMap::from([(1, 60)]),
+        ),
+        Some((1, GrandStrategy::Culture)),
+        "an assigned lane receives the actionable forecast before the raw bar"
+    );
 
     // A flat or receding leader clamps to the raw reading: not urgent.
     live.stock_pressure_history
@@ -33105,6 +33132,10 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
         progress: 60,
     };
     assert!(!live.victory_pressure_is_urgent(&game, 1, science));
+    assert_eq!(
+        live.denial_response_for_pressure(&game, 0, 0, 1, science),
+        None
+    );
 
     // The withhold arm restores the raw bar exactly.
     let mut withheld = AdvancedAi::new();
@@ -33117,6 +33148,10 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
             .collect(),
     );
     assert!(!withheld.victory_pressure_is_urgent(&game, 1, rising));
+    assert_eq!(
+        withheld.denial_response_for_pressure(&game, 0, 0, 1, rising),
+        None
+    );
 
     // The published withhold row reaches the same flag.
     let row = GENES
