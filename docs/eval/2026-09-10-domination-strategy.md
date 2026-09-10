@@ -55,6 +55,36 @@ The best sequence depends on distance, defenses, technology, terrain, income,
 loyalty and rival clocks. The implementation uses existing campaign costs and
 legality checks; this audit does not claim that their weights are optimal.
 
+## What the next experiments must distinguish
+
+A victory count alone hides the stalled stage. Record the turn of first
+Conquest plan, first declaration, first foreign original-capital capture,
+subsequent capital captures and any capital losses. Also record whether the
+last required capital was reachable and whether the army had a surviving
+capture unit and a wall-breaking unit. Those observations distinguish an
+opening that never hands over from a campaign that starts but cannot finish.
+
+The first follow-up is the opening handover: the native probe failures include
+worlds ending with four cities per major. `domination-lane-hands-over`, now on
+trunk, is an independent opt-in for leaving that expansion plateau. Test a
+capability change with the handover held equal in both arms; changing both at
+once cannot identify which mechanism contributed.
+
+The next hypothesis is conditional redeployment after a capital capture.
+`one_war_prizes_in_reach` counts ordinary city damage and reachable pillage,
+while `one_war_presses` can use those prizes to extend a profitable war. A
+redeployment experiment must retain urgent defense, rival-victory denial and
+necessary loyalty-support captures. A captured capital that promptly flips
+back is not completed progress, and a peace treaty may constrain a later
+recapture. Measure retained capital control and completion time, not only
+cities taken or units killed.
+
+Neither proposal justifies an unconditional capital rush. A future default
+promotion needs a predeclared matched batch under the deployment profile,
+showing fewer stalled campaigns without more home-capital losses or occupation
+failures. Native symmetric-lane probes and standard screen reach are useful
+checks, but they do not substitute for that comparison.
+
 ## The capital-focus gene
 
 The previous planner computed the cheapest missing capital across every rival
@@ -86,7 +116,19 @@ keeps its existing cost, feasibility and staging tradeoffs.
 
 ## Validation
 
-Pending focused regression tests, full Rust tests and an end-to-end native
-Domination probe. A native probe establishes execution and observed outcomes;
-it does not establish live-game strength or isolate a win-rate effect without
-a paired baseline.
+The full Rust suite passed 3,576 tests (52 ignored), including the focused
+capital-routing and reversible-default checks. The changed Rust passed Clippy
+without diagnostics. All 14 append-point checks passed, as did the generated
+gene and evaluation-manifest consistency checks.
+
+The four matched native seeds used three players, a 36×22 map and Online speed
+with a 250-turn limit. Baseline completed one Domination victory; each explored
+capital-priority policy completed zero. A separate six-player deployment-profile
+probe completed zero of four on the baseline and broad policy, and zero of two
+on the within-front policy. These are completed non-Domination outcomes, not
+engine crashes. They do not establish a benefit.
+
+A predeclared 24-game standard fieldless screen (six players, 74×46 Continents,
+Online 250, Emperor, nine city-states; seeds starting at 109103000) is running
+to measure gene reach. Its result is pending. Reach evidence does not establish
+a win-rate effect or justify deployment promotion.
