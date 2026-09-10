@@ -3952,6 +3952,17 @@ impl AdvancedAi {
         self.chop_for_expansion = false;
     }
 
+    /// `conquest-takes-the-soft-city`: rank the early conquest target by what
+    /// can be taken before what is worth most. See `advanced/early_conquest.rs`.
+    pub fn enable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = true;
+    }
+
+    /// The twin of `enable_conquest_takes_the_soft_city`.
+    pub fn disable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = false;
+    }
+
     pub fn enable_objective_board(&mut self) {
         self.objective_board = true;
     }
