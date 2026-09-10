@@ -91,18 +91,28 @@
 //!    and either of them may be on beside this gene. What it shares with them
 //!    is the code path, which is the point.
 //!
-//! 3. **Chops: unavailable, and not invented here.** The design called for one
-//!    reserved Builder charge per Settler in production, on the best
-//!    harvestable tile in the producing city's radius. **This simulator has no
-//!    harvest.** `grep -n 'harvest\|chop' src/game.rs` returns three lines and
-//!    all three are the reasoning-log sense of the word ("the moment its plan
-//!    is harvested"); `data/improvements.json` has no harvest action, and
-//!    `Action` has no variant for one. Adding a Feature-removal yield rule to
-//!    the engine to serve one opt-in gene would be a rules change wearing a
-//!    gene's clothes, so the leg is recorded as unavailable in
-//!    `docs/eval/2026-09-09-expansion-scales-with-difficulty.md` and left
-//!    unimplemented. The Ancestral Hall's free Builder in every new city (leg
-//!    4) is the nearest thing the engine does model.
+//! 3. **Chops: available after all, and moved to their own gene.** The design
+//!    called for one reserved Builder charge per Settler in production, on the
+//!    best harvestable tile in the producing city's radius, and this note used
+//!    to record the leg as impossible: *"this simulator has no harvest",* off
+//!    a `grep -n 'harvest\|chop' src/game.rs` that returned three reasoning-log
+//!    lines.
+//!
+//!    ⚠⚠ **That grep read the wrong file and the conclusion was wrong.** `#2668`
+//!    had already carved the action layer out of `src/game.rs` into
+//!    `src/game/actions.rs`, so the search missed all of it. The engine has
+//!    modelled feature removal and resource harvesting the whole time:
+//!    `Game::builder_operations` offers `chop_woods`, `chop_rainforest`,
+//!    `clear_marsh` and `harvest_resource`, and `Game::do_builder_operation`
+//!    pays the shipped `Feature_Removes` and `Resource_Harvests` bases scaled
+//!    by the world era and Magnus. What was missing was a caller — those
+//!    operations appeared nowhere in `src/ai.rs` or `src/ai/advanced/`.
+//!
+//!    The leg therefore ships, as its own screenable gene rather than as a
+//!    fourth leg here: [`super::chop_for_expansion`]. Keeping it separate is
+//!    deliberate — this gene raises a target, that one spends Builder charges,
+//!    and either is worth pricing without the other. The Ancestral Hall's free
+//!    Builder in every new city (leg 4) is what makes the two compound.
 //!
 //! 4. **The cards and the Hall.** `strategic_policies`' timed-economy block
 //!    already front-loads Colonization and Expropriation while expansion is

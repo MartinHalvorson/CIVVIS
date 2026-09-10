@@ -313,6 +313,11 @@ local function resolveActions()
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
+		-- Parameterless Culture actions: Base/Assets/Gameplay/Data/UnitOperations.xml
+		-- :73 (park), :77 (excavate), and DLC/Expansion2/Data/Expansion2_UnitOperations.xml
+		-- :11 (concert). None has InterfaceMode: UnitPanel.lua:2518-2535 requests
+		-- the operation directly. The generic tail preserves CanStartOperation.
+		"UNITOPERATION_EXCAVATE", "UNITOPERATION_DESIGNATE_PARK", "UNITOPERATION_TOURISM_BOMB",
 		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
 		-- light cavalry's pillage-before-combat could not happen on the live
 		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
@@ -4926,6 +4931,23 @@ CivvisChooseSpyEscapeRoute = function(pid)
 		params[PlayerOperations.PARAM_DISTRICT_TYPE] =
 			GameInfo.Districts["DISTRICT_CITY_CENTER"].Index;
 		UI.RequestPlayerOperation(pid, PlayerOperations.SET_ESCAPE_ROUTE, params);
+		return true;
+	end, false);
+end
+
+-- ChooseArtifact.lua:11-19 reads the next extracting Archaeologist and its
+-- artifact; :79-81 chooses ActingPlayerID with CHOOSE_ARTIFACT_PLAYER.
+-- Notifications.xml:130 has AutoNotify="False", so the popup callback alone
+-- cannot guarantee this required choice gets answered on an unattended seat.
+CivvisChooseArtifactPlayer = function(pid)
+	return try(function()
+		local unit = Players[pid]:GetUnits():GetNextExtractingArchaeologist();
+		if unit == nil then return false; end
+		local artifact = Game.GetArtifactByIndex(unit:GetArchaeology():GetArtifactIndex());
+		if artifact == nil or type(artifact.ActingPlayerID) ~= "number" then return false; end
+		local params = {};
+		params[PlayerOperations.PARAM_PLAYER_ONE] = artifact.ActingPlayerID;
+		UI.RequestPlayerOperation(pid, PlayerOperations.CHOOSE_ARTIFACT_PLAYER, params);
 		return true;
 	end, false);
 end
@@ -19020,6 +19042,9 @@ local function tick()
 				if name == "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE" then
 					answered = CivvisChooseSpyEscapeRoute(pid)
 						and "escape_route:city_center" or nil;
+				elseif name == "ENDTURN_BLOCKING_ARTIFACT" then
+					answered = CivvisChooseArtifactPlayer(pid)
+						and "artifact_player:first" or nil;
 				elseif cfg.CivvisDecides then
 					-- CIVVIS has already made and applied its complete unit-order
 					-- pass in settleTurn. A soft blocker is only a UI reminder; the

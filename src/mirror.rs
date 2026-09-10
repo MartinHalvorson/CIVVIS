@@ -9623,8 +9623,15 @@ fn apply_unit_observation(
         .chain(state.spread_charges)
         .filter(|charges| *charges >= 0)
         .max();
-    if let Some(charges) = observed_charges {
-        live.charges = charges;
+    // Naturalists and Archaeologists execute DESIGNATE_PARK / EXCAVATE,
+    // not BUILD_IMPROVEMENT. Their reported Builder/spread zero is not an
+    // exhausted Culture operation counter. Keep the simulator's planning
+    // budget; native CanStartOperation remains the final legality check.
+    // This is deliberately not an assertion of remaining native artifacts.
+    if !matches!(live.kind.as_str(), "naturalist" | "archaeologist") {
+        if let Some(charges) = observed_charges {
+            live.charges = charges;
+        }
     }
     live.fortified = state.fortified;
     live.fortify_turns = state.fortify_turns.clamp(0, 2);

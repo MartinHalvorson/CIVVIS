@@ -2161,3 +2161,38 @@ fn host_amenity_deficit_calibrates_planning_without_freezing_arena_gain() {
         "a later unavailable host query must clear rather than preserve a stale deficit"
     );
 }
+
+#[test]
+fn culture_operation_budgets_are_not_builder_charges() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 156,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots: vec![host_grass(5, 5)],
+    }]);
+    for (kind, budget) in [
+        ("UNIT_ARCHAEOLOGIST", 3),
+        ("UNIT_NATURALIST", 1),
+        ("UNIT_BUILDER", 0),
+    ] {
+        let state = StateSnapshot {
+            turn: 156,
+            units: vec![StateUnit {
+                id: 92,
+                kind: kind.to_string(),
+                x: 5,
+                y: 5,
+                build_charges: Some(0),
+                spread_charges: Some(0),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            mirror.game.units[&mirror.uid_of[&92]].charges, budget,
+            "{kind}"
+        );
+    }
+}
