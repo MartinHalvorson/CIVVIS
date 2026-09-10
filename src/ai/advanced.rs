@@ -24828,7 +24828,7 @@ impl AdvancedAi {
         if adaptive_expansion_dispatch {
             self.expansion_census.dispatch_calls += 1;
         }
-        let mut counts = self.counts(g, pid);
+        let counts = self.counts(g, pid);
         let preempt_margin = self.production_review_margin(g);
         // `requisitions`: the board assessed for this turn before its
         // shortfall is read below; exact no-op with the gene off. See
@@ -24855,12 +24855,11 @@ impl AdvancedAi {
             None
         };
         for cid in city_ids {
-            // A named victory governor compares alternatives against the
-            // empire without this queue: the unit being reconsidered cannot
-            // satisfy its own demand. Refresh after each city's actual order.
-            if self.active_victory_target(g).is_some() {
-                counts = self.counts_without_city_queue(g, pid, cid);
-            }
+            // Every governor compares against the empire without this queue:
+            // a Settler cannot fill its own demand and thereby veto itself.
+            // Refresh even for an idle city, so a previous city's retained
+            // commitment still reserves its demand before this city chooses.
+            let mut counts = self.counts_without_city_queue(g, pid, cid);
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
@@ -24990,7 +24989,6 @@ impl AdvancedAi {
                                 "{} starts {}", city_name, Self::plain_item(&item);
                                 "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
                         }
-                        counts = self.counts(g, pid);
                         self.clear_idle_production_streak(cid);
                     }
                 }
@@ -25066,7 +25064,6 @@ impl AdvancedAi {
                 }
             }
             if committed.is_none() && self.resume_city_production(g, pid, cid, plan, &counts) {
-                counts = self.counts(g, pid);
                 self.clear_idle_production_streak(cid);
                 continue;
             }
