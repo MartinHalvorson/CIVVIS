@@ -737,6 +737,26 @@ fn rival_seat(kind: &str, seed: u64, genes: &[Gene], random_genome: &[bool]) -> 
 /// been decided.
 const SCIENCE_PACE_STANDARD_TURN: u32 = 150;
 
+/// ⭐ THE OPENING BAND MARK, in Standard-speed turns.
+///
+/// `cities_60` on a row is the seat's city count at the start of this batch's
+/// own turn equivalent to Standard turn 60, read exactly the way `techs_150`
+/// reads its own mark, so an Online screen takes it at turn 39.
+///
+/// Why this mark and not another: turn 60 is where the live corpus's single
+/// strongest result lives. Over 218 completed live runs **every one of the
+/// nine recorded wins had four to six cities at turn 60, and nothing outside
+/// that band won** — 0 of 128, one-sided Fisher *p* = 2.6 × 10⁻⁴. It is what
+/// `expansion_schedule::EXPANSION_BAND_FLOOR` aims the whole opening at and
+/// what `rapid_city_expansion::city_target` composes.
+///
+/// The live ladder has recorded `cities_at_60` on 359 of its deep runs since
+/// long before this; the simulator recorded nothing comparable, so
+/// `civ6_trajectory_fidelity.py` could not ask whether a screened game opens
+/// the way a live one does — on the one axis the corpus says decides a game.
+/// That is the whole reason for the column.
+const OPENING_BAND_STANDARD_TURN: u32 = 60;
+
 /// One seat of one screened game, written to the JSONL file and read back by
 /// `--analyze`. A game yields one row per major seat.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -814,6 +834,13 @@ struct Row {
     /// a file rather than a Δ of zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     techs_150: Option<usize>,
+    /// ⭐ THE OPENING BAND: cities held at the start of the turn equivalent to
+    /// Standard turn `OPENING_BAND_STANDARD_TURN`, or the final count when the
+    /// game ended before it. `None` in every file written before the field
+    /// existed, and not written then, so a reader can tell "not recorded" from
+    /// "opened with none".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cities_60: Option<usize>,
     /// Science per turn over this seat's cities at the end of the game
     /// (`Game::city_yields`, the read `victory_eval` prints). `None` as above.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2005,6 +2032,10 @@ fn play_game(
     // row then carries the final count, which is what the seat knew then.
     let pace_turn = world.standard_duration(SCIENCE_PACE_STANDARD_TURN);
     let mut techs_at_pace: Option<Vec<usize>> = None;
+    // The opening band, read the same way at its own mark. See
+    // `OPENING_BAND_STANDARD_TURN`.
+    let band_turn = world.standard_duration(OPENING_BAND_STANDARD_TURN);
+    let mut cities_at_band: Option<Vec<usize>> = None;
     let mut trajectories = vec![Vec::new(); world.players.len()];
     run_game_observed(&mut world, &mut ais, |g| {
         if g.turn.is_multiple_of(25) {
@@ -2014,6 +2045,14 @@ fn play_game(
         }
         if techs_at_pace.is_none() && g.turn >= pace_turn {
             techs_at_pace = Some(g.players.iter().map(|p| p.techs.len()).collect());
+        }
+        if cities_at_band.is_none() && g.turn >= band_turn {
+            cities_at_band = Some(
+                g.players
+                    .iter()
+                    .map(|p| g.player_city_ids(p.id).len())
+                    .collect(),
+            );
         }
     });
     let secs = started.elapsed().as_secs_f64();
@@ -2045,6 +2084,11 @@ fn play_game(
                 techs_at_pace
                     .as_ref()
                     .map_or(world.players[seat].techs.len(), |counts| counts[seat]),
+            );
+            row.cities_60 = Some(
+                cities_at_band
+                    .as_ref()
+                    .map_or_else(|| world.player_city_ids(seat).len(), |counts| counts[seat]),
             );
             match this_rival {
                 Some(offset) => {
@@ -2198,8 +2242,9 @@ fn row_for_seat(
             .filter(|node| game.players[seat].boosted_civics.contains(node))
             .count() as i64,
         // Filled in by `play_game`, which knows the game's mask and rung, and
-        // took the mid-game science-pace read.
+        // took the mid-game science-pace and opening-band reads.
         techs_150: None,
+        cities_60: None,
         victories_off: Vec::new(),
         difficulty: String::new(),
         rival_mix: String::new(),
@@ -6471,6 +6516,7 @@ mod tests {
             inquisition: false,
             techs: 0,
             techs_150: None,
+            cities_60: None,
             science_end: None,
             wonders: 0,
             military: 0.0,
@@ -6923,6 +6969,44 @@ mod tests {
         assert!(
             estimate_costs(&header, &rows).is_empty(),
             "secs are 0.0 in test rows"
+        );
+    }
+
+    #[test]
+    fn the_opening_band_is_absent_on_an_old_row_and_round_trips_on_a_new_one() {
+        // A row written before the column existed says nothing about the band,
+        // which a reader must be able to tell from "opened with none".
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.cities_60, None);
+        assert_eq!(old.cities, 8, "the end-of-game count is a different number");
+        let text = serde_json::to_string(&old).unwrap();
+        assert!(
+            !text.contains("cities_60"),
+            "an old row stays byte for byte what it was: {text}"
+        );
+        let mut row = test_row(0, 0, "10", true);
+        row.cities_60 = Some(5);
+        let text = serde_json::to_string(&row).unwrap();
+        assert!(text.contains("\"cities_60\":5"), "{text}");
+        let back: Row = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.cities_60, Some(5));
+    }
+
+    /// The band mark is the one the live corpus records against, and the two
+    /// marks convert through the same speed rule.
+    #[test]
+    fn the_two_turn_marks_convert_on_the_batchs_own_clock() {
+        assert_eq!(OPENING_BAND_STANDARD_TURN, 60, "the measured band's turn");
+        let online = civvis::game::Game::new_full(2, 24, 16, 91_009, 250, 0, false);
+        let band = online.standard_duration(OPENING_BAND_STANDARD_TURN);
+        let pace = online.standard_duration(SCIENCE_PACE_STANDARD_TURN);
+        assert!(band > 0, "the band converts to a real turn on this clock");
+        assert!(
+            band < pace,
+            "the opening is read before the middle game: {band} then {pace}"
         );
     }
 
