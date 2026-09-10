@@ -181,6 +181,31 @@ class TheRatchetOnlyTightens(unittest.TestCase):
         self.assertTrue(any("no tolerance recorded" in note for note in notes))
 
 
+class TheLedgerDisclosesItsOwnBound(unittest.TestCase):
+    """`Kind::HostOnly` genes ship on the live seat and are inert headless, so
+    the two sides of this ledger are never quite the same agent. A reader who
+    does not know that will read an opening-band gap as an engine defect."""
+
+    def test_the_host_only_genes_are_discovered_from_the_registry(self):
+        found = fidelity.host_only_genes()
+        self.assertGreater(len(found), 10, f"the registry scan went thin: {found}")
+        self.assertEqual(found, sorted(set(found)), "sorted and deduplicated")
+        # Several shape the opening; that is why the notice exists.
+        for opening in ("parallel-settlers", "land-grab", "host-settler-pop"):
+            self.assertIn(opening, found)
+        # A screenable opt-in is NOT host-only and must not be swept in.
+        self.assertNotIn("chop-for-expansion", found)
+
+    def test_the_report_names_the_bound_before_any_number(self):
+        live = [{"_cell": ("prince", "online", "small", "n/a"), "_score_ratio": 0.5}]
+        report = fidelity.ledger(live, [])
+        self.assertTrue(report["host_only_genes"])
+        text = fidelity.render(report)
+        head = text.split("##")[0]
+        self.assertIn("not quite the same agent", head)
+        self.assertIn("inert here", head)
+
+
 class TheOpeningBandIsComparable(unittest.TestCase):
     """Turn 60 is where the live corpus's strongest result lives: every one of
     its nine recorded wins had four to six cities there and nothing outside the
