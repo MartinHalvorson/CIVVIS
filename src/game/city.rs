@@ -6658,7 +6658,10 @@ impl Game {
             kind: "EMERGENCY_SEND_AID",
             diplomatic_victory_points: 2,
             first_place_favor: 100.0,
-            scoring: &[CompetitionScoreSource::Project],
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::GoldGift,
+            ],
             trigger: NativeCompetitionTrigger::RandomDisasterPopulationLoss,
             duration: 30,
             lockout: 30,
@@ -6670,7 +6673,10 @@ impl Game {
             kind: "EMERGENCY_SEND_MILITARY_AID",
             diplomatic_victory_points: 2,
             first_place_favor: 100.0,
-            scoring: &[CompetitionScoreSource::Project],
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::GoldGift,
+            ],
             trigger: NativeCompetitionTrigger::WarWithGrievances,
             duration: 30,
             lockout: 30,
@@ -6800,6 +6806,7 @@ impl Game {
             return false;
         };
         competition.scoring.iter().any(|source| match source {
+            CompetitionScoreSource::GoldGift => self.players[pid].gold >= 1.0,
             // Every empire generates Great Person Points and Diplomatic Favor,
             // so there is no ground to hold and nothing to gate on.
             CompetitionScoreSource::GreatPersonPointsPerTurn
@@ -6853,7 +6860,7 @@ impl Game {
         source: CompetitionScoreSource,
         amount: f64,
     ) {
-        if amount <= 0.0 || !self.victory_eligible(pid) {
+        if !amount.is_finite() || amount <= 0.0 || !self.victory_eligible(pid) {
             return;
         }
         let turn = self.turn;

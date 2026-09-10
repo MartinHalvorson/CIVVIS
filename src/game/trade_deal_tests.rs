@@ -1,6 +1,127 @@
 use super::*;
 use crate::ai::BasicAi;
 
+fn aid_request(game: &mut Game, kind: &str) {
+    game.competition = Some(Competition {
+        kind: kind.into(),
+        ends: game.turn + 3,
+        target: Some(1),
+        scores: BTreeMap::new(),
+    });
+}
+
+#[test]
+fn completed_aid_gold_gifts_score_exactly_once_for_both_request_kinds() {
+    for kind in ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"] {
+        let mut game = trade_game();
+        aid_request(&mut game, kind);
+        game.apply(
+            0,
+            &Action::Trade {
+                player: 1,
+                offer: Box::new(DealItems {
+                    gold: 37.0,
+                    ..Default::default()
+                }),
+                request: Box::default(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            game.competition.as_ref().unwrap().scores.get(&0),
+            Some(&37.0)
+        );
+        assert_eq!(game.players[0].gold, 463.0);
+        assert_eq!(game.players[1].gold, 537.0);
+        assert_eq!(game.players[0].counters["gifts_given"], 1);
+    }
+}
+
+#[test]
+fn aid_score_requires_fulfillment_not_a_proposal_or_failed_transfer() {
+    let mut game = trade_game();
+    aid_request(&mut game, "EMERGENCY_SEND_AID");
+    game.apply(
+        0,
+        &Action::ProposeDeal {
+            player: 1,
+            give_gold: 37.0,
+            request_gold: 0.0,
+            open_borders: false,
+            friendship: false,
+            peace: false,
+            alliance: None,
+        },
+    )
+    .unwrap();
+    assert!(game.competition.as_ref().unwrap().scores.is_empty());
+    let deal = game.pending_deals.last().unwrap().id;
+    game.current = 1;
+    game.players[0].gold = 0.0;
+    assert!(game.apply(1, &Action::AcceptDeal { deal }).is_err());
+    assert!(game.competition.as_ref().unwrap().scores.is_empty());
+    game.players[0].gold = 500.0;
+    game.apply(1, &Action::AcceptDeal { deal }).unwrap();
+    assert_eq!(game.competition.as_ref().unwrap().scores[&0], 37.0);
+    assert!(game.apply(1, &Action::AcceptDeal { deal }).is_err());
+    assert_eq!(game.competition.as_ref().unwrap().scores[&0], 37.0);
+}
+
+#[test]
+fn unrelated_expired_and_target_gifts_do_not_score() {
+    for (kind, target, expired) in [
+        ("EMERGENCY_WORLD_GAMES", Some(1), false),
+        ("EMERGENCY_SEND_AID", None, false),
+        ("EMERGENCY_SEND_AID", Some(0), false),
+        ("EMERGENCY_SEND_AID", Some(1), true),
+    ] {
+        let mut game = trade_game();
+        aid_request(&mut game, kind);
+        let running = game.competition.as_mut().unwrap();
+        running.target = target;
+        if expired {
+            running.ends = game.turn;
+        }
+        game.do_trade(
+            0,
+            1,
+            &DealItems {
+                gold: 37.0,
+                ..Default::default()
+            },
+            &DealItems::default(),
+        )
+        .unwrap();
+        assert!(game.competition.as_ref().unwrap().scores.is_empty());
+    }
+}
+
+#[test]
+fn aid_score_does_not_convert_trade_payments_or_gpt_into_lump_sum_gifts() {
+    let mut game = trade_game();
+    aid_request(&mut game, "EMERGENCY_SEND_AID");
+    let deal = game
+        .quick_deals(0)
+        .into_iter()
+        .find(|d| d.direction == "buy")
+        .unwrap();
+    game.do_trade(0, deal.partner, &deal.offer, &deal.request)
+        .unwrap();
+    assert!(game.competition.as_ref().unwrap().scores.is_empty());
+    game.do_trade(
+        0,
+        1,
+        &DealItems {
+            gold: 7.0,
+            gold_per_turn: 1.0,
+            ..Default::default()
+        },
+        &DealItems::default(),
+    )
+    .unwrap();
+    assert_eq!(game.competition.as_ref().unwrap().scores[&0], 7.0);
+}
+
 fn trade_game() -> Game {
     let mut game = Game::new_full(2, 24, 16, 7711, 120, 0, false);
     // Two capitals dropped on opposite ends of a map have not met, and

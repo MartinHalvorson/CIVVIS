@@ -9218,6 +9218,7 @@ impl Game {
         self.players[deal.to].gold += deal.give_gold - deal.request_gold;
         if Self::diplomatic_deal_is_gift(&deal) {
             self.record_gift(deal.from, deal.to);
+            self.score_aid_gold_gift(deal.from, deal.to, deal.give_gold);
         }
         if deal.peace {
             self.conclude_peace(deal.from, deal.to, peace_terms);
@@ -10440,16 +10441,30 @@ impl Game {
             .or_insert(0) += 1;
         if request.is_empty() {
             self.record_gift(from, to);
+            self.score_aid_gold_gift(from, to, offer.gold);
         }
         Ok(())
     }
 
     /// The gift ledger: what a seat gave for nothing, and what it was given.
-    /// A controller that reads `gifts_given` above zero on its own seat has
-    /// done something no controller here is meant to do.
+    /// This is not relationship credit. An eligible Aid Request can separately
+    /// award competition score for the Gold actually transferred.
     pub(super) fn record_gift(&mut self, from: usize, to: usize) {
         bump(&mut self.players[from], "gifts_given");
         bump(&mut self.players[to], "gifts_received");
+    }
+
+    /// Score only a completed gift to the currently running request's target.
+    /// Sending an offer, paying for goods, and giving to an unrelated rival do
+    /// not satisfy the shipped FromGold source. Host scores remain host-owned.
+    fn score_aid_gold_gift(&mut self, from: usize, to: usize, gold: f64) {
+        if self
+            .competition
+            .as_ref()
+            .is_some_and(|running| running.target == Some(to))
+        {
+            self.score_native_competition(from, CompetitionScoreSource::GoldGift, gold);
+        }
     }
 
     /// A diplomatic deal that only hands over Gold: legal as a gift, worth

@@ -3970,15 +3970,18 @@ pub struct HostCompetition {
 /// Spaceport Districts", so both accrue every turn; a `FromProject` row pays
 /// once, when the project completes.
 ///
-/// ⚠ Four shipped rows stay unmodelled because the data does not say what they
+/// ⚠ Three shipped rows stay unmodelled because the data does not say what they
 /// measure. `CLIMATE_ACCORDS_SCORE_CO2` pays for "emissions much lower than the
-/// biggest CO2 polluter" and never says how much lower; `SEND_AID_SCORE_FROM_GOLD`
-/// counts gifts of Gold to the target, which is a diplomatic action CIVVIS has
-/// no equivalent of; and the two `FROM_AT_WAR` penalties do not say whether -30
+/// biggest CO2 polluter" and never says how much lower; and the two
+/// `FROM_AT_WAR` penalties do not say whether -30
 /// and -200 are charged once or every turn. Choosing a number for any of them
 /// would be inventing a rule, which is the #2049 mistake.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum CompetitionScoreSource {
+    /// Expansion2_Emergencies.xml:131,166: one point per Gold gifted to
+    /// the Aid Request's target. Only completed lump-sum gifts are modeled;
+    /// recurring deal payments have no verified scoring cadence here.
+    GoldGift,
     /// `FromProject`: a project completed in a city, worth the
     /// `competition_score` it declares.
     Project,
