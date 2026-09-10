@@ -254,8 +254,64 @@ impl ConquestOpening {
     }
 }
 
+/// `conquest-takes-the-soft-city`: rank the opening's target by what can be
+/// taken before what is worth most.
+///
+/// ## The defect
+///
+/// [`TargetRank`] ships with `not_the_capital` as its LEADING field, so the
+/// rival's capital outranks every other city of theirs whatever is standing in
+/// it — the garrison field below it only ever breaks a tie between two cities
+/// of the same capital-ness. The opening force is
+/// [`CONQUEST_RANGED`] shooters and [`CONQUEST_MELEE`] melee bodies, and the
+/// capital is the one city on the board that is reliably defended: it starts
+/// with the rival's own Warrior, it is where the free difficulty units spawn,
+/// and it is the city an AI reinforces first.
+///
+/// The record says what that costs. Over 111 recorded Emperor games the empire
+/// took **2 cities and lost 65**, at 0.45 kills per loss — and from Emperor
+/// upward each rival opens with free Settlers, so a rival holds *more, thinner*
+/// cities than the capital-first rule assumes. A target the assembled force
+/// cannot take is worth nothing however valuable it is, and
+/// `conquest_preview_takes_the_city` then refuses the declaration, so the
+/// opening spends its whole reservation and never fires.
+///
+/// ## What the gene changes
+///
+/// One thing: [`TargetRank::key`] leads with what the city will COST TO TAKE
+/// and demotes capital-ness to the field under it. Same tie-breaks — so among
+/// equally defended cities the capital still wins, and the shipped intent
+/// survives everywhere the two questions do not conflict.
+///
+/// The cost is `Game::city_strength` plus the visible garrison, which is the
+/// same shape as the `at_city + defenders` term
+/// `campaign_city_requirement` builds — the number
+/// [`AdvancedAi::conquest_preview_takes_the_city`] already refuses the
+/// declaration on. **Selection and admission were asking different questions**:
+/// the target was chosen on visible units alone while the gate priced the
+/// Palace, the walls and the defence districts, so the opening could reserve
+/// the capital's production for sixty turns against a city the gate was always
+/// going to refuse. Ranking on the gate's own quantity is what makes the
+/// reservation buy something.
+///
+/// ⚠ `city_strength` is the right reading on the seat this is for: on a live
+/// board it answers out of `observed_city_strength`, the strength the mirror
+/// read off the city banner. The visible-garrison term keeps its existing
+/// fog-honest filter, so no unit this seat cannot see enters the ranking.
+///
+/// ⚠ **It is deliberately not gated on the difficulty rung**, although the rung
+/// is what motivates it. `gene_screen`'s ledger shape runs at **Prince** with no
+/// rotation (`difficulty: "prince"`, `difficulty_rotate: ""` in every standard
+/// screen), so a gene that is inert below Emperor could never be priced by the
+/// ranking and could never be turned on by it — inert by construction, which is
+/// the state eight genes were already found in. The rule stands at every rung
+/// instead, and the rung is the reason it was looked for.
 /// One candidate target, ranked. Lower is better in every field, in order.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+///
+/// ⚠ The field ORDER is the ranking, and `conquest-takes-the-soft-city`
+/// changes which of the first two leads. Read [`TargetRank::key`] rather than
+/// comparing these directly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct TargetRank {
     /// `0` for the rival's capital, `1` for any other city. The capital is
     /// the one city whose loss can end a small neighbour outright.
@@ -264,10 +320,40 @@ struct TargetRank {
     /// strength points, so the ranking is a total order and does not depend
     /// on floating-point ties.
     garrison: i64,
+    /// What this city will cost to take: its own strength — the Palace, the
+    /// walls, the defence districts and the terrain under it — plus the
+    /// visible garrison, in whole strength points.
+    ///
+    /// Read from `Game::city_strength`, which on a live seat answers out of
+    /// `observed_city_strength`, the strength the mirror actually read off the
+    /// city banner. Only `conquest-takes-the-soft-city` consults it.
+    defence: i64,
     /// Distance from our capital, so a tie goes to the nearer city.
     distance: i32,
     /// The city id, so the whole ranking is deterministic.
     city: u32,
+}
+
+impl TargetRank {
+    /// The comparison key.
+    ///
+    /// Shipped (`soft_first` false) this is exactly the derived ordering the
+    /// four fields used to have: capital-ness, then the visible garrison, then
+    /// distance, then id — `defence` is not read at all, so the gene off is
+    /// byte-identical.
+    ///
+    /// On, the leading question becomes *what will this cost to take*, with
+    /// capital-ness demoted to the field under it. Same tie-breaks, so among
+    /// equally defended cities the capital still wins and the shipped intent
+    /// survives everywhere the two questions do not conflict.
+    fn key(&self, soft_first: bool) -> (i64, i64, i32, u32) {
+        let capital = i64::from(self.not_the_capital);
+        if soft_first {
+            (self.defence, capital, self.distance, self.city)
+        } else {
+            (capital, self.garrison, self.distance, self.city)
+        }
+    }
 }
 
 impl AdvancedAi {
@@ -337,6 +423,7 @@ impl AdvancedAi {
         let capital = Self::conquest_capital(g, pid)?;
         let home = g.cities[&capital].pos;
         let visible = self.battlefront_visibility(g, pid);
+        let soft_first = self.conquest_takes_the_soft_city;
         let mut best: Option<(TargetRank, usize)> = None;
         for rival in 0..g.players.len() {
             let player = &g.players[rival];
@@ -356,13 +443,18 @@ impl AdvancedAi {
                 if distance > CONQUEST_REACH_TILES {
                     continue;
                 }
+                let garrison = Self::conquest_visible_garrison(g, pid, city, &visible);
                 let rank = TargetRank {
                     not_the_capital: u8::from(!g.cities[&city].is_capital),
-                    garrison: Self::conquest_visible_garrison(g, pid, city, &visible) as i64,
+                    garrison: garrison as i64,
+                    defence: (g.city_strength(city) + garrison) as i64,
                     distance,
                     city,
                 };
-                if best.as_ref().is_none_or(|(held, _)| rank < *held) {
+                if best
+                    .as_ref()
+                    .is_none_or(|(held, _)| rank.key(soft_first) < held.key(soft_first))
+                {
                     best = Some((rank, rival));
                 }
             }
