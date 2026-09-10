@@ -2,6 +2,8 @@
 use super::{finishing::begin_player_turn, AdvancedAi};
 use crate::game::{Action, Game};
 
+pub mod aid;
+
 /// Changes to information access or the fixed policy bundle change the
 /// experimental regime even when the set of randomized gene names does not.
 pub const CONTRACT: &str = "observed-player-v1";
@@ -21,6 +23,7 @@ pub fn plan_frame(
 ) -> (super::finishing::WarFinishingVolley, usize) {
     let finishing = begin_player_turn(ai, view, pid, mapped);
     let ordinary_begin = view.log.len();
+    aid::plan_native(view, pid);
     ai.plan_observed_turn(view, pid);
     (finishing, ordinary_begin)
 }
