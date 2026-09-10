@@ -2040,29 +2040,12 @@ pub struct AdvancedAi {
     /// the selection bias that dissolved this repository's coordinate-descent
     /// result on resampling.
     pub settler_price: f64,
-    /// How much better a candidate must be before a city abandons what it is
-    /// already building. **1.0 by default: adaptive controllers disable
-    /// preemption; named victory governors use a 25% improvement margin.**
-    /// Values above 1.0 explicitly configure the margin for either governor.
+    /// Improvement margin for routine review of unstarted or no-longer-useful
+    /// queues. Legal, useful wonders and invested items are finished first;
+    /// explicit emergency defense and insolvency handoffs may still interrupt.
+    /// Adaptive controllers disable routine review at 1.0; named victory
+    /// governors use a 25% margin. Values above 1.0 configure either governor.
     /// See `marginal_usefulness::production_review_margin`.
-    ///
-    /// Historically `advanced_production` skipped non-empty queues, so
-    /// `production_value` was consulted only on an idle city. `expansion_funnel` measured what that
-    /// costs: over 48 seats, on **25.8% of all seat-turns** the empire was
-    /// short of its own planned city target, permitted a settler, had a
-    /// reachable site, and every city was mid-build. The genuine valuation
-    /// loss — a free city choosing something else — is only **2.6%**.
-    ///
-    /// The plan above this re-assesses every 5 turns (`plan_stale`); the
-    /// historical queue governor never re-assessed. Switching is close to free here because
-    /// `City::production_progress` banks a paused build by item key, which is
-    /// the Civ 6 rule and the reason a strong human switches to a settler
-    /// routinely.
-    ///
-    /// ⚠ A margin at or below 1.0 means "switch on any improvement", which
-    /// invites oscillation between two nearly equal candidates re-scored every
-    /// turn. That is why the disabled value is 1.0 rather than 0.0: the flag is
-    /// a *ratio*, and the off state is the identity.
     pub preempt_margin: f64,
     /// Weigh whether a settle site can be held, not only what it yields.
     ///
@@ -24950,9 +24933,20 @@ impl AdvancedAi {
                 && committed
                     .as_ref()
                     .is_some_and(|(_, item)| self.science_recovery_preempts(g, item));
+            // Banked production preserves hammers, but switching still delays
+            // the payoff and can lose a wonder race. Finish a legal, useful
+            // investment before routine rescoring can claim this city. Siege
+            // and insolvency responses retain their explicit priority.
+            let finish_investment = committed.as_ref().is_some_and(|(value, item)| {
+                *value > -1_000.0
+                    && g.can_produce(pid, cid, item)
+                    && (matches!(item, Item::Wonder { .. })
+                        || g.item_remaining_cost_for_city(pid, cid, item)
+                            < g.item_cost_for_city(pid, cid, item))
+            });
             if committed.is_some()
                 && !recovery_preemption
-                && (preempt_margin <= 1.0 || economic_recovery)
+                && (finish_investment || preempt_margin <= 1.0 || economic_recovery)
             {
                 continue;
             }
@@ -25366,11 +25360,9 @@ impl AdvancedAi {
             let chosen = {
                 let mut chosen: Option<(f64, Item)> = None;
                 for (score, _, item) in ranked {
-                    // Switching is close to free in this engine:
-                    // `City::production_progress` banks a paused build's
-                    // progress by item key, so an abandoned item resumes where
-                    // it stopped. The margin is what stops a city oscillating
-                    // between two nearly equal candidates.
+                    // Invested, useful queues were preserved above. Review
+                    // unstarted or no-longer-useful commitments with a margin
+                    // so small score changes cannot churn the remaining queues.
                     let displaces_commitment = match &committed {
                         Some((current, current_item)) => {
                             *current_item != item
@@ -28210,11 +28202,13 @@ impl AdvancedAi {
                 let science_target = self.victory_target == Some(VictoryTarget::Science);
                 let wonder_civ =
                     !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                let continuing_wonder = city.queue.first() == Some(item);
                 let already_queued = g.cities.values().any(|other| {
-                    matches!(
-                        other.queue.first(),
-                        Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
-                    )
+                    other.id != cid
+                        && matches!(
+                            other.queue.first(),
+                            Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
+                        )
                 });
                 // See `lane_release_when_hopeless`: a released lane plays for
                 // score, and a wonder is fifteen score points -- the largest
@@ -28279,6 +28273,7 @@ impl AdvancedAi {
                     .values()
                     .filter(|other| {
                         other.owner == pid
+                            && other.id != cid
                             && matches!(other.queue.first(), Some(Item::Wonder { .. }))
                     })
                     .count();
@@ -28378,7 +28373,13 @@ impl AdvancedAi {
                     || spent_religion_founding_site
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
-                    || !(lane_opens || live_race_opens || strategic_opens || tally_opens)
+                    // Lane selection authorizes starting a race; a changed
+                    // preference alone does not invalidate its existing build.
+                    || !(continuing_wonder
+                        || lane_opens
+                        || live_race_opens
+                        || strategic_opens
+                        || tally_opens)
                 {
                     -10_000.0
                 } else {
