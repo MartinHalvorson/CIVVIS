@@ -3937,17 +3937,18 @@ pub struct AdvancedAi {
     /// than `RAID_POWER_RATIO` of us, walks the soldiers onto the prizes
     /// (`raid_prize_step`), keeps the grand strategy on its economic plan
     /// while the raid is the only war (`raid_only_war`), and proposes peace
-    /// once nothing is left in reach. Off everywhere by default; opt-in gene
-    /// `opportunistic-war`. See `advanced/opportunistic_war.rs`.
+    /// once nothing is left in reach. Advanced production turns it on after
+    /// the repeated positive standard-screen result. See
+    /// `advanced/opportunistic_war.rs`.
     pub opportunistic_war: bool,
     /// Version two checks post-declaration route feasibility and length
     /// before counting prizes toward a war. Independently screened from v1.
     pub opportunistic_war_2: bool,
     /// The pillage half of `opportunistic_war`: count a neighbour's unpillaged
     /// improvements and districts within reach as prizes, and walk raiding
-    /// soldiers to them. Off, a raid is priced on civilians alone. Its own
-    /// opt-in gene, `raid-pillage-prizes`, so the screen prices the tiles
-    /// apart from the Settlers; inert unless `opportunistic_war` is on.
+    /// soldiers to them. Its own opt-in gene, `raid-pillage-prizes`, keeps the
+    /// screen pricing the tiles apart from the Settlers; it is inert unless
+    /// `opportunistic_war` is on.
     pub raid_pillage_prizes: bool,
     /// The raid `opportunistic_war` opened and has not yet closed.
     raid_war: Option<opportunistic_war::RaidWar>,
@@ -7170,6 +7171,7 @@ impl AdvancedAi {
         ai.research_economy = true;
         ai.enable_solvency_first_trade_slot();
         ai.enable_great_person_housing();
+        ai.enable_opportunistic_war();
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;
@@ -23386,8 +23388,8 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether war or targeted science/culture production must yield to the baseline
-    /// solvency recovery before it adds another upkeep bill.
+    /// Whether war or a science, culture, or domination target must yield to
+    /// baseline solvency recovery before it adds another upkeep bill.
     ///
     /// `BasicAi::product_for` uses the same reserve-and-deficit predicate:
     /// below 100 Gold plus 25 per city, a negative income selects a Trader, a
@@ -23402,8 +23404,8 @@ impl AdvancedAi {
     /// Keep the baseline's emergency exception. An empire at major war with
     /// fewer military units than cities may still raise its first garrison;
     /// every other live war queue takes the same recovery branch that the
-    /// ordinary governor would have used. Science targeting also bypasses the
-    /// baseline picker, including when the optional war-economy gene is off.
+    /// ordinary governor would have used. Named victory targeting also bypasses
+    /// the baseline picker, including when the optional war-economy gene is off.
     /// Rome on 2026-09-08 stayed insolvent from t100 through t190 in peace
     /// while this guard was disabled, continually replacing unpaid units.
     fn live_war_economy_requires_recovery(
@@ -23415,7 +23417,7 @@ impl AdvancedAi {
         if (!self.war_economy
             && !matches!(
                 self.active_victory_target(g),
-                Some(VictoryTarget::Science | VictoryTarget::Culture)
+                Some(VictoryTarget::Science | VictoryTarget::Culture | VictoryTarget::Domination)
             ))
             || self.base.minor
             || self.base.barb
@@ -40633,6 +40635,9 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod domination_solvency_tests;
 
 mod science_scaling;
 

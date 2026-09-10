@@ -2648,16 +2648,8 @@ fn append_work_sale_order(
 // ordinary emergency purchases, and will never spend more score than the
 // official project gives.  The current tracker—not a guessed opponent total—
 // sets the exact amount required to move strictly ahead.
-const AID_GIFT_FINISH_WINDOW: i64 = 3;
-const AID_GIFT_GOLD_RESERVE: i64 = 100;
-const AID_GIFT_SCORE_MAX: i64 = 200;
-
-fn aid_request_kind(kind: &str) -> bool {
-    matches!(
-        kind.trim(),
-        "EMERGENCY_SEND_AID" | "EMERGENCY_SEND_MILITARY_AID"
-    )
-}
+#[cfg(test)]
+use civvis::ai::player::aid::FINISH_WINDOW as AID_GIFT_FINISH_WINDOW;
 
 /// The share of the treasury a ROUTED peace offer may carry as tribute on
 /// its retry, and the most it may ever carry. ★ 2026-08-24: over 42 live
@@ -2680,24 +2672,6 @@ fn peace_tribute_cap(state: &civvis::mirror::StateSnapshot, routed: bool) -> i32
         return 0;
     }
     ((state.gold as f64 * PEACE_TRIBUTE_SHARE).floor() as i64).clamp(0, PEACE_TRIBUTE_MAX) as i32
-}
-
-/// The smallest integral gift that puts our tracker score strictly above every
-/// finite score Firaxis currently reports.  `None` says the host has not given
-/// an authoritative enough board, or the gap exceeds the bounded fallback.
-fn aid_gift_needed_score(emergency: &civvis::mirror::StateEmergency) -> Option<i64> {
-    let ours = emergency.ours.score.filter(|score| score.is_finite())?;
-    let leader = emergency
-        .scores
-        .iter()
-        .map(|entry| entry.score)
-        .filter(|score| score.is_finite())
-        .fold(ours, f64::max);
-    let needed = (leader - ours).floor() + 1.0;
-    if !needed.is_finite() || needed < 1.0 || needed > AID_GIFT_SCORE_MAX as f64 {
-        return None;
-    }
-    Some(needed as i64)
 }
 
 /// A host-reported Send Aid project already reaches the current emergency's
@@ -2730,34 +2704,34 @@ fn append_aid_gift_order(
     let Some(emergencies) = state.emergencies.as_ref() else {
         return Some("aid_gift_hold:no_tracker");
     };
-    let spendable = state.gold.saturating_sub(AID_GIFT_GOLD_RESERVE);
-    let candidate = emergencies
+    let opportunities: Vec<_> = emergencies
         .iter()
-        .filter(|emergency| {
-            aid_request_kind(&emergency.kind)
-                && emergency.begun
-                && emergency.turns_left >= 0
-                && emergency.turns_left <= AID_GIFT_FINISH_WINDOW
-                && emergency.ours.member
-                && emergency.target >= 0
-                && !aid_project_finishes_by_deadline(state, emergency)
-        })
-        .filter_map(|emergency| {
-            let amount = aid_gift_needed_score(emergency)?;
-            if amount > spendable {
-                return None;
-            }
-            let target_is_peaceful_met_major = state
+        .map(|emergency| civvis::ai::player::aid::Opportunity {
+            kind: &emergency.kind,
+            target: emergency.target,
+            turns_left: emergency.turns_left,
+            begun: emergency.begun,
+            member: emergency.ours.member,
+            ours: emergency.ours.score,
+            leader: emergency.ours.score.map(|_| {
+                emergency
+                    .scores
+                    .iter()
+                    .filter(|entry| entry.player != i64::from(state.seat.local_player))
+                    .map(|entry| entry.score)
+                    .filter(|score| score.is_finite())
+                    .fold(0.0, f64::max)
+            }),
+            peaceful_met_target: state
                 .rivals
                 .iter()
-                .any(|rival| rival.player as i64 == emergency.target && !rival.at_war);
-            target_is_peaceful_met_major.then_some((emergency, amount))
+                .any(|rival| rival.player as i64 == emergency.target && !rival.at_war),
+            project_finishes: aid_project_finishes_by_deadline(state, emergency),
         })
-        // If rare overlapping Aid Requests are both finishable, bank the
-        // earliest deadline; the lower exact spend is the deterministic tie
-        // breaker, then the actual host recipient id.
-        .min_by_key(|(emergency, amount)| (emergency.turns_left, *amount, emergency.target));
-    let Some((emergency, amount)) = candidate else {
+        .collect();
+    let Some((emergency, amount)) =
+        civvis::ai::player::aid::choose(state.gold as f64, &opportunities)
+    else {
         return Some("aid_gift_hold:no_finishable_lead");
     };
     let target = emergency.target;

@@ -303,7 +303,14 @@ class Profile:
                 "no call graph in this sample. `sample` writes one under a "
                 "'Call graph:' line; a report without one is usually a process "
                 "that exited before sampling began.")
-        self.thread = max(self.threads, key=lambda one: one["count"])
+        # sample counts parked threads at full rate. A pool coordinator can
+        # therefore tie (or exceed) every actual game worker. Select among
+        # crate-bearing threads by non-waiting samples, not wall-clock samples.
+        candidates = [one for one in self.threads
+                      if any(EXPECTED_CRATE in symbol
+                             for _, _, symbol in one["nodes"])]
+        self.thread = max(candidates or self.threads,
+                          key=self.thread_working_samples)
         #: Inclusive shares are per-thread: a call tree belongs to one thread.
         self.total = self.thread["count"]
         #: ⚠ Self shares are NOT. `sample` prints one "Sort by top of stack"
@@ -353,7 +360,7 @@ class Profile:
         child produced a complete, plausible, entirely `__sigsuspend` call
         graph, and the only thing that gave it away was reading it.
         """
-        blob = "\n".join(symbol for _, _, symbol in self.nodes[:400])
+        blob = "\n".join(symbol for _, _, symbol in self.nodes)
         if EXPECTED_CRATE not in blob:
             raise SystemExit(
                 "this sample's busiest thread never enters `%s`. The usual "
@@ -361,6 +368,19 @@ class Profile:
                 "makes `time` the parent, and its stack is one `__sigsuspend`. "
                 "Sample the binary's own pid.\n  busiest thread: %s (%d samples)"
                 % (EXPECTED_CRATE, self.thread["name"][:60], self.total))
+
+    @staticmethod
+    def thread_working_samples(thread: dict) -> int:
+        """Subtract each outermost wait subtree once, even with nested waits."""
+        idle = 0
+        idle_depth = None
+        for depth, count, symbol in thread["nodes"]:
+            if idle_depth is not None and depth <= idle_depth:
+                idle_depth = None
+            if idle_depth is None and IDLE.search(symbol):
+                idle += count
+                idle_depth = depth
+        return max(0, thread["count"] - idle)
 
     def inclusive(self) -> collections.Counter:
         """Samples with each symbol anywhere on the stack, recursion counted once.
