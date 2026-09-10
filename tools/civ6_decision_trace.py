@@ -30,9 +30,9 @@ def _binary_digest(filename: str, identity: tuple) -> str:
 
 def record_decision(run_dir: Path, payload: dict, binary: str) -> dict:
     decision = payload["decision"]
-    if decision.get("schema") != 1 or decision.get("turn") != payload.get("turn"):
+    if type(decision.get("schema")) is not int or decision["schema"] != 1 or type(payload.get("turn")) is not int or payload["turn"] < 0 or type(decision.get("turn")) is not int or decision["turn"] != payload["turn"]:
         raise ValueError("decision trace schema or turn mismatch")
-    if not isinstance(decision.get("frame"), int) or decision["frame"] < 0:
+    if type(decision.get("frame")) is not int or decision["frame"] < 0:
         raise ValueError("decision trace requires a nonnegative frame")
     if not isinstance(decision.get("native_actions"), list) or not isinstance(payload.get("orders"), list):
         raise ValueError("decision trace requires actions and emitted orders")
@@ -54,6 +54,23 @@ def record_decision(run_dir: Path, payload: dict, binary: str) -> dict:
     return record
 
 
+def exact_fact(expected, actual):
+    """JSON shape and scalar types are part of an exact deterministic fact."""
+    json.dumps([expected, actual], allow_nan=False)
+    for value in (expected, actual):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("non-finite deterministic fact")
+    if type(expected) is not type(actual):
+        return False
+    if isinstance(expected, list):
+        # Check every entry even after a mismatch so a later NaN is not hidden.
+        matches = [exact_fact(a, b) for a, b in zip(expected, actual)]
+        return len(expected) == len(actual) and all(matches)
+    if isinstance(expected, dict):
+        return expected.keys() == actual.keys() and all(exact_fact(value, actual[key]) for key, value in expected.items())
+    return expected == actual
+
+
 def compare_transition(case: dict) -> dict:
     """Check a causally isolated action against independently recorded facts.
 
@@ -62,28 +79,30 @@ def compare_transition(case: dict) -> dict:
     coverage gaps. A caller cannot obtain a passing report with no comparison.
     """
     gaps, differences, compared = [], [], 0
-    if case.get("phase") == "request_boundary":
+    if case.get("phase") != "settled" or case.get("coverage_gap"):
         return {"status": "unverifiable", "compared": 0,
-                "gaps": ["request acknowledgement is not settled execution"], "differences": []}
-    if case.get("same_turn") is not True or case.get("intervening_actions") != 0:
+                "gaps": ["explicit settled evidence without coverage gaps is required"], "differences": []}
+    if case.get("same_turn") is not True or type(case.get("intervening_actions")) is not int or case["intervening_actions"] != 0:
         return {"status": "unverifiable", "compared": 0,
                 "gaps": ["transition is not an isolated same-turn action"], "differences": []}
     predictions, observed = case.get("predictions", {}), case.get("observed", {})
+    if not isinstance(predictions, dict) or not isinstance(observed, dict):
+        raise ValueError("predictions and observed must be fact objects")
     for key, expected in predictions.items():
         actual = observed.get(key)
         if actual is None:
             gaps.append(key)
             continue
         if isinstance(expected, dict):
+            if set(expected) != {"low", "high"}:
+                raise ValueError(f"numeric prediction requires exactly low/high bounds: {key}")
             low, high = expected.get("low"), expected.get("high")
             values = (low, high, actual)
             if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in values) or low > high:
                 raise ValueError(f"invalid numeric prediction or observation: {key}")
             matches = low <= actual <= high
         else:
-            if isinstance(actual, float) and not math.isfinite(actual):
-                raise ValueError(f"non-finite observation: {key}")
-            matches = type(actual) is type(expected) and actual == expected
+            matches = exact_fact(expected, actual)
         compared += 1
         if not matches:
             differences.append({"key": key, "predicted": expected, "observed": actual})
