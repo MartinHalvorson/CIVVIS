@@ -15553,6 +15553,41 @@ fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
             .count(),
         1
     );
+
+    // The city can regain one amenity before the next strategic review while
+    // the other cities remain broadly short. The Arena is still the crisis
+    // repair and must survive that transient recovery.
+    let arena_city = cities[1..]
+        .iter()
+        .copied()
+        .find(|city| {
+            matches!(
+                game.cities[city].queue.first(),
+                Some(Item::Building { building }) if *building == crate::name!("arena")
+            )
+        })
+        .expect("the direct crisis reservation is an Arena");
+    let reserved_arena = game.cities[&arena_city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the Arena remains queued before review");
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).remove(&arena_city);
+    let modeled = game.city_amenity_surplus(&game.cities[&arena_city]);
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
+        .insert(arena_city, -modeled);
+    assert_eq!(
+        game.city_amenity_surplus(&game.cities[&arena_city]),
+        0,
+        "the reserved city's host-observed amenity count recovered"
+    );
+    assert!(AdvancedAi::widespread_amenity_pressure(&game, 0));
+    live.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&arena_city].queue.first(),
+        Some(&reserved_arena),
+        "a broad crisis keeps its Arena through a transient local recovery"
+    );
 }
 
 #[test]

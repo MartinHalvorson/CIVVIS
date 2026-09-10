@@ -24326,12 +24326,13 @@ impl AdvancedAi {
         }
     }
 
-    /// The threshold used by the idle-city Entertainment Complex path. Keep
-    /// it in one place instead of repeating the empire-wide deficit rule.
-    fn widespread_amenity_crisis(g: &Game, pid: usize) -> bool {
+    /// Return the empire-wide amenity pressure used by the live handoffs.
+    /// Keep the city count and deficit tally in one place so reservation and
+    /// queue ownership cannot drift apart.
+    fn amenity_pressure(g: &Game, pid: usize) -> Option<(usize, usize, i64)> {
         let city_ids = g.player_city_ids(pid);
         if city_ids.len() < 4 {
-            return false;
+            return None;
         }
         let mut short_cities = 0;
         let mut total_shortfall = 0;
@@ -24340,13 +24341,29 @@ impl AdvancedAi {
             short_cities += usize::from(shortfall > 0);
             total_shortfall += shortfall;
         }
-        short_cities * 2 >= city_ids.len() && total_shortfall >= city_ids.len() as i64
+        Some((city_ids.len(), short_cities, total_shortfall))
     }
 
-    /// An amenity repair in a city that is still short is a live emergency
-    /// commitment. Entertainment Complex districts have no direct amenity in
-    /// their district spec, so identify that family explicitly alongside the
-    /// direct Arena/Zoo/Stadium buildings.
+    /// The threshold used by the idle-city Entertainment Complex path.
+    fn widespread_amenity_crisis(g: &Game, pid: usize) -> bool {
+        Self::amenity_pressure(g, pid).is_some_and(|(city_count, short_cities, total_shortfall)| {
+            short_cities * 2 >= city_count && total_shortfall >= city_count as i64
+        })
+    }
+
+    /// A committed repair remains useful while at least half the empire is
+    /// still short, even if that city's host-observed count recovers by one
+    /// before the next strategic review.
+    fn widespread_amenity_pressure(g: &Game, pid: usize) -> bool {
+        Self::amenity_pressure(g, pid).is_some_and(|(city_count, short_cities, total_shortfall)| {
+            short_cities * 2 >= city_count && total_shortfall > 0
+        })
+    }
+
+    /// An amenity repair is a live emergency commitment. Entertainment
+    /// Complex districts have no direct amenity in their district spec, so
+    /// identify that family explicitly alongside the direct Arena/Zoo/Stadium
+    /// buildings.
     fn amenity_repair_queue_item(g: &Game, item: &Item) -> bool {
         match item {
             Item::District { district, .. } => {
@@ -24765,6 +24782,8 @@ impl AdvancedAi {
         if self.first_builder_reserve_2 && counts.builders > 0 {
             self.first_builder_reserve_2_paid = true;
         }
+        let widespread_amenity_pressure =
+            self.amenity_project_preemption_on() && Self::widespread_amenity_pressure(g, pid);
         let first_builder_reserve_2_city = (!economic_recovery)
             .then(|| self.first_builder_reserve_2_city(g, pid, plan, &counts, &city_ids))
             .flatten();
@@ -24802,13 +24821,15 @@ impl AdvancedAi {
             // intentionally claim an otherwise idle city. The normal review
             // margin could then see that emergency as a fresh Builder or Spy
             // opportunity and replace it in the same turn, which is exactly
-            // the live t177/t180/t183 failure. Keep the amenity chain through
-            // this pass; the later defense authority may still reclaim a
-            // genuinely threatened city.
+            // the live t177/t180/t183 failure. A city can recover one amenity
+            // between those passes while the empire remains broadly short;
+            // keep the chain through that transition as well. The later
+            // defense authority may still reclaim a genuinely threatened
+            // city.
             if !economic_recovery
                 && plan.strategy != GrandStrategy::Recovery
                 && self.amenity_project_preemption_on()
-                && g.city_amenity_surplus(&g.cities[&cid]) < 0
+                && (g.city_amenity_surplus(&g.cities[&cid]) < 0 || widespread_amenity_pressure)
                 && committed
                     .as_ref()
                     .is_some_and(|(_, item)| Self::amenity_repair_queue_item(g, item))
