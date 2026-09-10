@@ -11492,6 +11492,33 @@ impl BasicAi {
                 return Some(item);
             }
         }
+
+        // A physical cultural person can remain stranded even after its
+        // Theater Square is complete: the city may be spending its only
+        // queue on a Market, Granary, or repeatable project while every
+        // compatible Great Work slot is full. That queue is safe to bank in
+        // the same way as a paused district foundation, so open the exact
+        // missing slot chain before the ordinary governor spends another
+        // turn on it. Military bodies, repairs, walls, wonders, and one-shot
+        // projects remain protected by `queue_can_yield` above.
+        for need in &g.players[pid].live_great_person_activation_needs {
+            let Some(family) = Self::live_great_person_district(need) else {
+                continue;
+            };
+            if !Self::empire_district_family_ready_or_queued(g, pid, family) {
+                if let Some(item) = Self::live_great_person_district_item(g, pid, cid, family) {
+                    return Some(item);
+                }
+                continue;
+            }
+            if let Some(work) = Self::live_great_person_work(need) {
+                if let Some(item) = Self::live_great_person_cultural_item(g, pid, cid, work) {
+                    if g.can_produce(pid, cid, &item) {
+                        return Some(item);
+                    }
+                }
+            }
+        }
         None
     }
 
@@ -19236,6 +19263,64 @@ mod tests {
         assert!(matches!(
             game.cities[&city].queue.first(),
             Some(Item::Unit { unit }) if unit == "warrior"
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_writer_can_bank_a_safe_queue_for_a_work_slot() {
+        let mut game = Game::new_full(1, 20, 14, 41_111, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        let repeatable_project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        assert!(
+            game.can_produce(0, city, &repeatable_project),
+            "the fixture must expose a safe repeatable queue"
+        );
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: repeatable_project,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 11.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "writer".to_string(),
+                individual: Some("homer".to_string()),
+                required_district: Some("theater_square".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building })
+                if game.building_is_family(building, crate::name!("amphitheater"))
         ));
     }
 
