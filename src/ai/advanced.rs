@@ -6792,6 +6792,7 @@ mod coastal_sites;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
 mod deity_habits;
+mod rock_band_travel;
 
 /// Boost-aware research: research what is already boosted, wait out an
 /// eureka a short node would outrun, and buy the permission the other
@@ -39130,7 +39131,7 @@ impl AdvancedAi {
                     self.advanced_missionary_step(g, pid, uid, religious_offensive)
                 }
                 "missionary" => self.base.missionary_step(g, pid, uid),
-                "rock_band" => self.base.rock_band_step(g, pid, uid),
+                "rock_band" => self.advanced_rock_band_step(g, pid, uid),
                 _ if self.victory_planning && class == "religious" => {
                     self.advanced_religious_step(g, pid, uid, religious_offensive)
                 }
