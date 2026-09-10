@@ -1,0 +1,625 @@
+{
+  "abandoned": null,
+  "boosts": {
+    "at_t100": {
+      "civics_adopted": 17,
+      "civics_inspired": 3,
+      "civics_inspired_share": 0.1765,
+      "techs_boosted": 8,
+      "techs_boosted_share": 0.4706,
+      "techs_researched": 17
+    },
+    "at_t150": {
+      "civics_adopted": 24,
+      "civics_inspired": 4,
+      "civics_inspired_share": 0.1667,
+      "techs_boosted": 18,
+      "techs_boosted_share": 0.5143,
+      "techs_researched": 35
+    },
+    "civics_adopted": 29,
+    "civics_inspired": 6,
+    "civics_inspired_share": 0.2069,
+    "techs_boosted": 19,
+    "techs_boosted_share": 0.413,
+    "techs_researched": 46
+  },
+  "cities_at_60": 3,
+  "city_two_turn": 30,
+  "combat": {
+    "cities_lost": 1,
+    "cities_taken": 0,
+    "damage_dealt": 1519,
+    "damage_taken": 1546,
+    "deaths_after_unexecuted_move": 1,
+    "deaths_wounded_at_turn_start": 2,
+    "kills": 9,
+    "kills_per_loss": 1.0,
+    "losses": 9,
+    "lost_when_salvageable": 2,
+    "military_removal_context": {
+      "hostile_within_2": 3,
+      "no_visible_threat": 21
+    },
+    "military_units_gone": 24,
+    "move_fallback": 0,
+    "move_noop": 41
+  },
+  "configured": true,
+  "culture_marks": {
+    "100": {
+      "domestic": 8,
+      "percent": 0.0,
+      "rival_percent": 6.15,
+      "rival_tourists": 4,
+      "tourists": 0
+    },
+    "150": {
+      "domestic": 13,
+      "percent": 0.0,
+      "rival_percent": 20.39,
+      "rival_tourists": 31,
+      "tourists": 0
+    }
+  },
+  "deals": {
+    "closed": 0,
+    "declined": 0,
+    "expired": 26,
+    "peace_accepted": 0,
+    "peace_refused": 0,
+    "sessions_answered": 0,
+    "sessions_opened": 0,
+    "sessions_unanswered": 0,
+    "stood_down": false
+  },
+  "decider_binaries": [
+    {
+      "binary_revision": "7156aa0d927eaf09d1192b45211e4fe9f9112fe9",
+      "binary_sha256": "ee1a10aa4d0b31452c7699ee9b049bfdf442cbe133d66bcf41130dc94a74d309",
+      "binary_source": "binary-checkout",
+      "revision": "7156aa0d927eaf09d1192b45211e4fe9f9112fe9",
+      "source": "binary-checkout"
+    }
+  ],
+  "decider_revisions": [
+    "7156aa0d927eaf09d1192b45211e4fe9f9112fe9"
+  ],
+  "difficulty": "DIFFICULTY_EMPEROR",
+  "finished_utc": "2026-09-10T19:56:08Z",
+  "forced": [
+    "army-target-weighs-enemy",
+    "campus-through-expansion",
+    "city-campaign-2",
+    "culture-building-debt",
+    "expansion-scales-with-difficulty",
+    "garrison-under-fire",
+    "peacetime-deterrence",
+    "rapid-city-expansion-2",
+    "science-expansion-phase",
+    "settler-walk-deadline",
+    "siege-commitment",
+    "war-reinforcement"
+  ],
+  "game_stopped": true,
+  "genome": {
+    "civ": null,
+    "lane": null,
+    "source": "AdvancedAi::new",
+    "strategy": "stock",
+    "strength_bound": null
+  },
+  "genome_treatments": {
+    "forced": [
+      "army-target-weighs-enemy",
+      "culture-building-debt",
+      "garrison-under-fire",
+      "peacetime-deterrence",
+      "siege-commitment"
+    ],
+    "ledger_withheld": [
+      "blind-objective-units",
+      "relief-targets-the-siege",
+      "war-economy",
+      "bounded-recovery",
+      "recon-replacement",
+      "naval-recon",
+      "camp-party",
+      "settler-guard-holds",
+      "stranded-settler-discount",
+      "housing-research",
+      "district-coverage",
+      "settler-target-hysteresis",
+      "relief-column-marches",
+      "threatened-city-reserve"
+    ],
+    "treatments": [
+      "war-reinforcement",
+      "come-ashore",
+      "recorded-tactical-step",
+      "whole-turn-backtrack-guard",
+      "blind-objective-strength",
+      "army-target-weighs-enemy",
+      "peacetime-deterrence",
+      "siege-commitment",
+      "garrison-under-fire",
+      "strike-opening",
+      "barbarian-scouts-are-scouts",
+      "barbarian-bargain",
+      "barbarian-ranged-answer",
+      "religion-sues-peace",
+      "escort-unstick",
+      "buildings-before-projects",
+      "wide-map-capacity",
+      "amenity-project-preemption",
+      "amenity-district-path",
+      "slot-kind-tiebreak",
+      "loyalty-rate-alarm",
+      "one-launch-pad",
+      "culture-building-debt",
+      "live-trader-route",
+      "live-religious-purchase",
+      "live-motion-turn-accounting",
+      "solvent-faith-army",
+      "live-formationless-settler-shadow",
+      "live-wonder-race",
+      "expansion-before-prophet",
+      "no-elective-war",
+      "fog-land-capacity",
+      "counter-in-lane",
+      "era-paced-expansion",
+      "tally-culture",
+      "frontier-loyalty",
+      "tally-great-people",
+      "deny-while-targeted",
+      "stock-denial-lead-time",
+      "projected-stock-denial",
+      "parallel-settlers",
+      "host-settler-pop",
+      "explore-dead-targets",
+      "explore-commit",
+      "bank-envoys",
+      "land-grab",
+      "spy-mission-patience",
+      "expansion-pantheon",
+      "expansion-hall",
+      "opening-settler-waits",
+      "escort-patience-runs-out",
+      "barbarian-settler-capture",
+      "live-barbarian-scouts-capture",
+      "live-settler-capture-lessons",
+      "live-move-refusal-break",
+      "guard-breaks-the-pin",
+      "builder-barbarian-safety",
+      "apostle-promotion-by-role",
+      "founder-temple",
+      "religious-defence-scales",
+      "religious-units-heal-first",
+      "settle-sooner",
+      "research-tier-premium",
+      "one-shot-recovery",
+      "lane-great-people",
+      "lane-policy-deck",
+      "lane-space-race",
+      "competition-victory-points",
+      "defensible-sites",
+      "elective-war-in-reach",
+      "recovery-reads-the-war",
+      "domination-city-count",
+      "unchosen-war-keeps-the-lane",
+      "elective-war-yields-to-a-lane",
+      "rival-suzerainty-alarm",
+      "congress-counter-leader",
+      "culture-lane-forecast",
+      "diplomatic-lane-forecast",
+      "coordinated-finish",
+      "pantheon-board",
+      "maintenance-aware-deck",
+      "unit-cost-efficiency",
+      "settlement-gap-target",
+      "price-the-suzerainty",
+      "engine-faith-price",
+      "promote-when-wounded",
+      "district-planning",
+      "wonder-score-tally",
+      "religious-veto-defence",
+      "deals-for-our-gain",
+      "deals-at-the-ceiling",
+      "no-free-passage",
+      "one-war-at-a-time",
+      "pass-picket",
+      "campaign-pillage",
+      "science-victory-drive",
+      "expansion-schedule",
+      "growth-to-settle",
+      "order-retry",
+      "eureka-chasing-production",
+      "campus-adjacency-threshold-2",
+      "district-coverage-2",
+      "guru-heals-the-corps-2",
+      "power-the-laboratory-2",
+      "settler-guard-holds-2",
+      "settler-target-hysteresis-2",
+      "upgrade-the-garrison",
+      "builder-supply-floor",
+      "first-builder-reserve-2",
+      "wonder-adjacent-sites-2",
+      "contested-land-first",
+      "native-emergency-purchase",
+      "quest-production",
+      "quest-trade-route",
+      "science-building-first",
+      "boost-first-research",
+      "chokepoint-siting",
+      "chokepoint-garrison",
+      "government-capacity-fallback",
+      "government-ladder-2",
+      "lane-release-when-hopeless",
+      "war-needs-a-treasury",
+      "peace-when-the-war-does-not-pay",
+      "city-target-meets-the-map",
+      "moksha-defends-the-faithless",
+      "treasury-at-work-2",
+      "fire-plan",
+      "close-as-a-body",
+      "screen-the-shooters",
+      "defend-where-you-stand",
+      "coastal-city-sites-2",
+      "gold-income-floor",
+      "capture-go-or-stand-down-2",
+      "commitment-patience",
+      "island-exploration",
+      "settler-never-idles",
+      "settler-backlog-brake-2",
+      "connect-the-luxury",
+      "walls-after-districts",
+      "science-expansion-phase",
+      "science-opening-band",
+      "capital-settler-after-completion",
+      "settler-site-gate",
+      "air-surge-2",
+      "campus-through-expansion",
+      "trade-route-network",
+      "industrial-chain-debt",
+      "rapid-city-expansion-2",
+      "naval-recon-3",
+      "never-an-empty-queue-3",
+      "coalition-before-war-3",
+      "settler-walk-deadline",
+      "chase-every-boost",
+      "early-project-restraint-2",
+      "battle-planner-2",
+      "eureka-chasing-builder-2",
+      "objective-board",
+      "war-policy-via-board",
+      "swap-rotation-2",
+      "city-campaign-2",
+      "strike-reach",
+      "safest-stand",
+      "missionary-last-charge-explores-2",
+      "standing-still-is-a-risk",
+      "wonder-ring-recon-2",
+      "builder-workforce-recovery-2",
+      "expansion-best-idle-city-2",
+      "research-building-catchup-2",
+      "doomed-blow-veto-2",
+      "scout-first-opening",
+      "expansion-scales-with-difficulty",
+      "research-alliance-first"
+    ]
+  },
+  "last_score": 440,
+  "last_turn": 182,
+  "launch_marks": {
+    "last_launch_turn": null,
+    "launches_completed": 0,
+    "spaceport_turn": null
+  },
+  "map_size": "MAPSIZE_SMALL",
+  "max_turns": 650,
+  "mod_arms": {
+    "ActionTransitions": false,
+    "CampusSpecialist": false,
+    "CancelQueuedPaths": true,
+    "CapMovesToReach": true,
+    "CombatFrames": 0,
+    "CounterResolutions": true,
+    "EnvoyConsider": true,
+    "EnvoyLevy": true,
+    "EnvoyPlace": true,
+    "IsolatedActionProbes": false,
+    "MoveFallback": true,
+    "OrderQueue": true,
+    "PeaceDeterrence": true,
+    "PeacetimeWarFloors": false,
+    "ProbeCitizens": false,
+    "ReplanFrames": 2,
+    "SettlerEscortCapSync": true,
+    "StrikePreview": true,
+    "TileDelta": true
+  },
+  "modes": [],
+  "modes_requested": [],
+  "operator_retire": null,
+  "orders": {
+    "*": {
+      "applied": 2342,
+      "refused": {
+        "ATTACK": 1,
+        "IMPROVEMENT_BEACH_RESORT": 1,
+        "RANGE_ATTACK": 11,
+        "TRADE_ROUTE": 2,
+        "buy_pending": 2,
+        "cannot_EXCAVATE": 7,
+        "cannot_FORTIFY": 3,
+        "cannot_REPAIR": 1,
+        "cannot_start_DISTRICT_COMMERCIAL_HUB": 14,
+        "cannot_start_DISTRICT_DIPLOMATIC_QUARTER": 6,
+        "delegation_cooldown": 17,
+        "delegation_unaffordable": 11,
+        "found_off_site": 4,
+        "levy_refused_11": 1,
+        "move_no_moves_this_turn": 16,
+        "move_no_path": 92,
+        "nothing_tradeable": 12,
+        "opening_settler_in_progress": 2,
+        "policy_deck_same_turn": 6,
+        "queue_prior_refused": 19,
+        "settler_barbarian_combat_capture_hold": 9,
+        "taken_BELIEF_RELIGIOUS_SETTLEMENTS": 1,
+        "throw": 6,
+        "unit_gone:1310722": 1,
+        "unit_gone:524292": 1
+      },
+      "seen": 2798
+    },
+    "buy": {
+      "applied": 9,
+      "refused": {
+        "buy_pending": 2
+      },
+      "seen": 11
+    },
+    "civic": {
+      "applied": 29,
+      "refused": {},
+      "seen": 29
+    },
+    "dedication": {
+      "applied": 8,
+      "refused": {},
+      "seen": 8
+    },
+    "delegation": {
+      "applied": 15,
+      "refused": {
+        "delegation_cooldown": 17,
+        "delegation_unaffordable": 11
+      },
+      "seen": 43
+    },
+    "envoy": {
+      "applied": 52,
+      "refused": {},
+      "seen": 52
+    },
+    "government": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "governor_appoint": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "governor_assign": {
+      "applied": 4,
+      "refused": {},
+      "seen": 4
+    },
+    "governor_promote": {
+      "applied": 6,
+      "refused": {},
+      "seen": 6
+    },
+    "gp_patronize_faith": {
+      "applied": 1,
+      "refused": {},
+      "seen": 1
+    },
+    "levy": {
+      "applied": 0,
+      "refused": {
+        "levy_refused_11": 1
+      },
+      "seen": 1
+    },
+    "pantheon": {
+      "applied": 1,
+      "refused": {
+        "taken_BELIEF_RELIGIOUS_SETTLEMENTS": 1
+      },
+      "seen": 2
+    },
+    "peace": {
+      "applied": 2,
+      "refused": {},
+      "seen": 2
+    },
+    "policy_deck": {
+      "applied": 67,
+      "refused": {
+        "policy_deck_same_turn": 6
+      },
+      "seen": 73
+    },
+    "produce": {
+      "applied": 171,
+      "refused": {
+        "cannot_start_DISTRICT_COMMERCIAL_HUB": 14,
+        "cannot_start_DISTRICT_DIPLOMATIC_QUARTER": 6,
+        "opening_settler_in_progress": 2
+      },
+      "seen": 193
+    },
+    "produce_next": {
+      "applied": 375,
+      "refused": {},
+      "seen": 375
+    },
+    "purchase": {
+      "applied": 7,
+      "refused": {},
+      "seen": 7
+    },
+    "research": {
+      "applied": 47,
+      "refused": {},
+      "seen": 47
+    },
+    "sell": {
+      "applied": 20,
+      "refused": {
+        "nothing_tradeable": 12
+      },
+      "seen": 32
+    },
+    "unit": {
+      "applied": 1897,
+      "refused": {
+        "ATTACK": 1,
+        "IMPROVEMENT_BEACH_RESORT": 1,
+        "RANGE_ATTACK": 11,
+        "TRADE_ROUTE": 2,
+        "cannot_EXCAVATE": 7,
+        "cannot_FORTIFY": 3,
+        "cannot_REPAIR": 1,
+        "found_off_site": 4,
+        "move_no_moves_this_turn": 16,
+        "move_no_path": 92,
+        "queue_prior_refused": 19,
+        "settler_barbarian_combat_capture_hold": 9,
+        "throw": 6,
+        "unit_gone:1310722": 1,
+        "unit_gone:524292": 1
+      },
+      "seen": 2071
+    }
+  },
+  "orders_applied": 2081,
+  "orders_seen": 2168,
+  "outcome": {
+    "ctx": "agent",
+    "kind": "victory",
+    "local_player": 0,
+    "local_team": 0,
+    "run": "civvis-20260910T190513Z",
+    "score": 440,
+    "t": 1789070143,
+    "team": 4,
+    "turn": 182,
+    "turns_played": 182,
+    "utc": "2026-09-10T19:55:50.369Z",
+    "victory": 6,
+    "won": false
+  },
+  "reason": "stopped",
+  "retire_confirmed": null,
+  "retire_requested": null,
+  "rival_best": 1267,
+  "ruleset": "RULESET_EXPANSION_2",
+  "ruleset_requested": "RULESET_EXPANSION_2",
+  "screen_arm": null,
+  "screen_gene": null,
+  "seat": {
+    "action_transitions": false,
+    "city_states": 9,
+    "civ": "CIVILIZATION_GREECE",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_EMPEROR",
+    "is_human": true,
+    "isolated_action_probes": false,
+    "kind": "seat",
+    "leader": "LEADER_PERICLES",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20260910T190513Z",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "t": 1789067192,
+    "tile_delta": true,
+    "utc": "2026-09-10T19:06:43.554Z",
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "seat_autonomy": {
+    "civvis_unit_share": 1.0,
+    "engine_explored": 0,
+    "explore_guarded": 0,
+    "unit_orders": 2071,
+    "unit_orders_applied": 1897
+  },
+  "seed_probe": false,
+  "seed_request": null,
+  "speed": "GAMESPEED_ONLINE",
+  "strategy_requested": null,
+  "tag": "civvis-20260910T190513Z",
+  "tech_marks": {
+    "100": {
+      "rival_techs": 46,
+      "techs": 17
+    },
+    "150": {
+      "rival_techs": 61,
+      "techs": 35
+    }
+  },
+  "victory_target": "culture",
+  "withheld": []
+}
