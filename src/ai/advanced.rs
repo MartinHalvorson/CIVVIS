@@ -39833,10 +39833,6 @@ impl AdvancedAi {
         (10.0 * (domestic - foreign) / (domestic.min(foreign) + 0.5)).clamp(-20.0, 20.0)
     }
 
-    /// A city that cannot be razed or liberated should not be captured merely
-    /// to hand it back through Loyalty and attack it again. Wait only when the
-    /// projected revolt is imminent; eliminating the defender or completing
-    /// Domination remains decisive enough to take immediately.
     /// Only waive occupation safety when keeping this capture actually ends
     /// the game. Match check_domination and set_winner: our own original
     /// capital, enabled lanes and Require-N milestones are part of the win.
@@ -39912,6 +39908,10 @@ impl AdvancedAi {
         })
     }
 
+    /// A city that cannot be razed or liberated should not be captured merely
+    /// to hand it back through Loyalty and attack it again. Wait only when the
+    /// projected revolt is imminent; eliminating the defender or completing
+    /// Domination remains decisive enough to take immediately.
     fn should_defer_city_capture(g: &Game, pid: usize, city_id: u32) -> bool {
         let city = &g.cities[&city_id];
         let razable = !city.is_capital
