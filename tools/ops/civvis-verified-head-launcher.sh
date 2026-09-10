@@ -37,6 +37,19 @@
 #                                     the rung, as the stock launcher would.
 #   CIVVIS_LEADER                     Civ VI leader identifier; default LEADER_TRAJAN.
 #   CIVVIS_VICTORY                    the victory lane forwarded to the supervisor.
+#   CIVVIS_MAP                        the map script the Create Game panel is
+#                                     driven to, e.g. Pangaea.lua. Default
+#                                     Continents.lua — on which a seat can start
+#                                     ALONE, which no domination lane survives.
+#   CIVVIS_MAP_SIZE                   ⚠ THIS IS THE PLAYER COUNT. Civ VI derives
+#                                     the majors from the size: MAPSIZE_DUEL 2,
+#                                     MAPSIZE_TINY 4, MAPSIZE_SMALL 6 (default),
+#                                     MAPSIZE_STANDARD 8. There is no separate
+#                                     player knob to set.
+#   CIVVIS_SPEED                      GAMESPEED_ONLINE (default), _QUICK,
+#                                     _STANDARD, _EPIC, _MARATHON. A slower speed
+#                                     buys fewer eras inside the same 250-turn
+#                                     clock, so raise CIVVIS_PLAY_TIMEOUT with it.
 #   CIVVIS_PLAY_ATTEMPTS              games per cycle. Default 1, so EVERY game
 #                                     fetches and builds origin/main afresh
 #                                     (operator, 2026-08-21: "use the latest
@@ -211,6 +224,19 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_VICTORY)
         [[ "$value" =~ '^[a-z][a-z,]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_VICTORY='$value' is not a victory lane" ;;
+      # Shape only here; the tree itself is asked below whether the value is one
+      # the Create Game panel can actually be driven to. A list of maps, sizes or
+      # speeds written into this file would be complete the day it was written
+      # and silently wrong every day after.
+      CIVVIS_MAP)
+        [[ "$value" =~ '^[A-Za-z][A-Za-z0-9_]*\.lua$' ]] \
+          || refuse "$POLICY:$lineno CIVVIS_MAP='$value' is not a map script name" ;;
+      CIVVIS_MAP_SIZE)
+        [[ "$value" =~ '^MAPSIZE_[A-Z]+$' ]] \
+          || refuse "$POLICY:$lineno CIVVIS_MAP_SIZE='$value' is not a Civ VI map size" ;;
+      CIVVIS_SPEED)
+        [[ "$value" =~ '^GAMESPEED_[A-Z]+$' ]] \
+          || refuse "$POLICY:$lineno CIVVIS_SPEED='$value' is not a Civ VI game speed" ;;
       CIVVIS_PLAY_ATTEMPTS|CIVVIS_PLAY_TIMEOUT|CIVVIS_PLAY_TIMEOUT_CEILING)
         [[ "$value" =~ '^[1-9][0-9]*$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a positive integer" ;;
@@ -227,7 +253,7 @@ if [[ -f "$POLICY" ]]; then
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
         continue ;;
     esac
     policy[$key]=$value
@@ -257,9 +283,46 @@ origin=$(git -C "$HEAD_REPO" remote get-url origin 2>/dev/null || true)
 [[ "$origin" =~ '^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)MartinHalvorson/CIVVIS(\.git)?/?$' ]] \
   || refuse "origin of '$HEAD_REPO' is '${origin:-<none>}', not the GitHub CIVVIS; verification games must build what GitHub main holds"
 
+# ★ ASK THE TREE, DO NOT KEEP A LIST. A map, size or speed the Create Game panel
+# cannot be driven to has no rendered label to click and no legal read-back, so it
+# fails inside `set_dropdown` — after Civilization VI has launched, minutes in, as
+# "refusing to start an unverified game". The values live in `civ6_play.OPTIONS`;
+# read them out of the source with `ast` rather than importing that module, which
+# pulls in the vision and window stack a launcher has no business loading.
+if [[ -n "${policy[CIVVIS_MAP]:-}${policy[CIVVIS_MAP_SIZE]:-}${policy[CIVVIS_SPEED]:-}" ]]; then
+  lobby_error=$(CIVVIS_LOBBY_MAP=${policy[CIVVIS_MAP]:-} \
+                CIVVIS_LOBBY_MAP_SIZE=${policy[CIVVIS_MAP_SIZE]:-} \
+                CIVVIS_LOBBY_SPEED=${policy[CIVVIS_SPEED]:-} \
+                /usr/bin/python3 - "$HEAD_REPO/tools/civ6_play.py" <<'PYTHON' 2>&1
+import ast, os, sys
+
+try:
+    tree = ast.parse(open(sys.argv[1], encoding="utf-8").read())
+except OSError as error:
+    sys.exit(f"cannot read the tree's setup options: {error}")
+options = None
+for node in ast.walk(tree):
+    if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "OPTIONS"
+            for target in node.targets):
+        options = ast.literal_eval(node.value)
+if options is None:
+    sys.exit("civ6_play.OPTIONS was not found; cannot check the lobby policy")
+for key, row in (("CIVVIS_LOBBY_MAP", "map_type"),
+                 ("CIVVIS_LOBBY_MAP_SIZE", "map_size"),
+                 ("CIVVIS_LOBBY_SPEED", "speed")):
+    value = os.environ.get(key, "")
+    if value and value not in options.get(row, ()):
+        sys.exit(f"{key.replace('CIVVIS_LOBBY', 'CIVVIS')}='{value}' is not one the "
+                 f"Create Game panel offers: {' '.join(options.get(row, ()))}")
+PYTHON
+  ) || refuse "$POLICY: $lobby_error"
+fi
+
 # Never inherit a labelled experiment, a retired strategy, an alternate host,
 # or a former restart policy from the window that opened this.
 unset CIVVIS_WITH CIVVIS_WITHOUT CIVVIS_WITH_FILE CIVVIS_SCREEN_GENE CIVVIS_STRATEGY CIVVIS_VICTORY \
+      CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED \
       CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
       CIVVIS_ABANDON_BELOW_WIN_RATE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING \
       CIVVIS_HEAD_REPO CIVVIS_LADDER_HOST CIVVIS_LADDER_SUPERVISOR CIVVIS_SUPERVISOR \
