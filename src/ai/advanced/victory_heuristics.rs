@@ -234,9 +234,9 @@ impl AdvancedAi {
         None
     }
 
-    /// A Domination contract is fulfilled by foreign *original* capitals. An
-    /// exposed city-state can still be a useful staging target, but once the
-    /// campaign names a major rival, its first city must advance the victory.
+    /// A Domination contract is fulfilled by foreign *original* capitals.
+    /// An eligible known capital supplies both the next opponent and its city
+    /// objective. The ordinary war policy still gates the declaration.
     pub(super) fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return None;
