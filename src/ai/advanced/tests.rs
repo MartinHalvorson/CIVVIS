@@ -15588,6 +15588,32 @@ fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
         Some(&reserved_arena),
         "a broad crisis keeps its Arena through a transient local recovery"
     );
+
+    // The same empire-wide crisis must stay committed during Recovery. The
+    // t136 live handoff entered both the strategic Recovery plan and the
+    // treasury recovery predicate, then replaced Ephesus's new Entertainment
+    // Complex with a Builder even though every city remained under pressure.
+    game.at_war.clear();
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -1.0;
+    let mut recovery_live = AdvancedAi::targeting(VictoryTarget::Culture);
+    recovery_live.enable_live_bridge_universe();
+    recovery_live.enable_war_economy();
+    let recovery_plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan
+    };
+    assert!(recovery_live.live_war_economy_requires_recovery(
+        &game,
+        0,
+        &recovery_live.counts(&game, 0)
+    ));
+    recovery_live.advanced_production(&mut game, 0, &recovery_plan, false);
+    assert_eq!(
+        game.cities[&arena_city].queue.first(),
+        Some(&reserved_arena),
+        "a broad crisis keeps its Arena during Recovery and treasury recovery"
+    );
 }
 
 #[test]
