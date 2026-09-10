@@ -12740,11 +12740,9 @@ impl AdvancedAi {
             let Some(building) = g.rules.buildings.get_interned(*held) else {
                 continue;
             };
-            // A regional building is powered by its own city, not this one —
-            // the same test `Game::city_yields` applies before paying them.
-            if building.regional_range > 0 {
-                continue;
-            }
+            // These buildings originate in this city, including its Factory.
+            // Power enables their local yields too; benefits to other cities
+            // in regional range are outside this conservative estimate.
             let of = |key: &str| building.effects.get(key).copied().unwrap_or(0.0);
             switched.food += of("powered_food");
             switched.production += of("powered_production");
@@ -12759,9 +12757,7 @@ impl AdvancedAi {
     /// The `powered_*` yields `spec` would pay from the turn it stands, if
     /// this city's supply covers its demand with the building's own added.
     /// See `power_the_laboratory_2`; zero for a building with no powered half,
-    /// a regional building (powered by its own city's count, as
-    /// `power_switched_on` already skips) or a city the building would leave
-    /// dark.
+    /// a regional building, or a city the building would leave dark.
     fn powered_yields_if_powered(
         g: &Game,
         city: &crate::game::City,

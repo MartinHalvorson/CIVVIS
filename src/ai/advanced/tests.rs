@@ -48688,6 +48688,10 @@ fn power_plant_credit_uses_available_fuel_instead_of_one_resource_unit() {
     let city = game.cities[&cid].clone();
     assert_eq!(game.city_power_demand(&city), 5.0);
     assert_eq!(
+        AdvancedAi::power_switched_on(&game, &city, &coal).production,
+        3.0
+    );
+    assert_eq!(
         AdvancedAi::power_switched_on(&game, &city, &coal).culture,
         4.0
     );
