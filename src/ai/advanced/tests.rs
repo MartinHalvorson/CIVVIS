@@ -32711,7 +32711,7 @@ fn envoy_income_census() {
 /// A fixture that can legally build a named wonder: three cities so the
 /// lane guards are satisfied, the buildings and adjacent district the
 /// wonder requires, and one owned tile shaped to its terrain sheet.
-fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
+pub(super) fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     let mut game = Game::new_with(crate::game::GameOptions {
         barbarians: false,
         ..crate::game::GameOptions::new(2, 40, 28, seed, 250, 6)
@@ -32804,7 +32804,7 @@ fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     (game, city)
 }
 
-fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
+pub(super) fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
     StrategicPlan {
         strategy,
         target_player: None,
