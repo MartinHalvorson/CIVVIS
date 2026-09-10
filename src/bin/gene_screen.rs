@@ -1400,11 +1400,10 @@ struct Header {
     #[serde(default)]
     contested_field: String,
     /// Whether this batch ran CIVVIS' own scored competitions
-    /// (`Game::native_competitions`). Off in the standard screen and in every
-    /// file written before 2026-08-24. It is the only native route to
+    /// (`Game::native_competitions`). On in the observed-player screen; off in
+    /// the historical screen and every file before 2026-08-24. A recurring route to
     /// Diplomatic Victory Points that recurs through the second half of a
-    /// game, so the contested field turns it on — which makes it another leg
-    /// of the shape and another reason such a batch is not a ledger source.
+    /// game. This is a profile leg; differently configured batches never pool.
     #[serde(default)]
     native_competitions: bool,
     /// The genes a FIELD seat played on top of the deployment genome, comma
@@ -4344,6 +4343,8 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                             }
                             if first.player_contract != found.player_contract
                                 || first.target_mix != found.target_mix
+                                || first.native_competitions != found.native_competitions
+                                || first.contested_field != found.contested_field
                                 || first.players != found.players
                                 || first.width != found.width
                                 || first.height != found.height
@@ -4460,7 +4461,8 @@ fn shape_of(header: &Header) -> &'static str {
         // on. Both legs default to the fieldless values, so every file
         // written before 2026-08-24 keeps the shape it always had.
         && header.contested_field.is_empty()
-        && !header.native_competitions
+        && header.native_competitions
+            == (header.player_contract == civvis::ai::player::CONTRACT)
         && header.baseline == "best";
     if standard {
         "standard"
@@ -4694,7 +4696,11 @@ fn field_line(header: &Header) -> String {
         return format!(
             "field: none — the standard fieldless screen{}",
             if header.native_competitions {
-                " · ⚠ native competitions ON (a probe: this is not the standard screen)"
+                if header.player_contract == civvis::ai::player::CONTRACT {
+                    " · observed-player competitions ON"
+                } else {
+                    " · ⚠ native competitions ON (a probe: this is not the standard screen)"
+                }
             } else {
                 ""
             }
@@ -6052,12 +6058,10 @@ fn main() {
     // `Game::native_competitions` — which runs the two of them CIVVIS models —
     // ships OFF. A contested field turns it on, because pinning a seat to a
     // lane it cannot finish is the cosmetic version of this feature. It stays
-    // off for the standard screen, where it would move every recorded column.
-    let native_competitions = if present(&args, "--no-native-competitions") {
-        false
-    } else {
-        present(&args, "--native-competitions") || !field.is_empty()
-    };
+    // on for the observed-player contract. Historical anchors still default
+    // off in Game; old files retain their historical shape and cannot pool
+    // with this new contract. Explicit disabling is a nonstandard probe.
+    let native_competitions = !present(&args, "--no-native-competitions");
     let drawn = players - field.len() - if rivals { rival_chairs } else { 0 };
     let p_on = real(&args, "--p-on", P_ON);
     let p_default_on = real(&args, "--p-default-on", P_DEFAULT_ON);
@@ -6383,7 +6387,7 @@ mod tests {
     fn test_header(genes: &[&str]) -> Header {
         Header {
             target_mix: civvis::ai::player::TRAINING_TARGETS.to_string(),
-            player_contract: civvis::ai::player::CONTRACT.to_string(),
+            player_contract: String::new(),
             kind: "header".into(),
             genes: genes.iter().map(|gene| (*gene).to_string()).collect(),
             screened: genes.iter().map(|gene| (*gene).to_string()).collect(),
@@ -7188,6 +7192,20 @@ mod tests {
         assert_eq!(shape_of(&header), "legacy");
         header.native_competitions = false;
         assert_eq!(shape_of(&header), "standard");
+        header.player_contract = civvis::ai::player::CONTRACT.to_string();
+        assert_eq!(
+            shape_of(&header),
+            "legacy",
+            "missing competitions is an observed-player probe"
+        );
+        header.native_competitions = true;
+        assert_eq!(shape_of(&header), "standard");
+        header.contested_field = "diplomatic".into();
+        assert_eq!(
+            shape_of(&header),
+            "legacy",
+            "no reserved seats in either standard contract"
+        );
     }
 
     /// Both legs default to the fieldless values, so every file written before

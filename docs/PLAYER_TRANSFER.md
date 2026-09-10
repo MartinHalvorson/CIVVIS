@@ -12,6 +12,10 @@ row. Victory objectives are sampled independently per chair, from
 `ai::player::TRAINING_TARGETS`. `gene_screen --target-mix` accepts a weighted
 list (repeat a name to give it additional weight); `civvis` means adaptive.
 No Firaxis-style chair is reserved or removed from the six-seat sample.
+The new standard enables native scored competitions so diplomatic objectives
+have their recurring point sources. `--no-native-competitions` is a nonstandard
+probe. Historical files retain their old classification; competition settings
+and player contracts cannot be pooled by the analyzer or reporting columns.
 
 The mixture is an initial coverage prior, **not a fitted Firaxis emulator**.
 Pace telemetry is collected for every major every 25 turns. Measure its city,
@@ -78,6 +82,19 @@ explicit coverage gaps. Predictions come from applying the request to a rebuilt
 pre-action board, never from the observed after-state. Request-boundary movement
 and combat can still be asynchronous: a discrepancy is not yet a settled-result
 rule error. These diagnostics do not establish full actuation parity.
+
+`--isolated-action-probes` is a separate, opt-in diagnostic mode: it holds the
+normal planner while making one adjacent visible-land movement per opening
+turn (at most ten). It waits for observed arrival and spent movement, and
+timeouts/refusals never count as settled evidence. Do not use its deliberately
+perturbed games as strength measurements. The first ten consecutive probes in
+`transfer-3386-isolated-20260910` matched both destination and remaining movement.
+Their raw observations are retained in
+`data/fixtures/player_transfer/isolated_movement_20260910.jsonl`, with source
+digest, and replayed by a Rust regression. This covers only those ten movement
+cases, not combat, founding, or all terrain/ability combinations. Reproduce
+fixture extraction with `tools/civ6_extract_action_fixture.py`; existing files
+cannot be overwritten. Replay freezes map information before each request.
 
 For independently captured, causally isolated transition fixtures:
 

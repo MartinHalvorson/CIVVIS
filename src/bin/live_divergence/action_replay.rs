@@ -43,9 +43,15 @@ fn compare(
     snapshot: &Snapshot,
 ) -> Value {
     let mut case = json!({"id": begin["sequence"], "turn": before.turn,
-        "phase": "request_boundary", "order": begin["order"],
+        "phase": end.get("phase").and_then(Value::as_str).unwrap_or("request_boundary"), "order": begin["order"],
         "same_turn": before.turn == after.turn && begin["turn"] == end["turn"],
         "intervening_actions": 0, "predictions": {}, "observed": {}});
+    if case["phase"] == "settled"
+        && (begin["isolated"] != true || end["isolated"] != true || end["settled"] != true)
+    {
+        case["coverage_gap"] = json!("probe did not establish isolated completion");
+        return case;
+    }
     if snapshot.width <= 0 || snapshot.height <= 0 {
         case["coverage_gap"] = json!("no preceding map export");
         return case;
@@ -106,7 +112,12 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("expected events.jsonl")?;
     let mut snapshot = Snapshot::default();
     let mut seat: Option<Seat> = None;
-    let mut pending: Option<(Value, Option<StateSnapshot>, Option<StateSnapshot>)> = None;
+    let mut pending: Option<(
+        Value,
+        Option<StateSnapshot>,
+        Option<StateSnapshot>,
+        Snapshot,
+    )> = None;
     for line in std::io::BufReader::new(std::fs::File::open(file)?).lines() {
         let line = line?;
         let event: Value = serde_json::from_str(&line)?;
@@ -124,10 +135,10 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 if pending.is_some() {
                     return Err("nested/incomplete action transition".into());
                 }
-                pending = Some((event, None, None));
+                pending = Some((event, None, None, snapshot.clone()));
             }
             "action_transition_before" | "action_transition_after" => {
-                let (_, before, after) =
+                let (_, before, after, _) =
                     pending.as_mut().ok_or("observation outside transition")?;
                 let mut state = mirror::state_from_json(&line)?;
                 if let Some(seat) = &seat {
@@ -143,7 +154,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "action_transition_end" => {
-                let (begin, before, after) = pending.take().ok_or("end without begin")?;
+                let (begin, before, after, preceding_map) =
+                    pending.take().ok_or("end without begin")?;
                 if begin["sequence"] != event["sequence"] {
                     return Err("transition sequence mismatch".into());
                 }
@@ -153,7 +165,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                             && event["before_export"] == true
                             && event["after_export"] == true =>
                     {
-                        compare(&begin, &before, &after, &event, &snapshot)
+                        compare(&begin, &before, &after, &event, &preceding_map)
                     }
                     _ => {
                         json!({"id": begin["sequence"], "coverage_gap": "missing observation or exception"})

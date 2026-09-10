@@ -2292,6 +2292,14 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
         self.assertTrue(civ6_play.seat_matches_requested(
             self._seat(action_transitions=True), requested)[0])
 
+    def test_isolated_probes_must_be_read_back_when_requested(self):
+        requested = args(isolated_action_probes=True)
+        self.assertFalse(civ6_play.seat_matches_requested(self._seat(), requested)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=False), requested)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=True), requested)[0])
+
     def test_a_vanilla_game_is_refused_and_fails_the_whole_config(self):
         configured, modes, ruleset = civ6_play.seat_matches_requested(
             self._seat(ruleset="RULESET_STANDARD"), args())

@@ -257,6 +257,17 @@ class OneShape(unittest.TestCase):
                 self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
                 self.assertIn(next(iter(leg)), gene_ledger.shape_gap(gene_ledger.profile_of(probe)))
 
+    def test_observed_player_standard_requires_competitions_without_reserved_seats(self):
+        profile = gene_ledger.profile_of(analysis([{"tag": "a"}],
+            player_contract="observed-player-v1", native_competitions=True))
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        profile["native_competitions"] = False
+        self.assertEqual(gene_ledger.shape_of(profile), "legacy")
+        self.assertIn("native_competitions", gene_ledger.shape_gap(profile))
+        profile["native_competitions"] = True
+        profile["contested_field"] = "diplomatic"
+        self.assertEqual(gene_ledger.shape_of(profile), "legacy")
+
     def test_the_retired_paired_field_is_not_a_contested_board(self):
         """⚠ `field` was already taken. Every header the paired designs wrote
         carries `field: "advanced"` -- the agent the treated seat played

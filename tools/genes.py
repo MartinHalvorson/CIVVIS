@@ -1269,17 +1269,23 @@ def shape_of(profile: dict) -> str:
     ⚠ `FIELDLESS` is checked beside `SCREEN` and is the only thing standing
     between the ledger and a contested-field batch, which matches every map leg
     the screen has."""
-    if any(profile.get(k, v) != v for k, v in FIELDLESS.items()):
+    expected = dict(FIELDLESS)
+    if profile.get("player_contract") == "observed-player-v1":
+        expected["native_competitions"] = True
+    if any(profile.get(k, FIELDLESS[k]) != v for k, v in expected.items()):
         return "legacy"
     return "standard" if all(profile.get(k) == v for k, v in SCREEN.items()) else "legacy"
 
 
 def shape_gap(profile: dict) -> str:
     """The legs that differ from the screen, for the refusal message."""
+    expected = {**SCREEN, **FIELDLESS}
+    if profile.get("player_contract") == "observed-player-v1":
+        expected["native_competitions"] = True
     return ", ".join(
         f"{key}={profile.get(key, fieldless)!r} (screen: {fieldless!r})"
-        for key, fieldless in {**SCREEN, **FIELDLESS}.items()
-        if profile.get(key, fieldless) != fieldless
+        for key, fieldless in expected.items()
+        if profile.get(key, FIELDLESS.get(key, fieldless)) != fieldless
     )
 
 
@@ -2862,7 +2868,8 @@ def load_reporting_batches(ledger: dict) -> list[dict]:
     for meta in ledger.get("reporting_batches", []):
         data = load_source(ROOT / meta["path"])
         profile = data.get("profile", {})
-        contracts.add((profile.get("player_contract", ""), profile.get("target_mix", "")))
+        contracts.add((profile.get("player_contract", ""), profile.get("target_mix", ""),
+                       profile.get("native_competitions", False)))
         name = Path(meta["path"]).name
         batches.append({
             "meta": meta,

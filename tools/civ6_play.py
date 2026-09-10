@@ -554,7 +554,8 @@ def state_export_enabled(args: argparse.Namespace) -> bool:
     # event.  Keeping this derived here, where the baked mod config is made,
     # makes `--civvis-decides` self-contained instead of relying on callers to
     # remember a second, otherwise optional diagnostic flag.
-    return bool(args.export_state or args.civvis_decides or getattr(args, "action_transitions", False))
+    return bool(args.export_state or args.civvis_decides or getattr(args, "action_transitions", False)
+                or getattr(args, "isolated_action_probes", False))
 
 
 def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
@@ -721,6 +722,7 @@ def build_config(args: argparse.Namespace) -> dict:
         # that decides. Off by default: it is the largest emit in the mod.
         "ExportState": state_export_enabled(args),
         "ActionTransitions": getattr(args, "action_transitions", False),
+        "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
         # Ask every candidate inbound API what it holds, once a turn, and emit the
         # answer. Paired with `probe_channel.py`, which writes a changing nonce into
         # each sink from outside: the channel is whichever field reports the nonce
@@ -3393,6 +3395,7 @@ def seat_matches_requested(
         and (args.leader is None or event.get("leader") == args.leader)
         and modes_match
         and (not getattr(args, "action_transitions", False) or event.get("action_transitions") is True)
+        and (not getattr(args, "isolated_action_probes", False) or event.get("isolated_action_probes") is True)
         # `is not False`, not truthiness: an unreadable ruleset leaves the rest
         # of the seat report standing. `configured` gates BOTH the ladder's
         # comparability column and `finished()`, which stops a run at the seat
@@ -3503,6 +3506,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "MoveFallback": args.move_fallback,
             "ReplanFrames": getattr(args, "replan_frames", None),
             "ActionTransitions": getattr(args, "action_transitions", False),
+            "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": getattr(args, "tile_delta", None),
         },
         "city_two_turn": (sorted(state.get("founds") or [])[1]
@@ -4496,6 +4500,7 @@ def _play(args: argparse.Namespace) -> int:
             "MoveFallback": args.move_fallback,
             "ReplanFrames": args.replan_frames,
             "ActionTransitions": getattr(args, "action_transitions", False),
+            "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": args.tile_delta,
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
@@ -4792,6 +4797,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--action-transitions", action="store_true", default=False,
                     help="capture before/after request-boundary observations for action replay; requires state exports")
+    ap.add_argument("--isolated-action-probes", action="store_true", default=False,
+                    help="DIAGNOSTIC ONLY: hold normal orders for one observed movement probe per turn during turns 1-10")
     ap.add_argument("--probe-channels", action="store_true", default=False,
                     help="ask every candidate inbound API what it holds, once a turn")
     ap.add_argument("--campus-specialist", action="store_true", default=False,

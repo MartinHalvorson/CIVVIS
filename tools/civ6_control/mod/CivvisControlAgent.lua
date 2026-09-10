@@ -643,6 +643,7 @@ local function survey()
 		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
 		action_transitions = cfg.ActionTransitions == true,
+		isolated_action_probes = cfg.IsolatedActionProbes == true,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
 		-- deltas, not only with the periodic sweep. See CivvisTiles.
 		tile_delta = cfg.TileDelta ~= false,
@@ -14604,6 +14605,75 @@ CivvisFetchOrders = fetchOrders;
 CivvisExportState = exportState;
 CivvisExportTiles = exportTiles;
 
+-- Diagnostic-only serial movement probes, before the normal opening planner.
+-- While pending, tick returns before beginTurn/settleTurn can issue any other
+-- orders. Readiness is an observed arrival AND spent movement, not a timer or
+-- RequestOperation's acknowledgement. No production run enables this mode.
+CivvisActionProbe = { lastTurn = -1, preparing = -1, pending = nil };
+CivvisActionProbe.tick = function(player, pid, turn)
+	if cfg.IsolatedActionProbes ~= true then return false; end
+	local pending = CivvisActionProbe.pending;
+	if pending ~= nil then
+		pending.ticks = pending.ticks + 1;
+		local unit = liveUnit(pid, pending.row.subject);
+		local arrived = unit ~= nil and try(function()
+			return unit:GetX() == pending.row.x and unit:GetY() == pending.row.y
+				and unit:GetMovesRemaining() < pending.moves;
+		end, false);
+		if not arrived and pending.ticks < 120 and turn == pending.turn then return true; end
+		local after = pcall(function()
+			exportState(player, pid, turn, 0, "action_transition_after");
+		end);
+		emit("action_transition_end", { sequence = pending.sequence, turn = turn, frame = 0,
+			accepted = pending.accepted, before_export = pending.before, after_export = after,
+			threw = false, phase = "settled", settled = arrived == true and turn == pending.turn,
+			why = arrived and "observed_arrival" or "probe_timeout", isolated = true });
+		CivvisActionProbe.pending = nil;
+		return false;
+	end
+	if turn > 10 or CivvisActionProbe.lastTurn == turn then return false; end
+	if CivvisActionProbe.preparing ~= turn then
+		CivvisActionProbe.preparing = turn;
+		CivvisBoard.cancelQueuedPaths(player, pid, turn);
+		return true;
+	end
+	CivvisActionProbe.lastTurn = turn;
+	local row, moves;
+	eachUnit(player, function(unit)
+		if row ~= nil then return; end
+		local spec = GameInfo.Units[unitTypeName(unit)];
+		if spec == nil or (spec.Combat or 0) <= 0 or unit:GetMovesRemaining() <= 0 then return; end
+		for direction = 0, 5 do
+			local plot = Map.GetAdjacentPlot(unit:GetX(), unit:GetY(), direction);
+			if plot ~= nil and not plot:IsWater() and not plot:IsImpassable()
+				and PlayersVisibility[pid]:IsVisible(plot:GetX(), plot:GetY())
+				and (plot:GetOwner() == pid or plot:GetOwner() < 0)
+				and plot:GetUnitCount() == 0 then
+				row = { kind = "unit", subject = unit:GetID(), verb = "MOVE_TO", x = plot:GetX(), y = plot:GetY() };
+				moves = unit:GetMovesRemaining();
+				break;
+			end
+		end
+	end);
+	if row == nil then return false; end
+	exportTiles(player, pid, turn);
+	CivvisTransitions.sequence = CivvisTransitions.sequence + 1;
+	local sequence = CivvisTransitions.sequence;
+	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = 0, order = row,
+		isolated = true, source = "diagnostic_probe" });
+	local before = pcall(function() exportState(player, pid, turn, 0, "action_transition_before"); end);
+	local safe, accepted = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
+	if not safe or not accepted then
+		emit("action_transition_end", { sequence = sequence, turn = turn, frame = 0,
+			accepted = false, before_export = before, after_export = false, threw = not safe,
+			phase = "settled", settled = false, isolated = true, why = "probe_refused" });
+		return false;
+	end
+	CivvisActionProbe.pending = { row = row, moves = moves, sequence = sequence,
+		turn = turn, accepted = true, before = before, ticks = 0 };
+	return true;
+end;
+
 -- Pick the major civilization that is closest to a diplomatic victory.  The
 -- World Congress vote needs this independently of the rest of the turn loop,
 -- and score breaks a real DVP tie: at turn 221 of
@@ -18990,7 +19060,9 @@ local function tick()
 		if turn ~= lastTurnSeen then
 			-- See `movementNotYetRestored`: the board waits for the engine to
 			-- hand the units their turn's movement, not the previous turn's dregs.
-			if cfg.CivvisDecides and CivvisBoard.movementNotYetRestored(player, turn) then return; end
+			if cfg.CivvisDecides and not (cfg.IsolatedActionProbes == true and CivvisActionProbe.preparing == turn)
+				and CivvisBoard.movementNotYetRestored(player, turn) then return; end
+			if CivvisActionProbe.tick(player, pid, turn) then return; end
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
