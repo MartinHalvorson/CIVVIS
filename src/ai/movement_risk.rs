@@ -254,10 +254,7 @@ impl BasicAi {
             .into_iter()
             .filter(|pos| g.can_move(uid, *pos))
             .collect();
-        let routed = g
-            .route_step(uid, target, stop_range)
-            .filter(|pos| g.can_move(uid, *pos));
-        let route_escape = self.live_livelock_route_escape(uid) && routed.is_some();
+        let route_escape = self.live_livelock_route_escape(uid);
         if !std::iter::once(&here)
             .chain(candidates.iter())
             .any(|pos| Self::anything_can_reach(g, pid, *pos, &risk.envelopes))
@@ -265,6 +262,10 @@ impl BasicAi {
         {
             return None;
         }
+        let routed = g
+            .route_step(uid, target, stop_range)
+            .filter(|pos| g.can_move(uid, *pos));
+        let route_escape = route_escape && routed.is_some();
         if let Some(pos) = routed {
             if !candidates.contains(&pos) {
                 candidates.push(pos);
