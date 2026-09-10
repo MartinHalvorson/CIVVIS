@@ -9,11 +9,9 @@
     const channel = location.pathname.split("/").find(part => ["rust", "wasm", "beta"].includes(part));
     if (channel === "rust") document.title = "CIVVIS · Civ VI Simulator (Rust)";
     if (channel === "wasm" || channel === "beta") document.title = "CIVVIS · Civ VI Simulator (Wasm)";
-    // The published site serves a landing page at /home, and its wasm shim
-    // opens the world a link's query string names; a desktop build has
-    // neither, so the header's Home link and the Civ/Tactics mode chip beside
-    // it only appear on hosts that honour them — the domain itself and
-    // Cloudflare Pages previews of it.
+    // The published site serves a landing page at /home; a desktop build has
+    // none, so the header's Home link only appears on hosts that honour it —
+    // the domain itself and Cloudflare Pages previews of it.
     if (/(^|\.)civvis\.ai$|\.pages\.dev$/.test(location.hostname)) {
       document.addEventListener("DOMContentLoaded", () => {
         const links = document.getElementById("headlinks");
@@ -4911,18 +4909,13 @@
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
-        <!-- Only the published site has a /home to go to, and only its wasm
-             lane opens the world a query string names; the head script
-             unhides this row on the hosts that serve both. The mode chip
-             names the game mode this deck is NOT showing, so the whole
-             distance between Civ and Tactics is one click. Its label and
-             destination are settled by `syncModeLink`; the markup holds the
-             Civ world's side of the pair, which is what a stock visit sees. -->
+        <!-- Only the published site has a /home to go to; the head script
+             unhides this row on the hosts that serve one. The site offers
+             the full game and nothing else, so Home is the whole row: the
+             Tactics chip that used to stand beside it named a mode the menu
+             no longer carries. -->
         <div class="head-links" id="headlinks" hidden>
           <a class="home-link" id="homelink" href="/home">⌂ Home</a>
-          <a class="home-link" id="modelink"
-             href="?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20"
-             title="Watch the Tactics mode: two even armies on one bounded field">⚔ Tactics</a>
         </div>
       </div>
     </div>
@@ -5180,7 +5173,12 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
-        <label class="small civ6-hidden">Game mode<select id="gamemode" style="margin-top:4px"
+        <!-- The site offers the full game and nothing else, so this row is
+             `tactics-only`: it appears only when a Tactics world is already
+             on screen — a hand-typed `?map=battlefield…`, or a batch tool
+             driving this viewer — and its one job there is the way back to
+             Civvis. Nothing on civvis.ai leads into the arena any more. -->
+        <label class="small civ6-hidden tactics-only">Game mode<select id="gamemode" style="margin-top:4px"
           title="Civvis is the full game. Tactics is a playground for tactical unit combat: a named historical battle, or a custom one on a small flat field or a small globe — land or ocean, with mountains, rivers, woods and water but no resources or city-states — where two evenly-armed sides begin at opposite ends of the ground.">
           <option value="civ" selected>Civvis</option>
           <option value="tactics">Tactics</option>

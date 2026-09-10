@@ -1612,15 +1612,17 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The masthead offers the game mode the deck is not showing, one chip to
-/// the right of Home. Pinned as one literal because both halves of that
-/// sentence are the contract: the pair share a row, and Home comes first.
+/// The masthead offers Home and nothing else. The site carries one game —
+/// the full simulation, watched or played — so the chip that used to stand
+/// beside Home naming the other mode has no other mode to name. Pinned as
+/// one literal because the row is the contract: Home alone, inside a row
+/// that only the hosts serving a /home reveal.
 #[test]
-fn viewer_offers_the_other_game_mode_in_a_chip_beside_home() {
+fn viewer_masthead_offers_home_and_no_other_game_mode() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<div class=\"head-links\" id=\"headlinks\" hidden>\n",
         "          <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
-        "          <a class=\"home-link\" id=\"modelink\"",
+        "        </div>",
     )));
     // A row that draws itself as a flex container outranks the user
     // agent's `[hidden]`, so it has to restate what hidden means or the
@@ -1630,38 +1632,62 @@ fn viewer_offers_the_other_game_mode_in_a_chip_beside_home() {
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
     // The whole row is revealed together, and only on the hosts that
-    // serve a /home to return to and a shim that reads a world out of a
-    // link's query string.
+    // serve a /home to return to.
     assert!(
         EMBEDDED_INDEX.contains("/(^|\\.)civvis\\.ai$|\\.pages\\.dev$/.test(location.hostname)")
     );
     assert!(EMBEDDED_INDEX.contains("const links = document.getElementById(\"headlinks\");"));
     assert!(EMBEDDED_INDEX.contains("if (links) links.hidden = false;"));
-    // The chip names the mode that is NOT on screen, in both directions.
-    assert!(EMBEDDED_INDEX.contains("function syncModeLink(tactics = watchingBattlefield())"));
-    assert!(EMBEDDED_INDEX.contains("link.textContent = tactics ? \"⊕ Civvis\" : \"⚔ Tactics\";"));
-    // Returning to Civvis names no settings, which is the stock exhibition,
-    // and neither destination moves a viewer off the lane they arrived
-    // on — `/` and `/test` are different builds of this viewer.
+    // Nothing on the site leads into the arena any more: no chip, no
+    // chip query, and no function left behind to settle either.
+    for gone in [
+        "id=\"modelink\"",
+        "TACTICS_CHIP_QUERY",
+        "syncModeLink",
+        "⚔ Tactics",
+    ] {
+        assert!(
+            !EMBEDDED_INDEX.contains(gone),
+            "the viewer still carries the Tactics chip's {gone}"
+        );
+    }
+    let landing = include_str!("../../beta/landing.html");
+    for gone in [
+        "map=battlefield",
+        "Tactics",
+        "id=\"battle-catalog\"",
+        "class=\"row-nav\"",
+    ] {
+        assert!(
+            !landing.contains(gone),
+            "the home page still offers Tactics through {gone}"
+        );
+    }
+    // The setup drawer keeps the mode select for a world that is already
+    // an arena — a hand-typed `?map=battlefield…`, or a batch tool driving
+    // this viewer — and `tactics-only` is what keeps it out of the way of
+    // everyone else: the row appears only once the arena is on screen, and
+    // its one job there is the way back to Civvis.
     assert!(EMBEDDED_INDEX.contains(
-        "link.href = tactics ? location.pathname : `${location.pathname}?${TACTICS_CHIP_QUERY}`;"
+        "<label class=\"small civ6-hidden tactics-only\">Game mode<select id=\"gamemode\""
     ));
-    // The live world decides, not the setup drawer's mode select.
+    assert!(EMBEDDED_INDEX.contains(".tactics-only { display: none; }"));
+    assert!(EMBEDDED_INDEX.contains("body.playing-tactics .tactics-only { display: revert; }"));
+    // The live world still decides what the deck is showing, and it is
+    // still settled before the engine answers, so a deep link into a
+    // battlefield reads as one from its first frame.
     assert!(EMBEDDED_INDEX.contains("function watchingBattlefield() {"));
     assert!(EMBEDDED_INDEX.contains("return isBattlefieldMapScript(state.map.script);"));
-    assert!(EMBEDDED_INDEX.contains("syncModeLink(tactics);"));
-    // Settled before the engine answers, so a deep link into a
-    // battlefield never spends its first seconds offering Tactics. Since
-    // the viewer split, app.js (loaded first) cannot call syncModeLink at
-    // its own load time — the chip settles in app_setup.js's deferred
-    // cross-file init, the last statements of the second script. `boot()`
-    // has already yielded at its first `/rules` fetch at that point, so
-    // the calls run before the promise continuation can request `/state`.
-    assert!(EMBEDDED_INDEX.contains("initAdvancedSettings();\nsyncModeLink();"));
+    // app.js (loaded first) cannot call anything app_setup.js declares at
+    // its own load time — the first such call threw and the crash cascaded
+    // until the page never registered as a viewer. Those calls live at the
+    // end of the second script; `boot()` has already yielded at its first
+    // `/rules` fetch by then.
+    assert!(EMBEDDED_INDEX.contains("\ninitAdvancedSettings();"));
     assert!(EMBEDDED_INDEX.contains("\nboot();"));
     assert!(EMBEDDED_APP_JS.contains("RULES = await fetchJSON(\"/rules\");"));
     let deferred_init = EMBEDDED_INDEX
-        .rfind("initAdvancedSettings();\nsyncModeLink();")
+        .rfind("\ninitAdvancedSettings();")
         .expect("the deferred cross-file init is embedded");
     let boot = EMBEDDED_INDEX
         .rfind("\nboot();")
@@ -1670,94 +1696,72 @@ fn viewer_offers_the_other_game_mode_in_a_chip_beside_home() {
         boot < deferred_init,
         "the second script follows boot's first await"
     );
-    // One Tactics world for the whole site: the chip opens exactly what
-    // the home page's Tactics card opens.
-    const TACTICS_QUERY: &str = "map=battlefield&players=2&era=random&arena=20x20";
-    assert!(EMBEDDED_INDEX.contains(&format!("const TACTICS_CHIP_QUERY = \"{TACTICS_QUERY}\";")));
-    let landing = include_str!("../../beta/landing.html");
-    // Lane-relative (`../` from the lane's /home), so the test lane's
-    // card opens the test lane's viewer.
-    let card = format!("href=\"../?{}\"", TACTICS_QUERY.replace('&', "&amp;"));
-    assert!(
-        landing.contains(&card),
-        "the home page's Tactics card should open the world the chip does: {card}"
-    );
 }
 
-/// The home page's Tactics quadrants open the battle picker before they
-/// hand over to the simulator, and the picker is the historical scenario
-/// library — the same catalog the engine ships, copied into the static
-/// page by `tools/landing_battles.py` because a page cannot ask the
-/// WebAssembly module before the module is loaded. A copy drifts, so this
-/// pins it row for row: a battle added, renamed or re-dated in
-/// `historical_scenarios.rs` fails here until the tool is run again.
+/// The home page is one row of two cards — Watch CIVVIS and Play CIVVIS —
+/// and the world picker they open in place. The Tactics row that stood
+/// below them, the historical battle catalog its picker browsed, and the
+/// row index down the menu's left edge are all gone: the site offers the
+/// full game, watched or played, and nothing else.
 ///
-/// The four quadrants themselves are pinned by their destinations: Play
-/// Civ seats the visitor through the shim's `mode=play`, Watch Civ is the
-/// stock exhibition, and both Tactics quadrants fall back to the site's
-/// one Tactics world when the picker cannot open — the same world the
-/// viewer's chip opens (`viewer_offers_the_other_game_mode_in_a_chip_beside_home` above).
+/// The two quadrants are pinned by their destinations: Play seats the
+/// visitor through the shim's `mode=play`, Watch is the stock exhibition,
+/// and both Customize buttons fall back to the simulator's own Game setup
+/// drawer when the picker cannot open.
 #[test]
-fn the_home_page_carries_the_battle_catalog_the_engine_ships() {
+fn the_home_page_offers_the_full_game_watched_and_played() {
     let landing = include_str!("../../beta/landing.html");
-    let block = landing
-        .split_once("<script id=\"battle-catalog\" type=\"application/json\">")
-        .expect("the home page carries a battle catalog block")
-        .1
-        .split_once("</script>")
-        .expect("the end of the catalog block")
-        .0;
-    let carried: Value = serde_json::from_str(block).expect("the catalog block is JSON");
-    let shipped = serde_json::to_value(crate::historical_scenarios::all())
-        .expect("the engine's catalog serializes");
-    assert_eq!(
-        carried, shipped,
-        "beta/landing.html is behind the engine's battle catalog; run tools/landing_battles.py"
-    );
-    assert!(
-        !block.contains('<'),
-        "the catalog block must not be able to close its own element"
-    );
     for piece in [
-        // Rows: Tactics above, the full game below. Columns: Watch left,
-        // Play right. The immediate ways in are the photograph, the title
-        // and the card's own verb; Customize carries `data-pick` and
-        // falls back to an honest destination without scripting. Every
-        // viewer link is lane-relative (`../` from the lane's /home), so
-        // the test lane's home page opens the test lane's viewer.
+        // One row, two columns: Watch left, Play right. The immediate ways
+        // in are the photograph, the title and the card's own verb;
+        // Customize carries `data-pick` and falls back to an honest
+        // destination without scripting. Every viewer link is
+        // lane-relative (`../` from the lane's /home), so the test lane's
+        // home page opens the test lane's viewer.
         "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
-        "href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
         "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
-        "href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20\" data-pick=\"watch\"",
-        // The full game's Customized buttons land in the simulator with
-        // the Game setup drawer open (`?setup=1`, honoured at the end of
-        // app.js) when nothing can open the panel in place.
+        // The Customize buttons land in the simulator with the Game setup
+        // drawer open (`?setup=1`, honoured at the end of app.js) when
+        // nothing can open the panel in place.
         "href=\"../?setup=1\"",
         "href=\"../?mode=play&amp;setup=1\"",
         // The picker and its four lenses.
-        "id=\"battle-picker\"",
-        "data-lens=\"custom\"",
-        "data-lens=\"era\"",
-        "data-lens=\"person\"",
-        "data-lens=\"terrain\"",
-        // A picked battle travels as the lobby's own map id, plus who plays.
-        "href=\"${esc(into(`../?map=${b.id}&players=2`))}\"",
-        "const into = query => query + (mode === \"play\" ? \"&mode=play\" : \"\");",
+        "id=\"game-picker\"",
+        "data-lens=\"worlds\"",
+        "data-lens=\"sizes\"",
+        "data-lens=\"victory\"",
+        "data-lens=\"seats\"",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
-    // And the shim knows the word: `mode=play` seats the visitor,
-    // `mode=watch` leaves the world to its AIs.
+    // What the Tactics row took with it. The battle catalog was a copy of
+    // `historical_scenarios::all()` kept in step by `tools/landing_battles.py`
+    // and pinned here row for row; with no picker to browse it, the copy,
+    // the tool and the pin all go rather than drift together in silence.
+    for gone in [
+        "id=\"battle-catalog\"",
+        "id=\"battle-picker\"",
+        "id=\"row-tactics\"",
+        "class=\"row-nav\"",
+        "class=\"row-label\"",
+        "map=battlefield",
+    ] {
+        assert!(
+            !landing.contains(gone),
+            "the home page still carries {gone}"
+        );
+    }
+    assert!(
+        !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tools/landing_battles.py")
+            .exists(),
+        "tools/landing_battles.py regenerates a block the home page no longer carries"
+    );
+    // And the shim knows the word the cards spend: `mode=play` seats the
+    // visitor, `mode=watch` leaves the world to its AIs.
     let shim = include_str!("../../beta/shim.js");
     assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
     assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
-    // And it knows `era`, which the Tactics cards spend on `random`. The
-    // word has to reach `tactics_era` or the armies follow `start_era`
-    // instead and every linked battle is the same era — the whole point
-    // of the cards asking for a roll. `random` is not a start era, so it
-    // travels as the Tactics rule alone.
-    assert!(shim.contains("if (era && era !== \"random\") payload.start_era = era;"));
-    assert!(shim.contains("if (era) payload.tactics_era = era;"));
     // The viewer honours the Customize links' `?setup=1`: it opens the
     // sidebar's Game setup drawer on arrival instead of leaving the
     // visitor to hunt for it.
@@ -1802,77 +1806,49 @@ fn the_browser_build_prices_every_frame_for_the_shims_clock() {
 /// button does; the title line carries who is at the keyboard on its
 /// right, in the same font and size; each card reads name, description,
 /// actions, tags in that order; and Customize and every tag open the
-/// row's own customization panel in place — the battle picker below the
-/// Tactics row, the world picker below the CIVVIS row — with each tag
-/// landing on the section it names.
+/// row's world picker in place, with each tag landing on the section it
+/// names.
 #[test]
 fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
     let landing = include_str!("../../beta/landing.html");
-    const TACTICS: &str = "../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20";
     for piece in [
         // The art is a way in: each photograph links its card's preset.
-        &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}\">") as &str,
-        &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}&amp;mode=play\">"),
         "<a class=\"card-thumb-link\" href=\"../\">",
         "<a class=\"card-thumb-link\" href=\"../?mode=play\">",
         // The title links the same preset, and the mode descriptor sits
         // beside it on the one title line, styled at the title's own
         // font and size.
-        &format!("<h3 class=\"card-title\" id=\"watch-tactics-title\"><a href=\"{TACTICS}\">Watch CIVVIS Tactics</a></h3>"),
-        &format!("<h3 class=\"card-title\" id=\"play-tactics-title\"><a href=\"{TACTICS}&amp;mode=play\">Play CIVVIS Tactics</a></h3>"),
         "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
         "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
         "<span class=\"card-mode\">AI simulation</span>",
         "<span class=\"card-mode\">Single player</span>",
         ".card-mode { color: var(--muted); font-size: 17px; font-weight: 700;",
         ".card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }",
-        // The full game's Customize opens the world picker in place and
-        // still names Game setup as its scriptless destination.
+        // Customize opens the world picker in place and still names Game
+        // setup as its scriptless destination.
         "href=\"../?setup=1\" data-pick=\"watch-civ\"",
         "href=\"../?mode=play&amp;setup=1\" data-pick=\"play-civ\"",
-        // The tags: every one opens its row's panel on the section it
-        // names, with an honest scriptless destination behind it.
-        "data-pick=\"watch\" data-lens=\"custom\">AI vs AI</a>",
-        "data-pick=\"watch\" data-lens=\"custom\">Custom Maps</a>",
-        "data-pick=\"watch\" data-lens=\"era\">Historical Battles</a>",
-        "data-pick=\"watch\" data-lens=\"eras\">Any Era</a>",
-        "data-pick=\"play\" data-lens=\"custom\">AI Strategies &amp; Difficulties</a>",
-        "data-pick=\"play\" data-lens=\"eras\">Any Era</a>",
+        // The tags: every one opens the panel on the section it names,
+        // with an honest scriptless destination behind it.
         "data-pick=\"watch-civ\" data-lens=\"seats\">AI Empires</a>",
         "data-pick=\"watch-civ\" data-lens=\"worlds\">Fresh World Every Visit</a>",
         "data-pick=\"watch-civ\" data-lens=\"victory\">Every Victory Lane</a>",
         "data-pick=\"play-civ\" data-lens=\"seats\">Your Seat</a>",
         "data-pick=\"play-civ\" data-lens=\"seats\">AI Rivals</a>",
         "data-pick=\"play-civ\" data-lens=\"worlds\">Custom Worlds</a>",
-        // A click carries both halves: which panel, and which section.
+        // A click carries both halves: which card, and which section.
         "open(card.dataset.pick, card.dataset.lens);",
-        // The world picker and its lenses; the battle picker's fifth
-        // lens deals the custom field in any era.
-        "id=\"game-picker\"",
-        "data-lens=\"worlds\"",
-        "data-lens=\"sizes\"",
-        "data-lens=\"victory\"",
-        "data-lens=\"seats\"",
-        "data-lens=\"eras\" aria-selected=\"false\">Any era</button>",
-        // The panels are grid rows of the menu itself, so each opens
-        // directly below its own row of cards — spanning from the second
-        // column, because the first carries the vertical row labels and
-        // a panel is as wide as the pair of cards it belongs to. On one
-        // column there is no label column to skip. Both are pinned: the
-        // narrow rule alone still leaves `1 / -1` in the file, so a pin
-        // on that string would pass on the wrong rule.
-        "    grid-column: 2 / -1;",
-        "    .picker-panel { grid-column: 1 / -1; }",
+        // The panel is a grid row of the menu itself, so it opens
+        // directly below the row of cards, spanning both card columns.
+        // With the row-label column gone there is no furniture beside
+        // the cards for it to skip.
+        "    grid-column: 1 / -1;",
         // Two actions per card, four to a row: the card's own verb opens
         // its preset at once — never carrying `data-pick`, because
         // clicking it is meant to leave the page rather than open a
-        // panel — and Customize beside it opens the row's shared panel.
-        "<a class=\"card-btn verb-watch\" href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20\" aria-labelledby=\"watch-tactics-title\">Watch</a>",
-        "<a class=\"card-btn verb-play\" href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play\" aria-labelledby=\"play-tactics-title\">Play</a>",
+        // panel — and Customize beside it opens the shared panel.
         "<a class=\"card-btn verb-watch\" href=\"../\" aria-labelledby=\"watch-civ-title\">Watch</a>",
         "<a class=\"card-btn verb-play\" href=\"../?mode=play\" aria-labelledby=\"play-civ-title\">Play</a>",
-        "data-pick=\"watch\" aria-label=\"Customize a watched Tactics battle\">Customize</a>",
-        "data-pick=\"play\" aria-label=\"Customize a played Tactics battle\">Customize</a>",
         "data-pick=\"watch-civ\" aria-label=\"Customize a watched game\">Customize</a>",
         "data-pick=\"play-civ\" aria-label=\"Customize a played game\">Customize</a>",
         // The verb is the card's point, so it carries the colour and a
@@ -1883,34 +1859,23 @@ fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
         // a card whose tags wrap cannot stagger its neighbour's buttons.
         ".card-desc { margin: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }",
         ".card-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 54px; margin: 0; padding: 0; list-style: none; }",
-        // The row index on the menu's left edge: every row in page
-        // order, each a click that scrolls its row up — so the whole
-        // menu is legible in one glance.
         // An open panel names who is at the keyboard beside its Back
         // button, at the verb button's size and in its colour.
-        "<span class=\"picker-mode-badge watch\" id=\"battle-picker-mode\">",
         "<span class=\"picker-mode-badge watch\" id=\"game-picker-mode\">",
         ".picker-mode-badge.play { background: var(--play-bg); color: var(--play-fg); }",
-        "<nav class=\"row-nav\" aria-label=\"Menu rows\">",
-        "<a href=\"#row-tactics\">Tactics</a>",
-        "<a href=\"#row-civ\">CIVVIS</a>",
-        "<div class=\"mode-card\" id=\"row-tactics\">",
         "<div class=\"mode-card\" id=\"row-civ\">",
-        // While a row's shared panel is open, its two cards are the mode
-        // selector — the selected option highlights, the other mutes —
-        // and the panel's own chips switch between them in place. That
-        // is also when the row's four buttons merge into one set: the
-        // panel and its chips are now the customization, so both
-        // Customize buttons retire until it closes.
+        // While the panel is open, the two cards are the mode selector —
+        // the selected option highlights, the other mutes — and the
+        // panel's own chips switch between them in place. That is also
+        // when the row's four buttons merge into one set: the panel and
+        // its chips are now the customization, so both Customize buttons
+        // retire until it closes.
         "card.classList.toggle(\"picking\", selected);",
         "card.classList.toggle(\"muted\", shown && !selected);",
         "card.classList.toggle(\"merged\", shown);",
         ".mode-card.merged .card-btn.customize { display: none; }",
         ".mode-card.muted { opacity: 0.55; }",
-        "id=\"battle-modes\"",
         "id=\"game-modes\"",
-        "data-mode=\"watch\" aria-pressed=\"true\">AI simulation</button>",
-        "data-mode=\"play\" aria-pressed=\"false\">Single player</button>",
         "data-mode=\"watch-civ\" aria-pressed=\"true\">AI simulation</button>",
         "data-mode=\"play-civ\" aria-pressed=\"false\">Single player</button>",
         ".picker-lens[aria-pressed=\"true\"] { border-color: var(--accent); background: #2a3f52; color: #fff; }",
@@ -1927,19 +1892,17 @@ fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
         );
     }
     // Reading order inside a card: title row, description, actions, tags
-    // — and each panel sits below the row of cards that opens it.
+    // — and the panel sits below the row of cards that opens it.
     let index = |needle: &str| {
         landing
             .find(needle)
             .unwrap_or_else(|| panic!("the home page lost {needle}"))
     };
-    for card in ["watch-tactics", "play-tactics", "watch-civ", "play-civ"] {
+    for card in ["watch-civ", "play-civ"] {
         let title = index(&format!("id=\"{card}-title\""));
         let tags = index(&format!(
             "aria-label=\"{}",
             match card {
-                "watch-tactics" => "Watch CIVVIS Tactics features",
-                "play-tactics" => "Play CIVVIS Tactics features",
                 "watch-civ" => "Watch CIVVIS features",
                 _ => "Play CIVVIS features",
             }
@@ -1957,41 +1920,20 @@ fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
             "{card} must read title, description, actions, tags"
         );
     }
-    // Per row rather than as one chain across both: the old chain read
-    // `battle-picker` < `watch-civ-title`, which is not "a panel sits
-    // below its own cards" at all but "Tactics is the first row", and it
-    // failed the moment the rows swapped. Which row leads is a separate
-    // decision, asserted separately below.
-    for (watch, play, panel) in [
-        ("watch-civ", "play-civ", "game-picker"),
-        ("watch-tactics", "play-tactics", "battle-picker"),
-    ] {
-        assert!(
-            index(&format!("id=\"{watch}-title\"")) < index(&format!("id=\"{play}-title\""))
-                && index(&format!("id=\"{play}-title\"")) < index(&format!("id=\"{panel}\"")),
-            "{panel} must sit directly below its own row of cards"
-        );
-    }
-    // Operator, 2026-08-22: CIVVIS leads the menu, Tactics follows. The
-    // whole CIVVIS row — its panel included — precedes the first Tactics
-    // card, and the row index above the menu is in that same page order.
     assert!(
-        index("id=\"game-picker\"") < index("id=\"watch-tactics-title\""),
-        "the CIVVIS row must come before the Tactics row"
+        index("id=\"watch-civ-title\"") < index("id=\"play-civ-title\"")
+            && index("id=\"play-civ-title\"") < index("id=\"game-picker\""),
+        "the world picker must sit directly below its own row of cards"
     );
-    assert!(
-        index("href=\"#row-civ\"") < index("href=\"#row-tactics\""),
-        "the row index must list CIVVIS before Tactics"
-    );
-    // The LCP hint belongs to the first row's thumbnail, so it moves when
-    // the rows do; left behind it would preload a below-the-fold image.
+    // The LCP hint belongs to the row's own thumbnail; on any other image
+    // it would preload something below the fold.
     assert!(
         landing.contains(
             "src=\"assets/watch-civ.jpg\" alt=\"Watch CIVVIS: a CIVVIS globe at mid-game, \
 AI empires sharing two continents, borders and cities drawn across the planet.\" \
 fetchpriority=\"high\""
         ),
-        "the first row's thumbnail must carry the LCP hint"
+        "the first card's thumbnail must carry the LCP hint"
     );
 }
 
@@ -5598,8 +5540,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
     ] {
         assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
     }
-    // The game mode is a lobby control now, not a drawer one.
-    assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">Game mode"));
+    // The game mode is a lobby control now, not a drawer one — and
+    // `tactics-only`, because the site offers the full game alone: the row
+    // appears only once an arena is already on screen, as the way back.
+    assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden tactics-only\">Game mode"));
     for normal in [
         "class=\"small civ6-hidden tactics-hidden\">World shape",
         "class=\"small civ6-hidden tactics-hidden\">Start era",
@@ -11207,7 +11151,7 @@ fn browser_keeps_the_civilization_vi_mode_available_for_verification() {
     // Exactly the rows that are not carried, and no others. Difficulty is
     // deliberately absent: it is the setting the mode exists for.
     for row in [
-        "class=\"small civ6-hidden\">Game mode",
+        "class=\"small civ6-hidden tactics-only\">Game mode",
         "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // teams
         "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // leader pool
         "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // leader selection

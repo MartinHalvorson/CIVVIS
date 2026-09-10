@@ -26,8 +26,11 @@ Everything the old roadmap called planned has shipped and then some:
 - **civvis.ai is live**: the WebAssembly client shipped, with a `/test` lane
   redeployed from head half-hourly, a stable front page moved by operator
   judgment (`docs/SPECTATOR_DEPLOY.md`), native/wasm build-parity gates, and
-  a home page selling two products — full-game simulations and Tactics
-  battles (historical scenarios on real terrain, an era rolled per battle).
+  a home page selling one product in two forms — a full game watched as an
+  AI simulation, or played as one civilization against AI rivals. The
+  Tactics row came off the menu 2026-09-10: the arena is still in the
+  engine and still reachable by a hand-typed `?map=battlefield…`, but the
+  site no longer offers it.
 - **The AI is scripted and measured**: `AdvancedAi`, whose behaviours are
   boolean genes in one registry (`src/ai/advanced/genes.rs`), priced by the
   random-genome gene screen (`docs/GENE_SCREEN.md`) and shipped by the gene

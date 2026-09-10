@@ -7609,12 +7609,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       document.getElementById("gamemode").value = "civ";
       syncSetupMode();
     }
-    // The masthead chip reads the world, not the setup panel: a viewer who
-    // opens the drawer and flips the mode select has not left the game they
-    // are watching, and the chip must keep offering the other one.
-    syncModeLink(tactics);
-    // So does the between-game default: a Tactics world counts down in 3s
-    // unless the viewer has picked an interval by hand.
+    // The between-game default reads the world, not the setup panel: a
+    // Tactics world counts down in 3s unless the viewer has picked an
+    // interval by hand.
     applyBetweenGameCountdownDefault(tactics);
     // And the watch pace: a Tactics world opens at Blitz, a full game at
     // whatever the viewer's own pace is.
@@ -33030,11 +33027,11 @@ if (savedSidebarCollapsed === "1") togglePanel(true, false);
 else if (savedSidebarCollapsed === "0") togglePanel(false, false);
 else if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true, false);
 resize();
-// syncModeLink() is NOT called here: it lives in app_setup.js, which loads
-// after this file, so a load-time call throws and boot() below never runs —
-// the page stays behind the "Joining the live world" veil with viewers 0.
-// app_setup.js settles the chip at its own load time, still before the
-// engine's first answer (boot's synchronous prefix ends at its first await).
+// Nothing defined in app_setup.js is called here: that file loads after this
+// one, so a load-time call throws and boot() below never runs — the page
+// stays behind the "Joining the live world" veil with viewers 0. Those calls
+// live at the end of app_setup.js, still before the engine's first answer
+// (boot's synchronous prefix ends at its first await).
 boot();
 
 // `?setup=1` lands with the sidebar's Game setup drawer open: the home page's
