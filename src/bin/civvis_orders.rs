@@ -5060,20 +5060,24 @@ fn translate(
                 verb: None,
                 pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
             }),
-        Action::Improve { unit, improvement } => civ6_of
-            .get(unit)
-            .map(|civ6| Order {
-                kind: "unit",
-                subject: Some(*civ6),
-                verb: Some("IMPROVE".to_string()),
-                pos: None,
-            })
-            .map(|mut order| {
-                // The improvement name rides in `verb` alongside the operation, because the
-                // order row has no spare column; the mod splits them.
-                order.verb = Some(format!("IMPROVE:{}", civ6_improvement_type(improvement)));
-                order
+        Action::Improve { unit, improvement } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            // These simulator improvements are native operations, not rows in
+            // Firaxis' Improvements table. Both land and sea artifacts use EXCAVATE.
+            verb: Some(match improvement.as_str() {
+                "archaeological_dig" | "shipwreck_excavation" => "EXCAVATE".to_string(),
+                "national_park" => "DESIGNATE_PARK".to_string(),
+                _ => format!("IMPROVE:{}", civ6_improvement_type(improvement)),
             }),
+            pos: None,
+        }),
+        Action::PerformConcert { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("TOURISM_BOMB".to_string()),
+            pos: None,
+        }),
         // A builder repair is a distinct Firaxis unit operation.  Dropping it
         // strands pillaged improvements even though CIVVIS already chose the
         // repair and the builder is standing on the target tile.
@@ -13010,6 +13014,56 @@ mod tests {
             .verb
             .as_deref()
             .is_some_and(|verb| verb.starts_with("PROMOTE:")));
+    }
+
+    #[test]
+    fn culture_operations_cross_as_native_unit_operations() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 156,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(5, 5)],
+        }]);
+        for (kind, improvement, verb) in [
+            ("UNIT_ARCHAEOLOGIST", Some("archaeological_dig"), "EXCAVATE"),
+            (
+                "UNIT_ARCHAEOLOGIST",
+                Some("shipwreck_excavation"),
+                "EXCAVATE",
+            ),
+            ("UNIT_NATURALIST", Some("national_park"), "DESIGNATE_PARK"),
+            ("UNIT_ROCK_BAND", None, "TOURISM_BOMB"),
+            ("UNIT_BUILDER", Some("farm"), "IMPROVE:IMPROVEMENT_FARM"),
+        ] {
+            let state = StateSnapshot {
+                turn: 156,
+                units: vec![StateUnit {
+                    id: 92,
+                    kind: kind.to_string(),
+                    x: 5,
+                    y: 5,
+                    build_charges: Some(0),
+                    spread_charges: Some(0),
+                    ..StateUnit::default()
+                }],
+                ..StateSnapshot::default()
+            };
+            let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+            let unit = mirror.uid_of[&92];
+            let action = match improvement {
+                Some(name) => Action::Improve {
+                    unit,
+                    improvement: name.into(),
+                },
+                None => Action::PerformConcert { unit },
+            };
+            let order = translate(&action, &mirror, &state).expect("Culture action crosses");
+            assert_eq!(order.kind, "unit");
+            assert_eq!(order.subject, Some(92));
+            assert_eq!(order.verb.as_deref(), Some(verb));
+            assert_eq!(order.pos, None);
+        }
     }
 
     #[test]

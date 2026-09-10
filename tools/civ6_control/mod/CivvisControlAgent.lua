@@ -313,6 +313,11 @@ local function resolveActions()
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
+		-- Parameterless Culture actions: Base/Assets/Gameplay/Data/UnitOperations.xml
+		-- :73 (park), :77 (excavate), and DLC/Expansion2/Data/Expansion2_UnitOperations.xml
+		-- :11 (concert). None has InterfaceMode: UnitPanel.lua:2518-2535 requests
+		-- the operation directly. The generic tail preserves CanStartOperation.
+		"UNITOPERATION_EXCAVATE", "UNITOPERATION_DESIGNATE_PARK", "UNITOPERATION_TOURISM_BOMB",
 		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
 		-- light cavalry's pillage-before-combat could not happen on the live
 		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
