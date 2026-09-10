@@ -17344,9 +17344,13 @@ impl AdvancedAi {
         };
         let distance = g.wdist(position, objective);
         if !(3..=5).contains(&distance)
-            || g.rules.is_water(tile)
             || g.city_at(position).is_some()
             || !g.unit_can_traverse(uid, position)
+        {
+            return false;
+        }
+        if g.rules.is_water(tile)
+            && !Self::amphibious_staging_position(g, target, uid, objective, position)
         {
             return false;
         }
@@ -17809,7 +17813,9 @@ impl AdvancedAi {
                 return None;
             }
         }
-        if self.campaign_staging_position(g, pid, target, uid, objective, unit.pos) {
+        let already_staged =
+            self.campaign_staging_position(g, pid, target, uid, objective, unit.pos);
+        if already_staged && !g.rules.is_water(&g.map.tiles[&unit.pos]) {
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
 
@@ -17824,9 +17830,23 @@ impl AdvancedAi {
                 })
                 .collect()
         };
-        let next = g
-            .route_step_to_any(uid, &goals)
-            .filter(|position| g.can_move(uid, *position))?;
+        // Prefer an accessible dry assembly area. A coastal city can own
+        // every beach on its island, leaving its nominal dry staging ring
+        // behind closed borders. In that case embark next to a landing shore
+        // and wait offshore until the assembled army can declare.
+        let (water, dry): (HashSet<_>, HashSet<_>) = goals
+            .into_iter()
+            .partition(|position| g.rules.is_water(&g.map.tiles[position]));
+        let next = if let Some(next) = g.route_step_to_any(uid, &dry) {
+            next
+        } else if already_staged {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        } else {
+            g.route_step_to_any(uid, &water)?
+        };
+        if !g.can_move(uid, next) {
+            return None;
+        }
         // Do not use an Open Borders shortcut through the intended victim.
         // The next turn's route search will find a lawful way around it.
         let next_territory = g.map.tiles[&next]
@@ -40677,6 +40697,8 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests;
+
+mod amphibious_staging;
 
 #[cfg(test)]
 mod domination_solvency_tests;
