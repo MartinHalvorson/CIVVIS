@@ -11572,7 +11572,14 @@ impl AdvancedAi {
                 // target the map cannot meet.
                 && !(self.domination_lane_hands_over
                     && target == VictoryTarget::Domination
-                    && cities.len() >= DOMINATION_HANDOVER_CITIES)
+                    && cities.len() >= DOMINATION_HANDOVER_CITIES
+                    // ⚠ And only with an army that can win the war it opens. Game 6
+                    // (2026-09-10) handed over at t100 with power 198 against the
+                    // strongest rival's 384: Recovery by t116, one city by t170 —
+                    // a t270 victory-clock loss turned into a t170 suicide. The bar
+                    // is the same one the elective-war branch below has always
+                    // used against the weakest living rival.
+                    && my_power > weakest_rival * 1.80 + 20.0)
             {
                 (
                     GrandStrategy::Expansion,
@@ -11883,6 +11890,9 @@ impl AdvancedAi {
                         .filter(|prior| prior.target_player == Some(target))
                         .and_then(|prior| prior.target_city)
                         .filter(|city| g.cities.get(city).is_some_and(|city| city.owner == target))
+                        // A failed capture's explicit stand-down outranks a
+                        // cached siege objective until the cooldown expires.
+                        .filter(|city| !self.capture_stood_down_holds(g, *city))
                 })
         } else {
             None
@@ -40842,6 +40852,9 @@ mod domination_solvency_tests;
 
 #[cfg(test)]
 mod domination_finish_tests;
+
+#[cfg(test)]
+mod siege_standdown_tests;
 
 mod science_scaling;
 
