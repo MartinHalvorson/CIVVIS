@@ -122,6 +122,20 @@ const UNIT_RETREAT_TURNS: u32 = 2;
 pub(crate) const VETERAN_HP_PER_PROMOTION: i32 = 10;
 /// `veterans-withdraw-early`: the most a veteran keeps in hand (three promotions).
 pub(crate) const VETERAN_HP_MARGIN_CAP: i32 = 30;
+/// `ranged-hp-reserve`: hit points a ranged unit keeps in hand against the
+/// lethal pool. An archer's value is the shots it takes over many turns; a
+/// melee unit's is the blow it lands now. So the archer withdraws from a tile
+/// where the enemy's exact next-turn attacks would leave it THIS close to
+/// dead — and comes back to shoot again — where a warrior of the same health
+/// stays and trades. Siege pieces are excluded: they must sit in reach of the
+/// walls they exist to breach.
+///
+/// ⚠ 20, NOT 35. Measured in the archer-under-archer fixture: an even archer
+/// volley lands for ~70, so a 35-point reserve read every duel as a loss
+/// (65 left after our own shot + 35 ≥ 100) and the archer would never stand
+/// anywhere a peer could reach it — no shots, no war. Twenty lets it trade at
+/// full health and break off early instead of trading down.
+pub(crate) const RANGED_HP_RESERVE: i32 = 20;
 
 /// `game::damage` rolls every blow at `uniform(0.8, 1.2)` around the centre
 /// this controller prices with, so the average is not the number a survival
@@ -2641,6 +2655,11 @@ pub struct BasicAi {
     /// Experience only compounds on a unit that survives; a green unit
     /// reads its hit points as before. Set by `AdvancedAi`'s toggle.
     pub(crate) veteran_retreat_margin: bool,
+    /// `ranged-hp-reserve`: a ranged, non-siege unit reads the lethal pool
+    /// with `RANGED_HP_RESERVE` in hand, so it leaves a tile the enemy could
+    /// nearly kill it on and keeps shooting from the next one. Only the
+    /// lethal-pool test — the withdrawal line stays `one_shot_recovery`'s.
+    pub(crate) ranged_hp_reserve: bool,
     /// A unit one enemy blow from death withdraws to safe healing ground, and
     /// leaves that ground again the moment an enemy can strike it.
     ///
@@ -4974,6 +4993,7 @@ impl BasicAi {
             unit_objective_memory: false,
             precise_evacuation: true,
             veteran_retreat_margin: false,
+            ranged_hp_reserve: false,
             one_shot_recovery: false,
             w: Weights::default(),
             book_pos: 0,
@@ -5428,6 +5448,7 @@ impl BasicAi {
             unit_objective_memory: false,
             precise_evacuation: true,
             veteran_retreat_margin: false,
+            ranged_hp_reserve: false,
             one_shot_recovery: false,
             w,
             book_pos: 0,
@@ -6598,7 +6619,11 @@ impl BasicAi {
     /// this unit alive outside the remaining enemy envelopes. This is a small
     /// exact forward check, not a combat-score guess: it lets a unit finish a
     /// kill or create a safe trade when that is genuinely better than fleeing.
-    fn can_survive_by_attacking(&self, g: &Game, pid: usize, uid: u32) -> bool {
+    /// ``reserve`` is `ranged_hp_reserve`'s answer for this unit: a ranged unit
+    /// has not "survived" a trade that leaves it standing but below the hit
+    /// points it keeps in hand — that is the near-fatal hit the gene exists to
+    /// refuse. Zero for everything else, so nothing else changes.
+    fn can_survive_by_attacking(&self, g: &Game, pid: usize, uid: u32, reserve: i32) -> bool {
         g.legal_actions_within(pid, ActionFamilies::UNITS)
             .into_iter()
             .filter(|action| {
@@ -6620,6 +6645,7 @@ impl BasicAi {
                 };
                 let envelopes = self.enemy_attack_envelopes(&future, pid);
                 Self::evacuation_incoming_damage(&future, pid, uid, survivor.pos, &envelopes)
+                    + f64::from(reserve)
                     < f64::from(survivor.hp)
             })
     }
@@ -6725,12 +6751,15 @@ impl BasicAi {
         )?;
         // `veterans-withdraw-early`: the pool is lethal to a veteran once it
         // would leave less than the margin the unit keeps in hand.
-        let lethal = holding.incoming > 0.0
-            && holding.incoming + f64::from(self.veteran_hp_margin(g, uid)) >= f64::from(hp);
+        // `ranged-hp-reserve` adds to the same margin: an archer reads the pool
+        // as lethal while it would still be left standing, and leaves.
+        let margin = self.veteran_hp_margin(g, uid) + self.ranged_hp_reserve(g, uid);
+        let lethal =
+            holding.incoming > 0.0 && holding.incoming + f64::from(margin) >= f64::from(hp);
         if remembered.is_none() && !lethal {
             return None;
         }
-        if lethal && self.can_survive_by_attacking(g, pid, uid) {
+        if lethal && self.can_survive_by_attacking(g, pid, uid, self.ranged_hp_reserve(g, uid)) {
             return None;
         }
 
@@ -9736,6 +9765,25 @@ impl BasicAi {
         }
         let promotions = g.units.get(&uid).map_or(0, |unit| unit.promotions.len()) as i32;
         (promotions * VETERAN_HP_PER_PROMOTION).min(VETERAN_HP_MARGIN_CAP)
+    }
+
+    /// `ranged-hp-reserve`: `RANGED_HP_RESERVE` for a ranged unit that is not a
+    /// siege piece and not aircraft, else 0. Zero while the gene is off.
+    pub(crate) fn ranged_hp_reserve(&self, g: &Game, uid: u32) -> i32 {
+        if !self.ranged_hp_reserve {
+            return 0;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return 0;
+        };
+        let Some(spec) = g.rules.units.get(unit.kind.as_str()) else {
+            return 0;
+        };
+        if spec.has_ranged_attack() && !spec.siege && spec.domain.as_deref() != Some("air") {
+            RANGED_HP_RESERVE
+        } else {
+            0
+        }
     }
 
     /// The upgrade loop itself: strongest gain per Gold first, never
@@ -18016,7 +18064,7 @@ mod tests {
 
         let mut ai = BasicAi::new();
         assert!(
-            !ai.can_survive_by_attacking(&game, 0, defender),
+            !ai.can_survive_by_attacking(&game, 0, defender, 0),
             "a counterattack cannot make this three-warrior pool survivable"
         );
         assert_eq!(ai.healing_step(&mut game, 0, defender), Some(true));
@@ -18657,6 +18705,80 @@ mod tests {
         unit.promotions.insert(crate::name!("ambush"));
         unit.promotions.insert(crate::name!("zweihander"));
         assert_eq!(ai.veteran_hp_margin(&game, ours), VETERAN_HP_MARGIN_CAP);
+    }
+
+    /// `ranged-hp-reserve`: our archer stands where an enemy archer can shoot
+    /// it next turn. Below the lethal pool both controllers leave; above it a
+    /// controller with no reserve stays, and the reserve controller keeps
+    /// leaving for another `RANGED_HP_RESERVE` hit points — the band in which
+    /// a hit would not kill it but would leave it too hurt to keep shooting.
+    fn an_archer_under_one_archer() -> (Game, u32, Pos) {
+        let (mut game, warrior, front, _home) = a_warrior_under_one_archer();
+        game.remove_unit(warrior);
+        let ours = game.spawn_test_unit("archer", 0, front);
+        (game, ours, front)
+    }
+
+    #[test]
+    fn a_ranged_unit_keeps_a_reserve_against_the_lethal_pool() {
+        let (game, ours, _front) = an_archer_under_one_archer();
+        let controller = |reserve: bool| {
+            let mut ai = BasicAi::new();
+            ai.ranged_hp_reserve = reserve;
+            ai
+        };
+        assert_eq!(controller(false).ranged_hp_reserve(&game, ours), 0);
+        assert_eq!(
+            controller(true).ranged_hp_reserve(&game, ours),
+            RANGED_HP_RESERVE
+        );
+
+        // A fresh controller per reading: `retreat_step` remembers danger it has
+        // seen, and a memory from a low-hp reading would make a healthy one leave.
+        let leaves = |reserve: bool, hp: i32| {
+            let mut g = game.clone();
+            g.units.get_mut(&ours).unwrap().hp = hp;
+            controller(reserve).retreat_step(&mut g, 0, ours).is_some()
+        };
+        // The pool is fixed by the fixture (~45 at full health, ~55 when hurt);
+        // find where each controller stops leaving as hit points rise, rather
+        // than restating the damage table.
+        let last_leave = |reserve: bool| (1..=100).rev().find(|hp| leaves(reserve, *hp));
+        let plain_edge = last_leave(false).expect("a low-hp archer under fire leaves");
+        let reserve_edge = last_leave(true).expect("the reserve controller leaves too");
+        assert!(
+            reserve_edge > plain_edge,
+            "reserve leaves from {reserve_edge} hp, plain from {plain_edge}: the archer \
+             must leave while it would still be left standing"
+        );
+        // At full health it holds its ground and takes the duel: the reserve is
+        // for breaking off early, not for refusing to fight.
+        assert!(
+            !leaves(true, 100),
+            "a full-health archer must still stand and shoot"
+        );
+    }
+
+    #[test]
+    fn melee_and_siege_read_no_ranged_reserve() {
+        let (mut game, ours, front, _home) = a_warrior_under_one_archer();
+        let mut ai = BasicAi::new();
+        ai.ranged_hp_reserve = true;
+        assert_eq!(
+            ai.ranged_hp_reserve(&game, ours),
+            0,
+            "a warrior trades blows"
+        );
+        game.remove_unit(ours);
+        let catapult = game.spawn_test_unit("catapult", 0, front);
+        assert!(
+            game.rules.units["catapult"].siege && game.rules.units["catapult"].has_ranged_attack()
+        );
+        assert_eq!(
+            ai.ranged_hp_reserve(&game, catapult),
+            0,
+            "a siege piece must sit under the walls"
+        );
     }
 
     /// `modernize-before-spending`: the same Gold goes to the promoted unit
