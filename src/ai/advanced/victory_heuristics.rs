@@ -237,8 +237,7 @@ impl AdvancedAi {
     /// A Domination contract is fulfilled by foreign *original* capitals. An
     /// exposed city-state can still be a useful staging target, but once the
     /// campaign names a major rival, its first city must advance the victory.
-    #[cfg(test)]
-    fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+    pub(super) fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
         self.domination_capital_target_for(g, pid, None)
     }
 
@@ -421,6 +420,20 @@ mod tests {
     }
 
     #[test]
+    fn domination_capital_focus_is_an_independently_reversible_opt_in() {
+        assert!(!AdvancedAi::new().domination_capital_focus);
+        assert!(!AdvancedAi::legacy().domination_capital_focus);
+        let mut ai = AdvancedAi::new();
+        ai.enable_domination_capital_focus();
+        assert!(ai.domination_capital_focus);
+        ai.disable_domination_capital_focus();
+        assert!(!ai.domination_capital_focus);
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.tag == "domination-capital-focus" && gene.opt_in()));
+    }
+
+    #[test]
     fn domination_target_aims_at_an_uncontrolled_original_capital_before_a_convenient_city() {
         check_domination_front_capital(2);
     }
@@ -489,6 +502,14 @@ mod tests {
                 Some(2),
                 "the unengaged rival must own the cheaper global capital"
             );
+        }
+        if majors == 3 {
+            assert_eq!(
+                ai.assess(&game, 0).target_city,
+                Some(outpost),
+                "the off arm keeps the existing generic-city fallback"
+            );
+            ai.enable_domination_capital_focus();
         }
         let plan = ai.assess(&game, 0);
         assert_eq!(

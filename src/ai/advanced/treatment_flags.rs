@@ -4236,6 +4236,13 @@ impl AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    /// Rank required capitals within the selected domination campaign front.
+    pub fn enable_domination_capital_focus(&mut self) {
+        self.domination_capital_focus = true;
+    }
+    pub fn disable_domination_capital_focus(&mut self) {
+        self.domination_capital_focus = false;
+    }
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------

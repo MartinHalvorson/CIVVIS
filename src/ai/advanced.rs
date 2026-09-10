@@ -4935,6 +4935,9 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `domination-capital-focus`: rank missing original capitals within
+    /// the selected campaign front, independently of other rivals.
+    domination_capital_focus: bool,
     /// `conquest-takes-the-soft-city`: the early conquest opening ranks its
     /// target by the visible garrison before the rival's capital, so it aims
     /// at a city the opening force can actually take.
@@ -7833,6 +7836,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            domination_capital_focus: false,
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
             denial_outranks_expansion: false,
@@ -11668,6 +11672,7 @@ impl AdvancedAi {
                 .unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
+        let domination_capital = self.domination_capital_target(g, pid);
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
@@ -11798,8 +11803,15 @@ impl AdvancedAi {
             // hands. See `advanced/city_campaign.rs`.
             .or_else(|| self.campaign_objective_city(g, pid, target_player))
             .or_else(|| {
-                target_player
-                    .and_then(|target| self.domination_capital_target_for(g, pid, Some(target)))
+                let capital = if self.domination_capital_focus {
+                    target_player.and_then(|target| {
+                        self.domination_capital_target_for(g, pid, Some(target))
+                    })
+                } else {
+                    domination_capital
+                };
+                capital
+                    .filter(|(target, _)| target_player == Some(*target))
                     .map(|(_, capital)| capital)
             })
             .or_else(|| {

@@ -55,7 +55,7 @@ The best sequence depends on distance, defenses, technology, terrain, income,
 loyalty and rival clocks. The implementation uses existing campaign costs and
 legality checks; this audit does not claim that their weights are optimal.
 
-## Routing defect repaired in this change
+## The capital-focus gene
 
 The previous planner computed the cheapest missing capital across every rival
 but selected its target player independently. It used that capital only if
@@ -65,20 +65,23 @@ the capital priority inside an active war. At peace, generic opponent value
 could send the next campaign after a capital's former owner who retained only
 ordinary cities.
 
-When a war or other priority names a rival, capital ranking now runs within
-that rival's current holdings. An easier capital belonging to an unrelated
+`domination-capital-focus` ranks required capitals within the selected
+opponent's current holdings. An easier capital belonging to an unrelated
 rival cannot erase this front's capital priority. Emergency, rush, denial,
 city-campaign and existing siege-commitment overrides retain their precedence.
-The change applies to the explicit Domination contract and adds no deployment
-promotion or new numerical weight.
+The gene applies to the explicit Domination contract. It is default-off and
+independently reversible; the existing global-ranking fallback remains the
+control. No deployment promotion is part of this change.
 
 An initial version also made the cheapest missing capital choose the next
 opponent. That broader policy was rejected: four paired three-player seeds
 completed Domination once on the baseline and zero times with the initial
 change, and the exposed-city-state test demonstrated that it removed a useful
-intermediate conquest. This small sample is not a statistical verdict, but it
-provides no basis to impose an unconditional opponent priority. The retained
-fix repairs capital ranking inside the selected opponent; opponent selection
+intermediate conquest. A second probe retaining only focus within the chosen
+front also completed zero of those four games. These samples are not a
+statistical verdict, but they provide no basis to change the default. The
+within-front behavior is therefore an opt-in hypothesis for the normal screen,
+not a claim that always taking a capital first is optimal. Opponent selection
 keeps its existing cost, feasibility and staging tradeoffs.
 
 ## Validation
