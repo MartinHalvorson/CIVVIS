@@ -129,6 +129,12 @@ SUBSYSTEMS = [
         "cities held at Standard turn 60",
     ),
     Subsystem(
+        "cities_taken", "_cities_taken", "cities_taken", "cities conquered by the end"
+    ),
+    Subsystem(
+        "cities_lost", "_cities_lost", "cities_lost", "cities founded here and lost"
+    ),
+    Subsystem(
         "boost_coverage",
         "_boost_share",
         "_boost_share",
@@ -275,6 +281,15 @@ def live_records(path: Path) -> list[dict]:
         best = row.get("rival_best")
         if isinstance(own, (int, float)) and isinstance(best, (int, float)) and best > 0:
             record["_score_ratio"] = float(own) / float(best)
+        combat = row.get("combat")
+        if isinstance(combat, dict):
+            for key, source in (
+                ("_cities_taken", "cities_taken"),
+                ("_cities_lost", "cities_lost"),
+            ):
+                value = combat.get(source)
+                if isinstance(value, (int, float)):
+                    record[key] = float(value)
         boosts = row.get("boosts")
         if isinstance(boosts, dict):
             share = boosts.get("techs_boosted_share")
@@ -337,6 +352,10 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
             ]
             for seat in game:
                 record = {"_cell": cell}
+                for key in ("cities_taken", "cities_lost"):
+                    value = seat.get(key)
+                    if isinstance(value, (int, float)):
+                        record[key] = float(value)
                 band = seat.get("cities_60")
                 if isinstance(band, (int, float)):
                     record["cities_60"] = float(band)
