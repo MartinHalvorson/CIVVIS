@@ -691,11 +691,34 @@ mod tests {
         );
 
         lane.enable_domination_lane_hands_over();
+        // ⚠ Four cities alone are not enough: the hand-over also needs an army
+        // that clears the elective-war bar against the weakest rival. Game 6
+        // declared at power 198 vs 384 and was down to one city by t170.
+        let mut outgunned = game.clone();
+        for rival in 1..4 {
+            let capital = outgunned.player_city_ids(rival)[0];
+            let around = outgunned.cities[&capital].pos;
+            for _ in 0..8 {
+                let site = open_land_near(&outgunned, around, 2);
+                outgunned.spawn_test_unit("swordsman", rival, site);
+            }
+        }
+        let plan = lane.assess(&outgunned, 0);
+        assert_eq!(
+            plan.strategy,
+            GrandStrategy::Expansion,
+            "gene on but outgunned: no war at half the rivals' power: {plan:?}"
+        );
+
+        for _ in 0..8 {
+            let site = open_land_near(&game, center, 2);
+            game.spawn_test_unit("swordsman", 0, site);
+        }
         let plan = lane.assess(&game, 0);
         assert_eq!(
             plan.strategy,
             GrandStrategy::Conquest,
-            "gene on: four cities in hand, the lane goes to war: {plan:?}"
+            "gene on with the army to back it: four cities in hand, the lane goes to war: {plan:?}"
         );
     }
 
