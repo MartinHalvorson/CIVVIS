@@ -1057,6 +1057,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_setup_starts_only_after_every_required_dropdown_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True) as setter, \
+             patch.object(civ6_play, "select_requested_map", return_value=True) as mapper, \
              patch.object(civ6_play, "select_requested_leader", return_value=True) as leader, \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point",
@@ -1073,17 +1074,17 @@ class Civ6PlayTest(unittest.TestCase):
             [
                 call((100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary),
                      panel=None, panel_out=mock.ANY),
-                # The map is a required row like any other: the panel is the only
-                # place it can be set, and a seat that starts alone on Continents
-                # cannot play a domination lane.
-                call((100, 33, 756, 480), "map_type", "Continents.lua", Path(temporary),
-                     panel=None, panel_out=mock.ANY),
                 call((100, 33, 756, 480), "map_size", "MAPSIZE_SMALL", Path(temporary),
                      panel=None, panel_out=mock.ANY),
                 call((100, 33, 756, 480), "speed", "GAMESPEED_ONLINE", Path(temporary),
                      panel=None, panel_out=mock.ANY),
             ],
         )
+        # The map is a required row too, but it is NOT a dropdown: it opens the
+        # SELECT MAP browser, so it goes through its own driver.
+        mapper.assert_called_once_with(
+            (100, 33, 756, 480), "Continents.lua", Path(temporary),
+            panel=None, panel_out=mock.ANY)
         shared = setter.call_args_list[0].kwargs["panel_out"]
         self.assertTrue(all(c.kwargs["panel_out"] is shared for c in setter.call_args_list))
         leader.assert_called_once_with(
@@ -1101,6 +1102,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_setup_refuses_to_start_without_a_visible_start_game_control(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True), \
+             patch.object(civ6_play, "select_requested_map", return_value=True), \
              patch.object(civ6_play, "select_requested_leader", return_value=True), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point", return_value=None), \
@@ -1126,6 +1128,7 @@ class Civ6PlayTest(unittest.TestCase):
                 return True
 
             with patch.object(civ6_play, "set_dropdown", return_value=True), \
+                 patch.object(civ6_play, "select_requested_map", return_value=True), \
                  patch.object(civ6_play, "select_requested_leader",
                               side_effect=select_leader), \
                  patch.object(civ6_play, "screenshot", return_value=False), \
@@ -1146,6 +1149,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_setup_refuses_to_start_when_requested_leader_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True), \
+             patch.object(civ6_play, "select_requested_map", return_value=True), \
              patch.object(civ6_play, "select_requested_leader", return_value=False), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "click_at") as click:
@@ -1795,6 +1799,151 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class MapPickerTests(unittest.TestCase):
+    """★★★★★ THE MAP ROW OPENS A BROWSER, NOT A DROPDOWN.
+
+    `set_dropdown` clicked the row and looked for the requested name in what it
+    assumed was a short open list. What actually appears is a full panel titled
+    `SELECT MAP`: filter tabs, a two-column scrolling grid of globe tiles with
+    the map name captioned under each, and a `Select Map` button at the foot
+    that commits. The browser opens on the alphabetical head of the roster, so
+    `Pangaea` is several screens below the fold and no amount of retrying makes
+    it visible. Measured live on run civvis-20260910T175742Z: three attempts,
+    `requested option was not visible` each time, then a refusal and no game.
+    """
+
+    BOUNDS = (0, 33, 864, 542)
+
+    def _drive(self, *, current, frames, commit=(432, 566),
+               verified=("Pangaea.lua", (432, 300))):
+        """Run the picker against a scripted screen; return what it did.
+
+        ``frames`` is one list of caption points per wheel step: an empty list
+        is a frame the caption is not on. ``current`` is what the Create Game
+        row reads before the browser opens.
+        """
+        clicks: list[tuple[int, int]] = []
+        wheel: list[int] = []
+        reads = [current] + ([verified] if verified else [None, None])
+        frame = iter(frames)
+
+        def labels(path, bounds, label):
+            if label == "Select Map":
+                return [(432, 120), commit] if commit else []
+            if label == "Back":
+                return [(700, 120)]
+            try:
+                return next(frame)
+            except StopIteration:
+                return []
+
+        def current_value(path, bounds, name):
+            return reads.pop(0) if reads else None
+
+        with mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_map_picker_labels", labels), \
+             mock.patch.object(civ6_play, "_map_picker_open", return_value=True), \
+             mock.patch.object(civ6_play, "_setup_current_value", current_value), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "park_setup_pointer"), \
+             mock.patch.object(civ6_play, "press_escape"), \
+             mock.patch.object(civ6_play, "click_at",
+                               side_effect=lambda x, y: clicks.append((x, y))), \
+             mock.patch.object(civ6_play.macos_input, "move"), \
+             mock.patch.object(civ6_play.macos_input, "scroll",
+                               side_effect=wheel.append), \
+             mock.patch.object(civ6_play.time, "sleep"):
+            chosen = civ6_play.select_requested_map(
+                self.BOUNDS, "Pangaea.lua", Path("/tmp"))
+        return chosen, clicks, wheel
+
+    def test_the_map_already_shown_never_opens_the_browser(self):
+        """The fast path is the one that protects every other host. A run that
+        wants the map the row already shows must not click anything at all —
+        which is why enabling map selection cannot disturb a Continents host."""
+        chosen, clicks, wheel = self._drive(
+            current=("Pangaea.lua", (432, 300)), frames=[])
+        self.assertTrue(chosen)
+        self.assertEqual(clicks, [])
+        self.assertEqual(wheel, [])
+
+    def test_the_browser_is_walked_until_the_caption_appears(self):
+        """Three empty frames, then the caption: the wheel steps three times,
+        the caption is clicked, and the commit button after it."""
+        chosen, clicks, wheel = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[], [], [], [(500, 430)]])
+        self.assertTrue(chosen)
+        self.assertEqual(clicks, [(432, 300), (500, 430), (432, 566)])
+        # One reset to the top of the roster, then one step per empty frame.
+        self.assertEqual(wheel, [civ6_play.MAP_PICKER_SCROLL_RESET]
+                         + [civ6_play.MAP_PICKER_SCROLL_AMOUNT] * 3)
+
+    def test_the_roster_is_rewound_before_it_is_walked(self):
+        """⚠ Firaxis retains the grid's scroll position between openings, so a
+        retry can begin BELOW the wanted map and never reach it going down."""
+        _, _, wheel = self._drive(current=("Continents.lua", (432, 300)),
+                                  frames=[[(500, 430)]])
+        self.assertEqual(wheel[0], civ6_play.MAP_PICKER_SCROLL_RESET)
+        self.assertGreater(civ6_play.MAP_PICKER_SCROLL_RESET, 0, "rewind scrolls UP")
+        self.assertLess(civ6_play.MAP_PICKER_SCROLL_AMOUNT, 0, "walking scrolls DOWN")
+
+    def test_a_caption_that_never_appears_is_refused_rather_than_guessed(self):
+        """No tile is clicked and no coordinate is invented; the caller refuses
+        to start, which is what kept a wrong map off the ledger."""
+        chosen, clicks, wheel = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[] for _ in range(civ6_play.MAP_PICKER_SCROLL_STEPS)])
+        self.assertFalse(chosen)
+        # The row click that opened the browser, then the Back control. No tile.
+        self.assertEqual(clicks, [(432, 300), (700, 120)])
+        self.assertEqual(len(wheel), civ6_play.MAP_PICKER_SCROLL_STEPS + 1)
+
+    def test_a_commit_that_did_not_take_is_not_reported_as_success(self):
+        """The panel can highlight a tile and commit nothing. The Create Game
+        row is the only witness that counts."""
+        chosen, _, _ = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[(500, 430)]],
+            verified=None)
+        self.assertFalse(chosen)
+
+    def test_the_commit_button_is_the_lowest_select_map_on_screen(self):
+        """⚠⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS. `SELECT MAP`
+        titles the panel and `Select Map` commits it, and `_normalized_label`
+        casefolds both to one string — so taking the first match clicks the
+        heading, which does nothing, and the game never starts."""
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(432, 120), (432, 566), (432, 300)]):
+            self.assertEqual(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS),
+                (432, 566))
+        with mock.patch.object(civ6_play, "_map_picker_labels", return_value=[]):
+            self.assertIsNone(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS))
+
+    def test_one_select_map_label_is_not_enough_to_call_the_browser_open(self):
+        """A single match cannot separate a live panel from one stray label, so
+        the panel is only 'open' on two matches or on its own filter tab."""
+        def labels(path, bounds, label):
+            return {"Select Map": [(432, 120)], "All Maps": []}.get(label, [])
+
+        with mock.patch.object(civ6_play, "_map_picker_labels", labels):
+            self.assertFalse(civ6_play._map_picker_open(Path("/tmp/x.png"), self.BOUNDS))
+
+        def both(path, bounds, label):
+            return {"Select Map": [(432, 120), (432, 566)]}.get(label, [])
+
+        with mock.patch.object(civ6_play, "_map_picker_labels", both):
+            self.assertTrue(civ6_play._map_picker_open(Path("/tmp/x.png"), self.BOUNDS))
+
+        def tab(path, bounds, label):
+            return {"All Maps": [(500, 150)]}.get(label, [])
+
+        with mock.patch.object(civ6_play, "_map_picker_labels", tab):
+            self.assertTrue(civ6_play._map_picker_open(Path("/tmp/x.png"), self.BOUNDS))
+
+
 class MapSelectionTests(unittest.TestCase):
     """★★★★★ THE MAP WAS THE ONE LOBBY ROW THE PANEL NEVER SET.
 
@@ -1833,7 +1982,12 @@ class MapSelectionTests(unittest.TestCase):
             driven.append((name, value))
             return True
 
+        def record_map(bounds, value, run_dir, panel=None, panel_out=None):
+            driven.append(("map_type", value))
+            return True
+
         with mock.patch.object(civ6_play, "set_dropdown", record), \
+             mock.patch.object(civ6_play, "select_requested_map", record_map), \
              mock.patch.object(civ6_play, "select_requested_leader",
                                return_value=False):
             started = civ6_play.configure_and_start(

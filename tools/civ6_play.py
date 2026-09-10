@@ -2009,6 +2009,214 @@ def write_leader_hint(hint_dir: Path | None, leader: str | None, step: int) -> N
         print(f"[setup] leader: could not remember the picker step: {error}", flush=True)
 
 
+#: ★★★★★ THE MAP ROW IS NOT A DROPDOWN, AND THAT IS WHY THIS KEEPS FAILING.
+#:
+#: Difficulty, speed and map size drop a short list under their closed box.
+#: Clicking the map row instead opens a FULL-PANEL BROWSER titled `SELECT MAP`:
+#: three filter tabs (`Official Maps` / `World Builder Maps` / `All Maps`), a
+#: two-column scrolling grid of globe tiles with the map name captioned beneath
+#: each, a `Map Info` pane, a `BACK` control, and a `Select Map` button at the
+#: foot that commits the choice.
+#:
+#: So `set_dropdown` could never work here. It clicked the row, looked for the
+#: requested name in what it assumed was an open list, and found nothing —
+#: because the browser opens on the alphabetical head of the roster (4-Leaf
+#: Clover, 6-Armed Snowflake, Archipelago, Continents, …) and `Pangaea` is
+#: several screens below the fold. Measured live 2026-09-10 on run
+#: civvis-20260910T175742Z: three attempts, `requested option was not visible`
+#: each time, then `refusing to click an unverified coordinate` — the refusal
+#: doing its job, and no game starting. It is also, almost certainly, why the
+#: first attempt at map selection "broke setup outright" and was reverted: a
+#: guessed dropdown row index lands on this panel's tabs or tiles.
+#:
+#: The browser is the same shape as the DLC leader picker, so it gets the same
+#: treatment: open it, walk it with the wheel, match the caption by TEXT, click
+#: it, commit, and read the choice back off the Create Game row afterwards.
+#:
+#: The tile grid, as window fractions, for the enlarged OCR crop. Vision reads
+#: a caption inconsistently in the 864x542-point game quadrant and reliably at
+#: 4x — the same recovery `_leader_ocr` already needs.
+MAP_PICKER_STRIP = (0.26, 0.28, 0.62, 0.94)
+MAP_PICKER_OPEN_ATTEMPTS = 4
+#: The roster is ~40 official maps in a two-column grid. Wheel steps overlap on
+#: purpose: a step that scrolled exactly one row could hide a caption between
+#: two frames.
+MAP_PICKER_SCROLL_STEPS = 24
+MAP_PICKER_SCROLL_RESET = 20
+MAP_PICKER_SCROLL_AMOUNT = -3
+
+
+def _map_picker_labels(path: Path, bounds: tuple[int, int, int, int],
+                       label: str) -> list[tuple[int, int]]:
+    """Screen points where ``label`` is captioned in the SELECT MAP browser.
+
+    Both OCR passes are run and their results merged, rather than the crop
+    being a fallback only when the full-desktop pass finds nothing: the grid
+    spans more of the window than the general menu strip covers, and the pass
+    that reads the top rows is not always the pass that reads the bottom ones.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return []
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    observations = list(_menu_ocr_observations(path))
+    observations.extend(_menu_crop_ocr(path, bounds, MAP_PICKER_STRIP, "map-picker"))
+    found: list[tuple[int, int]] = []
+    for observation in observations:
+        if not _menu_label_matches(str(observation.get("text", "")), label):
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if x <= px <= x + w and y <= py <= y + h:
+            found.append((px, py))
+    return found
+
+
+def _map_picker_commit_point(path: Path, bounds: tuple[int, int, int, int]
+                             ) -> tuple[int, int] | None:
+    """The `Select Map` button at the panel's foot.
+
+    ⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS. `SELECT MAP` titles the
+    panel and `Select Map` commits it, and `_normalized_label` casefolds both to
+    the same string — so the first match is the heading and clicking it does
+    nothing. Take the LOWEST match on screen.
+    """
+    points = _map_picker_labels(path, bounds, "Select Map")
+    return max(points, key=lambda point: point[1]) if points else None
+
+
+def _map_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Whether the SELECT MAP browser is the thing currently on screen.
+
+    Two independent signals, because either alone is ambiguous: the heading and
+    the commit button render identical text, so a single `Select Map` match
+    cannot separate a live panel from one stray label; and `All Maps` is a
+    filter tab that exists only on this panel.
+    """
+    return (len(_map_picker_labels(path, bounds, "Select Map")) >= 2
+            or bool(_map_picker_labels(path, bounds, "All Maps")))
+
+
+def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
+                         run_dir: Path, panel: Path | None = None,
+                         panel_out: dict | None = None) -> bool:
+    """Choose ``map_script`` in the SELECT MAP browser and read the choice back.
+
+    The fast path matters as much as the slow one: a run that already wants the
+    map the row shows returns without opening anything, so every host that
+    plays the default Continents is untouched by this and never sees the
+    browser at all.
+    """
+    label = _setup_option_label(map_script)
+    x, y, w, h = bounds
+    closed_shot = run_dir / "map-picker-closed.png"
+    open_shot = run_dir / "map-picker-open.png"
+
+    for attempt in range(1, MAP_PICKER_OPEN_ATTEMPTS + 1):
+        if attempt == 1 and panel is not None and panel.is_file():
+            closed = panel
+        else:
+            closed = closed_shot
+            if not screenshot(closed):
+                print(f"[setup] map picker frame was unreadable (attempt {attempt}); "
+                      "retrying without guessing", flush=True)
+                continue
+        # A click that took effect late leaves the browser open while this
+        # attempt's own capture still showed the closed row. Reusing it is
+        # safer than clicking again, which would land inside the open panel.
+        if attempt > 1 and _map_picker_open(closed, bounds):
+            print(f"[setup] map browser opened after an unreadable frame "
+                  f"(attempt {attempt})", flush=True)
+            break
+        current = _setup_current_value(closed, bounds, "map_type")
+        if current is None:
+            print(f"[setup] map_type: current value was not readable "
+                  f"(attempt {attempt})", flush=True)
+            continue
+        current_value, current_point = current
+        if current_value == map_script:
+            if panel_out is not None:
+                panel_out["shot"] = closed
+            print(f"[setup] map_type: already verified {label}", flush=True)
+            return True
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        click_at(*current_point)
+        time.sleep(1.5)
+        if not screenshot(open_shot):
+            print(f"[setup] map picker frame was unreadable after its click "
+                  f"(attempt {attempt}); retrying without guessing", flush=True)
+            continue
+        if _map_picker_open(open_shot, bounds):
+            break
+        print(f"[setup] map browser did not open (attempt {attempt})", flush=True)
+    else:
+        print("[setup] map_type: the SELECT MAP browser never opened", flush=True)
+        return False
+
+    def wheel(amount: int, settle: float) -> None:
+        macos_input.move(int(x + w * 0.43), int(y + h * 0.60))
+        macos_input.scroll(amount)
+        time.sleep(settle)
+
+    # Firaxis retains the grid's scroll position between openings, so a retry
+    # can begin below Pangaea and never reach it going down.
+    wheel(MAP_PICKER_SCROLL_RESET, 1.0)
+
+    for step in range(MAP_PICKER_SCROLL_STEPS):
+        shot = run_dir / f"map-picker-{step:02d}.png"
+        screenshot(shot)
+        points = _map_picker_labels(shot, bounds, label)
+        if not points:
+            wheel(MAP_PICKER_SCROLL_AMOUNT, 0.8)
+            continue
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        click_at(*points[0])
+        time.sleep(1.0)
+        chosen = run_dir / "map-picker-chosen.png"
+        screenshot(chosen)
+        commit = _map_picker_commit_point(chosen, bounds)
+        if commit is None:
+            print(f"[setup] map_type: {label} was clicked but the Select Map "
+                  "button was not readable", flush=True)
+            break
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        click_at(*commit)
+        park_setup_pointer(bounds)
+        time.sleep(1.5)
+        # The Create Game row is the only witness that counts: the panel can
+        # highlight a tile and still commit nothing.
+        for settle in (0.0, 1.5):
+            if settle:
+                time.sleep(settle)
+            verified = run_dir / "map-picker-selected.png"
+            screenshot(verified)
+            selected = _setup_current_value(verified, bounds, "map_type")
+            if selected is not None and selected[0] == map_script:
+                if panel_out is not None:
+                    panel_out["shot"] = verified
+                print(f"[setup] map_type: selected and verified {label} "
+                      f"at wheel step {step}", flush=True)
+                return True
+        print(f"[setup] map_type: {label} was committed but the row still reads "
+              f"{selected[0] if selected else 'nothing readable'}", flush=True)
+        break
+
+    # Leave the panel rather than abandoning the game on top of it: the caller
+    # refuses to start, and the next attempt needs a Create Game screen to
+    # photograph, not a browser nobody closed.
+    back = _map_picker_labels(run_dir / f"map-picker-00.png", bounds, "Back")
+    if back:
+        click_at(*back[0])
+    else:
+        press_escape(1)
+    print(f"[setup] map_type: {label} was not found in the SELECT MAP browser",
+          flush=True)
+    return False
+
+
 def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
                             run_dir: Path, panel: Path | None = None,
                             panel_out: dict | None = None,
@@ -2389,12 +2597,13 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     # row index, four consecutive attempts logged "no game started", and no `seat`
     # event ever arrived. The revert asked for two things before it came back --
     # "OCR on the dropdown rows, or reading the selected value back off the screen
-    # before committing to Start Game". `set_dropdown` now does BOTH, for every row:
-    # it locates the option by its rendered label (`_observed_label_point`, which
-    # matches text, not a position), it re-reads the closed box afterwards
-    # (`_setup_current_value`, anchored on the row's own heading), and it refuses to
-    # click an unverified coordinate rather than guess one. So map type is not a
-    # special case any more and does not get a special path.
+    # before committing to Start Game". Both are done now: the option is located by
+    # its rendered label and the Create Game row is re-read afterwards, and an
+    # unverified coordinate is refused rather than clicked.
+    #
+    # ⚠ But the map row is NOT a dropdown, which is the part the revert did not know
+    # and the reason a guessed index broke setup outright: it opens the `SELECT MAP`
+    # browser. `select_requested_map` drives that panel.
     #
     # The map is also the axis with the strongest check on the far side: the mod
     # reports `MapConfiguration.GetScript()` in the `seat` event and
@@ -2404,12 +2613,23 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     #
     # Map type is chosen BEFORE map size: the size list is the one the chosen script
     # offers, so ordering it this way verifies the size against the final map.
+    #
+    # ⚠ AND IT IS NOT SET THE SAME WAY. Three of these four rows are dropdowns; the
+    # map row opens the full `SELECT MAP` browser instead, which is why it needs
+    # `select_requested_map` and why `set_dropdown` could never do it. That
+    # function's header records what the panel actually is.
+    def set_row(name: str, value: str) -> bool:
+        if name == "map_type":
+            return select_requested_map(bounds, value, run_dir,
+                                        panel=panel["shot"], panel_out=panel)
+        return set_dropdown(bounds, name, value, run_dir, panel=panel["shot"],
+                            panel_out=panel)
+
     for name, value in (("difficulty", args.difficulty),
                         ("map_type", args.map),
                         ("map_size", args.map_size),
                         ("speed", args.speed)):
-        if not set_dropdown(bounds, name, value, run_dir, panel=panel["shot"],
-                            panel_out=panel):
+        if not set_row(name, value):
             print(f"[setup] {name} was NOT set; refusing to start an unverified game",
                   flush=True)
             return False
