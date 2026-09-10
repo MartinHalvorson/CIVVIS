@@ -5149,7 +5149,7 @@ impl Game {
         let tile = self.map.get(pos)?;
         if tile.flooded
             || tile.submerged
-            || tile.improvement.is_some()
+            || tile.improvement.as_deref() == Some("national_park")
             || tile.district.is_some()
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
