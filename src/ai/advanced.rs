@@ -1764,6 +1764,9 @@ struct BarbarianCaptureThreat {
 
 #[derive(Clone)]
 pub struct AdvancedAi {
+    /// Current production players deliberate from an observation. Frozen
+    /// historical evaluation anchors retain their original execution contract.
+    observed_player: bool,
     base: BasicAi,
     plan: Option<StrategicPlan>,
     /// The single authority for an elective power-spike attack. Every
@@ -7610,6 +7613,7 @@ impl AdvancedAi {
             lane_lost: false,
             narrows_atlas: RefCell::new(chokepoints::NarrowsAtlas::default()),
             work_pool: None,
+            observed_player: false,
             belief: BeliefState::new(),
             battlefront_observation: true,
             live_trader_route_adapter: false,
@@ -21916,12 +21920,18 @@ impl AdvancedAi {
         }
     }
 
-    /// Current production planners wait for the shared clock before they
-    /// specialize. The frozen `advanced_v1` controller predates that policy,
+    /// Assigned Culture games begin their tourism buildup earlier; other
+    /// lanes keep the shared clock. The frozen `advanced_v1` predates that policy,
     /// so it retains its historical always-specialized behavior and therefore
     /// keeps its pinned decision stream.
     fn phase_specialization_active(&self, g: &Game) -> bool {
-        !self.victory_planning || Self::victory_specialization_active(g)
+        // An assigned Culture lane needs time to fill museums and accumulate
+        // tourism before its finishing purchases. Start that buildup after
+        // the first third; other lanes retain the shared halfway clock.
+        let culture_buildup = self.victory_target == Some(VictoryTarget::Culture)
+            && g.max_turns > 0
+            && g.turn.saturating_mul(3) >= g.max_turns.min(g.game_speed.turn_limit());
+        !self.victory_planning || culture_buildup || Self::victory_specialization_active(g)
     }
 
     /// Count completed and queued Harbors so the late Science lane can see a
@@ -40051,11 +40061,15 @@ impl Ai for AdvancedAi {
     }
 
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
-        // Stamp the context once, for every layer. Nothing below repeats the
-        // turn number or the acting civilization.
-        self.journal().begin_turn(g.turn, pid);
-        let pool = self.work_pool.clone();
-        g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+        if self.observed_player && !g.players[pid].is_minor && !g.players[pid].is_barbarian {
+            crate::ai::player::take_turn(self, g, pid);
+        } else {
+            self.plan_observed_turn(g, pid);
+        }
+    }
+
+    fn uses_player_observation(&self) -> bool {
+        self.observed_player
     }
 
     fn attach_journal(&mut self, journal: Journal) {
@@ -40064,6 +40078,16 @@ impl Ai for AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Engine adapters call this only on a disposable, observation-limited
+    /// board. The authoritative native entry point remains `Ai::take_turn`.
+    pub fn plan_observed_turn(&mut self, g: &mut Game, pid: usize) {
+        // Stamp the context once, for every layer. Nothing below repeats the
+        // turn number or the acting civilization.
+        self.journal().begin_turn(g.turn, pid);
+        let pool = self.work_pool.clone();
+        g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
+    }
+
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.builder_support.clear();
         self.battlefront_frame = None;

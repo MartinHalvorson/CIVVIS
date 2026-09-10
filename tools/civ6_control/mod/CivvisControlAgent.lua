@@ -647,6 +647,8 @@ local function survey()
 		-- strike) is exported again and the same turn re-planned, up to
 		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		action_transitions = cfg.ActionTransitions == true,
+		isolated_action_probes = cfg.IsolatedActionProbes == true,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
 		-- deltas, not only with the periodic sweep. See CivvisTiles.
 		tile_delta = cfg.TileDelta ~= false,
@@ -5992,7 +5994,19 @@ CivvisGreatPersonActivationPlots = function(unit, gp, pid, gwSurvey, openPlots)
 	return activationPlots;
 end;
 
-local function exportState(player, pid, turn, frame)
+-- WorldInput.lua:1041 gates foreign units on BOTH visible terrain and
+-- PlayersVisibility:IsUnitVisible(unit); MapSearchPanel.lua:475 does too.
+-- A submarine on a visible plot is not necessarily detected. Missing API
+-- evidence must not silently grant the controller omniscience.
+CivvisUnitVisible = function(pid, unit)
+	return try(function()
+		local visibility = PlayersVisibility[pid];
+		return visibility:IsVisible(unit:GetX(), unit:GetY())
+			and visibility:IsUnitVisible(unit);
+	end, false) == true;
+end;
+
+local function exportState(player, pid, turn, frame, eventKind)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
 	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a
@@ -7235,7 +7249,7 @@ local function exportState(player, pid, turn, frame)
 						-- answers in a gameplay context. A visible tile is not a
 						-- detection result, though: `other:GetUnits()` still contains
 						-- a foreign Spy while its operation remains secret.
-						if name ~= "UNIT_SPY" and PlayersVisibility[pid]:IsVisible(ux, uy) then
+						if name ~= "UNIT_SPY" and CivvisUnitVisible(pid, unit) then
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
@@ -7760,7 +7774,7 @@ local function exportState(player, pid, turn, frame)
 				for _, unit in minor:GetUnits():Members() do
 					pcall(function()
 						local ux, uy = unit:GetX(), unit:GetY();
-						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+						if CivvisUnitVisible(pid, unit) then
 							local name = unitTypeName(unit);
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
@@ -8088,7 +8102,7 @@ local function exportState(player, pid, turn, frame)
 		pcall(function()
 			for _, unit in other:GetUnits():Members() do
 				local ux, uy = unit:GetX(), unit:GetY();
-				if PlayersVisibility[pid]:IsVisible(ux, uy) then
+				if CivvisUnitVisible(pid, unit) then
 					local name = try(function()
 						return GameInfo.Units[unit:GetUnitType()].UnitType;
 					end, "?");
@@ -8442,7 +8456,7 @@ local function exportState(player, pid, turn, frame)
 			end);
 		end
 	end
-	emit("state", {
+	emit(eventKind or "state", {
 		turn = turn,
 		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
 		-- (see CivvisFrames). The brain re-plans the same turn on a frame.
@@ -14583,12 +14597,104 @@ end
 -- Exposed solely for the Lua 5.1 regression.  A bare global is required: the
 -- Civilization VI UI sandbox has no `_G` table.  Reusing the existing local
 -- handler avoids consuming another main-chunk register.
+-- Opt-in request-boundary evidence. These exports deliberately are NOT
+-- `state` events: the brain must never wake on a half-executed order batch.
+-- A request can enqueue asynchronous work, so these are issue-time readings,
+-- never an assertion that movement/combat has settled.
+CivvisTransitions = { sequence = 0, apply = applyOrder };
+applyOrder = function(player, pid, row, turn)
+	if cfg.ActionTransitions ~= true then
+		return CivvisTransitions.apply(player, pid, row, turn);
+	end
+	CivvisTransitions.sequence = CivvisTransitions.sequence + 1;
+	local sequence = CivvisTransitions.sequence;
+	local frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0;
+	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = frame,
+		order = { kind = row.kind, subject = row.subject, verb = row.verb, x = row.x, y = row.y } });
+	local before = pcall(function() exportState(player, pid, turn, frame, "action_transition_before"); end);
+	local safe, accepted, why = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
+	local after = pcall(function() exportState(player, pid, turn, frame, "action_transition_after"); end);
+	emit("action_transition_end", { sequence = sequence, turn = turn, frame = frame,
+		accepted = safe and accepted == true, why = tostring(why or ""),
+		before_export = before, after_export = after, phase = "request_boundary", threw = not safe });
+	if not safe then error(accepted); end
+	return accepted, why;
+end;
 CivvisApplyOrder = applyOrder;
 CivvisResolveActions = resolveActions;
 CivvisOrdersReady = ordersReady;
 CivvisFetchOrders = fetchOrders;
 CivvisExportState = exportState;
 CivvisExportTiles = exportTiles;
+
+-- Diagnostic-only serial movement probes, before the normal opening planner.
+-- While pending, tick returns before beginTurn/settleTurn can issue any other
+-- orders. Readiness is an observed arrival AND spent movement, not a timer or
+-- RequestOperation's acknowledgement. No production run enables this mode.
+CivvisActionProbe = { lastTurn = -1, preparing = -1, pending = nil };
+CivvisActionProbe.tick = function(player, pid, turn)
+	if cfg.IsolatedActionProbes ~= true then return false; end
+	local pending = CivvisActionProbe.pending;
+	if pending ~= nil then
+		pending.ticks = pending.ticks + 1;
+		local unit = liveUnit(pid, pending.row.subject);
+		local arrived = unit ~= nil and try(function()
+			return unit:GetX() == pending.row.x and unit:GetY() == pending.row.y
+				and unit:GetMovesRemaining() < pending.moves;
+		end, false);
+		if not arrived and pending.ticks < 120 and turn == pending.turn then return true; end
+		local after = pcall(function()
+			exportState(player, pid, turn, 0, "action_transition_after");
+		end);
+		emit("action_transition_end", { sequence = pending.sequence, turn = turn, frame = 0,
+			accepted = pending.accepted, before_export = pending.before, after_export = after,
+			threw = false, phase = "settled", settled = arrived == true and turn == pending.turn,
+			why = arrived and "observed_arrival" or "probe_timeout", isolated = true });
+		CivvisActionProbe.pending = nil;
+		return false;
+	end
+	if turn > 10 or CivvisActionProbe.lastTurn == turn then return false; end
+	if CivvisActionProbe.preparing ~= turn then
+		CivvisActionProbe.preparing = turn;
+		CivvisBoard.cancelQueuedPaths(player, pid, turn);
+		return true;
+	end
+	CivvisActionProbe.lastTurn = turn;
+	local row, moves;
+	eachUnit(player, function(unit)
+		if row ~= nil then return; end
+		local spec = GameInfo.Units[unitTypeName(unit)];
+		if spec == nil or (spec.Combat or 0) <= 0 or unit:GetMovesRemaining() <= 0 then return; end
+		for direction = 0, 5 do
+			local plot = Map.GetAdjacentPlot(unit:GetX(), unit:GetY(), direction);
+			if plot ~= nil and not plot:IsWater() and not plot:IsImpassable()
+				and PlayersVisibility[pid]:IsVisible(plot:GetX(), plot:GetY())
+				and (plot:GetOwner() == pid or plot:GetOwner() < 0)
+				and plot:GetUnitCount() == 0 then
+				row = { kind = "unit", subject = unit:GetID(), verb = "MOVE_TO", x = plot:GetX(), y = plot:GetY() };
+				moves = unit:GetMovesRemaining();
+				break;
+			end
+		end
+	end);
+	if row == nil then return false; end
+	exportTiles(player, pid, turn);
+	CivvisTransitions.sequence = CivvisTransitions.sequence + 1;
+	local sequence = CivvisTransitions.sequence;
+	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = 0, order = row,
+		isolated = true, source = "diagnostic_probe" });
+	local before = pcall(function() exportState(player, pid, turn, 0, "action_transition_before"); end);
+	local safe, accepted = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
+	if not safe or not accepted then
+		emit("action_transition_end", { sequence = sequence, turn = turn, frame = 0,
+			accepted = false, before_export = before, after_export = false, threw = not safe,
+			phase = "settled", settled = false, isolated = true, why = "probe_refused" });
+		return false;
+	end
+	CivvisActionProbe.pending = { row = row, moves = moves, sequence = sequence,
+		turn = turn, accepted = true, before = before, ticks = 0 };
+	return true;
+end;
 
 -- Pick the major civilization that is closest to a diplomatic victory.  The
 -- World Congress vote needs this independently of the rest of the turn loop,
@@ -18976,7 +19082,9 @@ local function tick()
 		if turn ~= lastTurnSeen then
 			-- See `movementNotYetRestored`: the board waits for the engine to
 			-- hand the units their turn's movement, not the previous turn's dregs.
-			if cfg.CivvisDecides and CivvisBoard.movementNotYetRestored(player, turn) then return; end
+			if cfg.CivvisDecides and not (cfg.IsolatedActionProbes == true and CivvisActionProbe.preparing == turn)
+				and CivvisBoard.movementNotYetRestored(player, turn) then return; end
+			if CivvisActionProbe.tick(player, pid, turn) then return; end
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
