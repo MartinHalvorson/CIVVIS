@@ -2,6 +2,155 @@ use super::*;
 use crate::ai::{run_game, Ai};
 
 #[test]
+fn a_finishing_batch_can_fire_more_shots_than_the_replan_budget() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    game.at_war.insert((0, 1));
+    let pos = (8, 6);
+    let target = game.spawn_unit("warrior", 1, pos);
+    game.units.get_mut(&target).unwrap().hp = 1000;
+    let attackers: Vec<_> = crate::hex::neighbors(pos)
+        .into_iter()
+        .take(REPLAN_FRAMES + 2)
+        .map(|pos| game.spawn_unit("archer", 0, pos))
+        .collect();
+    let finishing = super::super::finishing::WarFinishingVolley {
+        execution: attackers
+            .iter()
+            .map(|unit| {
+                (
+                    target,
+                    vec![Action::Ranged {
+                        unit: *unit,
+                        target: pos,
+                    }],
+                )
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let research = game
+        .legal_actions(0)
+        .into_iter()
+        .find(|a| matches!(a, Action::Research { .. }))
+        .unwrap();
+    let prior_research = game.players[0].research.clone();
+    assert!(execute_frame(
+        &mut game,
+        0,
+        &finishing,
+        [(0, research)].iter()
+    ));
+    for unit in attackers {
+        assert_eq!(game.units[&unit].attacks_left, 0);
+    }
+    assert_eq!(
+        game.players[0].research, prior_research,
+        "observe the full volley before ordinary planning"
+    );
+    assert!(!game.players[0].counters.contains_key("player:refused"));
+}
+
+#[test]
+fn ordinary_batches_keep_their_throughput_before_refreshing() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    let founding = game
+        .legal_actions(0)
+        .into_iter()
+        .find(|a| matches!(a, Action::FoundCity { .. }))
+        .unwrap();
+    let research = game
+        .legal_actions(0)
+        .into_iter()
+        .find(|a| matches!(a, Action::Research { .. }))
+        .unwrap();
+    let prior_research = game.players[0].research.clone();
+    assert!(execute_frame(
+        &mut game,
+        0,
+        &Default::default(),
+        [(0, founding), (0, research)].iter()
+    ));
+    assert_eq!(game.player_city_ids(0).len(), 1);
+    assert_ne!(game.players[0].research, prior_research);
+}
+
+#[test]
+fn finishing_refusal_stops_other_lines_and_ordinary_orders() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    let target = game.player_unit_ids(1)[0];
+    let research = game
+        .legal_actions(0)
+        .into_iter()
+        .find(|a| matches!(a, Action::Research { .. }))
+        .unwrap();
+    let prior_research = game.players[0].research.clone();
+    let finishing = super::super::finishing::WarFinishingVolley {
+        execution: vec![
+            (target, vec![Action::FoundCity { unit: u32::MAX }]),
+            (target, vec![research.clone()]),
+        ],
+        ..Default::default()
+    };
+    assert!(execute_frame(
+        &mut game,
+        0,
+        &finishing,
+        [(0, research)].iter()
+    ));
+    assert_eq!(game.players[0].research, prior_research);
+    assert_eq!(game.players[0].counters["player:refused"], 1);
+}
+
+#[test]
+fn refused_action_invalidates_batch_without_mutating_authoritative_assets() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    let units = game.units.clone();
+    let gold = game.players[0].gold;
+    assert!(execute_observed_action(&mut game, 0, &Action::FoundCity { unit: u32::MAX }).is_none());
+    assert_eq!(game.players[0].counters["player:refused"], 1);
+    assert_eq!(game.players[0].gold, gold);
+    assert_eq!(
+        serde_json::to_value(game.units.values().collect::<Vec<_>>()).unwrap(),
+        serde_json::to_value(units.values().collect::<Vec<_>>()).unwrap()
+    );
+}
+
+#[test]
+fn successful_allocation_requires_new_observation_but_research_does_not() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    let research = game
+        .legal_actions(0)
+        .into_iter()
+        .find(|a| matches!(a, Action::Research { .. }))
+        .unwrap();
+    assert_eq!(
+        execute_observed_action(&mut game, 0, &research),
+        Some(false)
+    );
+    let founding = game
+        .legal_actions(0)
+        .into_iter()
+        .find(|a| matches!(a, Action::FoundCity { .. }))
+        .unwrap();
+    assert_eq!(execute_observed_action(&mut game, 0, &founding), Some(true));
+    assert_eq!(game.player_city_ids(0).len(), 1);
+}
+
+#[test]
+fn an_executor_never_applies_another_seats_plan_after_turn_changes() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    game.current = 1;
+    let before = serde_json::to_value(&game).unwrap();
+    assert!(execute_observed_action(&mut game, 0, &Action::EndTurn).is_none());
+    assert_eq!(serde_json::to_value(&game).unwrap(), before);
+}
+
+#[test]
 fn targets_are_seeded_per_seat_without_consuming_genome_randomness() {
     let targets = parse_targets(TRAINING_TARGETS).unwrap();
     let mut seen = std::collections::BTreeSet::new();
