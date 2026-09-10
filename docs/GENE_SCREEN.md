@@ -70,7 +70,7 @@ gene is on and when gene is off."*
 | lanes | **all six**; no restricted-lane regime |
 | civs | shuffled per map |
 | majors' rung | **Emperor** — `--difficulty emperor`, the documented invocation since 2026-08-25: the live Civilization VI verification ladder plays Emperor and above, and a screen at the engine's Prince default prices genes against a slower economy than the one they are verified in. ⚠ Provenance, not an enforced leg: the code's default stays Prince (nothing was changed silently), the header records the rung, and the ledger pools both — read `difficulty` on a source before comparing two |
-| barbarians | Immortal, their own rung whatever the majors play |
+| barbarians | Deity, their own tournament rung whatever the majors play |
 
 `gene_screen --games N --difficulty emperor --out rows.jsonl` *is* the
 screen. Every **map** flag still exists, and every one of them turns a batch
@@ -2206,7 +2206,15 @@ combat, experience and era-boost bonuses of `data/difficulties.json` — and
 every screen so far played the engine's Prince default while the live
 Civilization VI verification ladder plays Emperor and above. Two flags now
 name the majors' rung, and the barbarian seat keeps its own rung
-(`default_barbarian_difficulty`, Immortal) whatever the majors play:
+(`SCREEN_BARBARIAN_DIFFICULTY`, Deity) whatever the majors play. The
+2026-09-10 operator change applies only to new tournament games; normal
+games retain their Immortal default. New headers record `barbarian_difficulty`
+and analysis refuses to merge segments with different recorded barbarian
+rungs. Historical headers without that field remain explicitly unrecorded,
+not retroactively labeled Deity. Keep the existing Immortal batch separate
+when switching to a new Deity batch.
+
+The majors' flags remain independent:
 
 - `--difficulty emperor` — one rung for every game; the header records
   `difficulty: "emperor"` and every row carries `difficulty`.

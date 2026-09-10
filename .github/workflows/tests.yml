@@ -212,6 +212,10 @@ jobs:
         if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
         run: cargo nextest run --cargo-profile ci --locked
 
+      - name: Tournament runner settings and provenance regressions
+        if: github.event_name != 'pull_request' || steps.scope.outputs.rust_gate == 'true'
+        run: cargo test --profile ci --locked --features developer-tools --bin gene_screen
+
       # ⚠ The worktree audit is the only guard against a whole class of loss
       # that is invisible to every other gate here: finished work left unstaged
       # in an agent worktree, which lives on exactly one disk and has already
