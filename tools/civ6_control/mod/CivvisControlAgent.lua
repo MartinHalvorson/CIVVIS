@@ -5491,7 +5491,7 @@ end
 -- makes Palace slots take all non-artifact kinds) and, when the slot's
 -- building hangs off a district, THAT DISTRICT'S PLOT INDEX — the tile a
 -- person must stand on for the engine to take Activate. Wonders keep
--- `plot = nil`: their buildings name no `PrerequisiteDistrict`, so their tile
+-- `plot = nil`: their buildings name no `PrereqDistrict`, so their tile
 -- stays unknown and the walk falls back to the engine's own highlight.
 --
 -- `district_plots` is every completed district tile we own, any type: a
@@ -5579,9 +5579,9 @@ CivvisGreatWorks.survey = function(player, turn)
 							if acceptSet ~= nil then
 								survey.slots[#survey.slots + 1] = {
 									accepts = acceptSet,
-									plot = buildingInfo.PrerequisiteDistrict ~= nil
+									plot = buildingInfo.PrereqDistrict ~= nil
 										and plotByDistrict[
-											buildingInfo.PrerequisiteDistrict]
+											buildingInfo.PrereqDistrict]
 										or nil,
 								};
 							end
