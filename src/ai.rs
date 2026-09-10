@@ -3064,8 +3064,8 @@ pub struct BasicAi {
     /// old gate vetoes every Trader when any city in the empire has a local
     /// barbarian alarm, so one Galley beside a remote coast can leave a safe
     /// capital's route capacity empty through insolvency. Entrant
-    /// `solvency-first-trade-slot`; deployment-on after its +8.07 pp displayed
-    /// pooled Diff.
+    /// `solvency-first-trade-slot`; Advanced production turns it on after its
+    /// repeated positive standard-screen result.
     pub(crate) solvency_first_trade_slot: bool,
     /// Whether a Builder whose nearest improvable tile cannot be stepped
     /// toward tries the next one instead of giving up the turn. Opt-in gene

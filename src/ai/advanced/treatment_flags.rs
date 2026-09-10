@@ -2001,7 +2001,7 @@ impl AdvancedAi {
     /// Reserve the first empty trade route slot ahead of ordinary production in
     /// any city that can start a safe route. A barbarian alarm at a remote city
     /// no longer vetoes the whole empire. See
-    /// `BasicAi::solvency_first_trade_slot`; opt-in gene
+    /// `BasicAi::solvency_first_trade_slot`; production gene
     /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
     /// append-point check reads a method line's first identifier.
     pub fn enable_solvency_first_trade_slot(&mut self) {
@@ -3915,6 +3915,17 @@ impl AdvancedAi {
     /// The twin of `enable_chop_for_expansion`.
     pub fn disable_chop_for_expansion(&mut self) {
         self.chop_for_expansion = false;
+    }
+
+    /// `conquest-takes-the-soft-city`: rank the early conquest target by what
+    /// can be taken before what is worth most. See `advanced/early_conquest.rs`.
+    pub fn enable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = true;
+    }
+
+    /// The twin of `enable_conquest_takes_the_soft_city`.
+    pub fn disable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = false;
     }
 
     pub fn enable_objective_board(&mut self) {
