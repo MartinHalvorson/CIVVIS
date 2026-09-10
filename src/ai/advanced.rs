@@ -3931,8 +3931,8 @@ pub struct AdvancedAi {
     /// Writer, Artist or Musician, the district, wonder or soldier the other
     /// classes wait on — and a due cultural person no city can house sells
     /// duplicate works to make room and recruits the same turn. See
-    /// `great_person_housing.rs`. Off everywhere by default; opt-in gene
-    /// `great-person-housing`.
+    /// `great_person_housing.rs`. Advanced production turns it on after its
+    /// repeated positive standard-screen result.
     pub great_person_housing: bool,
     /// Open a surprise war when the board offers a prize — an unescorted
     /// enemy Settler or Builder, or a cluster of unpillaged tiles — within a
@@ -7171,6 +7171,7 @@ impl AdvancedAi {
         ai.settler_commit = true;
         ai.research_economy = true;
         ai.enable_solvency_first_trade_slot();
+        ai.enable_great_person_housing();
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;
