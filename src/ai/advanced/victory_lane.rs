@@ -83,12 +83,13 @@
 //! of them.
 //!
 //! **`lane-culture-spending`.** `culture_spending` — the Naturalist that
-//! founds a National Park, the Rock Bands that tour — runs only when
-//! `plan.strategy == Culture`, and the Faith reserve that keeps a Naturalist
-//! affordable is chosen by the same value. An adaptive seat has no assigned
-//! target to carry into that pass, so the deployed controller follows its
-//! public Culture focus there; the opt-in remains the switch for a targeted
-//! seat whose current plan has not named Culture.
+//! founds a National Park, the Rock Bands that tour — runs on a named Culture
+//! plan or when an adaptive seat's public focus selects Culture, and the Faith
+//! reserve that keeps a Naturalist affordable is chosen by the same value. An
+//! adaptive seat has no assigned target to carry into that pass, so the
+//! deployed controller follows its public Culture focus there; the opt-in
+//! remains the switch for a targeted seat whose current plan has not named
+//! Culture.
 //!
 //! **`lane-space-race`.** Every gate in `science_production` asks for an
 //! **explicitly assigned** `VictoryTarget::Science`: the pad count (1 rather
