@@ -2038,12 +2038,24 @@ def write_leader_hint(hint_dir: Path | None, leader: str | None, step: int) -> N
 #: 4x — the same recovery `_leader_ocr` already needs.
 MAP_PICKER_STRIP = (0.26, 0.28, 0.62, 0.94)
 MAP_PICKER_OPEN_ATTEMPTS = 4
-#: The roster is ~40 official maps in a two-column grid. Wheel steps overlap on
-#: purpose: a step that scrolled exactly one row could hide a caption between
-#: two frames.
+#: ⚠⚠ ONE WHEEL TICK IS ROUGHLY THREE ROWS IN THIS PANEL, NOT ONE.
+#:
+#: This was -3, copied from the leader picker's step, and it stepped clean over
+#: the map it was looking for. Measured live on run civvis-20260910T182338Z: the
+#: rewind landed on the top of the roster (frame 00: 4-Leaf Clover, 6-Armed
+#: Snowflake, Archipelago, Continents, Continents and Islands, Earth, Earth
+#: Huge, East Asia, Europe, Fractal) and ONE -3 step landed on the very bottom
+#: (frame 01: Seven Seas, Shuffle, Small Continents, Splintered Fractal, Terra,
+#: True Start Location …). Every later frame was identical -- the list was
+#: already at its end -- so twenty-three more frames were photographed of a page
+#: that could not move, and `Pangaea` was never on any of them: it lives exactly
+#: in the gap between Fractal and Seven Seas that the single step jumped.
+#:
+#: One tick moves about three of the five rows a frame shows, so consecutive
+#: frames still overlap and no caption can hide between two of them.
 MAP_PICKER_SCROLL_STEPS = 24
 MAP_PICKER_SCROLL_RESET = 20
-MAP_PICKER_SCROLL_AMOUNT = -3
+MAP_PICKER_SCROLL_AMOUNT = -1
 
 
 def _map_picker_labels(path: Path, bounds: tuple[int, int, int, int],
@@ -2096,6 +2108,33 @@ def _map_picker_tile_point(path: Path, bounds: tuple[int, int, int, int],
         if left <= (px - x) / w <= right and top <= (py - y) / h <= bottom:
             return (px, py)
     return None
+
+
+def _map_picker_page_labels(path: Path, bounds: tuple[int, int, int, int]
+                            ) -> frozenset[str]:
+    """The tile captions this frame of the grid is showing.
+
+    Used only to notice that the wheel has stopped moving the list. Compared as
+    a SET, so the OCR passes returning the same captions in a different order --
+    or one pass reading a caption the other missed -- does not read as motion.
+    """
+    x, y, w, h = bounds
+    left, top, right, bottom = MAP_PICKER_STRIP
+    screen = desktop_size()
+    if screen is None:
+        return frozenset()
+    screen_w, screen_h = screen
+    showing = set()
+    for observation in _menu_crop_ocr(path, bounds, MAP_PICKER_STRIP, "map-picker"):
+        text = str(observation.get("text", "")).strip()
+        point = _observation_point(observation)
+        if not text or point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if left <= (px - x) / w <= right and top <= (py - y) / h <= bottom:
+            showing.add(_normalized_label(text))
+    showing.discard("")
+    return frozenset(showing)
 
 
 def _map_picker_commit_point(path: Path, bounds: tuple[int, int, int, int]
@@ -2188,11 +2227,22 @@ def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
     # can begin below Pangaea and never reach it going down.
     wheel(MAP_PICKER_SCROLL_RESET, 1.0)
 
+    # A grid that has stopped moving has nothing left to show. Without this the
+    # walk photographed the same bottom-of-list page twenty-three times before
+    # reporting a map it had genuinely never seen, which reads like a flaky OCR
+    # rather than a wheel that overshot.
+    settled = None
     for step in range(MAP_PICKER_SCROLL_STEPS):
         shot = run_dir / f"map-picker-{step:02d}.png"
         screenshot(shot)
         tile = _map_picker_tile_point(shot, bounds, label)
         if tile is None:
+            showing = _map_picker_page_labels(shot, bounds)
+            if showing and showing == settled:
+                refusal = (f"[setup] map_type: the browser stopped scrolling at "
+                           f"step {step} and {label} is not on it")
+                break
+            settled = showing
             wheel(MAP_PICKER_SCROLL_AMOUNT, 0.8)
             continue
         focus_game(GAME_SIDE, GAME_FRACTION)
