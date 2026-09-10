@@ -162,6 +162,33 @@ impl AdvancedAi {
         Some(match pressure.strategy {
             GrandStrategy::Science if self.counter_in_lane => GrandStrategy::Science,
             GrandStrategy::Science => GrandStrategy::Conquest,
+            // ⭐ CULTURE IS THE ONE LANE THAT CANNOT ANSWER A LEADER WITH WAR.
+            //
+            // Every other arm here reaches Conquest: Science does unless
+            // `counter-in-lane` holds it in lane, a Religion threat does
+            // whenever we have no faith of our own, and a score leader does on
+            // the same terms as Science. Culture alone answers a rival about to
+            // win by racing them, with no gene to choose otherwise — and it is
+            // the lane the live ladder actually loses to: six rival culture
+            // finishes between standard turns 155 and 208 in the recorded
+            // Emperor games.
+            //
+            // Racing is not nothing — our own domestic tourists are the bar the
+            // rival has to clear, so building culture raises it. But it is a
+            // race against a leader who is already ahead, and it gives up the
+            // one counter with a double effect: **capturing a city takes its
+            // Great Works**, which removes that tourism from the rival and adds
+            // it to us in the same action. No other lane's counter does that,
+            // and a culture leader is the rival likeliest to have spent its
+            // production on Theatre Squares rather than on an army.
+            //
+            // With the gene on, Culture reaches Conquest on the same urgency
+            // bar as the other lanes, and `victory_suppression_city` aims the
+            // campaign at the Great Works. The actionable pass still has to
+            // agree the war is executable, exactly as it does for Science.
+            GrandStrategy::Culture if self.counter_culture_by_conquest => {
+                GrandStrategy::Conquest
+            }
             GrandStrategy::Culture => GrandStrategy::Culture,
             GrandStrategy::Religion if g.players[pid].religion.is_some() => GrandStrategy::Religion,
             GrandStrategy::Religion => GrandStrategy::Conquest,
@@ -262,6 +289,15 @@ impl AdvancedAi {
         let district = match pressure.strategy {
             GrandStrategy::Science => crate::name!("spaceport"),
             GrandStrategy::Religion => crate::name!("holy_site"),
+            // The Theatre Square is where a culture leader's Great Works are
+            // slotted, so it is the same kind of concrete bottleneck the other
+            // two arms name — and the only one whose capture moves the tourism
+            // rather than merely stopping it. Reached only with
+            // `counter-culture-by-conquest` on, because without it a Culture
+            // threat never selects Conquest and this function is never asked.
+            GrandStrategy::Culture if self.counter_culture_by_conquest => {
+                crate::name!("theater_square")
+            }
             _ => return None,
         };
         g.cities
@@ -531,4 +567,136 @@ mod tests {
         assert_eq!(plan.strategy, GrandStrategy::Conquest);
         assert_eq!(plan.target_player, Some(3));
     }
+    // -----------------------------------------------------------------
+    // `counter-culture-by-conquest`
+    // -----------------------------------------------------------------
+
+    fn culture_threat(progress: i32) -> VictoryFocus {
+        VictoryFocus {
+            strategy: GrandStrategy::Culture,
+            progress,
+        }
+    }
+
+    /// Two majors with capitals, and a rival Theatre Square to aim at.
+    fn culture_board() -> (Game, u32) {
+        let mut game = Game::new_full(2, 24, 16, 91_777, 300, 0, false);
+        found_capitals(&mut game);
+        game.turn = game.max_turns / 2;
+        let rival_city = game
+            .player_city_ids(1)
+            .into_iter()
+            .next()
+            .expect("the rival founded a capital");
+        game.cities
+            .get_mut(&rival_city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), Default::default());
+        (game, rival_city)
+    }
+
+    #[test]
+    fn counter_culture_by_conquest_is_a_native_opt_in_off_in_both_controllers() {
+        super::super::test_support::opt_in_off_in_both_controllers(
+            "counter-culture-by-conquest",
+            |ai| ai.counter_culture_by_conquest,
+        );
+    }
+
+    /// The premise: every other lane can answer a leader with war, and Culture
+    /// cannot.
+    #[test]
+    fn culture_is_the_only_lane_that_never_reaches_conquest() {
+        let (game, _) = culture_board();
+        let ai = AdvancedAi::new();
+        let urgent = 95;
+        for (strategy, expected) in [
+            (GrandStrategy::Science, GrandStrategy::Conquest),
+            (GrandStrategy::Religion, GrandStrategy::Conquest),
+            (GrandStrategy::Expansion, GrandStrategy::Conquest),
+            (GrandStrategy::Culture, GrandStrategy::Culture),
+        ] {
+            let pressure = VictoryFocus {
+                strategy,
+                progress: urgent,
+            };
+            assert_eq!(
+                ai.denial_response_for_pressure(&game, 0, 0, 1, pressure),
+                Some(expected),
+                "{strategy:?} answers a leader this way with the gene off"
+            );
+        }
+    }
+
+    #[test]
+    fn the_gene_answers_a_culture_leader_with_war() {
+        let (game, _) = culture_board();
+        let mut ai = AdvancedAi::new();
+        ai.enable_counter_culture_by_conquest();
+        assert_eq!(
+            ai.denial_response_for_pressure(&game, 0, 0, 1, culture_threat(95)),
+            Some(GrandStrategy::Conquest)
+        );
+    }
+
+    /// The urgency bar is the shipped one and the gene does not lower it.
+    #[test]
+    fn a_culture_rival_below_the_bar_is_still_no_threat_either_way() {
+        let (game, _) = culture_board();
+        let mut ai = AdvancedAi::new();
+        assert_eq!(
+            ai.denial_response_for_pressure(&game, 0, 0, 1, culture_threat(50)),
+            None
+        );
+        ai.enable_counter_culture_by_conquest();
+        assert_eq!(
+            ai.denial_response_for_pressure(&game, 0, 0, 1, culture_threat(50)),
+            None,
+            "the gene changes the answer, never the bar"
+        );
+    }
+
+    #[test]
+    fn the_campaign_is_aimed_at_the_rivals_great_works() {
+        let (game, rival_city) = culture_board();
+        let mut ai = AdvancedAi::new();
+        assert_eq!(
+            ai.victory_suppression_city(&game, 0, 1, culture_threat(95)),
+            None,
+            "off, a Culture threat names no suppression city"
+        );
+        ai.enable_counter_culture_by_conquest();
+        assert_eq!(
+            ai.victory_suppression_city(&game, 0, 1, culture_threat(95)),
+            Some(rival_city),
+            "on, the Theatre Square city is the campaign's first target"
+        );
+    }
+
+    /// The other two arms are untouched, gene or no gene.
+    #[test]
+    fn the_science_and_religion_suppression_arms_are_unchanged() {
+        let (mut game, rival_city) = culture_board();
+        game.cities
+            .get_mut(&rival_city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("spaceport"), Default::default());
+        let mut ai = AdvancedAi::new();
+        let science = VictoryFocus {
+            strategy: GrandStrategy::Science,
+            progress: 95,
+        };
+        assert_eq!(
+            ai.victory_suppression_city(&game, 0, 1, science),
+            Some(rival_city)
+        );
+        ai.enable_counter_culture_by_conquest();
+        assert_eq!(
+            ai.victory_suppression_city(&game, 0, 1, science),
+            Some(rival_city)
+        );
+    }
+
 }

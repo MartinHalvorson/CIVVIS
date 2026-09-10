@@ -2220,6 +2220,17 @@ pub const GENES: &[Gene] = &[
     // action layer to `src/game/actions.rs`. While a city builds a Settler, a
     // Builder clears the best-paying feature in reach instead of improving.
     Gene { tag: "chop-for-expansion", field: "chop_for_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_for_expansion, disable: AdvancedAi::disable_chop_for_expansion },
+    // Appended above the markers, so a running screen keeps its positional
+    // gene index and the append points stay free at the tail.
+    // Every arm of `denial_response_for_pressure` reaches Conquest except
+    // Culture, which answers a rival about to win by racing it and has no gene
+    // to choose otherwise — and culture is the lane the live ladder loses to,
+    // six rival finishes between standard turns 155 and 208. Capturing a city
+    // takes its Great Works, so it removes the rival's tourism and adds it to
+    // ours in one action; no other lane's counter does that. This gives Culture
+    // the same Conquest answer on the same urgency bar, and aims
+    // `victory_suppression_city` at the Theatre Square.
+    Gene { tag: "counter-culture-by-conquest", field: "counter_culture_by_conquest", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_culture_by_conquest, disable: AdvancedAi::disable_counter_culture_by_conquest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
