@@ -1430,6 +1430,12 @@ struct Header {
     p_on: f64,
     #[serde(default)]
     p_default_on: f64,
+    /// ⭐ A FIDELITY RUN, NOT A SCREEN (`--deployment-genome`): every measured
+    /// seat played the genome the ledger ships, and no gene was screened, so
+    /// this file prices nothing and `tools/genes.py` refuses it as a source.
+    /// Absent and unwritten in every ordinary screen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    deployment_genome: bool,
     /// ⭐ The gene FAMILIES: every versioned gene with its versions, in
     /// version order, base first (`war-economy`, `war-economy-2`, …). A seat
     /// plays at most one version of a family, so the screen can say whether
@@ -5803,7 +5809,8 @@ fn usage() -> ! {
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
-         gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
+         the fidelity run, NOT a screen: [--deployment-genome] every measured seat plays the genome the ledger ships, no gene is screened, and the file prices nothing — the shape `civ6_trajectory_fidelity.py` compares against the live seat
+       gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
          gene_screen --list",
         civvis::game::default_difficulty(),
         SCREEN_BARBARIAN_DIFFICULTY,
@@ -6169,13 +6176,33 @@ fn main() {
     let drawn = players - field.len() - if rivals { rival_chairs } else { 0 };
     let p_on = real(&args, "--p-on", P_ON);
     let p_default_on = real(&args, "--p-default-on", P_DEFAULT_ON);
-    for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
-        if !(p > 0.0 && p < 1.0) {
-            eprintln!("{name} must be strictly between 0 and 1 (both arms need seats), got {p}");
-            std::process::exit(2);
+    // ⭐ THE FIDELITY RUN: every seat plays the genome the ladder ships.
+    //
+    // A screen draws each seat's genome — a default-on gene at
+    // `--p-default-on`, the rest at `--p-on` — because pricing a gene needs
+    // seats on both sides of it. That makes every measured seat a NEIGHBOUR of
+    // the deployment genome and none of them the deployment genome itself,
+    // which is fine for a screen and wrong for the one question
+    // `civ6_trajectory_fidelity.py` asks: does a simulated game go the way a
+    // live one does? The live seat plays exactly one genome.
+    //
+    // An unscreened gene is already pinned to its deployment state by
+    // `on_probabilities` (1.0 on, 0.0 off), so this needs no new genome
+    // machinery: it screens NOTHING, which the ordinary path refuses on
+    // purpose, and every seat falls through to the shipped genome.
+    let deployment_genome = present(&args, "--deployment-genome");
+    if !deployment_genome {
+        for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
+            if !(p > 0.0 && p < 1.0) {
+                eprintln!(
+                    "{name} must be strictly between 0 and 1 (both arms need seats), got {p}"
+                );
+                std::process::exit(2);
+            }
         }
     }
     let screened: Vec<bool> = match text(&args, "--genes") {
+        _ if deployment_genome => vec![false; genes.len()],
         None => vec![true; genes.len()],
         Some(list) => {
             let wanted: Vec<&str> = list
@@ -6203,8 +6230,12 @@ fn main() {
         }
     };
     let screened_count = screened.iter().filter(|&&s| s).count();
-    if screened_count == 0 {
+    if screened_count == 0 && !deployment_genome {
         eprintln!("nothing to screen");
+        std::process::exit(2);
+    }
+    if deployment_genome && text(&args, "--genes").is_some() {
+        eprintln!("--deployment-genome screens nothing, so --genes cannot be given with it");
         std::process::exit(2);
     }
     let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
@@ -6344,6 +6375,7 @@ fn main() {
             String::new()
         },
         rival_chairs: if rivals { rival_chairs } else { 0 },
+        deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
