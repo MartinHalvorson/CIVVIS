@@ -40,4 +40,87 @@ seeds, shape, exposure counts, complete outcomes and uncertainty. A small
 screen is diagnostic and does not justify promotion. Do not pool it with
 live Pericles outcomes or the all-Culture reachability comparison.
 
-Measurements are pending. The gene remains off by default.
+## All-Culture comparison
+
+Both arms used clean source revision `bec42aae732a296acb2c2077a406317972768168`,
+the same `ci`-profile binary, six players, 74×46, Online speed, a 250-turn cap,
+and the deployment profile. Only the experimental gene differed. Each arm
+completed all four games, and every game ended in a Culture victory.
+
+| Seed | Control finish | Earlier Cold War finish | Treatment minus control |
+| --- | ---: | ---: | ---: |
+| 910131000 | 175 | 183 | +8 |
+| 910131001 | 176 | 180 | +4 |
+| 910131002 | 200 | 211 | +11 |
+| 910131003 | 202 | 197 | −5 |
+
+The experimental order finished later on three of four maps and averaged
+4.5 turns slower. This small all-Culture comparison provides no case for
+changing the default. Because every major uses the same arm, these numbers
+measure when the field produces a culture winner, not an individual's win
+probability against unchanged rivals.
+
+Commands (the process returns success only when all requested Culture games
+finish as Culture):
+
+```sh
+cargo build --profile ci --locked --features developer-tools \
+  --bin gene_screen --bin victory_eval
+target/ci/victory_eval --target culture --deployment --games 4 \
+  --players 6 --width 74 --height 46 --turns 250 --speed online \
+  --start-seed 910131000 --without culture-cold-war-window
+target/ci/victory_eval --target culture --deployment --games 4 \
+  --players 6 --width 74 --height 46 --turns 250 --speed online \
+  --start-seed 910131000 --with culture-cold-war-window
+```
+
+The measured `victory_eval` SHA-256 is
+`7631f9d6d5374dda8addb98b0f2380735598ae18517213599186e000c74ca03b`.
+Raw logs and provenance are retained in the host's
+`civvis-culture-evidence-20260910/cold-war-window-bec42aae7` directory.
+
+## Emperor adaptive-seat screen
+
+All twelve games completed (72 seats): 17 enabled and 55 disabled. Enabled
+seats won 2/17 versus 10/55, a −6.42 percentage-point contrast with a reported
+standard error of 8.25 points. Score share differed by −2.58 points (reported
+SE 1.13). The small sample and seats sharing games do not establish a reliable
+win-rate effect. Ten games ended by Science, one by Religion, and one by
+Culture. This is not a dedicated Pericles Culture evaluation.
+
+The screen used six majors, 74×46 Continents, nine city-states, Online speed,
+a 250-turn cap, Emperor, shuffled civilizations, the deployed background and
+only this gene varied at probability 0.25. Its clean source revision is the
+same checkpoint as the all-Culture comparison; its binary SHA-256 is
+`9c2093ead5c0ae21e8da9d8f067f0ed4d95385851013d02a0e690278ee492d81`.
+
+```sh
+target/ci/gene_screen --games 12 --jobs 2 --genes culture-cold-war-window \
+  --difficulty emperor --start-seed 910130000 --out screen.jsonl --quiet
+target/ci/gene_screen --analyze screen.jsonl \
+  --json docs/gene_screens/fires/culture-cold-war-window.json
+```
+
+The committed analysis records complete batch coverage and provenance.
+This pilot is a firing artifact, not a new source for the pooled deployment
+ledger; the generated ranking therefore still labels it unmeasured there.
+The matched games independently demonstrate changed outcomes. Neither test
+supports promotion: the gene remains off by default.
+
+## Separate live prerequisite verification
+
+The fresh Pericles run `civvis-20260910T130546Z` uses deployed revision
+`482136653f4d6874a2ecab1598fb8eebd28c4eee`, not this experimental strategy.
+Its host events record Li Bai activating at turn 69, moving to a tile with
+`open_slot: true`, then activating again at turn 70. Subsequent state readback
+reports two Great Works and 4 tourism per turn. This verifies the Great Work
+slot correction from #3380 in a real game, but is not a Cold War treatment
+result or a demonstrated win-rate increase. The evidence is retained as
+`civvis-culture-evidence-20260910/post-fix-first-writer.json` with the run's
+binary provenance.
+
+The original segment and first continuation stalled at turn 72. The managed
+supervisor recovered from the turn-68 autosave on its second continuation,
+which passed turn 105 with eight cities and 12 tourism per turn. These are
+segments of the same game family, not independent trials. No completed
+post-fix outcome is available at this checkpoint.

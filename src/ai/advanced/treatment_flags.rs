@@ -922,7 +922,7 @@ impl AdvancedAi {
     }
 
     /// Test the Rock Band unlock before the Culture lane's stadium and
-    /// museum-theming civics, while retaining Humanism and Conservation first.
+    /// museum-tourism civics, while retaining Humanism and Conservation first.
     pub fn enable_culture_cold_war_window(&mut self) {
         self.culture_cold_war_window = true;
     }
