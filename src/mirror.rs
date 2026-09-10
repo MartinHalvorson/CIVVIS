@@ -2142,6 +2142,10 @@ pub struct StateCity {
 /// One unit as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateUnit {
+    /// Rock Band activation highlights from the host, in offset coordinates.
+    /// An empty list is authoritative; missing means the API was not read.
+    #[serde(default)]
+    pub concert_plots: Option<Vec<StateActivationPlot>>,
     #[serde(default)]
     pub id: i64,
     /// ★★★★★ `type` IS AN ALIAS AND IT WAS MISSING, SO EVERY BARBARIAN WAS DROPPED.
@@ -5647,6 +5651,7 @@ const UNIT_KEYS: &[&str] = &[
     "spy_operation",
     "spy_operation_end_turn",
     "spy_missions_available",
+    "concert_plots",
 ];
 
 const PUBLIC_STATS_KEYS: &[&str] = &[
@@ -7567,7 +7572,8 @@ fn apply_foreign_unit_strikes(game: &mut crate::game::Game, uid: u32, unit: &Sta
 /// for the host's movement allowance in threat floods.
 fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
     let finite = |value: Option<f64>| value.filter(|value| value.is_finite());
-    let exported = unit.upgrade_to.is_some()
+    let exported = unit.concert_plots.is_some()
+        || unit.upgrade_to.is_some()
         || unit.upgrade_cost.is_some()
         || unit.upgrade_blocked_reason.is_some()
         || unit.maintenance.is_some()
@@ -7617,6 +7623,12 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
         uid,
         crate::game::HostUnitFacts {
             civ6_id: Some(unit.id),
+            concert_plots: unit.concert_plots.as_ref().map(|plots| {
+                plots
+                    .iter()
+                    .map(|plot| crate::hex::offset_to_axial(plot.x, plot.y))
+                    .collect()
+            }),
             upgrade,
             maintenance: finite(unit.maintenance).filter(|bill| *bill >= 0.0),
             religious_strength: finite(unit.religious_strength),
