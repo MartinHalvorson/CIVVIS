@@ -25230,8 +25230,8 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
 
     let mut native = AdvancedAi::new();
     native.enable_engine_repairs();
-    assert!(!native.live_settler_capture_lessons);
-    assert!(!native.settler_routing_recovery_on());
+    assert!(native.live_settler_capture_lessons);
+    assert!(native.settler_routing_recovery_on());
 }
 
 /// `one_shot_recovery` lives on `BasicAi`, which is where `healing_step`

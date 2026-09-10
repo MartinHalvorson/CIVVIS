@@ -636,7 +636,7 @@ FIELDLESS = {
 #: win column of such a source is a statement about the seat against
 #: handicapped rivals, not the self-play column beside it (`column_estimate`).
 RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate", "rivals",
-                     "handicap", "rival_chairs")
+                     "handicap", "rival_chairs", "player_contract", "target_mix")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since
@@ -2858,13 +2858,18 @@ def load_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
 def load_reporting_batches(ledger: dict) -> list[dict]:
     """The three fixed batch columns, newest first, with their source rows."""
     batches = []
+    contracts = set()
     for meta in ledger.get("reporting_batches", []):
         data = load_source(ROOT / meta["path"])
+        profile = data.get("profile", {})
+        contracts.add((profile.get("player_contract", ""), profile.get("target_mix", "")))
         name = Path(meta["path"]).name
         batches.append({
             "meta": meta,
             "rows": measurements_from_source(data, name, meta["shape"]),
         })
+    if len(contracts) > 1:
+        raise SystemExit("reporting batches mix player/visibility contracts or target mixes; start a fresh reporting epoch")
     return batches
 
 
