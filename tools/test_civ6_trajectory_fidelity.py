@@ -35,18 +35,17 @@ def write_live(rows, directory: Path) -> Path:
     return path
 
 
-def write_sim(games, directory: Path, difficulty="emperor") -> Path:
+def write_sim(games, directory: Path, difficulty="emperor", handicap=None) -> Path:
     path = directory / "screen.jsonl"
-    lines = [
-        json.dumps(
-            {
-                "difficulty": difficulty,
-                "speed": "online",
-                "width": 74,
-                "height": 46,
-            }
-        )
-    ]
+    header = {
+        "difficulty": difficulty,
+        "speed": "online",
+        "width": 74,
+        "height": 46,
+    }
+    if handicap is not None:
+        header["handicap"] = handicap
+    lines = [json.dumps(header)]
     for index, seats in enumerate(games):
         for seat in seats:
             lines.append(json.dumps({"kind": "game", "game": index, **seat}))
@@ -76,11 +75,11 @@ class ItRefusesToPoolDifferentGames(unittest.TestCase):
         self.assertEqual(report["matched_cells"], [], "settler is not emperor")
         self.assertEqual(
             [entry["cell"] for entry in report["live_only"]],
-            [["settler", "online", "small"]],
+            [["settler", "online", "small", "rivals"]],
         )
         self.assertEqual(
             [entry["cell"] for entry in report["sim_only"]],
-            [["emperor", "online", "small"]],
+            [["emperor", "online", "small", "all"]],
         )
 
     def test_a_matched_configuration_is_compared(self):
@@ -90,7 +89,7 @@ class ItRefusesToPoolDifferentGames(unittest.TestCase):
                 write_live([live_row(score=100, rival_best=200)], tmp)
             )
             sim = fidelity.sim_records(
-                write_sim([[{"score": 100}, {"score": 200}]], tmp),
+                write_sim([[{"score": 100}, {"score": 200}]], tmp, handicap="rivals"),
                 fidelity.map_sizes(),
             )
             report = fidelity.ledger(live, sim)
@@ -120,7 +119,7 @@ class AMissingFieldIsNamed(unittest.TestCase):
                 write_live([live_row(score=100, rival_best=200, techs_at_150=20)], tmp)
             )
             sim = fidelity.sim_records(
-                write_sim([[{"score": 100}, {"score": 200}]], tmp),
+                write_sim([[{"score": 100}, {"score": 200}]], tmp, handicap="rivals"),
                 fidelity.map_sizes(),
             )
             report = fidelity.ledger(live, sim)
@@ -145,6 +144,23 @@ class TheRatchetOnlyTightens(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertTrue(any("exceeds" in note for note in notes))
 
+    def test_a_small_wobble_inside_the_regression_margin_does_not_fail(self):
+        allowed = 1.01
+        report = {
+            "matched_cells": [
+                {
+                    "subsystems": {
+                        "standing": {
+                            "available": True,
+                            "divergence": allowed * (1 + fidelity.FIDELITY_SLACK / 2),
+                        }
+                    }
+                }
+            ]
+        }
+        status, _ = fidelity.check(report, {"standing": allowed}, 0)
+        self.assertEqual(status, 0, "the ratchet is a regression alarm, not a caliper")
+
     def test_a_subsystem_inside_its_tolerance_passes(self):
         report = {
             "matched_cells": [
@@ -163,6 +179,86 @@ class TheRatchetOnlyTightens(unittest.TestCase):
         status, notes = fidelity.check(report, {}, 0)
         self.assertEqual(status, 0)
         self.assertTrue(any("no tolerance recorded" in note for note in notes))
+
+
+class TheHandicapIsPartOfTheConfiguration(unittest.TestCase):
+    """The rung says how big the bonus is; the handicap mode says who gets it.
+
+    A screen run with `gene_screen`'s default hands the rung's bonus to EVERY
+    seat, our measured ones included, so it cancels. A live seat never carries
+    it. Comparing those two is comparing different games, which is the one
+    thing this ledger exists not to do.
+    """
+
+    def test_prince_confers_nothing_so_the_mode_cannot_matter(self):
+        neutral = fidelity.neutral_rungs()
+        self.assertIn("prince", neutral)
+        self.assertEqual(
+            fidelity.handicap_for("prince", "all", neutral), fidelity.NEUTRAL_HANDICAP
+        )
+        self.assertEqual(
+            fidelity.handicap_for("prince", "rivals", neutral),
+            fidelity.NEUTRAL_HANDICAP,
+        )
+
+    def test_every_other_shipped_rung_tilts_one_way_or_the_other(self):
+        neutral = fidelity.neutral_rungs()
+        for rung in ("settler", "chieftain", "warlord", "king", "emperor", "deity"):
+            with self.subTest(rung=rung):
+                self.assertNotIn(
+                    rung, neutral, "a rung with a bonus is not neutral"
+                )
+                self.assertEqual(fidelity.handicap_for(rung, "all", neutral), "all")
+
+    def test_a_symmetric_emperor_screen_does_not_match_the_live_seat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            live = fidelity.live_records(
+                write_live([live_row(score=100, rival_best=300)], tmp)
+            )
+            # No `handicap` key at all: `gene_screen` omits the whole rival
+            # block without `--rivals`, and its default is every seat.
+            sim = fidelity.sim_records(
+                write_sim([[{"score": 100}, {"score": 200}]], tmp),
+                fidelity.map_sizes(),
+            )
+            report = fidelity.ledger(live, sim)
+        self.assertEqual(
+            report["matched_cells"],
+            [],
+            "an all-seats handicap is not the field a live seat meets",
+        )
+        self.assertEqual(report["live_only"][0]["cell"][3], "rivals")
+        self.assertEqual(report["sim_only"][0]["cell"][3], "all")
+
+    def test_an_asymmetric_emperor_screen_does_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            live = fidelity.live_records(
+                write_live([live_row(score=100, rival_best=300)], tmp)
+            )
+            sim = fidelity.sim_records(
+                write_sim(
+                    [[{"score": 100}, {"score": 200}]], tmp, handicap="rivals"
+                ),
+                fidelity.map_sizes(),
+            )
+            report = fidelity.ledger(live, sim)
+        self.assertEqual(len(report["matched_cells"]), 1)
+        self.assertEqual(report["matched_cells"][0]["cell"][3], "rivals")
+
+    def test_the_committed_corpora_still_share_the_neutral_rung(self):
+        """Prince is where the simulator is actually shown to be sound, so the
+        ratchet must still have a cell to measure."""
+        live = fidelity.live_records(fidelity.LIVE_DEFAULT)
+        sim = fidelity.sim_records(fidelity.SIM_DEFAULT, fidelity.map_sizes())
+        report = fidelity.ledger(live, sim)
+        cells = [c["cell"] for c in report["matched_cells"]]
+        self.assertTrue(cells, "no configuration is shared any more")
+        self.assertTrue(
+            all(cell[3] == fidelity.NEUTRAL_HANDICAP for cell in cells),
+            f"only neutral-rung cells should match today, got {cells}",
+        )
 
 
 class ItSkipsLoudlyWithNoCorpus(unittest.TestCase):
