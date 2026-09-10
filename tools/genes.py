@@ -616,6 +616,44 @@ FIELDLESS = {
     "contested_field": "",
     "native_competitions": False,
 }
+#: ⭐ THE FIELD THE LEDGER'S GENES WERE MEASURED AGAINST, AND THE SECOND THING
+#: STANDING BETWEEN IT AND A BATCH THAT PLAYED A DIFFERENT GAME.
+#:
+#: `FIELDLESS` above catches a contested board. This catches the other axis a
+#: batch can differ on while matching every map leg: **the rung, and who
+#: carries its handicap.**
+#:
+#: `data/difficulties.json` hands every rung above Prince a yield, experience
+#: and free-unit bonus, and every rung below it hands the HUMAN an experience
+#: bonus; Prince alone tilts neither way. `gene_screen --handicap` then decides
+#: who receives it, and its DEFAULT gives it to every major — our measured
+#: seats included — which is symmetric and cancels. `--rivals firaxis-mix`
+#: seats a fixed unmeasured opponent in one chair.
+#:
+#: Every one of those changes the field a gene's win rate is a statement about,
+#: and none of them changes a single map leg, so without this check they read
+#: `standard` and pool — re-pricing a hundred genes against a board none of
+#: them was measured on. That is the exact sentence `FIELDLESS` was written
+#: for; the rung had only a "read with care" comment.
+#:
+#: ⚠ Every existing source records none of these, and the one batch that
+#: records a rung records `prince`, so nothing is reclassified: the defaults
+#: here ARE the ledger's field. A batch that names something else is `legacy`
+#: — history, refused at the write path unless deliberate — which is the
+#: correct home for the Immortal/Deity test bed
+#: (`--difficulty immortal --rivals firaxis-mix --handicap rivals`). It is
+#: real evidence about a different field, not a column to average in.
+#:
+#: ⚠ `difficulty_rotate` is here too. A rotation draws a rung per game from the
+#: seed, so unlike `victory_mask` — whose lanes are all live across the batch —
+#: it makes the batch a MIXTURE of fields rather than the ledger's one.
+DEPLOYMENT_FIELD = {
+    "difficulty": "prince",
+    "difficulty_rotate": "",
+    "handicap": "",
+    "rivals": "",
+    "rival_chairs": 0,
+}
 #: ⭐ PROVENANCE RECORDED WHEN SET, AND NOT A SHAPE LEG. `gene_screen
 #: --victory-mask rotate:N` closes N of the five real conditions per game from
 #: the game's seed, score always on; `victories` in its header is still the
@@ -1283,7 +1321,13 @@ def shape_of(profile: dict) -> str:
 
     ⚠ `FIELDLESS` is checked beside `SCREEN` and is the only thing standing
     between the ledger and a contested-field batch, which matches every map leg
-    the screen has."""
+    the screen has.
+
+    ⚠ The rung and who carries its handicap are deliberately NOT legs here:
+    the ladder plays Emperor and above and a screen may follow it without the
+    ledger holding two worlds. What that costs is that two columns can play
+    different fields and still pool, which `field_of` and `field_drift` below
+    make impossible to do silently."""
     expected = dict(FIELDLESS)
     if profile.get("player_contract") == "observed-player-v1":
         expected["native_competitions"] = True
@@ -1629,6 +1673,40 @@ def latest_reporting_batches(entered: list[Path], recorded: list[Path]) -> list[
     ]
 
 
+def field_of(profile: dict) -> tuple:
+    """The field a batch played: the rung, and who carried its handicap.
+
+    Defaulted, so a header that records nothing reads as what its absence
+    means — `gene_screen` omits each of these when it is at its default.
+    """
+    return tuple(
+        (key, profile.get(key, default)) for key, default in DEPLOYMENT_FIELD.items()
+    )
+
+
+def field_name(field: tuple) -> str:
+    """`prince, handicap all` — the legs that are set, for a message."""
+    said = [
+        f"{key}={value!r}"
+        for key, value in field
+        if value != DEPLOYMENT_FIELD[key]
+    ]
+    return ", ".join(said) if said else "the ledger's own field (prince, unhandicapped)"
+
+
+def field_drift(records: list[dict]) -> dict[str, list[str]]:
+    """Which reporting batches played which field, when more than one did.
+
+    Empty when every column played the same game, which is the only state in
+    which averaging them means anything.
+    """
+    seen: dict[str, list[str]] = {}
+    for record in records:
+        seen.setdefault(field_name(field_of(record.get("profile", {})))
+                        , []).append(record.get("path", "?"))
+    return seen if len(seen) > 1 else {}
+
+
 def reporting_batch_records(paths: list[Path],
                             build_notes: dict[str, str] | None = None) -> list[dict]:
     """Validate and record fixed display-batch artifacts without pricing rules.
@@ -1652,6 +1730,32 @@ def reporting_batch_records(paths: list[Path],
         if reason:
             record["unverified"] = reason
         records.append(record)
+    # ⭐⭐ THE RANKING AVERAGES THESE THREE COLUMNS, SO THEY HAVE TO BE ONE GAME.
+    #
+    # The rung and who carries its handicap are deliberately not shape legs —
+    # see `shape_of` — so the ladder can follow the deployment up without the
+    # ledger holding two worlds. The cost of that decision is that two columns
+    # CAN play different fields and still pool, and the weighted latest-three
+    # average would then be a mixture nobody can see. `handicap`'s own note
+    # asks a reader to "read with care"; this is what makes that possible.
+    #
+    # A rung batch is exactly the evidence the Emperor ladder needs, so this
+    # never refuses one on its own — it refuses only the SILENT MIXTURE, and
+    # the fix is to let the new field fill all three columns rather than to
+    # average it against the old one.
+    drift = field_drift(records)
+    if drift:
+        lines = "\n".join(
+            f"  {name}: " + ", ".join(paths) for name, paths in sorted(drift.items())
+        )
+        raise SystemExit(
+            "gene ledger: the three reporting columns did not play the same "
+            "field, so their weighted average is a mixture of different games:"
+            f"\n{lines}\n"
+            "Every column the ranking averages must play one field. Either let "
+            "the new field fill all three columns, or keep the columns on the "
+            "field the ledger's genes were priced on."
+        )
     return records
 
 
