@@ -1815,7 +1815,7 @@ class MapPickerTests(unittest.TestCase):
     BOUNDS = (0, 33, 864, 542)
 
     def _drive(self, *, current, frames, commit=(432, 566),
-               verified=("Pangaea.lua", (432, 300))):
+               verified=("Pangaea.lua", (432, 300)), pages=None):
         """Run the picker against a scripted screen; return what it did.
 
         ``frames`` is one list of caption points per wheel step: an empty list
@@ -1830,6 +1830,17 @@ class MapPickerTests(unittest.TestCase):
         def picker_open(path, bounds):
             # Still in the browser unless the commit click has been sent.
             return commit is None or (432, 566) not in clicks
+
+        # Each frame shows a different page unless a test says otherwise, so the
+        # end-of-list stop does not fire in tests that are about something else.
+        page = iter(pages if pages is not None
+                    else (frozenset({f"page{n}"}) for n in range(1000)))
+
+        def page_labels(path, bounds):
+            try:
+                return next(page)
+            except StopIteration:
+                return frozenset()
 
         def labels(path, bounds, label):
             if label == "Select Map":
@@ -1847,6 +1858,7 @@ class MapPickerTests(unittest.TestCase):
         with mock.patch.object(civ6_play, "screenshot", return_value=True), \
              mock.patch.object(civ6_play, "_map_picker_labels", labels), \
              mock.patch.object(civ6_play, "_map_picker_open", side_effect=picker_open), \
+             mock.patch.object(civ6_play, "_map_picker_page_labels", page_labels), \
              mock.patch.object(civ6_play, "_setup_current_value", current_value), \
              mock.patch.object(civ6_play, "focus_game"), \
              mock.patch.object(civ6_play, "park_setup_pointer"), \
@@ -1891,6 +1903,36 @@ class MapPickerTests(unittest.TestCase):
         self.assertEqual(wheel[0], civ6_play.MAP_PICKER_SCROLL_RESET)
         self.assertGreater(civ6_play.MAP_PICKER_SCROLL_RESET, 0, "rewind scrolls UP")
         self.assertLess(civ6_play.MAP_PICKER_SCROLL_AMOUNT, 0, "walking scrolls DOWN")
+
+    def test_one_wheel_tick_per_step_because_a_tick_is_about_three_rows(self):
+        """⚠⚠ THIS WAS -3 AND IT STEPPED CLEAN OVER THE MAP IT WANTED.
+
+        Measured live on run civvis-20260910T182338Z: the rewind landed on the
+        top of the roster and ONE -3 step landed on the very bottom — every
+        later frame identical, the list already at its end. `Pangaea` lives
+        exactly in the gap between Fractal and Seven Seas that the single step
+        jumped, so it was never on any frame.
+
+        A frame shows five rows and one tick moves about three of them, so
+        consecutive frames overlap and no caption can hide between two.
+        """
+        self.assertEqual(civ6_play.MAP_PICKER_SCROLL_AMOUNT, -1)
+
+    def test_the_walk_stops_when_the_grid_stops_moving(self):
+        """A page that cannot move has nothing left to show. Without this the
+        walk photographed the same bottom-of-list page twenty-three times and
+        then reported a map it had genuinely never seen — which reads like
+        flaky OCR rather than a wheel that overshot."""
+        stuck = frozenset({"seven seas", "shuffle", "terra"})
+        chosen, clicks, wheel = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[] for _ in range(civ6_play.MAP_PICKER_SCROLL_STEPS)],
+            pages=[frozenset({"top of list"}), stuck, stuck, stuck])
+        self.assertFalse(chosen)
+        # Rewind, then one step off the first page, then one off the repeat that
+        # proved the list had settled. It stops there, not at step 24.
+        self.assertEqual(len(wheel), 3)
+        self.assertNotIn((500, 430), clicks)
 
     def test_a_caption_that_never_appears_is_refused_rather_than_guessed(self):
         """No tile is clicked and no coordinate is invented; the caller refuses
