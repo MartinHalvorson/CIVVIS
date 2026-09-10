@@ -119,6 +119,7 @@ mod tests {
         g.cities.get_mut(&target).unwrap().wall_hp = 100;
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
         ai.enable_domination_siege_research();
+        ai.battlefront_observation = false;
         let plan = StrategicPlan {
             strategy: GrandStrategy::Conquest,
             target_player: Some(1),
