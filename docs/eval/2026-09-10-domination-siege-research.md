@@ -78,3 +78,12 @@ all eight terminal records. This explains why first-capability research was
 not a binding constraint in that native probe. It does not establish that the
 siege units were actually built, delivered or strong enough for later walls.
 Those are the more useful follow-up questions for this tested regime.
+
+The [campaign census](2026-09-10-domination-siege-census.json) preserves the
+configuration, per-seat counts and observer source. Of the 871 walled-objective
+observations, 230 had no fielded land siege unit and 245 had one but none within
+six hexes. Narrowing to active wars gives 300 observations: 81 had neither a
+fielded nor queued land siege unit; 98 had siege units but none within six
+hexes. These are repeated post-turn observations, not independent samples or
+proof of a production/pathfinding defect. They include the cost of staging,
+and the distance test does not establish reachability or firing capability.
