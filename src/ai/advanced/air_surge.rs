@@ -498,11 +498,15 @@ impl AdvancedAi {
             return false;
         }
         let fronts = Self::air_surge_fronts(g, pid);
-        // An explicit Science race has a fixed lane to protect. At peace the
-        // air package would divert research into Advanced Flight and spend
-        // production on an elective war; retain the capability for the
-        // defensive one-front counter below.
-        if self.victory_target == Some(VictoryTarget::Science) && fronts.is_empty() {
+        // An explicit Science or Culture race has a fixed lane to protect. At
+        // peace the air package would divert research into Advanced Flight
+        // and spend production on an elective war; retain the capability for
+        // the defensive one-front counter below.
+        if matches!(
+            self.active_victory_target(g),
+            Some(VictoryTarget::Science | VictoryTarget::Culture)
+        ) && fronts.is_empty()
+        {
             return false;
         }
         let reserve = g.standard_duration(AIR_SURGE_ENDGAME_RESERVE);
