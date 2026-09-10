@@ -24828,7 +24828,7 @@ impl AdvancedAi {
         if adaptive_expansion_dispatch {
             self.expansion_census.dispatch_calls += 1;
         }
-        let counts = self.counts(g, pid);
+        let mut counts = self.counts(g, pid);
         let preempt_margin = self.production_review_margin(g);
         // `requisitions`: the board assessed for this turn before its
         // shortfall is read below; exact no-op with the gene off. See
@@ -24859,13 +24859,16 @@ impl AdvancedAi {
             // a Settler cannot fill its own demand and thereby veto itself.
             // Refresh even for an idle city, so a previous city's retained
             // commitment still reserves its demand before this city chooses.
-            let mut counts = self.counts_without_city_queue(g, pid, cid);
+            // Frozen historical controllers retain their original census.
+            if self.victory_planning || self.active_victory_target(g).is_some() {
+                counts = self.counts_without_city_queue(g, pid, cid);
+            }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
             let committed: Option<(f64, Item)> =
                 g.cities[&cid].queue.first().cloned().map(|item| {
-                    let value = if g.can_produce(pid, cid, &item) {
+                    let value = if !self.victory_planning || g.can_produce(pid, cid, &item) {
                         self.production_value(g, pid, cid, &item, plan, &counts)
                     } else {
                         -10_000.0
@@ -24892,7 +24895,8 @@ impl AdvancedAi {
             let amenity_repair_committed = self.amenity_project_preemption_on()
                 && (g.city_amenity_surplus(&g.cities[&cid]) < 0 || widespread_amenity_pressure)
                 && committed.as_ref().is_some_and(|(value, item)| {
-                    *value > -1_000.0 && Self::amenity_repair_queue_item(g, item)
+                    (!self.victory_planning || *value > -1_000.0)
+                        && Self::amenity_repair_queue_item(g, item)
                 });
             if amenity_repair_committed
                 && (widespread_amenity_pressure
@@ -24958,10 +24962,9 @@ impl AdvancedAi {
                     && (matches!(item, Item::Wonder { .. })
                         || g.item_invested_production(cid, item) > 0.0)
             });
-            if committed
-                .as_ref()
-                .is_some_and(|(value, _)| value.is_finite() && *value > -1_000.0)
-                && !recovery_preemption
+            if committed.as_ref().is_some_and(|(value, _)| {
+                !self.victory_planning || (value.is_finite() && *value > -1_000.0)
+            }) && !recovery_preemption
                 && (finish_investment || preempt_margin <= 1.0 || economic_recovery)
             {
                 continue;
@@ -24989,6 +24992,7 @@ impl AdvancedAi {
                                 "{} starts {}", city_name, Self::plain_item(&item);
                                 "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
                         }
+                        counts = self.counts(g, pid);
                         self.clear_idle_production_streak(cid);
                     }
                 }
@@ -25385,8 +25389,8 @@ impl AdvancedAi {
                     let displaces_commitment = match &committed {
                         Some((current, current_item)) => {
                             *current_item != item
-                                && (*current <= -1_000.0
-                                    || !current.is_finite()
+                                && ((self.victory_planning
+                                    && (*current <= -1_000.0 || !current.is_finite()))
                                     || score > *current + current.abs() * (preempt_margin - 1.0))
                         }
                         None => true,
@@ -28223,10 +28227,10 @@ impl AdvancedAi {
                 let science_target = self.victory_target == Some(VictoryTarget::Science);
                 let wonder_civ =
                     !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
-                let continuing_wonder =
-                    city.queue.first() == Some(item) || g.item_invested_production(cid, item) > 0.0;
+                let continuing_wonder = city.queue.first() == Some(item)
+                    || (self.victory_planning && g.item_invested_production(cid, item) > 0.0);
                 let already_queued = g.cities.values().any(|other| {
-                    other.owner == pid
+                    (!self.victory_planning || other.owner == pid)
                         && other.id != cid
                         && matches!(
                             other.queue.first(),
