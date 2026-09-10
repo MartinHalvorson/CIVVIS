@@ -34521,7 +34521,7 @@ fn raid_settler_board() -> (Game, u32, u32) {
 fn opportunistic_war_is_a_native_production_gene() {
     let ai = AdvancedAi::new();
     assert!(ai.opportunistic_war);
-    assert!(ai.raid_pillage_prizes);
+    assert!(!ai.raid_pillage_prizes);
     assert!(!AdvancedAi::legacy().opportunistic_war);
     assert!(!AdvancedAi::legacy().raid_pillage_prizes);
     let enable = GENES
@@ -34556,7 +34556,7 @@ fn opportunistic_war_is_a_native_production_gene() {
     assert!(crate::ai::gene("opportunistic-war")
         .expect("registered gene")
         .production());
-    assert!(crate::ai::gene("raid-pillage-prizes")
+    assert!(!crate::ai::gene("raid-pillage-prizes")
         .expect("registered gene")
         .production());
 }
@@ -34746,6 +34746,7 @@ fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
     let warrior = game.spawn_test_unit("warrior", 0, post);
     let _ = ours;
     let mut ai = AdvancedAi::new();
+    ai.disable_raid_pillage_prizes();
     ai.enable_opportunistic_war();
     game.world_era = 2;
     assert!(

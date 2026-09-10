@@ -264,7 +264,7 @@ impl AdvancedAi {
 
     /// Count a neighbour's unpillaged improvements within reach as raid prizes
     /// and send raiders to pillage them. See
-    /// [`AdvancedAi::raid_pillage_prizes`]. Production gene; inert unless
+    /// [`AdvancedAi::raid_pillage_prizes`]. Opt-in gene; inert unless
     /// `opportunistic_war` is on.
     pub fn enable_raid_pillage_prizes(&mut self) {
         self.raid_pillage_prizes = true;

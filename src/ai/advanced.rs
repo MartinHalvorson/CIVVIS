@@ -3946,9 +3946,9 @@ pub struct AdvancedAi {
     pub opportunistic_war_2: bool,
     /// The pillage half of `opportunistic_war`: count a neighbour's unpillaged
     /// improvements and districts within reach as prizes, and walk raiding
-    /// soldiers to them. Its own production gene, `raid-pillage-prizes`, keeps
-    /// the screen pricing the tiles apart from the Settlers; it is inert
-    /// unless `opportunistic_war` is on.
+    /// soldiers to them. Its own opt-in gene, `raid-pillage-prizes`, keeps the
+    /// screen pricing the tiles apart from the Settlers; it is inert unless
+    /// `opportunistic_war` is on.
     pub raid_pillage_prizes: bool,
     /// The raid `opportunistic_war` opened and has not yet closed.
     raid_war: Option<opportunistic_war::RaidWar>,
@@ -7168,7 +7168,6 @@ impl AdvancedAi {
         ai.enable_solvency_first_trade_slot();
         ai.enable_great_person_housing();
         ai.enable_opportunistic_war();
-        ai.enable_raid_pillage_prizes();
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;

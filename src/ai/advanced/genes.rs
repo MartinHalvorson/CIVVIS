@@ -609,11 +609,11 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "opportunistic-war", field: "opportunistic_war", kind: Kind::Production, enable: AdvancedAi::enable_opportunistic_war, disable: AdvancedAi::disable_opportunistic_war },
     // V2 rejects prizes without a short post-declaration route.
     Gene { tag: "opportunistic-war-2", field: "opportunistic_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war_2, disable: AdvancedAi::disable_opportunistic_war_2 },
-    // Promoted 2026-09-10: the repeated standard screen measured +1.70 pp
-    // wins (z +3.94) and +0.407 pp score share (z +4.57). The pillage half is
-    // inert unless the bounded raid above is on; see
+    // The pillage half of the raid remains separately screened: inert unless
+    // the row above is on, and still opt-in until a current screen confirms
+    // its older positive standard result. See
     // `AdvancedAi::raid_pillage_prizes`.
-    Gene { tag: "raid-pillage-prizes", field: "raid_pillage_prizes", kind: Kind::Production, enable: AdvancedAi::enable_raid_pillage_prizes, disable: AdvancedAi::disable_raid_pillage_prizes },
+    Gene { tag: "raid-pillage-prizes", field: "raid_pillage_prizes", kind: Kind::OptIn, enable: AdvancedAi::enable_raid_pillage_prizes, disable: AdvancedAi::disable_raid_pillage_prizes },
     // A target can be excellent while a visible hostile makes its next route
     // step unsafe. This holds that corridor aside briefly and sends the
     // Settler to the best safe runner-up; see `settler_threat_detour`.
