@@ -23835,9 +23835,7 @@ impl AdvancedAi {
             }
         }
 
-        let Some((damage, city, committed, defence)) = best else {
-            return None;
-        };
+        let (damage, city, committed, defence) = best?;
         let city_name = g.cities[&city].name.clone();
         if g.apply(
             pid,
