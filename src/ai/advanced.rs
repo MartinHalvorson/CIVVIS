@@ -4944,6 +4944,10 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `conquest-takes-the-soft-city`: the early conquest opening ranks its
+    /// target by the visible garrison before the rival's capital, so it aims
+    /// at a city the opening force can actually take.
+    conquest_takes_the_soft_city: bool,
     /// `chop-for-expansion`: while a city is building a Settler, a Builder
     /// spends a charge clearing a feature or harvesting a resource for the
     /// Production instead of improving a tile. Off ships the shipped
@@ -7820,6 +7824,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            conquest_takes_the_soft_city: false,
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
