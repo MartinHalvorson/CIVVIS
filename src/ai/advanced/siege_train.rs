@@ -1756,7 +1756,13 @@ mod tests {
     }
 
     /// One unit through the doctrine alone, the rest of the force standing.
-    pub(super) fn step_unit(ai: &mut AdvancedAi, g: &mut Game, pid: usize, uid: u32, plan: &StrategicPlan) {
+    pub(super) fn step_unit(
+        ai: &mut AdvancedAi,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) {
         ai.rebuild_force_groups(g, pid, plan);
         for _ in 0..8 {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
