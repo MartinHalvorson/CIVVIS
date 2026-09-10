@@ -937,6 +937,20 @@ try {
     if (typeof savedOverlays[name] === "boolean") OVERLAY_VISIBILITY[name] = savedOverlays[name];
   }
 } catch (error) {}
+// The dedicated CIVVIS display (`?display=dedicated`, opened by
+// tools/ops/civvis-display-keeper.mjs beside a live Civilization VI) exists to
+// show the player HUD. Nobody sits at that window to switch an overlay back
+// on, and its Chrome profile keeps this page's localStorage across launches —
+// so one stray click that hid the players overlay hid it for every game after,
+// and on 2026-09-10 the display beside a live Emperor game showed a bare map.
+// The saved choice still applies to a person's own browser; the dedicated
+// display always starts with the HUD and the turn tracker showing. The tech
+// and civics tree is a modal that opens only on request and stays closed.
+const DEDICATED_DISPLAY = new URLSearchParams(location.search).get("display") === "dedicated";
+if (DEDICATED_DISPLAY) {
+  OVERLAY_VISIBILITY.players = true;
+  OVERLAY_VISIBILITY.victory = true;
+}
 function applyOverlayVisibility() {
   for (const name of OVERLAY_NAMES) {
     document.body.classList.toggle(`overlay-${name}-hidden`, !OVERLAY_VISIBILITY[name]);

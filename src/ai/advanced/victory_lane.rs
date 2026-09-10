@@ -120,7 +120,7 @@
 //! Diplomacy, the competition is open, and this completion would put the seat
 //! at or in front of the leader.
 
-use super::{AdvancedAi, GrandStrategy, StrategicPlan};
+use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::Game;
 
 /// A projected Culture race this live is worth preserving as a Faith sink,
@@ -281,8 +281,11 @@ impl AdvancedAi {
 
     pub(super) fn culture_lane_spends(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
         let culture_focus = self.victory_focus(g, pid).strategy == GrandStrategy::Culture;
+        // A named Culture contract owns this Faith even during an expansion
+        // or counter-campaign posture. Recovery retains its defensive hold.
         plan.strategy != GrandStrategy::Recovery
-            && (culture_focus && self.lane_culture_spending
+            && (self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                || culture_focus && self.lane_culture_spending
                 || self.adaptive_culture_lane_spends(g, pid, plan, culture_focus))
     }
 
@@ -489,10 +492,10 @@ mod tests {
         );
 
         let targeted = AdvancedAi::targeting(VictoryTarget::Culture);
-        assert!(!targeted.culture_lane_spends(&g, 0, &plan));
+        assert!(targeted.culture_lane_spends(&g, 0, &plan));
         assert_eq!(
             targeted.culture_faith_lane(&g, 0, &plan),
-            GrandStrategy::Expansion
+            GrandStrategy::Culture
         );
 
         let mut science_target = AdvancedAi::targeting(VictoryTarget::Science);

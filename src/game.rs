@@ -35878,4 +35878,7 @@ mod unit_upgrade_price_tests;
 mod wonder_effect_cache_tests;
 
 #[cfg(test)]
+mod building_activity_cache_tests;
+
+#[cfg(test)]
 mod attack_reach_flood_tests;

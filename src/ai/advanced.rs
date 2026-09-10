@@ -6967,6 +6967,7 @@ mod gold_and_cards;
 mod yield_floors;
 
 mod marginal_usefulness;
+mod production_commitment;
 mod production_compounding;
 
 /// `opening-warrior-recon-2` gives the Settler's escorting Warrior the first
@@ -21077,8 +21078,25 @@ impl AdvancedAi {
             .values()
             .filter(|unit| unit.owner == pid && unit.kind == "rock_band")
             .count();
-        if active_bands >= 2 || !g.players[pid].civics.contains(&crate::name!("cold_war")) {
+        if !g.players[pid].civics.contains(&crate::name!("cold_war")) {
             return;
+        }
+        if active_bands >= 2 {
+            // An assigned Culture race spends its affordable Faith on usable
+            // tours. A fixed two-band ceiling can strand the whole treasury
+            // while both bands travel; an absent venue should still hold it.
+            let usable_tour = self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                && g.units.values().any(|unit| {
+                    unit.owner == pid
+                        && unit.kind == "rock_band"
+                        && g.map.tiles.keys().any(|position| {
+                            g.rock_concert_ai_value(pid, unit.id, *position).is_some()
+                                && g.route_distance(unit.id, *position, 0).is_some()
+                        })
+                });
+            if !usable_tour {
+                return;
+            }
         }
         for city in g.player_city_ids(pid) {
             // Same correction as the religious units above: the shipped rules
@@ -23388,8 +23406,8 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether war or targeted science/culture production must yield to the baseline
-    /// solvency recovery before it adds another upkeep bill.
+    /// Whether war or a science, culture, or domination target must yield to
+    /// baseline solvency recovery before it adds another upkeep bill.
     ///
     /// `BasicAi::product_for` uses the same reserve-and-deficit predicate:
     /// below 100 Gold plus 25 per city, a negative income selects a Trader, a
@@ -23404,8 +23422,8 @@ impl AdvancedAi {
     /// Keep the baseline's emergency exception. An empire at major war with
     /// fewer military units than cities may still raise its first garrison;
     /// every other live war queue takes the same recovery branch that the
-    /// ordinary governor would have used. Science targeting also bypasses the
-    /// baseline picker, including when the optional war-economy gene is off.
+    /// ordinary governor would have used. Named victory targeting also bypasses
+    /// the baseline picker, including when the optional war-economy gene is off.
     /// Rome on 2026-09-08 stayed insolvent from t100 through t190 in peace
     /// while this guard was disabled, continually replacing unpaid units.
     fn live_war_economy_requires_recovery(
@@ -23417,7 +23435,7 @@ impl AdvancedAi {
         if (!self.war_economy
             && !matches!(
                 self.active_victory_target(g),
-                Some(VictoryTarget::Science | VictoryTarget::Culture)
+                Some(VictoryTarget::Science | VictoryTarget::Culture | VictoryTarget::Domination)
             ))
             || self.base.minor
             || self.base.barb
@@ -24856,10 +24874,12 @@ impl AdvancedAi {
             None
         };
         for cid in city_ids {
-            // A named victory governor compares alternatives against the
-            // empire without this queue: the unit being reconsidered cannot
-            // satisfy its own demand. Refresh after each city's actual order.
-            if self.active_victory_target(g).is_some() {
+            // Every governor compares against the empire without this queue:
+            // a Settler cannot fill its own demand and thereby veto itself.
+            // Refresh even for an idle city, so a previous city's retained
+            // commitment still reserves its demand before this city chooses.
+            // Frozen historical controllers retain their original census.
+            if self.victory_planning || self.active_victory_target(g).is_some() {
                 counts = self.counts_without_city_queue(g, pid, cid);
             }
             // What this city is already committed to, and what that is worth
@@ -24867,7 +24887,11 @@ impl AdvancedAi {
             // so `production_value` is only ever consulted on an idle city.
             let committed: Option<(f64, Item)> =
                 g.cities[&cid].queue.first().cloned().map(|item| {
-                    let value = self.production_value(g, pid, cid, &item, plan, &counts);
+                    let value = if !self.victory_planning || g.can_produce(pid, cid, &item) {
+                        self.production_value(g, pid, cid, &item, plan, &counts)
+                    } else {
+                        -10_000.0
+                    };
                     // `build_what_cards_boost`: the same lean the menu gets below,
                     // so a committed boosted item is not preempted by its own
                     // unboosted twin. Unchanged with the gene off.
@@ -24889,9 +24913,10 @@ impl AdvancedAi {
             // cities short and the same review replaced it with a Builder.
             let amenity_repair_committed = self.amenity_project_preemption_on()
                 && (g.city_amenity_surplus(&g.cities[&cid]) < 0 || widespread_amenity_pressure)
-                && committed
-                    .as_ref()
-                    .is_some_and(|(_, item)| Self::amenity_repair_queue_item(g, item));
+                && committed.as_ref().is_some_and(|(value, item)| {
+                    (!self.victory_planning || *value > -1_000.0)
+                        && Self::amenity_repair_queue_item(g, item)
+                });
             if amenity_repair_committed
                 && (widespread_amenity_pressure
                     || (!economic_recovery && plan.strategy != GrandStrategy::Recovery))
@@ -24954,11 +24979,11 @@ impl AdvancedAi {
                 *value > -1_000.0
                     && g.can_produce(pid, cid, item)
                     && (matches!(item, Item::Wonder { .. })
-                        || g.item_remaining_cost_for_city(pid, cid, item)
-                            < g.item_cost_for_city(pid, cid, item))
+                        || g.item_invested_production(cid, item) > 0.0)
             });
-            if committed.is_some()
-                && !recovery_preemption
+            if committed.as_ref().is_some_and(|(value, _)| {
+                !self.victory_planning || (value.is_finite() && *value > -1_000.0)
+            }) && !recovery_preemption
                 && (finish_investment || preempt_margin <= 1.0 || economic_recovery)
             {
                 continue;
@@ -25060,6 +25085,10 @@ impl AdvancedAi {
                         continue;
                     }
                 }
+            }
+            if committed.is_none() && self.resume_city_production(g, pid, cid, plan, &counts) {
+                self.clear_idle_production_streak(cid);
+                continue;
             }
             // The first usable empty trade slot is an income-producing asset,
             // not an ordinary low-value unit bid. Once immediate local defence
@@ -25379,7 +25408,9 @@ impl AdvancedAi {
                     let displaces_commitment = match &committed {
                         Some((current, current_item)) => {
                             *current_item != item
-                                && score > *current + current.abs() * (preempt_margin - 1.0)
+                                && ((self.victory_planning
+                                    && (*current <= -1_000.0 || !current.is_finite()))
+                                    || score > *current + current.abs() * (preempt_margin - 1.0))
                         }
                         None => true,
                     };
@@ -28215,9 +28246,11 @@ impl AdvancedAi {
                 let science_target = self.victory_target == Some(VictoryTarget::Science);
                 let wonder_civ =
                     !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
-                let continuing_wonder = city.queue.first() == Some(item);
+                let continuing_wonder = city.queue.first() == Some(item)
+                    || (self.victory_planning && g.item_invested_production(cid, item) > 0.0);
                 let already_queued = g.cities.values().any(|other| {
-                    other.id != cid
+                    (!self.victory_planning || other.owner == pid)
+                        && other.id != cid
                         && matches!(
                             other.queue.first(),
                             Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
@@ -40487,6 +40520,10 @@ impl AdvancedAi {
             {
                 self.culture_spending(g, pid);
             }
+            // Emergency and victory reservations have had their turn. Reclaim
+            // useful interrupted work before either routine governor fills
+            // the remaining idle cities with unrelated new investments.
+            self.reconcile_production_commitments(g, pid, &plan);
             let adaptive_expansion_dispatch =
                 self.adaptive_expansion_dispatches(&plan, active_victory_target);
             // A broad host-observed Amenity deficit can persist through an
@@ -40635,6 +40672,9 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod domination_solvency_tests;
 
 mod science_scaling;
 

@@ -313,8 +313,11 @@ impl Game {
         position: Pos,
     ) -> bool {
         !self.map.tiles[&position].pillaged
-            && !(self.district_is_family(district, crate::name!("encampment"))
-                && city.encampment_pillaged)
+            // Resolve the family only when the city-wide encampment flag
+            // could disable it. Yield and upkeep queries ask this for every
+            // district/building, almost always with the flag clear.
+            && !(city.encampment_pillaged
+                && self.district_is_family(district, crate::name!("encampment")))
     }
 
     pub(super) fn city_has_active_district_family(&self, city: &City, family: impl AsName) -> bool {
@@ -6172,14 +6175,30 @@ impl Game {
         }
     }
 
+    /// Work already assigned to this exact item, including a paused build.
+    /// An idle city's unassigned overflow is not an investment in every menu item.
+    pub(crate) fn item_invested_production(&self, cid: u32, item: &Item) -> f64 {
+        let city = &self.cities[&cid];
+        let saved = city
+            .production_progress
+            .get(&Self::item_progress_key(item))
+            .copied()
+            .unwrap_or(0.0);
+        saved
+            + if city.queue.first() == Some(item) {
+                city.production
+            } else {
+                0.0
+            }
+    }
+
     /// Production still required after active progress, item-specific paused
     /// progress, and unassigned overflow are applied. Search agents use this
     /// instead of treating a nearly complete build like a fresh one.
     pub(crate) fn item_remaining_cost_for_city(&self, pid: usize, cid: u32, item: &Item) -> f64 {
         let city = &self.cities[&cid];
-        let key = Self::item_progress_key(item);
-        let mut invested = city.production_progress.get(&key).copied().unwrap_or(0.0);
-        if city.queue.is_empty() || city.queue.first() == Some(item) {
+        let mut invested = self.item_invested_production(cid, item);
+        if city.queue.is_empty() {
             invested += city.production;
         }
         (self.item_cost_for_city(pid, cid, item) - invested).max(0.0)

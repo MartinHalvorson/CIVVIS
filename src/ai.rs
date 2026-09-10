@@ -11201,7 +11201,20 @@ impl BasicAi {
             .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
             .filter(|unit| self.barbarian_raider_counts_as_threat(g, pid, unit))
             .count();
-        let wanted: usize = if raiders >= 2 { 2 } else { 1 };
+        // The live opening cannot call two bodies sufficient against an
+        // entire raid. Athens' t18--20 horse raid still saw a zero gap with
+        // two local defenders, so its Settler queue remained the answer.
+        // Match the observed party up to a bounded four-body response while
+        // the seat is in the Ancient/Classical window. The demand recedes
+        // with the raiders; later eras and unarmed controllers keep the old
+        // floor. Existing threat/visibility and naval-triage filters apply.
+        let wanted = if self.garrison_under_fire
+            && advanced::AdvancedAi::early_archers_window_open(g, pid)
+        {
+            raiders.clamp(1, 4)
+        } else {
+            raiders.clamp(1, 2)
+        };
         wanted.saturating_sub(self.barbarian_local_defenders_for_controller(g, pid, cid))
     }
 
@@ -28559,3 +28572,6 @@ mod attack_envelope_key_tests {
 
 #[cfg(test)]
 mod recovery_project_tests;
+
+#[cfg(test)]
+mod opening_defense_tests;

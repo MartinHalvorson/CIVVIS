@@ -2111,7 +2111,17 @@ fn visible_border_staging_fills_one_local_garrison_without_preemption() {
     let settler = Item::Unit {
         unit: crate::name!("settler"),
     };
-    committed.cities.get_mut(&ours).expect("capital").queue = vec![settler.clone()];
+    // This is a legal commitment, not a population-one blocked Settler.
+    committed.cities.get_mut(&ours).expect("capital").pop = 2;
+    committed
+        .apply(
+            0,
+            &Action::Produce {
+                city: ours,
+                item: settler.clone(),
+            },
+        )
+        .unwrap();
     ai.advanced_production(&mut committed, 0, &plan, false);
     assert_eq!(
         committed.cities[&ours].queue.first(),
@@ -32711,7 +32721,7 @@ fn envoy_income_census() {
 /// A fixture that can legally build a named wonder: three cities so the
 /// lane guards are satisfied, the buildings and adjacent district the
 /// wonder requires, and one owned tile shaped to its terrain sheet.
-fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
+pub(super) fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     let mut game = Game::new_with(crate::game::GameOptions {
         barbarians: false,
         ..crate::game::GameOptions::new(2, 40, 28, seed, 250, 6)
@@ -32739,7 +32749,7 @@ fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
             {
                 break;
             }
-            game.units.remove(&settler);
+            game.remove_unit(settler);
         }
     }
 
@@ -32804,7 +32814,7 @@ fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     (game, city)
 }
 
-fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
+pub(super) fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
     StrategicPlan {
         strategy,
         target_player: None,
@@ -48524,4 +48534,103 @@ fn city_bombardment_does_not_credit_damage_to_its_unharmed_garrison() {
     assert!(!depleted.log.iter().any(|(_, action)| {
         matches!(action, Action::Ranged { unit, target } if *unit == shooter && *target == origin)
     }), "the picker must save the shot rather than bombard a depleted city");
+}
+
+#[test]
+fn assigned_culture_can_fund_more_than_two_bands_when_the_tour_is_usable() {
+    let (mut game, capital) = great_person_housing_fixture(774_4068);
+    game.players[0].civics.insert(crate::name!("cold_war"));
+    game.players[0].faith = 5_000.0;
+    let rival = game.player_city_ids(1)[0];
+    let venue = install_ai_test_district(&mut game, rival, "theater_square");
+    game.cities
+        .get_mut(&rival)
+        .unwrap()
+        .buildings
+        .push(crate::name!("broadcast_center"));
+    let band = game.spawn_test_unit("rock_band", 0, venue);
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    let other = game.spawn_test_unit("rock_band", 0, game.cities[&rival].pos);
+    game.units
+        .get_mut(&other)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    // Leave the purchasing city's civilian slot free.
+    for unit in game.player_unit_ids(0) {
+        if unit != band && unit != other {
+            game.remove_unit(unit);
+        }
+    }
+    let count = |g: &Game| {
+        g.units
+            .values()
+            .filter(|u| u.owner == 0 && u.kind == "rock_band")
+            .count()
+    };
+    assert_eq!(count(&game), 2);
+    assert!(game.rock_concert_ai_value(0, band, venue).is_some());
+    assert_eq!(game.route_distance(band, venue, 0), Some(0));
+    let price = game
+        .unit_purchase_cost(0, capital, "rock_band", "faith")
+        .unwrap();
+    let mut adaptive = game.clone();
+    AdvancedAi::new().culture_spending(&mut adaptive, 0);
+    assert_eq!(
+        count(&adaptive),
+        2,
+        "an adaptive seat keeps its existing reserve"
+    );
+    let mut unavailable = game.clone();
+    for uid in [band, other] {
+        std::sync::Arc::make_mut(&mut unavailable.host_unit_facts).insert(
+            uid,
+            crate::game::HostUnitFacts {
+                concert_plots: Some(Default::default()),
+                ..Default::default()
+            },
+        );
+    }
+    let culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    culture.culture_spending(&mut unavailable, 0);
+    assert_eq!(
+        count(&unavailable),
+        2,
+        "host-denied venues must not grow an idle roster"
+    );
+    let mut poor = game.clone();
+    poor.players[0].faith = price - 1.0;
+    culture.culture_spending(&mut poor, 0);
+    assert_eq!(
+        count(&poor),
+        2,
+        "the normal affordability gate still applies"
+    );
+    culture.culture_spending(&mut game, 0);
+    assert_eq!(
+        count(&game),
+        3,
+        "a usable Culture tour may spend beyond the old two-band ceiling"
+    );
+    assert_eq!(game.players[0].faith, 5_000.0 - price);
+}
+
+#[test]
+fn assigned_culture_keeps_faith_spending_during_a_counter_campaign() {
+    let (mut game, _) = great_person_housing_fixture(774_4069);
+    game.players[1].culture_lifetime = 100_000.0;
+    game.players[0].tourism_lifetime = 0.0;
+    let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    culture.lane_culture_spending = false;
+    let campaign = great_person_housing_plan(&game, GrandStrategy::Conquest);
+    assert!(
+        culture.culture_lane_spends(&game, 0, &campaign),
+        "a temporary counter-campaign does not release an assigned Culture race"
+    );
+    let recovery = great_person_housing_plan(&game, GrandStrategy::Recovery);
+    assert!(!culture.culture_lane_spends(&game, 0, &recovery));
 }
