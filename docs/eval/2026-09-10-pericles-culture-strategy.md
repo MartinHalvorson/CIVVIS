@@ -84,6 +84,17 @@ slot types, pillage, location, charges, legal host actions and order acceptance.
 The `113451Z` board instead shows weak district coverage and no Great Works.
 Those are different bottlenecks and should not receive the same intervention.
 
+Follow-up investigation identified a concrete activation defect, fixed in
+[#3380](https://github.com/MartinHalvorson/CIVVIS/pull/3380): the slot survey
+read `PrerequisiteDistrict`, but the shipped Amphitheater row uses
+`PrereqDistrict` (`Base/Assets/Gameplay/Data/Buildings.xml:113`). Empty slots
+were counted without being associated with their district tile. The actual
+survey/export regression fails for both Theater and Acropolis before the
+correction, and reports the matching tile open afterward. At the retained
+turn-150 marks, 22 of 23 cultural GP bodies across ten segments had positive
+empty-slot counts with every activation highlight marked closed. This is
+pre-fix evidence; live creation after loading the correction remains unverified.
+
 In `104739Z`, final culture reached 278.926 with five suzerainties, but tourism
 was only 11 and visitors remained zero. The single observed Great Work at turn
 150 was writing in the Palace. Culture growth by itself did not complete the
