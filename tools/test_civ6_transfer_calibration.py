@@ -43,6 +43,17 @@ class CalibrationTests(unittest.TestCase):
             self.assertFalse(finite(missing))
         self.assertTrue(finite(0))
 
+    def test_eliminated_seats_are_not_zero_pace_live_opponents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / "rows.jsonl"
+            rows = [{"kind": "header"}, {"kind": "game", "seed": 1, "seat": 0,
+                    "trajectory": [{"turn": 25, "alive": True, "cities": 1},
+                                   {"turn": 50, "alive": False, "cities": 0}]}]
+            file.write_text("\n".join(map(json.dumps, rows)))
+            samples = list(native_samples([file]))
+            self.assertEqual(len(samples), 1)
+            self.assertEqual(samples[0]["cohort"][2], 25)
+
     def test_percentiles_include_tails(self):
         self.assertEqual(quantiles([0, 10, 20]), {"n": 3, "p10": 2., "median": 10., "p90": 18.})
 

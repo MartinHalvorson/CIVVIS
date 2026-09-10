@@ -72,6 +72,8 @@ def live_samples(directory):
             frames[turn] = event
     for turn, event in sorted(frames.items()):
         for rival in event.get("rivals", []):
+            if rival.get("alive") is False:
+                continue
             stats = rival.get("public_stats") or {}
             if not isinstance(stats, dict): stats = {}
             values = {"cities": stats.get("city_count"), "techs": rival.get("techs_researched", rival.get("techs")),
@@ -104,6 +106,8 @@ def native_samples(files):
             if row.get("kind") != "game": continue
             if header is None: raise ValueError(f"{file}: seat before header")
             for sample in row.get("trajectory", []):
+                if sample.get("alive") is False:
+                    continue
                 key = (header_id, row.get("difficulty"), row["seed"], row["seat"],
                        row.get("player_target"), sample["turn"])
                 if key in seen: continue
@@ -145,7 +149,7 @@ def summarize(samples):
                         "status": "comparable_pace" if live and native else "unmatched_cohort",
                         "metrics": metrics, "native_targets": targets})
     return {"schema": 1, "scope": "public rival pace; not causal policy identification",
-            "selection": "met rivals only; surviving seats at each checkpoint; no winner-only filtering",
+            "selection": "met live rivals; known eliminated seats excluded from pace only; older missing survival readings remain unknown; no winner-only filtering",
             "production_policy_changed": False, "cohorts": cohorts}
 
 

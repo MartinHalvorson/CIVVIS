@@ -62,6 +62,9 @@ pub fn target_for(
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PaceSample {
     pub turn: u32,
+    /// Older trajectory files did not distinguish elimination from zero pace.
+    #[serde(default)]
+    pub alive: Option<bool>,
     pub cities: usize,
     pub techs: usize,
     pub civics: usize,
@@ -80,6 +83,7 @@ impl PaceSample {
         }
         Self {
             turn: game.turn,
+            alive: Some(game.players[pid].alive),
             cities: cities.len(),
             techs: game.players[pid].techs.len(),
             civics: game.players[pid].civics.len(),

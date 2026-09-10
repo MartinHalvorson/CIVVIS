@@ -39,8 +39,9 @@ held-out error by more than 10%; a proposal still needs prospective tournament
 validation. This is a prior-fitting tool, not proof of Firaxis policy recovery.
 Continuation directories share their original game identity and duplicated
 observations cannot inflate fitting evidence.
-Handicap/seat-asymmetry work is deliberately excluded. Barbarians retain the
-existing Immortal setting rather than inventing a new non-Civ difficulty band.
+Handicap/seat-asymmetry work is deliberately excluded. The integrated standard
+tournament uses the repository's Deity barbarian setting; it does not invent a
+new non-Civ difficulty band.
 
 ## Information and execution
 
@@ -116,7 +117,7 @@ This contract is a structural change, not a claim that every Civ VI rule or
 host-side strategic fallback is now equivalent. In particular, action-specific
 live transition capture/reconstruction, adapter rewrite parity, latent rival
 state estimates, policy-counter attribution, and held-out calibration of the
-target mixture still need measured coverage. The three visibility invariance
+target mixture still need measured coverage. The visibility invariance
 tests and same-observation planner test are necessary but not exhaustive.
 
 Tournament headers record `player_contract` and `target_mix`. The analyzer

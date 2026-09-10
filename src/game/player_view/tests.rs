@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn visible_rival_units_do_not_reveal_private_lifetime_or_training_records() {
+    let mut game = Game::new_full(2, 30, 20, 918, 40, 0, false);
+    let own = game.player_unit_ids(0)[0];
+    let rival = game.player_unit_ids(1)[0];
+    let pos = game.units[&own].pos;
+    let unit = game.units.get_mut(&rival).unwrap();
+    unit.pos = pos;
+    unit.damage_dealt = 900;
+    unit.production_cost = 700.0;
+    unit.xp_bonus_pct = 75.0;
+    unit.free_upkeep = true;
+    unit.linked_to = Some(999_999);
+    let view = game.player_decision_view(0);
+    let observed = &view.units[&rival];
+    assert_eq!(observed.damage_dealt, 0);
+    assert_eq!(observed.production_cost, 0.0);
+    assert_eq!(observed.xp_bonus_pct, 0.0);
+    assert!(!observed.free_upkeep);
+    assert!(observed.linked_to.is_none());
+    assert_eq!(observed.hp, game.units[&rival].hp);
+    assert_eq!(
+        view.units[&own].production_cost,
+        game.units[&own].production_cost
+    );
+}
+
+#[test]
 fn every_major_gets_only_own_and_visible_units() {
     let game = Game::new_full(6, 40, 28, 91, 40, 0, false);
     for pid in 0..6 {

@@ -63,6 +63,18 @@ impl Game {
         view.units.retain(|id, unit| {
             unit.owner == pid || (visible.contains(&unit.pos) && self.unit_visible_to(*id, pid))
         });
+        for unit in view.units.values_mut().filter(|unit| unit.owner != pid) {
+            // Seeing a unit is not access to its owner's investment ledger,
+            // training infrastructure, levy expiry, or hidden escort handle.
+            unit.damage_dealt = 0;
+            unit.production_cost = 0.0;
+            unit.xp_bonus_pct = 0.0;
+            unit.free_upkeep = false;
+            unit.extra_first_promotion = false;
+            unit.linked_to = None;
+            unit.levied_from = None;
+            unit.levied_until = 0;
+        }
         let own_cities: BTreeSet<u32> = self
             .cities
             .values()
