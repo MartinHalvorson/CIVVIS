@@ -234,7 +234,7 @@ impl AdvancedAi {
     /// exposed nearby, then sue for peace. Open a surprise war on a neighbour
     /// whose unescorted Settlers, Builders or unpillaged tiles lie within a
     /// short march of our soldiers, take them, and sue for peace. See
-    /// [`AdvancedAi::opportunistic_war`]. Opt-in gene.
+    /// [`AdvancedAi::opportunistic_war`]. Production gene.
     pub fn enable_opportunistic_war(&mut self) {
         self.opportunistic_war = true;
         self.opportunistic_war_2 = false;
