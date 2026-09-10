@@ -5909,6 +5909,18 @@ const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
         "PATROL",
         "the frame carries no patrol state; where a deployed fighter stands next frame is the host's",
     ),
+    // A Rock Band's concert is the shipped `UNITOPERATION_TOURISM_BOMB`
+    // (`DLC/Expansion2/Data/Expansion2_UnitOperations.xml:11`). The frame
+    // exports no band level and no per-unit tourism, so the only consequence
+    // it can show is the player's whole-turn tourism — which the passive rate
+    // moves every turn anyway. Same shape as HEAL: real, and not separable
+    // from doing nothing. Declared rather than checked, so that a verb which
+    // genuinely cannot be verified says so instead of vanishing through the
+    // fallthrough.
+    (
+        "TOURISM_BOMB",
+        "the frame carries no band level and a whole-turn tourism delta cannot separate a concert from the passive rate",
+    ),
 ];
 
 fn unverifiable_kind(kind: &str) -> bool {
@@ -6765,7 +6777,21 @@ fn verify_unit_order(
                 Verdict::Failed("still_exists".to_string())
             }
         }
-        "IMPROVE" | "REPAIR" => {
+        // ⚠⚠ FOUND BY `every_issued_unit_verb_is_checked_or_declared_unverifiable`.
+        // `Action::Improve` does not always translate to `IMPROVE:<type>`: a
+        // National Park is `DESIGNATE_PARK` and both artifact digs are
+        // `EXCAVATE`, and neither had an arm — both fell through to
+        // `Unverifiable`, so a Naturalist's park and an Archaeologist's dig
+        // were excluded from every actuation rate. They share this arm because
+        // they share its evidence: the operation spends a charge, and a unit
+        // spending its last one is consumed.
+        //
+        // The tile test differs by verb. `IMPROVE` names the improvement it
+        // wants in `arg`; `DESIGNATE_PARK` names none, and what the plot must
+        // show is the park itself. `EXCAVATE` leaves no improvement at all —
+        // it lifts the artifact and clears the site — so it rests on the
+        // charge, the unit and the `improved` event.
+        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" => {
             let charges_spent = match (
                 was.and_then(|u| u.build_charges),
                 now.and_then(|u| u.build_charges),
@@ -6777,6 +6803,8 @@ fn verify_unit_order(
                 tiles.plot((u.x, u.y)).is_some_and(|plot| {
                     (op == "IMPROVE" && !arg.is_empty() && plot.im.as_deref() == Some(arg))
                         || (op == "REPAIR" && !plot.p)
+                        || (op == "DESIGNATE_PARK"
+                            && plot.im.as_deref() == Some("IMPROVEMENT_NATIONAL_PARK"))
                 })
             });
             let improved_event = was.is_some_and(|u| {
@@ -18051,13 +18079,19 @@ mod order_postcondition_tests {
     fn every_issued_unit_verb_is_checked_or_declared_unverifiable() {
         // Discover, never list: every unit verb this file can put on the wire.
         //
-        // Comments are stripped first — they quote verbs, and they quote
-        // ordinary shouted words too ("ZERO captures"), which a bare literal
-        // scan cannot tell apart. What is left is code, and in code the only
-        // upper-case literals beside a `kind: "unit"` order are its verbs.
-        // Both spellings are covered: `verb: Some("FORTIFY".to_string())`, and
-        // the `let verb = if … { "CAPTURE" } else { "MOVE_TO" }` above the
-        // move arm, which is why the window reaches backwards as well.
+        // ⚠ A byte WINDOW around `kind: "unit"` was tried first and is wrong.
+        // It swept in a neighbouring `kind: "war"` literal's DECLARE, and
+        // whether it reached a verb at all depended on how many bytes of
+        // comment happened to sit between — it found DESIGNATE_PARK on one
+        // revision of this file and missed EXCAVATE beside it. So the unit of
+        // discovery is the `Order { … }` LITERAL, taken to its balanced brace,
+        // which no edit above or below can shift.
+        //
+        // Two shapes carry a verb: the literal `verb: Some("FORTIFY"…)` inside
+        // such a block, and a `let verb = if … { "CAPTURE" } else { "MOVE_TO" }`
+        // above one. Both are read. Comments are stripped first — they quote
+        // verbs, and they quote ordinary shouted words too ("ZERO captures"),
+        // which a bare literal scan cannot tell apart.
         let source = include_str!("civvis_orders.rs");
         let code: String = source
             .lines()
@@ -18067,6 +18101,79 @@ mod order_postcondition_tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
+        fn upper_literals(block: &str, into: &mut std::collections::BTreeSet<String>) {
+            for (at, _) in block.match_indices('"') {
+                let rest = &block[at + 1..];
+                let Some(close) = rest.find('"') else {
+                    continue;
+                };
+                let verb = &rest[..close];
+                let shaped = (4..=32).contains(&verb.len())
+                    && verb
+                        .bytes()
+                        .all(|b| b.is_ascii_uppercase() || b == b'_' || b.is_ascii_digit())
+                    && verb.bytes().any(|b| b.is_ascii_uppercase());
+                if shaped {
+                    into.insert(verb.to_string());
+                }
+            }
+        }
+        /// The text of one brace-balanced block starting at `from`, never
+        /// longer than `LITERAL_CAP`.
+        ///
+        /// ⚠ The cap is load-bearing. Brace counting over raw source is fooled
+        /// by a brace inside a string — `format!("{kind}:{verb}")` is one — and
+        /// an unbalanced count runs to the end of the file, sweeping in every
+        /// upper-case word of every JSON test fixture on the way. An `Order`
+        /// literal is a few hundred bytes, so a block that has not closed by
+        /// here did not parse and is truncated rather than trusted.
+        const LITERAL_CAP: usize = 600;
+        fn balanced(code: &str, from: usize) -> &str {
+            let mut depth = 0usize;
+            for (offset, ch) in code[from..].char_indices() {
+                if offset >= LITERAL_CAP {
+                    break;
+                }
+                if ch == '{' {
+                    depth += 1;
+                } else if ch == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &code[from..from + offset + 1];
+                    }
+                }
+            }
+            let end = code[from..]
+                .char_indices()
+                .map(|(offset, ch)| offset + ch.len_utf8())
+                .take_while(|offset| *offset <= LITERAL_CAP)
+                .last()
+                .unwrap_or(0);
+            &code[from..from + end]
+        }
+        let mut verbs: std::collections::BTreeSet<String> = Default::default();
+        for (index, _) in code.match_indices("Order {") {
+            let block = balanced(&code, index + "Order ".len());
+            if !block.contains("kind: \"unit\"") {
+                continue;
+            }
+            upper_literals(block, &mut verbs);
+            // A unit order whose verb is a variable took it from the nearest
+            // `let verb =` above — and only that one, so a `let verb` feeding
+            // a `kind: "city"` order (KEEP, RAZE, LIBERATE) is never swept in.
+            if block.contains("verb: Some(verb") {
+                // Bounded, for the same reason the block is: the assignment
+                // that feeds this order sits directly above it, and an
+                // unbounded `rfind` would sweep every literal back to the last
+                // `let verb` anywhere in the file.
+                let from = index.saturating_sub(LITERAL_CAP);
+                if let Some(assign) = code[from..index].rfind("let verb = ") {
+                    upper_literals(&code[from + assign..index], &mut verbs);
+                }
+            }
+        }
+        // Firaxis type names travel in a unit order's `pos` and `subject`
+        // payloads; they are not verbs.
         const NOT_A_VERB: &[&str] = &[
             "UNIT_",
             "DISTRICT_",
@@ -18106,32 +18213,9 @@ mod order_postcondition_tests {
             "UNITAI_",
             "GAMESPEED_",
         ];
-        let mut verbs: std::collections::BTreeSet<&str> = Default::default();
-        for (index, _) in code.match_indices("kind: \"unit\"") {
-            let from = index.saturating_sub(600);
-            let to = (index + 240).min(code.len());
-            let window = &code[from..to];
-            for (at, _) in window.match_indices('"') {
-                let rest = &window[at + 1..];
-                let Some(close) = rest.find('"') else {
-                    continue;
-                };
-                let verb = &rest[..close];
-                let shaped = (4..=32).contains(&verb.len())
-                    && verb
-                        .bytes()
-                        .all(|b| b.is_ascii_uppercase() || b == b'_' || b.is_ascii_digit())
-                    && verb.bytes().any(|b| b.is_ascii_uppercase());
-                if !shaped || NOT_A_VERB.iter().any(|prefix| verb.starts_with(prefix)) {
-                    continue;
-                }
-                // `code` is a slice of `source`, so the borrow outlives the window.
-                let start = from + at + 1;
-                verbs.insert(&code[start..start + close]);
-            }
-        }
-        let issued: Vec<&str> = verbs
+        let issued: Vec<String> = verbs
             .into_iter()
+            .filter(|verb| !NOT_A_VERB.iter().any(|prefix| verb.starts_with(prefix)))
             .filter(|verb| !verb.starts_with("SPY_"))
             .collect();
         assert!(
@@ -18142,6 +18226,7 @@ mod order_postcondition_tests {
         before.units = vec![unit(1, "UNIT_WARRIOR", 1, 1)];
         let after = frame(2);
         for verb in issued {
+            let verb = verb.as_str();
             let probe = order("unit", Some(1), Some(verb), Some((9, 9)));
             let verdict = check(&probe, &before, &after, &[]);
             assert!(
