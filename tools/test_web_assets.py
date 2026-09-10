@@ -293,4 +293,3 @@ class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
         html = INDEX.read_text(encoding="utf-8")
         self.assertRegex(html, r'<div id="tree">', "the tech/civics tree is a modal")
         self.assertNotRegex(html, r'<div id="tree"[^>]*class="[^"]*\bopen\b')
-
