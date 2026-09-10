@@ -11522,15 +11522,24 @@ impl BasicAi {
             }
         }
 
-        // A physical cultural person can remain stranded even after its
-        // Theater Square is complete: the city may be spending its only
-        // queue on a Market, Granary, or repeatable project while every
-        // compatible Great Work slot is full. That queue is safe to bank in
-        // the same way as a paused district foundation, so open the exact
-        // missing slot chain before the ordinary governor spends another
-        // turn on it. Military bodies, repairs, walls, wonders, and one-shot
+        // A physical person can remain stranded while its required or default
+        // district is missing: the city may be spending its only queue on a
+        // Market, Granary, or repeatable project. That queue is safe to bank
+        // in the same way as a paused district foundation, so open the exact
+        // missing district before the ordinary governor spends another turn
+        // on it. Military bodies, repairs, walls, wonders, and one-shot
         // projects remain protected by `queue_can_yield` above.
         for need in &g.players[pid].live_great_person_activation_needs {
+            if need.kind == "engineer"
+                && matches!(
+                    need.individual.as_deref(),
+                    Some("imhotep" | "gustave_eiffel")
+                )
+            {
+                // These named Engineers use the wonder path above; their
+                // default Industrial Zone is not an activation prerequisite.
+                continue;
+            }
             let Some(family) = Self::live_great_person_district(need) else {
                 continue;
             };
@@ -11538,6 +11547,19 @@ impl BasicAi {
                 if let Some(item) = Self::live_great_person_district_item(g, pid, cid, family) {
                     return Some(item);
                 }
+            }
+        }
+
+        // A physical cultural person can remain stranded even after its
+        // Theater Square is complete: every compatible Great Work slot may be
+        // full while the city spends its only queue on ordinary production.
+        // Open the exact missing slot chain before the ordinary governor
+        // spends another turn on it.
+        for need in &g.players[pid].live_great_person_activation_needs {
+            let Some(family) = Self::live_great_person_district(need) else {
+                continue;
+            };
+            if !Self::empire_district_family_ready_or_queued(g, pid, family) {
                 continue;
             }
             if let Some(work) = Self::live_great_person_work(need) {
@@ -19460,6 +19482,79 @@ mod tests {
             Some(Item::Unit { unit })
                 if game.rules.units[unit].class == "military"
                     && game.rules.units[unit].domain.as_deref() != Some("sea")
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_merchant_can_bank_a_safe_queue_for_a_commercial_hub() {
+        let mut game = Game::new_full(1, 20, 14, 41_114, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 5;
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        grant_tech_with_prerequisites(&mut game, 0, "currency");
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        let repeatable_project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        assert!(
+            game.can_produce(0, city, &repeatable_project),
+            "the fixture must expose a safe repeatable queue"
+        );
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: repeatable_project,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 11.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "merchant".to_string(),
+                individual: Some("marco_polo".to_string()),
+                required_district: Some("commercial_hub".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, .. })
+                if game.district_family(*district) == "commercial_hub"
         ));
     }
 
