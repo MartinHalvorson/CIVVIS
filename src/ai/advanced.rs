@@ -3934,8 +3934,8 @@ pub struct AdvancedAi {
     /// Writer, Artist or Musician, the district, wonder or soldier the other
     /// classes wait on — and a due cultural person no city can house sells
     /// duplicate works to make room and recruits the same turn. See
-    /// `great_person_housing.rs`. Off everywhere by default; opt-in gene
-    /// `great-person-housing`.
+    /// `great_person_housing.rs`. Advanced production turns it on after its
+    /// repeated positive standard-screen result.
     pub great_person_housing: bool,
     /// Open a surprise war when the board offers a prize — an unescorted
     /// enemy Settler or Builder, or a cluster of unpillaged tiles — within a
@@ -7186,6 +7186,7 @@ impl AdvancedAi {
         ai.settler_commit = true;
         ai.research_economy = true;
         ai.enable_solvency_first_trade_slot();
+        ai.enable_great_person_housing();
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;
@@ -35990,9 +35991,16 @@ impl AdvancedAi {
                         + if captures { 30.0 } else { 0.0 }
                 }
                 Some(survivor) => {
-                    (hp - survivor.hp).max(0) as f64 * (1.0 + strength / 100.0)
-                        + if siege { 18.0 } else { 0.0 }
-                        + if captures { 6.0 } else { 0.0 }
+                    let damage = (hp - survivor.hp).max(0) as f64;
+                    // District attacks leave the garrison unharmed. Its role
+                    // is valuable only when this blow actually damages it.
+                    if damage > 0.0 {
+                        damage * (1.0 + strength / 100.0)
+                            + if siege { 18.0 } else { 0.0 }
+                            + if captures { 6.0 } else { 0.0 }
+                    } else {
+                        0.0
+                    }
                 }
             };
         }
@@ -36028,21 +36036,32 @@ impl AdvancedAi {
                 let wall_damage = (wall_hp - after_city.wall_hp).max(0) as f64;
                 let city_damage = (city_hp - after_city.hp).max(0) as f64;
                 let progress = wall_damage * 1.35 + city_damage;
-                value += progress
-                    + if progress > 0.0 && plan.target_city == Some(city) {
-                        35.0
-                    } else {
-                        0.0
-                    };
+                // A depleted city needs a melee taker. A finite zero still
+                // earns target/focus bonuses and siege attack incentives in
+                // the picker, wasting another shot on a city that cannot fall.
+                value += if progress > 0.0 {
+                    progress
+                        + if plan.target_city == Some(city) {
+                            35.0
+                        } else {
+                            0.0
+                        }
+                } else {
+                    f64::NEG_INFINITY
+                };
             }
         } else if let Some(city) = target_encampment {
             let (wall_hp, encampment_hp, pillaged) =
                 encampment_before.expect("a target encampment has pre-attack state");
             let after_city = &after.cities[&city];
-            value += (wall_hp - after_city.encampment_wall_hp).max(0) as f64 * 1.35
+            let progress = (wall_hp - after_city.encampment_wall_hp).max(0) as f64 * 1.35
                 + (encampment_hp - after_city.encampment_hp).max(0) as f64;
             if !pillaged && after_city.encampment_pillaged {
-                value += 180.0;
+                value += progress + 180.0;
+            } else if progress > 0.0 {
+                value += progress;
+            } else {
+                value = f64::NEG_INFINITY;
             }
         }
         (

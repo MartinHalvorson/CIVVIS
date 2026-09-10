@@ -220,7 +220,7 @@ impl AdvancedAi {
     /// selling duplicate works to make room. A class earned and blocked
     /// reserves a city for the slot building, district, wonder or soldier that
     /// lifts the block, and a due cultural person sells duplicate works to make
-    /// room. See [`AdvancedAi::great_person_housing`]. Opt-in gene.
+    /// room. See [`AdvancedAi::great_person_housing`]. Production gene.
     pub fn enable_great_person_housing(&mut self) {
         self.great_person_housing = true;
     }
