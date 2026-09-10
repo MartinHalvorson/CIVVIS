@@ -362,3 +362,71 @@ fn raid_pursuit_holds_when_the_next_step_is_lethal() {
     );
     assert_eq!(game.units[&warrior].pos, origin);
 }
+
+#[test]
+fn a_raid_with_only_a_lethal_prize_offers_peace() {
+    let mut game = pillage_raid_board();
+    let warrior = game.player_unit_ids(0)[0];
+    let origin = game.units[&warrior].pos;
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    ai.enable_raid_pillage_prizes();
+    let prizes = ai.raid_prizes_against(
+        &game,
+        0,
+        1,
+        &[super::RaidStriker {
+            uid: warrior,
+            pos: origin,
+            reach: super::RAID_PURSUIT_RADIUS,
+            lone_garrison: false,
+        }],
+    );
+    let goal = prizes.first().expect("the fixture has a raid prize").pos();
+    for prize in prizes.iter().filter(|prize| prize.pos() != goal) {
+        game.map.tiles.get_mut(&prize.pos()).unwrap().pillaged = true;
+    }
+    let next = game
+        .route_step(warrior, goal, 0)
+        .expect("the remaining prize has a legal first step");
+    let archer_at =
+        game.nbrs(next)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, goal) > 1
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.unit_ids_at(*position).is_empty()
+            })
+            .expect("the fixture has a ranged firing position beside the route");
+    for _ in 0..6 {
+        let archer = game.spawn_test_unit("archer", 1, archer_at);
+        assert!(game.unit_visible_to(archer, 0));
+        assert!(game.attack_reach(archer).contains(&next));
+    }
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert!(
+        super::super::battle_planner::danger(&game, 0, next, warrior)
+            >= f64::from(game.units[&warrior].hp),
+        "the remaining prize must be lethal to approach"
+    );
+    ai.raid_war = Some(RaidWar {
+        target: 1,
+        declared: game.turn,
+        value: RAID_WAR_MIN_VALUE,
+        settlers: 0,
+        builders: 0,
+        pillage_tiles: 1,
+    });
+    game.turn += game.standard_duration(super::RAID_PEACE_EARLIEST);
+    let plan = ai.assess(&game, 0);
+    ai.opportunistic_war_diplomacy(&mut game, 0, &plan);
+    assert!(
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.peace && deal.from == 0 && deal.to == 1),
+        "a prize that cannot be approached safely must not hold the raid open"
+    );
+}
