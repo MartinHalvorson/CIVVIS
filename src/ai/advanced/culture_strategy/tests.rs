@@ -33,6 +33,50 @@ fn board() -> Game {
 }
 
 #[test]
+fn culture_returns_to_conservation_when_a_better_government_is_unlocked() {
+    let mut g = board();
+    let withheld = [
+        "conservation",
+        "suffrage",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("monarchy".to_string());
+    g.players[0].civic = None;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    assert!(g
+        .available_civics(0)
+        .contains(&crate::name!("conservation")));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("conservation"));
+    assert_eq!(ai.government_ladder_rung(&g, 0), None);
+    g.players[0].government = Some("communism".to_string());
+    assert!(
+        ai.government_ladder_rung(&g, 0).is_some(),
+        "after adopting the unlocked capacity, a further rung remains useful"
+    );
+}
+
+#[test]
 fn cold_war_window_keeps_the_opening_and_resumes_the_culture_chain() {
     let mut g = board();
     let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);

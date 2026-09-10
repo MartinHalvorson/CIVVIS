@@ -14514,6 +14514,18 @@ impl AdvancedAi {
             })
         };
         let ours = g.players[pid].government.as_deref().map_or(0, &capacity);
+        // Research has already supplied a higher-capacity government. Let
+        // the government chooser adopt it before buying another rung; while
+        // it waits, the assigned victory lane gets its civic slot back.
+        if g.rules.governments.iter().any(|(name, spec)| {
+            capacity(name.as_str()) > ours
+                && spec
+                    .civic
+                    .as_ref()
+                    .is_some_and(|civic| g.players[pid].civics.contains(civic))
+        }) {
+            return None;
+        }
         let behind = g
             .players
             .iter()
