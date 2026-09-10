@@ -128,6 +128,13 @@ const SCREEN_WIDTH: i32 = 74;
 const SCREEN_HEIGHT: i32 = 46;
 const SCREEN_CITY_STATES: usize = 9;
 const SCREEN_MAP: MapScript = MapScript::Continents;
+// Operator tournament policy, 2026-09-10; normal games retain their own default.
+const SCREEN_BARBARIAN_DIFFICULTY: &str = "deity";
+
+fn tournament_options(mut options: GameOptions) -> GameOptions {
+    options.barbarian_difficulty = SCREEN_BARBARIAN_DIFFICULTY.to_string();
+    options
+}
 
 /// The five conditions a victory mask may close. Score is never among them:
 /// it is the clock, the ending that turns a game the 250-turn limit reaches
@@ -290,7 +297,7 @@ fn combinations(items: &[&'static str], k: usize) -> Vec<Vec<&'static str>> {
 /// rungs is drawn per game from the seed: the weights are laid end to end
 /// and the game on `seed` takes the rung at `seed % total`, so a consecutive
 /// seed window plays each rung in exactly its share. The barbarian seat keeps
-/// its own rung (`default_barbarian_difficulty`, Immortal) whatever the
+/// its own rung (`SCREEN_BARBARIAN_DIFFICULTY`, Deity) whatever the
 /// majors draw. Rows carry the rung their game played, so `--analyze` can
 /// read a gene per rung.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1438,6 +1445,10 @@ struct Header {
     /// ([`DifficultyRotation`]), or empty when every game played `difficulty`.
     #[serde(default)]
     difficulty_rotate: String,
+    /// Tournament barbarian rung. Empty in historical files: do not relabel
+    /// their unrecorded setting with today's tournament default.
+    #[serde(default)]
+    barbarian_difficulty: String,
     /// The games this segment pre-registered per rung, from its seed window,
     /// before the first game. Empty without a rotation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -1913,7 +1924,7 @@ fn play_game(
         mask.apply(seed, profile.victories)
     });
     // ⭐ THE MAJORS' RUNG, per game from the seed under a rotation. The
-    // barbarian seat keeps its own rung: `GameOptions::new` sets it.
+    // barbarian seat keeps its own tournament rung, independent of the majors.
     let difficulty = profile
         .difficulty_rotate
         .as_ref()
@@ -1938,7 +1949,7 @@ fn play_game(
     } else {
         BTreeSet::new()
     };
-    let mut world = Game::new_with(GameOptions {
+    let mut world = Game::new_with(tournament_options(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
@@ -1953,7 +1964,7 @@ fn play_game(
             profile.turns,
             profile.city_states,
         )
-    });
+    }));
     // ⚠ Set on the world rather than through `GameOptions`, which has no such
     // field: `civvis simulate --native-competitions` reaches it exactly the
     // same way. Nothing in the engine changes for this — the flag has shipped
@@ -4357,6 +4368,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.victory_mask != found.victory_mask
                                 || first.difficulty != found.difficulty
                                 || first.difficulty_rotate != found.difficulty_rotate
+                                || first.barbarian_difficulty != found.barbarian_difficulty
                                 || first.rivals != found.rivals
                                 || first.handicap != found.handicap
                                 || first.rival_chairs != found.rival_chairs
@@ -4995,6 +5007,11 @@ fn print_victory_masks(header: &Header, rows: &[Row]) {
 
 /// One line saying what rung the majors played, or how they rotated.
 fn difficulty_line(header: &Header) -> String {
+    let barbarians = if header.barbarian_difficulty.is_empty() {
+        "unrecorded"
+    } else {
+        &header.barbarian_difficulty
+    };
     if !header.difficulty_rotate.is_empty() {
         return format!(
             "difficulty: ⭐ majors rotate {} per game from the seed ({}) · barbarians at their own rung ({})",
@@ -5005,7 +5022,7 @@ fn difficulty_line(header: &Header) -> String {
                 .map(|(rung, games)| format!("{rung}×{games}"))
                 .collect::<Vec<_>>()
                 .join(" "),
-            civvis::game::default_barbarian_difficulty()
+            barbarians
         );
     }
     format!(
@@ -5018,7 +5035,7 @@ fn difficulty_line(header: &Header) -> String {
         } else {
             header.difficulty.clone()
         },
-        civvis::game::default_barbarian_difficulty()
+        barbarians
     )
 }
 
@@ -5702,7 +5719,7 @@ fn usage() -> ! {
          gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
          gene_screen --list",
         civvis::game::default_difficulty(),
-        civvis::game::default_barbarian_difficulty(),
+        SCREEN_BARBARIAN_DIFFICULTY,
         CONTESTED_FIELD.join("+")
     );
     std::process::exit(2)
@@ -6219,6 +6236,7 @@ fn main() {
             .as_ref()
             .map(DifficultyRotation::id)
             .unwrap_or_default(),
+        barbarian_difficulty: SCREEN_BARBARIAN_DIFFICULTY.to_string(),
         difficulty_games: difficulty_rotate
             .as_ref()
             .map(|rotation| rotation.games_by_rung(start_seed, games_to_play))
@@ -6410,6 +6428,7 @@ mod tests {
             victory_mask_games: BTreeMap::new(),
             difficulty: String::new(),
             difficulty_rotate: String::new(),
+            barbarian_difficulty: String::new(),
             difficulty_games: BTreeMap::new(),
             rivals: String::new(),
             rival_games: BTreeMap::new(),
@@ -7490,6 +7509,35 @@ mod tests {
             .expect("parses");
         assert_eq!(back.difficulty, "emperor");
         assert_eq!(row_rung(&back), "emperor");
+    }
+
+    #[test]
+    fn tournaments_use_deity_barbarians_without_changing_normal_games() {
+        let options = GameOptions::new(2, 12, 10, 42, 5, 0);
+        assert_eq!(options.barbarian_difficulty, "immortal");
+        let normal_rung = options.difficulty.clone();
+        let game = Game::new_with(tournament_options(options));
+        assert_eq!(game.barbarian_difficulty, "deity");
+        assert_eq!(game.difficulty, normal_rung);
+        assert!(game.players.iter().any(|player| player.is_barbarian));
+    }
+
+    #[test]
+    fn barbarian_provenance_round_trips_without_relabeling_old_results() {
+        let mut header = screen_header(&["a"]);
+        header.barbarian_difficulty = SCREEN_BARBARIAN_DIFFICULTY.into();
+        let mut value = serde_json::to_value(&header).unwrap();
+        let restored: Header = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(restored.barbarian_difficulty, "deity");
+        assert!(difficulty_line(&restored).contains("(deity)"));
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("barbarian_difficulty");
+        let historical: Header = serde_json::from_value(value).unwrap();
+        assert!(historical.barbarian_difficulty.is_empty());
+        assert!(difficulty_line(&historical).contains("(unrecorded)"));
+        assert!(!difficulty_line(&historical).contains("deity"));
     }
 
     /// A rotating batch at the screen's shape is the standard screen: the

@@ -2504,6 +2504,9 @@ fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
     // seat; hold it out here so the rungs themselves stay pinned. See
     // `the_land_grab_wants_the_land_not_a_rung` for the seat as deployed.
     live.disable_land_grab();
+    // Tournament defaults may enable a separate difficulty-based horizon;
+    // withhold it here so this regression continues to isolate the rung clock.
+    live.disable_expansion_scales_with_difficulty();
     let mut paced = live.clone();
     paced.shared_city_target = false;
     let mut stock_pace = paced.clone();

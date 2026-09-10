@@ -4947,6 +4947,11 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `chop-for-expansion`: while a city is building a Settler, a Builder
+    /// spends a charge clearing a feature or harvesting a resource for the
+    /// Production instead of improving a tile. Off ships the shipped
+    /// behaviour exactly.
+    chop_for_expansion: bool,
     /// `early-conquest-opening`: the opening this controller has committed
     /// to. `None` whenever the gene is off. See
     /// `advanced/early_conquest.rs`.
@@ -6803,6 +6808,10 @@ mod chase_every_boost;
 /// table and at most three committed side objectives. Opt-in gene
 /// `boost-planner`; see `advanced/boost_planner.rs`.
 mod boost_planner;
+/// `chop-for-expansion`: a Builder turns a forest into a Settler. The engine
+/// has always modelled feature removal and harvesting; nothing ever asked for
+/// one. See `advanced/chop_for_expansion.rs`.
+mod chop_for_expansion;
 
 mod site_lookahead;
 
@@ -7814,6 +7823,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
             denial_war: None,
@@ -10164,7 +10174,17 @@ impl AdvancedAi {
     /// Reported as `100 * ours at the clock / the largest bar at the clock`,
     /// clamped. A seat that already leads reads 100 without the projection.
     fn culture_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
-        if !self.culture_lane_forecast || !g.victory_conditions.culture {
+        self.culture_lane_forecast_score_with(g, pid, self.culture_lane_forecast)
+    }
+
+    /// The same public race projection used by the forecast gene, when a
+    /// caller has its own narrow reason to price the Culture sink. Keeping
+    /// the gene wrapper above preserves its off-by-default contract and its
+    /// screenable field; the adaptive Faith pass can ask the engine's
+    /// published curves whether Culture is still a winnable use of Faith
+    /// without making that forecast choose the whole grand strategy.
+    fn culture_lane_forecast_score_with(&self, g: &Game, pid: usize, enabled: bool) -> i32 {
+        if !enabled || !g.victory_conditions.culture {
             return 0;
         }
         let majors: Vec<usize> = g
@@ -14463,7 +14483,7 @@ impl AdvancedAi {
             return None;
         }
         if self.government_ladder_2 {
-            return self.government_ladder_rung(g, pid);
+            return self.government_ladder_rung(g, pid, objective);
         }
         if g.turn as f64 > g.max_turns.max(1) as f64 * GOVERNMENT_LADDER_WINDOW {
             return None;
@@ -14508,7 +14528,12 @@ impl AdvancedAi {
     /// on slots: [`GOVERNMENT_LADDER_WINDOW`] normally, and
     /// [`GOVERNMENT_LADDER_BEHIND_WINDOW`] while some living major plays a
     /// government with more capacity than ours.
-    fn government_ladder_rung(&self, g: &Game, pid: usize) -> Option<&'static str> {
+    fn government_ladder_rung(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: GrandStrategy,
+    ) -> Option<&'static str> {
         let capacity = |name: &str| {
             g.rules.governments.get(name).map_or(0, |spec| {
                 spec.slots.military
@@ -14533,9 +14558,16 @@ impl AdvancedAi {
         if g.turn as f64 > g.max_turns.max(1) as f64 * window {
             return None;
         }
+        let priorities = Self::government_priorities(objective, false);
+        let culture_match = Self::culture_government_match(g, pid, objective);
         g.rules
             .governments
             .iter()
+            .filter(|(name, _)| {
+                self.government_capacity_fallback
+                    || priorities.contains(&name.as_str())
+                    || culture_match.as_deref() == Some(name.as_str())
+            })
             .filter(|(name, _)| capacity(name.as_str()) > ours)
             .filter_map(|(_, spec)| spec.civic.as_ref())
             .filter(|civic| !g.players[pid].civics.contains(civic))
@@ -14880,6 +14912,13 @@ impl AdvancedAi {
         let Some(target) = self.victory_target else {
             return false;
         };
+        // Accumulated tourists lag the infrastructure and Faith that enable
+        // a Culture finish. Comparing that stock with a rival at midgame
+        // cannot justify replacing an assigned Culture goal with Score:
+        // doing so drops Conservation and the tourism civic chain itself.
+        if target == VictoryTarget::Culture {
+            return false;
+        }
         if (g.turn as f64) < g.max_turns.max(1) as f64 * LANE_VERDICT_SHARE {
             return false;
         }
@@ -14945,51 +14984,13 @@ impl AdvancedAi {
         !(in_recovery || runs_dry)
     }
 
-    fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
-        let unlocked = |government: &str| {
-            g.rules.governments.get(government).is_some_and(|spec| {
-                spec.civic
-                    .as_ref()
-                    .is_none_or(|civic| g.players[pid].civics.contains(civic))
-            })
-        };
-
-        // Matching the leading Culture defender removes the full -40%
-        // Gathering Storm penalty between distinct Tier 3/4 governments.
-        // Lower-tier governments have zero intolerance and do not justify
-        // giving up the stronger late-game government effects.
-        let culture_match = (objective == GrandStrategy::Culture)
-            .then(|| {
-                g.players
-                    .iter()
-                    .filter(|rival| {
-                        rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
-                    })
-                    .max_by_key(|rival| (g.domestic_tourists(rival.id), rival.id))
-                    .and_then(|rival| rival.government.clone())
-            })
-            .flatten()
-            .filter(|government| {
-                matches!(
-                    government.as_str(),
-                    "communism"
-                        | "democracy"
-                        | "fascism"
-                        | "corporate_libertarianism"
-                        | "digital_democracy"
-                        | "synthetic_technocracy"
-                ) && unlocked(government)
-            });
-
-        let faith_mobilization =
-            matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
-                && g.players[pid].faith >= 600.0
-                && unlocked("theocracy");
-        let priorities: &[&str] = match objective {
+    /// Research and adoption share candidate governments. Otherwise the
+    /// capacity ladder buys civics for a government the lane will not use.
+    fn government_priorities(
+        objective: GrandStrategy,
+        faith_mobilization: bool,
+    ) -> &'static [&'static str] {
+        match objective {
             GrandStrategy::Culture | GrandStrategy::Diplomacy => &[
                 "digital_democracy",
                 "democracy",
@@ -15065,7 +15066,59 @@ impl AdvancedAi {
                 "classical_republic",
                 "chiefdom",
             ],
+        }
+    }
+
+    fn culture_government_match(g: &Game, pid: usize, objective: GrandStrategy) -> Option<String> {
+        (objective == GrandStrategy::Culture)
+            .then(|| {
+                g.players
+                    .iter()
+                    .filter(|rival| {
+                        rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+                    })
+                    .max_by_key(|rival| (g.domestic_tourists(rival.id), rival.id))
+                    .and_then(|rival| rival.government.clone())
+            })
+            .flatten()
+            .filter(|government| {
+                matches!(
+                    government.as_str(),
+                    "communism"
+                        | "democracy"
+                        | "fascism"
+                        | "corporate_libertarianism"
+                        | "digital_democracy"
+                        | "synthetic_technocracy"
+                )
+            })
+    }
+
+    fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy);
+        let unlocked = |government: &str| {
+            g.rules.governments.get(government).is_some_and(|spec| {
+                spec.civic
+                    .as_ref()
+                    .is_none_or(|civic| g.players[pid].civics.contains(civic))
+            })
         };
+
+        // Matching the leading Culture defender removes the full -40%
+        // Gathering Storm penalty between distinct Tier 3/4 governments.
+        // Lower-tier governments have zero intolerance and do not justify
+        // giving up the stronger late-game government effects.
+        let culture_match = Self::culture_government_match(g, pid, objective)
+            .filter(|government| unlocked(government));
+
+        let faith_mobilization =
+            matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
+                && g.players[pid].faith >= 600.0
+                && unlocked("theocracy");
+        let priorities = Self::government_priorities(objective, faith_mobilization);
         let choice = culture_match.or_else(|| {
             priorities
                 .iter()
@@ -33473,6 +33526,15 @@ impl AdvancedAi {
             if stepped {
                 return true;
             }
+        }
+        // `chop-for-expansion`: a Settler under production is a deadline, and
+        // the sweep below cannot see a chop — `worthwhile_improvements` ranks
+        // improvements, and a builder operation is not one. Placed after the
+        // project errand, which is an empire decision already taken, and ahead
+        // of repair and improvement, which have no deadline. `None` with the
+        // gene off, before anything is read.
+        if let Some(acted) = self.chop_for_expansion_step(g, pid, uid, strategy) {
+            return acted;
         }
         let repairable = g.map.get(current).is_some_and(|tile| {
             tile.pillaged
