@@ -124,3 +124,6 @@ Tournament headers record `player_contract` and `target_mix`. The analyzer
 refuses to pool mismatching contracts; reporting batches must start a fresh
 epoch. Old tournament evidence remains history and the initial deployment
 prior, not fresh validation of the new information boundary.
+Pooled gene estimates also use the newest explicit player epoch that priced
+each gene; old source references remain recorded, but cannot supply posterior
+precision or misleading prior-batch trends for a different observation contract.
