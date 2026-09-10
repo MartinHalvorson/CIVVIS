@@ -856,6 +856,32 @@ struct Row {
     /// a file rather than a Δ of zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     techs_150: Option<usize>,
+    /// ⭐ CITY DEVELOPMENT: districts and buildings the empire finished, and
+    /// the specialty districts among them.
+    ///
+    /// The empire's failure at Emperor is CONVERSION, not width, and nothing
+    /// on this row could show it. Measured over the 30-game deployment-shape
+    /// run in `docs/fidelity/`, against the best rival: cities **0.83**, but
+    /// science per city **0.32** and faith per city **0.30**. We hold the
+    /// leader's land and each of our cities yields about a third of theirs.
+    /// The shortfall is uniform across yields, so it is one cause rather than
+    /// a science-specific one — and the obvious candidate is that the cities
+    /// are simply not built up. `docs/` already records the anecdote from
+    /// three deep games ("11 cities with 3 Libraries", "9 Campus districts
+    /// against 3 science buildings"); these columns make it a standing number
+    /// that any screen can read.
+    ///
+    /// `specialty_districts` is the count Civilization VI treats as
+    /// specialty (`Game::city_specialty_district_count`) — the ones that carry
+    /// the yield buildings — as distinct from walls, an aqueduct or a canal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    districts: Option<usize>,
+    /// See `districts`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    specialty_districts: Option<usize>,
+    /// See `districts`. Wonders are counted separately by `wonders`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    buildings: Option<usize>,
     /// ⭐ THE CITY LEDGER, the starkest number the live corpus reports.
     ///
     /// `cities_taken` is the seat's `captures` counter — cities it conquered,
@@ -2171,6 +2197,30 @@ fn play_game(
             // with an unfinished one.
             row.cities_at_game_turn_60 = cities_at_live_band.as_ref().map(|counts| counts[seat]);
             row.techs_at_game_turn_150 = techs_at_live_pace.as_ref().map(|counts| counts[seat]);
+            row.districts = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| city.districts.len())
+                    .sum(),
+            );
+            row.specialty_districts = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| world.city_specialty_district_count(city))
+                    .sum(),
+            );
+            row.buildings = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| city.buildings.len())
+                    .sum(),
+            );
             row.cities_taken = Some(
                 world.players[seat]
                     .counters
@@ -2344,6 +2394,9 @@ fn row_for_seat(
         cities_60: None,
         cities_at_game_turn_60: None,
         techs_at_game_turn_150: None,
+        districts: None,
+        specialty_districts: None,
+        buildings: None,
         cities_taken: None,
         cities_lost: None,
         victories_off: Vec::new(),
@@ -6647,6 +6700,9 @@ mod tests {
             cities_60: None,
             cities_at_game_turn_60: None,
             techs_at_game_turn_150: None,
+            districts: None,
+            specialty_districts: None,
+            buildings: None,
             cities_taken: None,
             cities_lost: None,
             science_end: None,
