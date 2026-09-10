@@ -70,3 +70,11 @@ matched between arms, as did the eight terminal records. This is stronger
 negative evidence than matching final summaries: the option had no observed
 research effect in this regime. The snapshot timing does not observe every
 individual action, and this result says nothing about untested map profiles.
+
+A separate observer wrapper counted Conquest plans after each seat's turn.
+Across the same eight control games, it saw 871 observations with a still-walled
+foreign objective; every one already had Engineering. The wrapper reproduced
+all eight terminal records. This explains why first-capability research was
+not a binding constraint in that native probe. It does not establish that the
+siege units were actually built, delivered or strong enough for later walls.
+Those are the more useful follow-up questions for this tested regime.
