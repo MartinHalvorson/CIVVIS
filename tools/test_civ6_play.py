@@ -55,6 +55,8 @@ class SharedDesktopRescueTests(unittest.TestCase):
     def test_marker_and_foreground_control_optional_recovery(self):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.operator_presence, "operator_active",
+                          return_value=False), \
              patch.object(civ6_play.popup_clear, "frontmost") as front:
             self.assertFalse(civ6_play.shared_desktop_in_use())
             front.assert_not_called()
@@ -65,6 +67,53 @@ class SharedDesktopRescueTests(unittest.TestCase):
                 self.assertEqual(civ6_play.shared_desktop_in_use(), deferred)
             front.side_effect = subprocess.TimeoutExpired("osascript", 5)
             self.assertTrue(civ6_play.shared_desktop_in_use())
+
+    def test_a_person_at_the_keyboard_makes_the_desktop_shared_without_a_marker(self):
+        """The whole point: no marker to remember. Sit down and the harness keeps
+        its hands off; walk away and upkeep resumes on its own."""
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.operator_presence, "operator_active") as active, \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"):
+            active.return_value = True
+            self.assertTrue(civ6_play.shared_desktop_in_use())
+            active.return_value = False
+            self.assertFalse(civ6_play.shared_desktop_in_use())
+
+    def test_a_game_the_person_put_in_front_is_still_fair_game(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.operator_presence, "operator_active", return_value=True), \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Civ6_Exe_Child"):
+            self.assertFalse(civ6_play.shared_desktop_in_use())
+
+    def test_focus_upkeep_defers_to_a_present_operator(self):
+        with patch.object(civ6_play, "shared_desktop_in_use", return_value=True), \
+             patch.object(civ6_play, "screen_locked", return_value=False), \
+             patch.object(civ6_play, "focus_game") as focus:
+            self.assertEqual(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
+        focus.assert_not_called()
+        with patch.object(civ6_play, "shared_desktop_in_use", return_value=False), \
+             patch.object(civ6_play, "screen_locked", return_value=False), \
+             patch.object(civ6_play, "focus_game") as focus:
+            self.assertGreater(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
+        focus.assert_called_once()
+
+    def test_presence_is_logged_on_transitions_only(self):
+        """A person working beside the game for an hour is one line, not one per
+        poll."""
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"), \
+             patch.object(civ6_play.operator_presence, "operator_active") as active, \
+             patch.dict(civ6_play._SHARED_DESKTOP_STATE, {"deferring": False}), \
+             patch("sys.stdout", out):
+            for value in (True, True, True, False, False):
+                active.return_value = value
+                civ6_play.shared_desktop_in_use()
+        lines = [line for line in out.getvalue().splitlines() if line.startswith("[desktop]")]
+        self.assertEqual(len(lines), 2, lines)
 
     def test_real_event_handler_preserves_events_without_gui_or_budget_work(self):
         # Execute the actual nested callback; no game or GUI bootstrap is needed.
@@ -119,6 +168,8 @@ class SharedDesktopFocusTests(unittest.TestCase):
              patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
              patch.object(civ6_play.time, "monotonic", return_value=100), \
              patch.object(civ6_play, "screen_locked", return_value=False), \
+             patch.object(civ6_play.operator_presence, "operator_active", return_value=False), \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"), \
              patch.object(civ6_play, "focus_game") as focus, \
              patch.object(civ6_play, "place_game") as place:
             marker = Path(tmp) / ".civvis-shared-desktop"

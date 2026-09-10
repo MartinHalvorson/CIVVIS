@@ -210,6 +210,7 @@ fn hypothetical_raid_opens_closed_borders_without_changing_the_real_board() {
 fn a_visible_settler_behind_an_impassable_ring_is_not_a_war_opportunity() {
     let mut game = pillage_raid_board();
     let mut ai = AdvancedAi::new();
+    ai.disable_raid_pillage_prizes();
     ai.enable_opportunistic_war_2();
     let warrior = game.player_unit_ids(0)[0];
     let here = game.units[&warrior].pos;

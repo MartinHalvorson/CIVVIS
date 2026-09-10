@@ -602,14 +602,17 @@ pub const GENES: &[Gene] = &[
     // the slot space ahead of the person, sell duplicate works when nothing
     // can be built; see `AdvancedAi::great_person_housing`.
     Gene { tag: "great-person-housing", field: "great_person_housing", kind: Kind::Production, enable: AdvancedAi::enable_great_person_housing, disable: AdvancedAi::disable_great_person_housing },
-    // A surprise war priced on what the board exposes — an unescorted
-    // Settler or Builder, a cluster of unpillaged tiles — taken by movement
-    // and closed by peace; see `AdvancedAi::opportunistic_war`.
-    Gene { tag: "opportunistic-war", field: "opportunistic_war", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war, disable: AdvancedAi::disable_opportunistic_war },
+    // Promoted 2026-09-10: the repeated standard screen measured +1.53 pp
+    // wins (z +3.56) and +0.482 pp score share (z +5.45). The bounded raid
+    // takes an exposed civilian or nearby prize and sues for peace; see
+    // `AdvancedAi::opportunistic_war`.
+    Gene { tag: "opportunistic-war", field: "opportunistic_war", kind: Kind::Production, enable: AdvancedAi::enable_opportunistic_war, disable: AdvancedAi::disable_opportunistic_war },
     // V2 rejects prizes without a short post-declaration route.
     Gene { tag: "opportunistic-war-2", field: "opportunistic_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war_2, disable: AdvancedAi::disable_opportunistic_war_2 },
-    // The pillage half of the raid, priced apart: inert unless the row
-    // above is on. See `AdvancedAi::raid_pillage_prizes`.
+    // The pillage half of the raid remains separately screened: inert unless
+    // the row above is on, and still opt-in until a current screen confirms
+    // its older positive standard result. See
+    // `AdvancedAi::raid_pillage_prizes`.
     Gene { tag: "raid-pillage-prizes", field: "raid_pillage_prizes", kind: Kind::OptIn, enable: AdvancedAi::enable_raid_pillage_prizes, disable: AdvancedAi::disable_raid_pillage_prizes },
     // A target can be excellent while a visible hostile makes its next route
     // step unsafe. This holds that corridor aside briefly and sends the

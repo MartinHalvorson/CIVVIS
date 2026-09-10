@@ -34525,18 +34525,21 @@ fn raid_settler_board() -> (Game, u32, u32) {
     (game, warrior, settler)
 }
 
-/// The gene is an opt-in: off in every bundle, flippable by name, in
-/// `PRODUCTION_OPT_INS`, and switching it off forgets any open raid.
+/// The genes are production-on, still flippable by name, and switching the
+/// raid off forgets any open raid.
 #[test]
-fn opportunistic_war_is_a_native_opt_in() {
-    let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge_universe();
-    assert!(!ai.opportunistic_war);
+fn opportunistic_war_is_a_native_production_gene() {
+    let ai = AdvancedAi::new();
+    assert!(ai.opportunistic_war);
+    assert!(!ai.raid_pillage_prizes);
+    assert!(!AdvancedAi::legacy().opportunistic_war);
+    assert!(!AdvancedAi::legacy().raid_pillage_prizes);
     let enable = GENES
         .iter()
         .find(|gene| gene.tag == "opportunistic-war")
-        .expect("an opt-in row")
+        .expect("a production row")
         .enable;
+    let mut ai = AdvancedAi::legacy();
     enable(&mut ai);
     assert!(ai.opportunistic_war);
     ai.raid_war = Some(opportunistic_war::RaidWar {
@@ -34560,6 +34563,12 @@ fn opportunistic_war_is_a_native_opt_in() {
     assert!(ai.raid_pillage_prizes);
     ai.disable_raid_pillage_prizes();
     assert!(!ai.raid_pillage_prizes);
+    assert!(crate::ai::gene("opportunistic-war")
+        .expect("registered gene")
+        .production());
+    assert!(!crate::ai::gene("raid-pillage-prizes")
+        .expect("registered gene")
+        .production());
 }
 
 /// An unescorted enemy Settler two tiles from our warrior is a prize worth a
@@ -34670,7 +34679,9 @@ fn a_raid_is_not_a_reason_to_plan_a_conquest() {
     );
     assert_ne!(plan.strategy, GrandStrategy::Recovery);
     // The same war without the gene's bookkeeping reads "already at war".
-    let stock = AdvancedAi::new();
+    let mut stock = AdvancedAi::new();
+    stock.disable_opportunistic_war();
+    stock.disable_raid_pillage_prizes();
     let stock_plan = stock.assess(&game, 0);
     assert_eq!(stock_plan.strategy, GrandStrategy::Conquest);
 }
@@ -34745,6 +34756,7 @@ fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
     let warrior = game.spawn_test_unit("warrior", 0, post);
     let _ = ours;
     let mut ai = AdvancedAi::new();
+    ai.disable_raid_pillage_prizes();
     ai.enable_opportunistic_war();
     game.world_era = 2;
     assert!(
