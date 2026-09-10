@@ -11873,6 +11873,9 @@ impl AdvancedAi {
                         .filter(|prior| prior.target_player == Some(target))
                         .and_then(|prior| prior.target_city)
                         .filter(|city| g.cities.get(city).is_some_and(|city| city.owner == target))
+                        // A failed capture's explicit stand-down outranks a
+                        // cached siege objective until the cooldown expires.
+                        .filter(|city| !self.capture_stood_down_holds(g, *city))
                 })
         } else {
             None
@@ -40832,6 +40835,9 @@ mod domination_solvency_tests;
 
 #[cfg(test)]
 mod domination_finish_tests;
+
+#[cfg(test)]
+mod siege_standdown_tests;
 
 mod science_scaling;
 
