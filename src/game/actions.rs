@@ -4292,11 +4292,10 @@ impl Game {
             // is an Archaeologist action, not a persistent tile improvement.
             if excavates_artifact {
                 t.resource = None;
-                t.improvement = None;
             } else {
                 t.improvement = Some(Name::new(imp));
+                t.pillaged = false;
             }
-            t.pillaged = false;
             if removes {
                 t.feature = None;
             }
