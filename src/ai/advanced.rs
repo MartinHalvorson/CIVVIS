@@ -4944,6 +4944,11 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `chop-for-expansion`: while a city is building a Settler, a Builder
+    /// spends a charge clearing a feature or harvesting a resource for the
+    /// Production instead of improving a tile. Off ships the shipped
+    /// behaviour exactly.
+    chop_for_expansion: bool,
     /// `early-conquest-opening`: the opening this controller has committed
     /// to. `None` whenever the gene is off. See
     /// `advanced/early_conquest.rs`.
@@ -5666,11 +5671,6 @@ pub struct AdvancedAi {
     /// groups and the posture ladder; `force_groups` is built from the forces
     /// so the planners and the ladder read it unchanged. Opt-in gene
     /// `objective-board`. See `advanced/objective_board.rs`.
-    /// `chop-for-expansion`: while a city is building a Settler, a Builder
-    /// spends a charge clearing a feature or harvesting a resource for the
-    /// Production instead of improving a tile. Off ships the shipped
-    /// behaviour exactly.
-    chop_for_expansion: bool,
     objective_board: bool,
     /// The board and its forces, kept across turns. See `objective_board`.
     objective_board_state: objective_board::ObjectiveBoard,
@@ -7819,6 +7819,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
             denial_war: None,
@@ -7924,7 +7925,6 @@ impl AdvancedAi {
             magnus_follows_settlers: false,
             liang_follows_builders: false,
             modernize_before_spending: false,
-            chop_for_expansion: false,
             objective_board: false,
             objective_board_state: objective_board::ObjectiveBoard::default(),
             live_move_refusal_break: false,
