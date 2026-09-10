@@ -2420,6 +2420,63 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
     return False
 
 
+#: Civilization VI's own confirmation when its Quit menu is used from inside a
+#: game or the Create Game screen.
+EXIT_DIALOG_HEADING = "Exit To Desktop"
+EXIT_DIALOG_CANCEL = "Cancel"
+
+
+def confirm_exit_dialog(run_dir: Path | None = None) -> bool:
+    """Click OK on the EXIT TO DESKTOP confirmation, if it is on screen.
+
+    ★★★★★ THE POLITE QUIT ASKS A QUESTION AND NOTHING WAS ANSWERING IT.
+    `civ6_env.request_macos_quit()` clicks *Quit Civilization VI* in the game's
+    menu; from inside a game or the Create Game screen that raises this modal
+    rather than exiting. The SIGTERM that follows cannot get through a modal and
+    `quit_game` rightly will not escalate to SIGKILL, so the process sits there
+    and the supervisor reports `LANE STALLED ... it needs an operator`. It
+    needed one twice on 2026-09-10, and both times the fix was a single click.
+
+    ⚠⚠ OK CANNOT BE FOUND BY OCR. `_menu_label_matches` demands an exact match
+    for a label under ten characters and `OK` is two, so it never matches --
+    which is also why the heading and Cancel are read instead. The dialog is
+    symmetric: the heading sits on the centre line and OK and Cancel straddle
+    it, so OK is Cancel mirrored about the heading.
+
+    Measured twice on 2026-09-10 against live frames: heading x=433 with Cancel
+    (480, 334) gives (386, 334); heading x=431 with the same Cancel gives
+    (382, 334). Both exited the game at once. `(385 + 480) / 2 = 432.5` lands on
+    the heading, which is what says the mirror is the rule rather than a lucky
+    constant.
+
+    ⚠ The full-desktop OCR pass reads the heading but NOT the buttons -- they
+    are too small at 1x. `_observed_label_points` falls through to the enlarged
+    crop, which is the pass that finds `Cancel`; a reimplementation that only
+    called `recognize` returned nothing and clicked nothing.
+    """
+    bounds = game_window()
+    if bounds is None:
+        return False
+    shots = run_dir if run_dir is not None else Path(tempfile.gettempdir())
+    shot = shots / "exit-dialog.png"
+    if not screenshot(shot):
+        return False
+    heading = _observed_label_points(shot, EXIT_DIALOG_HEADING, bounds)
+    cancel = _observed_label_points(shot, EXIT_DIALOG_CANCEL, bounds)
+    if not heading or not cancel:
+        return False
+    x, y, w, h = bounds
+    confirm = (2 * heading[0][0] - cancel[0][0], cancel[0][1])
+    if not (x <= confirm[0] <= x + w and y <= confirm[1] <= y + h):
+        # A mirror that lands outside the game window is not this dialog.
+        return False
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    click_at(*confirm)
+    print(f"[setup] answered the EXIT TO DESKTOP confirmation at {confirm}",
+          flush=True)
+    return True
+
+
 def _main_menu_visible(path: Path) -> bool:
     """Return whether a screenshot visibly contains Firaxis's Single Player row."""
     return any(

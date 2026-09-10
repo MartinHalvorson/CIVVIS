@@ -1799,6 +1799,80 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class ExitConfirmationTests(unittest.TestCase):
+    """★★★★★ THE POLITE QUIT ASKS A QUESTION AND NOTHING WAS ANSWERING IT.
+
+    `civ6_env.request_macos_quit()` clicks *Quit Civilization VI* in the game's
+    own menu. From inside a game or the Create Game screen that raises an
+    in-engine modal — EXIT TO DESKTOP / OK · Cancel — rather than exiting. The
+    SIGTERM that follows cannot get through a modal and `quit_game` rightly
+    will not escalate to SIGKILL, so the process sits there and the supervisor
+    reports `LANE STALLED ... it needs an operator`. It needed one twice on
+    2026-09-10 and both times the fix was one click.
+    """
+
+    BOUNDS = (0, 33, 864, 542)
+
+    def _confirm(self, points):
+        clicks = []
+
+        def labels(shot, label, bounds, strip=None):
+            return points.get(label, [])
+
+        with mock.patch.object(civ6_play, "game_window", return_value=self.BOUNDS), \
+             mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_observed_label_points", labels), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "click_at",
+                               side_effect=lambda x, y: clicks.append((x, y))):
+            answered = civ6_play.confirm_exit_dialog()
+        return answered, clicks
+
+    def test_ok_is_cancel_mirrored_about_the_heading(self):
+        """⚠⚠ OK CANNOT BE FOUND BY OCR — the readers demand an exact match
+        under ten characters and `OK` is two. These are real coordinates from
+        the two live stalls: heading x=433 with Cancel (480, 334) gives
+        (386, 334), and heading x=431 gives (382, 334). Both exited the game.
+        `(385 + 480) / 2 = 432.5` lands on the heading, which is what makes the
+        mirror a rule rather than a lucky constant."""
+        for heading_x, expected in ((433, 386), (431, 382)):
+            with self.subTest(heading_x=heading_x):
+                answered, clicks = self._confirm({
+                    "Exit To Desktop": [(heading_x, 294)],
+                    "Cancel": [(480, 334)],
+                })
+                self.assertTrue(answered)
+                self.assertEqual(clicks, [(expected, 334)])
+
+    def test_no_dialog_means_no_click(self):
+        for points in ({}, {"Exit To Desktop": [(433, 294)]}, {"Cancel": [(480, 334)]}):
+            with self.subTest(points=sorted(points)):
+                answered, clicks = self._confirm(points)
+                self.assertFalse(answered)
+                self.assertEqual(clicks, [])
+
+    def test_a_mirror_outside_the_game_window_is_not_this_dialog(self):
+        """Cancel far to the left of the heading mirrors to a point off the
+        window. That is not a symmetric dialog, so nothing is clicked."""
+        answered, clicks = self._confirm({
+            "Exit To Desktop": [(60, 294)],
+            "Cancel": [(840, 334)],
+        })
+        self.assertFalse(answered)
+        self.assertEqual(clicks, [])
+
+    def test_an_unreadable_frame_is_not_a_guessed_click(self):
+        with mock.patch.object(civ6_play, "game_window", return_value=self.BOUNDS), \
+             mock.patch.object(civ6_play, "screenshot", return_value=False), \
+             mock.patch.object(civ6_play, "click_at") as click:
+            self.assertFalse(civ6_play.confirm_exit_dialog())
+        click.assert_not_called()
+        with mock.patch.object(civ6_play, "game_window", return_value=None), \
+             mock.patch.object(civ6_play, "click_at") as click:
+            self.assertFalse(civ6_play.confirm_exit_dialog())
+        click.assert_not_called()
+
+
 class MapPickerTests(unittest.TestCase):
     """★★★★★ THE MAP ROW OPENS A BROWSER, NOT A DROPDOWN.
 
