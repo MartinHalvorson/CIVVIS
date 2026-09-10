@@ -834,6 +834,30 @@ struct Row {
     /// a file rather than a Δ of zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     techs_150: Option<usize>,
+    /// ⭐ THE CITY LEDGER, the starkest number the live corpus reports.
+    ///
+    /// `cities_taken` is the seat's `captures` counter — cities it conquered,
+    /// the one `capture_rewards` bumps. `cities_lost` is read off the final
+    /// board: a city this seat FOUNDED (`original_owner`) that somebody else
+    /// holds at the end. Together they are the sim-side twin of the live
+    /// `combat` block's `cities_taken` / `cities_lost`.
+    ///
+    /// Why they are worth a column: over 96 deep live Emperor runs the seat
+    /// took **2 cities and lost 65**. Nothing on this side could be set beside
+    /// that, so nobody could tell whether the empire loses cities because the
+    /// strategy is wrong or because the live bridge cannot execute the orders
+    /// the strategy gives — which are different problems with different fixes.
+    ///
+    /// ⚠ Unit kills and losses are deliberately NOT here. `kills` is a
+    /// counter but there is no per-player loss counter to divide it by, so a
+    /// `kills_per_loss` on this side would have to be invented rather than
+    /// read. Cities are counted honestly today; units need an engine counter
+    /// first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cities_taken: Option<usize>,
+    /// The other half of the city ledger. See `cities_taken`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cities_lost: Option<usize>,
     /// ⭐ THE OPENING BAND: cities held at the start of the turn equivalent to
     /// Standard turn `OPENING_BAND_STANDARD_TURN`, or the final count when the
     /// game ended before it. `None` in every file written before the field
@@ -2090,6 +2114,22 @@ fn play_game(
                     .as_ref()
                     .map_or_else(|| world.player_city_ids(seat).len(), |counts| counts[seat]),
             );
+            row.cities_taken = Some(
+                world.players[seat]
+                    .counters
+                    .get("captures")
+                    .copied()
+                    .unwrap_or(0)
+                    .max(0) as usize,
+            );
+            // Founded by this seat, held by somebody else when the game ended.
+            row.cities_lost = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.original_owner == seat && city.owner != seat)
+                    .count(),
+            );
             match this_rival {
                 Some(offset) => {
                     row.player_target = String::new();
@@ -2245,6 +2285,8 @@ fn row_for_seat(
         // took the mid-game science-pace and opening-band reads.
         techs_150: None,
         cities_60: None,
+        cities_taken: None,
+        cities_lost: None,
         victories_off: Vec::new(),
         difficulty: String::new(),
         rival_mix: String::new(),
@@ -6517,6 +6559,8 @@ mod tests {
             techs: 0,
             techs_150: None,
             cities_60: None,
+            cities_taken: None,
+            cities_lost: None,
             science_end: None,
             wonders: 0,
             military: 0.0,
@@ -6969,6 +7013,32 @@ mod tests {
         assert!(
             estimate_costs(&header, &rows).is_empty(),
             "secs are 0.0 in test rows"
+        );
+    }
+
+    #[test]
+    fn the_city_ledger_is_absent_on_an_old_row_and_round_trips_on_a_new_one() {
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.cities_taken, None, "a row that never counted says so");
+        assert_eq!(old.cities_lost, None);
+        let text = serde_json::to_string(&old).unwrap();
+        assert!(
+            !text.contains("cities_taken") && !text.contains("cities_lost"),
+            "an old row stays byte for byte what it was: {text}"
+        );
+        let mut row = test_row(0, 0, "10", true);
+        row.cities_taken = Some(2);
+        row.cities_lost = Some(0);
+        let text = serde_json::to_string(&row).unwrap();
+        let back: Row = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.cities_taken, Some(2));
+        assert_eq!(
+            back.cities_lost,
+            Some(0),
+            "zero lost is a real reading and must survive the round trip"
         );
     }
 
