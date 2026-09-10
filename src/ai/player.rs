@@ -114,50 +114,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         // Governor preferences are player decisions, not predicted resources.
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
-        let mut changed = false;
-        for (target, actions) in &finishing.execution {
-            if game.units.contains_key(target) {
-                for action in actions {
-                    changed = true;
-                    if game.apply(pid, action).is_err() {
-                        *game.players[pid]
-                            .counters
-                            .entry("player:refused".into())
-                            .or_default() += 1;
-                        break;
-                    }
-                }
-            }
-        }
-        for (seat, action) in view.log.since(ordinary_begin) {
-            if game.current != pid || game.winner.is_some() {
-                return;
-            }
-            if *seat != pid || matches!(action, Action::EndTurn) {
-                continue;
-            }
-            let explored = game.players[pid].explored.len();
-            let allocator = game.next_id;
-            if game.apply(pid, action).is_err() {
-                *game.players[pid]
-                    .counters
-                    .entry("player:refused".into())
-                    .or_default() += 1;
-                changed = true;
-                break;
-            }
-            changed |= game.players[pid].explored.len() != explored
-                || game.next_id != allocator
-                || matches!(
-                    action,
-                    Action::Attack { .. }
-                        | Action::Ranged { .. }
-                        | Action::CityStrike { .. }
-                        | Action::EncampmentStrike { .. }
-                        | Action::AirStrike { .. }
-                        | Action::TheologicalAttack { .. }
-                );
-        }
+        let changed = execute_frame(game, pid, &finishing, view.log.since(ordinary_begin));
         if !changed {
             break;
         }
@@ -186,6 +143,65 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
             break;
         }
     }
+}
+
+fn execute_frame<'a>(
+    game: &mut Game,
+    pid: usize,
+    finishing: &super::finishing::WarFinishingVolley,
+    ordinary: impl Iterator<Item = &'a (usize, Action)>,
+) -> bool {
+    for (target, actions) in &finishing.execution {
+        if game.units.contains_key(target) {
+            for action in actions {
+                if execute_observed_action(game, pid, action) {
+                    return true;
+                }
+            }
+        }
+    }
+    // This tail assumes the projected finishing result. Never reach it after
+    // a refusal, discovery or actual combat roll changed those premises.
+    for (seat, action) in ordinary {
+        if *seat == pid
+            && !matches!(action, Action::EndTurn)
+            && execute_observed_action(game, pid, action)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// True means the rest of this projected batch must not execute. Replanning
+/// is bounded by the same frame budget as the live adapter; unused projected
+/// actions are not permission to execute against facts we know are stale.
+fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> bool {
+    if game.current != pid || game.winner.is_some() {
+        return true;
+    }
+    let explored = game.players[pid].explored.len();
+    let allocator = game.next_id;
+    if game.apply(pid, action).is_err() {
+        *game.players[pid]
+            .counters
+            .entry("player:refused".into())
+            .or_default() += 1;
+        return true;
+    }
+    game.current != pid
+        || game.winner.is_some()
+        || game.players[pid].explored.len() != explored
+        || game.next_id != allocator
+        || matches!(
+            action,
+            Action::Attack { .. }
+                | Action::Ranged { .. }
+                | Action::CityStrike { .. }
+                | Action::EncampmentStrike { .. }
+                | Action::AirStrike { .. }
+                | Action::TheologicalAttack { .. }
+        )
 }
 
 #[cfg(test)]
