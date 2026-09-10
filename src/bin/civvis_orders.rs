@@ -2089,6 +2089,7 @@ fn append_border_buy_order(
 // under `LUXURY_BUY_CEILING_MIN` — two Gold a turn, the cheapest ask on
 // record — is not worth a deal window.
 const LUXURY_BUY_MIN_DEFICIT: f64 = 2.0;
+const LUXURY_BUY_EMERGENCY_DEFICIT: f64 = 4.0;
 const LUXURY_BUY_GOLD_RESERVE: i64 = 60;
 const LUXURY_BUY_INCOME_FLOOR: f64 = 4.0;
 const LUXURY_BUY_CEILING_BASE: i32 = 135;
@@ -2117,7 +2118,8 @@ fn append_luxury_buy_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> Option<&'static str> {
-    if amenity_deficit(state) < LUXURY_BUY_MIN_DEFICIT {
+    let deficit = amenity_deficit(state);
+    if deficit < LUXURY_BUY_MIN_DEFICIT {
         return Some("luxury_buy_hold:content");
     }
     if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
@@ -2126,9 +2128,23 @@ fn append_luxury_buy_order(
     let Some(income) = state.gold_per_turn.filter(|income| income.is_finite()) else {
         return Some("luxury_buy_hold:income_unknown");
     };
-    let carried = (25.0 * (income - LUXURY_BUY_INCOME_FLOOR))
+    let income_carried = (25.0 * (income - LUXURY_BUY_INCOME_FLOOR))
         .floor()
         .clamp(0.0, LUXURY_BUY_CEILING_MAX as f64) as i32;
+    // A severe amenity deficit can itself push income below the ordinary
+    // safety floor through the host's yield penalty. Preserve that floor for
+    // ordinary shortages, but let the treasury carry one emergency luxury
+    // ask when four or more amenities are missing and the reserve can survive
+    // it. The ask remains bounded by the normal ceiling.
+    let carried = if deficit >= LUXURY_BUY_EMERGENCY_DEFICIT {
+        income_carried.max(
+            (state.gold - LUXURY_BUY_GOLD_RESERVE)
+                .max(0)
+                .min(LUXURY_BUY_CEILING_MAX as i64) as i32,
+        )
+    } else {
+        income_carried
+    };
     let worth = LUXURY_BUY_CEILING_BASE
         + LUXURY_BUY_CEILING_PER_CITY * state.cities.len().min(i32::MAX as usize) as i32;
     let ceiling = worth.min(LUXURY_BUY_CEILING_MAX).min(carried);
@@ -15483,6 +15499,21 @@ mod tests {
             append_luxury_buy_order(&thin, &mut held),
             Some("luxury_buy_hold:income")
         );
+        // A severe deficit can be the reason income is already below the
+        // normal floor. Use only treasury room above the reserve for one
+        // emergency ask; ordinary thin income remains held above.
+        let mut emergency = thin.clone();
+        emergency.gold = 132;
+        emergency.gold_per_turn = Some(-3.5);
+        emergency.cities = vec![short(8.0, 4.0)];
+        let mut emergency_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&emergency, &mut emergency_orders),
+            None
+        );
+        assert_eq!(emergency_orders.len(), 1);
+        assert_eq!(emergency_orders[0].subject, Some(4));
+        assert_eq!(emergency_orders[0].pos, Some((72, 0)));
         let mut poor = state.clone();
         poor.gold = 59;
         assert_eq!(
