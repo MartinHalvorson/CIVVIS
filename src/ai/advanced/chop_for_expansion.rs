@@ -385,8 +385,9 @@ mod tests {
         let (g, ai, _, _, wood) = fixture();
         let improvements = ai.worthwhile_improvements(&g, 0, wood, GrandStrategy::Expansion);
         assert!(
-            !improvements.iter().any(|improvement| CHOP_OPERATIONS
-                .contains(&improvement.as_str())),
+            !improvements
+                .iter()
+                .any(|improvement| CHOP_OPERATIONS.contains(&improvement.as_str())),
             "a builder operation is not an improvement, so it is never ranked"
         );
     }
