@@ -89,7 +89,11 @@
 //! adaptive seat has no assigned target to carry into that pass, so the
 //! deployed controller follows its public Culture focus there; the opt-in
 //! remains the switch for a targeted seat whose current plan has not named
-//! Culture.
+//! Culture. A targetless seat whose current posture is war or Science can also
+//! reach the pass when the engine's own projected Culture curves still clear
+//! the live-race floor; this keeps a real late Culture race from starving on
+//! an incidental plan switch without making the forecast choose the grand
+//! strategy.
 //!
 //! **`lane-space-race`.** Every gate in `science_production` asks for an
 //! **explicitly assigned** `VictoryTarget::Science`: the pad count (1 rather
@@ -118,6 +122,10 @@
 
 use super::{AdvancedAi, GrandStrategy, StrategicPlan};
 use crate::game::Game;
+
+/// A projected Culture race this live is worth preserving as a Faith sink,
+/// even when the adaptive posture is temporarily occupied elsewhere.
+const ADAPTIVE_CULTURE_SPENDING_SCORE: i32 = 60;
 
 /// What one Diplomatic Victory Point is worth to a Diplomacy lane, in the
 /// units `production_value` ranks in. The same number
@@ -225,7 +233,9 @@ impl AdvancedAi {
 
     /// `lane-culture-spending`: the lane the Culture Faith pass and its
     /// reserve read. Adaptive seats derive this from their public victory
-    /// focus; the opt-in remains available for an explicitly targeted seat
+    /// focus; a targetless seat also keeps the pass open when the projected
+    /// Culture race is still live even if the current posture is Science or
+    /// Conquest. The opt-in remains available for an explicitly targeted seat
     /// whose current plan has not named Culture.
     ///
     /// ⚠ **NOT `lane_or_plan`, and the difference is the whole gene.** The
@@ -245,19 +255,35 @@ impl AdvancedAi {
     /// `Recovery` still refuses: an empire losing ground at home has better
     /// uses for its Faith than a Rock Band, and `military_faith_spending`
     /// runs after this.
-    fn adaptive_culture_lane_spends(&self, plan: &StrategicPlan, culture_focus: bool) -> bool {
+    fn adaptive_culture_spending_signal(&self, g: &Game, pid: usize) -> bool {
+        self.victory_planning
+            && self.victory_target.is_none()
+            // The opening and midgame already have the baseline Faith
+            // priorities. Delay the city-wide projection until the late pass
+            // where a posture switch can otherwise strand the Culture sink.
+            && g.turn >= g.standard_duration(100)
+            && self.culture_lane_forecast_score_with(g, pid, true)
+                >= ADAPTIVE_CULTURE_SPENDING_SCORE
+    }
+
+    fn adaptive_culture_lane_spends(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        culture_focus: bool,
+    ) -> bool {
         self.victory_planning
             && self.victory_target.is_none()
             && plan.strategy != GrandStrategy::Recovery
-            && culture_focus
+            && (culture_focus || self.adaptive_culture_spending_signal(g, pid))
     }
 
     pub(super) fn culture_lane_spends(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
         let culture_focus = self.victory_focus(g, pid).strategy == GrandStrategy::Culture;
         plan.strategy != GrandStrategy::Recovery
-            && culture_focus
-            && (self.lane_culture_spending
-                || self.adaptive_culture_lane_spends(plan, culture_focus))
+            && (culture_focus && self.lane_culture_spending
+                || self.adaptive_culture_lane_spends(g, pid, plan, culture_focus))
     }
 
     /// The lane the Culture Faith reserve is sized for: `Culture` when this
@@ -357,6 +383,7 @@ mod tests {
     use crate::ai::advanced::VictoryTarget;
     use crate::game::{Game, GameOptions};
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     fn game() -> Game {
         Game::new_with(GameOptions {
@@ -471,6 +498,69 @@ mod tests {
         let mut science_target = AdvancedAi::targeting(VictoryTarget::Science);
         science_target.enable_lane_culture_spending();
         assert!(!science_target.culture_lane_spends(&g, 0, &plan));
+    }
+
+    /// A temporary Conquest or Science posture must not strand a targetless
+    /// seat whose published Culture curves still close before the clock. The
+    /// adaptive signal is deliberately narrower than the public focus: a weak
+    /// projection stays shut, and an explicitly targeted seat keeps its
+    /// opt-in boundary.
+    #[test]
+    fn adaptive_culture_sink_survives_a_non_culture_posture_only_when_projected() {
+        let mut g = game();
+        g.turn = 200;
+        g.players[0].civics.insert(crate::name!("cold_war"));
+        for rival in 1..4 {
+            g.players[rival].culture_lifetime = 10_000.0;
+            g.players[0]
+                .tourism_pressure
+                .insert(rival, 10.0 * 4.0 * crate::game::TOURISM_PER_VISITOR);
+        }
+        Arc::make_mut(&mut g.observed_tourism_per_turn).insert(0, 200.0);
+        g.players[0].science_projects.extend([
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+            "launch_mars_colony".to_string(),
+            "exoplanet_expedition".to_string(),
+        ]);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            ..expansion_plan()
+        };
+        let adaptive = AdvancedAi::new();
+        assert_eq!(
+            adaptive.victory_focus(&g, 0).strategy,
+            GrandStrategy::Science,
+            "the current posture is deliberately not Culture"
+        );
+        let projected = adaptive.culture_lane_forecast_score_with(&g, 0, true);
+        assert!(
+            projected >= ADAPTIVE_CULTURE_SPENDING_SCORE,
+            "fixture must clear the adaptive floor ({projected})"
+        );
+        assert!(adaptive.adaptive_culture_spending_signal(&g, 0));
+        assert!(adaptive.culture_lane_spends(&g, 0, &plan));
+        assert_eq!(
+            adaptive.culture_faith_lane(&g, 0, &plan),
+            GrandStrategy::Culture
+        );
+
+        let mut weak = g.clone();
+        Arc::make_mut(&mut weak.observed_tourism_per_turn).insert(0, 20.0);
+        assert!(!adaptive.adaptive_culture_spending_signal(&weak, 0));
+        assert!(!adaptive.culture_lane_spends(&weak, 0, &plan));
+
+        let targeted = AdvancedAi::targeting(VictoryTarget::Science);
+        assert!(
+            !targeted.culture_lane_spends(&g, 0, &plan),
+            "explicit targets still require the Culture spending opt-in"
+        );
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            ..plan
+        };
+        assert!(!adaptive.culture_lane_spends(&g, 0, &recovery));
     }
 
     /// A war posture is a decision, not a gap: the policy-deck gene leaves it

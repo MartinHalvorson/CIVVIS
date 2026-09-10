@@ -10170,7 +10170,17 @@ impl AdvancedAi {
     /// Reported as `100 * ours at the clock / the largest bar at the clock`,
     /// clamped. A seat that already leads reads 100 without the projection.
     fn culture_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
-        if !self.culture_lane_forecast || !g.victory_conditions.culture {
+        self.culture_lane_forecast_score_with(g, pid, self.culture_lane_forecast)
+    }
+
+    /// The same public race projection used by the forecast gene, when a
+    /// caller has its own narrow reason to price the Culture sink. Keeping
+    /// the gene wrapper above preserves its off-by-default contract and its
+    /// screenable field; the adaptive Faith pass can ask the engine's
+    /// published curves whether Culture is still a winnable use of Faith
+    /// without making that forecast choose the whole grand strategy.
+    fn culture_lane_forecast_score_with(&self, g: &Game, pid: usize, enabled: bool) -> i32 {
+        if !enabled || !g.victory_conditions.culture {
             return 0;
         }
         let majors: Vec<usize> = g
