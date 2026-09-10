@@ -223,6 +223,72 @@ class TheOpeningBandIsComparable(unittest.TestCase):
         self.assertEqual(band["why"], "sim", "the live side recorded it")
 
 
+class TheCityLedgerIsComparable(unittest.TestCase):
+    """Over 96 deep live Emperor runs the seat took 2 cities and lost 65.
+    Nothing on the simulator side could be set beside that number."""
+
+    def test_both_halves_are_read_from_each_corpus(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            live = fidelity.live_records(
+                write_live(
+                    [
+                        live_row(
+                            score=100,
+                            rival_best=200,
+                            combat={"cities_taken": 2, "cities_lost": 65},
+                        )
+                    ],
+                    tmp,
+                )
+            )
+            sim = fidelity.sim_records(
+                write_sim(
+                    [
+                        [
+                            {"score": 100, "cities_taken": 2, "cities_lost": 1},
+                            {"score": 200, "cities_taken": 4, "cities_lost": 3},
+                        ]
+                    ],
+                    tmp,
+                    handicap="rivals",
+                ),
+                fidelity.map_sizes(),
+            )
+            report = fidelity.ledger(live, sim)
+        subsystems = report["matched_cells"][0]["subsystems"]
+        taken = subsystems["cities_taken"]
+        self.assertTrue(taken["available"])
+        self.assertAlmostEqual(taken["live"], 2.0)
+        self.assertAlmostEqual(taken["sim"], 3.0, msg="median of 2 and 4")
+        lost = subsystems["cities_lost"]
+        self.assertTrue(lost["available"])
+        self.assertAlmostEqual(lost["live"], 65.0)
+        self.assertAlmostEqual(lost["sim"], 2.0, msg="median of 1 and 3")
+        self.assertGreater(
+            lost["divergence"], 10.0, "a 65-against-2 gap must show as a large one"
+        )
+
+    def test_a_live_run_with_no_combat_block_says_which_side_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            live = fidelity.live_records(
+                write_live([live_row(score=100, rival_best=200)], tmp)
+            )
+            sim = fidelity.sim_records(
+                write_sim(
+                    [[{"score": 100, "cities_lost": 1}, {"score": 200, "cities_lost": 3}]],
+                    tmp,
+                    handicap="rivals",
+                ),
+                fidelity.map_sizes(),
+            )
+            report = fidelity.ledger(live, sim)
+        lost = report["matched_cells"][0]["subsystems"]["cities_lost"]
+        self.assertFalse(lost["available"])
+        self.assertEqual(lost["why"], "live")
+
+
 class TheHandicapIsPartOfTheConfiguration(unittest.TestCase):
     """The rung says how big the bonus is; the handicap mode says who gets it.
 
