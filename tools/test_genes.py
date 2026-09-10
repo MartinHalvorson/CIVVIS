@@ -273,6 +273,86 @@ class OneShape(unittest.TestCase):
                 self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
                 self.assertIn(next(iter(leg)), gene_ledger.shape_gap(gene_ledger.profile_of(probe)))
 
+    def test_the_three_reporting_columns_must_have_played_one_field(self):
+        """⚠⚠ The cost of the rung NOT being a shape leg, paid at the ranking.
+
+        `--difficulty emperor`, `--handicap rivals` and `--rivals firaxis-mix`
+        all leave every map leg alone and stay `standard`, deliberately: the
+        ladder plays Emperor and above and the screen may follow it. But the
+        ranking averages the latest THREE columns weighted by seats, so if one
+        played Emperor against handicapped rivals and two played Prince
+        self-play, that average is a mixture of different games and nothing
+        said so. `handicap`'s own note asks a reader to read such a source with
+        care; this is what makes that possible."""
+        def column(name, **legs):
+            return {
+                "path": name,
+                "profile": gene_ledger.profile_of(analysis([{"tag": "a"}], **legs)),
+            }
+
+        prince = column("prince.json")
+        emperor = column("emperor.json", difficulty="emperor", handicap="rivals",
+                         rivals="firaxis-mix", rival_chairs=5)
+        self.assertEqual(gene_ledger.field_drift([prince]), {})
+        self.assertEqual(gene_ledger.field_drift([prince, prince]), {})
+        self.assertEqual(gene_ledger.field_drift([emperor, emperor]), {})
+        mixed = gene_ledger.field_drift([prince, emperor])
+        self.assertEqual(len(mixed), 2, f"a mixture must be named: {mixed}")
+        self.assertTrue(
+            any("emperor" in name for name in mixed),
+            f"the message must name the field that differs: {mixed}",
+        )
+
+    def test_the_mixture_is_refused_at_the_door_the_ranking_reads(self):
+        """The guard runs in the change that adds it: two real files, one
+        Prince and one Emperor, through the function the ledger actually
+        calls."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            prince = tmp / "prince.json"
+            prince.write_text(json.dumps(analysis([{"tag": "a"}])))
+            emperor = tmp / "emperor.json"
+            emperor.write_text(json.dumps(analysis(
+                [{"tag": "a"}], difficulty="emperor", handicap="rivals")))
+            notes = {"prince.json": "test", "emperor.json": "test"}
+            # Either one alone is fine.
+            self.assertEqual(
+                len(gene_ledger.reporting_batch_records([prince], notes)), 1)
+            self.assertEqual(
+                len(gene_ledger.reporting_batch_records([emperor], notes)), 1)
+            with self.assertRaises(SystemExit) as refusal:
+                gene_ledger.reporting_batch_records([prince, emperor], notes)
+        message = str(refusal.exception)
+        self.assertIn("did not play the same field", message)
+        self.assertIn("emperor", message)
+        self.assertIn("prince.json", message)
+        self.assertIn("emperor.json", message)
+
+    def test_a_rung_batch_alone_is_never_refused(self):
+        """The gate is against the MIXTURE, not against the rung. An Emperor
+        column is exactly the evidence the Emperor ladder needs."""
+        emperor = analysis([{"tag": "a"}], difficulty="emperor", handicap="rivals")
+        profile = gene_ledger.profile_of(emperor)
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        self.assertEqual(
+            gene_ledger.field_drift([{"path": "emperor.json", "profile": profile}]), {}
+        )
+
+    def test_every_deployment_field_default_is_what_an_unset_header_means(self):
+        """The defaults have to BE the shipped ones, or a batch that recorded
+        nothing would read as a different field from one that recorded its
+        default explicitly."""
+        blank = gene_ledger.profile_of(analysis([{"tag": "a"}]))
+        for key, default in gene_ledger.DEPLOYMENT_FIELD.items():
+            with self.subTest(key=key):
+                self.assertEqual(blank.get(key, default), default)
+        spelled = gene_ledger.profile_of(analysis([{"tag": "a"}], difficulty="prince"))
+        self.assertEqual(
+            gene_ledger.field_of(blank),
+            gene_ledger.field_of(spelled),
+            "naming the rung it already played is not a different field",
+        )
+
     def test_observed_player_standard_requires_competitions_without_reserved_seats(self):
         profile = gene_ledger.profile_of(analysis([{"tag": "a"}],
             player_contract="observed-player-v1", native_competitions=True))
