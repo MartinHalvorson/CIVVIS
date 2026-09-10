@@ -921,6 +921,16 @@ impl AdvancedAi {
         self.culture_lane_forecast = false;
     }
 
+    /// Test the Rock Band unlock before the Culture lane's stadium and
+    /// museum-theming civics, while retaining Humanism and Conservation first.
+    pub fn enable_culture_cold_war_window(&mut self) {
+        self.culture_cold_war_window = true;
+    }
+
+    pub fn disable_culture_cold_war_window(&mut self) {
+        self.culture_cold_war_window = false;
+    }
+
     /// Read a rival's Science clock from the prerequisite chain it has
     /// climbed, not only from the launches it has made. See
     /// [`Self::science_chain_alarm`].

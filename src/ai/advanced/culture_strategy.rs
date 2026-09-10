@@ -3,6 +3,7 @@
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::{Game, Item, QuickDeal};
+use crate::name::Name;
 use std::collections::BTreeSet;
 
 /// An explicit Culture target must keep valuing Theater Squares and their
@@ -23,6 +24,39 @@ pub(super) const CULTURE_THREAT_PRESSURE: i32 = 50;
 pub(super) const CULTURE_THREAT_PRESSURE_EARLY: i32 = 30;
 
 impl AdvancedAi {
+    /// `culture-cold-war-window` changes only the order of the Culture civic
+    /// milestones. Cold War is otherwise reached through the later Space Race
+    /// goal. It does not bypass government, survival, or Great Person goals in
+    /// the caller, and the unchanged purchase pass still pays for every band.
+    pub(super) fn culture_civic_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        let goals: &[&str] = if self.culture_cold_war_window && g.victory_conditions.culture {
+            &[
+                "humanism",
+                "conservation",
+                "cold_war",
+                "professional_sports",
+                "cultural_heritage",
+                "space_race",
+                "environmentalism",
+                "social_media",
+            ]
+        } else {
+            &[
+                "humanism",
+                "conservation",
+                "professional_sports",
+                "cultural_heritage",
+                "space_race",
+                "environmentalism",
+                "social_media",
+            ]
+        };
+        goals
+            .iter()
+            .copied()
+            .find(|civic| !g.players[pid].civics.contains(&Name::new(civic)))
+    }
+
     /// The rival pressure, as a percent of the global culture-victory bar,
     /// at which a rival becomes a defensive threat. Off, version one's 50.
     pub(super) fn culture_threat_pressure(&self) -> i32 {
