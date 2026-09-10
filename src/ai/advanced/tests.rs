@@ -33636,7 +33636,8 @@ fn a_writer_at_the_price_with_no_slot_starts_an_amphitheater_whatever_the_lane()
     };
     assert!(game.can_produce(0, capital, &amphitheater));
 
-    let stock = AdvancedAi::new();
+    let mut stock = AdvancedAi::new();
+    stock.disable_great_person_housing();
     assert_eq!(
         stock.stuck_great_people(&game, 0),
         vec![StuckGreatPerson {
@@ -33794,7 +33795,9 @@ fn a_due_writer_no_city_can_house_sells_a_duplicate_and_recruits() {
     };
 
     let mut kept = game.clone();
-    assert!(!AdvancedAi::new().great_person_housing(&mut kept, 0, &plan));
+    let mut stock = AdvancedAi::new();
+    stock.disable_great_person_housing();
+    assert!(!stock.great_person_housing(&mut kept, 0, &plan));
     assert_eq!(writing_works(&kept, 0), 2);
     assert_eq!(claimed(&kept), 0);
 
@@ -33950,22 +33953,26 @@ fn districts_are_reserved_only_for_a_due_person_and_the_music_chain_walks_its_pr
     );
 }
 
-/// The gene is an opt-in: off in every bundle, flippable by name, in
-/// `PRODUCTION_OPT_INS`.
+/// The gene is production-on, still flippable by name, and registered as a
+/// production row.
 #[test]
-fn great_person_housing_is_a_native_opt_in() {
-    let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge_universe();
-    assert!(!ai.great_person_housing);
+fn great_person_housing_is_a_native_production_gene() {
+    let ai = AdvancedAi::new();
+    assert!(ai.great_person_housing);
+    assert!(!AdvancedAi::legacy().great_person_housing);
     let enable = GENES
         .iter()
         .find(|gene| gene.tag == "great-person-housing")
-        .expect("an opt-in row")
+        .expect("a production row")
         .enable;
+    let mut ai = AdvancedAi::legacy();
     enable(&mut ai);
     assert!(ai.great_person_housing);
     ai.disable_great_person_housing();
     assert!(!ai.great_person_housing);
+    let gene = crate::ai::gene("great-person-housing").expect("registered gene");
+    assert!(gene.production());
+    assert!(gene.screenable());
 }
 
 /// ★★★★ FIVE OF THIRTY-SIX SEATS ENDED THE PROBE GAMES WITH ENGINEER POINTS
