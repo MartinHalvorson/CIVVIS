@@ -2257,11 +2257,6 @@ pub const GENES: &[Gene] = &[
     // planned. This admits exactly that case; `building_near_mountain:` and
     // `themed_buildings` keep their Expensive reading.
     Gene { tag: "boost-planner-builds", field: "boost_planner_builds", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner_builds, disable: AdvancedAi::disable_boost_planner_builds },
-    // ---- append: c-d ------------------------------------------------
-    // ---- append: e-f ------------------------------------------------
-    // ---- append: g-k ------------------------------------------------
-    // ---- append: l-o ------------------------------------------------
-    // ---- append: p-r ------------------------------------------------
     // `ranged-hp-reserve` (2026-09-10, operator: "asymmetric damage with
     // archers while not taking fatal hits"): a ranged, non-siege unit reads
     // the lethal pool with 20 hp in hand, so it leaves a tile the enemy's exact
@@ -2271,6 +2266,11 @@ pub const GENES: &[Gene] = &[
     // threat. Off; screen it.
     Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
     // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
+    // ---- append: g-k ------------------------------------------------
+    // ---- append: l-o ------------------------------------------------
+    // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
