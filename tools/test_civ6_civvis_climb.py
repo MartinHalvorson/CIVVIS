@@ -2278,15 +2278,15 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertIn("batch's own arm", climb.screen_refusal(
             self._play_args(screen_gene=host_only, without=[host_only])))
 
-    def test_the_play_command_always_selects_rome(self):
-        """Even a direct caller cannot pass another leader through the climb."""
-        for requested in (None, "LEADER_TOKUGAWA", "LEADER_TRAJAN"):
-            with self.subTest(requested=requested):
-                cmd = climb.play_command(
-                    self._play_args(leader=requested), "t",
-                    Path("orders.sqlite"), Path("civvis_orders"))
-                leader = cmd.index("--leader")
-                self.assertEqual(cmd[leader + 1], climb.ROMAN_LEADER)
+    def test_play_command_preserves_leader_in_new_and_resumed_games(self):
+        for requested in (None, "LEADER_PERICLES", "LEADER_TRAJAN"):
+            for save in (None, Path("AutoSave.Civ6Save")):
+                with self.subTest(requested=requested, save=save):
+                    cmd = climb.play_command(
+                        self._play_args(leader=requested), "t",
+                        Path("orders.sqlite"), Path("civvis_orders"), load_save=save)
+                    self.assertEqual(cmd[cmd.index("--leader") + 1],
+                                     requested or climb.ROMAN_LEADER)
 
     def test_new_and_resumed_games_keep_firaxis_in_the_upper_left(self):
         for save in (None, Path("AutoSave.Civ6Save")):

@@ -78,7 +78,7 @@ import computer_control as desktop_control  # noqa: E402
 # The default is imported for the same reason the list is: this launcher used
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
-from civ6_play import ROMAN_LEADER, VICTORY_LANES, enforce_roman_leader  # noqa: E402
+from civ6_play import ROMAN_LEADER, VICTORY_LANES, resolve_live_leader  # noqa: E402
 # The run's supplied binary can come from another checkout than this bridge.
 # Reuse the same provenance and digest helpers the brain writes into
 # `runtime_updates.jsonl`, so the human-facing climb log and the durable dossier
@@ -2056,7 +2056,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--difficulty", args.difficulty,
          "--map-size", args.map_size,
          "--speed", args.speed,
-         "--leader", ROMAN_LEADER]
+         "--leader", resolve_live_leader(getattr(args, "leader", None))]
         + (["--load-save", str(load_save)] if load_save is not None else [])
         + [
          "--max-turns", str(args.max_turns),
@@ -2460,11 +2460,9 @@ def main() -> int:
     # consecutive rows comparable at all. Rows recorded before this change carry a
     # random seat and cannot be pooled with rows recorded after it.
     #
-    # The operator has since made this an invariant rather than a launcher
-    # default: any explicit non-Roman value is recorded and coerced below.
+    # Keep the default deterministic and forward explicit operator selections.
     ap.add_argument("--leader", default=ROMAN_LEADER,
-                    help="accepted for compatibility; live games always select "
-                         "Rome's Trajan")
+                    help="Civ VI leader identifier (default: Trajan)")
     ap.add_argument("--timeout", type=float, default=5400.0)
     # ⚠⚠⚠ THE OUTER WATCHDOG MUST SIT ABOVE THE INNER CEILING, NOT ABOVE
     # `--timeout`, AND FOR TEN DAYS IT DID BOTH BECAUSE THEY WERE THE SAME
@@ -2660,7 +2658,7 @@ def main() -> int:
                     help="allow the code to change mid-batch; rows stop being "
                          "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
-    args.leader = enforce_roman_leader(args.leader, caller="civ6_civvis_climb")
+    args.leader = resolve_live_leader(args.leader)
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
     args.victory = operator_victory_lane(args.victory)

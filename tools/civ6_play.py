@@ -156,30 +156,16 @@ DESKTOP_RESCUE_BUDGET = capture_budget.CaptureBudget()
 # 0-33 light-years at t250), which is the improvement queue, not a reason to
 # keep aiming at a lane the operator has not asked for.
 DEFAULT_CIVVIS_VICTORY = "science"
-# The operator's standing instruction is unambiguous: every live game plays
-# Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
-# not merely in a launcher default, so a direct ``civ6_play.py --leader ...``
-# invocation cannot quietly start a different civilization.
+# Keep a deterministic default, while honoring the operator's selected leader.
 ROMAN_LEADER = "LEADER_TRAJAN"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
 
 
-def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
-    """Return the one live-game leader, recording an attempted override.
-
-    ``--leader`` remains accepted for command-line compatibility, but a
-    verification result is only comparable when every game uses the same
-    civilization.  The caller label makes a coerced direct invocation visible
-    in its durable play or climb log rather than silently pretending the
-    requested leader was honored.
-    """
-    if requested != ROMAN_LEADER:
-        named = requested or "Random Leader"
-        print(f"[{caller}] overriding requested leader {named!r}; live games "
-              f"always play Rome / Trajan ({ROMAN_LEADER})", flush=True)
-    return ROMAN_LEADER
+def resolve_live_leader(requested: str | None) -> str:
+    """Keep an explicit leader; omitted selections use the deterministic default."""
+    return requested or ROMAN_LEADER
 
 # ★★★ FULL-GAME VERIFICATION POLICY. A score gap is evidence to preserve, not
 # a loss certificate. Every verification game is played through its in-game
@@ -4730,8 +4716,7 @@ def main(argv: list[str] | None = None) -> int:
                         "to an in-game outcome (the supplied value is ignored)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
-                    help="accepted for compatibility; live games always select "
-                         "Rome's Trajan")
+                    help="Civ VI leader identifier (default: Trajan)")
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
@@ -5036,7 +5021,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.status:
         return status()
-    args.leader = enforce_roman_leader(args.leader, caller="civ6_play")
+    args.leader = resolve_live_leader(args.leader)
     if args.tag is None:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
