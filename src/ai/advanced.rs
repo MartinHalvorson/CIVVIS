@@ -7027,6 +7027,9 @@ pub use science_victory_drive::ScienceDrive;
 /// treatment/flag anchor. See `advanced/victory_heuristics.rs`.
 mod victory_heuristics;
 
+#[cfg(test)]
+mod domination_target_tests;
+
 /// The gene ledger: the screens' verdict per gene and the deployment genome
 /// it implies. `enable_live_bridge` and `enable_engine_repairs` end by
 /// applying it; the table is generated. See `advanced/gene_ledger.rs`.
@@ -11705,6 +11708,10 @@ impl AdvancedAi {
                     actionable_denial
                         .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                         .map(|(rival, _)| rival)
+                        // A domination contract's eligible original capital
+                        // also chooses the opponent, before optional economic
+                        // conquests can divert the next campaign.
+                        .or_else(|| domination_capital.map(|(owner, _)| owner))
                         // `city_campaign`: the plan's rival before the generic
                         // value sort. See `advanced/city_campaign.rs`.
                         // `war-policy-via-board`: a rival whose nearest
