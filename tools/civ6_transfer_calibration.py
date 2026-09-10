@@ -56,6 +56,8 @@ def live_samples(directory):
     summary = json.loads((directory / "summary.json").read_text())
     if summary.get("configured") is not True:
         raise ValueError(f"{directory}: setup was not verified")
+    if summary.get("isolated_action_probes") is True:
+        raise ValueError(f"{directory}: deliberately perturbed diagnostic game is not calibration evidence")
     speed = normalized(summary.get("speed"), "GAMESPEED_")
     difficulty = normalized(summary.get("difficulty"), "DIFFICULTY_")
     # Last opening-frame export wins on a reload. Mid-turn frames never count

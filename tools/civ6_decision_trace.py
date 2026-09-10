@@ -62,6 +62,9 @@ def compare_transition(case: dict) -> dict:
     coverage gaps. A caller cannot obtain a passing report with no comparison.
     """
     gaps, differences, compared = [], [], 0
+    if case.get("phase") == "request_boundary":
+        return {"status": "unverifiable", "compared": 0,
+                "gaps": ["request acknowledgement is not settled execution"], "differences": []}
     if case.get("same_turn") is not True or case.get("intervening_actions") != 0:
         return {"status": "unverifiable", "compared": 0,
                 "gaps": ["transition is not an isolated same-turn action"], "differences": []}

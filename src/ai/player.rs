@@ -10,6 +10,21 @@ pub const TRAINING_TARGETS: &str = "civvis,science,culture,religion,diplomatic,d
 /// Opening frame plus the live launcher's two default observation refreshes.
 pub const REPLAN_FRAMES: usize = 2;
 
+/// The production decision sequence, shared rather than independently
+/// orchestrated by the native and live executors. The supplied board must be
+/// disposable observed state; the caller owns execution and re-observation.
+pub fn plan_frame(
+    ai: &mut AdvancedAi,
+    view: &mut Game,
+    pid: usize,
+    mapped: &std::collections::BTreeMap<u32, i64>,
+) -> (super::finishing::WarFinishingVolley, usize) {
+    let finishing = begin_player_turn(ai, view, pid, mapped);
+    let ordinary_begin = view.log.len();
+    ai.plan_observed_turn(view, pid);
+    (finishing, ordinary_begin)
+}
+
 pub fn parse_targets(text: &str) -> Result<Vec<Option<super::VictoryTarget>>, String> {
     if text.is_empty() {
         return Err("target mix must not be empty".into());
@@ -91,9 +106,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         }
         let mut view = game.player_decision_view(pid);
         let mapped = view.units.keys().map(|id| (*id, i64::from(*id))).collect();
-        let finishing = begin_player_turn(ai, &mut view, pid, &mapped);
-        let ordinary_begin = view.log.len();
-        ai.plan_observed_turn(&mut view, pid);
+        let (finishing, ordinary_begin) = plan_frame(ai, &mut view, pid, &mapped);
         // Governor preferences are player decisions, not predicted resources.
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();

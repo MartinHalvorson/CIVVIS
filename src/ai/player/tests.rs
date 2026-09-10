@@ -30,10 +30,9 @@ fn production_adapters_plan_the_same_actions_from_the_same_observation() {
         let mut first = game.player_decision_view(0);
         let mut second = first.clone();
         let mapped = first.units.keys().map(|id| (*id, i64::from(*id))).collect();
-        let a = begin_player_turn(&mut native, &mut first, 0, &mapped);
-        let b = begin_player_turn(&mut external, &mut second, 0, &mapped);
-        native.plan_observed_turn(&mut first, 0);
-        external.plan_observed_turn(&mut second, 0);
+        let (a, a_begin) = plan_frame(&mut native, &mut first, 0, &mapped);
+        let (b, b_begin) = plan_frame(&mut external, &mut second, 0, &mapped);
+        assert_eq!(a_begin, b_begin);
         assert_eq!(
             serde_json::to_value(a.actions).unwrap(),
             serde_json::to_value(b.actions).unwrap()

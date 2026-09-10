@@ -3461,12 +3461,11 @@ fn decide(
     // been measured leaving such kills alive. And a settler's bound guard is
     // not the volley's to spend one tile away from the civilian it shields.
     ai.observe_confirmed_host_deaths(&planned_game, state);
-    let war_finishers =
-        civvis::ai::finishing::begin_player_turn(ai, &mut planned_game, 0, &mirror_state.civ6_of);
+    let (war_finishers, ai_actions_begin) =
+        civvis::ai::player::plan_frame(ai, &mut planned_game, 0, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
     // order that was intentionally not applied to the planning board. Ordinary
     // AI actions start after the attacks that were applied there.
-    let ai_actions_begin = planned_game.log.len();
     // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
     // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
     // would have been read as "CIVVIS cannot declare war" when it only meant "I asked
@@ -3520,8 +3519,6 @@ fn decide(
         .values()
         .filter(|u| u.owner == 0 && u.moves_left > 0.0)
         .count();
-    ai.plan_observed_turn(&mut planned_game, 0);
-
     let mut orders: Vec<Order> = war_finishers
         .actions
         .iter()

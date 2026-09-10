@@ -106,7 +106,8 @@ Each case provides `same_turn`, `intervening_actions`, `predictions`, and
 `observed`. Deterministic facts compare exactly; stochastic numerical predictions
 use explicit `low`/`high` bounds fixed before reading the observed result.
 Missing coverage, intervening actions, empty inputs, and mismatches fail the
-check. This does **not** upgrade passive `live_divergence` projections into
+check. Explicit request-boundary cases also fail, even if their values happen
+to match: acknowledgement is not completion. This does **not** upgrade passive `live_divergence` projections into
 action replay: their measurements remain confounded by unmodeled orders.
 
 ## Evidence still required

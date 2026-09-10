@@ -2,10 +2,17 @@ import unittest
 import json
 import tempfile
 from pathlib import Path
-from civ6_transfer_calibration import finite, native_samples, quantiles, summarize
+from civ6_transfer_calibration import finite, live_samples, native_samples, quantiles, summarize
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_deliberate_action_probes_are_not_opponent_calibration_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "summary.json").write_text(json.dumps(
+                {"configured": True, "isolated_action_probes": True}))
+            with self.assertRaisesRegex(ValueError, "diagnostic game"):
+                list(live_samples(directory))
+
     def test_different_information_contracts_cannot_be_pooled(self):
         with tempfile.TemporaryDirectory() as directory:
             file = Path(directory) / "epochs.jsonl"

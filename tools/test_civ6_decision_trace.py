@@ -40,6 +40,13 @@ class TraceTests(unittest.TestCase):
         del case["observed"]["damage"]
         self.assertEqual(compare_transition(case)["status"], "unverifiable")
 
+    def test_matching_request_boundary_does_not_prove_execution(self):
+        case = {"same_turn": True, "intervening_actions": 0, "phase": "request_boundary",
+                "predictions": {"position": [2, 3]}, "observed": {"position": [2, 3]}}
+        self.assertEqual(compare_transition(case)["status"], "unverifiable")
+        case["phase"] = "settled"
+        self.assertEqual(compare_transition(case)["status"], "match")
+
     def test_nonfinite_and_inverted_bounds_are_refused(self):
         for interval in ({"low": 4, "high": 3}, {"low": 0, "high": float("inf")}):
             with self.assertRaises(ValueError):
