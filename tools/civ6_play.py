@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
+from civ6_control import operator_presence  # noqa: E402
 from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           macos_input, macos_ocr, macos_window,
                           operator_retire, popup_clear, vision,
@@ -1109,9 +1110,37 @@ def focus_game(side: str = "left", fraction: float = 0.5) -> None:
     return macos_window.focus_game(GAME_PROCESS)
 
 
+#: Logged on transitions only, so a person working beside the game does not
+#: fill the play log with one line per poll.
+_SHARED_DESKTOP_STATE: dict = {"deferring": False}
+
+
 def shared_desktop_in_use() -> bool:
-    """Optional GUI recovery must leave other apps in front in shared mode."""
-    if not (Path.home() / ".civvis-shared-desktop").exists():
+    """Optional GUI recovery must leave other apps in front while a person is here.
+
+    Two ways the desktop counts as shared, and the harness keeps its hands off
+    in either:
+
+    * **someone is using the Mac** -- `operator_presence.operator_active()`
+      reads macOS's own idle clock (minus the harness's synthetic events) and
+      says so for `DEFAULT_THRESHOLD_SECONDS` after their last keystroke or
+      pointer move. This is the default and needs nothing from the operator:
+      they sit down, the game stops raising itself and clicking; they walk
+      away, upkeep resumes on its own.
+    * **`~/.civvis-shared-desktop` exists** -- the standing manual override,
+      for a host where the game must never take the front even unattended.
+
+    In shared mode a Civ VI that is already frontmost is still fair game: the
+    person put it there. Anything else in front is theirs.
+    """
+    active = operator_presence.operator_active()
+    marker = (Path.home() / ".civvis-shared-desktop").exists()
+    if active != _SHARED_DESKTOP_STATE["deferring"]:
+        _SHARED_DESKTOP_STATE["deferring"] = active
+        print("[desktop] a person is using the Mac; leaving the front alone"
+              if active else
+              "[desktop] the Mac has been idle; resuming game upkeep", flush=True)
+    if not (active or marker):
         return False
     try:
         return not popup_clear.frontmost().startswith("Civ6")
@@ -1124,15 +1153,16 @@ def maintain_game_focus(interval: float, last_focus: float, *,
                         place: bool = False) -> float:
     """Periodic upkeep only; explicit setup/recovery can still use the GUI.
 
-    Touch ~/.civvis-shared-desktop to leave other apps in front during play.
-    The marker is read live, so removing it restores unattended upkeep without
-    restarting the game. Background progress also depends on Civ VI's own
-    ThrottleWhileInactive setting; this switch cannot change engine behavior.
+    Upkeep defers automatically while a person is using the Mac -- see
+    `shared_desktop_in_use` -- and resumes once the machine has been idle.
+    ~/.civvis-shared-desktop is the standing manual override on top of that.
+    Background progress also depends on Civ VI's own ThrottleWhileInactive
+    setting; this switch cannot change engine behavior.
     """
     now = time.monotonic()
     if interval <= 0 or now - last_focus < interval:
         return last_focus
-    if (Path.home() / ".civvis-shared-desktop").exists() or screen_locked():
+    if shared_desktop_in_use() or screen_locked():
         return last_focus
     focus_game()
     if place:
