@@ -3924,6 +3924,17 @@ impl AdvancedAi {
         self.conquest_takes_the_soft_city = false;
     }
 
+    /// `counter-culture-by-conquest`: answer a culture leader with war aimed
+    /// at its Great Works. See `advanced/victory_heuristics.rs`.
+    pub fn enable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = true;
+    }
+
+    /// The twin of `enable_counter_culture_by_conquest`.
+    pub fn disable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = false;
+    }
+
     /// `boost-planner-builds`: the boost planner serves `building:` triggers.
     /// See `advanced/boost_planner.rs`.
     pub fn enable_boost_planner_builds(&mut self) {

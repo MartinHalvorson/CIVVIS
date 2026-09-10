@@ -4955,6 +4955,10 @@ pub struct AdvancedAi {
     /// target by the visible garrison before the rival's capital, so it aims
     /// at a city the opening force can actually take.
     conquest_takes_the_soft_city: bool,
+    /// `counter-culture-by-conquest`: a rival about to win a culture victory
+    /// is answered with war aimed at its Great Works, the way every other lane
+    /// already answers a leader, instead of only by racing it.
+    counter_culture_by_conquest: bool,
     /// `chop-for-expansion`: while a city is building a Settler, a Builder
     /// spends a charge clearing a feature or harvesting a resource for the
     /// Production instead of improving a tile. Off ships the shipped
@@ -7834,6 +7838,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             conquest_takes_the_soft_city: false,
+            counter_culture_by_conquest: false,
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,

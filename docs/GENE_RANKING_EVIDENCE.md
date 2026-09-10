@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
 | `chop-for-expansion` | off (unmeasured) | `chop-for-expansion`: a Builder turns a forest into a Settler. | 1 \| 1 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
+| `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `culture-cold-war-window` | off (unmeasured) | Test the Rock Band unlock before the Culture lane's stadium and museum-tourism civics, while retaining Humanism and Conservation first. | 1 \| 1 |
 
 ## Removed from the code
