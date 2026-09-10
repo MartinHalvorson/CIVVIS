@@ -109,4 +109,13 @@ fn native_planning_logs_the_same_gift_without_mutating_its_source() {
     );
     assert_eq!(game.players[0].gold, 251.0);
     assert_eq!(view.players[0].gold, 100.0);
+    // The independently executed action, not the projected treasury, earns
+    // the native score. Re-observing that result must not spend on a held lead.
+    game.apply(0, action).unwrap();
+    assert_eq!(game.players[0].gold, 100.0);
+    assert_eq!(game.competition.as_ref().unwrap().scores[&0], 201.0);
+    game.players[0].gold = 500.0;
+    let mut refreshed = game.player_decision_view(0);
+    plan_native(&mut refreshed, 0);
+    assert!(refreshed.log.is_empty());
 }
