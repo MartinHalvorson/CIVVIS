@@ -2111,7 +2111,17 @@ fn visible_border_staging_fills_one_local_garrison_without_preemption() {
     let settler = Item::Unit {
         unit: crate::name!("settler"),
     };
-    committed.cities.get_mut(&ours).expect("capital").queue = vec![settler.clone()];
+    // This is a legal commitment, not a population-one blocked Settler.
+    committed.cities.get_mut(&ours).expect("capital").pop = 2;
+    committed
+        .apply(
+            0,
+            &Action::Produce {
+                city: ours,
+                item: settler.clone(),
+            },
+        )
+        .unwrap();
     ai.advanced_production(&mut committed, 0, &plan, false);
     assert_eq!(
         committed.cities[&ours].queue.first(),
