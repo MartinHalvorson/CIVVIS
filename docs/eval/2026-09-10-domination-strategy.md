@@ -65,14 +65,21 @@ the capital priority inside an active war. At peace, generic opponent value
 could send the next campaign after a capital's former owner who retained only
 ordinary cities.
 
-The next discretionary opponent now comes from the required-capital ranking,
-after emergency, rush, forced-target, actionable-denial and existing city-campaign
-priorities. When
-a war or other higher-priority choice already names a rival, capital ranking
-runs within that rival's current holdings. Active fronts and existing siege
-commitments retain their existing precedence. The change applies to the
-explicit Domination contract, including its existing gene-controlled campaign
-and war-board paths; it adds no deployment promotion or new numerical weight.
+When a war or other priority names a rival, capital ranking now runs within
+that rival's current holdings. An easier capital belonging to an unrelated
+rival cannot erase this front's capital priority. Emergency, rush, denial,
+city-campaign and existing siege-commitment overrides retain their precedence.
+The change applies to the explicit Domination contract and adds no deployment
+promotion or new numerical weight.
+
+An initial version also made the cheapest missing capital choose the next
+opponent. That broader policy was rejected: four paired three-player seeds
+completed Domination once on the baseline and zero times with the initial
+change, and the exposed-city-state test demonstrated that it removed a useful
+intermediate conquest. This small sample is not a statistical verdict, but it
+provides no basis to impose an unconditional opponent priority. The retained
+fix repairs capital ranking inside the selected opponent; opponent selection
+keeps its existing cost, feasibility and staging tradeoffs.
 
 ## Validation
 

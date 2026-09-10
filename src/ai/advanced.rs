@@ -11668,7 +11668,6 @@ impl AdvancedAi {
                 .unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
-        let domination_capital = self.domination_capital_target(g, pid);
         let target_player = if let Some(emergency) = &emergency_objective {
             Some(emergency.target)
         } else if wartime_rivals.is_empty() {
@@ -11690,11 +11689,6 @@ impl AdvancedAi {
                             self.campaign_target(g, pid)
                                 .filter(|rival| self.war_policy_target_feasible(g, pid, *rival))
                         })
-                        // The next Domination war must advance an original
-                        // capital still missing from our holdings. Ordinary
-                        // rival value can prefer a defeated capital's former
-                        // owner, who no longer holds any victory objective.
-                        .or_else(|| domination_capital.map(|(owner, _)| owner))
                         .or_else(|| {
                             let mut candidates: Vec<_> = major_rivals
                                 .iter()

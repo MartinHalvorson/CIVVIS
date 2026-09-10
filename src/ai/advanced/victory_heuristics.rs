@@ -237,7 +237,8 @@ impl AdvancedAi {
     /// A Domination contract is fulfilled by foreign *original* capitals. An
     /// exposed city-state can still be a useful staging target, but once the
     /// campaign names a major rival, its first city must advance the victory.
-    pub(super) fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+    #[cfg(test)]
+    fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
         self.domination_capital_target_for(g, pid, None)
     }
 
@@ -449,9 +450,12 @@ mod tests {
         }
         game.cities.get_mut(&outpost).unwrap().hp = 25;
         game.cities.get_mut(&outpost).unwrap().wall_hp = 0;
-        game.cities.get_mut(&outpost).unwrap().pop = if majors == 3 { 1 } else { 14 };
+        game.cities.get_mut(&outpost).unwrap().pop = 14;
         if majors == 3 {
-            game.cities.get_mut(&capital).unwrap().pop = 20;
+            // A nearby friendly population base makes the capital holdable;
+            // the rich enemy outpost remains the generic scorer's bargain.
+            let support = game.found_city_for(0, open_land_near(&game, capital_pos, 2), None);
+            game.cities.get_mut(&support).unwrap().pop = 30;
             let home = game.cities[&game.player_city_ids(0)[0]].pos;
             for _ in 0..6 {
                 game.spawn_test_unit("giant_death_robot", 0, home);
@@ -487,13 +491,22 @@ mod tests {
             );
         }
         let plan = ai.assess(&game, 0);
-        assert_eq!(plan.strategy, GrandStrategy::Conquest);
+        assert_eq!(
+            plan.strategy,
+            if majors == 3 {
+                // The forward support city is exposed to the garrison.
+                // Retain the defensive posture while naming this front.
+                GrandStrategy::Recovery
+            } else {
+                GrandStrategy::Conquest
+            }
+        );
         assert_eq!(plan.target_player, Some(1));
         assert_eq!(plan.target_city, Some(capital));
     }
 
     #[test]
-    fn domination_next_war_follows_capital_ownership_instead_of_its_former_owner() {
+    fn domination_capital_routing_uses_current_ownership_and_includes_home_capital() {
         let mut game = Game::new_full(3, 48, 28, 91_006, 300, 0, false);
         found_capitals(&mut game);
         game.turn = 200;
@@ -506,9 +519,11 @@ mod tests {
         game.cities.get_mut(&outpost).unwrap().pop = 20;
         let remaining = game.player_city_ids(2)[0];
         let ai = AdvancedAi::targeting(VictoryTarget::Domination);
-        let plan = ai.assess(&game, 0);
-        assert_eq!(plan.target_player, Some(2));
-        assert_eq!(plan.target_city, Some(remaining));
+        assert_eq!(
+            ai.domination_capital_target_for(&game, 0, Some(2)),
+            Some((2, remaining))
+        );
+        assert_eq!(ai.domination_capital_target_for(&game, 0, Some(1)), None);
 
         // Another conqueror can hold multiple original capitals. Route to
         // their present owner, including when our own capital needs retaking.
@@ -525,7 +540,6 @@ mod tests {
             Some((2, home)),
             "our own lost original capital is still required"
         );
-        assert_eq!(ai.assess(&game, 0).target_city, Some(home));
         assert_eq!(ai.domination_capital_target_for(&game, 0, Some(1)), None);
     }
 
