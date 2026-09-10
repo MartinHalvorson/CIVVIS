@@ -183,6 +183,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
 | `chop-for-expansion` | off (unmeasured) | The army's turn planned from a ranked Objective Board — rows valued in hammers with a requirement and a deadline — and served by persistent task forces, in place of proximity force groups and the posture ladder; `force_groups` is built from the forces. | 1 \| 1 |
 | `culture-cold-war-window` | off (unmeasured) | Test the Rock Band unlock before the Culture lane's stadium and museum-tourism civics, while retaining Humanism and Conservation first. | 1 \| 1 |
 

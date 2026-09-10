@@ -3952,6 +3952,17 @@ impl AdvancedAi {
         self.chop_for_expansion = false;
     }
 
+    /// `boost-planner-builds`: the boost planner serves `building:` triggers.
+    /// See `advanced/boost_planner.rs`.
+    pub fn enable_boost_planner_builds(&mut self) {
+        self.boost_planner_builds = true;
+    }
+
+    /// The twin of `enable_boost_planner_builds`.
+    pub fn disable_boost_planner_builds(&mut self) {
+        self.boost_planner_builds = false;
+    }
+
     pub fn enable_objective_board(&mut self) {
         self.objective_board = true;
     }

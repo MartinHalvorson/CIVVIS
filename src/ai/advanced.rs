@@ -4783,6 +4783,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `boost-planner-builds`: the boost planner may make a side objective of a
+    /// `building:` trigger, the largest family in the two trees, which it
+    /// otherwise reads as strategic spending and never plans.
+    boost_planner_builds: bool,
     /// Plan the next six technologies' and four civics' boosts: classify each
     /// trigger by what it costs the plan and turn the cheap ones into at most
     /// three deadlined side objectives, each a 15 percent premium on the one
@@ -7787,6 +7791,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            boost_planner_builds: false,
             boost_planner: false,
             boost_planner_frame: RefCell::new(boost_planner::BoostPlannerFrame::default()),
             amani_follows_suzerainty: false,
