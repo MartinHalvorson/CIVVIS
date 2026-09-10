@@ -14728,6 +14728,18 @@ fn promoted_amenity_repair_reaches_strategic_production_once_per_turn() {
         1,
         "the strategic handoff reserves one amenity district per turn: {repaired:?}"
     );
+    let repaired_city = repaired[0];
+    let reserved_repair = game.cities[&repaired_city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the first strategic pass leaves the repair queued");
+    live.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&repaired_city].queue.first(),
+        Some(&reserved_repair),
+        "a second strategic review must not replace an amenity repair in deficit"
+    );
 
     let mut frozen = AdvancedAi::legacy();
     frozen.advanced_production(&mut frozen_board, 0, &plan, false);
@@ -14738,6 +14750,70 @@ fn promoted_amenity_repair_reaches_strategic_production_once_per_turn() {
                 if frozen_board.district_family(*district) == "entertainment_complex"
         )),
         "the frozen strategic controller keeps the historical queue path"
+    );
+}
+
+#[test]
+fn widespread_amenity_repair_survives_strategic_queue_review() {
+    // The live Culture seat reserved an Entertainment Complex for a broad
+    // deficit, then the same turn's strategic review replaced it with a
+    // Builder. Keep the repair that the pre-production handoff owns.
+    let (mut game, capital, home) = empire_with_a_capital(71_117);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    game.players[0]
+        .civics
+        .insert(crate::name!("games_recreation"));
+
+    let mut cities = vec![capital];
+    for _ in 0..3 {
+        cities.push(found_nearby_test_city(&mut game, 0, home));
+    }
+    for &cid in &cities {
+        game.cities.get_mut(&cid).unwrap().pop = 6;
+        install_ai_test_district(&mut game, cid, "campus");
+        let modeled = game.city_amenity_surplus(&game.cities[&cid]);
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
+            .insert(cid, -1 - modeled);
+        assert_eq!(game.city_amenity_surplus(&game.cities[&cid]), -1);
+    }
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge_universe();
+    live.victory_target = Some(VictoryTarget::Culture);
+    assert!(live.amenity_project_preemption);
+    live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
+    let repair_city = cities
+        .iter()
+        .copied()
+        .find(|cid| {
+            matches!(
+                game.cities[cid].queue.first(),
+                Some(Item::District { district, .. })
+                    if game.district_family(*district) == "entertainment_complex"
+            )
+        })
+        .expect("the widespread crisis reserves one Entertainment Complex");
+    let reserved = game.cities[&repair_city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the repair queue is present before review");
+
+    live.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&repair_city].queue.first(),
+        Some(&reserved),
+        "ordinary strategic production must not replace the amenity repair"
     );
 }
 
