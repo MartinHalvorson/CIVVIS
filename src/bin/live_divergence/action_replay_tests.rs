@@ -60,6 +60,33 @@ fn unsupported_rules_or_missing_identity_cannot_default_to_a_passing_model() {
 }
 
 #[test]
+fn future_map_information_cannot_be_used_as_a_pre_action_snapshot() {
+    let mut events = fixture_events();
+    events
+        .iter_mut()
+        .find(|event| event["kind"] == "tiles")
+        .unwrap()["turn"] = json!(200);
+    assert!(replay_events(&events)
+        .unwrap_err()
+        .to_string()
+        .contains("after the requested action"));
+}
+
+#[test]
+fn distinct_but_reversed_transition_sequences_are_rejected() {
+    let mut events = fixture_events();
+    for event in &mut events {
+        if event["sequence"] == 1 {
+            event["sequence"] = json!(99);
+        }
+    }
+    assert!(replay_events(&events)
+        .unwrap_err()
+        .to_string()
+        .contains("out-of-order"));
+}
+
+#[test]
 fn unchanged_location_and_moves_do_not_prove_fortification() {
     let mut events = fixture_events();
     let begin = events

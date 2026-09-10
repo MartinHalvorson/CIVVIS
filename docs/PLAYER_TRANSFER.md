@@ -79,7 +79,7 @@ cargo run --profile ci --locked --features developer-tools --bin live_divergence
 
 The replay requires explicit Gathering Storm/no-optional-modes seat metadata,
 recognized civilization/speed/difficulty, and a preceding map export. It rejects
-duplicated sequences, out-of-order observations and interleaved planner/turn
+duplicated/reversed sequences, future-dated map exports, out-of-order observations and interleaved planner/turn
 events. All four transition records must agree on turn and frame.
 The replay emits JSONL cases for the transition checker below. Initial coverage
 is research, civics, walking, founding, and fortifying; other requests emit

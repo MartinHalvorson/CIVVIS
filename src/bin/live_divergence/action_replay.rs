@@ -153,7 +153,8 @@ fn replay(
         Option<StateSnapshot>,
         Snapshot,
     )> = None;
-    let mut sequences = std::collections::BTreeSet::new();
+    let mut last_sequence = 0;
+    let mut map_turn = None;
     for line in reader.lines() {
         let line = line?;
         let event: Value = serde_json::from_str(&line)?;
@@ -194,8 +195,15 @@ fn replay(
                     );
                 }
                 seat = Some(parsed);
+                snapshot = Snapshot::default();
+                map_turn = None;
             }
             "tiles" => {
+                let turn = event["turn"].as_u64().ok_or("map export requires turn")?;
+                if map_turn.is_some_and(|previous| turn < previous) {
+                    return Err("map export moved backwards in time".into());
+                }
+                map_turn = Some(turn);
                 let chunk: TilesChunk = serde_json::from_value(event.clone())?;
                 if event["delta"] == true {
                     snapshot.merge_delta(&chunk);
@@ -211,11 +219,15 @@ fn replay(
                     .as_u64()
                     .filter(|id| *id > 0)
                     .ok_or("transition requires a positive sequence")?;
-                if !sequences.insert(sequence) {
-                    return Err("duplicate transition sequence".into());
+                if sequence <= last_sequence {
+                    return Err("duplicate or out-of-order transition sequence".into());
                 }
+                last_sequence = sequence;
                 if event["turn"].as_u64().is_none() || event["frame"].as_u64().is_none() {
                     return Err("transition requires turn and frame".into());
+                }
+                if map_turn.is_some_and(|turn| Some(turn) > event["turn"].as_u64()) {
+                    return Err("map export is from after the requested action".into());
                 }
                 pending = Some((event, None, None, snapshot.clone()));
             }
