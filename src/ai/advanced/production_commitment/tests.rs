@@ -159,12 +159,12 @@ fn both_governors_get_the_same_idle_resumption_pass() {
         let mut board = g.clone();
         board.cities.get_mut(&city).unwrap().queue.clear();
         board.cities.get_mut(&city).unwrap().production = 0.0;
-        ai.resume_interrupted_production(&mut board, 0, &plan);
+        ai.reconcile_production_commitments(&mut board, 0, &plan);
         assert_eq!(board.cities[&city].queue.first(), Some(&wonder));
         // Further reviews must not restart or double-credit saved progress.
         let progress = board.cities[&city].production;
         ai.advanced_production(&mut board, 0, &plan, false);
-        ai.resume_interrupted_production(&mut board, 0, &plan);
+        ai.reconcile_production_commitments(&mut board, 0, &plan);
         assert_eq!(board.cities[&city].production, progress);
         assert_eq!(board.cities[&city].queue.first(), Some(&wonder));
     }
@@ -232,4 +232,35 @@ fn an_investment_does_not_override_the_completion_deadline_or_its_exact_site() {
     let counts = ai.counts(&g, 0);
     assert!(!ai.resume_city_production(&mut g, 0, city, &plan, &counts));
     assert!(g.cities[&city].queue.is_empty());
+}
+
+#[test]
+fn the_complete_turn_pipeline_replaces_a_blocked_queue_for_both_governors() {
+    let (mut g, _, city, wonder, plan) = paused_wonder();
+    g.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: wonder.clone(),
+        },
+    )
+    .unwrap();
+    let mut blocked = BTreeMap::new();
+    blocked.insert(
+        city,
+        [Game::production_block_key(&wonder)].into_iter().collect(),
+    );
+    g.replace_blocked_production(blocked);
+    for mut ai in [
+        AdvancedAi::new(),
+        AdvancedAi::targeting(VictoryTarget::Science),
+    ] {
+        let mut board = g.clone();
+        ai.base.book_pos = 4;
+        ai.plan = Some(plan.clone());
+        ai.plan_observed_turn(&mut board, 0);
+        let replacement = board.cities[&city].queue.first().unwrap();
+        assert_ne!(replacement, &wonder);
+        assert!(board.can_produce(0, city, replacement));
+    }
 }

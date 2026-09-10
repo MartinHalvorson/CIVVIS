@@ -24892,11 +24892,9 @@ impl AdvancedAi {
             // cities short and the same review replaced it with a Builder.
             let amenity_repair_committed = self.amenity_project_preemption_on()
                 && (g.city_amenity_surplus(&g.cities[&cid]) < 0 || widespread_amenity_pressure)
-                && committed
-                    .as_ref()
-                    .is_some_and(|(value, item)| {
-                        *value > -1_000.0 && Self::amenity_repair_queue_item(g, item)
-                    });
+                && committed.as_ref().is_some_and(|(value, item)| {
+                    *value > -1_000.0 && Self::amenity_repair_queue_item(g, item)
+                });
             if amenity_repair_committed
                 && (widespread_amenity_pressure
                     || (!economic_recovery && plan.strategy != GrandStrategy::Recovery))
@@ -28228,8 +28226,8 @@ impl AdvancedAi {
                 let science_target = self.victory_target == Some(VictoryTarget::Science);
                 let wonder_civ =
                     !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
-                let continuing_wonder = city.queue.first() == Some(item)
-                    || g.item_invested_production(cid, item) > 0.0;
+                let continuing_wonder =
+                    city.queue.first() == Some(item) || g.item_invested_production(cid, item) > 0.0;
                 let already_queued = g.cities.values().any(|other| {
                     other.id != cid
                         && matches!(
@@ -40504,7 +40502,7 @@ impl AdvancedAi {
             // Emergency and victory reservations have had their turn. Reclaim
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
-            self.resume_interrupted_production(g, pid, &plan);
+            self.reconcile_production_commitments(g, pid, &plan);
             let adaptive_expansion_dispatch =
                 self.adaptive_expansion_dispatches(&plan, active_victory_target);
             // A broad host-observed Amenity deficit can persist through an

@@ -32739,7 +32739,7 @@ pub(super) fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
             {
                 break;
             }
-            game.units.remove(&settler);
+            game.remove_unit(settler);
         }
     }
 
