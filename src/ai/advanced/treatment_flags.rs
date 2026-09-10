@@ -3953,6 +3953,16 @@ impl AdvancedAi {
     pub fn disable_denial_outranks_expansion(&mut self) {
         self.denial_outranks_expansion = false;
     }
+    /// The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES`
+    /// instead of waiting for a growing city target. Opt-in gene
+    /// `domination-lane-hands-over`.
+    pub fn enable_domination_lane_hands_over(&mut self) {
+        self.domination_lane_hands_over = true;
+    }
+    /// The twin of `enable_domination_lane_hands_over`.
+    pub fn disable_domination_lane_hands_over(&mut self) {
+        self.domination_lane_hands_over = false;
+    }
 
     /// `boost-planner-builds`: the boost planner serves `building:` triggers.
     /// See `advanced/boost_planner.rs`.

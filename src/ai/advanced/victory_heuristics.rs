@@ -144,7 +144,7 @@ impl AdvancedAi {
             {
                 return None;
             }
-        } else if pressure.progress < 78 || (!urgent && pressure.progress < own_progress + 15) {
+        } else if !urgent && (pressure.progress < 78 || pressure.progress < own_progress + 15) {
             return None;
         }
 
@@ -639,6 +639,64 @@ mod tests {
             .districts
             .insert(crate::name!("theater_square"), Default::default());
         (game, rival_city)
+    }
+
+    #[test]
+    fn domination_lane_hands_over_is_a_native_opt_in_off_in_both_controllers() {
+        super::super::test_support::opt_in_off_in_both_controllers(
+            "domination-lane-hands-over",
+            |ai| ai.domination_lane_hands_over,
+        );
+    }
+
+    /// `domination-lane-hands-over`: four cities on a board whose lane target is
+    /// higher. Gene off, the lane keeps reading Expansion — the branch that held
+    /// the live seat at 8 and 9 cities. Gene on, it follows its lane to war.
+    #[test]
+    fn a_domination_lane_with_the_opening_band_in_hand_goes_to_war_only_with_the_gene() {
+        let mut game = Game::new_full(4, 48, 28, 91_004, 300, 0, false);
+        found_capitals(&mut game);
+        game.turn = 120;
+        for rival in 1..4 {
+            game.record_contact(0, rival);
+        }
+        let capital = game.player_city_ids(0)[0];
+        let center = game.cities[&capital].pos;
+        let mut radius = 4;
+        while game.player_city_ids(0).len() < super::super::DOMINATION_HANDOVER_CITIES {
+            let site = open_land_near(&game, center, radius);
+            game.found_city_for(0, site, None);
+            radius += 1;
+            assert!(radius < 12, "could not place four cities near {center:?}");
+        }
+        assert_eq!(
+            game.player_city_ids(0).len(),
+            super::super::DOMINATION_HANDOVER_CITIES
+        );
+
+        let mut lane = AdvancedAi::targeting(VictoryTarget::Domination);
+        // The live seat's forced pair, which is what grows the target past the
+        // land: 6 wanted, then 10, on a map that holds five or six.
+        lane.enable_rapid_city_expansion_2();
+        lane.enable_expansion_scales_with_difficulty();
+        let plan = lane.assess(&game, 0);
+        assert!(
+            plan.desired_cities > super::super::DOMINATION_HANDOVER_CITIES,
+            "the fixture must sit under the lane's own target: {plan:?}"
+        );
+        assert_eq!(
+            plan.strategy,
+            GrandStrategy::Expansion,
+            "gene off: the lane waits for a target the map may never meet: {plan:?}"
+        );
+
+        lane.enable_domination_lane_hands_over();
+        let plan = lane.assess(&game, 0);
+        assert_eq!(
+            plan.strategy,
+            GrandStrategy::Conquest,
+            "gene on: four cities in hand, the lane goes to war: {plan:?}"
+        );
     }
 
     #[test]

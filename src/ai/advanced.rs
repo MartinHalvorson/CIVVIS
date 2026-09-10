@@ -1167,6 +1167,11 @@ impl std::str::FromStr for VictoryTarget {
     }
 }
 
+/// `domination-lane-hands-over`: the city count at which the Domination lane
+/// stops deferring to expansion. Four is the floor of the opening band every
+/// recorded live win came from (4-6 cities at t60, 9 of 9 in, 0 of 128 out).
+pub(crate) const DOMINATION_HANDOVER_CITIES: usize = 4;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrategicPlan {
     pub strategy: GrandStrategy,
@@ -4954,6 +4959,14 @@ pub struct AdvancedAi {
     /// lost to a religious victory at turns 278 and 163 while the board read
     /// "the first half is reserved for expansion".
     denial_outranks_expansion: bool,
+    /// `domination-lane-hands-over`: with the Domination lane assigned, stop
+    /// deferring to "keep expanding" once the empire holds
+    /// `DOMINATION_HANDOVER_CITIES`, whatever `desired_cities` has grown to.
+    /// That target scales with difficulty — 6, then 10 — and a four-civ Tiny
+    /// map holds five or six, so without this the lane never hands over: the
+    /// live seat reached 8 and then 9 cities still reading Expansion, and
+    /// declared no war in three Emperor games.
+    domination_lane_hands_over: bool,
     /// `chop-for-expansion`: while a city is building a Settler, a Builder
     /// spends a charge clearing a feature or harvesting a resource for the
     /// Production instead of improving a tile. Off ships the shipped
@@ -6892,6 +6905,8 @@ pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
 mod close_as_a_body;
 
+mod siege_production;
+
 /// Siege train and anvil: the doctrines of a force whose objective is a city
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
@@ -7841,6 +7856,7 @@ impl AdvancedAi {
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
             denial_outranks_expansion: false,
+            domination_lane_hands_over: false,
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
@@ -11546,7 +11562,16 @@ impl AdvancedAi {
                     GrandStrategy::Religion,
                     "the religion lane still needs a religion",
                 )
-            } else if !specialization_active && cities.len() < desired_cities && has_site {
+            } else if !specialization_active
+                && cities.len() < desired_cities
+                && has_site
+                // `domination-lane-hands-over`: a conquest lane with the opening
+                // band's cities in hand goes to war; it does not wait for a city
+                // target the map cannot meet.
+                && !(self.domination_lane_hands_over
+                    && target == VictoryTarget::Domination
+                    && cities.len() >= DOMINATION_HANDOVER_CITIES)
+            {
                 (
                     GrandStrategy::Expansion,
                     "the first half is reserved for expansion and defense",
@@ -14319,6 +14344,15 @@ impl AdvancedAi {
                 }
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if first_government => Some("political_philosophy"),
+                // Put an already-built museum to work before buying more
+                // government capacity. Recovery keeps the normal ladder.
+                GrandStrategy::Culture
+                    if plan.strategy == GrandStrategy::Culture
+                        && !self.lane_lost
+                        && self.culture_museum_unlock_goal(g, pid).is_some() =>
+                {
+                    self.culture_museum_unlock_goal(g, pid)
+                }
                 // See `government_ladder`: the same sentence one rung up. The
                 // tier-1 arm above exists because "a victory beeline cannot
                 // usefully precede the government's policy capacity"; tier 2
@@ -27297,6 +27331,7 @@ impl AdvancedAi {
                     // once the strike force is complete.
                     let conquest_body =
                         self.conquest_reservation(g, pid, cid, spec, counts, threatened);
+                    let missing_siege = self.missing_domination_siege(g, pid, plan, counts, spec);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
@@ -27304,6 +27339,7 @@ impl AdvancedAi {
                         && early_contact <= 0.0
                         && early_archer <= 0.0
                         && conquest_body <= 0.0
+                        && !missing_siege
                     {
                         return -2_000.0;
                     }
@@ -27362,6 +27398,13 @@ impl AdvancedAi {
                         desired_aircraft.saturating_sub(counts.aircraft) as f64
                     } else {
                         desired_military.saturating_sub(land_military) as f64
+                    };
+                    // A missing wall-breaking role is one unfilled army slot,
+                    // even when field units have filled the head-count target.
+                    let force_gap = if missing_siege {
+                        force_gap.max(1.0)
+                    } else {
+                        force_gap
                     };
                     let role_gap = if force_gap <= 0.0 {
                         0.0
