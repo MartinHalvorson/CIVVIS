@@ -35,6 +35,7 @@
 #   CIVVIS_DIFFICULTY                 DIFFICULTY_SETTLER … DIFFICULTY_DEITY.
 #                                     Absent: the read-only ladder policy picks
 #                                     the rung, as the stock launcher would.
+#   CIVVIS_LEADER                     Civ VI leader identifier; default LEADER_TRAJAN.
 #   CIVVIS_VICTORY                    the victory lane forwarded to the supervisor.
 #   CIVVIS_PLAY_ATTEMPTS              games per cycle. Default 1, so EVERY game
 #                                     fetches and builds origin/main afresh
@@ -204,6 +205,9 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_DIFFICULTY)
         [[ "$value" =~ '^DIFFICULTY_(SETTLER|CHIEFTAIN|WARLORD|PRINCE|KING|EMPEROR|IMMORTAL|DEITY)$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_DIFFICULTY='$value' is not a Civ VI difficulty" ;;
+      CIVVIS_LEADER)
+        [[ "$value" =~ '^LEADER_[A-Z0-9_]+$' ]] \
+          || refuse "$POLICY:$lineno CIVVIS_LEADER='$value' is not a Civ VI leader identifier" ;;
       CIVVIS_VICTORY)
         [[ "$value" =~ '^[a-z][a-z,]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_VICTORY='$value' is not a victory lane" ;;
@@ -223,7 +227,7 @@ if [[ -f "$POLICY" ]]; then
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_VICTORY CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
         continue ;;
     esac
     policy[$key]=$value
@@ -256,7 +260,7 @@ origin=$(git -C "$HEAD_REPO" remote get-url origin 2>/dev/null || true)
 # Never inherit a labelled experiment, a retired strategy, an alternate host,
 # or a former restart policy from the window that opened this.
 unset CIVVIS_WITH CIVVIS_WITHOUT CIVVIS_WITH_FILE CIVVIS_SCREEN_GENE CIVVIS_STRATEGY CIVVIS_VICTORY \
-      CIVVIS_DIFFICULTY CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
+      CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
       CIVVIS_ABANDON_BELOW_WIN_RATE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING \
       CIVVIS_HEAD_REPO CIVVIS_LADDER_HOST CIVVIS_LADDER_SUPERVISOR CIVVIS_SUPERVISOR \
       CIVVIS_INTERACTIVE_HOST_LOG CIVVIS_INTERACTIVE_HOST_LOCK

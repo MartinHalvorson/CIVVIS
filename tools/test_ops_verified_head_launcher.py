@@ -46,6 +46,36 @@ class CaptureFreePolicyTests(unittest.TestCase):
         self.assertIn("explicit CIVVIS_DIFFICULTY", selection)
         self.assertIn("requires difficulty DIFFICULTY_EMPEROR", selection)
 
+    @unittest.skipUnless(shutil.which("zsh"), "zsh is not installed")
+    def test_leader_policy_validates_and_exports_the_selected_value(self):
+        source = LAUNCHER.read_text(encoding="utf-8")
+        case = source[source.index('    case "$key" in'):source.index('    policy[$key]=$value')]
+        exports = source[source.index("unset CIVVIS_WITH "):source.index('if [[ -f "$POLICY" ]]; then', source.index("unset CIVVIS_WITH "))]
+        for value, accepted in (("LEADER_PERICLES", True), ("LEADER_TRAJAN", True),
+                                ("Pericles", False), ("LEADER_PERICLES;exit", False), ("", False)):
+            script = '\n'.join([
+                'typeset -A policy', 'refuse() { print -u2 -- "$*"; exit 64; }',
+                'key=CIVVIS_LEADER', 'value=$1', case,
+                'policy[$key]=$value', 'CIVVIS_LEADER=LEADER_STALE', exports,
+                'print -r -- "$CIVVIS_LEADER"',
+            ])
+            done = subprocess.run(["zsh", "-c", script, "test", value], capture_output=True, text=True)
+            with self.subTest(value=value):
+                self.assertEqual(done.returncode, 0 if accepted else 64, done.stderr)
+                if accepted:
+                    self.assertEqual(done.stdout.strip(), value)
+
+    @unittest.skipUnless(shutil.which("zsh"), "zsh is not installed")
+    def test_supervisor_forwards_configured_leader_as_one_argument(self):
+        source = SUPERVISOR.read_text(encoding="utf-8")
+        setting = next(line for line in source.splitlines() if line.startswith("LEADER="))
+        self.assertEqual(source.count('--leader "$LEADER"'), 2)
+        for value in ("", "LEADER_PERICLES"):
+            script = 'CIVVIS_LEADER=$1\n' + setting + '\nprint -rl -- --leader "$LEADER"'
+            done = subprocess.run(["zsh", "-c", script, "test", value], capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(done.stdout.splitlines(), ["--leader", value or "LEADER_TRAJAN"])
+
     def test_changed_shell_scripts_still_parse(self):
         if shutil.which("zsh") is None:
             self.skipTest("zsh is not installed")
