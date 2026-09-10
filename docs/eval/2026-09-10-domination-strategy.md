@@ -114,6 +114,13 @@ within-front behavior is therefore an opt-in hypothesis for the normal screen,
 not a claim that always taking a capital first is optimal. Opponent selection
 keeps its existing cost, feasibility and staging tradeoffs.
 
+Main subsequently added capital-owner priority as a separate change. The
+final gene preserves that opponent choice: it still computes the global
+capital for opponent selection, then ranks within the chosen front only when
+this option is enabled. A regression checks that enabling focus cannot remove
+main's capital-owner priority. The earlier broad-policy probes above describe
+their historical base, not the current integrated policy.
+
 ## Validation
 
 The full Rust suite passed 3,576 tests (52 ignored), including the focused
@@ -132,3 +139,12 @@ A predeclared 24-game standard fieldless screen (six players, 74×46 Continents,
 Online 250, Emperor, nine city-states; seeds starting at 109103000) is running
 to measure gene reach. Its result is pending. Reach evidence does not establish
 a win-rate effect or justify deployment promotion.
+
+After integrating current main and fixing that interaction, the full suite
+passed **3,593 tests** (52 ignored), including the capital-owner preservation
+regression. A new matched eight-seed Prince native probe used seeds
+109108000–109108007, three players, 36×22, Online 250 and
+`domination-lane-hands-over` on in both arms. Capital focus completed Domination
+in **1/8** worlds versus **2/8** with the option off. Both arms used source
+`584c2d573`; current main's opponent-selection and terminal-capture rules were
+held equal. This also provides no basis for a default promotion.
