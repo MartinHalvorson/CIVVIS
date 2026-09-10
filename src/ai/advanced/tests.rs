@@ -48266,6 +48266,101 @@ fn forgetting_unit_identity_discards_battle_recovery() {
 }
 
 #[test]
+fn production_review_finishes_a_started_wonder_despite_a_better_score() {
+    let (mut game, city) = strategic_wonder_fixture(6_402, "great_library");
+    let pos = game.wonder_sites(city, "great_library")[0];
+    let item = Item::Wonder {
+        wonder: crate::name!("great_library"),
+        pos,
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: item.clone(),
+        },
+    )
+    .unwrap();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = wonder_plan(GrandStrategy::Science, game.turn);
+    // A changed preference makes alternatives attractive without making the
+    // existing wonder useless or impossible to complete.
+    ai.base.w.p_wonder = 0.01;
+    ai.preempt_margin = 1.000001;
+    game.cities.get_mut(&city).unwrap().production = game.item_cost_for_city(0, city, &item) / 2.0;
+    let counts = ai.counts_without_city_queue(&game, 0, city);
+    let value = ai.production_value(&game, 0, city, &item, &plan, &counts);
+    assert!(value > -1_000.0, "wonder must remain useful: {value}");
+    let best_alternative = game
+        .producible_items(0, city)
+        .iter()
+        .filter(|candidate| **candidate != item)
+        .map(|candidate| ai.production_value(&game, 0, city, candidate, &plan, &counts))
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        best_alternative > value * ai.preempt_margin,
+        "fixture must offer a tempting switch: {best_alternative} vs {value}"
+    );
+    let other = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|id| *id != city)
+        .unwrap();
+    let mut duplicate = game.clone();
+    duplicate.cities.get_mut(&other).unwrap().queue = vec![item.clone()];
+    assert!(
+        ai.production_value(&duplicate, 0, city, &item, &plan, &counts) <= -9_999.0,
+        "another city's duplicate wonder must still be rejected"
+    );
+    let mut threatened_plan = plan.clone();
+    threatened_plan.threatened_city = Some(city);
+    assert!(
+        ai.production_value(&game, 0, city, &item, &threatened_plan, &counts) <= -9_999.0,
+        "a threatened city must remain free to interrupt its wonder"
+    );
+    for _ in 0..3 {
+        ai.advanced_production(&mut game, 0, &plan, false);
+        assert_eq!(game.cities[&city].queue.first(), Some(&item));
+        game.turn += 1;
+    }
+}
+
+#[test]
+fn production_review_finishes_invested_units_but_reviews_unstarted_units() {
+    let (mut game, city) = strategic_wonder_fixture(6_402, "great_library");
+    for pos in [(4, 5), (5, 4), (6, 4), (4, 4)] {
+        game.spawn_test_unit("warrior", 0, pos);
+    }
+    let item = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: item.clone(),
+        },
+    )
+    .unwrap();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = wonder_plan(GrandStrategy::Science, game.turn);
+    let mut unstarted = game.clone();
+    ai.advanced_production(&mut unstarted, 0, &plan, false);
+    assert_ne!(unstarted.cities[&city].queue.first(), Some(&item));
+    game.cities.get_mut(&city).unwrap().production = 1.0;
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+    game.cities.get_mut(&city).unwrap().production = 0.0;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .production_progress
+        .insert("unit:warrior".into(), 1.0);
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+}
+
+#[test]
 fn city_bombardment_does_not_credit_damage_to_its_unharmed_garrison() {
     let mut game = Game::new_full(2, 24, 16, 71_009, 120, 0, false);
     let origin = game
