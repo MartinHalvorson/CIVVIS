@@ -4943,6 +4943,14 @@ pub struct AdvancedAi {
     /// is answered with war aimed at its Great Works, the way every other lane
     /// already answers a leader, instead of only by racing it.
     counter_culture_by_conquest: bool,
+    /// `denial-outranks-expansion`: a rival close to winning is answered
+    /// BEFORE the assigned lane's "keep expanding" rule, not after it. See
+    /// the strategy chain, where `actionable_denial` sat below the lane
+    /// branch and so could never interrupt an empire one city short of its
+    /// target — which is how two Emperor games on a four-civ Pangaea were
+    /// lost to a religious victory at turns 278 and 163 while the board read
+    /// "the first half is reserved for expansion".
+    denial_outranks_expansion: bool,
     /// `chop-for-expansion`: while a city is building a Settler, a Builder
     /// spends a charge clearing a feature or harvesting a resource for the
     /// Production instead of improving a tile. Off ships the shipped
@@ -7826,6 +7834,7 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
+            denial_outranks_expansion: false,
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
@@ -11515,6 +11524,13 @@ impl AdvancedAi {
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
             )
+        } else if let Some((_, counter)) =
+            actionable_denial.filter(|_| self.denial_outranks_expansion)
+        {
+            // `denial-outranks-expansion`: the same answer the branch below
+            // gives, reached before the lane can say "keep expanding". A
+            // rival at match point does not wait for our sixth city.
+            (counter, "countering a rival close to winning, ahead of the lane")
         } else if let Some(target) = active_victory_target {
             if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
                 (

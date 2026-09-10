@@ -509,8 +509,10 @@ mod tests {
         assert_eq!(plan.target_city, Some(spaceport_city));
     }
 
-    #[test]
-    fn an_unactionable_leader_does_not_mask_an_actionable_victory_threat() {
+    /// Four majors at turn 190: rival 1 leads Culture but cannot be reached,
+    /// rival 3 has launched the Exoplanet Expedition. `stock_denial_lead_time`
+    /// makes that Science clock an actionable denial against player 3.
+    fn launched_science_threat_board() -> Game {
         let mut game = Game::new_full(4, 48, 28, 91_004, 300, 0, false);
         found_capitals(&mut game);
         game.turn = 190;
@@ -549,6 +551,12 @@ mod tests {
             .science_projects
             .insert("exoplanet_expedition".to_string());
 
+        game
+    }
+
+    #[test]
+    fn an_unactionable_leader_does_not_mask_an_actionable_victory_threat() {
+        let game = launched_science_threat_board();
         let mut ai = AdvancedAi::new();
         ai.stock_denial_lead_time = true;
         assert_eq!(
@@ -564,6 +572,41 @@ mod tests {
         let plan = ai.assess(&game, 0);
         assert_eq!(plan.strategy, GrandStrategy::Conquest);
         assert_eq!(plan.target_player, Some(3));
+    }
+
+    /// `denial-outranks-expansion`: the same board, but the seat has a lane.
+    /// One city against a target of several keeps the lane's branch on
+    /// "Expansion", and that branch sits above the denial in the chain — so
+    /// with the gene off the launched rival is never answered. With it on the
+    /// denial is asked first and the plan is the same Conquest against player
+    /// 3 that a lane-less seat already chooses.
+    #[test]
+    fn a_rival_close_to_winning_outranks_the_lanes_expansion_only_with_the_gene() {
+        let game = launched_science_threat_board();
+        // A Culture lane, so the off-case cannot land on Conquest-against-3 by
+        // way of the lane's own strategy; the live seat's Domination lane hit
+        // the same Expansion branch for the same reason.
+        let mut lane = AdvancedAi::targeting(VictoryTarget::Culture);
+        lane.stock_denial_lead_time = true;
+        // `deny-while-targeted` is what lets a seat with a lane see a denial at
+        // all; this gene is about what happens to that denial once it exists.
+        lane.deny_while_targeted = true;
+        assert_eq!(
+            lane.actionable_victory_denial(&game, 0),
+            Some((3, GrandStrategy::Conquest)),
+            "the denial is actionable regardless of the lane"
+        );
+        let plan = lane.assess(&game, 0);
+        assert_ne!(
+            (plan.strategy, plan.target_player),
+            (GrandStrategy::Conquest, Some(3)),
+            "with the gene off the lane's expansion rule shadows the denial: {plan:?}"
+        );
+
+        lane.enable_denial_outranks_expansion();
+        let plan = lane.assess(&game, 0);
+        assert_eq!(plan.strategy, GrandStrategy::Conquest);
+        assert_eq!(plan.target_player, Some(3), "the denial is answered ahead of the lane");
     }
     // -----------------------------------------------------------------
     // `counter-culture-by-conquest`
@@ -592,6 +635,14 @@ mod tests {
             .districts
             .insert(crate::name!("theater_square"), Default::default());
         (game, rival_city)
+    }
+
+    #[test]
+    fn denial_outranks_expansion_is_a_native_opt_in_off_in_both_controllers() {
+        super::super::test_support::opt_in_off_in_both_controllers(
+            "denial-outranks-expansion",
+            |ai| ai.denial_outranks_expansion,
+        );
     }
 
     #[test]
