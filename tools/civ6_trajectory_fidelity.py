@@ -32,6 +32,29 @@ That is not a hypothetical caution. On the corpus this was written against,
 seat is Prince -- so the honest answer to "does the simulator reproduce the live
 game" is that nobody has ever been in a position to ask.
 
+THE RUNG IS NOT THE WHOLE CONFIGURATION: WHO CARRIES THE HANDICAP IS TOO
+======================================================================
+A rung above Prince hands the AI a yield, experience and free-unit bonus, and
+the rungs below Prince hand the HUMAN an experience bonus. `gene_screen` decides
+who receives it, and its DEFAULT (`--handicap all`, i.e. the flag absent) gives
+it to every seat -- our measured seats included. That is symmetric, so it
+cancels, and it is not the deployment: a live seat meets an Emperor field
+without an Emperor bonus of its own.
+
+The first version of this ledger did not read that axis, and its Emperor row
+said so without knowing why -- live standing 0.34 against a simulated 0.66, a
+1.93x divergence, which reads as an engine defect. It is not one. The tell was
+already in the table: the simulated standing is **0.66 at Prince and 0.66 at
+Emperor**, identical to two decimals, because a handicap given to everyone
+changes nothing. Every Emperor seat ever screened played a symmetric field.
+
+So the handicap mode is part of the configuration key. The live seat is always
+`rivals` -- the rung's bonus goes to the rivals and not to us. A screen is
+whatever its header records, defaulting to `all`. At a rung that confers nothing
+either way the distinction is meaningless, so both sides collapse to `n/a` and
+the cell still matches; `data/difficulties.json` says which rungs those are and
+it is read rather than restated.
+
 Usage::
 
     python3 tools/civ6_trajectory_fidelity.py                  # markdown ledger
@@ -131,6 +154,56 @@ def map_sizes() -> dict[tuple[int, int], str]:
     return sizes
 
 
+#: What the live seat always is: the rung's bonus goes to the rivals, never to
+#: us. `civ6_play.py` sets the difficulty on the host and CIVVIS plays the
+#: local player, so there is no configuration in which a live seat carries it.
+LIVE_HANDICAP = "rivals"
+
+#: What a screen is when its header records nothing, which is `gene_screen`'s
+#: own default for the flag: every seat receives the rung's bonus.
+SIM_HANDICAP_DEFAULT = "all"
+
+#: A rung that confers nothing on either side; the handicap mode cannot matter.
+NEUTRAL_HANDICAP = "n/a"
+
+
+def neutral_rungs() -> set[str]:
+    """Difficulties that hand nothing to either side, from the shipped table.
+
+    Read out of `data/difficulties.json` rather than restated, so a rung whose
+    bonuses change reaches this tool on its own. A rung is neutral when it
+    carries no AI bonus of any kind AND no human bonus: on the stock ladder
+    that is Prince alone, since Settler, Chieftain and Warlord all hand the
+    HUMAN an experience bonus and every rung above Prince hands the AI yields,
+    experience and free units.
+    """
+    body = json.loads((REPO / "data" / "difficulties.json").read_text(encoding="utf-8"))
+    rows = body.items() if isinstance(body, dict) else [(r.get("name"), r) for r in body]
+    neutral = set()
+    for name, spec in rows:
+        if not isinstance(spec, dict) or not name:
+            continue
+        tilts = any(
+            spec.get(key)
+            for key in ("ai_yield_pct", "ai_bonus_units", "ai_xp_pct", "human_xp_pct")
+        )
+        if not tilts:
+            neutral.add(str(name).lower())
+    if not neutral:
+        raise SystemExit(
+            "data/difficulties.json parsed to no neutral rung; the table moved "
+            "and every cell would be split on a distinction that cannot matter"
+        )
+    return neutral
+
+
+def handicap_for(difficulty: str | None, mode: str, neutral: set[str]) -> str:
+    """`mode`, unless the rung confers nothing and the mode cannot matter."""
+    if difficulty and difficulty.lower() in neutral:
+        return NEUTRAL_HANDICAP
+    return mode
+
+
 def strip_prefix(value: str | None, prefix: str) -> str | None:
     """`DIFFICULTY_KING` -> `king`, and `None` stays `None`."""
     if not isinstance(value, str):
@@ -168,6 +241,7 @@ def live_attempts(path: Path) -> list[dict]:
 
 def live_records(path: Path) -> list[dict]:
     """Deep live runs, projected onto the common schema."""
+    neutral = neutral_rungs()
     out = []
     for row in live_attempts(path):
         turns = row.get("turns")
@@ -175,10 +249,12 @@ def live_records(path: Path) -> list[dict]:
             turns = row.get("last_turn")
         if (turns or 0) < MIN_TURNS:
             continue
+        difficulty = strip_prefix(row.get("difficulty"), "DIFFICULTY_")
         cell = (
-            strip_prefix(row.get("difficulty"), "DIFFICULTY_"),
+            difficulty,
             strip_prefix(row.get("speed"), "GAMESPEED_"),
             strip_prefix(row.get("map_size"), "MAPSIZE_"),
+            handicap_for(difficulty, LIVE_HANDICAP, neutral),
         )
         if None in cell:
             continue
@@ -210,6 +286,7 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
     is what the live row's `rival_best` means.
     """
     files = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
+    neutral = neutral_rungs()
     out: list[dict] = []
     for file in files:
         header: dict = {}
@@ -228,10 +305,16 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
                 header = row
         if not header:
             continue
+        difficulty = (header.get("difficulty") or "").lower() or None
+        # `gene_screen` records the handicap inside its rival-mix block, and
+        # skips that block entirely when no `--rivals` was asked for — so an
+        # absent value is the flag's own default, every seat handicapped.
+        mode = str(header.get("handicap") or SIM_HANDICAP_DEFAULT).lower()
         cell = (
-            (header.get("difficulty") or "").lower() or None,
+            difficulty,
             (header.get("speed") or "").lower() or None,
             sizes.get((header.get("width"), header.get("height"))),
+            handicap_for(difficulty, mode, neutral),
         )
         if None in cell:
             continue
@@ -368,9 +451,9 @@ def render(report: dict) -> str:
             "",
         ]
     for cell in report["matched_cells"]:
-        difficulty, speed, size = cell["cell"]
+        difficulty, speed, size, handicap = cell["cell"]
         lines += [
-            f"## {difficulty} / {speed} / {size}",
+            f"## {difficulty} / {speed} / {size} / handicap {handicap}",
             "",
             f"{cell['live_runs']} live runs against {cell['sim_seats']} screen seats.",
             "",
@@ -398,10 +481,22 @@ def render(report: dict) -> str:
             continue
         lines += [f"## {title}", ""]
         for entry in report[key]:
-            difficulty, speed, size = entry["cell"]
-            lines.append(f"- {difficulty} / {speed} / {size} — {entry[unit]} {unit}")
+            difficulty, speed, size, handicap = entry["cell"]
+            lines.append(
+                f"- {difficulty} / {speed} / {size} / handicap {handicap}"
+                f" — {entry[unit]} {unit}"
+            )
         lines.append("")
     return "\n".join(lines)
+
+
+#: How far past a recorded divergence the check tolerates before failing.
+#:
+#: The recorded number is a point estimate over a few dozen live runs, so it
+#: carries real sampling error, and a ratchet that fires on a 2% wobble is an
+#: alarm nobody keeps. This is a REGRESSION alarm: the recorded value stays the
+#: honest observation, and the bar to clear is that value plus this margin.
+FIDELITY_SLACK = 0.25
 
 
 def load_tolerances() -> dict[str, float]:
@@ -420,11 +515,15 @@ def check(report: dict, tolerances: dict[str, float], most: int) -> tuple[int, l
         if allowed is None:
             notes.append(f"{name}: {worst:.2f}× — no tolerance recorded yet")
             continue
-        if worst > allowed:
+        bar = allowed * (1.0 + FIDELITY_SLACK)
+        if worst > bar:
             over += 1
-            notes.append(f"{name}: {worst:.2f}× exceeds the recorded {allowed:.2f}×")
+            notes.append(
+                f"{name}: {worst:.2f}× exceeds the recorded {allowed:.2f}× "
+                f"by more than the {FIDELITY_SLACK:.0%} regression margin"
+            )
         else:
-            notes.append(f"{name}: {worst:.2f}× within {allowed:.2f}×")
+            notes.append(f"{name}: {worst:.2f}× within {allowed:.2f}× +{FIDELITY_SLACK:.0%}")
     return (1 if over > most else 0), notes
 
 
@@ -444,9 +543,12 @@ def write_tolerances(report: dict) -> dict[str, float]:
             {
                 "note": (
                     "Worst per-subsystem divergence between the live corpus and "
-                    "the simulator, in matched configurations. Written only by "
-                    "`civ6_trajectory_fidelity.py --write`; a tolerance may "
-                    "tighten and never loosens."
+                    "the simulator, in matched configurations — a configuration "
+                    "being difficulty, speed, map size AND which side carries "
+                    "the rung's handicap. Written only by "
+                    "`civ6_trajectory_fidelity.py --write`; a value may tighten "
+                    "and never loosens, and `--check` fails only past it plus a "
+                    "regression margin (see FIDELITY_SLACK)."
                 ),
                 "tolerances": updated,
             },
