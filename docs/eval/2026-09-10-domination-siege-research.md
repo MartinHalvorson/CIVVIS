@@ -62,3 +62,11 @@ After merging main, the full Rust suite passed 3,582 tests (52 ignored). The
 three research regressions also passed after moving them into their dedicated
 test module, and the 14 append-point tests passed. Generated gene and manifest
 checks remain current.
+
+A read-only `run_game_observed` replay of those same eight handover seeds,
+linked against the merged evaluation build, recorded every major's selected
+research and known technology set at each turn start. All 5,937 snapshots
+matched between arms, as did the eight terminal records. This is stronger
+negative evidence than matching final summaries: the option had no observed
+research effect in this regime. The snapshot timing does not observe every
+individual action, and this result says nothing about untested map profiles.
