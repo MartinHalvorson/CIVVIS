@@ -33,10 +33,11 @@ fn board() -> Game {
 }
 
 #[test]
-fn culture_returns_to_conservation_when_a_better_government_is_unlocked() {
+fn culture_researches_a_government_its_chooser_will_adopt() {
     let mut g = board();
     let withheld = [
         "conservation",
+        "class_struggle",
         "suffrage",
         "totalitarianism",
         "corporate_libertarianism",
@@ -54,9 +55,7 @@ fn culture_returns_to_conservation_when_a_better_government_is_unlocked() {
     g.players[0].civic = None;
     let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
     ai.enable_government_ladder_2();
-    assert!(g
-        .available_civics(0)
-        .contains(&crate::name!("conservation")));
+    ai.government_capacity_fallback = false;
     let plan = StrategicPlan {
         strategy: GrandStrategy::Recovery,
         target_player: None,
@@ -66,14 +65,25 @@ fn culture_returns_to_conservation_when_a_better_government_is_unlocked() {
         assessed_turn: g.turn,
         rush: false,
     };
-    ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].civic.as_deref(), Some("conservation"));
-    assert_eq!(ai.government_ladder_rung(&g, 0), None);
-    g.players[0].government = Some("communism".to_string());
-    assert!(
-        ai.government_ladder_rung(&g, 0).is_some(),
-        "after adopting the unlocked capacity, a further rung remains useful"
+    assert!(g.available_civics(0).contains(&crate::name!("suffrage")));
+    let mut capacity = g.clone();
+    ai.government_capacity_fallback = true;
+    ai.advanced_research(&mut capacity, 0, &plan);
+    assert_eq!(capacity.players[0].civic.as_deref(), Some("class_struggle"));
+    ai.government_capacity_fallback = false;
+    let mut matching = g.clone();
+    matching.players[2].government = Some("communism".to_string());
+    ai.advanced_research(&mut matching, 0, &plan);
+    assert_eq!(
+        matching.players[0].civic.as_deref(),
+        Some("class_struggle"),
+        "matching the leading Culture defender remains an eligible goal"
     );
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("suffrage"));
+    g.players[0].civics.insert(crate::name!("suffrage"));
+    ai.strategic_government(&mut g, 0, GrandStrategy::Recovery);
+    assert_eq!(g.players[0].government.as_deref(), Some("democracy"));
 }
 
 #[test]
