@@ -4930,6 +4930,23 @@ CivvisChooseSpyEscapeRoute = function(pid)
 	end, false);
 end
 
+-- ChooseArtifact.lua:11-19 reads the next extracting Archaeologist and its
+-- artifact; :79-81 chooses ActingPlayerID with CHOOSE_ARTIFACT_PLAYER.
+-- Notifications.xml:130 has AutoNotify="False", so the popup callback alone
+-- cannot guarantee this required choice gets answered on an unattended seat.
+CivvisChooseArtifactPlayer = function(pid)
+	return try(function()
+		local unit = Players[pid]:GetUnits():GetNextExtractingArchaeologist();
+		if unit == nil then return false; end
+		local artifact = Game.GetArtifactByIndex(unit:GetArchaeology():GetArtifactIndex());
+		if artifact == nil or type(artifact.ActingPlayerID) ~= "number" then return false; end
+		local params = {};
+		params[PlayerOperations.PARAM_PLAYER_ONE] = artifact.ActingPlayerID;
+		UI.RequestPlayerOperation(pid, PlayerOperations.CHOOSE_ARTIFACT_PLAYER, params);
+		return true;
+	end, false);
+end
+
 -- Not every blocker actually blocks. "Units have moves" and its relatives are
 -- the interface nagging that something could still be done this turn -- the
 -- shipped end-turn button cycles to the next idle unit instead of ending, but
@@ -19020,6 +19037,9 @@ local function tick()
 				if name == "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE" then
 					answered = CivvisChooseSpyEscapeRoute(pid)
 						and "escape_route:city_center" or nil;
+				elseif name == "ENDTURN_BLOCKING_ARTIFACT" then
+					answered = CivvisChooseArtifactPlayer(pid)
+						and "artifact_player:first" or nil;
 				elseif cfg.CivvisDecides then
 					-- CIVVIS has already made and applied its complete unit-order
 					-- pass in settleTurn. A soft blocker is only a UI reminder; the
