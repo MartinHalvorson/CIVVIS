@@ -77,6 +77,10 @@ have distinct event names, so they cannot wake the brain mid-batch. Replay:
 cargo run --profile ci --locked --features developer-tools --bin live_divergence -- /path/to/events.jsonl --actions
 ```
 
+The replay requires explicit Gathering Storm/no-optional-modes seat metadata,
+recognized civilization/speed/difficulty, and a preceding map export. It rejects
+duplicated sequences, out-of-order observations and interleaved planner/turn
+events. All four transition records must agree on turn and frame.
 The replay emits JSONL cases for the transition checker below. Initial coverage
 is research, civics, walking, founding, and fortifying; other requests emit
 explicit coverage gaps. Predictions come from applying the request to a rebuilt
@@ -103,13 +107,18 @@ For independently captured, causally isolated transition fixtures:
 python3 tools/civ6_decision_trace.py /path/to/action-cases.jsonl
 ```
 
-Each case provides `same_turn`, `intervening_actions`, `predictions`, and
+Each case provides explicit `phase: "settled"`, `same_turn`,
+`intervening_actions`, `predictions`, and
 `observed`. Deterministic facts compare exactly; stochastic numerical predictions
 use explicit `low`/`high` bounds fixed before reading the observed result.
-Missing coverage, intervening actions, empty inputs, and mismatches fail the
+Missing/unknown phases, coverage gaps, intervening actions, empty inputs, and mismatches fail the
 check. Explicit request-boundary cases also fail, even if their values happen
 to match: acknowledgement is not completion. This does **not** upgrade passive `live_divergence` projections into
 action replay: their measurements remain confounded by unmodeled orders.
+Fortification compares the actual fortified flag, not just unchanged position
+and movement. Founding compares settler consumption and the city at its
+requested location as well as total city count. Synthetic negative regressions
+for these facts are not additional live-game evidence.
 
 ## Evidence still required
 

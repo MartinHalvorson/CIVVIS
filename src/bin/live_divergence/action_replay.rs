@@ -44,12 +44,18 @@ fn compare(
 ) -> Value {
     let mut case = json!({"id": begin["sequence"], "turn": before.turn,
         "phase": end.get("phase").and_then(Value::as_str).unwrap_or("request_boundary"), "order": begin["order"],
-        "same_turn": before.turn == after.turn && begin["turn"] == end["turn"],
+        "same_turn": before.turn == after.turn && begin["turn"].as_u64() == Some(u64::from(before.turn))
+            && end["turn"] == begin["turn"] && before.frame == after.frame
+            && begin["frame"].as_u64() == Some(u64::from(before.frame)) && end["frame"] == begin["frame"],
         "intervening_actions": 0, "predictions": {}, "observed": {}});
     if case["phase"] == "settled"
         && (begin["isolated"] != true || end["isolated"] != true || end["settled"] != true)
     {
         case["coverage_gap"] = json!("probe did not establish isolated completion");
+        return case;
+    }
+    if case["same_turn"] != true {
+        case["coverage_gap"] = json!("turn or frame changed inside transition");
         return case;
     }
     if snapshot.width <= 0 || snapshot.height <= 0 {
@@ -79,10 +85,22 @@ fn compare(
             json!({"civic": mirror.game.players[0].civic}),
             json!({"civic": after.civic.as_ref().map(|s| s.trim_start_matches("CIVIC_").to_lowercase())}),
         ),
-        Action::FoundCity { .. } => (
-            json!({"cities": mirror.game.player_city_ids(0).len()}),
-            json!({"cities": after.cities.len()}),
-        ),
+        Action::FoundCity { unit } => {
+            let host_id = begin["order"]["subject"].as_i64();
+            let original = before.units.iter().find(|u| Some(u.id) == host_id);
+            let founded_at = original.map(|u| (u.x, u.y));
+            let native_city = founded_at.is_some_and(|pos| {
+                mirror.game.cities.values().any(|city| {
+                    city.owner == 0 && civvis::hex::axial_to_offset(city.pos.0, city.pos.1) == pos
+                })
+            });
+            let host_city = founded_at
+                .is_some_and(|pos| after.cities.iter().any(|city| (city.x, city.y) == pos));
+            (
+                json!({"cities": mirror.game.player_city_ids(0).len(), "settler_present": mirror.game.units.contains_key(&unit), "city_at_settler": native_city}),
+                json!({"cities": after.cities.len(), "settler_present": after.units.iter().any(|u| Some(u.id) == host_id), "city_at_settler": host_city}),
+            )
+        }
         Action::MoveTo { unit, .. } | Action::Fortify { unit } => {
             let native = &mirror.game.units[&unit];
             let host = after
@@ -90,13 +108,20 @@ fn compare(
                 .iter()
                 .find(|u| Some(u.id) == begin["order"]["subject"].as_i64());
             let pos = civvis::hex::axial_to_offset(native.pos.0, native.pos.1);
-            (
+            let (mut predicted, mut observed) = (
                 json!({"position": [pos.0, pos.1], "moves": native.moves_left}),
                 host.map_or(
                     json!({}),
                     |u| json!({"position": [u.x, u.y], "moves": u.moves}),
                 ),
-            )
+            );
+            if matches!(action, Action::Fortify { .. }) {
+                predicted["fortified"] = json!(native.fortified);
+                if let Some(host) = host {
+                    observed["fortified"] = json!(host.fortified);
+                }
+            }
+            (predicted, observed)
         }
         _ => unreachable!(),
     };
@@ -110,6 +135,16 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .find(|arg| arg.ends_with(".jsonl"))
         .ok_or("expected events.jsonl")?;
+    replay(
+        std::io::BufReader::new(std::fs::File::open(file)?),
+        |case| println!("{case}"),
+    )
+}
+
+fn replay(
+    reader: impl BufRead,
+    mut emit: impl FnMut(Value),
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut snapshot = Snapshot::default();
     let mut seat: Option<Seat> = None;
     let mut pending: Option<(
@@ -118,11 +153,48 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         Option<StateSnapshot>,
         Snapshot,
     )> = None;
-    for line in std::io::BufReader::new(std::fs::File::open(file)?).lines() {
+    let mut sequences = std::collections::BTreeSet::new();
+    for line in reader.lines() {
         let line = line?;
         let event: Value = serde_json::from_str(&line)?;
         match event["kind"].as_str().unwrap_or("") {
-            "seat" => seat = Some(serde_json::from_value(event)?),
+            "seat" => {
+                if pending.is_some() {
+                    return Err("seat changed inside transition".into());
+                }
+                // This replay reconstructs Gathering Storm without optional
+                // modes. Do not silently default missing/unsupported setup.
+                if event["ruleset"] != "RULESET_EXPANSION_2" || event["modes"] != json!([]) {
+                    return Err(
+                        "action replay requires an explicit Gathering Storm/no-modes seat".into(),
+                    );
+                }
+                let parsed: Seat = serde_json::from_value(event)?;
+                let speed = parsed
+                    .speed
+                    .trim()
+                    .trim_start_matches("GAMESPEED_")
+                    .to_lowercase();
+                let difficulty = parsed
+                    .difficulty
+                    .trim()
+                    .trim_start_matches("DIFFICULTY_")
+                    .to_lowercase();
+                if parsed.players < 2
+                    || parsed.local_player < 0
+                    || parsed.local_player as usize >= parsed.players
+                    || mirror::civvis_civ_name(&parsed.civ).is_none()
+                    || civvis::setup::GameSpeed::from_id(&speed).is_none()
+                    || !civvis::rules::Rules::embedded()
+                        .difficulties
+                        .contains_key(difficulty.as_str())
+                {
+                    return Err(
+                        "action replay seat has missing or unsupported identity/rules".into(),
+                    );
+                }
+                seat = Some(parsed);
+            }
             "tiles" => {
                 let chunk: TilesChunk = serde_json::from_value(event.clone())?;
                 if event["delta"] == true {
@@ -135,11 +207,30 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 if pending.is_some() {
                     return Err("nested/incomplete action transition".into());
                 }
+                let sequence = event["sequence"]
+                    .as_u64()
+                    .filter(|id| *id > 0)
+                    .ok_or("transition requires a positive sequence")?;
+                if !sequences.insert(sequence) {
+                    return Err("duplicate transition sequence".into());
+                }
+                if event["turn"].as_u64().is_none() || event["frame"].as_u64().is_none() {
+                    return Err("transition requires turn and frame".into());
+                }
                 pending = Some((event, None, None, snapshot.clone()));
             }
             "action_transition_before" | "action_transition_after" => {
+                if event["turn"].as_u64().is_none() || event["frame"].as_u64().is_none() {
+                    return Err("transition observation requires turn and frame".into());
+                }
                 let (_, before, after, _) =
                     pending.as_mut().ok_or("observation outside transition")?;
+                if event["kind"] == "action_transition_after" && before.is_none() {
+                    return Err("after observation precedes before observation".into());
+                }
+                if after.is_some() {
+                    return Err("observation after completed pair".into());
+                }
                 let mut state = mirror::state_from_json(&line)?;
                 if let Some(seat) = &seat {
                     state.seat = seat.clone();
@@ -163,15 +254,19 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     (Some(before), Some(after))
                         if event["threw"] == false
                             && event["before_export"] == true
-                            && event["after_export"] == true =>
+                            && event["after_export"] == true
+                            && seat.is_some() =>
                     {
                         compare(&begin, &before, &after, &event, &preceding_map)
                     }
                     _ => {
-                        json!({"id": begin["sequence"], "coverage_gap": "missing observation or exception"})
+                        json!({"id": begin["sequence"], "coverage_gap": "missing seat/observation or exception"})
                     }
                 };
-                println!("{case}");
+                emit(case);
+            }
+            "state" | "orders" | "turn" if pending.is_some() => {
+                return Err("ordinary planner/turn event inside isolated transition".into())
             }
             _ => (),
         }
