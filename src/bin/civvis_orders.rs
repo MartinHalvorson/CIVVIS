@@ -1259,6 +1259,162 @@ impl HostMoveRefusals {
     }
 }
 
+/// ⭐ THE ACTUATION CONTRACT: an order earns a verified outcome or an explained
+/// refusal, and one the host has provably refused stops being re-sent.
+///
+/// ## What was happening instead
+///
+/// The bridge already checks every order it sends. `settle_pending_orders`
+/// pairs each `IssuedOrder` with a [`Verdict`] on the next turn's frame and
+/// ships the answers back as `order_verified` / `order_failed` rows. Nothing
+/// then reads them. The verdicts are a ledger, and the decision that produced
+/// the order never sees one — so an order the host refuses is re-derived from
+/// the same persistent agent state next turn, re-translated to a byte-identical
+/// `Order`, and sent again. Recorded live: **13.9% of all orders come back
+/// `did_not_move`**, and the same refused `MOVE_TO` has been re-issued **eleven
+/// turns running**. `suppress_same_turn_replays` cannot see it: it resets on
+/// every new turn, so it stops a duplicate within a turn and never a repeat
+/// across one.
+///
+/// ## What this does
+///
+/// Counts *consecutive identical* failures. An order is identified by
+/// everything the host is told — kind, verb, subject and target plot — so a
+/// re-planned destination is a different order and starts clean. After
+/// [`ORDER_REFUSAL_STRIKES`] failures with the same reason, that exact order is
+/// withheld for [`ORDER_REFUSAL_COOLDOWN_TURNS`] host turns and the reply says
+/// so by name. Any `Verified` for that identity clears the record immediately.
+///
+/// ⚠ **The reason is compared, not classified.** `HostMoveRefusals` keeps a
+/// hand-written list of two reason strings it trusts as proof of dead ground
+/// and rejects the rest as transient. That list is right for the question it
+/// asks and would be wrong here, and a hand-written list of reasons is exactly
+/// the shape that goes stale as the mod learns to name new ones. A genuinely
+/// transient condition — no movement left, a unit in the way this turn — does
+/// not produce the *same* reason three turns running; a standing refusal does.
+/// So the rule needs no list and cannot fall behind the mod.
+///
+/// ⚠ `Unverifiable` never counts, in either direction. An order whose effect
+/// the frame cannot show is not evidence of anything, so it neither earns a
+/// strike nor clears one.
+const ORDER_REFUSAL_STRIKES: u32 = 3;
+
+/// How long a struck-out order stays withheld, in host turns. Long enough that
+/// the agent's own re-planning gets a clear run at the problem, short enough
+/// that ground which genuinely opens up — a war ending, a border opening, a
+/// blocking unit leaving — is retried inside one era.
+const ORDER_REFUSAL_COOLDOWN_TURNS: u32 = 10;
+
+/// Everything the host is told about one order. Two orders with the same
+/// identity are the same request; anything else is a new one.
+type OrderIdentity = (String, Option<String>, Option<i64>, Option<(i32, i32)>);
+
+fn order_identity(order: &IssuedOrder) -> OrderIdentity {
+    (
+        order.kind.clone(),
+        order.verb.clone(),
+        order.subject,
+        order.pos,
+    )
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RefusalRecord {
+    /// Consecutive failures carrying `reason`.
+    strikes: u32,
+    reason: String,
+    /// The turn the cooldown expires on, once the strikes are spent.
+    until: Option<u32>,
+}
+
+#[derive(Default)]
+struct HostOrderRefusals {
+    seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
+}
+
+impl HostOrderRefusals {
+    /// Read one turn's checks. `turn` is the turn the orders were sent on.
+    fn observe(&mut self, checks: &[OrderCheck], turn: u32) {
+        for check in checks {
+            let identity = order_identity(&check.order);
+            match &check.verdict {
+                // The host did what was asked, so whatever went before is
+                // history: this order works.
+                Verdict::Verified => {
+                    self.seen.remove(&identity);
+                }
+                Verdict::Failed(reason) => {
+                    let record = self.seen.entry(identity).or_insert(RefusalRecord {
+                        strikes: 0,
+                        reason: reason.clone(),
+                        until: None,
+                    });
+                    if record.reason == *reason {
+                        record.strikes += 1;
+                    } else {
+                        // A different answer is a different problem. The host
+                        // is not standing on one refusal, so the count starts
+                        // again rather than accumulating across causes.
+                        record.reason = reason.clone();
+                        record.strikes = 1;
+                    }
+                    record.until = (record.strikes >= ORDER_REFUSAL_STRIKES)
+                        .then_some(turn + ORDER_REFUSAL_COOLDOWN_TURNS);
+                }
+                Verdict::Unverifiable => {}
+            }
+        }
+    }
+
+    /// Why this order is withheld, if it is.
+    fn withheld(&self, order: &Order, turn: u32) -> Option<&str> {
+        let identity = (
+            order.kind.to_string(),
+            order.verb.clone(),
+            order.subject,
+            order.pos,
+        );
+        self.seen
+            .get(&identity)
+            .filter(|record| record.until.is_some_and(|until| turn < until))
+            .map(|record| record.reason.as_str())
+    }
+
+    /// Drop records whose cooldown has run out, so the table tracks the live
+    /// problem rather than the whole game's history.
+    fn sweep(&mut self, turn: u32) {
+        self.seen
+            .retain(|_, record| record.until.is_none_or(|until| turn < until));
+    }
+}
+
+/// Withhold the orders that have struck out, and name each one.
+///
+/// Returns the surviving orders and one `kind:verb reason` line per withheld
+/// order, so a refusal that stops being sent is visible in the reply rather
+/// than simply absent.
+fn withhold_refused_orders(
+    orders: Vec<Order>,
+    turn: u32,
+    refusals: &mut HostOrderRefusals,
+) -> (Vec<Order>, Vec<String>) {
+    refusals.sweep(turn);
+    let mut allowed = Vec::with_capacity(orders.len());
+    let mut withheld = Vec::new();
+    for order in orders {
+        match refusals.withheld(&order, turn) {
+            Some(reason) => withheld.push(format!(
+                "{}:{} {}",
+                order.kind,
+                order.verb.as_deref().unwrap_or("-"),
+                reason
+            )),
+            None => allowed.push(order),
+        }
+    }
+    (allowed, withheld)
+}
+
 /// Withhold only peace orders whose known Firaxis cooldown has not expired.
 ///
 /// This is deliberately below translation, so native `MakePeace`, negotiated
@@ -3792,6 +3948,8 @@ struct DecisionMemory<'a> {
     ours: &'a mut std::collections::BTreeMap<i64, String>,
     host_peace_retries: &'a mut HostPeaceRetries,
     host_move_refusals: &'a mut HostMoveRefusals,
+    /// The actuation contract's memory: orders the host has provably refused.
+    host_order_refusals: &'a mut HostOrderRefusals,
 }
 
 fn decide(
@@ -3806,6 +3964,7 @@ fn decide(
         ours,
         host_peace_retries,
         host_move_refusals,
+        host_order_refusals,
     } = memory;
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
@@ -4462,6 +4621,20 @@ fn decide(
 
     // Remember where each move sends which host unit, so next turn's positions
     // can prove a destination unwalkable. See `HostMoveRefusals`.
+    // ⭐ THE ACTUATION CONTRACT. An order that has come back Failed with the
+    // same reason `ORDER_REFUSAL_STRIKES` times running is not sent again for
+    // `ORDER_REFUSAL_COOLDOWN_TURNS`. Placed after every other suppressor so
+    // the strike list is applied to the orders that would really have gone,
+    // and before `record`, which is the ledger of what was actually sent.
+    let (orders, refused_before) = withhold_refused_orders(orders, state.turn, host_order_refusals);
+    let mut orders = orders;
+    if !refused_before.is_empty() {
+        note_bits.push(format!(
+            "withheld_refused={} [{}]",
+            refused_before.len(),
+            refused_before.join("; ")
+        ));
+    }
     host_move_refusals.record(&orders, state, &first_unknown_steps);
     if !host_move_refusals.dead.is_empty() {
         note_bits.push(format!("host_dead_plots={}", host_move_refusals.dead.len()));
@@ -7117,6 +7290,7 @@ fn settle_pending_orders(
     events: &Path,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
+    refusals: &mut HostOrderRefusals,
 ) -> Vec<Order> {
     let answered: Vec<PendingOrders> = {
         let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(pending)
@@ -7165,6 +7339,11 @@ fn settle_pending_orders(
             ));
     }
     for (turn, checks) in by_turn {
+        // The contract's memory reads the checks here, where an `IssuedOrder`
+        // is still paired with its own verdict. The verdict ROWS below carry
+        // the turn in `pos` and cannot be joined back to the order that earned
+        // them, which is why nothing downstream has ever been able to.
+        refusals.observe(&checks, turn);
         rows.extend(verdict_rows(turn, &checks));
     }
     rows
