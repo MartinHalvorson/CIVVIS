@@ -268,3 +268,29 @@ class EveryScriptParses(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
+    """The window the keeper opens beside a live game exists to show the player
+    HUD. Its Chrome profile keeps this page's localStorage across launches, so
+    one stray click that hid the players overlay hid it for every game after —
+    on 2026-09-10 the display beside a live Emperor game showed a bare map."""
+
+    def test_dedicated_mode_forces_the_players_and_victory_overlays_on(self):
+        source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        gate = source.index('get("display") === "dedicated"')
+        # After the saved overlays are read, so the forced values win.
+        self.assertGreater(gate, source.index("OVERLAY_STORAGE_KEY) ||"))
+        block = source[gate:gate + 400]
+        self.assertIn("OVERLAY_VISIBILITY.players = true", block)
+        self.assertIn("OVERLAY_VISIBILITY.victory = true", block)
+
+    def test_the_keeper_opens_the_page_in_dedicated_mode(self):
+        keeper = (Path(__file__).resolve().parent / "ops" / "civvis-display-keeper.mjs").read_text(encoding="utf-8")
+        self.assertIn("?display=dedicated", keeper)
+
+    def test_the_tree_only_opens_on_request(self):
+        html = INDEX.read_text(encoding="utf-8")
+        self.assertRegex(html, r'<div id="tree">', "the tech/civics tree is a modal")
+        self.assertNotRegex(html, r'<div id="tree"[^>]*class="[^"]*\bopen\b')
+
