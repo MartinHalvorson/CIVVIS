@@ -264,3 +264,27 @@ fn the_complete_turn_pipeline_replaces_a_blocked_queue_for_both_governors() {
         assert!(board.can_produce(0, city, replacement));
     }
 }
+
+#[test]
+fn a_rival_starting_the_same_wonder_does_not_cancel_our_investment() {
+    let (mut g, ai, city, wonder, plan) = paused_wonder();
+    let founder = g
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|uid| g.units[uid].kind == "settler")
+        .unwrap();
+    let rival = g.found_city_for(1, g.units[&founder].pos, None);
+    let Item::Wonder { wonder: name, .. } = &wonder else {
+        unreachable!()
+    };
+    g.cities.get_mut(&rival).unwrap().queue = vec![Item::Wonder {
+        wonder: *name,
+        pos: g.cities[&rival].pos,
+    }];
+    g.cities.get_mut(&city).unwrap().queue.clear();
+    g.cities.get_mut(&city).unwrap().production = 0.0;
+    let counts = ai.counts(&g, 0);
+    assert!(ai.production_value(&g, 0, city, &wonder, &plan, &counts) > 0.0);
+    assert!(ai.resume_city_production(&mut g, 0, city, &plan, &counts));
+    assert_eq!(g.cities[&city].queue.first(), Some(&wonder));
+}

@@ -28229,7 +28229,8 @@ impl AdvancedAi {
                 let continuing_wonder =
                     city.queue.first() == Some(item) || g.item_invested_production(cid, item) > 0.0;
                 let already_queued = g.cities.values().any(|other| {
-                    other.id != cid
+                    other.owner == pid
+                        && other.id != cid
                         && matches!(
                             other.queue.first(),
                             Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
