@@ -188,7 +188,7 @@ class AttachRunningTests(unittest.TestCase):
 
     def test_cli_exposes_the_autosave_turn_to_the_attach_owner(self) -> None:
         with patch.object(civ6_play, "play", return_value=0) as play, \
-             patch.object(civ6_play, "enforce_roman_leader",
+             patch.object(civ6_play, "resolve_live_leader",
                           return_value="LEADER_TRAJAN"):
             self.assertEqual(civ6_play.main([
                 "--tag", "saved-game", "--attach-running",
@@ -1026,14 +1026,13 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("bypasses CIVVIS's war decision", error.getvalue())
 
-    def test_live_launcher_coerces_an_explicit_non_roman_leader(self) -> None:
-        """A direct harness call must not bypass the standing Rome policy."""
-        with patch.object(civ6_play, "play", return_value=0) as play:
-            result = civ6_play.main(
-                ["--tag", "rome-policy", "--leader", "LEADER_TOKUGAWA"])
-
-        self.assertEqual(result, 0)
-        self.assertEqual(play.call_args.args[0].leader, civ6_play.ROMAN_LEADER)
+    def test_live_launcher_honors_selected_leader_and_defaults_to_rome(self) -> None:
+        for flags, expected in (([], civ6_play.ROMAN_LEADER),
+                                (["--leader", "LEADER_PERICLES"], "LEADER_PERICLES")):
+            with self.subTest(flags=flags), patch.object(civ6_play, "play", return_value=0) as play:
+                result = civ6_play.main(["--tag", "leader-policy"] + flags)
+                self.assertEqual(result, 0)
+                self.assertEqual(play.call_args.args[0].leader, expected)
 
     def test_setup_does_not_start_when_a_required_dropdown_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \

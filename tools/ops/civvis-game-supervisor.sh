@@ -293,6 +293,7 @@ EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
 # when this knob is set, so the default has exactly one home and this file does
 # not become another copy of it. Set `CIVVIS_VICTORY` to pin a different lane.
 VICTORY=${CIVVIS_VICTORY:-}
+LEADER=${CIVVIS_LEADER:-LEADER_TRAJAN}
 # ⚠⚠ ONE EXPANSION PER WORD IN THE INVOCATION BELOW. zsh does not word-split an
 # unquoted `${VAR:+--flag "$VAR"}`: with the knob set it reaches the climb as
 # ONE argument, `--victory science`, which argparse rejects as "unrecognized
@@ -915,7 +916,7 @@ while true; do
     python3 -u tools/civ6_capture_free_loop.py --attempts "$ATTEMPTS" \
         --refresh-seconds 0 \
         --difficulty "$DIFFICULTY" \
-        --leader LEADER_TRAJAN \
+        --leader "$LEADER" \
         --ruleset RULESET_EXPANSION_2 \
         --map Continents.lua \
         --map-size MAPSIZE_SMALL \
@@ -932,7 +933,7 @@ while true; do
     python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
         --refresh-seconds 0 \
         --difficulty "$DIFFICULTY" \
-        --leader LEADER_TRAJAN \
+        --leader "$LEADER" \
         "${WITHOUT_ARGS[@]}" \
         "${WITH_ARGS[@]}" \
         "${SCREEN_ARGS[@]}" \
