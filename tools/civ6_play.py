@@ -2058,6 +2058,33 @@ MAP_PICKER_SCROLL_RESET = 20
 MAP_PICKER_SCROLL_AMOUNT = -1
 
 
+def _labels_in_strip(path: Path, bounds: tuple[int, int, int, int], label: str,
+                     strip: tuple[float, float, float, float],
+                     tag: str) -> list[tuple[int, int]]:
+    """Screen points of ``label`` inside one enlarged crop of the game window.
+
+    Small controls are unreadable at 1x and reliable at 4x, and which crop a
+    control needs depends on where it sits: the tile captions and the commit
+    button are in different bands of the same panel.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return []
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    found: list[tuple[int, int]] = []
+    for observation in _menu_crop_ocr(path, bounds, strip, tag):
+        if not _menu_label_matches(str(observation.get("text", "")), label):
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if x <= px <= x + w and y <= py <= y + h:
+            found.append((px, py))
+    return found
+
+
 def _map_picker_labels(path: Path, bounds: tuple[int, int, int, int],
                        label: str) -> list[tuple[int, int]]:
     """Screen points where ``label`` is captioned in the SELECT MAP browser.
@@ -2137,17 +2164,38 @@ def _map_picker_page_labels(path: Path, bounds: tuple[int, int, int, int]
     return frozenset(showing)
 
 
+#: The panel's foot, where the commit button lives, as window fractions.
+#: ⚠ It is BELOW `MAP_PICKER_STRIP`: the button sits at about 0.98 of the window
+#: height and the grid crop stops at 0.94, so the grid pass cannot reach it.
+MAP_PICKER_COMMIT_STRIP = (0.28, 0.84, 0.72, 1.0)
+#: A `Select Map` match above this much of the window is the panel's HEADING.
+MAP_PICKER_COMMIT_MIN_Y = 0.80
+
+
 def _map_picker_commit_point(path: Path, bounds: tuple[int, int, int, int]
                              ) -> tuple[int, int] | None:
-    """The `Select Map` button at the panel's foot.
+    """The `Select Map` button at the panel's foot, or None if it is not legible.
 
-    ⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS. `SELECT MAP` titles the
-    panel and `Select Map` commits it, and `_normalized_label` casefolds both to
-    the same string — so the first match is the heading and clicking it does
-    nothing. Take the LOWEST match on screen.
+    ⚠⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS, AND "LOWEST WINS" WAS
+    NOT ENOUGH. `SELECT MAP` titles the panel and `Select Map` commits it, and
+    `_normalized_label` casefolds both to one string. Taking the lowest match is
+    right only while BOTH are legible. On run civvis-20260910T184530Z only the
+    heading was read — the button is small and sits BELOW the grid crop, so only
+    the 1x full-desktop pass can reach it, and that pass missed it — and the
+    lowest of one match is the heading. The click landed on the title, the
+    browser never closed, and the readback then mistook a tile caption for the
+    Create Game row: `Pangaea was committed but the row still reads Lakes.lua`.
+
+    So position decides, not order: the button is in the panel's foot, the
+    heading is at its top, and a match outside the foot is not the button. Not
+    finding it is a refusal — never a click somewhere else.
     """
-    points = _map_picker_labels(path, bounds, "Select Map")
-    return max(points, key=lambda point: point[1]) if points else None
+    x, y, w, h = bounds
+    points = list(_map_picker_labels(path, bounds, "Select Map"))
+    points.extend(_labels_in_strip(path, bounds, "Select Map",
+                                   MAP_PICKER_COMMIT_STRIP, "map-commit"))
+    foot = [point for point in points if (point[1] - y) / h >= MAP_PICKER_COMMIT_MIN_Y]
+    return max(foot, key=lambda point: point[1]) if foot else None
 
 
 def _map_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
@@ -2261,11 +2309,20 @@ def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
         time.sleep(1.5)
         # The Create Game row is the only witness that counts: the panel can
         # highlight a tile and still commit nothing.
+        #
+        # ⚠⚠ AND THE ROW CANNOT BE READ WHILE THE BROWSER IS STILL UP. With the
+        # panel open there is no `Choose Map Type` heading on screen, so
+        # `_setup_current_value` falls through to its overlapping band fallback
+        # and returns the first map-shaped word it finds — a TILE CAPTION. On
+        # run civvis-20260910T184530Z that reported the row as `Lakes.lua` while
+        # the browser was still open and nothing had been committed at all.
         for settle in (0.0, 1.5):
             if settle:
                 time.sleep(settle)
             verified = run_dir / "map-picker-selected.png"
             screenshot(verified)
+            if _map_picker_open(verified, bounds):
+                continue
             selected = _setup_current_value(verified, bounds, "map_type")
             if selected is not None and selected[0] == map_script:
                 if panel_out is not None:
@@ -2273,8 +2330,12 @@ def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
                 print(f"[setup] map_type: selected and verified {label} "
                       f"at wheel step {step}", flush=True)
                 return True
-        refusal = (f"[setup] map_type: {label} was committed but the row still "
-                   f"reads {selected[0] if selected else 'nothing readable'}")
+        if _map_picker_open(verified, bounds):
+            refusal = (f"[setup] map_type: {label} was clicked but the SELECT MAP "
+                       "browser is still open, so nothing was committed")
+        else:
+            refusal = (f"[setup] map_type: {label} was committed but the row still "
+                       f"reads {selected[0] if selected else 'nothing readable'}")
         break
     else:
         refusal = (f"[setup] map_type: {label} was not found in the "

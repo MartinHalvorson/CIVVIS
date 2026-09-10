@@ -2031,6 +2031,75 @@ class MapPickerTests(unittest.TestCase):
         # now and must not be clicked on the way out.
         self.assertNotIn((700, 120), clicks)
 
+    def test_a_lone_heading_is_never_taken_for_the_commit_button(self):
+        """⚠⚠ "LOWEST WINS" IS ONLY RIGHT WHILE BOTH ARE LEGIBLE.
+
+        On run civvis-20260910T184530Z only the heading was read — the button is
+        small and sits BELOW the grid crop, so only the 1x full-desktop pass can
+        reach it and that pass missed it. The lowest of one match is the
+        heading; the click landed on the title, the browser never closed, and
+        the run reported `Pangaea was committed but the row still reads
+        Lakes.lua`. Position decides now, not order.
+        """
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(431, 122)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
+            self.assertIsNone(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS))
+
+    def test_the_commit_button_is_found_in_the_panels_foot(self):
+        """The button reads reliably only in its own enlarged crop, which the
+        grid crop cannot cover: it is at ~0.98 of the window and the grid strip
+        stops at 0.94. Real coordinates from the live frames."""
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(431, 122)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip",
+                               return_value=[(432, 566)]):
+            self.assertEqual(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS),
+                (432, 566))
+        # The foot threshold separates them: 122 is 0.16 of the window, 566 is 0.98.
+        y, h = self.BOUNDS[1], self.BOUNDS[3]
+        self.assertLess((122 - y) / h, civ6_play.MAP_PICKER_COMMIT_MIN_Y)
+        self.assertGreater((566 - y) / h, civ6_play.MAP_PICKER_COMMIT_MIN_Y)
+
+    def test_the_row_is_not_read_through_a_browser_that_is_still_open(self):
+        """⚠⚠ With the panel up there is no `Choose Map Type` heading on screen,
+        so `_setup_current_value` falls through to its overlapping band fallback
+        and returns a TILE CAPTION. That is how a run with nothing committed
+        reported the row as `Lakes.lua`."""
+        reads = []
+
+        def never_closes(path, bounds):
+            return True
+
+        def current_value(path, bounds, name):
+            reads.append(path.name)
+            return ("Lakes.lua", (432, 219))
+
+        with mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_map_picker_labels",
+                               side_effect=lambda p, b, l: {"Select Map": [(432, 566)],
+                                                            "Back": [(700, 120)]}.get(l, [])), \
+             mock.patch.object(civ6_play, "_map_picker_tile_point",
+                               return_value=(500, 430)), \
+             mock.patch.object(civ6_play, "_map_picker_commit_point",
+                               return_value=(432, 566)), \
+             mock.patch.object(civ6_play, "_map_picker_open", never_closes), \
+             mock.patch.object(civ6_play, "_setup_current_value",
+                               side_effect=[("Continents.lua", (432, 300))] + [None] * 8), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "park_setup_pointer"), \
+             mock.patch.object(civ6_play, "press_escape"), \
+             mock.patch.object(civ6_play, "click_at"), \
+             mock.patch.object(civ6_play.macos_input, "move"), \
+             mock.patch.object(civ6_play.macos_input, "scroll"), \
+             mock.patch.object(civ6_play.time, "sleep"):
+            self.assertFalse(civ6_play.select_requested_map(
+                self.BOUNDS, "Pangaea.lua", Path("/tmp")))
+        # The verification frames were never handed to the row reader.
+        self.assertNotIn("map-picker-selected.png", reads)
+
     def test_the_commit_button_is_the_lowest_select_map_on_screen(self):
         """⚠⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS. `SELECT MAP`
         titles the panel and `Select Map` commits it, and `_normalized_label`
