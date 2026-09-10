@@ -48265,7 +48265,9 @@ fn production_review_finishes_a_started_wonder_despite_a_better_score() {
     .unwrap();
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     let plan = wonder_plan(GrandStrategy::Science, game.turn);
-    // Review a half-built wonder even after the named plan changes.
+    // A changed preference makes alternatives attractive without making the
+    // existing wonder useless or impossible to complete.
+    ai.base.w.p_wonder = 0.01;
     ai.preempt_margin = 1.000001;
     game.cities.get_mut(&city).unwrap().production = game.item_cost_for_city(0, city, &item) / 2.0;
     let counts = ai.counts_without_city_queue(&game, 0, city);
