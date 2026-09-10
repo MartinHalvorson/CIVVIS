@@ -2036,7 +2036,7 @@ impl AdvancedAi {
     /// Reserve the first empty trade route slot ahead of ordinary production in
     /// any city that can start a safe route. A barbarian alarm at a remote city
     /// no longer vetoes the whole empire. See
-    /// `BasicAi::solvency_first_trade_slot`; opt-in gene
+    /// `BasicAi::solvency_first_trade_slot`; production gene
     /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
     /// append-point check reads a method line's first identifier.
     pub fn enable_solvency_first_trade_slot(&mut self) {
