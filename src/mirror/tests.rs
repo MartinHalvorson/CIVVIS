@@ -13779,3 +13779,50 @@ fn native_policy_choices_deserialize_unknown_and_empty_distinctly() {
     assert_eq!(absent.available_policies, None);
     assert_eq!(empty.available_policies, Some(vec![]));
 }
+
+#[test]
+fn concert_plots_survive_rebuild_and_refresh_on_sync_without_defaulting_missing_to_empty() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 120,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(4, 4, "TERRAIN_GRASS")],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 120,
+        units: vec![serde_json::from_value(serde_json::json!({
+            "id": 78, "kind": "UNIT_ROCK_BAND", "x": 3, "y": 3,
+            "concert_plots": [{"x": 4, "y": 3}]
+        }))
+        .unwrap()],
+        cities: vec![StateCity {
+            id: 1,
+            x: 4,
+            y: 4,
+            pop: 4,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let uid = mirror.uid_of[&78];
+    assert_eq!(
+        mirror.game.host_unit_facts[&uid].concert_plots,
+        Some(BTreeSet::from([crate::hex::offset_to_axial(4, 3)]))
+    );
+    state.turn += 1;
+    state.units[0].concert_plots = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror.game.host_unit_facts[&mirror.uid_of[&78]].concert_plots,
+        Some(BTreeSet::new())
+    );
+    state.turn += 1;
+    state.units[0].concert_plots = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror.game.host_unit_facts[&mirror.uid_of[&78]].concert_plots,
+        None
+    );
+}

@@ -2060,3 +2060,47 @@ fn climate_accords_projects_consume_the_exact_host_power_plant() {
         }
     }
 }
+
+#[test]
+fn host_concert_plots_bound_destination_scoring_and_performance() {
+    let (mut game, city, venue) = one_city(774_4063);
+    let rival = game.players.len();
+    game.players.push(Player::new(rival, "Venue Rival", false));
+    game.cities.get_mut(&city).unwrap().owner = rival;
+    install_district(&mut game, city, venue, "theater_square");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("broadcast_center"));
+    let band = game.spawn_test_unit("rock_band", 0, venue);
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    assert!(game.rock_concert_ai_value(0, band, venue).is_some());
+    assert!(game.rock_concert_tourism(0, band).is_some());
+    for plots in [BTreeSet::new(), BTreeSet::from([(venue.0 + 1, venue.1)])] {
+        Arc::make_mut(&mut game.host_unit_facts).insert(
+            band,
+            HostUnitFacts {
+                concert_plots: Some(plots),
+                ..Default::default()
+            },
+        );
+        assert_eq!(game.rock_concert_ai_value(0, band, venue), None);
+        assert_eq!(game.rock_concert_tourism(0, band), None);
+        assert!(game
+            .apply(0, &Action::PerformConcert { unit: band })
+            .is_err());
+    }
+    Arc::make_mut(&mut game.host_unit_facts)
+        .get_mut(&band)
+        .unwrap()
+        .concert_plots = Some(BTreeSet::from([venue]));
+    assert!(game.rock_concert_ai_value(0, band, venue).is_some());
+    assert!(game
+        .apply(0, &Action::PerformConcert { unit: band })
+        .is_ok());
+}

@@ -991,6 +991,23 @@ CivvisMilitaryFormation = function(unit)
 	end, -1);
 end;
 
+-- SelectedUnit_Expansion2.lua:65-70 asks this unit's RockBand component for
+-- activation highlights. Do not replace an unreadable API with "no venues".
+function CivvisRockBandConcertPlots(unit, name)
+    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    return try(function()
+        local raw = unit:GetRockBand():GetActivationHighlightPlots();
+        if type(raw) ~= "table" then return nil; end
+        local plots = {};
+        for _, index in ipairs(raw) do
+            local plot = Map.GetPlotByIndex(index);
+            if plot == nil then return nil; end
+            plots[#plots + 1] = { x = plot:GetX(), y = plot:GetY() };
+        end
+        return plots;
+    end, nil);
+end
+
 -- Facts that decide what a unit may do next. Reconstructing every live unit from
 -- its type defaults reset Apostles to full charges with no promotion and military
 -- units to level one on every turn, so CIVVIS repeatedly chose actions Firaxis had
@@ -7159,6 +7176,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			spy_operation_end_turn = spyEnds,
 			spy_missions_available = spyMissions,
 			great_person = greatPerson,
+			concert_plots = CivvisRockBandConcertPlots(unit, name),
 		};
 	end);
 
