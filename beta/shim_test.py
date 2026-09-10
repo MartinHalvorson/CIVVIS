@@ -59,6 +59,46 @@ window.Worker = class {
 <script src="shim.js"></script></head><body></body></html>"""
 
 
+#: How long Chrome is given to publish a debuggable page.
+#:
+#: It was 30, and `published-build` failed intermittently on a loaded hosted
+#: runner with no way to tell a slow start from a dead browser. The wait costs
+#: nothing when Chrome is ready in a second, which is the ordinary case, and a
+#: check that fails at random is worse than a slow one: it teaches every reader
+#: to ignore the colour, which is how a real failure gets through.
+CHROME_READY_SECONDS = 90
+
+
+def chrome_stderr_tail(path: pathlib.Path, lines: int = 12) -> str:
+    """The tail of Chrome's own stderr, for a failure message.
+
+    A browser that exited silently is a different problem from one that
+    explained itself, so say which.
+    """
+    try:
+        said = path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError as why:
+        return f"\nChrome's stderr could not be read: {why}"
+    if not said:
+        return "\nChrome wrote nothing to stderr."
+    tail = "\n".join(said.splitlines()[-lines:])
+    return f"\nChrome's stderr (last {lines} lines):\n{tail}"
+
+
+def check_stderr_tail(stage: pathlib.Path) -> None:
+    """Exercise every branch of `chrome_stderr_tail` before it is needed."""
+    missing = stage / "no-such-log"
+    assert "could not be read" in chrome_stderr_tail(missing), "absent log"
+    empty = stage / "empty.log"
+    empty.write_text("", encoding="utf-8")
+    assert "wrote nothing" in chrome_stderr_tail(empty), "silent chrome"
+    said = stage / "said.log"
+    said.write_text("\n".join(f"line {n}" for n in range(20)), encoding="utf-8")
+    tail = chrome_stderr_tail(said, lines=3)
+    assert "line 19" in tail and "line 17" in tail, tail
+    assert "line 16" not in tail, f"the tail is bounded: {tail}"
+
+
 class Quiet(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -80,12 +120,19 @@ def main() -> int:
         '{"commit":"test","wasm_bytes":7340032}\n', encoding="utf-8"
     )
 
+    # ⚠ The failure message runs in the same change that adds it. A diagnostic
+    # nobody has exercised is a guess, and this one only ever prints on a
+    # machine having a bad day — the worst time to discover it is wrong.
+    check_stderr_tail(stage)
+
     port = free_port()
     server = socketserver.TCPServer(
         ("127.0.0.1", port), functools.partial(Quiet, directory=str(stage))
     )
     threading.Thread(target=server.serve_forever, daemon=True).start()
     debug_port = free_port()
+    chrome_log_path = stage / "chrome-stderr.log"
+    chrome_log = chrome_log_path.open("wb")
     chrome = subprocess.Popen(
         [
             find_chrome(),
@@ -97,14 +144,29 @@ def main() -> int:
             f"http://127.0.0.1:{port}/?slow=1",
         ],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        # ⚠ NOT DEVNULL. When Chrome fails to start — a missing shared
+        # library, a sandbox refusal, a port already taken — the reason it
+        # printed is the only thing that says which. Throwing it away left
+        # `Chrome never offered a debuggable page` as the entire diagnosis of
+        # an intermittent CI failure, which is a sentence nobody can act on.
+        stderr=chrome_log,
     )
     tether(chrome)
 
     try:
         target = None
-        deadline = time.time() + 30
+        # What the last attempt actually saw, so a failure can say which of
+        # the three shapes it was: Chrome died, the endpoint never answered,
+        # or it answered with pages that were not yet debuggable.
+        last_error: str | None = "the debugging endpoint never answered"
+        seen: list[str] = []
+        deadline = time.time() + CHROME_READY_SECONDS
         while time.time() < deadline and not target:
+            # A Chrome that has already exited is never going to offer a page,
+            # and waiting the whole deadline to say so hides its exit code.
+            if chrome.poll() is not None:
+                last_error = f"chrome exited with status {chrome.returncode}"
+                break
             try:
                 pages = json.load(
                     urllib.request.urlopen(
@@ -120,10 +182,25 @@ def main() -> int:
                     ),
                     None,
                 )
-            except Exception:
+                if not target:
+                    seen = sorted({str(page.get("type")) for page in pages})
+                    last_error = (
+                        f"the endpoint answered with {len(pages)} target(s) "
+                        f"({', '.join(seen) or 'none'}) and no debuggable page"
+                    )
+            except Exception as why:
+                last_error = f"{type(why).__name__}: {why}"
+            if not target:
+                # Sleep on BOTH paths. The original slept only after an
+                # exception, so an endpoint that answered without a page yet
+                # was polled in a tight loop for the whole deadline.
                 time.sleep(0.2)
         if not target:
-            raise RuntimeError("Chrome never offered a debuggable page")
+            raise RuntimeError(
+                "Chrome never offered a debuggable page within "
+                f"{CHROME_READY_SECONDS}s: {last_error}."
+                + chrome_stderr_tail(chrome_log_path)
+            )
 
         dev = Devtools(target["webSocketDebuggerUrl"])
         dev.call("Runtime.enable")
@@ -229,6 +306,8 @@ def main() -> int:
             chrome.wait(timeout=5)
         except subprocess.TimeoutExpired:
             chrome.kill()
+        # After the wait, so the tail read above sees everything Chrome wrote.
+        chrome_log.close()
         server.shutdown()
         server.server_close()
         shutil.rmtree(stage, ignore_errors=True)
