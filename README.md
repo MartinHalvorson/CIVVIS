@@ -2,7 +2,7 @@
 
 Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)
 
-The Lv 5 (King) is the highest level beat so far, using computer control to bridge the gap between CIVVIS and Firaxis Civ 6. I try to keep the [YouTube](https://www.youtube.com/@civvis) channel somewhat up to date with the latest progress.
+[Lv 6 (Emperor)](youtube.com/watch?v=2qilc2xTGyU) is the highest level beat so far, using computer control to bridge the gap between CIVVIS and Firaxis Civ 6. I try to keep the [YouTube](https://www.youtube.com/@civvis) channel somewhat up to date with the latest progress.
 
 Maybe interesting -> Check out the ranking of our best Civ 6 heuristics: [GENE_HEURISTIC_RANKING](https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md)
 
