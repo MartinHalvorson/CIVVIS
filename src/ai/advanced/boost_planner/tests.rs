@@ -802,3 +802,119 @@ fn off_every_entry_point_returns_before_reading_anything() {
     // Nothing was memoised either: the flag is checked before the frame.
     assert_eq!(plain_ai.boost_planner_frame.borrow().stamp, None);
 }
+
+// ---------------------------------------------------------------------
+// `boost-planner-builds`
+// ---------------------------------------------------------------------
+
+fn builds_armed() -> AdvancedAi {
+    let mut ai = armed();
+    ai.enable_boost_planner_builds();
+    ai
+}
+
+fn builds_class(game: &Game, spec: &BoostSpec) -> BoostTriggerClass {
+    builds_armed().boost_trigger_class(game, 0, spec)
+}
+
+#[test]
+fn boost_planner_builds_is_a_native_opt_in_off_in_both_controllers() {
+    opt_in_off_in_both_controllers("boost-planner-builds", |ai| ai.boost_planner_builds);
+}
+
+/// The premise: `building:` is the largest trigger family in the two trees,
+/// and the shipped planner cannot make an objective of any of them.
+#[test]
+fn the_shipped_planner_reads_every_building_trigger_as_strategic_spending() {
+    let mut game = capital_board(71_101);
+    let spec = trigger("building:walls", 1);
+    unlock(&mut game, "building:walls");
+    assert_eq!(
+        ai_class(&game, &spec),
+        BoostTriggerClass::Expensive,
+        "off, a building trigger is never planned"
+    );
+}
+
+#[test]
+fn a_building_a_city_can_start_now_becomes_an_objective() {
+    let mut game = capital_board(71_102);
+    let spec = trigger("building:walls", 1);
+    unlock(&mut game, "building:walls");
+    assert_eq!(
+        builds_class(&game, &spec),
+        BoostTriggerClass::Cheap(BoostAction::Building("walls".to_string())),
+        "on, an ordinary building in a city that can start it is the objective"
+    );
+}
+
+/// The same admission the `district:` class uses: an ordinary next step, not a
+/// new investment. A building nothing we own can start is still Expensive.
+#[test]
+fn a_building_no_city_can_start_is_not_an_objective() {
+    let mut game = capital_board(71_103);
+    let spec = trigger("building:university", 2);
+    unlock(&mut game, "building:university");
+    assert_eq!(
+        builds_class(&game, &spec),
+        BoostTriggerClass::Expensive,
+        "no Campus stands, so a University is an investment, not a next step"
+    );
+}
+
+/// The `units_of:` one-more test applies here too: a trigger still two builds
+/// away is not one ordinary decision.
+#[test]
+fn a_building_trigger_more_than_one_build_away_is_not_cheap() {
+    let mut game = capital_board(71_104);
+    let spec = trigger("building:walls", 2);
+    unlock(&mut game, "building:walls");
+    assert_eq!(
+        builds_class(&game, &spec),
+        BoostTriggerClass::Expensive,
+        "two to go is not one ordinary build"
+    );
+}
+
+/// These two carry the `building` word and are deliberately left alone.
+#[test]
+fn a_sited_or_themed_building_trigger_keeps_its_expensive_reading() {
+    let mut game = capital_board(71_105);
+    for name in ["building_near_mountain:university", "themed_buildings"] {
+        let spec = trigger(name, 1);
+        unlock(&mut game, name);
+        assert_eq!(
+            builds_class(&game, &spec),
+            BoostTriggerClass::Expensive,
+            "{name} needs a particular site or Great Works, not an ordinary build"
+        );
+    }
+}
+
+/// The objective has to reach the production ranking, or it buys nothing.
+#[test]
+fn the_objective_pays_a_premium_on_that_building_and_on_nothing_else() {
+    let game = capital_board(71_106);
+    let walls = BoostAction::Building("walls".to_string());
+    assert!(AdvancedAi::boost_item_satisfies(
+        &game,
+        &walls,
+        &Item::Building {
+            building: name!("walls")
+        }
+    ));
+    assert!(!AdvancedAi::boost_item_satisfies(
+        &game,
+        &walls,
+        &Item::Building {
+            building: name!("granary")
+        }
+    ));
+    assert!(!AdvancedAi::boost_item_satisfies(
+        &game,
+        &walls,
+        &Item::Unit {
+            unit: name!("warrior")
+        }
+    ));
+}

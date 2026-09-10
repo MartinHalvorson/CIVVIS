@@ -3902,10 +3902,6 @@ impl AdvancedAi {
         self.base.veteran_retreat_margin = false;
     }
 
-    /// The army's turn planned from a ranked Objective Board — rows valued in
-    /// hammers with a requirement and a deadline — and served by persistent
-    /// task forces, in place of proximity force groups and the posture
-    /// ladder; `force_groups` is built from the forces. See `objective_board`.
     /// `chop-for-expansion`: a Builder turns a forest into a Settler. See
     /// `advanced/chop_for_expansion.rs`.
     pub fn enable_chop_for_expansion(&mut self) {
@@ -3937,6 +3933,17 @@ impl AdvancedAi {
     /// The twin of `enable_counter_culture_by_conquest`.
     pub fn disable_counter_culture_by_conquest(&mut self) {
         self.counter_culture_by_conquest = false;
+    }
+
+    /// `boost-planner-builds`: the boost planner serves `building:` triggers.
+    /// See `advanced/boost_planner.rs`.
+    pub fn enable_boost_planner_builds(&mut self) {
+        self.boost_planner_builds = true;
+    }
+
+    /// The twin of `enable_boost_planner_builds`.
+    pub fn disable_boost_planner_builds(&mut self) {
+        self.boost_planner_builds = false;
     }
 
     /// The army's turn planned from a ranked Objective Board — rows valued in
