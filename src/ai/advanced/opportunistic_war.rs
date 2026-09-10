@@ -714,7 +714,19 @@ impl AdvancedAi {
         let next = g
             .route_step(uid, goal, 0)
             .filter(|next| g.can_move(uid, *next))?;
+        // A prize does not justify walking a soldier onto a tile where the
+        // visible response is expected to kill it next turn. Keep this a
+        // lethal-only gate: non-lethal fire can still be the right price for
+        // a fast capture, while a dead raider turns the bounded war into a
+        // gift to the defender.
         let kind = unit.kind.as_str();
+        let incoming = super::battle_planner::danger(g, pid, next, uid);
+        if incoming >= f64::from(unit.hp) {
+            think!(self.journal(), Military, Decision,
+                   "{kind} {uid} holds before a raid prize";
+                   "visible return fire is expected to kill it on {next:?} ({incoming:.1} damage against {} hp)", unit.hp);
+            return None;
+        }
         think!(self.journal(), Military, Decision,
                "{kind} {uid} marches on a raid prize";
                "{} has something unguarded {} tiles away", g.players[raid.target].civ, g.wdist(unit.pos, goal);

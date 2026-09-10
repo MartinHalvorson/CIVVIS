@@ -1,4 +1,4 @@
-use super::{AdvancedAi, RaidPrize, VictoryTarget, SETTLER_PRIZE};
+use super::{AdvancedAi, RaidPrize, RaidWar, VictoryTarget, RAID_WAR_MIN_VALUE, SETTLER_PRIZE};
 use crate::game::Game;
 use crate::Pos;
 use std::sync::Arc;
@@ -275,4 +275,90 @@ fn raid_versions_are_independent_and_mutually_exclusive() {
     assert!(!ai.opportunistic_war_2);
     ai.disable_opportunistic_war_2();
     assert!(ai.opportunistic_war, "disabling v2 preserves v1");
+}
+
+#[test]
+fn raid_pursuit_holds_when_the_next_step_is_lethal() {
+    let mut game = pillage_raid_board();
+    let warrior = game.player_unit_ids(0)[0];
+    let origin = game.units[&warrior].pos;
+    let mut ai = AdvancedAi::new();
+    ai.enable_opportunistic_war();
+    ai.enable_raid_pillage_prizes();
+    let goal = ai
+        .raid_prizes_against(
+            &game,
+            0,
+            1,
+            &[super::RaidStriker {
+                uid: warrior,
+                pos: origin,
+                reach: super::RAID_PURSUIT_RADIUS,
+                lone_garrison: false,
+            }],
+        )
+        .into_iter()
+        .next()
+        .expect("the fixture has a raid prize")
+        .pos();
+    let next = game
+        .route_step(warrior, goal, 0)
+        .expect("the raid prize has a legal first step");
+    let archer_at =
+        game.nbrs(next)
+            .into_iter()
+            .find(|position| {
+                game.wdist(*position, goal) > 1
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.unit_ids_at(*position).is_empty()
+            })
+            .expect("the fixture has a ranged firing position beside the route");
+    for _ in 0..6 {
+        let archer = game.spawn_test_unit("archer", 1, archer_at);
+        assert!(
+            game.unit_visible_to(archer, 0),
+            "the firing position must be visible to the raider"
+        );
+        assert!(
+            game.attack_reach(archer).contains(&next),
+            "the enemy archer must be able to strike the proposed step"
+        );
+    }
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    let prize_count = ai
+        .raid_prizes_against(
+            &game,
+            0,
+            1,
+            &[super::RaidStriker {
+                uid: warrior,
+                pos: origin,
+                reach: super::RAID_PURSUIT_RADIUS,
+                lone_garrison: false,
+            }],
+        )
+        .len();
+    ai.raid_war = Some(RaidWar {
+        target: 1,
+        declared: game.turn,
+        value: RAID_WAR_MIN_VALUE,
+        settlers: 0,
+        builders: 0,
+        pillage_tiles: prize_count,
+    });
+    let plan = ai.assess(&game, 0);
+    let hp = game.units[&warrior].hp;
+    assert!(
+        super::super::battle_planner::danger(&game, 0, next, warrior) >= f64::from(hp),
+        "the fixture must be lethal before testing the raid guard"
+    );
+    assert_eq!(
+        ai.raid_prize_step(&mut game, 0, warrior, &plan, false),
+        None,
+        "a raid prize must not spend the soldier on a lethal step"
+    );
+    assert_eq!(game.units[&warrior].pos, origin);
 }
