@@ -19,7 +19,8 @@
     "disabled": [
       "domination-siege-research"
     ],
-    "other_genes": "AdvancedAi::fleet_targeting defaults at source_commit"
+    "other_genes": "AdvancedAi::fleet_targeting defaults at source_commit",
+    "difficulty": "prince"
   },
   "observation": "After each seat turn, inspect current Conquest plan and its still-owned foreign objective. Walled means actual wall_hp > 0; these are diagnostic world observations, not additional information supplied to the AI. Near means hex distance <= 6, not a path-feasibility or firing-range claim. Totals count observations, not unique cities or independent samples.",
   "totals": {
@@ -377,7 +378,8 @@
       "control": "siege-commitment OFF",
       "primary": "fraction of worlds ending in Domination; paired terminal outcomes",
       "secondary": "post-turn walled Conquest observations, fielded/queued land siege gap, distance <=6 proximity",
-      "limitations": "Symmetric-lane completion, not observed-player competitive win rate; no default promotion from this batch; follow-up selected after eight-seed exploratory delivery census; seeds disjoint from exploration."
+      "limitations": "Symmetric-lane completion, not observed-player competitive win rate; no default promotion from this batch; follow-up selected after eight-seed exploratory delivery census; seeds disjoint from exploration.",
+      "difficulty": "prince"
     },
     "domination_completions": {
       "control": 10,

@@ -107,3 +107,6 @@ six hexes in 486 versus 402. These different trajectories do not isolate the
 cause of the lost completions. A stickier target is not itself a remedy for
 an unexecutable siege. No deployment default changed. The census artifact
 includes every paired terminal record, protocol and observer source.
+
+The native probes and census use Prince, the source revision’s default
+`GameOptions` difficulty. The standard screen separately uses Emperor.
