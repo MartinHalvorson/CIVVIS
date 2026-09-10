@@ -738,6 +738,7 @@ pub const GENES: &[Gene] = &[
     // Unlike Diplomacy, both curves move, so this projects both. See
     // `culture_lane_forecast`.
     Gene { tag: "culture-lane-forecast", field: "culture_lane_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast, disable: AdvancedAi::disable_culture_lane_forecast },
+    Gene { tag: "culture-cold-war-window", field: "culture_cold_war_window", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_cold_war_window, disable: AdvancedAi::disable_culture_cold_war_window },
     // ⚠ The lane this engine finishes most often is the lane the planner never
     // picks. `victory_eval` at the ladder's profile: diplomatic 14/16, culture
     // 12/16, religious 8/16, domination 2/16, science 0/16. `audit` over the

@@ -33,6 +33,78 @@ fn board() -> Game {
 }
 
 #[test]
+fn cold_war_window_keeps_the_opening_and_resumes_the_culture_chain() {
+    let mut g = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert!(!ai.culture_cold_war_window);
+    ai.enable_culture_cold_war_window();
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("humanism"));
+    g.players[0].civics.insert(crate::name!("humanism"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("conservation"));
+    g.players[0].civics.insert(crate::name!("conservation"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("cold_war"));
+    ai.disable_culture_cold_war_window();
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+    ai.enable_culture_cold_war_window();
+    g.victory_conditions.culture = false;
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+    g.victory_conditions.culture = true;
+    g.players[0].civics.insert(crate::name!("cold_war"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+}
+
+#[test]
+fn cold_war_window_changes_the_legal_civic_order_only_for_culture() {
+    let mut g = board();
+    let withheld = [
+        "cold_war",
+        "professional_sports",
+        "cultural_heritage",
+        "space_race",
+        "environmentalism",
+        "social_media",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|c| !withheld.contains(&c.as_str()))
+        .collect();
+    g.players[0].civic = None;
+    assert!(g.available_civics(0).contains(&crate::name!("cold_war")));
+    assert!(g
+        .available_civics(0)
+        .contains(&crate::name!("professional_sports")));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    for target in [VictoryTarget::Culture, VictoryTarget::Science] {
+        let mut control = g.clone();
+        let mut treatment = g.clone();
+        let mut ai = AdvancedAi::targeting(target);
+        ai.advanced_research(&mut control, 0, &plan);
+        ai.enable_culture_cold_war_window();
+        ai.advanced_research(&mut treatment, 0, &plan);
+        if target == VictoryTarget::Culture {
+            assert_eq!(
+                control.players[0].civic.as_deref(),
+                Some("professional_sports")
+            );
+            assert_eq!(treatment.players[0].civic.as_deref(), Some("cold_war"));
+        } else {
+            assert_eq!(control.players[0].civic, treatment.players[0].civic);
+        }
+    }
+}
+
+#[test]
 fn defense_uses_the_global_bar_and_only_known_living_opponents() {
     let mut g = board();
     let ai = AdvancedAi::targeting(VictoryTarget::Science);

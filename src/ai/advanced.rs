@@ -4574,6 +4574,10 @@ pub struct AdvancedAi {
     /// **Off by default.** Screenable.
     pub culture_lane_forecast: bool,
 
+    /// Experimental Culture beeline: unlock Rock Bands after Conservation,
+    /// before Professional Sports and Cultural Heritage. Off until measured.
+    pub culture_cold_war_window: bool,
+
     /// Whether the Diplomacy lane is scored by WHEN twenty Diplomatic Victory
     /// Points arrive rather than by how many are already banked.
     ///
@@ -7756,6 +7760,7 @@ impl AdvancedAi {
             conversion_majority_alarm: false,
             conversion_majority_alarm_2: false,
             culture_lane_forecast: false,
+            culture_cold_war_window: false,
             diplomatic_lane_forecast: false,
             diplomatic_lane_forecast_2: false,
             frontier_massing_alarm: false,
@@ -14271,17 +14276,7 @@ impl AdvancedAi {
                 // all, and never arrived. Released, `civic_value`'s argmax
                 // takes the slot back.
                 _ if self.lane_lost => None,
-                GrandStrategy::Culture => [
-                    "humanism",
-                    "conservation",
-                    "professional_sports",
-                    "cultural_heritage",
-                    "space_race",
-                    "environmentalism",
-                    "social_media",
-                ]
-                .into_iter()
-                .find(|civic| !g.players[pid].civics.contains(&Name::new(civic))),
+                GrandStrategy::Culture => self.culture_civic_goal(g, pid),
                 GrandStrategy::Science
                     if !g.players[pid].civics.contains(&crate::name!("space_race")) =>
                 {
