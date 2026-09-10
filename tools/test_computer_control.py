@@ -41,6 +41,11 @@ class QuadrantFrameTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cc.quadrant_frame("center", 1728, 1117)
 
+    def test_operator_layout_places_both_games_above_the_terminal(self) -> None:
+        self.assertEqual([(row["process"], row["quadrant"]) for row in cc.STANDARD_LAYOUT],
+                         [("Terminal", "lower-left"), (None, "upper-right"),
+                          ("Civ6", "upper-left")])
+
     def test_lower_right_exists_for_callers_but_not_in_the_standard_layout(self) -> None:
         """The operator keeps that quadrant; nothing of ours may claim it."""
         cc.quadrant_frame("lower-right", 1728, 1117)
