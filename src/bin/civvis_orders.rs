@@ -984,8 +984,29 @@ impl HostMoveRefusals {
             self.same_turn_deal_orders.clear();
             self.same_turn_production_orders.clear();
         }
+        // A planner may revise a queue several times before this batch is
+        // sent (for example, restoring a military build after an economic
+        // pass). Only its final choice should acquire the host-turn lease.
+        // Later calls still cannot overwrite a choice already sent this turn.
+        let final_production: std::collections::BTreeMap<_, _> = orders
+            .iter()
+            .enumerate()
+            .filter(|(_, order)| order.kind == "produce" && order.verb.is_some())
+            .filter_map(|(index, order)| order.subject.map(|city| (city, index)))
+            .collect();
+        let before = orders.len();
+        let mut index = 0;
+        orders.retain(|order| {
+            let keep = order.kind != "produce"
+                || order.verb.is_none()
+                || order
+                    .subject
+                    .is_none_or(|city| final_production[&city] == index);
+            index += 1;
+            keep
+        });
         let frame = state.frame;
-        let mut dropped = 0;
+        let mut dropped = before - orders.len();
         orders.retain(|order| {
             if order.kind == "produce" {
                 if let (Some(city), Some(verb)) = (order.subject, order.verb.as_deref()) {
@@ -10357,6 +10378,38 @@ mod tests {
         state.turn += 1;
         refusals.observe(&state, &[]);
         assert!(refusals.local_retry.is_empty());
+    }
+
+    #[test]
+    fn the_final_city_queue_in_one_batch_survives_the_replay_filter() {
+        let (_, state) = production_board();
+        let mut refusals = HostMoveRefusals::default();
+        let mut ours = std::collections::BTreeMap::new();
+        let mut orders = vec![
+            production_order(7, "PROJECT_ENHANCE_DISTRICT_THEATER"),
+            production_order(8, "BUILDING_LIGHTHOUSE"),
+            unit_order(9, "MOVE_TO", Some((4, 5))),
+            production_order(7, "UNIT_CUIRASSIER"),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut orders, &state, &mut ours),
+            1
+        );
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0].subject, Some(8));
+        assert_eq!(orders[1].kind, "unit");
+        assert_eq!(orders[2].verb.as_deref(), Some("UNIT_CUIRASSIER"));
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_CUIRASSIER"));
+        let mut replan = vec![production_order(7, "UNIT_BUILDER")];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
+            1
+        );
+        assert!(
+            replan.is_empty(),
+            "a later call still cannot replace the sent choice"
+        );
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_CUIRASSIER"));
     }
 
     #[test]
