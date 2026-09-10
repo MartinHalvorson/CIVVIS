@@ -117,50 +117,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         // Governor preferences are player decisions, not predicted resources.
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
-        let mut changed = false;
-        for (target, actions) in &finishing.execution {
-            if game.units.contains_key(target) {
-                for action in actions {
-                    changed = true;
-                    if game.apply(pid, action).is_err() {
-                        *game.players[pid]
-                            .counters
-                            .entry("player:refused".into())
-                            .or_default() += 1;
-                        break;
-                    }
-                }
-            }
-        }
-        for (seat, action) in view.log.since(ordinary_begin) {
-            if game.current != pid || game.winner.is_some() {
-                return;
-            }
-            if *seat != pid || matches!(action, Action::EndTurn) {
-                continue;
-            }
-            let explored = game.players[pid].explored.len();
-            let allocator = game.next_id;
-            if game.apply(pid, action).is_err() {
-                *game.players[pid]
-                    .counters
-                    .entry("player:refused".into())
-                    .or_default() += 1;
-                changed = true;
-                break;
-            }
-            changed |= game.players[pid].explored.len() != explored
-                || game.next_id != allocator
-                || matches!(
-                    action,
-                    Action::Attack { .. }
-                        | Action::Ranged { .. }
-                        | Action::CityStrike { .. }
-                        | Action::EncampmentStrike { .. }
-                        | Action::AirStrike { .. }
-                        | Action::TheologicalAttack { .. }
-                );
-        }
+        let changed = execute_frame(game, pid, &finishing, view.log.since(ordinary_begin));
         if !changed {
             break;
         }
@@ -189,6 +146,72 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
             break;
         }
     }
+}
+
+fn execute_frame<'a>(
+    game: &mut Game,
+    pid: usize,
+    finishing: &super::finishing::WarFinishingVolley,
+    ordinary: impl Iterator<Item = &'a (usize, Action)>,
+) -> bool {
+    let mut changed = false;
+    for (target, actions) in &finishing.execution {
+        if game.units.contains_key(target) {
+            for action in actions {
+                match execute_observed_action(game, pid, action) {
+                    Some(refresh) => changed |= refresh,
+                    None => return true,
+                }
+            }
+        }
+    }
+    // Complete the conditional volley as a batch, then observe its actual
+    // result before ordinary movement. The frame budget is NOT an attack cap.
+    if changed {
+        return true;
+    }
+    for (seat, action) in ordinary {
+        if *seat == pid && !matches!(action, Action::EndTurn) {
+            match execute_observed_action(game, pid, action) {
+                Some(refresh) => changed |= refresh,
+                None => return true,
+            }
+        }
+    }
+    changed
+}
+
+/// None stops a refused/terminal batch immediately. Some(true) requests a
+/// fresh observation AFTER the batch, preserving the live adapter's bounded
+/// batch cadence instead of silently limiting an army to three attacks.
+fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Option<bool> {
+    if game.current != pid || game.winner.is_some() {
+        return None;
+    }
+    let explored = game.players[pid].explored.len();
+    let allocator = game.next_id;
+    if game.apply(pid, action).is_err() {
+        *game.players[pid]
+            .counters
+            .entry("player:refused".into())
+            .or_default() += 1;
+        return None;
+    }
+    Some(
+        game.current != pid
+            || game.winner.is_some()
+            || game.players[pid].explored.len() != explored
+            || game.next_id != allocator
+            || matches!(
+                action,
+                Action::Attack { .. }
+                    | Action::Ranged { .. }
+                    | Action::CityStrike { .. }
+                    | Action::EncampmentStrike { .. }
+                    | Action::AirStrike { .. }
+                    | Action::TheologicalAttack { .. }
+            ),
+    )
 }
 
 #[cfg(test)]
