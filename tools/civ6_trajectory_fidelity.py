@@ -179,6 +179,36 @@ SIM_HANDICAP_DEFAULT = "all"
 NEUTRAL_HANDICAP = "n/a"
 
 
+def host_only_genes() -> list[str]:
+    """Genes the live seat ships that a headless board cannot run.
+
+    ⚠⚠ THE BOUND ON EVERYTHING THIS TOOL CAN SAY. `Kind::HostOnly` is
+    "shipped by the Civilization VI seat but reading host state a native board
+    does not have: inert in a headless game, so never screened". Even
+    `gene_screen --deployment-genome`, which pins every screenable gene to its
+    shipped state, cannot make these act — there is no host for them to read.
+
+    So the two sides of this ledger are NEVER quite the same agent, and the
+    difference is not noise: roughly a dozen of them shape the opening
+    (`parallel-settlers`, `land-grab`, `host-settler-pop`,
+    `era-paced-expansion`, `expansion-hall`, `opening-settler-waits`,
+    `fog-land-capacity`, …), which is the axis showing the largest gap.
+
+    Read out of the registry rather than restated, so a gene added or
+    reclassified there reaches this notice on its own.
+    """
+    source = (REPO / "src" / "ai" / "advanced" / "genes.rs").read_text(encoding="utf-8")
+    found = re.findall(
+        r'Gene \{ tag: "([a-z0-9-]+)"[^}]*?kind: Kind::HostOnly', source
+    )
+    if not found:
+        raise SystemExit(
+            "src/ai/advanced/genes.rs parsed to no HostOnly gene; the registry "
+            "moved and this ledger would quietly stop disclosing its own bound"
+        )
+    return sorted(set(found))
+
+
 def neutral_rungs() -> set[str]:
     """Difficulties that hand nothing to either side, from the shipped table.
 
@@ -413,6 +443,8 @@ def ledger(live: list[dict], sim: list[dict]) -> dict:
     report = {
         "live_runs": len(live),
         "sim_seats": len(sim),
+        # The bound this ledger discloses about itself. See `host_only_genes`.
+        "host_only_genes": host_only_genes(),
         "matched_cells": [],
         "live_only": [
             {"cell": list(cell), "runs": len(rows)}
@@ -462,6 +494,7 @@ def worst_divergences(report: dict) -> dict[str, float]:
 
 
 def render(report: dict) -> str:
+    host_only = report.get("host_only_genes", [])
     lines = [
         "# Trajectory fidelity: the simulator against the live seat",
         "",
@@ -469,6 +502,17 @@ def render(report: dict) -> str:
         f"{report['sim_seats']} screen seats.",
         "",
     ]
+    if host_only:
+        lines += [
+            f"⚠ **The two sides are not quite the same agent.** {len(host_only)} genes "
+            "ship on the live seat and read host state a native board does not have, "
+            "so they are inert here however the screen is configured — "
+            "`--deployment-genome` included. Several shape the opening, which is why "
+            "an opening-band gap is not by itself an engine defect: "
+            + ", ".join(f"`{tag}`" for tag in host_only[:6])
+            + (f" and {len(host_only) - 6} more." if len(host_only) > 6 else "."),
+            "",
+        ]
     if not report["matched_cells"]:
         lines += [
             "## Nothing is comparable",

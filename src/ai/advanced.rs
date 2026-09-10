@@ -6889,6 +6889,8 @@ pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 /// mover's tile score; see `advanced/close_as_a_body.rs`.
 mod close_as_a_body;
 
+mod siege_production;
+
 /// Siege train and anvil: the doctrines of a force whose objective is a city
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
@@ -14317,6 +14319,15 @@ impl AdvancedAi {
                 }
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if first_government => Some("political_philosophy"),
+                // Put an already-built museum to work before buying more
+                // government capacity. Recovery keeps the normal ladder.
+                GrandStrategy::Culture
+                    if plan.strategy == GrandStrategy::Culture
+                        && !self.lane_lost
+                        && self.culture_museum_unlock_goal(g, pid).is_some() =>
+                {
+                    self.culture_museum_unlock_goal(g, pid)
+                }
                 // See `government_ladder`: the same sentence one rung up. The
                 // tier-1 arm above exists because "a victory beeline cannot
                 // usefully precede the government's policy capacity"; tier 2
@@ -27295,6 +27306,7 @@ impl AdvancedAi {
                     // once the strike force is complete.
                     let conquest_body =
                         self.conquest_reservation(g, pid, cid, spec, counts, threatened);
+                    let missing_siege = self.missing_domination_siege(g, pid, plan, counts, spec);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
@@ -27302,6 +27314,7 @@ impl AdvancedAi {
                         && early_contact <= 0.0
                         && early_archer <= 0.0
                         && conquest_body <= 0.0
+                        && !missing_siege
                     {
                         return -2_000.0;
                     }
@@ -27360,6 +27373,13 @@ impl AdvancedAi {
                         desired_aircraft.saturating_sub(counts.aircraft) as f64
                     } else {
                         desired_military.saturating_sub(land_military) as f64
+                    };
+                    // A missing wall-breaking role is one unfilled army slot,
+                    // even when field units have filled the head-count target.
+                    let force_gap = if missing_siege {
+                        force_gap.max(1.0)
+                    } else {
+                        force_gap
                     };
                     let role_gap = if force_gap <= 0.0 {
                         0.0
