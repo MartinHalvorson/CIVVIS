@@ -31,7 +31,7 @@ class TraceTests(unittest.TestCase):
             self.assertEqual(compare_transition(case)["status"], "unverifiable")
 
     def test_roll_bounds_and_exact_results(self):
-        case = {"same_turn": True, "intervening_actions": 0,
+        case = {"same_turn": True, "intervening_actions": 0, "phase": "settled",
                 "predictions": {"damage": {"low": 24, "high": 36}, "accepted": True},
                 "observed": {"damage": 30, "accepted": True}}
         self.assertEqual(compare_transition(case)["status"], "match")
@@ -50,8 +50,28 @@ class TraceTests(unittest.TestCase):
     def test_nonfinite_and_inverted_bounds_are_refused(self):
         for interval in ({"low": 4, "high": 3}, {"low": 0, "high": float("inf")}):
             with self.assertRaises(ValueError):
-                compare_transition({"same_turn": True, "intervening_actions": 0,
+                compare_transition({"same_turn": True, "intervening_actions": 0, "phase": "settled",
                                     "predictions": {"damage": interval}, "observed": {"damage": 3}})
+
+    def test_missing_unknown_or_gap_marked_phase_cannot_pass(self):
+        case = {"same_turn": True, "intervening_actions": 0,
+                "predictions": {"position": [2, 3]}, "observed": {"position": [2, 3]}}
+        for phase in (None, "request_boundary", "timeout", "unknown"):
+            self.assertEqual(compare_transition(dict(case, phase=phase))["status"], "unverifiable")
+        self.assertEqual(compare_transition(dict(case, phase="settled", coverage_gap="missing map"))["status"], "unverifiable")
+        self.assertEqual(compare_transition(dict(case, phase="settled", intervening_actions=False))["status"], "unverifiable")
+
+    def test_exact_nested_facts_preserve_types_and_reject_nonfinite_tails(self):
+        case = {"same_turn": True, "intervening_actions": 0, "phase": "settled",
+                "predictions": {"position": [1, 2]}, "observed": {"position": [True, 2]}}
+        self.assertEqual(compare_transition(case)["status"], "mismatch")
+        case["observed"]["position"] = [1, 2, float("inf")]
+        with self.assertRaises(ValueError): compare_transition(case)
+
+    def test_boolean_frame_is_not_a_decision_frame(self):
+        payload = {"turn": 12, "orders": [], "decision": {"schema": 1, "turn": 12, "frame": True, "native_actions": []}}
+        with self.assertRaisesRegex(ValueError, "frame"):
+            record_decision(Path("/unused"), payload, "/unused")
 
 
 if __name__ == "__main__":
