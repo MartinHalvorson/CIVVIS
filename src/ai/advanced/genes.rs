@@ -67,9 +67,9 @@ pub enum Kind {
     /// An engine repair the Civilization VI seat ships and a native board can
     /// play: on in the genome's universe, screenable, withholdable live.
     Repair(Axis),
-    /// Shipped by the Civilization VI seat but reading host state a native
-    /// board does not have: inert in a headless game, so never screened;
-    /// withholdable live.
+    /// Fixed bridge-era behavior, enabled in both production adapters. Some
+    /// rows adapt host-only representation; others are strategic safeguards.
+    /// Kept out of the variable genome for bit-order compatibility.
     HostOnly,
     /// Production ships it on before the ledger says anything (the stock
     /// agent carries it).
@@ -117,7 +117,8 @@ impl Gene {
     pub const fn opt_in(&self) -> bool {
         matches!(self.kind, Kind::OptIn)
     }
-    /// On after `enable_engine_repairs_universe`: the genome's universe.
+    /// On after setup among the variable genes. HostOnly rows are fixed on
+    /// outside the variable genome in both production adapters.
     pub const fn universe_on(&self) -> bool {
         self.repair() || self.production()
     }

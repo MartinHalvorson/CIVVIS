@@ -1009,6 +1009,9 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_civvis_decision_mode_always_enables_state_export(self) -> None:
         self.assertTrue(civ6_play.state_export_enabled(
+            SimpleNamespace(export_state=False, civvis_decides=False, action_transitions=True)
+        ))
+        self.assertTrue(civ6_play.state_export_enabled(
             SimpleNamespace(export_state=False, civvis_decides=True)
         ))
         self.assertTrue(civ6_play.state_export_enabled(
@@ -2280,6 +2283,22 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
     def test_the_asked_for_ruleset_matches(self):
         self.assertEqual(
             civ6_play.seat_matches_requested(self._seat(), args()), (True, True, True))
+
+    def test_action_capture_must_be_read_back_when_requested(self):
+        requested = args(action_transitions=True)
+        self.assertFalse(civ6_play.seat_matches_requested(self._seat(), requested)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            self._seat(action_transitions=False), requested)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self._seat(action_transitions=True), requested)[0])
+
+    def test_isolated_probes_must_be_read_back_when_requested(self):
+        requested = args(isolated_action_probes=True)
+        self.assertFalse(civ6_play.seat_matches_requested(self._seat(), requested)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=False), requested)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=True), requested)[0])
 
     def test_a_vanilla_game_is_refused_and_fails_the_whole_config(self):
         configured, modes, ruleset = civ6_play.seat_matches_requested(
