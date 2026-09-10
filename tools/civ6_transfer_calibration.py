@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import statistics
+import re
 from pathlib import Path
 
 METRICS = ("cities", "techs", "science", "culture", "military")
@@ -60,7 +61,10 @@ def live_samples(directory):
     # Last opening-frame export wins on a reload. Mid-turn frames never count
     # as additional independent observations.
     frames = {}
+    dimensions = (None, None)
     for event in records(directory / "events.jsonl"):
+        if event.get("kind") == "tiles":
+            dimensions = (event.get("width", dimensions[0]), event.get("height", dimensions[1]))
         turn = event.get("turn")
         if event.get("kind") == "state" and isinstance(turn, int) and turn % 25 == 0 and event.get("frame", 0) == 0:
             frames[turn] = event
@@ -70,8 +74,13 @@ def live_samples(directory):
             if not isinstance(stats, dict): stats = {}
             values = {"cities": stats.get("city_count"), "techs": rival.get("techs_researched", rival.get("techs")),
                       "science": rival.get("science"), "culture": rival.get("culture"), "military": rival.get("military")}
-            yield {"cohort": (speed, difficulty, turn), "source": "live",
-                   "run": directory.name, "seat": rival.get("player"), "target": "observed_firaxis",
+            seat = summary.get("seat") or {}
+            profile = {"map": str(seat.get("map", "unknown")).lower().removesuffix(".lua"),
+                       "width": dimensions[0], "height": dimensions[1], "players": seat.get("players"),
+                       "city_states": seat.get("city_states"), "ruleset": seat.get("ruleset"),
+                       "modes": seat.get("modes"), "native_competitions": True}
+            yield {"cohort": (speed, difficulty, turn), "source": "live", "profile": profile,
+                   "run": re.sub(r"-cont\d+$", "", directory.name), "seat": rival.get("player"), "target": "observed_firaxis",
                    "values": {k: v for k, v in values.items() if finite(v)}}
 
 
@@ -98,7 +107,16 @@ def native_samples(files):
                 if key in seen: continue
                 seen.add(key)
                 yield {"cohort": (header.get("speed", "unknown"), row.get("difficulty") or header.get("difficulty") or "prince", sample["turn"]),
-                       "source": "native", "run": f"{header_id}:{row.get('difficulty')}:{row['seed']}", "seat": row["seat"],
+                       "profile": {"map": header.get("map"), "width": header.get("width"),
+                                   "height": header.get("height"), "players": header.get("players"),
+                                   "city_states": header.get("city_states"), "ruleset": "RULESET_EXPANSION_2",
+                                   "modes": [], "native_competitions": header.get("native_competitions", False)},
+                       "source": "native", "model_build": header.get("build", {}).get("binary_sha256"),
+                       # Split repeated worlds together even across binaries;
+                       # otherwise a rebuild could move a training map into validation.
+                       "run": json.dumps([header.get("map"), header.get("width"), header.get("height"),
+                                          header.get("speed"), row.get("difficulty") or header.get("difficulty"), row["seed"]]),
+                       "seat": row["seat"],
                        "target": row.get("player_target") or "unrecorded",
                        "values": {k: sample[k] for k in METRICS if finite(sample.get(k))}}
 
@@ -133,10 +151,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", nargs="+", required=True, type=Path)
     parser.add_argument("--native", nargs="*", default=[], type=Path)
+    parser.add_argument("--fit-target-mix", action="store_true", help="fit a coverage-constrained prior on training games and evaluate on untouched games; never changes production")
     args = parser.parse_args()
     samples = [sample for directory in args.live for sample in live_samples(directory)]
     samples.extend(native_samples(args.native))
     report = summarize(samples)
+    if args.fit_target_mix:
+        from civ6_target_mix import fit
+        report["target_mix_calibration"] = fit(samples)
     print(json.dumps(report, indent=2, allow_nan=False))
     return 0 if samples else 2
 

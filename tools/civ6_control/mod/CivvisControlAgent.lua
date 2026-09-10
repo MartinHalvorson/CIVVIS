@@ -5971,6 +5971,18 @@ CivvisGreatPersonActivationPlots = function(unit, gp, pid, gwSurvey, openPlots)
 	return activationPlots;
 end;
 
+-- WorldInput.lua:1041 gates foreign units on BOTH visible terrain and
+-- PlayersVisibility:IsUnitVisible(unit); MapSearchPanel.lua:475 does too.
+-- A submarine on a visible plot is not necessarily detected. Missing API
+-- evidence must not silently grant the controller omniscience.
+CivvisUnitVisible = function(pid, unit)
+	return try(function()
+		local visibility = PlayersVisibility[pid];
+		return visibility:IsVisible(unit:GetX(), unit:GetY())
+			and visibility:IsUnitVisible(unit);
+	end, false) == true;
+end;
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
@@ -7214,7 +7226,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 						-- answers in a gameplay context. A visible tile is not a
 						-- detection result, though: `other:GetUnits()` still contains
 						-- a foreign Spy while its operation remains secret.
-						if name ~= "UNIT_SPY" and PlayersVisibility[pid]:IsVisible(ux, uy) then
+						if name ~= "UNIT_SPY" and CivvisUnitVisible(pid, unit) then
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
@@ -7739,7 +7751,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				for _, unit in minor:GetUnits():Members() do
 					pcall(function()
 						local ux, uy = unit:GetX(), unit:GetY();
-						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+						if CivvisUnitVisible(pid, unit) then
 							local name = unitTypeName(unit);
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
@@ -8067,7 +8079,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		pcall(function()
 			for _, unit in other:GetUnits():Members() do
 				local ux, uy = unit:GetX(), unit:GetY();
-				if PlayersVisibility[pid]:IsVisible(ux, uy) then
+				if CivvisUnitVisible(pid, unit) then
 					local name = try(function()
 						return GameInfo.Units[unit:GetUnitType()].UnitType;
 					end, "?");

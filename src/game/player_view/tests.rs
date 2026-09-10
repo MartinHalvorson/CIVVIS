@@ -64,6 +64,26 @@ fn unknown_rival_research_and_treasury_are_not_exposed() {
 }
 
 #[test]
+fn global_religion_choices_survive_anonymous_rival_redaction() {
+    let mut game = Game::new_full(2, 30, 20, 812, 40, 0, false);
+    game.players[0].met.clear();
+    game.players[1].pantheon = Some("religious_settlements".into());
+    game.players[1].religion = Some("buddhism".into());
+    game.players[1].religion_beliefs = vec!["tithe".into()];
+    let view = game.player_decision_view(0);
+    assert!(view
+        .blocked_pantheons
+        .contains(&crate::name!("religious_settlements")));
+    assert_eq!(view.players[1].religion, game.players[1].religion);
+    assert_eq!(
+        view.players[1].religion_beliefs,
+        game.players[1].religion_beliefs
+    );
+    assert!(!view.has_met(0, 1));
+    assert!(view.players[1].pantheon.is_none());
+}
+
+#[test]
 fn public_rivals_do_not_disclose_private_accumulators_or_camp_timers() {
     let mut game = Game::new_full(2, 30, 20, 812, 40, 0, false);
     game.players[0].met.insert(1);

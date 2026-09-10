@@ -26,6 +26,15 @@ turn's weight. Prince and Emperor observations are not pooled. Matching speed
 and difficulty is necessary, not sufficient: map, leader mix, ruleset, game
 modes, and survivor/contact selection must also be reviewed before fitting a
 new prior. The tool reports pace; it does not change the deployment policy.
+`--fit-target-mix` proposes a mixture only when complete map/rules/modes and
+competition profiles match. It splits independent game IDs deterministically,
+fits log-pace error on training games with a 5% floor for every objective, then
+checks the frozen weights on untouched games. Each split needs three live and
+three native games plus per-target feature coverage. The candidate must improve
+held-out error by more than 10%; a proposal still needs prospective tournament
+validation. This is a prior-fitting tool, not proof of Firaxis policy recovery.
+Continuation directories share their original game identity and duplicated
+observations cannot inflate fitting evidence.
 Handicap/seat-asymmetry work is deliberately excluded. Barbarians retain the
 existing Immortal setting rather than inventing a new non-Civ difficulty band.
 

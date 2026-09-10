@@ -34,6 +34,14 @@ impl Game {
             .retain(|id, city| !visible.contains(&city.pos) || self.city_at(city.pos) == Some(*id));
         let mut view = self.clone();
         Arc::make_mut(&mut view.rules).enable_unknown_terrain();
+        // The chooser exposes which pantheons remain available, including
+        // those taken by unmet civilizations, without exposing their owners.
+        Arc::make_mut(&mut view.blocked_pantheons).extend(
+            self.players
+                .iter()
+                .filter_map(|p| p.pantheon.as_deref())
+                .map(Name::new),
+        );
         for tile in view.map.tiles.values_mut() {
             let pos = tile.pos;
             if visible.contains(&pos) {
@@ -113,6 +121,11 @@ impl Game {
             );
             player.is_barbarian = source.is_barbarian;
             player.is_free_city = source.is_free_city;
+            // The religion overview is global. Preserve its public founding
+            // and belief pool while an unmet founder's civilization stays
+            // anonymous, as LiveMirror::apply_player_religion does.
+            player.religion = source.religion.clone();
+            player.religion_beliefs = source.religion_beliefs.clone();
             if known {
                 player.alive = source.alive;
                 player.team = source.team;
@@ -122,8 +135,6 @@ impl Game {
                 player.gold_per_turn = source.gold_per_turn;
                 player.age = source.age.clone();
                 player.pantheon = source.pantheon.clone();
-                player.religion = source.religion.clone();
-                player.religion_beliefs = source.religion_beliefs.clone();
                 player.envoys = source
                     .envoys
                     .iter()
