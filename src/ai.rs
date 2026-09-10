@@ -7365,14 +7365,13 @@ impl BasicAi {
     /// one-hex dead end can consume the whole war.  The coordinated mover may
     /// make one exception for an A* route after this becomes true, because the
     /// route can need to cross an already-visited square before it exits the
-    /// pocket.  Keeping that exception behind `recorded_tactical_step` leaves
-    /// every native controller on its historical movement path.
+    /// pocket.  The exception is independent of the live movement recorder:
+    /// the motion ledger is also populated by the ordinary turn-based path,
+    /// and the route escape still applies its own legality and danger checks.
     pub(crate) fn live_livelock_route_escape(&self, uid: u32) -> bool {
-        self.recorded_tactical_step
-            && self
-                .unit_motion
-                .get(&uid)
-                .is_some_and(|motion| motion.looping)
+        self.unit_motion
+            .get(&uid)
+            .is_some_and(|motion| motion.looping)
     }
 
     /// Whether a plain pathing step should be refused because it walks back
@@ -18141,6 +18140,19 @@ mod tests {
         );
         assert!(ai.retreads_a_loop(scout, ground[1]));
         assert!(!ai.retreads_a_loop(scout, ground[7]));
+    }
+
+    #[test]
+    fn a_proven_loop_can_use_the_coordinated_route_escape() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_WINDOW + 2).map(|turn| turn % 2).collect();
+        let (ai, _g, _ground, scout) = observe_walk(&shuttle, None);
+
+        assert!(
+            !ai.recorded_tactical_step,
+            "the coordinated production path does not enable live movement recording"
+        );
+        assert!(ai.unit_motion[&scout].looping);
+        assert!(ai.live_livelock_route_escape(scout));
     }
 
     /// The host can move a Scout around an obstacle without ever taking the

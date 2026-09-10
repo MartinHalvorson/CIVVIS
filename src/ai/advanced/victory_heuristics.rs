@@ -234,9 +234,9 @@ impl AdvancedAi {
         None
     }
 
-    /// A Domination contract is fulfilled by foreign *original* capitals. An
-    /// exposed city-state can still be a useful staging target, but once the
-    /// campaign names a major rival, its first city must advance the victory.
+    /// A Domination contract is fulfilled by foreign *original* capitals.
+    /// An eligible known capital supplies both the next opponent and its city
+    /// objective. The ordinary war policy still gates the declaration.
     pub(super) fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return None;
@@ -691,11 +691,34 @@ mod tests {
         );
 
         lane.enable_domination_lane_hands_over();
+        // ⚠ Four cities alone are not enough: the hand-over also needs an army
+        // that clears the elective-war bar against the weakest rival. Game 6
+        // declared at power 198 vs 384 and was down to one city by t170.
+        let mut outgunned = game.clone();
+        for rival in 1..4 {
+            let capital = outgunned.player_city_ids(rival)[0];
+            let around = outgunned.cities[&capital].pos;
+            for _ in 0..8 {
+                let site = open_land_near(&outgunned, around, 2);
+                outgunned.spawn_test_unit("swordsman", rival, site);
+            }
+        }
+        let plan = lane.assess(&outgunned, 0);
+        assert_eq!(
+            plan.strategy,
+            GrandStrategy::Expansion,
+            "gene on but outgunned: no war at half the rivals' power: {plan:?}"
+        );
+
+        for _ in 0..8 {
+            let site = open_land_near(&game, center, 2);
+            game.spawn_test_unit("swordsman", 0, site);
+        }
         let plan = lane.assess(&game, 0);
         assert_eq!(
             plan.strategy,
             GrandStrategy::Conquest,
-            "gene on: four cities in hand, the lane goes to war: {plan:?}"
+            "gene on with the army to back it: four cities in hand, the lane goes to war: {plan:?}"
         );
     }
 

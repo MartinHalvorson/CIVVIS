@@ -48,7 +48,8 @@ def write_sim(games, directory: Path, difficulty="emperor", handicap=None) -> Pa
     lines = [json.dumps(header)]
     for index, seats in enumerate(games):
         for seat in seats:
-            lines.append(json.dumps({"kind": "game", "game": index, **seat}))
+            kind = seat.pop("kind", "game")
+            lines.append(json.dumps({"kind": kind, "game": index, **seat}))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
@@ -116,16 +117,25 @@ class AMissingFieldIsNamed(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             live = fidelity.live_records(
-                write_live([live_row(score=100, rival_best=200, techs_at_150=20)], tmp)
+                write_live(
+                    [
+                        live_row(
+                            score=100,
+                            rival_best=200,
+                            combat={"cities_taken": 3, "cities_lost": 1},
+                        )
+                    ],
+                    tmp,
+                )
             )
             sim = fidelity.sim_records(
                 write_sim([[{"score": 100}, {"score": 200}]], tmp, handicap="rivals"),
                 fidelity.map_sizes(),
             )
             report = fidelity.ledger(live, sim)
-        pace = report["matched_cells"][0]["subsystems"]["research_pace"]
-        self.assertFalse(pace["available"])
-        self.assertEqual(pace["why"], "sim", "the live side had the field")
+        taken = report["matched_cells"][0]["subsystems"]["cities_taken"]
+        self.assertFalse(taken["available"])
+        self.assertEqual(taken["why"], "sim", "the live side had the field")
 
 
 class TheRatchetOnlyTightens(unittest.TestCase):
@@ -134,13 +144,58 @@ class TheRatchetOnlyTightens(unittest.TestCase):
         self.assertAlmostEqual(fidelity.divergence(1.0, 2.0), 2.0)
         self.assertAlmostEqual(fidelity.divergence(3.0, 3.0), 1.0)
 
+    def test_a_tolerance_belongs_to_one_cell_not_to_every_rung(self):
+        """Prince reproduces at 1.01x and Emperor at 1.26x. One number for both
+        means the tighter cell sets a bar the looser one never clears."""
+        report = {
+            "matched_cells": [
+                {
+                    "cell": ["prince", "online", "small", "n/a"],
+                    "subsystems": {"standing": {"available": True, "divergence": 1.01}},
+                },
+                {
+                    "cell": ["emperor", "online", "small", "rivals"],
+                    "subsystems": {"standing": {"available": True, "divergence": 1.26}},
+                },
+            ]
+        }
+        worst = fidelity.worst_divergences(report)
+        self.assertEqual(len(worst), 2, f"one entry per cell: {worst}")
+        self.assertIn("prince/online/small/n/a|standing", worst)
+        self.assertIn("emperor/online/small/rivals|standing", worst)
+        # Each is judged against its own recorded value, so neither drags the
+        # other: both pass here, and the loose one alone fails when it moves.
+        status, _ = fidelity.check(
+            report,
+            {
+                "prince/online/small/n/a|standing": 1.01,
+                "emperor/online/small/rivals|standing": 1.26,
+            },
+            0,
+        )
+        self.assertEqual(status, 0)
+        status, _ = fidelity.check(
+            report,
+            {
+                "prince/online/small/n/a|standing": 1.01,
+                "emperor/online/small/rivals|standing": 1.00,
+            },
+            0,
+        )
+        self.assertEqual(status, 1, "the emperor cell alone is past its own bar")
+
     def test_a_subsystem_past_its_tolerance_fails_the_check(self):
         report = {
             "matched_cells": [
-                {"subsystems": {"standing": {"available": True, "divergence": 4.0}}}
+                {
+                    "cell": ["prince", "online", "small", "n/a"],
+                    "subsystems": {"standing": {"available": True, "divergence": 4.0}},
+                }
             ]
         }
-        status, notes = fidelity.check(report, {"standing": 2.0}, 0)
+        status, notes = fidelity.check(
+            report, {"prince/online/small/n/a|standing": 2.0}, 0
+        )
         self.assertEqual(status, 1)
         self.assertTrue(any("exceeds" in note for note in notes))
 
@@ -149,36 +204,123 @@ class TheRatchetOnlyTightens(unittest.TestCase):
         report = {
             "matched_cells": [
                 {
+                    "cell": ["prince", "online", "small", "n/a"],
                     "subsystems": {
                         "standing": {
                             "available": True,
                             "divergence": allowed * (1 + fidelity.FIDELITY_SLACK / 2),
                         }
-                    }
+                    },
                 }
             ]
         }
-        status, _ = fidelity.check(report, {"standing": allowed}, 0)
+        status, _ = fidelity.check(
+            report, {"prince/online/small/n/a|standing": allowed}, 0
+        )
         self.assertEqual(status, 0, "the ratchet is a regression alarm, not a caliper")
 
     def test_a_subsystem_inside_its_tolerance_passes(self):
         report = {
             "matched_cells": [
-                {"subsystems": {"standing": {"available": True, "divergence": 1.5}}}
+                {
+                    "cell": ["prince", "online", "small", "n/a"],
+                    "subsystems": {"standing": {"available": True, "divergence": 1.5}},
+                }
             ]
         }
-        status, _ = fidelity.check(report, {"standing": 2.0}, 0)
+        status, _ = fidelity.check(
+            report, {"prince/online/small/n/a|standing": 2.0}, 0
+        )
         self.assertEqual(status, 0)
 
     def test_a_subsystem_with_no_tolerance_yet_does_not_fail(self):
         report = {
             "matched_cells": [
-                {"subsystems": {"standing": {"available": True, "divergence": 9.0}}}
+                {
+                    "cell": ["prince", "online", "small", "n/a"],
+                    "subsystems": {"standing": {"available": True, "divergence": 9.0}},
+                }
             ]
         }
         status, notes = fidelity.check(report, {}, 0)
         self.assertEqual(status, 0)
         self.assertTrue(any("no tolerance recorded" in note for note in notes))
+
+
+class TheFieldIsTheRivalSeats(unittest.TestCase):
+    """⚠⚠ A rival-mix run seats its opponents as `kind: "rival"`, and they ARE
+    the field. Gathering only the measured seats left one seat per game, so
+    "the best other seat" fell back to the seat itself and every standing read
+    exactly 1.00 — on the very run this ledger exists to interpret."""
+
+    def test_a_rival_mix_run_measures_the_seat_against_its_rivals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            sim = fidelity.sim_records(
+                write_sim(
+                    [
+                        [
+                            {"kind": "game", "score": 100},
+                            {"kind": "rival", "score": 400},
+                            {"kind": "rival", "score": 200},
+                        ]
+                    ],
+                    tmp,
+                    handicap="rivals",
+                ),
+                fidelity.map_sizes(),
+            )
+        self.assertEqual(len(sim), 1, "only the measured seat is a reading")
+        self.assertAlmostEqual(
+            sim[0]["_score_ratio"], 0.25, msg="100 against the best rival's 400"
+        )
+
+
+class AMismatchedMarkIsNeverCompared(unittest.TestCase):
+    """The most dangerous shape a ledger can have is two numbers that are
+    readings of different things, because it looks like an answer."""
+
+    def test_no_subsystem_is_left_comparing_different_moments(self):
+        """The two known mismatches are fixed at the source: the screen now
+        reads both marks at the RAW game turn the live ladder uses. Any
+        subsystem still declared incomparable must say why in its own words."""
+        for subsystem in fidelity.SUBSYSTEMS:
+            with self.subTest(subsystem=subsystem.name):
+                if subsystem.incomparable:
+                    self.assertGreater(len(subsystem.incomparable), 20)
+
+    def test_the_mechanism_still_works_for_the_next_mismatch(self):
+        probe = fidelity.Subsystem(
+            "probe", "_a", "_b", "a probe", incomparable="different moments"
+        )
+        self.assertTrue(probe.incomparable)
+
+    def test_an_incomparable_subsystem_produces_no_divergence(self):
+        report = {
+            "live_runs": 1,
+            "sim_seats": 1,
+            "host_only_genes": [],
+            "live_only": [],
+            "sim_only": [],
+            "matched_cells": [
+                {
+                    "cell": ["prince", "online", "small", "n/a"],
+                    "live_runs": 1,
+                    "sim_seats": 1,
+                    "subsystems": {
+                        "probe": {
+                            "available": False,
+                            "why": "incomparable",
+                            "incomparable": "different moments",
+                        }
+                    },
+                }
+            ],
+        }
+        self.assertEqual(fidelity.worst_divergences(report), {})
+        # `render` walks SUBSYSTEMS, so a synthetic name is not printed; what
+        # matters is that an incomparable body never becomes a divergence.
+        self.assertNotIn("probe", fidelity.worst_divergences(report))
 
 
 class TheLedgerDisclosesItsOwnBound(unittest.TestCase):
@@ -206,12 +348,12 @@ class TheLedgerDisclosesItsOwnBound(unittest.TestCase):
         self.assertIn("inert here", head)
 
 
-class TheOpeningBandIsComparable(unittest.TestCase):
-    """Turn 60 is where the live corpus's strongest result lives: every one of
-    its nine recorded wins had four to six cities there and nothing outside the
-    band won. The simulator recorded nothing comparable until `cities_60`."""
+class TheOpeningBandIsComparedAtTheLiveMark(unittest.TestCase):
+    """Turn 60 is where this corpus's strongest result lives. Both sides now
+    read it at the same RAW game turn — the mark `civ6_play.OPENING_TEMPO_TURN`
+    uses — so it can finally be compared."""
 
-    def test_the_band_is_read_off_a_screen_seat(self):
+    def test_both_sides_are_read_at_the_same_game_turn_and_compared(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             live = fidelity.live_records(
@@ -219,33 +361,30 @@ class TheOpeningBandIsComparable(unittest.TestCase):
             )
             sim = fidelity.sim_records(
                 write_sim(
-                    [[{"score": 100, "cities_60": 4}, {"score": 200, "cities_60": 6}]],
+                    [
+                        [
+                            {"score": 100, "cities_at_game_turn_60": 4},
+                            {"score": 200, "cities_at_game_turn_60": 6},
+                        ]
+                    ],
                     tmp,
                     handicap="rivals",
                 ),
                 fidelity.map_sizes(),
             )
-            report = fidelity.ledger(live, sim)
-        band = report["matched_cells"][0]["subsystems"]["opening_band"]
-        self.assertTrue(band["available"])
-        self.assertAlmostEqual(band["live"], 5.0)
-        self.assertAlmostEqual(band["sim"], 5.0, msg="median of 4 and 6")
-        self.assertAlmostEqual(band["divergence"], 1.0)
-
-    def test_a_screen_written_before_the_column_says_so_by_name(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            live = fidelity.live_records(
-                write_live([live_row(score=100, rival_best=200, cities_at_60=5)], tmp)
-            )
-            sim = fidelity.sim_records(
-                write_sim([[{"score": 100}, {"score": 200}]], tmp, handicap="rivals"),
-                fidelity.map_sizes(),
-            )
-            report = fidelity.ledger(live, sim)
-        band = report["matched_cells"][0]["subsystems"]["opening_band"]
-        self.assertFalse(band["available"])
-        self.assertEqual(band["why"], "sim", "the live side recorded it")
+        self.assertAlmostEqual(live[0]["cities_at_60"], 5.0, msg="live side read")
+        self.assertAlmostEqual(
+            sim[0]["cities_at_game_turn_60"], 4.0, msg="sim side, same raw turn"
+        )
+        band = next(s for s in fidelity.SUBSYSTEMS if s.name == "opening_band")
+        self.assertIsNone(
+            band.incomparable, "both sides read raw game turn 60, so it compares"
+        )
+        report = fidelity.ledger(live, sim)
+        cell = report["matched_cells"][0]["subsystems"]["opening_band"]
+        self.assertTrue(cell["available"])
+        self.assertAlmostEqual(cell["live"], 5.0)
+        self.assertAlmostEqual(cell["sim"], 5.0, msg="median of 4 and 6")
 
 
 class TheCityLedgerIsComparable(unittest.TestCase):

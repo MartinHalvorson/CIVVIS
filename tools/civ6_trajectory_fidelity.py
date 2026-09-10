@@ -85,7 +85,16 @@ REPO = Path(__file__).resolve().parent.parent
 #: ledger whose evidence only exists on one disk cannot be a ratchet, and this
 #: one travels to every clone and every runner. `--live` takes either.
 LIVE_DEFAULT = REPO / "docs" / "civ6_ladder.json"
-SIM_DEFAULT = REPO / "docs" / "gene_screens"
+#: Where the simulator side comes from, in scan order.
+#:
+#: `gene_screens/` is the screen history — every seat there drew its genome, so
+#: those files answer the fidelity question only approximately. `fidelity/` is
+#: the shape that answers it properly: `gene_screen --deployment-genome`, every
+#: seat playing the genome the ladder ships. Both are read, because the screens
+#: are the only sim evidence at rungs no fidelity run has covered yet, and a
+#: cell says which files it was built from either way.
+SIM_DEFAULTS = [REPO / "docs" / "gene_screens", REPO / "docs" / "fidelity"]
+SIM_DEFAULT = SIM_DEFAULTS[0]
 TOLERANCES = REPO / "docs" / "trajectory_fidelity.json"
 
 #: A live run shallower than this never left the opening and says nothing about
@@ -102,31 +111,68 @@ class Subsystem:
     how a ledger starts measuring nothing.
     """
 
-    def __init__(self, name: str, live: str, sim: str, about: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        live: str,
+        sim: str,
+        about: str,
+        incomparable: str | None = None,
+    ) -> None:
         self.name = name
         self.live = live
         self.sim = sim
         self.about = about
+        #: Why these two fields must NOT be compared, when they must not.
+        #: Both sides may report a number and the numbers may still be
+        #: readings of different things — the most dangerous shape a ledger
+        #: can have, because it looks like an answer.
+        self.incomparable = incomparable
 
 
 SUBSYSTEMS = [
     Subsystem(
         "standing", "_score_ratio", "_score_ratio", "own score over the best rival's"
     ),
+    # ⚠⚠ THE TWO SIDES READ DIFFERENT MOMENTS, AND BOTH REPORT A NUMBER.
+    #
+    # `civ6_ladder.tech_marks` reads the first live `state` frame at or after
+    # **game turn 150**. `gene_screen`'s `techs_150` reads the turn equivalent
+    # to **Standard turn 150 on the batch's own clock**, which at Online speed
+    # is turn 99. So the live figure is 51 game-turns later and larger for that
+    # reason alone: 46 against 22 on the first Emperor cell, a 2.09x "gap" that
+    # is entirely the clock.
+    #
+    # Reported as incomparable rather than dropped, so the mismatch is visible
+    # and someone fixes it. The fix is a sim column at the LIVE mark — both
+    # corpora run Online, so raw turn 150 on each side is the same moment —
+    # not a conversion of the live figure, which was recorded raw.
+    # Both sides now read RAW game turn 150, which is the same moment because
+    # both corpora run Online. The Standard-scaled `techs_150` stays on the row
+    # for the science-pace table and is deliberately NOT what is compared here.
     Subsystem(
-        "research_pace", "techs_at_150", "techs_150", "own techs at Standard turn 150"
+        "research_pace",
+        "techs_at_150",
+        "techs_at_game_turn_150",
+        "own techs at game turn 150",
     ),
     Subsystem(
         "rival_research_pace",
         "rival_techs_at_150",
-        "_rival_techs_150",
-        "the best rival's techs at Standard turn 150",
+        "_rival_techs_at_game_turn_150",
+        "the best rival's techs at game turn 150",
     ),
+    # ⚠⚠ The same mismatch, and it is MY error: `cities_60` (#3433) mirrored
+    # `techs_150`'s Standard-turn conversion without checking what the live
+    # mark meant. `civ6_play.OPENING_TEMPO_TURN` is 60 raw game turns; the
+    # screen reads Standard turn 60, which is turn 39 on an Online clock. The
+    # live seat is being read 21 turns later, which is most of why it shows
+    # more cities.
     Subsystem(
         "opening_band",
         "cities_at_60",
-        "cities_60",
-        "cities held at Standard turn 60",
+        "cities_at_game_turn_60",
+        "cities held at game turn 60",
     ),
     Subsystem(
         "cities_taken", "_cities_taken", "cities_taken", "cities conquered by the end"
@@ -336,7 +382,13 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
     seat. The best rival's score is the best OTHER seat in the same game, which
     is what the live row's `rival_best` means.
     """
-    files = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
+    roots = path if isinstance(path, (list, tuple)) else [path]
+    files = sorted(
+        found
+        for root in roots
+        if root.exists()
+        for found in (sorted(root.glob("*.jsonl")) if root.is_dir() else [root])
+    )
     neutral = neutral_rungs()
     out: list[dict] = []
     for file in files:
@@ -350,7 +402,13 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if row.get("kind") == "game":
+            # ⚠⚠ A RIVAL-MIX RUN'S OPPONENTS ARE `kind: "rival"`, AND THEY
+            # ARE THE FIELD. Collecting only the measured seats left one seat
+            # per game, so "the best OTHER seat" fell back to the seat itself
+            # and every standing read exactly 1.00 — on the very run this
+            # ledger exists to interpret. Both kinds are gathered; only the
+            # measured ones become records, below.
+            if row.get("kind") in ("game", "rival"):
                 seats.setdefault(row.get("game"), []).append(row)
             elif "width" in row and "height" in row:
                 header = row
@@ -376,27 +434,29 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
                 if isinstance(seat.get("score"), (int, float))
             ]
             techs = [
-                float(seat["techs_150"])
+                float(seat["techs_at_game_turn_150"])
                 for seat in game
-                if isinstance(seat.get("techs_150"), (int, float))
+                if isinstance(seat.get("techs_at_game_turn_150"), (int, float))
             ]
             for seat in game:
+                if seat.get("kind") != "game":
+                    continue  # a fixed opponent is the field, not a reading
                 record = {"_cell": cell}
                 for key in ("cities_taken", "cities_lost"):
                     value = seat.get(key)
                     if isinstance(value, (int, float)):
                         record[key] = float(value)
-                band = seat.get("cities_60")
+                band = seat.get("cities_at_game_turn_60")
                 if isinstance(band, (int, float)):
-                    record["cities_60"] = float(band)
-                value = seat.get("techs_150")
+                    record["cities_at_game_turn_60"] = float(band)
+                value = seat.get("techs_at_game_turn_150")
                 if isinstance(value, (int, float)):
-                    record["techs_150"] = float(value)
+                    record["techs_at_game_turn_150"] = float(value)
                     # The best OTHER seat in this game, which is what the live
                     # row's `rival_*` fields mean.
                     others = [t for t in techs if t is not value]
                     if others:
-                        record["_rival_techs_150"] = max(others)
+                        record["_rival_techs_at_game_turn_150"] = max(others)
                 own = seat.get("score")
                 others = [s for s in scores if s != own] or scores
                 if isinstance(own, (int, float)) and others and max(others) > 0:
@@ -465,6 +525,13 @@ def ledger(live: list[dict], sim: list[dict]) -> dict:
             "subsystems": {},
         }
         for subsystem in SUBSYSTEMS:
+            if subsystem.incomparable:
+                entry["subsystems"][subsystem.name] = {
+                    "available": False,
+                    "why": "incomparable",
+                    "incomparable": subsystem.incomparable,
+                }
+                continue
             live_median = median_of(live_cells[cell], subsystem.live)
             sim_median = median_of(sim_cells[cell], subsystem.sim)
             if live_median is None or sim_median is None:
@@ -483,13 +550,27 @@ def ledger(live: list[dict], sim: list[dict]) -> dict:
     return report
 
 
+def tolerance_key(cell: list, subsystem: str) -> str:
+    """`emperor/online/small/rivals|standing` — a cell AND a subsystem.
+
+    ⚠ Per CELL, not per subsystem. A cell is this tool's whole unit of
+    comparison, and rungs legitimately diverge by different amounts: Prince
+    reproduces at 1.01x and Emperor at 1.26x, and one number for both means
+    the tighter cell sets a bar the looser one was never going to clear. The
+    first version did that and Emperor passed only by sitting a hundredth
+    inside the margin.
+    """
+    return "/".join(str(part) for part in cell) + "|" + subsystem
+
+
 def worst_divergences(report: dict) -> dict[str, float]:
-    """The largest divergence each subsystem shows across every matched cell."""
+    """The divergence each cell's subsystem shows, keyed by both."""
     worst: dict[str, float] = {}
     for cell in report["matched_cells"]:
         for name, body in cell["subsystems"].items():
             if body.get("available"):
-                worst[name] = max(worst.get(name, 0.0), body["divergence"])
+                key = tolerance_key(cell["cell"], name)
+                worst[key] = max(worst.get(key, 0.0), body["divergence"])
     return worst
 
 
@@ -535,10 +616,12 @@ def render(report: dict) -> str:
         for subsystem in SUBSYSTEMS:
             body = cell["subsystems"][subsystem.name]
             if not body.get("available"):
-                lines.append(
-                    f"| {subsystem.name} | — | — | unavailable "
-                    f"({body['why']} side has no value) |"
+                why = (
+                    f"**not compared** — {body['incomparable']}"
+                    if body.get("why") == "incomparable"
+                    else f"unavailable ({body['why']} side has no value)"
                 )
+                lines.append(f"| {subsystem.name} | — | — | {why} |")
                 continue
             lines.append(
                 f"| {subsystem.name} | {body['live']:.2f} | {body['sim']:.2f} "
@@ -636,7 +719,7 @@ def write_tolerances(report: dict) -> dict[str, float]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--live", type=Path, default=LIVE_DEFAULT)
-    parser.add_argument("--sim", type=Path, default=SIM_DEFAULT)
+    parser.add_argument("--sim", type=Path, default=None)
     parser.add_argument("--json", type=Path)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--max", type=int, default=0, dest="most")
@@ -650,7 +733,7 @@ def main(argv: list[str] | None = None) -> int:
             "skipped on a machine with no recorded runs"
         )
         return 0
-    sim = sim_records(args.sim, map_sizes())
+    sim = sim_records(args.sim or SIM_DEFAULTS, map_sizes())
     report = ledger(live, sim)
 
     if args.json:
