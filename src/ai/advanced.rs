@@ -4944,6 +4944,11 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `chop-for-expansion`: while a city is building a Settler, a Builder
+    /// spends a charge clearing a feature or harvesting a resource for the
+    /// Production instead of improving a tile. Off ships the shipped
+    /// behaviour exactly.
+    chop_for_expansion: bool,
     /// `early-conquest-opening`: the opening this controller has committed
     /// to. `None` whenever the gene is off. See
     /// `advanced/early_conquest.rs`.
@@ -6800,6 +6805,10 @@ mod chase_every_boost;
 /// table and at most three committed side objectives. Opt-in gene
 /// `boost-planner`; see `advanced/boost_planner.rs`.
 mod boost_planner;
+/// `chop-for-expansion`: a Builder turns a forest into a Settler. The engine
+/// has always modelled feature removal and harvesting; nothing ever asked for
+/// one. See `advanced/chop_for_expansion.rs`.
+mod chop_for_expansion;
 
 mod site_lookahead;
 
@@ -7810,6 +7819,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
             denial_war: None,
@@ -33512,6 +33522,15 @@ impl AdvancedAi {
             if stepped {
                 return true;
             }
+        }
+        // `chop-for-expansion`: a Settler under production is a deadline, and
+        // the sweep below cannot see a chop — `worthwhile_improvements` ranks
+        // improvements, and a builder operation is not one. Placed after the
+        // project errand, which is an empire decision already taken, and ahead
+        // of repair and improvement, which have no deadline. `None` with the
+        // gene off, before anything is read.
+        if let Some(acted) = self.chop_for_expansion_step(g, pid, uid, strategy) {
+            return acted;
         }
         let repairable = g.map.get(current).is_some_and(|tile| {
             tile.pillaged
