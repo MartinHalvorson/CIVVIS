@@ -12684,6 +12684,25 @@ impl AdvancedAi {
         if generated <= 0.0 {
             return Yields::default();
         }
+        // Fuel plants convert each resource unit into Power; `power_generated`
+        // is not a fixed plant capacity. Credit only output the stock can fuel.
+        let generated = [
+            ("coal", "coal_per_power"),
+            ("oil", "oil_per_power"),
+            ("uranium", "uranium_per_power"),
+        ]
+        .into_iter()
+        .find_map(|(resource, key)| {
+            spec.effects
+                .get(key)
+                .filter(|rate| **rate > 0.0)
+                .map(|rate| {
+                    g.strategic_stockpile(city.owner, Name::new(resource))
+                        .max(0.0)
+                        / rate
+                })
+        })
+        .unwrap_or(generated);
         let demand = g.city_power_demand(city);
         let supply = g.city_power_supply(city);
         // Already powered: the yields are on and this plant adds none of them.

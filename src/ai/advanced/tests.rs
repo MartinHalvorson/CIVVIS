@@ -48669,3 +48669,57 @@ fn assigned_culture_keeps_faith_spending_during_a_counter_campaign() {
     let recovery = great_person_housing_plan(&game, GrandStrategy::Recovery);
     assert!(!culture.culture_lane_spends(&game, 0, &recovery));
 }
+
+#[test]
+fn power_plant_credit_uses_available_fuel_instead_of_one_resource_unit() {
+    let (mut game, _) = camp_bounty_board(93_606);
+    let cid = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, cid, "industrial_zone");
+    install_ai_test_district(&mut game, cid, "theater_square");
+    game.cities.get_mut(&cid).unwrap().buildings =
+        vec![crate::name!("factory"), crate::name!("broadcast_center")];
+    game.players[0].city_power.insert(cid, 0.0);
+    game.players[0].strategic_resources.clear();
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("coal"), 25.0);
+    let coal = game.rules.buildings["coal_power_plant"].clone();
+    let oil = game.rules.buildings["oil_power_plant"].clone();
+    let city = game.cities[&cid].clone();
+    assert_eq!(game.city_power_demand(&city), 5.0);
+    assert_eq!(
+        AdvancedAi::power_switched_on(&game, &city, &coal).culture,
+        4.0
+    );
+    assert_eq!(
+        AdvancedAi::power_switched_on(&game, &city, &oil).total(),
+        0.0
+    );
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("coal"), 1.0);
+    assert_eq!(
+        AdvancedAi::power_switched_on(&game, &city, &coal).total(),
+        0.0
+    );
+    game.players[0].city_power.insert(cid, 2.0);
+    assert_eq!(
+        AdvancedAi::power_switched_on(&game, &city, &coal).culture,
+        4.0
+    );
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("coal"), 0.0);
+    assert_eq!(
+        AdvancedAi::power_switched_on(&game, &city, &coal).total(),
+        0.0
+    );
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("coal"), 25.0);
+    game.players[0].city_power.insert(cid, 5.0);
+    assert_eq!(
+        AdvancedAi::power_switched_on(&game, &city, &coal).total(),
+        0.0
+    );
+}
