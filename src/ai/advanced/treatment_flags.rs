@@ -3934,6 +3934,16 @@ impl AdvancedAi {
     pub fn disable_counter_culture_by_conquest(&mut self) {
         self.counter_culture_by_conquest = false;
     }
+    /// A rival close to winning is answered before the lane's expansion rule.
+    /// See the `denial_outranks_expansion` field; opt-in gene
+    /// `denial-outranks-expansion`.
+    pub fn enable_denial_outranks_expansion(&mut self) {
+        self.denial_outranks_expansion = true;
+    }
+    /// The twin of `enable_denial_outranks_expansion`.
+    pub fn disable_denial_outranks_expansion(&mut self) {
+        self.denial_outranks_expansion = false;
+    }
 
     /// `boost-planner-builds`: the boost planner serves `building:` triggers.
     /// See `advanced/boost_planner.rs`.

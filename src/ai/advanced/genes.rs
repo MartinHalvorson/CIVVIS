@@ -2257,6 +2257,18 @@ pub const GENES: &[Gene] = &[
     // planned. This admits exactly that case; `building_near_mountain:` and
     // `themed_buildings` keep their Expensive reading.
     Gene { tag: "boost-planner-builds", field: "boost_planner_builds", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner_builds, disable: AdvancedAi::disable_boost_planner_builds },
+    // `denial-outranks-expansion` (2026-09-10): `actionable_denial` — a rival
+    // close to winning and a counter this seat can execute — was ranked BELOW
+    // the assigned lane in the strategy chain, and that lane answers
+    // "Expansion" while the empire is under its city target. On a four-civ
+    // Tiny Pangaea the target is six and the land holds five, so the lane
+    // never handed over and the denial never ran: two Emperor games lost to a
+    // religious victory at t278 and t163 with the board reading "the first
+    // half is reserved for expansion". With the gene on the denial is asked
+    // first. Same counter, same actionable test; only the order moves. Off;
+    // screen it, and force it on the live seat with `conversion-majority-alarm-2`
+    // so the religious clock is actually read.
+    Gene { tag: "denial-outranks-expansion", field: "denial_outranks_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_outranks_expansion, disable: AdvancedAi::disable_denial_outranks_expansion },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
