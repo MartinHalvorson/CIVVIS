@@ -734,3 +734,69 @@ fn an_assigned_culture_racer_keeps_conservation_while_behind_on_visitors() {
         "low accumulated tourism is not a verdict on an assigned Culture finish"
     );
 }
+
+#[test]
+fn a_ready_culture_museum_unlocks_archaeology_before_another_government() {
+    let mut g = board();
+    let withheld = [
+        "civil_engineering",
+        "natural_history",
+        "class_struggle",
+        "suffrage",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("monarchy".to_string());
+    g.players[0].civic = None;
+    let cid = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("archaeological_museum"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = true;
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut ready = g.clone();
+    ai.advanced_research(&mut ready, 0, &plan);
+    assert_eq!(ready.players[0].civic.as_deref(), Some("natural_history"));
+    ready.players[0]
+        .civics
+        .insert(crate::name!("natural_history"));
+    ready.players[0].civic = None;
+    ai.advanced_research(&mut ready, 0, &plan);
+    assert_eq!(ready.players[0].civic.as_deref(), Some("civil_engineering"));
+    plan.strategy = GrandStrategy::Recovery;
+    let mut recovery = g.clone();
+    ai.advanced_research(&mut recovery, 0, &plan);
+    assert_eq!(
+        recovery.players[0].civic.as_deref(),
+        Some("civil_engineering")
+    );
+    plan.strategy = GrandStrategy::Culture;
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .retain(|building| building != "archaeological_museum");
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("civil_engineering"));
+}
