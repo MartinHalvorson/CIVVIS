@@ -11,7 +11,9 @@ fn scanned_activity(game: &Game, city: &City, building: Name) -> bool {
     let wanted = game.district_family(family);
     city.districts.iter().any(|(district, position)| {
         game.district_family(*district) == wanted
-            && game.district_is_active(city, district, *position)
+            && !game.map.tiles[position].pillaged
+            && !(game.district_is_family(district, crate::name!("encampment"))
+                && city.encampment_pillaged)
     })
 }
 
