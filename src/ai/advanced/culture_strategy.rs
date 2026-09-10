@@ -5,6 +5,13 @@ use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::{Game, Item, QuickDeal};
 use std::collections::BTreeSet;
 
+/// An explicit Culture target must keep opening Theater Squares while the
+/// temporary war posture is Expansion, Conquest or Recovery. Those postures
+/// are allowed to price defense and expansion first, but letting them erase
+/// the district's lane bonus leaves the target with buildings to finish and
+/// no new tourism sources to host them.
+const CULTURE_TARGETED_THEATER_DISTRICT_BONUS: f64 = 850.0;
+
 /// Version one prepares at half the culture-victory bar. The Emperor ladder
 /// (`docs/civ6_ladder.json`) lost most of its games to a rival culture
 /// finish between turns 155 and 208, and one game with that defence in
@@ -176,7 +183,14 @@ impl AdvancedAi {
                 (spec.yields.culture.max(0.0), chain)
             }
             Item::District { district, .. } if g.district_family(*district) == "theater_square" => {
-                (2.0, 500.0)
+                let posture_bonus = if self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                    && strategy != GrandStrategy::Culture
+                {
+                    CULTURE_TARGETED_THEATER_DISTRICT_BONUS
+                } else {
+                    0.0
+                };
+                (2.0, 500.0 + posture_bonus)
             }
             _ => return 0.0,
         };
