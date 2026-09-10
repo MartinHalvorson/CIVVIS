@@ -2257,7 +2257,6 @@ pub const GENES: &[Gene] = &[
     // planned. This admits exactly that case; `building_near_mountain:` and
     // `themed_buildings` keep their Expensive reading.
     Gene { tag: "boost-planner-builds", field: "boost_planner_builds", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_planner_builds, disable: AdvancedAi::disable_boost_planner_builds },
-    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
@@ -2271,6 +2270,7 @@ pub const GENES: &[Gene] = &[
     // and `can_survive_by_attacking` still keeps a unit whose own shot ends the
     // threat. Off; screen it.
     Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
+    // ---- append: a-b ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
