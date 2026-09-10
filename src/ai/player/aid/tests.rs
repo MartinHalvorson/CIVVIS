@@ -65,8 +65,8 @@ fn overlapping_requests_choose_deadline_then_cost_then_target() {
 
 #[test]
 fn native_planning_logs_the_same_gift_without_mutating_its_source() {
-    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
-    for pid in 0..2 {
+    let mut game = Game::new_full(3, 24, 16, 41, 20, 0, false);
+    for pid in 0..3 {
         let unit = game
             .player_unit_ids(pid)
             .into_iter()
@@ -83,9 +83,21 @@ fn native_planning_logs_the_same_gift_without_mutating_its_source() {
         kind: "EMERGENCY_SEND_AID".into(),
         target: Some(1),
         ends: game.turn + 2,
-        scores: [(0, 50.0), (1, 200.0)].into(),
+        // The recipient is not a scoring member. A third major holds the lead.
+        scores: [(0, 50.0), (2, 200.0)].into(),
     });
     let mut view = game.player_decision_view(0);
+    let mut queued = view.clone();
+    let cid = queued.player_city_ids(0)[0];
+    queued.cities.get_mut(&cid).unwrap().queue = vec![Item::Project {
+        project: crate::name!("send_aid"),
+    }];
+    queued.cities.get_mut(&cid).unwrap().production = 1_000_000.0;
+    plan_native(&mut queued, 0);
+    assert!(
+        queued.log.is_empty(),
+        "a finishing own-city aid project must suppress the gift"
+    );
     plan_native(&mut view, 0);
     let (_, action) = view
         .log
