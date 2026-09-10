@@ -81,3 +81,12 @@ fn selecting_a_required_capital_still_waits_for_a_ready_army() {
         "a preparation target does not waive the war-readiness checks"
     );
 }
+
+#[test]
+fn capital_focus_preserves_the_required_capitals_owner_as_the_next_opponent() {
+    let (g, mut ai, _, capital) = capital_and_cheaper_city_state();
+    ai.enable_domination_capital_focus();
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(capital));
+}
