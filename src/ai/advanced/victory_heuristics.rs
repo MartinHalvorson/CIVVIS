@@ -649,7 +649,6 @@ mod tests {
         );
     }
 
-    #[test]
     /// `domination-lane-hands-over`: four cities on a board whose lane target is
     /// higher. Gene off, the lane keeps reading Expansion — the branch that held
     /// the live seat at 8 and 9 cities. Gene on, it follows its lane to war.
