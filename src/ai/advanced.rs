@@ -23757,7 +23757,7 @@ impl AdvancedAi {
         g: &mut Game,
         pid: usize,
         threatened_city: Option<u32>,
-    ) {
+    ) -> Option<(u32, Item)> {
         let active_major_war = g.players.iter().any(|player| {
             player.id != pid
                 && player.alive
@@ -23780,7 +23780,7 @@ impl AdvancedAi {
             && !self.native_emergency_purchase_on()
             && !armed_major_war_threat
         {
-            return;
+            return None;
         }
         let visible = armed_major_war_threat.then(|| self.battlefront_visibility(g, pid));
         let mut best: Option<(i32, u32, Option<Item>, Item)> = None;
@@ -23835,9 +23835,7 @@ impl AdvancedAi {
             }
         }
 
-        let Some((damage, city, committed, defence)) = best else {
-            return;
-        };
+        let (damage, city, committed, defence) = best?;
         let city_name = g.cities[&city].name.clone();
         if g.apply(
             pid,
@@ -23847,17 +23845,58 @@ impl AdvancedAi {
             },
         )
         .is_ok()
+        {
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                if let Some(committed) = committed {
+                    think!(self.journal(), Economy, Decision,
+                        "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
+                        "under fire or facing a confirmed siege with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
+                } else {
+                    think!(self.journal(), Economy, Decision,
+                        "{} starts {}", city_name, Self::plain_item(&defence);
+                        "under fire or facing a confirmed siege with {damage} combined city/wall health missing after a host queue release");
+                }
+            }
+            return Some((city, defence));
+        }
+        None
+    }
+
+    /// Restore the exact defense selected before diplomacy and production had
+    /// a chance to write another queue. Re-running the selector is not enough:
+    /// a city can be healthy and undamaged after the first handoff while its
+    /// original threat evidence has already been consumed by planning. Keep
+    /// the confirmed item authoritative for the rest of this turn, while
+    /// allowing an already-running defender to stand.
+    fn reapply_confirmed_defense_queue(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        claim: Option<&(u32, Item)>,
+    ) {
+        let Some((city, defence)) = claim else {
+            return;
+        };
+        let current = g.cities.get(city).and_then(|city| city.queue.first());
+        if current.is_some_and(|current| {
+            current == defence || Self::active_queue_is_defensive(g, current)
+        }) {
+            return;
+        }
+        let city_name = g.cities[city].name.clone();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: *city,
+                item: defence.clone(),
+            },
+        )
+        .is_ok()
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
-            if let Some(committed) = committed {
-                think!(self.journal(), Economy, Decision,
-                    "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
-                    "under fire or facing a confirmed siege with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
-            } else {
-                think!(self.journal(), Economy, Decision,
-                    "{} starts {}", city_name, Self::plain_item(&defence);
-                    "under fire or facing a confirmed siege with {damage} combined city/wall health missing after a host queue release");
-            }
+            think!(self.journal(), Economy, Decision,
+                "{} restores {}", city_name, Self::plain_item(defence);
+                "a later production writer replaced the already-confirmed defensive queue; the threat handoff remains authoritative for this turn");
         }
     }
 
@@ -40140,7 +40179,8 @@ impl AdvancedAi {
         // major-war branch disappear on exactly the turn a threatened city
         // needed it. The final queue-authority reapply runs after production
         // below, once every ordinary queue writer has had its turn.
-        self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
+        let confirmed_defense_queue =
+            self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
@@ -40338,11 +40378,13 @@ impl AdvancedAi {
         // The first defense handoff above must run before diplomacy so an
         // offered peace cannot erase the active-war evidence it needs. Every
         // production route runs after that handoff, however, and can replace
-        // the same city's wall or defender in the same turn. Reapply the
+        // the same city's wall or defender in the same turn. Re-run the
+        // selector for any newly observed threat, then restore the exact
         // already-confirmed defense after those writers and after the final
-        // queue rescue, so a wounded city cannot finish the turn on a campus,
-        // project, or unrelated unit.
+        // queue rescue, so a city cannot finish the turn on a campus, project,
+        // or unrelated unit.
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
+        self.reapply_confirmed_defense_queue(g, pid, confirmed_defense_queue.as_ref());
         if active_victory_target.is_some() && self.war_plan.is_none() && !surprise_defense_purchase
         {
             let counts = self.counts(g, pid);
