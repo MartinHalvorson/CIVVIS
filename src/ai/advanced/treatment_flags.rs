@@ -220,7 +220,7 @@ impl AdvancedAi {
     /// selling duplicate works to make room. A class earned and blocked
     /// reserves a city for the slot building, district, wonder or soldier that
     /// lifts the block, and a due cultural person sells duplicate works to make
-    /// room. See [`AdvancedAi::great_person_housing`]. Opt-in gene.
+    /// room. See [`AdvancedAi::great_person_housing`]. Production gene.
     pub fn enable_great_person_housing(&mut self) {
         self.great_person_housing = true;
     }
@@ -3928,6 +3928,21 @@ impl AdvancedAi {
         self.conquest_takes_the_soft_city = false;
     }
 
+    /// `counter-culture-by-conquest`: answer a culture leader with war aimed
+    /// at its Great Works. See `advanced/victory_heuristics.rs`.
+    pub fn enable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = true;
+    }
+
+    /// The twin of `enable_counter_culture_by_conquest`.
+    pub fn disable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = false;
+    }
+
+    /// The army's turn planned from a ranked Objective Board — rows valued in
+    /// hammers with a requirement and a deadline — and served by persistent
+    /// task forces, in place of proximity force groups and the posture
+    /// ladder; `force_groups` is built from the forces. See `objective_board`.
     pub fn enable_objective_board(&mut self) {
         self.objective_board = true;
     }

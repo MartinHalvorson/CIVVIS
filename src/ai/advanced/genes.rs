@@ -596,10 +596,12 @@ pub const GENES: &[Gene] = &[
     // `AdvancedAi::early_contact_window`.
     Gene { tag: "early-contact-window", field: "early_contact_window", kind: Kind::OptIn, enable: AdvancedAi::enable_early_contact_window, disable: AdvancedAi::disable_early_contact_window },
     Gene { tag: "early-contact-window-2", field: "early_contact_window_2", kind: Kind::OptIn, enable: AdvancedAi::enable_early_contact_window_2, disable: AdvancedAi::disable_early_contact_window_2 },
-    // A Great Person earned and blocked is a race forfeited: build the slot
-    // space ahead of the person, sell duplicate works when nothing can be
-    // built; see `AdvancedAi::great_person_housing`.
-    Gene { tag: "great-person-housing", field: "great_person_housing", kind: Kind::OptIn, enable: AdvancedAi::enable_great_person_housing, disable: AdvancedAi::disable_great_person_housing },
+    // Promoted 2026-09-10: the repeated standard screen measured +1.50 pp
+    // wins (z +3.46), +0.375 pp score share (z +4.12), and +1.11% ±1.02%
+    // compute. A Great Person earned and blocked is a race forfeited: build
+    // the slot space ahead of the person, sell duplicate works when nothing
+    // can be built; see `AdvancedAi::great_person_housing`.
+    Gene { tag: "great-person-housing", field: "great_person_housing", kind: Kind::Production, enable: AdvancedAi::enable_great_person_housing, disable: AdvancedAi::disable_great_person_housing },
     // A surprise war priced on what the board exposes — an unescorted
     // Settler or Builder, a cluster of unpillaged tiles — taken by movement
     // and closed by peace; see `AdvancedAi::opportunistic_war`.
@@ -2234,6 +2236,15 @@ pub const GENES: &[Gene] = &[
     // demotes capital-ness to the field under it — same fields, same
     // tie-breaks, so the capital still wins among equally garrisoned cities.
     Gene { tag: "conquest-takes-the-soft-city", field: "conquest_takes_the_soft_city", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_takes_the_soft_city, disable: AdvancedAi::disable_conquest_takes_the_soft_city },
+    // Every arm of `denial_response_for_pressure` reaches Conquest except
+    // Culture, which answers a rival about to win by racing it and has no gene
+    // to choose otherwise — and culture is the lane the live ladder loses to,
+    // six rival finishes between standard turns 155 and 208. Capturing a city
+    // takes its Great Works, so it removes the rival's tourism and adds it to
+    // ours in one action; no other lane's counter does that. This gives Culture
+    // the same Conquest answer on the same urgency bar, and aims
+    // `victory_suppression_city` at the Theatre Square.
+    Gene { tag: "counter-culture-by-conquest", field: "counter_culture_by_conquest", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_culture_by_conquest, disable: AdvancedAi::disable_counter_culture_by_conquest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
