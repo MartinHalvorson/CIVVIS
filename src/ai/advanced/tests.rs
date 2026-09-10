@@ -21689,7 +21689,8 @@ fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
     assert!(BasicAi::safe_trade_origin(&game, 0, safe));
     assert!(!BasicAi::safe_trade_origin(&game, 0, remote));
 
-    let control = AdvancedAi::new();
+    let mut control = AdvancedAi::new();
+    control.disable_solvency_first_trade_slot();
     let control_counts = control.counts(&game, 0);
     assert!(
         control.production_value(&game, 0, safe, &trader, &plan, &control_counts) < -9_000.0,
@@ -21720,14 +21721,14 @@ fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
         "the remote alarm receives no Trader order"
     );
 
-    assert!(!AdvancedAi::new().base.solvency_first_trade_slot);
+    assert!(AdvancedAi::new().base.solvency_first_trade_slot);
     assert!(!AdvancedAi::legacy().base.solvency_first_trade_slot);
     assert!(
         crate::ai::advanced::gene_ledger::ledger_default_on("solvency-first-trade-slot").is_some(),
         "the batch rule decides its default from its batch columns"
     );
     let gene = crate::ai::gene("solvency-first-trade-slot").expect("registered gene");
-    assert!(gene.opt_in());
+    assert!(gene.production());
     assert!(gene.screenable());
 }
 

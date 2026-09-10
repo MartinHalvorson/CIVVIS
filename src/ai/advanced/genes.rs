@@ -937,7 +937,11 @@ pub const GENES: &[Gene] = &[
     // usable empty slot after immediate local defence and test the producing
     // origin itself; ordinary and frozen controllers keep the global veto.
     // Appended at the END so a running screen keeps its positional genome.
-    Gene { tag: "solvency-first-trade-slot", field: "solvency_first_trade_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_solvency_first_trade_slot, disable: AdvancedAi::disable_solvency_first_trade_slot },
+    // Promoted 2026-09-10: the three latest standard screens keep this gene
+    // first, at +92/+101/+104 scaled wins per 10,000 seats, with a +5.17 pp
+    // aggregate on/off difference over 47,640 measured seats. The local fire
+    // above still pins the remote-alarm safety boundary.
+    Gene { tag: "solvency-first-trade-slot", field: "solvency_first_trade_slot", kind: Kind::Production, enable: AdvancedAi::enable_solvency_first_trade_slot, disable: AdvancedAi::disable_solvency_first_trade_slot },
     // 2026-08-24 operator goal: "much stronger tactical smarts and planning
     // for taking enemy cities, particularly for weaker enemies … analyze
     // neighboring enemies' military strength (public information) and their
@@ -2222,6 +2226,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "chop-for-expansion", field: "chop_for_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_for_expansion, disable: AdvancedAi::disable_chop_for_expansion },
     // Appended above the markers, so a running screen keeps its positional
     // gene index and the append points stay free at the tail.
+    // `TargetRank` leads with `not_the_capital`, so the early conquest opening
+    // aims at the one city on the board that is reliably defended and the
+    // garrison field below it only breaks ties. 2 cities taken against 65 lost
+    // over 111 Emperor games. This ranks by the visible garrison first and
+    // demotes capital-ness to the field under it — same fields, same
+    // tie-breaks, so the capital still wins among equally garrisoned cities.
+    Gene { tag: "conquest-takes-the-soft-city", field: "conquest_takes_the_soft_city", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_takes_the_soft_city, disable: AdvancedAi::disable_conquest_takes_the_soft_city },
     // `boost-planner` can only ever make an objective of three trigger
     // families — `improvement*`, `units_of:` and `district:`. `building:` is
     // the LARGEST family in the two trees, 21 of the 115 boost rows, and it is
