@@ -1,8 +1,6 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
 pub mod finishing;
-#[cfg(test)]
-mod opening_defense_tests;
 pub mod player;
 use crate::game::{
     effective_strength, expected_damage, Action, ActionFamilies, Game, Item, PolicyReadSet,
@@ -28472,3 +28470,6 @@ mod attack_envelope_key_tests {
 
 #[cfg(test)]
 mod recovery_project_tests;
+
+#[cfg(test)]
+mod opening_defense_tests;
