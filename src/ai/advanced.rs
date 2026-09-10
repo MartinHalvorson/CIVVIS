@@ -7170,6 +7170,7 @@ impl AdvancedAi {
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
         ai.research_economy = true;
+        ai.enable_solvency_first_trade_slot();
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;
