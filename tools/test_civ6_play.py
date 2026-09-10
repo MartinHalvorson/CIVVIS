@@ -1931,6 +1931,7 @@ class MapPickerTests(unittest.TestCase):
 
         with mock.patch.object(civ6_play, "screenshot", return_value=True), \
              mock.patch.object(civ6_play, "_map_picker_labels", labels), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]), \
              mock.patch.object(civ6_play, "_map_picker_open", side_effect=picker_open), \
              mock.patch.object(civ6_play, "_map_picker_page_labels", page_labels), \
              mock.patch.object(civ6_play, "_setup_current_value", current_value), \
@@ -2106,11 +2107,13 @@ class MapPickerTests(unittest.TestCase):
         casefolds both to one string — so taking the first match clicks the
         heading, which does nothing, and the game never starts."""
         with mock.patch.object(civ6_play, "_map_picker_labels",
-                               return_value=[(432, 120), (432, 566), (432, 300)]):
+                               return_value=[(432, 120), (432, 566), (432, 300)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
             self.assertEqual(
                 civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS),
                 (432, 566))
-        with mock.patch.object(civ6_play, "_map_picker_labels", return_value=[]):
+        with mock.patch.object(civ6_play, "_map_picker_labels", return_value=[]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
             self.assertIsNone(
                 civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS))
 
