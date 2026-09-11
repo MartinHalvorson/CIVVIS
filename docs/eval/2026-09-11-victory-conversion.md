@@ -91,3 +91,7 @@ submitted to the deployment ledger.
 Repository tooling ran 2,910 tests: 2,907 passed and two skipped. The sole
 failure was the stale `civvis_orders.rs` hotspot in `docs/ROADMAP.md`; its
 obsolete target row was removed and the full hotspot test suite then passed.
+
+After that repair, the complete tooling suite was rerun: 2,910 tests,
+two skipped, no failures (`python3 -m unittest discover -s tools -p
+'test_*.py'`).
