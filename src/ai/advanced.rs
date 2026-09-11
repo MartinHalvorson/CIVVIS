@@ -15618,6 +15618,17 @@ impl AdvancedAi {
         }
 
         let city_ids = g.player_city_ids(pid);
+        if self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && city_ids.iter().any(|cid| {
+                g.cities[cid].districts.iter().any(|(district, pos)| {
+                    g.district_family(*district) == "theater_square"
+                        && !g.map.tiles[pos].pillaged
+                        && g.district_yields(*district, *pos).culture > 0.0
+                })
+            })
+        {
+            desired.push("aesthetics");
+        }
         let unit_ids = g.player_unit_ids(pid);
         let settlers = unit_ids
             .iter()
@@ -15661,7 +15672,19 @@ impl AdvancedAi {
                     Some(Item::Unit { unit }) if unit == "builder"
                 )
             });
-            let expansion_active = settler_queued || city_ids.len() + settlers < city_goal;
+            // The production pass rejects unsuitable settlement sites even
+            // below the city goal. Use its site gate before giving a Culture
+            // policy slot to a Settler that no city would start.
+            let expansion_active = settler_queued
+                || (city_ids.len() + settlers < city_goal
+                    && (self.active_victory_target(g) != Some(VictoryTarget::Culture)
+                        || !(self.settler_site_gate || self.rapid_city_expansion_2)
+                        || city_ids.iter().any(|cid| {
+                            let city = &g.cities[cid];
+                            city.pop >= 2
+                                && self.settler_expansion_window_open(g, pid, *cid)
+                                && self.settler_site_gate(g, pid, city.pos, settlers).is_ok()
+                        })));
             if expansion_active || builder_queued {
                 const TIMED_ECONOMY: [&str; 6] = [
                     "expropriation",

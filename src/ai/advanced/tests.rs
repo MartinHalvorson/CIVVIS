@@ -21192,6 +21192,75 @@ fn live_war_economy_recovers_before_rearming_a_bankrupt_army() {
 }
 
 #[test]
+fn culture_uses_aesthetics_when_settler_production_has_no_site() {
+    let (mut game, city, home) = empire_with_a_capital(79_099);
+    game.at_war.clear();
+    game.cities.get_mut(&city).unwrap().pop = 3;
+    game.players[0].government = Some("chiefdom".into());
+    game.players[0].civics.extend([
+        crate::name!("code_of_laws"),
+        crate::name!("early_empire"),
+        crate::name!("medieval_faires"),
+    ]);
+    game.players[0].policies = [crate::name!("discipline"), crate::name!("colonization")].into();
+    let theater = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 1)
+        .unwrap();
+    game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("acropolis"));
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("acropolis"), theater);
+    assert!(game.district_yields(crate::name!("acropolis"), theater).culture > 0.0);
+    // Leave only the city and its adjacent Theater: no other city fits.
+    for tile in game
+        .map
+        .tiles
+        .values_mut()
+        .filter(|tile| tile.pos != home && tile.pos != theater)
+    {
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        tile.resource = None;
+    }
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_wide_map_capacity();
+    ai.enable_settler_site_gate();
+    ai.plan = Some(StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    });
+    assert!(ai.settler_site_gate(&game, 0, home, 0).is_err());
+    let mut queued = game.clone();
+    queued.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("settler"),
+    }];
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Culture);
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("aesthetics")));
+    assert!(!game.players[0]
+        .policies
+        .contains(&crate::name!("colonization")));
+    ai.strategic_policies(&mut queued, 0, GrandStrategy::Culture);
+    assert!(
+        queued.players[0]
+            .policies
+            .contains(&crate::name!("colonization")),
+        "an existing Settler queue still gets its production card"
+    );
+}
+
+#[test]
 fn live_policy_timing_slots_colonization_while_the_city_plan_is_short() {
     let (mut game, city, _) = empire_with_a_capital(79_099);
     game.cities.get_mut(&city).unwrap().pop = 3;
