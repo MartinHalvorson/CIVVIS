@@ -996,27 +996,30 @@ end;
 -- Do this before planning: an unnamed band's empty activation highlights must
 -- not strand it before it can ever receive a concert order. Requests are async;
 -- a later snapshot supplies the name and refreshed destinations.
-local rockBandNameRequests = {};
-function CivvisNameRockBands(player, pid, turn)
-    for _, unit in player:GetUnits():Members() do
-        pcall(function()
-            local row = GameInfo.Units[unit:GetUnitType()];
-            if row == nil or row.UnitType ~= "UNIT_ROCK_BAND" then return; end
-            local current = unit:GetName();
-            if current == nil or current ~= row.Name then return; end
-            local command = UnitCommandTypes.NAME_UNIT;
-            local parameter = UnitCommandTypes.PARAM_NAME;
-            if command == nil or parameter == nil then return; end
-            local key = tostring(pid) .. ":" .. tostring(unit:GetID());
-            if rockBandNameRequests[key] == turn then return; end
-            local params = {};
-            params[parameter] = "Civvis Band " .. tostring(unit:GetID());
-            if not UnitManager.CanStartCommand(unit, command, false) then return; end
-            rockBandNameRequests[key] = turn;
-            UnitManager.RequestCommand(unit, command, params);
-            emit("rock_band_name_requested", { turn = turn, unit = unit:GetID(), name = params[parameter] });
-        end);
+do
+    local rockBandNameRequests = {};
+    function CivvisNameRockBands(player, pid, turn)
+        for _, unit in player:GetUnits():Members() do
+            pcall(function()
+                local row = GameInfo.Units[unit:GetUnitType()];
+                if row == nil or row.UnitType ~= "UNIT_ROCK_BAND" then return; end
+                local current = unit:GetName();
+                if current == nil or current ~= row.Name then return; end
+                local command = UnitCommandTypes.NAME_UNIT;
+                local parameter = UnitCommandTypes.PARAM_NAME;
+                if command == nil or parameter == nil then return; end
+                local key = tostring(pid) .. ":" .. tostring(unit:GetID());
+                if rockBandNameRequests[key] == turn then return; end
+                local params = {};
+                params[parameter] = "Civvis Band " .. tostring(unit:GetID());
+                if not UnitManager.CanStartCommand(unit, command, false) then return; end
+                rockBandNameRequests[key] = turn;
+                UnitManager.RequestCommand(unit, command, params);
+                emit("rock_band_name_requested", { turn = turn, unit = unit:GetID(), name = params[parameter] });
+            end);
+        end
     end
+
 end
 
 -- SelectedUnit_Expansion2.lua:65-70 asks this unit's RockBand component for
