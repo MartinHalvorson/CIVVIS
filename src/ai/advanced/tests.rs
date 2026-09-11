@@ -48853,3 +48853,91 @@ fn assigned_culture_keeps_faith_spending_during_a_counter_campaign() {
     let recovery = great_person_housing_plan(&game, GrandStrategy::Recovery);
     assert!(!culture.culture_lane_spends(&game, 0, &recovery));
 }
+
+#[test]
+fn culture_unlocks_bands_before_the_late_government_ladder() {
+    let (mut game, _, _) = empire_with_a_capital(79_174);
+    game.at_war.clear();
+    game.turn = 174;
+    game.max_turns = 250;
+    let withheld = [
+        "cold_war",
+        "professional_sports",
+        "cultural_heritage",
+        "space_race",
+        "environmentalism",
+        "social_media",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    game.players[0].civics = game
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|c| !withheld.contains(&c.as_str()))
+        .collect();
+    game.players[0].government = Some("democracy".into());
+    game.players[1].government = Some("corporate_libertarianism".into());
+    game.players[0].civic = None;
+    game.players[0]
+        .boosted_civics
+        .insert(crate::name!("professional_sports"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = true;
+    ai.enable_culture_cold_war_window();
+    ai.chase_every_boost = true;
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert_eq!(ai.culture_civic_goal(&game, 0), Some("cold_war"));
+    assert!(ai
+        .government_ladder_goal(&game, 0, GrandStrategy::Culture)
+        .is_some());
+    let mut parks = game.clone();
+    parks.players[0]
+        .civics
+        .remove(&crate::name!("conservation"));
+    ai.advanced_research(&mut parks, 0, &plan);
+    assert_eq!(parks.players[0].civic.as_deref(), Some("conservation"));
+    parks.players[0].civic = None;
+    ai.culture_cold_war_window = false;
+    ai.advanced_research(&mut parks, 0, &plan);
+    assert_eq!(
+        parks.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+    ai.enable_culture_cold_war_window();
+    let mut culture = game.clone();
+    ai.advanced_research(&mut culture, 0, &plan);
+    assert_eq!(culture.players[0].civic.as_deref(), Some("cold_war"));
+    culture.players[0].civics.insert(crate::name!("cold_war"));
+    culture.players[0].civic = None;
+    ai.advanced_research(&mut culture, 0, &plan);
+    assert_eq!(
+        culture.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+    plan.strategy = GrandStrategy::Recovery;
+    let mut recovery = game.clone();
+    ai.advanced_research(&mut recovery, 0, &plan);
+    assert_eq!(
+        recovery.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+    plan.strategy = GrandStrategy::Culture;
+    ai.culture_cold_war_window = false;
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+}

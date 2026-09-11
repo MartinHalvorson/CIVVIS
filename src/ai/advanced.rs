@@ -14506,6 +14506,20 @@ impl AdvancedAi {
                 {
                     self.culture_museum_unlock_goal(g, pid)
                 }
+                // The active Culture plan needs its Faith-to-tourism unlocks.
+                // A later government's cheapest path can postpone Conservation
+                // and take Professional Sports before Cold War.
+                GrandStrategy::Culture
+                    if self.culture_cold_war_window
+                        && plan.strategy == GrandStrategy::Culture
+                        && !self.lane_lost
+                        && matches!(
+                            self.culture_civic_goal(g, pid),
+                            Some("conservation" | "cold_war")
+                        ) =>
+                {
+                    self.culture_civic_goal(g, pid)
+                }
                 // See `government_ladder`: the same sentence one rung up. The
                 // tier-1 arm above exists because "a victory beeline cannot
                 // usefully precede the government's policy capacity"; tier 2
