@@ -17734,7 +17734,8 @@ impl AdvancedAi {
         target: usize,
         objective: Pos,
     ) -> Vec<u32> {
-        g.player_unit_ids(pid)
+        let eligible: Vec<u32> = g
+            .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
                 let unit = &g.units[uid];
@@ -17743,7 +17744,47 @@ impl AdvancedAi {
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
                     && unit.hp as f64 > self.base.w.withdraw_hp
-                    && self.campaign_staging_position(g, pid, target, *uid, objective, unit.pos)
+            })
+            .collect();
+        let front: Vec<u32> = eligible
+            .iter()
+            .copied()
+            .filter(|uid| {
+                self.campaign_staging_position(g, pid, target, *uid, objective, g.units[uid].pos)
+            })
+            .collect();
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) || front.len() < 3 {
+            return front;
+        }
+        // A narrow border can fill the entire 3–5 ring before the army meets
+        // either launch bill. Count the rear rank that can join that actual
+        // vanguard, without moving the assembly posts or lowering the bill.
+        // Require a route to within one tile of a front unit in at most two
+        // steps; distance alone would count troops behind an impassable ridge.
+        eligible
+            .into_iter()
+            .filter(|uid| {
+                if front.contains(uid) {
+                    return true;
+                }
+                let unit = &g.units[uid];
+                let distance = g.wdist(unit.pos, objective);
+                if !(6..=8).contains(&distance) {
+                    return false;
+                }
+                let tile = &g.map.tiles[&unit.pos];
+                let territory = tile
+                    .owner_city
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.owner);
+                !g.rules.is_water(tile)
+                    && territory != Some(target)
+                    && territory.is_none_or(|owner| owner == pid || g.has_open_borders(pid, owner))
+                    && front.iter().any(|vanguard| {
+                        g.wdist(unit.pos, g.units[vanguard].pos) <= 3
+                            && g.route_distance(*uid, g.units[vanguard].pos, 1)
+                                .is_some_and(|steps| steps <= 2)
+                    })
             })
             .collect()
     }
@@ -41377,3 +41418,6 @@ mod opening_walk_tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod campaign_staging_reserve_tests;
