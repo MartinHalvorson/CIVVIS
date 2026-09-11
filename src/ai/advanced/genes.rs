@@ -2287,6 +2287,18 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "domination-lane-hands-over", field: "domination_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_lane_hands_over, disable: AdvancedAi::disable_domination_lane_hands_over },
     Gene { tag: "domination-siege-research", field: "domination_siege_research", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research, disable: AdvancedAi::disable_domination_siege_research },
     Gene { tag: "domination-capital-focus", field: "domination_capital_focus", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_capital_focus, disable: AdvancedAi::disable_domination_capital_focus },
+    // Appended above the markers, so a running screen keeps its positional
+    // gene index and the append points stay free at the tail.
+    // `expansion_hall` prices the Ancestral Hall for the land grab and cannot
+    // reach the plot it stands on: it prices a BUILDING and says so. Over the
+    // 38 recorded live runs of 2026-09-10/11 a Government Plaza stands in 25 at
+    // a median turn 112 and the Hall in 8 at a median turn 119, while the
+    // fourth city the opening band needs by turn 60 arrives at a median 77 —
+    // so the +50% Settlers land 59 turns late and 17 of 25 plazas never host
+    // them. This is `amenity_district_path`'s empty-plot repair on the
+    // expansion axis, at the building arm's own constants and its own
+    // shortfall scale.
+    Gene { tag: "expansion-hall-district", field: "expansion_hall_district", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_hall_district, disable: AdvancedAi::disable_expansion_hall_district },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

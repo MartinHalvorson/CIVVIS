@@ -4260,6 +4260,14 @@ impl AdvancedAi {
         self.domination_capital_focus = false;
     }
 
+    /// See `AdvancedAi::expansion_hall_district`.
+    pub fn enable_expansion_hall_district(&mut self) {
+        self.expansion_hall_district = true;
+    }
+    pub fn disable_expansion_hall_district(&mut self) {
+        self.expansion_hall_district = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
