@@ -65,3 +65,43 @@ assert(CivvisRockBandConcertPlots(unit, 'UNIT_ROCK_BAND') == nil)
 unit.GetRockBand = function() error('API unavailable') end
 assert(CivvisRockBandConcertPlots(unit, 'UNIT_ROCK_BAND') == nil)
 print('Rock Band highlights: coordinates, empty and unavailable readings passed')
+
+-- Naming is independent of a concert order, since an unnamed band may export
+-- no activation destinations. Preserve custom names and bound async retries.
+GameInfo.Units[1] = { UnitType = 'UNIT_ROCK_BAND', Name = 'LOC_UNIT_ROCK_BAND_NAME' }
+local bandName = 'LOC_UNIT_ROCK_BAND_NAME'
+unit.GetName = function() return bandName end
+UnitCommandTypes.NAME_UNIT = 501
+UnitCommandTypes.PARAM_NAME = 'name'
+local nameRequests, canName = 0, true
+UnitManager.CanStartCommand = function(u, command, testVisible)
+    assert(u == unit and command == 501 and testVisible == false)
+    return canName
+end
+UnitManager.RequestCommand = function(u, command, params)
+    assert(u == unit and command == 501 and params.name == 'Civvis Band 92')
+    nameRequests = nameRequests + 1
+end
+local player = { GetUnits = function() return { Members = function() return ipairs({unit}) end } end }
+CivvisNameRockBands(player, 0, 199)
+assert(nameRequests == 1)
+CivvisNameRockBands(player, 0, 199)
+assert(nameRequests == 1, 'pending name requests must not repeat in one turn')
+CivvisNameRockBands(player, 0, 200)
+assert(nameRequests == 2, 'a name absent on the next turn may retry')
+bandName = 'Existing Band'
+CivvisNameRockBands(player, 0, 201)
+assert(nameRequests == 2, 'preserve names already assigned by the host or user')
+bandName = 'LOC_UNIT_ROCK_BAND_NAME'
+canName = false
+CivvisNameRockBands(player, 0, 202)
+assert(nameRequests == 2, 'respect native command denial')
+canName = true
+GameInfo.Units[1].UnitType = 'UNIT_BUILDER'
+CivvisNameRockBands(player, 0, 203)
+assert(nameRequests == 2, 'only name Rock Bands')
+GameInfo.Units[1].UnitType = 'UNIT_ROCK_BAND'
+unit.GetName = function() error('unreadable') end
+CivvisNameRockBands(player, 0, 204)
+assert(nameRequests == 2, 'unknown names must not be overwritten')
+print('Rock Band naming: prerequisite, pending retry, existing names and refusal passed')
