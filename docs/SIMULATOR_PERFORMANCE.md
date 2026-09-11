@@ -4342,6 +4342,33 @@ falling host (10.07 → 6.35), resolves twice as tightly, and has no positive
 reading in 24 pairs. Quote the range, or quote the confirm block and say which
 it is.
 
+### ⭐ The CI runner reads it nearly twice as large — −11.68%
+
+`speed.yml`'s own paired gate is a third measurement, on hardware nobody in this
+session chose, against the base commit (run `34560777465`):
+
+    -11.68% per completed turn (median of 5 pairs) -- same game on every seed
+    spread: IQR 2.57pp over [-14.66%, -10.17%]; this run resolves +/-1.70%
+    pooled -11.92%; load average 4.50 at start, 4.50 peak, 1.02 at end
+    within the +8.00% budget, per completed turn
+
+Every one of its 5 pairs lands between −10.17% and −14.66%. Counting it with the
+two local blocks, that is **47 paired games across two machine classes, every
+single one reporting "same game on every seed."**
+
+⚠ **Quote the machine with the number.** This host reads −4% to −7%; the runner
+reads −11.7%. The gap is not noise — the runner's pairs do not overlap this
+host's at all — so there is no single figure for "the speedup," and a future
+reader comparing a ledger row to one of these must know which machine produced
+it. `docs/speed_ledger.json` already records the runner at 2.57× this host's
+cost per turn, so the two are not measuring the same computer in any respect.
+
+⭐ **That reading matters on its own terms, not merely as confirmation.** CI
+`cargo-test` is roughly 11 minutes per run at about 40 pull requests a day, and
+it is the second-ranked operational cost on this project's perf list. A
+simulator that costs 11.7% less per turn on the runner pays there as well as in
+screen throughput, and unlike the screen, nobody has to schedule it.
+
 ### What this buys, and why it was worth a task
 
 Nothing about the agent is stronger. The screen is what gets stronger: seats per
