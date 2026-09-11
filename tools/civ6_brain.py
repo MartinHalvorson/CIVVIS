@@ -111,6 +111,26 @@ class LiveRuntime:
     brain: Path
 
 
+def read_event_lines(events: Path, offset: int) -> tuple[list[str], int]:
+    """Consume only newline-terminated records from the append-only journal.
+
+    A poll can race a large board write. Leave its unfinished tail at the
+    previous byte offset, including any split UTF-8 character, for the next
+    poll; otherwise the JSON parser discards the board and the game waits.
+    """
+    with events.open("r", encoding="utf-8", errors="replace") as handle:
+        handle.seek(offset)
+        fresh = handle.readlines()
+        if fresh and not fresh[-1].endswith("\n"):
+            fresh.pop()
+            # Only the write-race path needs a second pass. TextIO's seek
+            # cookie keeps byte offsets correct even for split UTF-8 or CRLF.
+            handle.seek(offset)
+            for _ in fresh:
+                handle.readline()
+        return fresh, handle.tell()
+
+
 def board_age_seconds(event: dict, now: datetime | None = None) -> float | None:
     """Seconds between the harness receiving this board (`utc`, stamped by
     `civ6_play.record`) and `now`; None for a board that carries no stamp.
@@ -683,6 +703,12 @@ class Decider:
             print(f"[brain] IGNORING non-response line on the decider's stdout: "
                   f"{line.strip()[:160]}", flush=True)
             return self.ask(turn)
+        if "decision" in payload:
+            # Preserve the native action plan AND the final emitted orders.
+            # SQLite rows can be replaced by a later frame or a reload; this
+            # append-only record retains the exact answer that was considered.
+            from civ6_decision_trace import record_decision
+            record_decision(self.run_dir, payload, str(self.binary))
         rows = [
             (str(o.get("kind", "")), o.get("subject"), o.get("verb"),
              o.get("x"), o.get("y"))
@@ -1153,10 +1179,7 @@ def main() -> int:
         if not events.exists():
             time.sleep(0.5)
             continue
-        with events.open("r", errors="replace") as handle:
-            handle.seek(offset)
-            fresh = handle.readlines()
-            offset = handle.tell()
+        fresh, offset = read_event_lines(events, offset)
         for raw in fresh:
             try:
                 event = json.loads(raw)

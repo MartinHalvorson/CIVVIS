@@ -436,35 +436,23 @@ WOUNDED_HP = 45
 def evacuation_section(
     events: list[dict[str, Any]], local_player: int | None
 ) -> dict[str, Any] | None:
-    """Whether the seat's evacuations happen, from the run's own events.
+    """Observed movement before combat deaths, not proof of failed execution.
 
-    Measured on the 32 ledger runs of 2026-08-30..09-01 that reached turn
-    100: 461 of our units died in combat, 408 of them to barbarians; 352
-    were at or below 50 HP when the killing blow landed and 334 had been
-    hit on an earlier turn and left in reach. The order on the death turn
-    was, in most cases, a `MOVE_TO` — and 383 of the 461 made no host move
-    on the turn before they died. The decision to leave was taken; the leg
-    the host accepted never happened. That is the shape this section
-    counts, so a run can say whether the mod-side answer
-    (`CivvisBoard.moveNoop` / `move_fallback`) changed it.
+    The historical ``deaths_after_unexecuted_move`` key is retained for ladder
+    consumers. It counts victims ordered to move on the death turn or the one
+    before with no subsequent observed position change before death. A later
+    move supersedes an older failed attempt. Both host movement events and
+    consecutive exported positions provide progress evidence; missing movement
+    telemetry alone cannot establish that an order never executed.
 
-    - ``deaths``: our units killed by a unit.
-    - ``deaths_wounded_at_turn_start``: of those, at or below `WOUNDED_HP`
-      on the first frame of the turn they died — the recovery line had
-      already been crossed when the turn began.
-    - ``deaths_after_unexecuted_move``: of those, ordered `MOVE_TO` on the
-      death turn or the one before with no host move on that turn.
-    - ``move_noop`` / ``move_fallback``: the mod's same-pass answers, with
-      the host's reasons.
-
-    `None` when the run has no `combat` event at all (a mod that predates
-    the ledger), which is a different statement from a run with no deaths.
+    Wounded-at-turn-start uses the first frame. No combat telemetry returns
+    ``None``, distinct from a recording with no deaths.
     """
     if not any(event.get("kind") == "combat" for event in events):
         return None
     states = _states(events)
-    deaths: list[tuple[int, int]] = []
-    for event in events:
+    deaths: list[tuple[int, int, int]] = []
+    for index, event in enumerate(events):
         if event.get("kind") != "combat":
             continue
         attacker = event.get("attacker") or {}
@@ -478,12 +466,13 @@ def evacuation_section(
             and isinstance(defender.get("id"), int)
             and isinstance(event.get("turn"), int)
         ):
-            deaths.append((defender["id"], event["turn"]))
+            deaths.append((defender["id"], event["turn"], index))
     move_orders: set[tuple[int, int]] = set()
-    host_moves: set[tuple[int, int]] = set()
+    progress: dict[int, list[tuple[int, int, int]]] = collections.defaultdict(list)
+    previous_positions: dict[int, tuple[int, tuple[int, int]]] = {}
     noop_reasons: collections.Counter = collections.Counter()
     fallback_reasons: collections.Counter = collections.Counter()
-    for event in events:
+    for index, event in enumerate(events):
         kind = event.get("kind")
         turn = event.get("turn")
         if not isinstance(turn, int):
@@ -494,21 +483,36 @@ def evacuation_section(
             ):
                 move_orders.add((event["subject"], turn))
         elif kind == "host_move" and isinstance(event.get("unit"), int):
-            host_moves.add((event["unit"], turn))
+            before = (event.get("from_x"), event.get("from_y"))
+            after = (event.get("x"), event.get("y"))
+            if before != after and all(isinstance(v, int) for v in (*before, *after)):
+                progress[event["unit"]].append((turn, turn, index))
+        elif kind == "state":
+            for uid, unit in _own_units(event).items():
+                position = (unit.get("x"), unit.get("y"))
+                if not all(isinstance(v, int) for v in position):
+                    continue
+                if uid in previous_positions:
+                    previous_turn, previous_position = previous_positions[uid]
+                    if previous_position != position:
+                        progress[uid].append((previous_turn, turn, index))
+                previous_positions[uid] = (turn, position)
         elif kind == "move_noop":
             noop_reasons[str(event.get("why") or "unknown")] += 1
         elif kind == "move_fallback":
             fallback_reasons[str(event.get("why") or "unknown")] += 1
     wounded = 0
     unexecuted = 0
-    for uid, turn in deaths:
+    for uid, turn, death_index in deaths:
         board = states.get(turn)
         if board is not None:
             hp = _own_units(board).get(uid, {}).get("hp")
             if isinstance(hp, (int, float)) and hp <= WOUNDED_HP:
                 wounded += 1
-        if any(
-            (uid, t) in move_orders and (uid, t) not in host_moves for t in (turn, turn - 1)
+        ordered_turns = [t for t in (turn - 1, turn) if (uid, t) in move_orders]
+        if ordered_turns and not any(
+            min(ordered_turns) <= from_turn <= moved_turn <= turn and index < death_index
+            for from_turn, moved_turn, index in progress[uid]
         ):
             unexecuted += 1
     return {
@@ -522,15 +526,44 @@ def evacuation_section(
     }
 
 
-def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
+def roster_section(
+    events: list[dict[str, Any]], unit_orders: list | tuple = (),
+    local_player: int | None = None,
+) -> dict[str, Any]:
     states = _states(events)
     turns = sorted(states)
     gone: collections.Counter = collections.Counter()
     gone_by_kind: collections.Counter = collections.Counter()
     salvageable = 0
+    formed = 0
+    formations: dict[int, dict[int, set[tuple[str, Any, Any]]]] = {}
+    for turn, _, subject, verb, owner, partner in unit_orders:
+        if verb in ("FORM_CORPS", "FORM_ARMY"):
+            formations.setdefault(turn, {}).setdefault(subject, set()).add((verb, owner, partner))
     for i, turn in enumerate(turns[:-1]):
         now = _own_units(states[turn])
         nxt = _own_units(states[turns[i + 1]])
+        # A planned merge alone is not proof: the partner must disappear and
+        # the surviving subject must gain the requested military formation.
+        # Restrict to consecutive turns so an old order cannot explain a later loss.
+        combined = set()
+        if turns[i + 1] == turn + 1 and local_player is not None:
+            for subject, attempts in formations.get(turn, {}).items():
+                # Multiple different partners leave the consumed donor ambiguous.
+                if len(attempts) != 1:
+                    continue
+                verb, owner, partner = next(iter(attempts))
+                tier = {"FORM_CORPS": 1, "FORM_ARMY": 2}[verb]
+                if owner != local_player:
+                    continue
+                before, after = now.get(subject, {}), nxt.get(subject, {})
+                donor = now.get(partner, {})
+                before_tier = before.get("formation")
+                if (subject != partner and donor and partner not in nxt
+                        and before.get("kind") == donor.get("kind") == after.get("kind")
+                        and isinstance(before_tier, int) and before_tier < tier
+                        and after.get("formation") == tier):
+                    combined.add(partner)
         hostiles = _hostile_plots(states[turn])
         gold = states[turn].get("gold")
         for uid, unit in now.items():
@@ -538,6 +571,10 @@ def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
                 continue
             kind = str(unit.get("kind") or "?")
             gone_by_kind[kind] += 1
+            if uid in combined:
+                formed += 1
+                gone["confirmed_formation"] += 1
+                continue
             pos = (int(unit["x"]), int(unit["y"]))
             near = any(hex_distance(pos, plot) <= 2 for plot in hostiles)
             if (unit.get("hp") or 0) <= SALVAGEABLE_HP:
@@ -548,15 +585,14 @@ def roster_section(events: list[dict[str, Any]]) -> dict[str, Any]:
                 gone["hostile_within_2"] += 1
             else:
                 gone["no_visible_threat"] += 1
-    lost = sum(gone.values())
+    total = sum(gone.values())
+    lost = total - formed
     return {
-        "military_units_gone": lost,
-        # ⭐ HOW MANY OF THEM THE SEAT SAW COMING. A unit last seen at or
-        # below `SALVAGEABLE_HP` is one the controller had a turn's warning
-        # about and could have rotated, withdrawn or healed out of; the rest
-        # were killed from a health it had no reason to act on. The two are
-        # different failures and only one of them is worth a preservation
-        # change. The arena reports the same share as `salvag.`.
+        "military_units_gone": total,
+        "confirmed_formation_removals": formed,
+        "unattributed_removals": lost,
+        # Unattributed removals are potential losses, not proven combat deaths.
+        # Confirmed corps/army donors must not inflate the rescue opportunity.
         "lost_when_salvageable": salvageable,
         "salvageable_share": round(salvageable / lost, 2) if lost else None,
         "context_at_last_sight": dict(gone),
@@ -1057,7 +1093,7 @@ def ledger(run_dir: Path, hof: Path | None = None) -> dict[str, Any]:
         "arrival": arrival_section(events, unit_orders),
         "combat": combat_section(events, local_player),
         "evacuation": evacuation_section(events, local_player),
-        "roster": roster_section(events),
+        "roster": roster_section(events, unit_orders, local_player),
         "hover": hover_section(events, unit_orders),
         "engagement": engagement_section(events, local_player),
     }
@@ -1185,8 +1221,8 @@ def render(report: dict[str, Any]) -> str:
         lines.append(
             f"           {evacuation['deaths']} of ours killed by a unit: "
             f"{evacuation['deaths_wounded_at_turn_start']} began that turn at or below "
-            f"{WOUNDED_HP} hp, {evacuation['deaths_after_unexecuted_move']} had a MOVE_TO that "
-            f"never executed on that turn or the one before; host answered "
+            f"{WOUNDED_HP} hp, {evacuation['deaths_after_unexecuted_move']} had a MOVE_TO "
+            f"on that turn or the one before with no subsequent observed movement before death; host answered "
             f"{evacuation['move_noop']} no-op legs with {evacuation['move_fallback']} fallback steps"
         )
     roster = report["roster"]
@@ -1194,10 +1230,10 @@ def render(report: dict[str, Any]) -> str:
         f"  roster   {roster['military_units_gone']} military units left the board: "
         + ", ".join(f"{k} {n}" for k, n in roster["context_at_last_sight"].items())
     )
-    if roster["military_units_gone"]:
+    if roster["unattributed_removals"]:
         lines.append(
             f"           {roster['lost_when_salvageable']} were last seen at or below "
-            f"{SALVAGEABLE_HP} hp ({_fmt_share(roster['salvageable_share'])}) — the losses the "
+            f"{SALVAGEABLE_HP} hp ({_fmt_share(roster['salvageable_share'])} of unattributed removals) — potential losses the "
             f"seat had a turn's warning of"
         )
     hover = report["hover"]

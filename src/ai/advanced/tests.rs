@@ -882,6 +882,57 @@ fn armed_siege_preempts_an_imminent_major_war_queue_with_a_defender() {
 }
 
 #[test]
+fn imminent_defense_uses_host_wall_completion_time() {
+    let (mut game, city, _) = empire_with_a_capital(71_148);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    let ai = AdvancedAi::new();
+    let defender = ai.base.best_military(&game, 0, city, Some(false)).unwrap();
+    let defender = Item::Unit {
+        unit: Name::new(&defender),
+    };
+    let wall = Item::Building {
+        building: crate::name!("walls"),
+    };
+    assert!(game.can_produce(0, city, &wall));
+    for (wall_turns, defender_turns, expect_wall) in [
+        (Some(2.0), Some(2.0), true),
+        (Some(1.0), Some(2.0), true),
+        (Some(3.0), Some(2.0), false),
+        (None, Some(2.0), false),
+        (Some(2.0), None, false),
+        (Some(-1.0), Some(2.0), false),
+        (Some(f64::NAN), Some(2.0), false),
+    ] {
+        std::sync::Arc::make_mut(&mut game.host_buildable).insert(
+            city,
+            [
+                (
+                    Game::production_block_key(&wall),
+                    crate::game::HostMenuEntry {
+                        cost: None,
+                        turns: wall_turns,
+                    },
+                ),
+                (
+                    Game::production_block_key(&defender),
+                    crate::game::HostMenuEntry {
+                        cost: None,
+                        turns: defender_turns,
+                    },
+                ),
+            ]
+            .into(),
+        );
+        let chosen = ai.preemptive_major_war_defense_item(&game, 0, city, Some(city), true, true);
+        assert_eq!(
+            chosen.as_ref(),
+            Some(if expect_wall { &wall } else { &defender }),
+            "wall {wall_turns:?}, defender {defender_turns:?}"
+        );
+    }
+}
+
+#[test]
 fn armed_siege_buys_an_immediate_defender_before_a_wall_can_finish() {
     // A production handoff cannot save a city when the battlefront can already
     // attack its City Center. The armed live treatment must spend an actually
@@ -2328,7 +2379,17 @@ fn visible_border_staging_fills_one_local_garrison_without_preemption() {
     let settler = Item::Unit {
         unit: crate::name!("settler"),
     };
-    committed.cities.get_mut(&ours).expect("capital").queue = vec![settler.clone()];
+    // This is a legal commitment, not a population-one blocked Settler.
+    committed.cities.get_mut(&ours).expect("capital").pop = 2;
+    committed
+        .apply(
+            0,
+            &Action::Produce {
+                city: ours,
+                item: settler.clone(),
+            },
+        )
+        .unwrap();
     ai.advanced_production(&mut committed, 0, &plan, false);
     assert_eq!(
         committed.cities[&ours].queue.first(),
@@ -2721,6 +2782,9 @@ fn the_live_city_target_climbs_one_rung_per_era_of_the_settler_game() {
     // seat; hold it out here so the rungs themselves stay pinned. See
     // `the_land_grab_wants_the_land_not_a_rung` for the seat as deployed.
     live.disable_land_grab();
+    // Tournament defaults may enable a separate difficulty-based horizon;
+    // withhold it here so this regression continues to isolate the rung clock.
+    live.disable_expansion_scales_with_difficulty();
     let mut paced = live.clone();
     paced.shared_city_target = false;
     let mut stock_pace = paced.clone();
@@ -8436,7 +8500,7 @@ fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
         assessed_turn: game.turn,
         rush: false,
     };
-    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     assert!(game.legal_actions(0).iter().any(|action| {
         matches!(
             action,
@@ -8951,7 +9015,7 @@ fn expansion_dispatch_and_late_window_are_independent_on_online() {
 }
 
 #[test]
-fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
+fn a_requested_city_state_campaign_preserves_its_suzerain() {
     let mut game = Game::new_full(2, 30, 18, 711, 300, 1, false);
     for pid in 0..2 {
         let settler = game
@@ -8978,7 +9042,10 @@ fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
         game.spawn_test_unit("giant_death_robot", 1, rival_capital);
     }
 
-    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    // A requested city-state front can override capital priority, but it
+    // still cannot turn our own suzerained city-state into a legal target.
+    ai.forced_target_player = Some(minor);
     let exposed = ai.assess(&game, 0);
     assert_eq!(exposed.strategy, GrandStrategy::Conquest);
     assert_eq!(exposed.target_player, Some(minor));
@@ -11417,6 +11484,55 @@ fn victory_specialization_starts_at_the_game_halfway_point() {
 }
 
 #[test]
+fn culture_buildup_keeps_the_city_target_while_starting_the_culture_plan() {
+    let mut game = Game::new_full(2, 44, 28, 76_008, 250, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let all: Vec<_> = game.map.tiles.keys().copied().collect();
+    game.players[0].explored.extend(all);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.city_target_floor = 4;
+    game.turn = 83;
+    assert_eq!(ai.assess(&game, 0).strategy, GrandStrategy::Expansion);
+    game.turn = 84;
+    let plan = ai.assess(&game, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Culture);
+    assert!(
+        plan.desired_cities >= 4,
+        "buildup must keep asking for a larger empire"
+    );
+}
+
+#[test]
+fn assigned_culture_starts_buildup_before_the_shared_halfway_boundary() {
+    let mut game = Game::new(2, 24, 16, 76_007, 250, 0);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    game.turn = 83;
+    assert!(!culture.phase_specialization_active(&game));
+    game.turn = 84;
+    assert!(
+        culture.phase_specialization_active(&game),
+        "Culture needs time to accumulate tourism"
+    );
+    assert!(!science.phase_specialization_active(&game));
+    assert!(!AdvancedAi::new().phase_specialization_active(&game));
+    game.max_turns = 650;
+    assert!(
+        culture.phase_specialization_active(&game),
+        "an extended verification cap must not delay buildup"
+    );
+    game.turn = 125;
+    assert!(science.phase_specialization_active(&game));
+}
+
+#[test]
 fn extending_an_online_verification_game_does_not_delay_specialization() {
     let mut game = Game::new(2, 24, 16, 76_005, 650, 0);
     game.game_speed = crate::setup::GameSpeed::Online;
@@ -13051,6 +13167,7 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     }
 
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let adaptive = AdvancedAi::new();
     let plan = StrategicPlan {
         strategy: GrandStrategy::Science,
         target_player: None,
@@ -13156,6 +13273,11 @@ fn science_spaceport_queues_follow_the_project_milestones() {
         "launch_earth_satellite".to_string(),
         "launch_moon_landing".to_string(),
     ]);
+    assert_eq!(
+        adaptive.science_spaceport_target(&game, 0),
+        2,
+        "the adaptive Science lane follows the same Moon milestone"
+    );
     let counts = ai.counts(&game, 0);
     let phase_two: Vec<(u32, Item, f64)> = cities
         .iter()
@@ -13175,6 +13297,24 @@ fn science_spaceport_queues_follow_the_project_milestones() {
         admitted.len(),
         1,
         "Moon permits exactly one second launch site: {phase_two:?}"
+    );
+    let adaptive_counts = adaptive.counts(&game, 0);
+    let adaptive_phase_two: Vec<f64> = cities
+        .iter()
+        .copied()
+        .filter(|city| *city != opening)
+        .map(|city| {
+            let item = spaceport_item(&game, city);
+            adaptive.production_value(&game, 0, city, &item, &plan, &adaptive_counts)
+        })
+        .collect();
+    assert_eq!(
+        adaptive_phase_two
+            .iter()
+            .filter(|value| **value > -10_000.0)
+            .count(),
+        1,
+        "the adaptive lane must reserve only one second launch site: {adaptive_phase_two:?}"
     );
     let second = admitted[0].0;
     let second_item = admitted[0].1.clone();
@@ -13203,6 +13343,11 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     game.players[0]
         .science_projects
         .insert("launch_mars_colony".to_string());
+    assert_eq!(
+        adaptive.science_spaceport_target(&game, 0),
+        3,
+        "the adaptive Science lane follows the Mars milestone"
+    );
     let counts = ai.counts(&game, 0);
     let phase_three = cities
         .iter()
@@ -13216,6 +13361,20 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     assert_eq!(
         phase_three, 1,
         "Mars unlocks one final laser-flight Spaceport, not every remaining city"
+    );
+    let adaptive_counts = adaptive.counts(&game, 0);
+    let adaptive_phase_three = cities
+        .iter()
+        .copied()
+        .filter(|city| *city != opening && *city != second)
+        .filter(|city| {
+            let item = spaceport_item(&game, *city);
+            adaptive.production_value(&game, 0, *city, &item, &plan, &adaptive_counts) > -10_000.0
+        })
+        .count();
+    assert_eq!(
+        adaptive_phase_three, 1,
+        "the adaptive lane must reserve one final launch site"
     );
 }
 
@@ -14945,6 +15104,18 @@ fn promoted_amenity_repair_reaches_strategic_production_once_per_turn() {
         1,
         "the strategic handoff reserves one amenity district per turn: {repaired:?}"
     );
+    let repaired_city = repaired[0];
+    let reserved_repair = game.cities[&repaired_city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the first strategic pass leaves the repair queued");
+    live.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&repaired_city].queue.first(),
+        Some(&reserved_repair),
+        "a second strategic review must not replace an amenity repair in deficit"
+    );
 
     let mut frozen = AdvancedAi::legacy();
     frozen.advanced_production(&mut frozen_board, 0, &plan, false);
@@ -14955,6 +15126,70 @@ fn promoted_amenity_repair_reaches_strategic_production_once_per_turn() {
                 if frozen_board.district_family(*district) == "entertainment_complex"
         )),
         "the frozen strategic controller keeps the historical queue path"
+    );
+}
+
+#[test]
+fn widespread_amenity_repair_survives_strategic_queue_review() {
+    // The live Culture seat reserved an Entertainment Complex for a broad
+    // deficit, then the same turn's strategic review replaced it with a
+    // Builder. Keep the repair that the pre-production handoff owns.
+    let (mut game, capital, home) = empire_with_a_capital(71_117);
+    clear_barbarian_fixture(&mut game);
+    game.at_war.clear();
+    game.players[0]
+        .civics
+        .insert(crate::name!("games_recreation"));
+
+    let mut cities = vec![capital];
+    for _ in 0..3 {
+        cities.push(found_nearby_test_city(&mut game, 0, home));
+    }
+    for &cid in &cities {
+        game.cities.get_mut(&cid).unwrap().pop = 6;
+        install_ai_test_district(&mut game, cid, "campus");
+        let modeled = game.city_amenity_surplus(&game.cities[&cid]);
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
+            .insert(cid, -1 - modeled);
+        assert_eq!(game.city_amenity_surplus(&game.cities[&cid]), -1);
+    }
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge_universe();
+    live.victory_target = Some(VictoryTarget::Culture);
+    assert!(live.amenity_project_preemption);
+    live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
+    let repair_city = cities
+        .iter()
+        .copied()
+        .find(|cid| {
+            matches!(
+                game.cities[cid].queue.first(),
+                Some(Item::District { district, .. })
+                    if game.district_family(*district) == "entertainment_complex"
+            )
+        })
+        .expect("the widespread crisis reserves one Entertainment Complex");
+    let reserved = game.cities[&repair_city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the repair queue is present before review");
+
+    live.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&repair_city].queue.first(),
+        Some(&reserved),
+        "ordinary strategic production must not replace the amenity repair"
     );
 }
 
@@ -15418,6 +15653,34 @@ fn a_culture_target_reaches_the_theater_building_debt() {
         owed > unowed,
         "a Culture-targeted seat reaches the debt instead of the non-Culture veto: {owed} vs {unowed}"
     );
+
+    // An explicit Culture contract still has to open the district while the
+    // war planner is temporarily in Recovery. The normal district value is
+    // present in both arms; this larger gap pins the targeted lane's recovery
+    // handoff rather than merely proving that Culture is valued when the plan
+    // already says Culture.
+    let district_city = found_test_city(&mut game, 0);
+    let theater_site = game
+        .district_sites(district_city, crate::name!("theater_square"))
+        .into_iter()
+        .next()
+        .expect("the second city has a legal Theater Square site");
+    let theater = Item::District {
+        district: crate::name!("theater_square"),
+        pos: theater_site,
+    };
+    let recovery = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan
+    };
+    let targeted_recovery =
+        treated.production_value(&game, 0, district_city, &theater, &recovery, &counts);
+    let untargeted_recovery =
+        AdvancedAi::new().production_value(&game, 0, district_city, &theater, &recovery, &counts);
+    assert!(
+        targeted_recovery > untargeted_recovery + 10.0,
+        "the explicit Culture target preserves a strong Theater district bid during Recovery: {targeted_recovery} vs {untargeted_recovery}"
+    );
 }
 
 #[test]
@@ -15665,6 +15928,67 @@ fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
             .filter(|city| !game.cities[city].queue.is_empty())
             .count(),
         1
+    );
+
+    // The city can regain one amenity before the next strategic review while
+    // the other cities remain broadly short. The Arena is still the crisis
+    // repair and must survive that transient recovery.
+    let arena_city = cities[1..]
+        .iter()
+        .copied()
+        .find(|city| {
+            matches!(
+                game.cities[city].queue.first(),
+                Some(Item::Building { building }) if *building == crate::name!("arena")
+            )
+        })
+        .expect("the direct crisis reservation is an Arena");
+    let reserved_arena = game.cities[&arena_city]
+        .queue
+        .first()
+        .cloned()
+        .expect("the Arena remains queued before review");
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).remove(&arena_city);
+    let modeled = game.city_amenity_surplus(&game.cities[&arena_city]);
+    std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments)
+        .insert(arena_city, -modeled);
+    assert_eq!(
+        game.city_amenity_surplus(&game.cities[&arena_city]),
+        0,
+        "the reserved city's host-observed amenity count recovered"
+    );
+    assert!(AdvancedAi::widespread_amenity_pressure(&game, 0));
+    live.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&arena_city].queue.first(),
+        Some(&reserved_arena),
+        "a broad crisis keeps its Arena through a transient local recovery"
+    );
+
+    // The same empire-wide crisis must stay committed during Recovery. The
+    // t136 live handoff entered both the strategic Recovery plan and the
+    // treasury recovery predicate, then replaced Ephesus's new Entertainment
+    // Complex with a Builder even though every city remained under pressure.
+    game.at_war.clear();
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -1.0;
+    let mut recovery_live = AdvancedAi::targeting(VictoryTarget::Culture);
+    recovery_live.enable_live_bridge_universe();
+    recovery_live.enable_war_economy();
+    let recovery_plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan
+    };
+    assert!(recovery_live.live_war_economy_requires_recovery(
+        &game,
+        0,
+        &recovery_live.counts(&game, 0)
+    ));
+    recovery_live.advanced_production(&mut game, 0, &recovery_plan, false);
+    assert_eq!(
+        game.cities[&arena_city].queue.first(),
+        Some(&reserved_arena),
+        "a broad crisis keeps its Arena during Recovery and treasury recovery"
     );
 }
 
@@ -19764,6 +20088,26 @@ fn culture_patronage_waits_for_compatible_great_work_slots() {
     game.players[0].gpp.insert("writer".to_string(), cost - 5.0);
     game.players[0].gold = 500.0;
     let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let mut live = game.clone();
+    live.players[0].live_great_person_offers = Some(["writer".to_string()].into_iter().collect());
+    let individual = live.current_great_person("writer").unwrap().0.to_string();
+    live.players[0]
+        .live_great_person_offer_individuals
+        .insert("writer".to_string(), individual);
+    assert!(
+        live.can_activate_current_great_person(0, "writer"),
+        "native recruitment may legally hold a person for future slots"
+    );
+    ai.advanced_great_people(&mut live, 0, GrandStrategy::Culture);
+    assert_eq!(
+        live.players[0]
+            .gp_claimed
+            .get("writer")
+            .copied()
+            .unwrap_or(0),
+        0,
+        "paid Culture patronage must still wait for space on a named live offer"
+    );
 
     ai.advanced_great_people(&mut game, 0, GrandStrategy::Culture);
     assert_eq!(
@@ -19784,6 +20128,36 @@ fn culture_patronage_waits_for_compatible_great_work_slots() {
     install_ai_test_district(&mut game, city, "theater_square");
     ai.advanced_great_people(&mut game, 0, GrandStrategy::Culture);
     assert_eq!(game.players[0].gp_claimed["writer"], 1);
+    let mut adaptive = live.clone();
+    AdvancedAi::new().advanced_great_people(&mut adaptive, 0, GrandStrategy::Culture);
+    assert_eq!(
+        adaptive.players[0].gp_claimed["writer"], 1,
+        "the assigned-Culture guard does not change adaptive patronage"
+    );
+    live.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    install_ai_test_district(&mut live, city, "theater_square");
+    assert!(live.can_house_additional_great_work(0, "writing"));
+    live.players[0].live_open_great_work_slots = Some(Default::default());
+    ai.advanced_great_people(&mut live, 0, GrandStrategy::Culture);
+    assert_eq!(
+        live.players[0]
+            .gp_claimed
+            .get("writer")
+            .copied()
+            .unwrap_or(0),
+        0,
+        "observed occupied slots override hypothetical model capacity"
+    );
+    live.players[0].live_open_great_work_slots = Some(["writing".to_string()].into());
+    ai.advanced_great_people(&mut live, 0, GrandStrategy::Culture);
+    assert_eq!(
+        live.players[0].gp_claimed["writer"], 1,
+        "a named live offer can be patronized once compatible space opens"
+    );
 }
 
 #[test]
@@ -21738,7 +22112,8 @@ fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
     assert!(BasicAi::safe_trade_origin(&game, 0, safe));
     assert!(!BasicAi::safe_trade_origin(&game, 0, remote));
 
-    let control = AdvancedAi::new();
+    let mut control = AdvancedAi::new();
+    control.disable_solvency_first_trade_slot();
     let control_counts = control.counts(&game, 0);
     assert!(
         control.production_value(&game, 0, safe, &trader, &plan, &control_counts) < -9_000.0,
@@ -21769,14 +22144,14 @@ fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
         "the remote alarm receives no Trader order"
     );
 
-    assert!(!AdvancedAi::new().base.solvency_first_trade_slot);
+    assert!(AdvancedAi::new().base.solvency_first_trade_slot);
     assert!(!AdvancedAi::legacy().base.solvency_first_trade_slot);
     assert!(
         crate::ai::advanced::gene_ledger::ledger_default_on("solvency-first-trade-slot").is_some(),
         "the batch rule decides its default from its batch columns"
     );
     let gene = crate::ai::gene("solvency-first-trade-slot").expect("registered gene");
-    assert!(gene.opt_in());
+    assert!(gene.production());
     assert!(gene.screenable());
 }
 
@@ -25282,8 +25657,8 @@ fn live_capture_lessons_enable_route_recovery_without_the_hysteresis_gene() {
 
     let mut native = AdvancedAi::new();
     native.enable_engine_repairs();
-    assert!(!native.live_settler_capture_lessons);
-    assert!(!native.settler_routing_recovery_on());
+    assert!(native.live_settler_capture_lessons);
+    assert!(native.settler_routing_recovery_on());
 }
 
 /// `one_shot_recovery` lives on `BasicAi`, which is where `healing_step`
@@ -29276,7 +29651,7 @@ fn immediate_kill_priority_finishes_barbarians_and_wartime_units() {
     };
     let mut ai = AdvancedAi::new();
     let legal = game.legal_actions_within(0, ActionFamilies::UNITS);
-    let finished = ai.prioritize_immediate_kills(&mut game, 0, &plan);
+    let finished = ai.prioritize_immediate_kills(&mut game, 0, &plan, &BTreeSet::new());
     assert_eq!(
         finished, 2,
         "each available positive exchange must finish its removable target; \
@@ -32710,7 +33085,7 @@ fn envoy_income_census() {
 /// A fixture that can legally build a named wonder: three cities so the
 /// lane guards are satisfied, the buildings and adjacent district the
 /// wonder requires, and one owned tile shaped to its terrain sheet.
-fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
+pub(super) fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     let mut game = Game::new_with(crate::game::GameOptions {
         barbarians: false,
         ..crate::game::GameOptions::new(2, 40, 28, seed, 250, 6)
@@ -32738,7 +33113,7 @@ fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
             {
                 break;
             }
-            game.units.remove(&settler);
+            game.remove_unit(settler);
         }
     }
 
@@ -32803,7 +33178,7 @@ fn strategic_wonder_fixture(seed: u64, wonder: &str) -> (Game, u32) {
     (game, city)
 }
 
-fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
+pub(super) fn wonder_plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
     StrategicPlan {
         strategy,
         target_player: None,
@@ -33072,6 +33447,33 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
             .collect(),
     );
     assert!(live.victory_pressure_is_urgent(&game, 1, rising));
+    assert_eq!(
+        live.denial_response_for_pressure(&game, 0, 100, 1, rising),
+        Some(GrandStrategy::Culture),
+        "the projected alarm must reach the response, even with an assigned lane's 100 preference"
+    );
+    let diplomacy = VictoryFocus {
+        strategy: GrandStrategy::Diplomacy,
+        progress: 60,
+    };
+    assert_eq!(
+        live.denial_response_for_pressure(&game, 0, 100, 1, diplomacy),
+        Some(GrandStrategy::Diplomacy)
+    );
+
+    let mut targeted = AdvancedAi::targeting(VictoryTarget::Culture);
+    targeted.enable_live_bridge();
+    targeted.deny_while_targeted = true;
+    targeted.stock_pressure_history = live.stock_pressure_history.clone();
+    assert_eq!(
+        targeted.actionable_victory_denial_with_culture_pressures(
+            &game,
+            0,
+            &BTreeMap::from([(1, 60)]),
+        ),
+        Some((1, GrandStrategy::Culture)),
+        "an assigned lane receives the actionable forecast before the raw bar"
+    );
 
     // A flat or receding leader clamps to the raw reading: not urgent.
     live.stock_pressure_history
@@ -33094,6 +33496,10 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
         progress: 60,
     };
     assert!(!live.victory_pressure_is_urgent(&game, 1, science));
+    assert_eq!(
+        live.denial_response_for_pressure(&game, 0, 0, 1, science),
+        None
+    );
 
     // The withhold arm restores the raw bar exactly.
     let mut withheld = AdvancedAi::new();
@@ -33106,6 +33512,10 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
             .collect(),
     );
     assert!(!withheld.victory_pressure_is_urgent(&game, 1, rising));
+    assert_eq!(
+        withheld.denial_response_for_pressure(&game, 0, 0, 1, rising),
+        None
+    );
 
     // The published withhold row reaches the same flag.
     let row = GENES
@@ -33635,7 +34045,8 @@ fn a_writer_at_the_price_with_no_slot_starts_an_amphitheater_whatever_the_lane()
     };
     assert!(game.can_produce(0, capital, &amphitheater));
 
-    let stock = AdvancedAi::new();
+    let mut stock = AdvancedAi::new();
+    stock.disable_great_person_housing();
     assert_eq!(
         stock.stuck_great_people(&game, 0),
         vec![StuckGreatPerson {
@@ -33793,7 +34204,9 @@ fn a_due_writer_no_city_can_house_sells_a_duplicate_and_recruits() {
     };
 
     let mut kept = game.clone();
-    assert!(!AdvancedAi::new().great_person_housing(&mut kept, 0, &plan));
+    let mut stock = AdvancedAi::new();
+    stock.disable_great_person_housing();
+    assert!(!stock.great_person_housing(&mut kept, 0, &plan));
     assert_eq!(writing_works(&kept, 0), 2);
     assert_eq!(claimed(&kept), 0);
 
@@ -33949,22 +34362,26 @@ fn districts_are_reserved_only_for_a_due_person_and_the_music_chain_walks_its_pr
     );
 }
 
-/// The gene is an opt-in: off in every bundle, flippable by name, in
-/// `PRODUCTION_OPT_INS`.
+/// The gene is production-on, still flippable by name, and registered as a
+/// production row.
 #[test]
-fn great_person_housing_is_a_native_opt_in() {
-    let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge_universe();
-    assert!(!ai.great_person_housing);
+fn great_person_housing_is_a_native_production_gene() {
+    let ai = AdvancedAi::new();
+    assert!(ai.great_person_housing);
+    assert!(!AdvancedAi::legacy().great_person_housing);
     let enable = GENES
         .iter()
         .find(|gene| gene.tag == "great-person-housing")
-        .expect("an opt-in row")
+        .expect("a production row")
         .enable;
+    let mut ai = AdvancedAi::legacy();
     enable(&mut ai);
     assert!(ai.great_person_housing);
     ai.disable_great_person_housing();
     assert!(!ai.great_person_housing);
+    let gene = crate::ai::gene("great-person-housing").expect("registered gene");
+    assert!(gene.production());
+    assert!(gene.screenable());
 }
 
 /// ★★★★ FIVE OF THIRTY-SIX SEATS ENDED THE PROBE GAMES WITH ENGINEER POINTS
@@ -34507,18 +34924,21 @@ fn raid_settler_board() -> (Game, u32, u32) {
     (game, warrior, settler)
 }
 
-/// The gene is an opt-in: off in every bundle, flippable by name, in
-/// `PRODUCTION_OPT_INS`, and switching it off forgets any open raid.
+/// The genes are production-on, still flippable by name, and switching the
+/// raid off forgets any open raid.
 #[test]
-fn opportunistic_war_is_a_native_opt_in() {
-    let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge_universe();
-    assert!(!ai.opportunistic_war);
+fn opportunistic_war_is_a_native_production_gene() {
+    let ai = AdvancedAi::new();
+    assert!(ai.opportunistic_war);
+    assert!(!ai.raid_pillage_prizes);
+    assert!(!AdvancedAi::legacy().opportunistic_war);
+    assert!(!AdvancedAi::legacy().raid_pillage_prizes);
     let enable = GENES
         .iter()
         .find(|gene| gene.tag == "opportunistic-war")
-        .expect("an opt-in row")
+        .expect("a production row")
         .enable;
+    let mut ai = AdvancedAi::legacy();
     enable(&mut ai);
     assert!(ai.opportunistic_war);
     ai.raid_war = Some(opportunistic_war::RaidWar {
@@ -34542,6 +34962,12 @@ fn opportunistic_war_is_a_native_opt_in() {
     assert!(ai.raid_pillage_prizes);
     ai.disable_raid_pillage_prizes();
     assert!(!ai.raid_pillage_prizes);
+    assert!(crate::ai::gene("opportunistic-war")
+        .expect("registered gene")
+        .production());
+    assert!(!crate::ai::gene("raid-pillage-prizes")
+        .expect("registered gene")
+        .production());
 }
 
 /// An unescorted enemy Settler two tiles from our warrior is a prize worth a
@@ -34652,7 +35078,9 @@ fn a_raid_is_not_a_reason_to_plan_a_conquest() {
     );
     assert_ne!(plan.strategy, GrandStrategy::Recovery);
     // The same war without the gene's bookkeeping reads "already at war".
-    let stock = AdvancedAi::new();
+    let mut stock = AdvancedAi::new();
+    stock.disable_opportunistic_war();
+    stock.disable_raid_pillage_prizes();
     let stock_plan = stock.assess(&game, 0);
     assert_eq!(stock_plan.strategy, GrandStrategy::Conquest);
 }
@@ -34727,6 +35155,7 @@ fn a_cluster_of_improvements_in_reach_is_a_pillage_raid() {
     let warrior = game.spawn_test_unit("warrior", 0, post);
     let _ = ours;
     let mut ai = AdvancedAi::new();
+    ai.disable_raid_pillage_prizes();
     ai.enable_opportunistic_war();
     game.world_era = 2;
     assert!(
@@ -35014,6 +35443,31 @@ fn explicit_science_keeps_elective_air_surge_out_but_allows_a_counter() {
     );
 }
 
+/// An explicit Culture race has the same protection as Science: an elective
+/// air war must not displace the Theater chain, while the same package remains
+/// available when one major is already attacking us.
+#[test]
+fn explicit_culture_keeps_elective_air_surge_out_but_allows_a_counter() {
+    let (mut game, _, _) = air_surge_fixture(941_117);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_air_surge();
+
+    assert!(!ai.air_surge_open(&game, 0));
+    ai.maintain_air_surge(&game, 0);
+    assert!(!ai.air_surge_active());
+    assert!(ai.air_surge_research_goal(&game, 0).is_none());
+
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert!(ai.air_surge_open(&game, 0), "one front remains a counter");
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active());
+    assert_eq!(
+        ai.air_surge_research_goal(&game, 0),
+        Some(air_surge::AIR_SURGE_GOAL_TECH)
+    );
+}
+
 /// ★★★★ The gate that matters. The seat reaches its closest approach to
 /// Advanced Flight at turn 258 of 300 with 79 turns of research still to pay
 /// (`air_surge_census_at_deployment_scale`, seed 941200). A gate on the
@@ -35214,6 +35668,86 @@ fn the_airfield_is_claimed_before_the_wing() {
             <= 1,
         "before {before:?} after {after:?}"
     );
+}
+
+#[test]
+fn a_faster_second_airfield_can_deliver_the_launch_wing_sooner() {
+    let (mut game, fast, _) = air_surge_fixture(941_125);
+    air_surge_arm(&mut game);
+    let slow = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != fast)
+        .unwrap();
+    install_ai_test_district(&mut game, slow, "aerodrome");
+    for cid in game.player_city_ids(0) {
+        game.cities.get_mut(&cid).unwrap().queue.clear();
+    }
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        fast,
+        Yields {
+            production: 100.0,
+            ..Yields::default()
+        },
+    );
+    assert!(game.producible_items(0, fast).iter().any(|item| {
+        matches!(item, Item::District { district, .. } if district == "aerodrome")
+    }));
+    let original = game.clone();
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    assert_eq!(ai.air_surge_status.aerodromes_committed, 1);
+    assert!(ai.air_surge_production(&mut game, 0));
+    assert!(
+        matches!(game.cities[&fast].queue.first(), Some(Item::District { district, .. }) if district == "aerodrome"),
+        "the fast city should complete a second airfield and launch wing before the slow base; queued {:?}",
+        game.cities[&fast].queue
+    );
+    let anchor = game.cities[&fast].pos;
+    let third = found_nearby_test_city(&mut game, 0, anchor);
+    game.cities.get_mut(&third).unwrap().pop = 12;
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        third,
+        Yields {
+            production: 300.0,
+            ..Yields::default()
+        },
+    );
+    assert!(
+        game.producible_items(0, third).iter().any(|item| {
+            matches!(item, Item::District { district, .. } if district == "aerodrome")
+        }),
+        "the cap must hold even with an eligible faster third city"
+    );
+    ai.air_surge_production(&mut game, 0);
+    assert_eq!(
+        ai.air_surge_status.aerodromes_committed, 2,
+        "never open a third base"
+    );
+
+    for wing_committed in [false, true] {
+        let mut held = original.clone();
+        if wing_committed {
+            for _ in 0..air_surge::AIR_SURGE_LAUNCH_BOMBERS {
+                held.spawn_test_unit("bomber", 0, held.cities[&slow].pos);
+            }
+        } else {
+            std::sync::Arc::make_mut(&mut held.observed_city_yield_adjustments).insert(
+                slow,
+                Yields {
+                    production: 200.0,
+                    ..Yields::default()
+                },
+            );
+        }
+        let mut held_ai = air_surge_ai();
+        held_ai.maintain_air_surge(&held, 0);
+        held_ai.air_surge_production(&mut held, 0);
+        assert!(
+            !matches!(held.cities[&fast].queue.first(), Some(Item::District { district, .. }) if district == "aerodrome"),
+            "no extra base when the existing base is faster or the launch wing is committed ({wing_committed})"
+        );
+    }
 }
 
 /// With the airfield standing the wing is the next claim, and the package is
@@ -45079,10 +45613,8 @@ fn the_move_refusal_break_gene_off_records_and_bars_nothing() {
     assert!(!ai.base.move_refusal_blocked(&g, uid));
 }
 
-/// The Settler half: a frozen Settler does not merely bend its route — its
-/// destination is retired through the same dead-site machinery a watchdog
-/// arrival uses, so the chooser must pick a site the refused approach does
-/// not serve.
+/// A city site that is itself the refused tile has no alternate approach.
+/// It is deferred until the host refusal expires.
 #[test]
 fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
     let mut g = Game::new_full(2, 24, 16, 7_925, 250, 1, false);
@@ -45100,11 +45632,7 @@ fn a_frozen_settlers_destination_is_retired_through_dead_sites() {
         .into_iter()
         .find(|pos| *pos != here)
         .expect("a neighboring tile");
-    let target = g
-        .wdisk(here, 5)
-        .into_iter()
-        .find(|pos| g.wdist(*pos, here) >= 4)
-        .expect("a distant destination");
+    let target = step; // The unavailable tile is itself the city site.
     ai.settler_targets.insert(settler, target);
     ai.base
         .move_refusal_blocks
@@ -47341,14 +47869,20 @@ fn immediate_kill_priority_rejects_a_poisoned_finish() {
         tactical.units.contains_key(&victim),
         "the ordinary military path must not reopen the rejected finish"
     );
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 0);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        0
+    );
     assert!(g.units.contains_key(&victim));
 
     // Removing the second hostile makes the same blow a safe finish. The
     // killed victim must not remain in a cached attack envelope.
     g.remove_unit(counter);
     assert!(ai.immediate_kill_value(&g, 0, &action, &plan).is_some());
-    assert_eq!(ai.prioritize_immediate_kills(&mut g, 0, &plan), 1);
+    assert_eq!(
+        ai.prioritize_immediate_kills(&mut g, 0, &plan, &BTreeSet::new()),
+        1
+    );
     assert!(!g.units.contains_key(&victim));
 }
 
@@ -47416,4 +47950,1453 @@ fn live_science_peace_offer_keeps_the_war_and_threats_until_host_acceptance() {
     science.advanced_diplomacy(&mut game, 0, &plan);
     assert!(!game.is_at_war(0, 1));
     assert!(!science.peace_offers.contains(&1));
+}
+
+fn remembered_naval_escort_field() -> (Game, AdvancedAi, u32, u32, Pos, Pos) {
+    let (mut game, _, home) = barbarian_field(99_132_700);
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
+    game.turn = 30;
+    game.players[0].techs.insert(crate::name!("shipbuilding"));
+    let start = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            game.wdist(*pos, home) > 4
+                && game.nbrs(*pos).len() == 6
+                && [
+                    (pos.0 + 1, pos.1),
+                    (pos.0 + 2, pos.1),
+                    (pos.0 + 2, pos.1 - 1),
+                ]
+                .iter()
+                .all(|p| game.map.get(*p).is_some() && game.city_at(*p).is_none())
+        })
+        .unwrap();
+    let water = (start.0 + 1, start.1);
+    let target = (start.0 + 2, start.1);
+    let seen = (start.0 + 2, start.1 - 1);
+    for pos in game.nbrs(start) {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+    }
+    for pos in [water, seen] {
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("coast");
+        tile.improvement = None;
+    }
+    let guard = game.spawn_test_unit("archer", 0, start);
+    let settler = game.spawn_test_unit("settler", 0, target);
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.disable_come_ashore(); // Matches the recorded live deployment.
+    ai.bind_settler_guard(&game, settler, guard);
+    ai.hostile_last_seen.insert(
+        999_999,
+        super::RememberedHostile {
+            pos: seen,
+            when: game.turn - 1,
+            owner: 1,
+            kind: crate::name!("caravel"),
+        },
+    );
+    assert!(
+        game.can_move(guard, water),
+        "the risky embarkation is legal"
+    );
+    (game, ai, guard, settler, start, water)
+}
+
+#[test]
+fn hostile_memory_v2_preserves_a_safe_land_guard_beside_a_remembered_fleet() {
+    let (game, ai, guard, settler, start, water) = remembered_naval_escort_field();
+    let mut old_game = game.clone();
+    let mut old = ai.clone();
+    assert_eq!(old.stacked_guard_step(&mut old_game, 0, guard), Some(true));
+    assert_eq!(
+        old_game.units[&guard].pos, water,
+        "v1 takes the legal water shortcut"
+    );
+
+    let mut safe_game = game;
+    let mut safe = ai;
+    safe.enable_hostile_memory_2();
+    assert_eq!(
+        safe.stacked_guard_step(&mut safe_game, 0, guard),
+        Some(false)
+    );
+    assert_eq!(
+        safe_game.units[&guard].pos, start,
+        "do not expose the guard to the remembered fleet"
+    );
+    assert!(safe_game.units[&guard].fortified);
+    assert_eq!(safe.settler_guards.get(&settler), Some(&guard));
+}
+
+#[test]
+fn hostile_memory_v2_does_not_forbid_a_trip_after_the_sighting_expires() {
+    let (mut game, mut ai, guard, _, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.get_mut(&999_999).unwrap().when =
+        game.turn - civilian_safety::HOSTILE_MEMORY_TURNS - 1;
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, water);
+}
+
+#[test]
+fn hostile_memory_versions_are_exclusive_and_opt_in() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.hostile_memory && !ai.hostile_memory_2);
+    ai.enable_hostile_memory();
+    ai.enable_hostile_memory_2();
+    assert!(!ai.hostile_memory && ai.hostile_memory_2);
+    ai.enable_hostile_memory();
+    assert!(ai.hostile_memory && !ai.hostile_memory_2);
+    ai.disable_hostile_memory();
+    assert!(!ai.hostile_memory && !ai.hostile_memory_2);
+    assert!(GENES
+        .iter()
+        .any(|g| g.tag == "hostile-memory-2" && g.opt_in()));
+}
+
+#[test]
+fn hostile_memory_v2_takes_a_safe_forward_land_step_instead() {
+    let (mut game, ai, guard, settler, start, dry) = remembered_naval_escort_field();
+    let wet = (start.0 + 1, start.1 - 1);
+    let target = (start.0 + 2, start.1 - 1);
+    let seen = (start.0 + 2, start.1);
+    game.relocate(settler, target);
+    for pos in [dry, target] {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("grassland");
+    }
+    for pos in [wet, seen] {
+        game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+    }
+    let mut ai = ai;
+    ai.hostile_last_seen.get_mut(&999_999).unwrap().pos = seen;
+    let mut old_game = game.clone();
+    let mut old = ai.clone();
+    assert_eq!(old.stacked_guard_step(&mut old_game, 0, guard), Some(true));
+    assert_eq!(old_game.units[&guard].pos, wet);
+    ai.enable_hostile_memory_2();
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, dry);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_invent_a_sighting_from_a_hidden_ship() {
+    let (mut game, mut ai, guard, _, start, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.clear();
+    let hidden = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            game.wdist(*pos, start) > 15
+                && game.city_at(*pos).is_none()
+                && !game.player_can_see(0, *pos)
+        })
+        .unwrap();
+    game.map.tiles.get_mut(&hidden).unwrap().terrain = crate::name!("coast");
+    let ship = game.spawn_test_unit("caravel", 1, hidden);
+    assert!(!game.player_can_see(0, game.units[&ship].pos));
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, water);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_hold_a_guard_under_a_remembered_land_threat() {
+    let (mut game, mut ai, guard, _, start, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    ai.hostile_last_seen.insert(
+        999_998,
+        super::RememberedHostile {
+            pos: start,
+            when: game.turn - 1,
+            owner: 1,
+            kind: crate::name!("warrior"),
+        },
+    );
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(
+        game.units[&guard].pos, water,
+        "do not replace an escape with an unsafe hold"
+    );
+}
+
+#[test]
+fn hostile_memory_v2_allows_an_embarked_guard_to_come_ashore() {
+    let (mut game, mut ai, guard, settler, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    game.relocate(guard, water);
+    let target = game.units[&settler].pos;
+    assert_eq!(ai.stacked_guard_step(&mut game, 0, guard), Some(true));
+    assert_eq!(game.units[&guard].pos, target);
+}
+
+#[test]
+fn hostile_memory_v2_does_not_apply_the_land_guard_rule_to_a_ship() {
+    let (mut game, mut ai, _, settler, _, water) = remembered_naval_escort_field();
+    ai.enable_hostile_memory_2();
+    let ship = game.spawn_test_unit("galley", 0, water);
+    let target = game.units[&settler].pos;
+    assert_eq!(
+        ai.escort_naval_memory_step(&mut game, 0, ship, target),
+        None
+    );
+}
+
+#[test]
+fn scout_first_opening_registry_toggles_both_governors() {
+    let gene = crate::ai::GENES
+        .iter()
+        .find(|gene| gene.tag == "scout-first-opening")
+        .unwrap();
+    assert!(gene.opt_in());
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
+    assert!(!AdvancedAi::legacy().scout_first_opening);
+    ai.disable_recon_replacement();
+    (gene.enable)(&mut ai);
+    assert!(ai.scout_first_opening);
+    assert!(ai.base.scout_first_opening);
+    assert!(!ai.base.recon_replacement);
+    (gene.disable)(&mut ai);
+    assert!(!ai.scout_first_opening);
+    assert!(!ai.base.scout_first_opening);
+}
+
+fn remembered_shore_gun_fixture() -> (Game, AdvancedAi, u32, Pos) {
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_623).expect("barbarian fixture");
+    let gun_at = far_side_of(&g, front, refuge).expect("shore opposite refuge");
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != refuge && tile.pos != gun_at {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let ours = g.spawn_test_unit("galley", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 31;
+    let gun = g.spawn_test_unit("field_cannon", barbarian, gun_at);
+    g.turn = 134;
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(
+        ai.hostile_last_seen.contains_key(&(gun as i64)),
+        "the gun must actually have been seen"
+    );
+    g.remove_unit(gun);
+    g.turn = 136;
+    (g, ai, ours, gun_at)
+}
+
+#[test]
+fn a_wounded_galley_leaves_a_remembered_shore_guns_reach() {
+    let (mut g, ai, ours, gun_at) = remembered_shore_gun_fixture();
+    let before = g.units[&ours].pos;
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "a remembered land gun still threatens a wounded ship on water"
+    );
+    assert!(
+        g.wdist(g.units[&ours].pos, gun_at) > g.wdist(before, gun_at),
+        "if the unseen gun's entire projection cannot be escaped, increase separation"
+    );
+    assert_eq!(g.units[&ours].hp, 31);
+}
+
+#[test]
+fn a_shore_gun_without_an_in_scope_memory_does_not_move_the_ship() {
+    let (g, ai, ours, _) = remembered_shore_gun_fixture();
+    for mode in [
+        "gene-off",
+        "memory-off",
+        "unseen",
+        "expired",
+        "future",
+        "peace",
+        "melee-only",
+    ] {
+        let mut policy = ai.clone();
+        let mut board = g.clone();
+        match mode {
+            "gene-off" => policy.disable_wounded_out_of_reach(),
+            "memory-off" => policy.disable_hostile_memory(),
+            "unseen" => policy.hostile_last_seen.clear(),
+            "expired" => board.turn = 139,
+            "future" => {
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.when = 140;
+                }
+            }
+            "peace" => {
+                assert!(!board.is_at_war(0, 1));
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.owner = 1;
+                }
+            }
+            "melee-only" => {
+                for record in policy.hostile_last_seen.values_mut() {
+                    record.kind = crate::name!("warrior");
+                }
+            }
+            _ => unreachable!(),
+        }
+        let before = board.units[&ours].pos;
+        assert_eq!(
+            policy.wounded_out_of_reach_step(&mut board, 0, ours),
+            None,
+            "{mode}"
+        );
+        assert_eq!(board.units[&ours].pos, before, "{mode}");
+    }
+}
+
+#[test]
+fn hostile_memory_v2_also_remembers_a_shore_guns_firing_reach() {
+    let (mut g, mut ai, ours, gun_at) = remembered_shore_gun_fixture();
+    ai.enable_hostile_memory_2();
+    let before = g.units[&ours].pos;
+    assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some());
+    assert!(g.wdist(g.units[&ours].pos, gun_at) > g.wdist(before, gun_at));
+}
+
+#[test]
+fn a_shore_guns_hidden_current_position_does_not_change_its_remembered_threat() {
+    let (mut g, mut ai, ours, _) = remembered_shore_gun_fixture();
+    let record = ai
+        .hostile_last_seen
+        .values()
+        .find(|r| r.kind == "field_cannon")
+        .unwrap()
+        .clone();
+    let remote: Vec<Pos> = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            g.wdist(*pos, g.units[&ours].pos) > 7
+                && g.cities.values().all(|city| g.wdist(*pos, city.pos) > 5)
+        })
+        .take(2)
+        .collect();
+    assert_eq!(remote.len(), 2);
+    let hidden = g.spawn_test_unit("field_cannon", record.owner, remote[0]);
+    ai.hostile_last_seen.clear();
+    ai.hostile_last_seen.insert(hidden as i64, record);
+    let mut destinations = Vec::new();
+    for pos in remote {
+        let mut board = g.clone();
+        board.relocate(hidden, pos);
+        assert!(!board.sees(&board.player_vision_frame(0), pos));
+        let mut observed = ai.clone();
+        observed.observe_turn_start_hostiles(&board, 0);
+        assert_eq!(
+            observed.hostile_last_seen[&(hidden as i64)],
+            ai.hostile_last_seen[&(hidden as i64)],
+            "an unseen move must not overwrite the recorded sighting"
+        );
+        assert!(observed
+            .wounded_out_of_reach_step(&mut board, 0, ours)
+            .is_some());
+        destinations.push(board.units[&ours].pos);
+    }
+    assert_eq!(
+        destinations[0], destinations[1],
+        "only the recorded position may be read"
+    );
+}
+
+#[test]
+fn a_never_seen_shore_gun_is_not_added_to_either_hostile_observation() {
+    let (mut g, mut ai, ours, _) = remembered_shore_gun_fixture();
+    let far = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| {
+            g.wdist(*pos, g.units[&ours].pos) > 7
+                && g.cities.values().all(|city| g.wdist(*pos, city.pos) > 5)
+        })
+        .unwrap();
+    let hidden = g.spawn_test_unit("field_cannon", g.barb_pid.unwrap(), far);
+    assert!(!g.sees(&g.player_vision_frame(0), far));
+    ai.live_formationless_settler_shadow = true;
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(!ai.hostile_last_seen.contains_key(&(hidden as i64)));
+    assert!(ai
+        .turn_start_hostiles
+        .iter()
+        .all(|record| record.id != hidden));
+}
+
+fn wounded_galley_prepass_fixture() -> (Game, AdvancedAi, u32, u32, StrategicPlan) {
+    let (mut g, front, refuge, barbarian) =
+        wounded_out_of_reach_board(91_619).expect("barbarian fixture");
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != refuge {
+            tile.terrain = crate::name!("coast");
+        }
+    }
+    let target_at = g.nbrs(front).into_iter().find(|p| *p != refuge).unwrap();
+    let unseen_at = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| *p != refuge && *p != target_at)
+        .unwrap();
+    let ours = g.spawn_test_unit("galley", 0, front);
+    let target = g.spawn_test_unit("galley", barbarian, target_at);
+    let unseen = g.spawn_test_unit("galley", barbarian, unseen_at);
+    g.units.get_mut(&ours).unwrap().hp = 40;
+    g.units.get_mut(&target).unwrap().hp = 24;
+    g.units.get_mut(&unseen).unwrap().hp = 53;
+    g.turn = 173;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_hostile_memory();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(unseen as i64)));
+    // A subsequent observed frame has lost sight of the second hull.
+    g.remove_unit(unseen);
+    g.turn = 177;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    (g, ai, ours, target, plan)
+}
+
+#[test]
+fn selected_wounded_galley_is_reserved_before_live_finishing() {
+    let (g, mut ai, ours, _, _) = wounded_galley_prepass_fixture();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).is_empty());
+    ai.enable_wounded_out_of_reach();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+    assert_eq!(g.units[&ours].hp, 40);
+}
+
+#[test]
+fn selected_wounded_galley_withdraws_before_native_kill_plan() {
+    let (g, ai, ours, target, plan) = wounded_galley_prepass_fixture();
+    for planner in [false, true] {
+        let mut treated = ai.clone();
+        treated.enable_wounded_out_of_reach();
+        let mut board = g.clone();
+        let before = board.units[&ours].pos;
+        if planner {
+            treated.enable_battle_planner_2();
+            treated.plan_battle(&mut board, 0, &plan);
+            assert!(treated.battle_planner_ordered.contains(&ours));
+        } else {
+            let reserved = treated.withdraw_before_kill_prepass(&mut board, 0, &plan);
+            assert!(reserved.contains(&ours));
+            treated.prioritize_immediate_kills(&mut board, 0, &plan, &reserved);
+        }
+        assert_ne!(board.units[&ours].pos, before);
+        assert_eq!(board.units[&ours].hp, 40);
+        assert_eq!(board.units[&target].hp, 24);
+        assert!(!board
+            .log
+            .iter()
+            .any(|(_, a)| matches!(a, Action::Attack { unit, .. } if *unit == ours)));
+    }
+}
+
+#[test]
+fn selected_wounded_ship_holds_without_fortify_before_kill_prepasses() {
+    let (mut g, mut ai, ours, target, plan) = wounded_galley_prepass_fixture();
+    let here = g.units[&ours].pos;
+    let victim = g.units[&target].pos;
+    for tile in g.map.tiles.values_mut() {
+        if tile.pos != here && tile.pos != victim {
+            tile.terrain = crate::name!("plains");
+        }
+    }
+    assert!(!g.unit_can_fortify(&g.units[&ours]));
+    ai.enable_wounded_out_of_reach();
+    for planner in [false, true] {
+        let mut board = g.clone();
+        let mut treated = ai.clone();
+        if planner {
+            treated.enable_battle_planner_2();
+            treated.plan_battle(&mut board, 0, &plan);
+            assert!(treated.battle_planner_ordered.contains(&ours));
+        } else {
+            let reserved = treated.withdraw_before_kill_prepass(&mut board, 0, &plan);
+            assert!(reserved.contains(&ours));
+            treated.prioritize_immediate_kills(&mut board, 0, &plan, &reserved);
+        }
+        assert_eq!(board.units[&ours].pos, here);
+        assert_eq!(board.units[&ours].hp, 40);
+        assert_eq!(board.units[&target].hp, 24);
+    }
+}
+
+#[test]
+fn wounded_prepass_preserves_the_only_threat_kill_and_city_defense_exception() {
+    let (g, mut ai, ours, target, mut plan) = wounded_galley_prepass_fixture();
+    ai.enable_wounded_out_of_reach();
+    let mut last_threat = g.clone();
+    last_threat.units.get_mut(&target).unwrap().hp = 1;
+    let mut no_memory = ai.clone();
+    no_memory.disable_hostile_memory();
+    no_memory.hostile_last_seen.clear();
+    assert!(no_memory
+        .live_wounded_unit_reservations(&last_threat, 0)
+        .is_empty());
+    assert!(no_memory
+        .withdraw_before_kill_prepass(&mut last_threat, 0, &plan)
+        .is_empty());
+    assert_eq!(
+        no_memory.prioritize_immediate_kills(&mut last_threat, 0, &plan, &BTreeSet::new()),
+        1
+    );
+    assert!(last_threat.units.contains_key(&ours));
+    let mut defending = g.clone();
+    plan.threatened_city = defending.player_city_ids(0).first().copied();
+    assert!(plan.threatened_city.is_some());
+    assert!(ai
+        .withdraw_before_kill_prepass(&mut defending, 0, &plan)
+        .is_empty());
+}
+
+#[test]
+fn a_wounded_ship_may_finish_the_only_visible_shore_gun() {
+    let (mut g, mut ai, ours, gun_at) = remembered_shore_gun_fixture();
+    g.units.get_mut(&ours).unwrap().kind = crate::name!("frigate");
+    let gun = g.spawn_test_unit("field_cannon", g.barb_pid.unwrap(), gun_at);
+    g.units.get_mut(&gun).unwrap().hp = 1;
+    let unseen = ai
+        .hostile_last_seen
+        .iter()
+        .next()
+        .map(|(key, record)| (*key, record.clone()))
+        .unwrap();
+    ai.hostile_last_seen.clear();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(g
+        .legal_actions_within(0, ActionFamilies::UNITS)
+        .iter()
+        .any(|action| { matches!(action, Action::Ranged { unit, .. } if *unit == ours) }));
+    let before = g.units[&ours].pos;
+    assert_eq!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a shot removing the only gun must not retain its speculative casualty as firing memory"
+    );
+    assert_eq!(g.units[&ours].pos, before);
+    assert!(
+        ai.hostile_last_seen.contains_key(&(gun as i64)),
+        "forecasting a kill does not erase the real observed memory"
+    );
+    ai.hostile_last_seen.insert(unseen.0, unseen.1);
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "removing the visible gun does not remove a different remembered gun"
+    );
+}
+
+fn remembered_chariot_gun_fixture(gun_kind: &str) -> (Game, AdvancedAi, u32, Pos, usize) {
+    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_631).unwrap();
+    let gun_at = far_side_of(&g, front, refuge).unwrap();
+    let ours = g.spawn_test_unit("heavy_chariot", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 80;
+    let gun = g.spawn_test_unit(gun_kind, barbarian, gun_at);
+    g.turn = 165;
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(gun as i64)));
+    g.remove_unit(gun);
+    g.turn = 167;
+    (g, ai, ours, gun_at, barbarian)
+}
+
+#[test]
+fn withdrawal_v2_remembers_the_gun_that_can_kill_a_healthy_chariot() {
+    let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture("field_cannon");
+    let front = g.units[&ours].pos;
+    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+    assert!(!ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+    ai.enable_wounded_out_of_reach_2();
+    assert!(ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+    assert!(ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some());
+    assert_ne!(g.units[&ours].pos, front);
+}
+
+#[test]
+fn withdrawal_v2_does_not_invent_lethal_memory_from_weak_or_missing_guns() {
+    for mode in ["weak", "unseen", "expired", "off", "memory-off", "peace"] {
+        let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture(if mode == "weak" {
+            "archer"
+        } else {
+            "field_cannon"
+        });
+        ai.enable_wounded_out_of_reach_2();
+        match mode {
+            "unseen" => ai.hostile_last_seen.clear(),
+            "expired" => g.turn = 170,
+            "off" => ai.disable_wounded_out_of_reach_2(),
+            "memory-off" => ai.disable_hostile_memory(),
+            "peace" => {
+                assert!(!g.is_at_war(0, 1));
+                for record in ai.hostile_last_seen.values_mut() {
+                    record.owner = 1;
+                }
+            }
+            _ => {}
+        }
+        assert_eq!(
+            ai.wounded_out_of_reach_step(&mut g, 0, ours),
+            None,
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn withdrawal_v2_prices_one_remembered_gun_instead_of_summing_a_stale_army() {
+    let (mut g, mut ai, ours, _, _) = remembered_chariot_gun_fixture("archer");
+    let record = ai.hostile_last_seen.values().next().unwrap().clone();
+    for key in 100_000..100_010 {
+        ai.hostile_last_seen.insert(key, record.clone());
+    }
+    ai.enable_wounded_out_of_reach_2();
+    assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+}
+
+#[test]
+fn withdrawal_v2_keeps_known_defenses_and_the_shore_guns_naval_penalty() {
+    for naval in [false, true] {
+        let (mut g, mut ai, ours, _, barbarian) = remembered_chariot_gun_fixture("field_cannon");
+        let front = g.units[&ours].pos;
+        if naval {
+            g.units.get_mut(&ours).unwrap().kind = crate::name!("galley");
+            g.map.tiles.get_mut(&front).unwrap().terrain = crate::name!("coast");
+        } else {
+            let unit = g.units.get_mut(&ours).unwrap();
+            unit.hp = 100;
+            unit.fortify_turns = 2;
+            let tile = g.map.tiles.get_mut(&front).unwrap();
+            tile.hills = true;
+            tile.feature = Some(crate::name!("forest"));
+        }
+        let nominal = g
+            .nominal_ranged_damage_from_kind(crate::name!("field_cannon"), barbarian, ours, front)
+            .unwrap();
+        assert!(nominal * crate::ai::COMBAT_ROLL_MAX < f64::from(g.units[&ours].hp));
+        ai.enable_wounded_out_of_reach_2();
+        assert_eq!(ai.wounded_out_of_reach_step(&mut g, 0, ours), None);
+    }
+}
+
+#[test]
+fn withdrawal_v2_nominal_shot_matches_an_unmodified_observed_guns_combat_price() {
+    for (gun_kind, defender_kind, sea) in [
+        ("field_cannon", "heavy_chariot", false),
+        ("field_cannon", "galley", true),
+        ("catapult", "heavy_chariot", false),
+    ] {
+        let (mut g, _, ours, gun_at, barbarian) = remembered_chariot_gun_fixture(gun_kind);
+        g.units.get_mut(&ours).unwrap().kind = defender_kind.into();
+        let front = g.units[&ours].pos;
+        if sea {
+            g.map.tiles.get_mut(&front).unwrap().terrain = crate::name!("coast");
+        }
+        let gun = g.spawn_test_unit(gun_kind, barbarian, gun_at);
+        let (attack, defense) = g.ranged_strike_strengths(gun, ours, front).unwrap();
+        let actual_price = crate::game::expected_damage(attack, defense);
+        let nominal = g
+            .nominal_ranged_damage_from_kind(gun_kind.into(), barbarian, ours, front)
+            .unwrap();
+        assert!(
+            (actual_price - nominal).abs() < 1e-9,
+            "{gun_kind} into {defender_kind}: {actual_price} vs {nominal}"
+        );
+    }
+}
+
+#[test]
+fn military_withdrawal_does_not_use_the_civilian_terrain_fallback() {
+    let (mut g, front, refuge, barbarian) = wounded_out_of_reach_board(91_641).unwrap();
+    let lair = far_side_of(&g, front, refuge).unwrap();
+    // Every two-step path crosses a mountain. A Builder on the far side
+    // supplies current sight without screening the Archer from the raider.
+    for pos in g.nbrs(front) {
+        if g.wdist(pos, lair) == 1 {
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+        }
+    }
+    let observer = g
+        .nbrs(lair)
+        .into_iter()
+        .find(|pos| g.wdist(*pos, front) > 2 && g.map.get(*pos).is_some())
+        .unwrap();
+    g.spawn_test_unit("builder", 0, observer);
+    let ours = g.spawn_test_unit("archer", 0, front);
+    let raider = g.spawn_test_unit("man_at_arms", barbarian, lair);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_settler_capture_lessons();
+    ai.enable_wounded_out_of_reach();
+    assert!(g.sees(&g.player_vision_frame(0), lair));
+    assert!(!g.threat_reach(raider).contains(&front));
+    assert!(
+        ai.barbarian_reach(&g, 0, front, 8).covers(&g, front),
+        "the host civilian capture fallback remains conservative"
+    );
+    assert_eq!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours),
+        None,
+        "a visible raider cannot force a military withdrawal through mountains"
+    );
+    assert!(!ai.live_wounded_unit_reservations(&g, 0).contains(&ours));
+
+    let mut open = g.clone();
+    for pos in open.nbrs(front) {
+        if open.wdist(pos, lair) == 1 {
+            open.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
+        }
+    }
+    assert!(open.threat_reach(raider).contains(&front));
+    assert!(
+        ai.wounded_out_of_reach_step(&mut open, 0, ours).is_some(),
+        "an actual open route still forces the exposed shooter to withdraw"
+    );
+
+    ai.enable_hostile_memory();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(raider as i64)));
+    g.remove_unit(raider);
+    g.turn += 1;
+    assert!(
+        ai.wounded_out_of_reach_step(&mut g, 0, ours).is_some(),
+        "the last-sighting projection remains conservative in fog"
+    );
+}
+
+#[test]
+fn remembered_threat_ties_do_not_trade_this_turns_healing_for_a_better_healing_tile() {
+    let (mut g, front, city, barbarian) = wounded_out_of_reach_board(91_629).unwrap();
+    let next = g
+        .nbrs(front)
+        .into_iter()
+        .find(|p| g.wdist(*p, city) > 1)
+        .unwrap();
+    let gun_at = g
+        .wdisk(front, 2)
+        .into_iter()
+        .find(|p| g.wdist(*p, front) == 2 && g.wdist(*p, next) == 2)
+        .unwrap();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("mountain");
+    }
+    for pos in [front, next, gun_at] {
+        g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains");
+    }
+    let cid = g.city_at(city).unwrap();
+    g.map.tiles.get_mut(&next).unwrap().owner_city = Some(cid);
+    let ours = g.spawn_test_unit("warrior", 0, front);
+    g.units.get_mut(&ours).unwrap().hp = 1;
+    let gun = g.spawn_test_unit("crossbowman", barbarian, gun_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_hostile_memory();
+    ai.enable_wounded_out_of_reach();
+    ai.observe_turn_start_hostiles(&g, 0);
+    assert!(ai.hostile_last_seen.contains_key(&(gun as i64)));
+    g.remove_unit(gun);
+    assert_eq!(g.reachable(ours), vec![next]);
+    assert!(g.healing_location(0, next).rate() > g.healing_location(0, front).rate());
+    for version in [1, 2] {
+        let mut policy = ai.clone();
+        if version == 2 {
+            policy.enable_wounded_out_of_reach_2();
+        }
+        let mut board = g.clone();
+        assert!(policy
+            .wounded_out_of_reach_step(&mut board, 0, ours)
+            .is_some());
+        assert_eq!(board.units[&ours].pos, front,
+            "an equally threatened tile is not a withdrawal, even if it would heal faster later (v{version})");
+    }
+}
+
+#[test]
+fn battle_recovery_follows_surviving_units_across_a_live_id_rebuild() {
+    let mut ai = AdvancedAi::new();
+    // The rebuilt board reuses the old wounded unit's id for a healthy
+    // survivor, while another recovering unit has died. Recovery belongs
+    // to the surviving host identity, not either reused native number.
+    ai.battle_planner_recovering.extend([7, 9]);
+    ai.remap_unit_memory(&BTreeMap::from([(7, 8), (8, 7)]));
+    assert_eq!(ai.battle_planner_recovering, BTreeSet::from([8]));
+    ai.remap_unit_memory(&BTreeMap::from([(8, 12), (7, 13)]));
+    assert_eq!(ai.battle_planner_recovering, BTreeSet::from([12]));
+}
+
+#[test]
+fn forgetting_unit_identity_discards_battle_recovery() {
+    let mut ai = AdvancedAi::new();
+    ai.battle_planner_recovering.insert(7);
+    ai.forget_unit_memory();
+    assert!(ai.battle_planner_recovering.is_empty());
+}
+
+#[test]
+fn production_review_finishes_a_started_wonder_despite_a_better_score() {
+    let (mut game, city) = strategic_wonder_fixture(6_402, "great_library");
+    let pos = game.wonder_sites(city, "great_library")[0];
+    let item = Item::Wonder {
+        wonder: crate::name!("great_library"),
+        pos,
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: item.clone(),
+        },
+    )
+    .unwrap();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = wonder_plan(GrandStrategy::Science, game.turn);
+    // A changed preference makes alternatives attractive without making the
+    // existing wonder useless or impossible to complete.
+    ai.base.w.p_wonder = 0.01;
+    ai.preempt_margin = 1.000001;
+    game.cities.get_mut(&city).unwrap().production = game.item_cost_for_city(0, city, &item) / 2.0;
+    let counts = ai.counts_without_city_queue(&game, 0, city);
+    let value = ai.production_value(&game, 0, city, &item, &plan, &counts);
+    assert!(value > -1_000.0, "wonder must remain useful: {value}");
+    let best_alternative = game
+        .producible_items(0, city)
+        .iter()
+        .filter(|candidate| **candidate != item)
+        .map(|candidate| ai.production_value(&game, 0, city, candidate, &plan, &counts))
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        best_alternative > value * ai.preempt_margin,
+        "fixture must offer a tempting switch: {best_alternative} vs {value}"
+    );
+    let other = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|id| *id != city)
+        .unwrap();
+    let mut duplicate = game.clone();
+    duplicate.cities.get_mut(&other).unwrap().queue = vec![item.clone()];
+    assert!(
+        ai.production_value(&duplicate, 0, city, &item, &plan, &counts) <= -9_999.0,
+        "another city's duplicate wonder must still be rejected"
+    );
+    let mut threatened_plan = plan.clone();
+    threatened_plan.threatened_city = Some(city);
+    assert!(
+        ai.production_value(&game, 0, city, &item, &threatened_plan, &counts) <= -9_999.0,
+        "a threatened city must remain free to interrupt its wonder"
+    );
+    for _ in 0..3 {
+        ai.advanced_production(&mut game, 0, &plan, false);
+        assert_eq!(game.cities[&city].queue.first(), Some(&item));
+        game.turn += 1;
+    }
+}
+
+#[test]
+fn production_review_finishes_invested_units_but_reviews_unstarted_units() {
+    let (mut game, city) = strategic_wonder_fixture(6_402, "great_library");
+    for pos in [(4, 5), (5, 4), (6, 4), (4, 4)] {
+        game.spawn_test_unit("warrior", 0, pos);
+    }
+    let item = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: item.clone(),
+        },
+    )
+    .unwrap();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = wonder_plan(GrandStrategy::Science, game.turn);
+    let mut unstarted = game.clone();
+    ai.advanced_production(&mut unstarted, 0, &plan, false);
+    assert_ne!(unstarted.cities[&city].queue.first(), Some(&item));
+    game.cities.get_mut(&city).unwrap().production = 1.0;
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+    game.cities.get_mut(&city).unwrap().production = 0.0;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .production_progress
+        .insert("unit:warrior".into(), 1.0);
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+}
+
+#[test]
+fn city_bombardment_does_not_credit_damage_to_its_unharmed_garrison() {
+    let mut game = Game::new_full(2, 24, 16, 71_009, 120, 0, false);
+    let origin = game
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|id| game.units[id].kind == "settler")
+        .map(|id| game.units[&id].pos)
+        .unwrap();
+    let city = game.found_city_for(1, origin, None);
+    for id in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(id);
+    }
+    let staging = game
+        .nbrs(origin)
+        .into_iter()
+        .find(|pos| {
+            game.map
+                .get(*pos)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.city_at(*pos).is_none()
+        })
+        .unwrap();
+    let attacker = game.spawn_test_unit("giant_death_robot", 0, staging);
+    game.at_war.insert((0, 1));
+    game.current = 0;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(city),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let action = Action::Ranged {
+        unit: attacker,
+        target: origin,
+    };
+    // A depleted city still accepts ranged orders, but only melee can take it.
+    game.cities.get_mut(&city).unwrap().hp = 0;
+    game.cities.get_mut(&city).unwrap().wall_hp = 0;
+    for kind in ["warrior", "catapult"] {
+        let mut occupied = game.clone();
+        let garrison = occupied.spawn_test_unit(kind, 1, origin);
+        let (result, applied) =
+            AdvancedAi::tactical_attack_result_in(&mut occupied, 0, attacker, &action, &plan);
+        assert!(matches!(applied, AppliedAttack::Applied));
+        assert_eq!(occupied.units[&garrison].hp, 100);
+        assert_eq!(occupied.cities[&city].owner, 1);
+        assert!(!result.eliminates_enemy_unit);
+        assert_eq!(
+            result.value,
+            f64::NEG_INFINITY,
+            "an unharmed {kind} is not bombardment progress"
+        );
+    }
+    game.cities.get_mut(&city).unwrap().hp = 200;
+    let mut progressing = game.clone();
+    let garrison = progressing.spawn_test_unit("catapult", 1, origin);
+    let result =
+        AdvancedAi::tactical_attack_result_in(&mut progressing, 0, attacker, &action, &plan).0;
+    assert!(progressing.cities[&city].hp < 200);
+    assert_eq!(progressing.units[&garrison].hp, 100);
+    assert_eq!(
+        result.value,
+        (200 - progressing.cities[&city].hp) as f64 + 35.0
+    );
+
+    // Ordinary ranged attacks stop at one HP; siege can remove that last HP.
+    // Do not confuse that useful final siege shot with another empty volley.
+    for (kind, remaining_hp) in [("archer", 1), ("catapult", 0)] {
+        let mut last_hit = game.clone();
+        last_hit.cities.get_mut(&city).unwrap().hp = 1;
+        last_hit.remove_unit(attacker);
+        let shooter = last_hit.spawn_test_unit(kind, 0, staging);
+        let (result, applied) = AdvancedAi::tactical_attack_result_in(
+            &mut last_hit,
+            0,
+            shooter,
+            &Action::Ranged {
+                unit: shooter,
+                target: origin,
+            },
+            &plan,
+        );
+        assert!(matches!(applied, AppliedAttack::Applied));
+        assert_eq!(last_hit.cities[&city].hp, remaining_hp);
+        assert_eq!(result.value.is_finite(), remaining_hp == 0);
+    }
+
+    // Finishing with melee is still valuable, even though no HP remain.
+    let mut captured = game.clone();
+    captured.cities.get_mut(&city).unwrap().hp = 0;
+    let result = AdvancedAi::tactical_attack_result_in(
+        &mut captured,
+        0,
+        attacker,
+        &Action::Attack {
+            unit: attacker,
+            target: origin,
+        },
+        &plan,
+    )
+    .0;
+    assert_eq!(captured.cities[&city].owner, 0);
+    assert!(result.value > 0.0);
+
+    // Encampments have the same split: no further bombardment, but a useful
+    // melee pillage even at zero HP.
+    let mut encampment = game.clone();
+    let district = crate::game::install_test_district(&mut encampment, city, "encampment");
+    let approach = encampment
+        .nbrs(district)
+        .into_iter()
+        .find(|pos| {
+            encampment.map.get(*pos).is_some_and(|tile| {
+                encampment.rules.is_passable(tile) && !encampment.rules.is_water(tile)
+            }) && encampment.city_at(*pos).is_none()
+                && encampment.unit_ids_at(*pos).is_empty()
+        })
+        .unwrap();
+    encampment.relocate(attacker, approach);
+    encampment.cities.get_mut(&city).unwrap().encampment_hp = 0;
+    encampment.cities.get_mut(&city).unwrap().encampment_wall_hp = 0;
+    let mut bombarded = encampment.clone();
+    let (result, applied) = AdvancedAi::tactical_attack_result_in(
+        &mut bombarded,
+        0,
+        attacker,
+        &Action::Ranged {
+            unit: attacker,
+            target: district,
+        },
+        &plan,
+    );
+    assert!(matches!(applied, AppliedAttack::Applied));
+    assert_eq!(result.value, f64::NEG_INFINITY);
+    let result = AdvancedAi::tactical_attack_result_in(
+        &mut encampment,
+        0,
+        attacker,
+        &Action::Attack {
+            unit: attacker,
+            target: district,
+        },
+        &plan,
+    )
+    .0;
+    assert!(encampment.cities[&city].encampment_pillaged);
+    assert!(result.value > 0.0);
+
+    // The actual picker must not let its target/focus bonuses revive the shot.
+    let mut depleted = game.clone();
+    depleted.cities.get_mut(&city).unwrap().hp = 0;
+    depleted.remove_unit(attacker);
+    let shooter = depleted.spawn_test_unit("catapult", 0, staging);
+    depleted.spawn_test_unit("warrior", 1, origin);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.advanced_military_step(&mut depleted, 0, shooter, &plan);
+    assert!(!depleted.log.iter().any(|(_, action)| {
+        matches!(action, Action::Ranged { unit, target } if *unit == shooter && *target == origin)
+    }), "the picker must save the shot rather than bombard a depleted city");
+}
+
+#[test]
+fn assigned_culture_can_fund_more_than_two_bands_when_the_tour_is_usable() {
+    let (mut game, capital) = great_person_housing_fixture(774_4068);
+    game.players[0].civics.insert(crate::name!("cold_war"));
+    game.players[0].faith = 5_000.0;
+    let rival = game.player_city_ids(1)[0];
+    let venue = install_ai_test_district(&mut game, rival, "theater_square");
+    game.cities
+        .get_mut(&rival)
+        .unwrap()
+        .buildings
+        .push(crate::name!("broadcast_center"));
+    let band = game.spawn_test_unit("rock_band", 0, venue);
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    let other = game.spawn_test_unit("rock_band", 0, game.cities[&rival].pos);
+    game.units
+        .get_mut(&other)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    // Leave the purchasing city's civilian slot free.
+    for unit in game.player_unit_ids(0) {
+        if unit != band && unit != other {
+            game.remove_unit(unit);
+        }
+    }
+    let count = |g: &Game| {
+        g.units
+            .values()
+            .filter(|u| u.owner == 0 && u.kind == "rock_band")
+            .count()
+    };
+    assert_eq!(count(&game), 2);
+    assert!(game.rock_concert_ai_value(0, band, venue).is_some());
+    assert_eq!(game.route_distance(band, venue, 0), Some(0));
+    let price = game
+        .unit_purchase_cost(0, capital, "rock_band", "faith")
+        .unwrap();
+    let mut adaptive = game.clone();
+    AdvancedAi::new().culture_spending(&mut adaptive, 0);
+    assert_eq!(
+        count(&adaptive),
+        2,
+        "an adaptive seat keeps its existing reserve"
+    );
+    let mut unavailable = game.clone();
+    for uid in [band, other] {
+        std::sync::Arc::make_mut(&mut unavailable.host_unit_facts).insert(
+            uid,
+            crate::game::HostUnitFacts {
+                concert_plots: Some(Default::default()),
+                ..Default::default()
+            },
+        );
+    }
+    let culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    culture.culture_spending(&mut unavailable, 0);
+    assert_eq!(
+        count(&unavailable),
+        2,
+        "host-denied venues must not grow an idle roster"
+    );
+    let mut poor = game.clone();
+    poor.players[0].faith = price - 1.0;
+    culture.culture_spending(&mut poor, 0);
+    assert_eq!(
+        count(&poor),
+        2,
+        "the normal affordability gate still applies"
+    );
+    culture.culture_spending(&mut game, 0);
+    assert_eq!(
+        count(&game),
+        3,
+        "a usable Culture tour may spend beyond the old two-band ceiling"
+    );
+    assert_eq!(game.players[0].faith, 5_000.0 - price);
+}
+
+#[test]
+fn assigned_culture_keeps_faith_spending_during_a_counter_campaign() {
+    let (mut game, _) = great_person_housing_fixture(774_4069);
+    game.players[1].culture_lifetime = 100_000.0;
+    game.players[0].tourism_lifetime = 0.0;
+    let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    culture.lane_culture_spending = false;
+    let campaign = great_person_housing_plan(&game, GrandStrategy::Conquest);
+    assert!(
+        culture.culture_lane_spends(&game, 0, &campaign),
+        "a temporary counter-campaign does not release an assigned Culture race"
+    );
+    let recovery = great_person_housing_plan(&game, GrandStrategy::Recovery);
+    assert!(!culture.culture_lane_spends(&game, 0, &recovery));
+}
+
+#[test]
+fn culture_unlocks_bands_before_the_late_government_ladder() {
+    let (mut game, _, _) = empire_with_a_capital(79_174);
+    game.at_war.clear();
+    game.turn = 174;
+    game.max_turns = 250;
+    let withheld = [
+        "cold_war",
+        "professional_sports",
+        "cultural_heritage",
+        "space_race",
+        "environmentalism",
+        "social_media",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    game.players[0].civics = game
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|c| !withheld.contains(&c.as_str()))
+        .collect();
+    game.players[0].government = Some("democracy".into());
+    game.players[1].government = Some("corporate_libertarianism".into());
+    game.players[0].civic = None;
+    game.players[0]
+        .boosted_civics
+        .insert(crate::name!("professional_sports"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = true;
+    ai.enable_culture_cold_war_window();
+    ai.chase_every_boost = true;
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert_eq!(ai.culture_civic_goal(&game, 0), Some("cold_war"));
+    assert!(ai
+        .government_ladder_goal(&game, 0, GrandStrategy::Culture)
+        .is_some());
+    let mut parks = game.clone();
+    parks.players[0]
+        .civics
+        .remove(&crate::name!("conservation"));
+    ai.advanced_research(&mut parks, 0, &plan);
+    assert_eq!(parks.players[0].civic.as_deref(), Some("conservation"));
+    parks.players[0].civic = None;
+    ai.culture_cold_war_window = false;
+    ai.advanced_research(&mut parks, 0, &plan);
+    assert_eq!(
+        parks.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+    ai.enable_culture_cold_war_window();
+    let mut culture = game.clone();
+    ai.advanced_research(&mut culture, 0, &plan);
+    assert_eq!(culture.players[0].civic.as_deref(), Some("cold_war"));
+    culture.players[0].civics.insert(crate::name!("cold_war"));
+    culture.players[0].civic = None;
+    ai.advanced_research(&mut culture, 0, &plan);
+    assert_eq!(
+        culture.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+    plan.strategy = GrandStrategy::Recovery;
+    let mut recovery = game.clone();
+    ai.advanced_research(&mut recovery, 0, &plan);
+    assert_eq!(
+        recovery.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+    plan.strategy = GrandStrategy::Culture;
+    ai.culture_cold_war_window = false;
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+}
+
+#[test]
+fn culture_fortifies_before_a_visible_peacetime_siege_party_attacks() {
+    let (mut game, city, home) = empire_with_a_capital(65_3504);
+    game.at_war.clear();
+    game.turn = 65;
+    game.players[0].met.insert(1);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    let nearby: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| game.wdist(home, *pos) == 1)
+        .take(3)
+        .collect();
+    assert_eq!(nearby.len(), 3);
+    for (kind, pos) in ["catapult", "warrior", "archer"].into_iter().zip(nearby) {
+        game.spawn_test_unit(kind, 1, pos);
+    }
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_peacetime_deterrence();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let wall = Item::Building {
+        building: crate::name!("walls"),
+    };
+    assert!(game.can_produce(0, city, &wall));
+    let mut disabled = ai.clone();
+    disabled.peacetime_deterrence = false;
+    assert!(disabled
+        .culture_border_siege_walls_item(&game, 0, city, &plan)
+        .is_none());
+    let mut friendly = game.clone();
+    friendly.players[0].friends_until.insert(1, game.turn + 30);
+    assert!(ai
+        .culture_border_siege_walls_item(&friendly, 0, city, &plan)
+        .is_none());
+    let mut no_siege = game.clone();
+    let siege = no_siege
+        .units
+        .values()
+        .find(|u| u.owner == 1 && u.kind == "catapult")
+        .unwrap()
+        .id;
+    no_siege.units.remove(&siege);
+    assert!(ai
+        .culture_border_siege_walls_item(&no_siege, 0, city, &plan)
+        .is_none());
+    let mut unknown = game.clone();
+    unknown.players[0].met.remove(&1);
+    assert!(ai
+        .culture_border_siege_walls_item(&unknown, 0, city, &plan)
+        .is_none());
+    let mut unseen = game.clone();
+    let visible = unseen.player_vision_frame(0);
+    let hidden = unseen
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| unseen.wdist(home, *pos) <= 4 && !unseen.sees(&visible, *pos))
+        .expect("the fixture has nearby fog outside the capital's view");
+    for unit in unseen.units.values_mut().filter(|unit| unit.owner == 1) {
+        unit.pos = hidden;
+    }
+    assert!(
+        ai.culture_border_siege_walls_item(&unseen, 0, city, &plan)
+            .is_none(),
+        "nearby siege units in the fog cannot influence production"
+    );
+    let mut recovery = plan.clone();
+    recovery.strategy = GrandStrategy::Recovery;
+    assert!(ai
+        .culture_border_siege_walls_item(&game, 0, city, &recovery)
+        .is_none());
+    let mut defender = game.clone();
+    defender.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("warrior"),
+    }];
+    ai.advanced_production(&mut defender, 0, &plan, false);
+    assert_eq!(
+        defender.cities[&city].queue[0],
+        Item::Unit {
+            unit: crate::name!("warrior")
+        }
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&wall),
+        "visible siege preparations should not wait for an actual declaration"
+    );
+}
+
+/// ★★★★ THE PLAZA IS BUILT AT TURN 112 AND THE OPENING NEEDED IT AT 40.
+///
+/// Over the 38 recorded live runs of 2026-09-10/11 a `DISTRICT_GOVERNMENT`
+/// stands in 25 at a median turn 112 and the Ancestral Hall in 8 at a median
+/// turn 119, while the fourth city the opening band needs by turn 60 arrives at
+/// a median turn 77. `expansion_hall` prices the Hall and says in its own note
+/// that the plaza's placement keeps its price, so the plot the Hall stands on
+/// scores like an empty one. See `expansion_hall_district`.
+#[test]
+fn an_expansion_district_is_worth_the_hall_it_hosts() {
+    let (game, capital, _home) = empire_with_a_capital(71_117);
+    let hall = &game.rules.buildings["ancestral_hall"];
+    let expected = (hall.effects["free_builder_new_city"] * EXPANSION_HALL_BUILDER_VALUE
+        + (hall.effects["settler_production_pct"] / 50.0) * EXPANSION_HALL_SETTLER_VALUE)
+        * HOSTED_EXPANSION_DISCOUNT;
+
+    assert_eq!(
+        AdvancedAi::hosted_expansion_path(&game, 0, &crate::name!("government_plaza")),
+        expected,
+        "the Ancestral Hall is the land-grab building the plaza hosts"
+    );
+    assert_eq!(
+        AdvancedAi::hosted_expansion_path(&game, 0, &crate::name!("campus")),
+        0.0,
+        "a Campus hosts nothing that pays the land grab"
+    );
+
+    let site = game
+        .district_sites(capital, crate::name!("government_plaza"))
+        .into_iter()
+        .next()
+        .expect("the capital has a plot for a Government Plaza");
+    let plaza = Item::District {
+        district: crate::name!("government_plaza"),
+        pos: site,
+    };
+    let short = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 9,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+
+    let ordinary = AdvancedAi::new();
+    assert!(!ordinary.expansion_hall_district, "the gene ships off");
+    let frozen = AdvancedAi::legacy();
+    assert!(!frozen.expansion_hall_district);
+    let stock = ordinary.production_value(&game, 0, capital, &plaza, &short, &counts);
+    assert_eq!(
+        frozen.production_value(&game, 0, capital, &plaza, &short, &counts),
+        stock,
+        "the frozen anchor prices the plaza exactly as the ordinary controller"
+    );
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_expansion_hall_district();
+    let paid = treated.production_value(&game, 0, capital, &plaza, &short, &counts);
+    assert!(
+        paid > stock,
+        "a plaza worth nothing on its own is worth the Hall it will host: \
+         {paid} against {stock}"
+    );
+
+    // ⭐ AND THE CREDIT FADES WITH THE SHORTFALL, on the building arm's own
+    // scale, so the district's term reaches zero on the turn the Hall's does.
+    let met = StrategicPlan {
+        desired_cities: 0,
+        ..short.clone()
+    };
+    assert_eq!(
+        treated.production_value(&game, 0, capital, &plaza, &met, &counts),
+        ordinary.production_value(&game, 0, capital, &plaza, &met, &counts),
+        "an empire no longer short of seats prices the plaza as stock does"
+    );
+
+    // And nothing else moves: a district that hosts no land-grab building is
+    // priced identically with the gene on.
+    if let Some(campus_site) = game
+        .district_sites(capital, crate::name!("campus"))
+        .into_iter()
+        .next()
+    {
+        let campus = Item::District {
+            district: crate::name!("campus"),
+            pos: campus_site,
+        };
+        assert_eq!(
+            treated.production_value(&game, 0, capital, &campus, &short, &counts),
+            ordinary.production_value(&game, 0, capital, &campus, &short, &counts),
+            "a Campus is priced the same with the gene on"
+        );
+    }
 }

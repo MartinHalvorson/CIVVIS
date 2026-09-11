@@ -1045,6 +1045,49 @@ fn doomed_shooters(
 }
 
 impl AdvancedAi {
+    /// The live controller must also honor this policy when its fresh combat
+    /// preview disagrees with the native damage model.
+    pub fn live_strike_survival_enabled(&self) -> bool {
+        self.doomed_blow_veto || self.doomed_blow_veto_2
+    }
+
+    /// Apply the selected survival policy to a live bridge finishing volley.
+    /// The bridge commits these actions before `take_turn`, so the ordinary
+    /// battle planner cannot protect their strikers afterwards. Recheck the
+    /// whole resulting board: a later friendly kill can remove an earlier
+    /// striker's reply threat. Off, neither the actions nor the board are read.
+    pub fn live_finishing_actions_survive<'a>(
+        &self,
+        before: &Game,
+        pid: usize,
+        actions: impl IntoIterator<Item = &'a Action>,
+    ) -> bool {
+        if !self.doomed_blow_veto && !self.doomed_blow_veto_2 {
+            return true;
+        }
+        let mut after = before.speculative_clone();
+        let mut strikers = BTreeSet::new();
+        for action in actions {
+            if after.apply(pid, action).is_err() {
+                return false;
+            }
+            if let Action::Attack { unit, .. } | Action::Ranged { unit, .. } = action {
+                strikers.insert(*unit);
+            }
+        }
+        let mut field = DangerField::with_reach(&after, pid, self.strike_reach);
+        strikers.into_iter().all(|uid| {
+            after.units.get(&uid).is_some_and(|unit| {
+                let incoming = field.danger(unit.pos, uid);
+                let started_healthy = before
+                    .units
+                    .get(&uid)
+                    .is_some_and(|unit| unit.hp >= WOUNDED_STRIKER_HP);
+                incoming < f64::from(unit.hp) && (started_healthy || incoming <= NO_DANGER)
+            })
+        })
+    }
+
     /// Whether the battle plan has already ordered this unit this turn, so
     /// the per-unit ladder leaves it where the plan put it.
     pub(super) fn battle_planner_claims(&self, uid: u32) -> bool {
@@ -1060,6 +1103,8 @@ impl AdvancedAi {
         if !self.battle_planner_on() {
             return false;
         }
+        self.battle_planner_ordered = self.withdraw_before_kill_prepass(g, pid, plan);
+        let withdrew = !self.battle_planner_ordered.is_empty();
         self.battle_planner_recovering.retain(|uid| {
             g.units
                 .get(uid)
@@ -1107,13 +1152,13 @@ impl AdvancedAi {
         // The caller's own rebuild after a strike is the version-one
         // contract and stands.
         if self.positions_plan_on() {
-            if struck {
+            if struck || withdrew {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
-            self.plan_positions(g, pid, &mut field, &armed);
+            self.plan_positions(g, pid, plan, &mut field, &armed);
         }
-        struck
+        struck || withdrew
     }
 
     /// The kill plan alone — the ordered blows the search chose, before any
@@ -1325,7 +1370,8 @@ impl AdvancedAi {
                 || unit.moves_left <= 0.0
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
                 || self.battle_planner_recovering.contains(&uid)
-                || self.guard_is_bound_to_any_settler(uid)
+                || self.battle_planner_ordered.contains(&uid)
+                || self.guard_is_reserved_for_civilian(uid)
                 // `battle-planner-3`: the siege's taker is not the plan's.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
@@ -1867,17 +1913,19 @@ impl AdvancedAi {
                 || unit.linked_to.is_some()
                 || unit.moves_left <= 0.0
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
-                || self.guard_is_bound_to_any_settler(uid)
+                || self.guard_is_reserved_for_civilian(uid)
                 // `battle-planner-3`: the siege's taker holds its post.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
                 continue;
             }
             if g.city_at(unit.pos).is_some() || g.encampment_at(unit.pos).is_some() {
-                // A garrison needs no evacuation, but its proposed sortie
-                // still needs the veto. Otherwise the early return lets the
-                // ladder reopen the very poisoned finish marked above.
-                if doomed.contains(&uid) {
+                // A recovering garrison already reached safety. Keep its
+                // reservation across live frames until RETURN_HP, otherwise
+                // the per-unit ladder can undo the rotation with a sortie.
+                // Other garrisons still need the proposed-strike veto.
+                if doomed.contains(&uid) || (heals && self.battle_planner_recovering.contains(&uid))
+                {
                     self.base.fortify_or_stop(g, pid, uid);
                     self.battle_planner_ordered.insert(uid);
                 }
@@ -2241,7 +2289,7 @@ impl AdvancedAi {
                     && !g.is_embarked(unit)
                     && g.city_at(unit.pos).is_none()
                     && g.encampment_at(unit.pos).is_none()
-                    && !self.guard_is_bound_to_any_settler(*uid)
+                    && !self.guard_is_reserved_for_civilian(*uid)
                     && !matches!(
                         Self::force_role(g, *uid),
                         ForceRole::Recon | ForceRole::AirStrike
@@ -2737,6 +2785,7 @@ impl AdvancedAi {
         &mut self,
         g: &mut Game,
         pid: usize,
+        strategy: &StrategicPlan,
         field: &mut DangerField,
         armed: &BTreeSet<u32>,
     ) {
@@ -2745,6 +2794,16 @@ impl AdvancedAi {
         }
         let groups = self.force_groups.clone();
         for group in &groups {
+            // The siege doctrine owns this formation's approach and firing
+            // posts. A generic slot can hold a gun outside range and claim
+            // its turn before the siege ladder gets to move it. Kill shots
+            // and wounded-unit rotations have already run above.
+            if self.siege_train
+                && group.domain == super::ForceDomain::Land
+                && self.siege_city_of(g, pid, strategy, group).is_some()
+            {
+                continue;
+            }
             let Some(plan) = self.position_plan(g, pid, group, field, armed) else {
                 continue;
             };
@@ -4188,6 +4247,33 @@ mod tests {
     }
 
     #[test]
+    fn a_recovering_garrison_stays_claimed_until_it_can_return_to_battle() {
+        for hp in [57, RETURN_HP - 1, RETURN_HP] {
+            let mut g = open_field();
+            g.tactics.heal = true;
+            let refuge = at(10, 4);
+            g.found_city_for(0, refuge, Some("Refuge".to_string()));
+            let ours = g.spawn_unit("warrior", 0, refuge);
+            wound(&mut g, ours, hp);
+            let mut ai = version_two();
+            // The preceding host frame rotated this unit into the city.
+            // A fresh frame restores its unspent movement before FORTIFY
+            // has landed, so the per-unit ladder must still leave it alone.
+            ai.battle_planner_recovering.insert(ours);
+            let plan = conquest(&g);
+            ai.plan_battle(&mut g, 0, &plan);
+            assert_eq!(ai.battle_planner_claims(ours), hp < RETURN_HP);
+            if hp < RETURN_HP {
+                assert!(g.units[&ours].fortified);
+                assert_eq!(g.units[&ours].pos, refuge);
+                assert!(ai.battle_planner_recovering.contains(&ours));
+            } else {
+                assert!(!ai.battle_planner_recovering.contains(&ours));
+            }
+        }
+    }
+
+    #[test]
     fn doomed_veto_blocks_a_profitable_trade_before_the_kill_search_can_spend_it() {
         let mut g = open_field();
         g.found_city_for(0, at(10, 4), Some("Refuge".to_string()));
@@ -4436,3 +4522,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod siege_position_tests;

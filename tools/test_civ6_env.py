@@ -199,3 +199,46 @@ class MacosQuitMenuTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExitConfirmationWiringTests(unittest.TestCase):
+    """The graceful quit has to answer the question it just asked."""
+
+    def test_quit_game_answers_the_confirmation_while_it_waits(self):
+        """★ Without this the menu quit opens a modal, the SIGTERM that follows
+        cannot get through it, and `quit_game` — rightly refusing to SIGKILL a
+        process that owns the save files — leaves the lane stalled for an
+        operator. Measured twice on 2026-09-10."""
+        alive = [[4242], [4242], [4242], []]
+
+        def pids():
+            return alive.pop(0) if alive else []
+
+        with mock.patch.object(civ6_env, "game_pids", side_effect=pids), \
+             mock.patch.object(civ6_env, "request_macos_quit", return_value=True), \
+             mock.patch.object(civ6_env, "confirm_exit_dialog",
+                               return_value=True) as confirm, \
+             mock.patch.object(civ6_env.os, "kill") as kill, \
+             mock.patch("time.sleep"):
+            self.assertTrue(civ6_env.quit_game(timeout_s=20.0))
+        confirm.assert_called_once_with()
+        kill.assert_not_called()
+
+    def test_the_confirmation_is_never_asked_when_the_menu_quit_was_refused(self):
+        """No menu quit, no modal to answer — go straight to the TERM path."""
+        with mock.patch.object(civ6_env, "game_pids",
+                               side_effect=[[4242], [4242], []]), \
+             mock.patch.object(civ6_env, "request_macos_quit", return_value=False), \
+             mock.patch.object(civ6_env, "confirm_exit_dialog") as confirm, \
+             mock.patch.object(civ6_env.os, "kill"), \
+             mock.patch("time.sleep"):
+            civ6_env.quit_game(timeout_s=20.0)
+        confirm.assert_not_called()
+
+    def test_a_reader_that_raises_never_escapes_the_quit_path(self):
+        """⚠ A quit must not be turned into a traceback by a screen reader."""
+        import civ6_play
+
+        with mock.patch.object(civ6_play, "confirm_exit_dialog",
+                               side_effect=RuntimeError("no capture")):
+            self.assertFalse(civ6_env.confirm_exit_dialog())

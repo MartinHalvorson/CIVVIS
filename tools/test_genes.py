@@ -105,6 +105,22 @@ class Merging(unittest.TestCase):
             # prices them, so the batch rule reads every one as off.
             return gene_ledger.build_ledger(paths, filter_known=False)
 
+    def test_observed_epoch_replaces_pooled_evidence_not_historical_source_files(self):
+        old = analysis([{"tag": "a", "wins": 400, "win": 4.0}])
+        new = analysis([{"tag": "a", "wins": -200, "win": -2.0}],
+                       player_contract="observed-player-v1", target_mix="science,culture",
+                       native_competitions=True)
+        ledger = self.build([old, new])
+        self.assertEqual(len(ledger["sources"]), 2, "history remains recorded")
+        row = ledger["genes"][0]
+        self.assertEqual(row["win_diff_pp"], -2.0)
+        self.assertEqual(row["posterior_screens"], 1)
+        self.assertIsNone(row["wins_prior_10k"])
+        history = [gene_ledger.measurements_from_source(data, name, "standard")["a"]
+                   for data, name in ((old, "old"), (new, "new"), (old, "display-old"))]
+        self.assertEqual(gene_ledger.pooled_win_diff_pp(history), -2.0)
+        self.assertEqual(len(gene_ledger.current_player_evidence(history)), 1)
+
     def test_the_newest_screen_that_priced_a_gene_supplies_its_verdict(self):
         ledger = self.build([
             analysis([
@@ -256,6 +272,113 @@ class OneShape(unittest.TestCase):
                 probe = analysis([{"tag": "a"}], **leg)
                 self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
                 self.assertIn(next(iter(leg)), gene_ledger.shape_gap(gene_ledger.profile_of(probe)))
+
+    def test_a_fidelity_run_is_refused_as_a_source_with_no_escape(self):
+        """⚠⚠ `--deployment-genome` screens NOTHING: every seat plays the
+        shipped genome, so no seat has a gene off to price it against. It is
+        the shape `civ6_trajectory_fidelity.py` compares with the live seat,
+        and it must never be mistaken for a screen. `--legacy-shape` does not
+        let it in either — there is nothing to excuse, only nothing to read."""
+        run = analysis([{"tag": "a"}])
+        run["deployment_genome"] = True
+        for legacy in (False, True):
+            with self.subTest(legacy_shape=legacy):
+                with self.assertRaises(SystemExit) as refusal:
+                    self.sources(run, legacy_shape=legacy)
+                self.assertIn("prices nothing", str(refusal.exception))
+        # The same file without the flag is the ordinary screen again.
+        self.assertEqual(len(self.sources(analysis([{"tag": "a"}]))), 1)
+
+    def test_the_three_reporting_columns_must_have_played_one_field(self):
+        """⚠⚠ The cost of the rung NOT being a shape leg, paid at the ranking.
+
+        `--difficulty emperor`, `--handicap rivals` and `--rivals firaxis-mix`
+        all leave every map leg alone and stay `standard`, deliberately: the
+        ladder plays Emperor and above and the screen may follow it. But the
+        ranking averages the latest THREE columns weighted by seats, so if one
+        played Emperor against handicapped rivals and two played Prince
+        self-play, that average is a mixture of different games and nothing
+        said so. `handicap`'s own note asks a reader to read such a source with
+        care; this is what makes that possible."""
+        def column(name, **legs):
+            return {
+                "path": name,
+                "profile": gene_ledger.profile_of(analysis([{"tag": "a"}], **legs)),
+            }
+
+        prince = column("prince.json")
+        emperor = column("emperor.json", difficulty="emperor", handicap="rivals",
+                         rivals="firaxis-mix", rival_chairs=5)
+        self.assertEqual(gene_ledger.field_drift([prince]), {})
+        self.assertEqual(gene_ledger.field_drift([prince, prince]), {})
+        self.assertEqual(gene_ledger.field_drift([emperor, emperor]), {})
+        mixed = gene_ledger.field_drift([prince, emperor])
+        self.assertEqual(len(mixed), 2, f"a mixture must be named: {mixed}")
+        self.assertTrue(
+            any("emperor" in name for name in mixed),
+            f"the message must name the field that differs: {mixed}",
+        )
+
+    def test_the_mixture_is_refused_at_the_door_the_ranking_reads(self):
+        """The guard runs in the change that adds it: two real files, one
+        Prince and one Emperor, through the function the ledger actually
+        calls."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            prince = tmp / "prince.json"
+            prince.write_text(json.dumps(analysis([{"tag": "a"}])))
+            emperor = tmp / "emperor.json"
+            emperor.write_text(json.dumps(analysis(
+                [{"tag": "a"}], difficulty="emperor", handicap="rivals")))
+            notes = {"prince.json": "test", "emperor.json": "test"}
+            # Either one alone is fine.
+            self.assertEqual(
+                len(gene_ledger.reporting_batch_records([prince], notes)), 1)
+            self.assertEqual(
+                len(gene_ledger.reporting_batch_records([emperor], notes)), 1)
+            with self.assertRaises(SystemExit) as refusal:
+                gene_ledger.reporting_batch_records([prince, emperor], notes)
+        message = str(refusal.exception)
+        self.assertIn("did not play the same field", message)
+        self.assertIn("emperor", message)
+        self.assertIn("prince.json", message)
+        self.assertIn("emperor.json", message)
+
+    def test_a_rung_batch_alone_is_never_refused(self):
+        """The gate is against the MIXTURE, not against the rung. An Emperor
+        column is exactly the evidence the Emperor ladder needs."""
+        emperor = analysis([{"tag": "a"}], difficulty="emperor", handicap="rivals")
+        profile = gene_ledger.profile_of(emperor)
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        self.assertEqual(
+            gene_ledger.field_drift([{"path": "emperor.json", "profile": profile}]), {}
+        )
+
+    def test_every_deployment_field_default_is_what_an_unset_header_means(self):
+        """The defaults have to BE the shipped ones, or a batch that recorded
+        nothing would read as a different field from one that recorded its
+        default explicitly."""
+        blank = gene_ledger.profile_of(analysis([{"tag": "a"}]))
+        for key, default in gene_ledger.DEPLOYMENT_FIELD.items():
+            with self.subTest(key=key):
+                self.assertEqual(blank.get(key, default), default)
+        spelled = gene_ledger.profile_of(analysis([{"tag": "a"}], difficulty="prince"))
+        self.assertEqual(
+            gene_ledger.field_of(blank),
+            gene_ledger.field_of(spelled),
+            "naming the rung it already played is not a different field",
+        )
+
+    def test_observed_player_standard_requires_competitions_without_reserved_seats(self):
+        profile = gene_ledger.profile_of(analysis([{"tag": "a"}],
+            player_contract="observed-player-v1", native_competitions=True))
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        profile["native_competitions"] = False
+        self.assertEqual(gene_ledger.shape_of(profile), "legacy")
+        self.assertIn("native_competitions", gene_ledger.shape_gap(profile))
+        profile["native_competitions"] = True
+        profile["contested_field"] = "diplomatic"
+        self.assertEqual(gene_ledger.shape_of(profile), "legacy")
 
     def test_the_retired_paired_field_is_not_a_contested_board(self):
         """⚠ `field` was already taken. Every header the paired designs wrote
@@ -939,12 +1062,33 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         self.assertEqual(rules["operator_default_off"], [])
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
+        # ⭐ Hysteresis reads the previous published selection, which the
+        # ledger records so this re-derivation has the same input.
+        prior = rules["prior_deployment_genome"]
+        self.assertEqual(prior, sorted(set(prior)), "sorted, unique")
+        tags = gene_ledger.screenable_tags()
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
-            batches, gene_ledger.screenable_tags()))
+            batches, tags, prior_on=prior))
         # The exact set is the regression oracle. Its count intentionally
         # moves whenever a completed reporting batch enters the three-batch
         # window, so a fixed number would reject a correct table rotation.
         self.assertEqual(set(rules["deployment_genome"]), eligible)
+        self.assertEqual(rules["retained_selection_off_below"],
+                         gene_ledger.RETAINED_SELECTION_OFF_BELOW)
+        self.assertEqual(rules["hysteresis_held"],
+                         gene_ledger.hysteresis_held(batches, tags, rules["deployment_genome"]))
+        averages = gene_ledger.retained_selection_averages(batches, tags)
+        for tag in rules["hysteresis_held"]:
+            self.assertIn(tag, rules["deployment_genome"], tag)
+            self.assertIn(tag, prior, f"{tag} is held on by hysteresis but was not on before")
+            if tag in averages:
+                self.assertGreaterEqual(averages[tag],
+                                        gene_ledger.RETAINED_SELECTION_OFF_BELOW, tag)
+                self.assertLessEqual(averages[tag],
+                                     gene_ledger.RETAINED_SELECTION_MIN_AVERAGE, tag)
+        for tag in rules["deployment_genome"]:
+            if tag not in rules["hysteresis_held"]:
+                self.assertGreater(averages[tag], gene_ledger.RETAINED_SELECTION_MIN_AVERAGE, tag)
 
     def test_retained_selection_weights_only_available_batch_readings_by_seats(self):
         self.assertEqual(
@@ -971,6 +1115,132 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
             gene_ledger.retained_deployment_genome_from_batches(
                 [{"meta": {"seats": 10_000}, "rows": {"sample": row}}], ["sample"]),
             ())
+
+    @staticmethod
+    def _batch(wins_by_tag: dict[str, float], seats: int = 10_000) -> dict:
+        """One displayed batch whose cell for each tag reads exactly `wins`
+        per 10,000 total seats (every seat on the arm), weighted `seats`."""
+        return {
+            "meta": {"seats": seats},
+            "rows": {
+                tag: {
+                    "players": 6,
+                    "win_on": 1 / 6 + wins / 10_000,
+                    "n_on": 10_000,
+                    "source_seats": 10_000,
+                }
+                for tag, wins in wins_by_tag.items()
+            },
+        }
+
+    def _select(self, wins: float, prior_on: tuple[str, ...], tag: str = "g") -> bool:
+        batches = [self._batch({tag: wins})]
+        return tag in gene_ledger.retained_deployment_genome_from_batches(
+            batches, [tag], prior_on=prior_on)
+
+    # ⭐ HYSTERESIS (operator, 2026-09-09): one batch's bounce cannot flip a
+    # default. #3236 turned `bounded-recovery` off from readings −14 / +45 /
+    # +10 with verdict Helps and P(>0) = 100%.
+    def test_a_gene_that_is_on_stays_on_at_minus_two(self):
+        self.assertTrue(self._select(-2, prior_on=("g",)))
+
+    def test_a_gene_that_is_on_turns_off_at_minus_four(self):
+        self.assertFalse(self._select(-4, prior_on=("g",)))
+
+    def test_a_gene_that_is_off_stays_off_at_plus_two(self):
+        self.assertFalse(self._select(2, prior_on=()))
+
+    def test_a_gene_that_is_off_turns_on_at_plus_four(self):
+        self.assertTrue(self._select(4, prior_on=()))
+
+    def test_the_band_is_symmetric_and_strict_at_both_edges(self):
+        # Exactly −3 is not strictly below −3: an on gene stays on. Exactly
+        # +3 is not strictly above +3: an off gene stays off.
+        self.assertTrue(self._select(-3, prior_on=("g",)))
+        self.assertFalse(self._select(3, prior_on=()))
+        # Inside the band the previous state is the answer, either way.
+        self.assertTrue(self._select(0, prior_on=("g",)))
+        self.assertFalse(self._select(0, prior_on=()))
+        # Outside it the reading is, either way.
+        self.assertTrue(self._select(4, prior_on=("g",)))
+        self.assertFalse(self._select(-4, prior_on=()))
+
+    def test_a_gene_that_is_on_and_unpriced_keeps_its_default(self):
+        batches = [self._batch({"other": 9})]
+        self.assertEqual(
+            gene_ledger.retained_deployment_genome_from_batches(
+                batches, ["g", "other"], prior_on=("g",)),
+            ("g", "other"))
+        self.assertEqual(
+            gene_ledger.retained_deployment_genome_from_batches(
+                batches, ["g", "other"], prior_on=()),
+            ("other",))
+
+    def test_hysteresis_weights_the_latest_three_readings_by_completed_seats(self):
+        # bounded-recovery's readings from #3236: −14 / +45 / +10 over
+        # 13,938 / 2,460 / 18,768 seats average +2.6 — inside the band, so it
+        # stays on when it was on and stays off when it was off.
+        batches = [self._batch({"g": -14}, 13_938), self._batch({"g": 45}, 2_460),
+                   self._batch({"g": 10}, 18_768)]
+        average = gene_ledger.retained_selection_averages(batches, ["g"])["g"]
+        self.assertGreater(average, gene_ledger.RETAINED_SELECTION_OFF_BELOW)
+        self.assertLess(average, gene_ledger.RETAINED_SELECTION_MIN_AVERAGE)
+        self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+            batches, ["g"], prior_on=("g",)), ("g",))
+        self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+            batches, ["g"], prior_on=()), ())
+
+    def test_the_family_tie_break_is_unchanged_by_hysteresis(self):
+        tags = ["g", "g-2"]
+        # Two versions above +3 ship the higher average, whatever was on.
+        both = [self._batch({"g": 5, "g-2": 8})]
+        for prior in ((), ("g",), ("g-2",)):
+            self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+                both, tags, prior_on=prior), ("g-2",), prior)
+        # An exact tie still goes to the higher version.
+        tie = [self._batch({"g": 5, "g-2": 5})]
+        self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+            tie, tags, prior_on=("g",)), ("g-2",))
+        # A version held on by the band alone yields to a sibling that clears
+        # +3 — a family still ships exactly one version.
+        sibling_earns = [self._batch({"g": 4, "g-2": 0})]
+        self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+            sibling_earns, tags, prior_on=("g-2",)), ("g",))
+        # Two versions both inside the band: the one that was on stays on.
+        neither_earns = [self._batch({"g": 1, "g-2": 2})]
+        self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+            neither_earns, tags, prior_on=("g",)), ("g",))
+        self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+            neither_earns, tags, prior_on=()), ())
+
+    def test_hysteresis_held_names_the_kept_defaults(self):
+        batches = [self._batch({"g": 4, "h": -1})]
+        selected = gene_ledger.retained_deployment_genome_from_batches(
+            batches, ["g", "h", "i"], prior_on=("h", "i"))
+        self.assertEqual(selected, ("g", "h", "i"))
+        self.assertEqual(gene_ledger.hysteresis_held(batches, ["g", "h", "i"], selected),
+                         ["h", "i"])
+
+    def test_a_reselection_records_the_prior_it_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.json"
+            source.write_text(json.dumps(analysis([{"tag": "g"}, {"tag": "h"}])))
+            reports = batch_files(tmp, [batch([{"tag": "g", "wins": -2}, {"tag": "h", "wins": 2}])])
+            with unittest.mock.patch.object(gene_ledger, "OPERATOR_DEFAULT_ON", ()):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    ledger = gene_ledger.build_ledger(
+                        [source], filter_known=False, reporting_batches=reports,
+                        deployment_policy=gene_ledger.RETAINED_DEPLOYMENT_POLICY,
+                        retained_deployment_genome=("g",),
+                        prior_deployment_genome=("g",))
+        rules = ledger["rules"]
+        self.assertEqual(rules["prior_deployment_genome"], ["g"])
+        self.assertEqual(rules["hysteresis_held"], ["g"])
+        self.assertEqual(rules["retained_selection_off_below"], -3)
+        # Re-deriving from the record reproduces the same selection.
+        batches = ranking.load_reporting_batches(ledger)
+        self.assertEqual(gene_ledger.retained_deployment_genome_from_batches(
+            batches, ["g", "h"], prior_on=rules["prior_deployment_genome"]), ("g",))
 
     def test_the_shipped_genome_is_the_rule_over_the_recorded_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())

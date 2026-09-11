@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
+from civ6_control import operator_presence  # noqa: E402
 from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           macos_input, macos_ocr, macos_window,
                           operator_retire, popup_clear, vision,
@@ -156,30 +157,16 @@ DESKTOP_RESCUE_BUDGET = capture_budget.CaptureBudget()
 # 0-33 light-years at t250), which is the improvement queue, not a reason to
 # keep aiming at a lane the operator has not asked for.
 DEFAULT_CIVVIS_VICTORY = "science"
-# The operator's standing instruction is unambiguous: every live game plays
-# Rome, using its base-game leader Trajan.  Keep this at the harness boundary,
-# not merely in a launcher default, so a direct ``civ6_play.py --leader ...``
-# invocation cannot quietly start a different civilization.
+# Keep a deterministic default, while honoring the operator's selected leader.
 ROMAN_LEADER = "LEADER_TRAJAN"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
 
 
-def enforce_roman_leader(requested: str | None, *, caller: str) -> str:
-    """Return the one live-game leader, recording an attempted override.
-
-    ``--leader`` remains accepted for command-line compatibility, but a
-    verification result is only comparable when every game uses the same
-    civilization.  The caller label makes a coerced direct invocation visible
-    in its durable play or climb log rather than silently pretending the
-    requested leader was honored.
-    """
-    if requested != ROMAN_LEADER:
-        named = requested or "Random Leader"
-        print(f"[{caller}] overriding requested leader {named!r}; live games "
-              f"always play Rome / Trajan ({ROMAN_LEADER})", flush=True)
-    return ROMAN_LEADER
+def resolve_live_leader(requested: str | None) -> str:
+    """Keep an explicit leader; omitted selections use the deterministic default."""
+    return requested or ROMAN_LEADER
 
 # ★★★ FULL-GAME VERIFICATION POLICY. A score gap is evidence to preserve, not
 # a loss certificate. Every verification game is played through its in-game
@@ -293,9 +280,45 @@ def partial_summary(tag: str, config: dict, state: dict) -> dict:
         "last_turn": state.get("turn"),
         "last_score": state.get("score"),
         "cities_at_60": state.get("cities_at_60"),
+        "districts": state.get("districts"),
+        "buildings": state.get("buildings"),
+        "developed_cities": state.get("developed_cities"),
         "outcome": state.get("outcome"),
         "abandoned": state.get("abandoned"),
     }
+
+
+def record_development(state: dict, event: dict) -> None:
+    """Total districts and buildings over our cities, from a `state` frame.
+
+    The frame lists only this seat's cities (`original_owner` is us on every
+    one), each with a `districts` list and a `buildings` list. Both counts are
+    RAW totals and both include what `gene_screen`'s columns include — the
+    city centre is a district on each side — so the two are comparable without
+    translating a single Firaxis type name. `developed_cities` is the divisor
+    the frame itself saw, so a run that lost a city is not divided by the
+    count it ended with.
+
+    ⚠ Specialty districts are deliberately not counted here. Telling which
+    Firaxis type is a specialty needs a name map (`DISTRICT_THEATER` is
+    `theater_square`), and a wrong map would produce a confident wrong number.
+    The raw pair answers the question being asked.
+
+    Overwrites on every frame, so the value is the last one the run saw.
+    """
+    cities = event.get("cities")
+    if not isinstance(cities, list) or not cities:
+        return
+    districts = 0
+    buildings = 0
+    for city in cities:
+        if not isinstance(city, dict):
+            return
+        districts += len(city.get("districts") or [])
+        buildings += len(city.get("buildings") or [])
+    state["districts"] = districts
+    state["buildings"] = buildings
+    state["developed_cities"] = len(cities)
 
 
 def below_leader_score_reading(
@@ -568,7 +591,8 @@ def state_export_enabled(args: argparse.Namespace) -> bool:
     # event.  Keeping this derived here, where the baked mod config is made,
     # makes `--civvis-decides` self-contained instead of relying on callers to
     # remember a second, otherwise optional diagnostic flag.
-    return bool(args.export_state or args.civvis_decides)
+    return bool(args.export_state or args.civvis_decides or getattr(args, "action_transitions", False)
+                or getattr(args, "isolated_action_probes", False))
 
 
 def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
@@ -734,6 +758,8 @@ def build_config(args: argparse.Namespace) -> dict:
         # Mirror the board into the log once a turn so CIVVIS can be the engine
         # that decides. Off by default: it is the largest emit in the mod.
         "ExportState": state_export_enabled(args),
+        "ActionTransitions": getattr(args, "action_transitions", False),
+        "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
         # Ask every candidate inbound API what it holds, once a turn, and emit the
         # answer. Paired with `probe_channel.py`, which writes a changing nonce into
         # each sink from outside: the channel is whichever field reports the nonce
@@ -1032,26 +1058,30 @@ OPTIONS = {
               "GAMESPEED_EPIC", "GAMESPEED_MARATHON"],
     "map_size": ["MAPSIZE_DUEL", "MAPSIZE_TINY", "MAPSIZE_SMALL",
                  "MAPSIZE_STANDARD", "MAPSIZE_LARGE", "MAPSIZE_HUGE"],
-    # ⚠ THIS ORDER IS A HYPOTHESIS, AND IT IS VERIFIED RATHER THAN TRUSTED.
+    # ⚠ THIS IS A MEMBERSHIP SET, NOT A CLICK ORDER. Nothing indexes it.
     #
     # Setting the map through config does NOT work: `CivvisControlSetup.lua` never
     # runs because the FrontEnd context does not load on this install, so
-    # `MapScript` is ignored and every game so far has been Continents. That
-    # matters more than it sounds: on Continents a seat can start ALONE. Run
+    # `MapScript` is ignored and a game plays whatever the panel says. That matters
+    # more than it sounds: on Continents a seat can start ALONE. Run
     # settler-20260730T045551Z reached turn 118 with `met = 0` after 415 explore
     # orders, and first contact came at turn 130 — far too late for domination,
     # which needs three capitals.
     #
-    # The dropdown is the only route that works, and it needs an index.
-    # `vision.py` reads row POSITIONS, not text, so the name cannot be matched on
-    # screen. This order is the scripted maps from the shipped `Maps` table sorted
-    # by SortIndex (Continents 10, Fractal 20, InlandSea 25, Island_Plates 30,
-    # Lakes 35, Pangaea 40, ...), on the assumption that fixed-size static maps are
-    # filtered out at Tiny.
+    # This list once carried a guessed row order, because the dropdown was clicked
+    # by index: the scripted maps from the shipped `Maps` table sorted by SortIndex
+    # (Continents 10, Fractal 20, InlandSea 25, Island_Plates 30, Lakes 35,
+    # Pangaea 40, ...), assuming fixed-size static maps are filtered out at Tiny.
+    # Clicking a guessed index broke setup outright and was reverted. `set_dropdown`
+    # no longer needs one: `_observed_label_point` finds the option by its rendered
+    # TEXT and `_setup_current_value` reads the choice back off the closed box, so
+    # these entries are only the values a row may legally hold and the count of
+    # rows an open list covers (`option_strip`). Reordering them changes nothing;
+    # removing one makes that map unselectable and unreadable.
     #
-    # The `seat` event reports the script the game ACTUALLY generated, so a wrong
-    # guess is caught on the first run rather than silently played for hours —
-    # which is exactly how "we have been asking for Pangaea and playing Continents"
+    # The `seat` event reports the script the game ACTUALLY generated, so a miss is
+    # caught on the first run rather than silently played for hours — which is
+    # exactly how "we have been asking for Pangaea and playing Continents"
     # survived this long.
     "map_type": ["Continents.lua", "Fractal.lua", "InlandSea.lua",
                  "Island_Plates.lua", "Lakes.lua", "Pangaea.lua",
@@ -1114,6 +1144,66 @@ def place_game(side: str = "left", fraction: float = 0.5,
 def focus_game(side: str = "left", fraction: float = 0.5) -> None:
     del side, fraction  # kept for call-site compatibility
     return macos_window.focus_game(GAME_PROCESS)
+
+
+#: Logged on transitions only, so a person working beside the game does not
+#: fill the play log with one line per poll.
+_SHARED_DESKTOP_STATE: dict = {"deferring": False}
+
+
+def shared_desktop_in_use() -> bool:
+    """Optional GUI recovery must leave other apps in front while a person is here.
+
+    Two ways the desktop counts as shared, and the harness keeps its hands off
+    in either:
+
+    * **someone is using the Mac** -- `operator_presence.operator_active()`
+      reads macOS's own idle clock (minus the harness's synthetic events) and
+      says so for `DEFAULT_THRESHOLD_SECONDS` after their last keystroke or
+      pointer move. This is the default and needs nothing from the operator:
+      they sit down, the game stops raising itself and clicking; they walk
+      away, upkeep resumes on its own.
+    * **`~/.civvis-shared-desktop` exists** -- the standing manual override,
+      for a host where the game must never take the front even unattended.
+
+    In shared mode a Civ VI that is already frontmost is still fair game: the
+    person put it there. Anything else in front is theirs.
+    """
+    active = operator_presence.operator_active()
+    marker = (Path.home() / ".civvis-shared-desktop").exists()
+    if active != _SHARED_DESKTOP_STATE["deferring"]:
+        _SHARED_DESKTOP_STATE["deferring"] = active
+        print("[desktop] a person is using the Mac; leaving the front alone"
+              if active else
+              "[desktop] the Mac has been idle; resuming game upkeep", flush=True)
+    if not (active or marker):
+        return False
+    try:
+        return not popup_clear.frontmost().startswith("Civ6")
+    except (OSError, subprocess.SubprocessError):
+        # An unreadable foreground is not permission to take the keyboard.
+        return True
+
+
+def maintain_game_focus(interval: float, last_focus: float, *,
+                        place: bool = False) -> float:
+    """Periodic upkeep only; explicit setup/recovery can still use the GUI.
+
+    Upkeep defers automatically while a person is using the Mac -- see
+    `shared_desktop_in_use` -- and resumes once the machine has been idle.
+    ~/.civvis-shared-desktop is the standing manual override on top of that.
+    Background progress also depends on Civ VI's own ThrottleWhileInactive
+    setting; this switch cannot change engine behavior.
+    """
+    now = time.monotonic()
+    if interval <= 0 or now - last_focus < interval:
+        return last_focus
+    if shared_desktop_in_use() or screen_locked():
+        return last_focus
+    focus_game()
+    if place:
+        place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+    return now
 
 
 def click_at(px: int, py: int) -> None:
@@ -1985,6 +2075,354 @@ def write_leader_hint(hint_dir: Path | None, leader: str | None, step: int) -> N
         print(f"[setup] leader: could not remember the picker step: {error}", flush=True)
 
 
+#: ★★★★★ THE MAP ROW IS NOT A DROPDOWN, AND THAT IS WHY THIS KEEPS FAILING.
+#:
+#: Difficulty, speed and map size drop a short list under their closed box.
+#: Clicking the map row instead opens a FULL-PANEL BROWSER titled `SELECT MAP`:
+#: three filter tabs (`Official Maps` / `World Builder Maps` / `All Maps`), a
+#: two-column scrolling grid of globe tiles with the map name captioned beneath
+#: each, a `Map Info` pane, a `BACK` control, and a `Select Map` button at the
+#: foot that commits the choice.
+#:
+#: So `set_dropdown` could never work here. It clicked the row, looked for the
+#: requested name in what it assumed was an open list, and found nothing —
+#: because the browser opens on the alphabetical head of the roster (4-Leaf
+#: Clover, 6-Armed Snowflake, Archipelago, Continents, …) and `Pangaea` is
+#: several screens below the fold. Measured live 2026-09-10 on run
+#: civvis-20260910T175742Z: three attempts, `requested option was not visible`
+#: each time, then `refusing to click an unverified coordinate` — the refusal
+#: doing its job, and no game starting. It is also, almost certainly, why the
+#: first attempt at map selection "broke setup outright" and was reverted: a
+#: guessed dropdown row index lands on this panel's tabs or tiles.
+#:
+#: The browser is the same shape as the DLC leader picker, so it gets the same
+#: treatment: open it, walk it with the wheel, match the caption by TEXT, click
+#: it, commit, and read the choice back off the Create Game row afterwards.
+#:
+#: The tile grid, as window fractions, for the enlarged OCR crop. Vision reads
+#: a caption inconsistently in the 864x542-point game quadrant and reliably at
+#: 4x — the same recovery `_leader_ocr` already needs.
+MAP_PICKER_STRIP = (0.26, 0.28, 0.62, 0.94)
+MAP_PICKER_OPEN_ATTEMPTS = 4
+#: ⚠⚠ ONE WHEEL TICK IS ROUGHLY THREE ROWS IN THIS PANEL, NOT ONE.
+#:
+#: This was -3, copied from the leader picker's step, and it stepped clean over
+#: the map it was looking for. Measured live on run civvis-20260910T182338Z: the
+#: rewind landed on the top of the roster (frame 00: 4-Leaf Clover, 6-Armed
+#: Snowflake, Archipelago, Continents, Continents and Islands, Earth, Earth
+#: Huge, East Asia, Europe, Fractal) and ONE -3 step landed on the very bottom
+#: (frame 01: Seven Seas, Shuffle, Small Continents, Splintered Fractal, Terra,
+#: True Start Location …). Every later frame was identical -- the list was
+#: already at its end -- so twenty-three more frames were photographed of a page
+#: that could not move, and `Pangaea` was never on any of them: it lives exactly
+#: in the gap between Fractal and Seven Seas that the single step jumped.
+#:
+#: One tick moves about three of the five rows a frame shows, so consecutive
+#: frames still overlap and no caption can hide between two of them.
+MAP_PICKER_SCROLL_STEPS = 24
+MAP_PICKER_SCROLL_RESET = 20
+MAP_PICKER_SCROLL_AMOUNT = -1
+
+
+def _labels_in_strip(path: Path, bounds: tuple[int, int, int, int], label: str,
+                     strip: tuple[float, float, float, float],
+                     tag: str) -> list[tuple[int, int]]:
+    """Screen points of ``label`` inside one enlarged crop of the game window.
+
+    Small controls are unreadable at 1x and reliable at 4x, and which crop a
+    control needs depends on where it sits: the tile captions and the commit
+    button are in different bands of the same panel.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return []
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    found: list[tuple[int, int]] = []
+    for observation in _menu_crop_ocr(path, bounds, strip, tag):
+        if not _menu_label_matches(str(observation.get("text", "")), label):
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if x <= px <= x + w and y <= py <= y + h:
+            found.append((px, py))
+    return found
+
+
+def _map_picker_labels(path: Path, bounds: tuple[int, int, int, int],
+                       label: str) -> list[tuple[int, int]]:
+    """Screen points where ``label`` is captioned in the SELECT MAP browser.
+
+    Both OCR passes are run and their results merged, rather than the crop
+    being a fallback only when the full-desktop pass finds nothing: the grid
+    spans more of the window than the general menu strip covers, and the pass
+    that reads the top rows is not always the pass that reads the bottom ones.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return []
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    observations = list(_menu_ocr_observations(path))
+    observations.extend(_menu_crop_ocr(path, bounds, MAP_PICKER_STRIP, "map-picker"))
+    found: list[tuple[int, int]] = []
+    for observation in observations:
+        if not _menu_label_matches(str(observation.get("text", "")), label):
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if x <= px <= x + w and y <= py <= y + h:
+            found.append((px, py))
+    return found
+
+
+def _map_picker_tile_point(path: Path, bounds: tuple[int, int, int, int],
+                           label: str) -> tuple[int, int] | None:
+    """Where ``label`` is captioned under a TILE, ignoring the Map Info pane.
+
+    ⚠⚠ THE SELECTED MAP'S NAME IS ON SCREEN TWICE. The grid captions it under
+    its globe, and the `Map Info` pane on the right captions it again above the
+    description. Measured on the live frame from run civvis-20260910T175742Z,
+    `Continents` came back as BOTH (585, 223) -- the info pane -- and
+    (432, 292) -- the tile -- with the info pane FIRST. Clicking the first match
+    clicks a label in a read-only pane, which selects nothing and leaves the
+    browser open until the walk gives up.
+
+    The grid occupies the panel's left column, so a tile match is one inside
+    `MAP_PICKER_STRIP`; the info pane sits to its right and is excluded by it.
+    """
+    x, y, w, h = bounds
+    left, top, right, bottom = MAP_PICKER_STRIP
+    for px, py in _map_picker_labels(path, bounds, label):
+        if left <= (px - x) / w <= right and top <= (py - y) / h <= bottom:
+            return (px, py)
+    return None
+
+
+def _map_picker_page_labels(path: Path, bounds: tuple[int, int, int, int]
+                            ) -> frozenset[str]:
+    """The tile captions this frame of the grid is showing.
+
+    Used only to notice that the wheel has stopped moving the list. Compared as
+    a SET, so the OCR passes returning the same captions in a different order --
+    or one pass reading a caption the other missed -- does not read as motion.
+    """
+    x, y, w, h = bounds
+    left, top, right, bottom = MAP_PICKER_STRIP
+    screen = desktop_size()
+    if screen is None:
+        return frozenset()
+    screen_w, screen_h = screen
+    showing = set()
+    for observation in _menu_crop_ocr(path, bounds, MAP_PICKER_STRIP, "map-picker"):
+        text = str(observation.get("text", "")).strip()
+        point = _observation_point(observation)
+        if not text or point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if left <= (px - x) / w <= right and top <= (py - y) / h <= bottom:
+            showing.add(_normalized_label(text))
+    showing.discard("")
+    return frozenset(showing)
+
+
+#: The panel's foot, where the commit button lives, as window fractions.
+#: ⚠ It is BELOW `MAP_PICKER_STRIP`: the button sits at about 0.98 of the window
+#: height and the grid crop stops at 0.94, so the grid pass cannot reach it.
+MAP_PICKER_COMMIT_STRIP = (0.28, 0.84, 0.72, 1.0)
+#: A `Select Map` match above this much of the window is the panel's HEADING.
+MAP_PICKER_COMMIT_MIN_Y = 0.80
+
+
+def _map_picker_commit_point(path: Path, bounds: tuple[int, int, int, int]
+                             ) -> tuple[int, int] | None:
+    """The `Select Map` button at the panel's foot, or None if it is not legible.
+
+    ⚠⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS, AND "LOWEST WINS" WAS
+    NOT ENOUGH. `SELECT MAP` titles the panel and `Select Map` commits it, and
+    `_normalized_label` casefolds both to one string. Taking the lowest match is
+    right only while BOTH are legible. On run civvis-20260910T184530Z only the
+    heading was read — the button is small and sits BELOW the grid crop, so only
+    the 1x full-desktop pass can reach it, and that pass missed it — and the
+    lowest of one match is the heading. The click landed on the title, the
+    browser never closed, and the readback then mistook a tile caption for the
+    Create Game row: `Pangaea was committed but the row still reads Lakes.lua`.
+
+    So position decides, not order: the button is in the panel's foot, the
+    heading is at its top, and a match outside the foot is not the button. Not
+    finding it is a refusal — never a click somewhere else.
+    """
+    x, y, w, h = bounds
+    points = list(_map_picker_labels(path, bounds, "Select Map"))
+    points.extend(_labels_in_strip(path, bounds, "Select Map",
+                                   MAP_PICKER_COMMIT_STRIP, "map-commit"))
+    foot = [point for point in points if (point[1] - y) / h >= MAP_PICKER_COMMIT_MIN_Y]
+    return max(foot, key=lambda point: point[1]) if foot else None
+
+
+def _map_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Whether the SELECT MAP browser is the thing currently on screen.
+
+    Two independent signals, because either alone is ambiguous: the heading and
+    the commit button render identical text, so a single `Select Map` match
+    cannot separate a live panel from one stray label; and `All Maps` is a
+    filter tab that exists only on this panel.
+    """
+    return (len(_map_picker_labels(path, bounds, "Select Map")) >= 2
+            or bool(_map_picker_labels(path, bounds, "All Maps")))
+
+
+def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
+                         run_dir: Path, panel: Path | None = None,
+                         panel_out: dict | None = None) -> bool:
+    """Choose ``map_script`` in the SELECT MAP browser and read the choice back.
+
+    The fast path matters as much as the slow one: a run that already wants the
+    map the row shows returns without opening anything, so every host that
+    plays the default Continents is untouched by this and never sees the
+    browser at all.
+    """
+    label = _setup_option_label(map_script)
+    x, y, w, h = bounds
+    closed_shot = run_dir / "map-picker-closed.png"
+    open_shot = run_dir / "map-picker-open.png"
+
+    for attempt in range(1, MAP_PICKER_OPEN_ATTEMPTS + 1):
+        if attempt == 1 and panel is not None and panel.is_file():
+            closed = panel
+        else:
+            closed = closed_shot
+            if not screenshot(closed):
+                print(f"[setup] map picker frame was unreadable (attempt {attempt}); "
+                      "retrying without guessing", flush=True)
+                continue
+        # A click that took effect late leaves the browser open while this
+        # attempt's own capture still showed the closed row. Reusing it is
+        # safer than clicking again, which would land inside the open panel.
+        if attempt > 1 and _map_picker_open(closed, bounds):
+            print(f"[setup] map browser opened after an unreadable frame "
+                  f"(attempt {attempt})", flush=True)
+            break
+        current = _setup_current_value(closed, bounds, "map_type")
+        if current is None:
+            print(f"[setup] map_type: current value was not readable "
+                  f"(attempt {attempt})", flush=True)
+            continue
+        current_value, current_point = current
+        if current_value == map_script:
+            if panel_out is not None:
+                panel_out["shot"] = closed
+            print(f"[setup] map_type: already verified {label}", flush=True)
+            return True
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        click_at(*current_point)
+        time.sleep(1.5)
+        if not screenshot(open_shot):
+            print(f"[setup] map picker frame was unreadable after its click "
+                  f"(attempt {attempt}); retrying without guessing", flush=True)
+            continue
+        if _map_picker_open(open_shot, bounds):
+            break
+        print(f"[setup] map browser did not open (attempt {attempt})", flush=True)
+    else:
+        print("[setup] map_type: the SELECT MAP browser never opened", flush=True)
+        return False
+
+    def wheel(amount: int, settle: float) -> None:
+        macos_input.move(int(x + w * 0.43), int(y + h * 0.60))
+        macos_input.scroll(amount)
+        time.sleep(settle)
+
+    # Firaxis retains the grid's scroll position between openings, so a retry
+    # can begin below Pangaea and never reach it going down.
+    wheel(MAP_PICKER_SCROLL_RESET, 1.0)
+
+    # A grid that has stopped moving has nothing left to show. Without this the
+    # walk photographed the same bottom-of-list page twenty-three times before
+    # reporting a map it had genuinely never seen, which reads like a flaky OCR
+    # rather than a wheel that overshot.
+    settled = None
+    for step in range(MAP_PICKER_SCROLL_STEPS):
+        shot = run_dir / f"map-picker-{step:02d}.png"
+        screenshot(shot)
+        tile = _map_picker_tile_point(shot, bounds, label)
+        if tile is None:
+            showing = _map_picker_page_labels(shot, bounds)
+            if showing and showing == settled:
+                refusal = (f"[setup] map_type: the browser stopped scrolling at "
+                           f"step {step} and {label} is not on it")
+                break
+            settled = showing
+            wheel(MAP_PICKER_SCROLL_AMOUNT, 0.8)
+            continue
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        click_at(*tile)
+        time.sleep(1.0)
+        chosen = run_dir / "map-picker-chosen.png"
+        screenshot(chosen)
+        commit = _map_picker_commit_point(chosen, bounds)
+        if commit is None:
+            print(f"[setup] map_type: {label} was clicked but the Select Map "
+                  "button was not readable", flush=True)
+            break
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        click_at(*commit)
+        park_setup_pointer(bounds)
+        time.sleep(1.5)
+        # The Create Game row is the only witness that counts: the panel can
+        # highlight a tile and still commit nothing.
+        #
+        # ⚠⚠ AND THE ROW CANNOT BE READ WHILE THE BROWSER IS STILL UP. With the
+        # panel open there is no `Choose Map Type` heading on screen, so
+        # `_setup_current_value` falls through to its overlapping band fallback
+        # and returns the first map-shaped word it finds — a TILE CAPTION. On
+        # run civvis-20260910T184530Z that reported the row as `Lakes.lua` while
+        # the browser was still open and nothing had been committed at all.
+        for settle in (0.0, 1.5):
+            if settle:
+                time.sleep(settle)
+            verified = run_dir / "map-picker-selected.png"
+            screenshot(verified)
+            if _map_picker_open(verified, bounds):
+                continue
+            selected = _setup_current_value(verified, bounds, "map_type")
+            if selected is not None and selected[0] == map_script:
+                if panel_out is not None:
+                    panel_out["shot"] = verified
+                print(f"[setup] map_type: selected and verified {label} "
+                      f"at wheel step {step}", flush=True)
+                return True
+        if _map_picker_open(verified, bounds):
+            refusal = (f"[setup] map_type: {label} was clicked but the SELECT MAP "
+                       "browser is still open, so nothing was committed")
+        else:
+            refusal = (f"[setup] map_type: {label} was committed but the row still "
+                       f"reads {selected[0] if selected else 'nothing readable'}")
+        break
+    else:
+        refusal = (f"[setup] map_type: {label} was not found in the "
+                   f"{MAP_PICKER_SCROLL_STEPS} wheel steps of the SELECT MAP browser")
+
+    # Leave the panel rather than abandoning the game on top of it: the next
+    # attempt needs a Create Game screen to photograph, not a browser nobody
+    # closed. Only if we are still in it -- a commit that took but did not
+    # register has already returned us, and `Back` there is a different control.
+    parting = run_dir / "map-picker-parting.png"
+    if screenshot(parting) and _map_picker_open(parting, bounds):
+        back = _map_picker_labels(parting, bounds, "Back")
+        if back:
+            focus_game(GAME_SIDE, GAME_FRACTION)
+            click_at(*back[0])
+        else:
+            press_escape(1)
+    print(refusal, flush=True)
+    return False
+
+
 def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
                             run_dir: Path, panel: Path | None = None,
                             panel_out: dict | None = None,
@@ -2107,6 +2545,63 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
     press_escape(1)
     print(f"[setup] requested leader {label} ({leader}) was not in the picker", flush=True)
     return False
+
+
+#: Civilization VI's own confirmation when its Quit menu is used from inside a
+#: game or the Create Game screen.
+EXIT_DIALOG_HEADING = "Exit To Desktop"
+EXIT_DIALOG_CANCEL = "Cancel"
+
+
+def confirm_exit_dialog(run_dir: Path | None = None) -> bool:
+    """Click OK on the EXIT TO DESKTOP confirmation, if it is on screen.
+
+    ★★★★★ THE POLITE QUIT ASKS A QUESTION AND NOTHING WAS ANSWERING IT.
+    `civ6_env.request_macos_quit()` clicks *Quit Civilization VI* in the game's
+    menu; from inside a game or the Create Game screen that raises this modal
+    rather than exiting. The SIGTERM that follows cannot get through a modal and
+    `quit_game` rightly will not escalate to SIGKILL, so the process sits there
+    and the supervisor reports `LANE STALLED ... it needs an operator`. It
+    needed one twice on 2026-09-10, and both times the fix was a single click.
+
+    ⚠⚠ OK CANNOT BE FOUND BY OCR. `_menu_label_matches` demands an exact match
+    for a label under ten characters and `OK` is two, so it never matches --
+    which is also why the heading and Cancel are read instead. The dialog is
+    symmetric: the heading sits on the centre line and OK and Cancel straddle
+    it, so OK is Cancel mirrored about the heading.
+
+    Measured twice on 2026-09-10 against live frames: heading x=433 with Cancel
+    (480, 334) gives (386, 334); heading x=431 with the same Cancel gives
+    (382, 334). Both exited the game at once. `(385 + 480) / 2 = 432.5` lands on
+    the heading, which is what says the mirror is the rule rather than a lucky
+    constant.
+
+    ⚠ The full-desktop OCR pass reads the heading but NOT the buttons -- they
+    are too small at 1x. `_observed_label_points` falls through to the enlarged
+    crop, which is the pass that finds `Cancel`; a reimplementation that only
+    called `recognize` returned nothing and clicked nothing.
+    """
+    bounds = game_window()
+    if bounds is None:
+        return False
+    shots = run_dir if run_dir is not None else Path(tempfile.gettempdir())
+    shot = shots / "exit-dialog.png"
+    if not screenshot(shot):
+        return False
+    heading = _observed_label_points(shot, EXIT_DIALOG_HEADING, bounds)
+    cancel = _observed_label_points(shot, EXIT_DIALOG_CANCEL, bounds)
+    if not heading or not cancel:
+        return False
+    x, y, w, h = bounds
+    confirm = (2 * heading[0][0] - cancel[0][0], cancel[0][1])
+    if not (x <= confirm[0] <= x + w and y <= confirm[1] <= y + h):
+        # A mirror that lands outside the game window is not this dialog.
+        return False
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    click_at(*confirm)
+    print(f"[setup] answered the EXIT TO DESKTOP confirmation at {confirm}",
+          flush=True)
+    return True
 
 
 def _main_menu_visible(path: Path) -> bool:
@@ -2352,40 +2847,58 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     # of one capture is paid once, so a row that is already right costs neither
     # a capture nor a recognizer pass. The first row takes its own capture.
     panel: dict = {"shot": None}
+    # ★★★★★ THE MAP IS SET HERE, AND IT IS SET THE SAME WAY AS EVERY OTHER ROW.
+    #
+    # `MapScript` in the baked config is ignored -- the FrontEnd context that would
+    # read it never loads on this install -- so a game plays whatever the Create Game
+    # panel says, and for a long time that was Continents for every run whatever was
+    # asked for. On Continents a seat can start ALONE: one run reached turn 118 with
+    # `met = 0` and first contact at turn 130, which is far too late for domination,
+    # a lane that needs three capitals.
+    #
+    # An earlier attempt at this WAS reverted, and correctly: it clicked a guessed
+    # row index, four consecutive attempts logged "no game started", and no `seat`
+    # event ever arrived. The revert asked for two things before it came back --
+    # "OCR on the dropdown rows, or reading the selected value back off the screen
+    # before committing to Start Game". Both are done now: the option is located by
+    # its rendered label and the Create Game row is re-read afterwards, and an
+    # unverified coordinate is refused rather than clicked.
+    #
+    # ⚠ But the map row is NOT a dropdown, which is the part the revert did not know
+    # and the reason a guessed index broke setup outright: it opens the `SELECT MAP`
+    # browser. `select_requested_map` drives that panel.
+    #
+    # The map is also the axis with the strongest check on the far side: the mod
+    # reports `MapConfiguration.GetScript()` in the `seat` event and
+    # `seat_matches_requested` compares it to `--map`, so a game that generated a
+    # different script is `configured = False` and is refused from inside the
+    # running game on the first attempt.
+    #
+    # Map type is chosen BEFORE map size: the size list is the one the chosen script
+    # offers, so ordering it this way verifies the size against the final map.
+    #
+    # ⚠ AND IT IS NOT SET THE SAME WAY. Three of these four rows are dropdowns; the
+    # map row opens the full `SELECT MAP` browser instead, which is why it needs
+    # `select_requested_map` and why `set_dropdown` could never do it. That
+    # function's header records what the panel actually is.
+    def set_row(name: str, value: str) -> bool:
+        if name == "map_type":
+            return select_requested_map(bounds, value, run_dir,
+                                        panel=panel["shot"], panel_out=panel)
+        return set_dropdown(bounds, name, value, run_dir, panel=panel["shot"],
+                            panel_out=panel)
+
     for name, value in (("difficulty", args.difficulty),
+                        ("map_type", args.map),
                         ("map_size", args.map_size),
                         ("speed", args.speed)):
-        if not set_dropdown(bounds, name, value, run_dir, panel=panel["shot"],
-                            panel_out=panel):
+        if not set_row(name, value):
             print(f"[setup] {name} was NOT set; refusing to start an unverified game",
                   flush=True)
             return False
     if not select_requested_leader(bounds, args.leader, run_dir, panel=panel["shot"],
                                    panel_out=panel, hint_dir=run_dir.parent):
         print("[setup] requested leader was NOT selected; refusing to start", flush=True)
-        return False
-    # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
-    # because the FrontEnd context that would read it never loads, so every game so
-    # far has been Continents whatever was asked for. On Continents a seat can start
-    # alone: one run reached turn 118 with `met = 0`, and first contact at turn 130 is
-    # too late for domination. The `seat` event reports the script the game actually
-    # generated, so a wrong row shows up as a run that says so.
-    # ⚠ REVERTED, AND LEFT REVERTED UNTIL IT CAN BE VERIFIED.
-    #
-    # Selecting the map here broke setup outright: four consecutive attempts logged
-    # "no game started" and no `seat` event ever arrived, where the same path had
-    # been reliable for hours. The dropdown row is an unverified guess (`vision.py`
-    # reads row POSITIONS, not text, so "Pangaea" cannot be matched on screen), and
-    # an unverified guess that breaks a working path is not worth keeping.
-    #
-    # The problem it was aimed at is REAL and still open: `MapScript` in the baked
-    # config is ignored because the FrontEnd context never loads, so every game is
-    # Continents, and on Continents a seat can start ALONE — one run reached turn 118
-    # with `met = 0`. Fixing it properly needs OCR on the dropdown rows, or reading
-    # the selected value back off the screen before committing to Start Game.
-    if args.map != "Continents.lua":
-        print(f"map selection is disabled pending verification; refusing to claim "
-              f"the default Continents map is {args.map}", file=sys.stderr)
         return False
     setup_shot = run_dir / "setup.png"
     captured = screenshot(setup_shot)
@@ -2883,118 +3396,12 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
 
 
 def dismiss_leader_dialogue(clicks: int = 6) -> bool:
-    """Click through a leader conversation's dialogue options until it closes.
-
-    ⚠ THIS IS THE FOURTH APPROACH TO THIS SCREEN AND THE FIRST ONE THAT WORKS.
-    Verified by hand against a live stuck screen. The three that did not:
-
-    * `ExitConversationMode` — only acts `if ms_currentViewMode ==
-      CONVERSATION_MODE`, and a first-contact leader is CINEMA_MODE.
-    * `CloseFocusedState` — its cinema branch is gated on a fade animation being
-      stopped, and it never fired.
-    * Escape — does nothing at all on this screen. Twice, with focus confirmed.
-
-    A first-contact screen offers a stack of dialogue options in the lower-left of
-    the game window, and it closes only when one is chosen. Each click consumes
-    the option under the cursor and the stack shrinks, so clicking the same spot
-    repeatedly walks down it and the last one ends the conversation. That is
-    exactly what a person does.
-
-    Measured on this display: the stack sits at x ~= 123 pt and the bottom option
-    at y ~= 817 of 1117, so the position is taken as a fraction of the desktop
-    rather than hardcoded. `clicks` defaults to 4 because three options plus one
-    spare covers every first-contact screen seen so far.
-    """
-    # ⚠ MEASURE THE WINDOW, NOT THE DESKTOP.
-    #
-    # This first computed the position from the desktop size and GAME_FRACTION,
-    # which was right only while the game owned the left half at full height. The
-    # moment the operator asked for the game in the upper-right quadrant
-    # (864,33,864,542) those clicks landed on the TERMINAL instead, and a run sat
-    # stalled for ten minutes with the harness reporting "dialogue clicks sent".
-    # A position derived from an assumption about layout is a position that breaks
-    # when the layout changes; the window knows where it is.
-    rect = game_window()
-    if rect is None:
-        print("[dialogue] cannot read the game window; not guessing a position",
-              file=sys.stderr)
-        return False
-    wx, wy, ww, wh = rect
-    focus_game(GAME_SIDE, GAME_FRACTION)
-    time.sleep(1.0)
-    # ⚠ THESE SCREENS ARE NOT ALL THE SAME SHAPE, and assuming they were cost a
-    # run. A first-contact conversation offers a stack of dialogue options at the
-    # LOWER-LEFT; a trade proposal (`DiplomacyDealView`) offers Accept/Refuse near
-    # the TOP. Clicking the conversation position on a deal screen hits empty space,
-    # which is exactly what happened: the harness logged "dialogue clicks sent"
-    # while a peace offer from Wilhelmina sat unanswered for eleven minutes and the
-    # run burned its stall timeout.
-    #
-    # ⚠ REFUSE, NEVER ACCEPT. The refuse button is clicked first and deliberately.
-    # An accepted deal can cede cities, gold per turn or a peace treaty, and a peace
-    # treaty ends the war that domination depends on — the only victory route still
-    # open. Refusing an unseen offer costs nothing; accepting one can cost the game.
-    # ⚠ THREE DIFFERENT SHAPES, and missing the third cost a run 457 seconds.
-    #   * a trade proposal puts Accept/Refuse near the TOP
-    #   * a single-button leader ("That's a shame." / Goodbye) sits at ~0.91 DOWN
-    #   * a three-option conversation stack sits around 0.68-0.73
-    # The stack positions miss the single-button variant completely. Verified by
-    # hand: 0.172/0.913 recovered a run that had been stuck for 457s.
-    # ⚠ FOUR SHAPES NOW. A TWO-option first-contact screen sits between the bands
-    # already covered and was missed by all of them. Measured off `stalled-3.png`
-    # (run civvis-20260730T192135Z, turn 175, Cyrus): window (864,33,864,542), the
-    # two options at roughly (1011,492) and (1011,519) — fy 0.847 and 0.897, where
-    # the nearest existing target was 0.913 and the stack pair sat at 0.73/0.68.
-    # Thirty-five pixels of miss cost a run holding FIVE cities and score 209, the
-    # best of the day.
-    # ★★★★ SWEEP THE COLUMN, DO NOT ENUMERATE THE SHAPES.
-    #
-    # The list above this comment grew one entry per lost run — three shapes, then
-    # four, each added after a stall that a thirty-five pixel miss had caused. Run
-    # civvis-20260730T223506Z died the same way at turn 88 on a three-option
-    # delegation from John Curtin. Enumerating variants cannot converge: Civilization
-    # VI composes these screens from a variable number of options, so the Nth shape
-    # is always one run away.
-    #
-    # Every variant shares a geometry, and that is the thing worth encoding: the
-    # options are a VERTICAL STACK at the lower-left of the game window, x ~= 0.17.
-    # So sweep that column densely enough that no option can fall between two clicks.
-    # Measured off stalled-1.png of the run above: options at fy 0.828, 0.876 and
-    # 0.920, which a 0.02 step covers with room to spare.
-    #
-    # ⚠ Clicks that miss land on the leader art, which does nothing. This runs ONLY
-    # after a stall is confirmed and one of these screens is therefore up; it is not
-    # safe to sweep a live map, where a click can select a unit and the next can
-    # order it to move.
-    targets = [("refuse deal", 0.222, 0.174)]
-    step = 0.02
-    band = int(round((0.95 - 0.60) / step))
-    targets += [
-        ("stack sweep %.2f" % (0.60 + i * step), 0.170, 0.60 + i * step)
-        for i in range(band + 1)
-    ]
-    print(f"[dialogue] window {rect}")
-    # ⚠ EACH TARGET NEEDS SEVERAL CLICKS, NOT ONE. `clicks // len(targets)` gave
-    # exactly one click per position once the target list grew, and a leader
-    # conversation is a CHAIN: choosing an option can open the next statement, so one
-    # click opens a new question rather than ending anything. Measured on
-    # stalled-1.png of run civvis-20260730T200543Z — a three-option delegation offer
-    # that survived three full rescue rounds.
-    # ⚠ PASSES OUTSIDE, POSITIONS INSIDE. This used to click one position six times
-    # before moving on, which is the wrong order for a CHAIN: when an option is not
-    # at that spot the five extra clicks do nothing, and when one is, the statement it
-    # opens is somewhere else by the time the next click lands. Walking the whole
-    # column once per pass advances a chain one link per pass, which is what a person
-    # does. Same number of clicks, and the sweep now finishes in about 6s of a 240s
-    # stall budget instead of 46s.
-    passes = max(1, clicks // 2)
-    for attempt in range(passes):
-        print(f"[dialogue] pass {attempt + 1}/{passes} over {len(targets)} positions")
-        for name, fx, fy in targets:
-            x, y = int(wx + ww * fx), int(wy + wh * fy)
-            click_at(x, y)
-            time.sleep(0.1)
-    return True
+    """Leave leader decisions to the mod's statement-aware dialogue handler."""
+    # A coordinate sweep can select an invitation that reveals our capital.
+    # The visual fallback also refuses leader choices without statement data.
+    handled, reason = dismiss_visually_confirmed_popup()
+    print(f"[dialogue] {reason}")
+    return handled
 
 
 def dismiss_visually_confirmed_popup(*, diagnostic_path: Path | None = None) -> tuple[bool, str]:
@@ -3227,6 +3634,15 @@ def _attach_running_game(args: argparse.Namespace) -> int:
         "ruleset": None,
         "founds": [],
         "cities_at_60": None,
+        # ⭐ CITY DEVELOPMENT, from the last `state` frame that listed cities.
+        # The empire's Emperor failure is conversion rather than width — it
+        # holds 0.83 of the leader's cities and turns each into 0.30 of their
+        # science — and `gene_screen` records these per seat since 2026-09-10.
+        # The live row carried nothing comparable, so the ledger could not ask
+        # whether the simulator builds the way the live seat does.
+        "districts": None,
+        "buildings": None,
+        "developed_cities": None,
         "operator_retire_event": None,
         "operator_retired": None,
     }
@@ -3246,6 +3662,8 @@ def _attach_running_game(args: argparse.Namespace) -> int:
                 turn = -1
             if turn >= 0:
                 state["turn"] = max(state["turn"], turn)
+        if kind == "state":
+            record_development(state, event)
         if kind == "seat":
             state["seat"] = event
             configured, modes_match, ruleset_match = seat_matches_requested(event, args)
@@ -3400,14 +3818,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
                 time.sleep(2.0)
                 brain = start_brain()
             now = time.monotonic()
-            # Civ VI advances frames at a crawl while another app owns the
-            # desktop.  The attach mode has no pixel work, so a light periodic
-            # activation is enough to retain the normal player's foreground
-            # guarantee without disturbing an operator's recording pipeline.
-            if (not screen_locked()
-                    and now - last_focus >= max(1.0, args.focus_every)):
-                focus_game()
-                last_focus = now
+            last_focus = maintain_game_focus(args.focus_every, last_focus)
             if env.game_pids():
                 core_missing_since = None
             elif core_missing_since is None:
@@ -3487,6 +3898,8 @@ def seat_matches_requested(
         and event.get("map") == args.map
         and (args.leader is None or event.get("leader") == args.leader)
         and modes_match
+        and (not getattr(args, "action_transitions", False) or event.get("action_transitions") is True)
+        and (not getattr(args, "isolated_action_probes", False) or event.get("isolated_action_probes") is True)
         # `is not False`, not truthiness: an unreadable ruleset leaves the rest
         # of the seat report standing. `configured` gates BOTH the ladder's
         # comparability column and `finished()`, which stops a run at the seat
@@ -3596,11 +4009,16 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "StrikePreview": getattr(args, "strike_preview", None),
             "MoveFallback": args.move_fallback,
             "ReplanFrames": getattr(args, "replan_frames", None),
+            "ActionTransitions": getattr(args, "action_transitions", False),
+            "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": getattr(args, "tile_delta", None),
         },
         "city_two_turn": (sorted(state.get("founds") or [])[1]
                           if len(state.get("founds") or []) >= 2 else None),
         "cities_at_60": state.get("cities_at_60"),
+        "districts": state.get("districts"),
+        "buildings": state.get("buildings"),
+        "developed_cities": state.get("developed_cities"),
     }
     try:
         import civ6_ladder
@@ -3628,6 +4046,22 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
         if marks:
             summary["tech_marks"] = marks
+        # And the culture clock beside it: the leading rival's share of the
+        # culture victory and the staycationer bar we set against it, from the
+        # same frame. The Emperor record's rival victories are majority culture
+        # and land ~30 turns earlier than the science ones. Absent when the run
+        # never reached t100 or predates the tourism export.
+        culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+        if culture:
+            summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         revisions = civ6_ladder.decider_revisions(run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
@@ -3892,6 +4326,12 @@ def _play(args: argparse.Namespace) -> int:
             marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
             if marks:
                 partial["tech_marks"] = marks
+            culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+            if culture:
+                partial["culture_marks"] = culture
+            launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+            if launches:
+                partial["launch_marks"] = launches
         except Exception:  # noqa: BLE001 - best-effort evidence at exit
             pass
         try:
@@ -3998,6 +4438,15 @@ def _play(args: argparse.Namespace) -> int:
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
         elif kind in ("autoclose_desktop", "autoclose_stuck"):
+            # These shim requests can outlive their dialogue. On the live
+            # 20260909T150620Z run, t24 raised Civ VI over Chrome only to find
+            # an ordinary card. Defer optional requests before capture/budget
+            # work while the shared desktop is in use. The independent,
+            # confirmed-stall recovery below can still recover a blocked game.
+            if shared_desktop_in_use():
+                print(f"[{kind}] shared desktop in use; deferring optional "
+                      f"recovery for {event.get('screen')}")
+                return
             # Every desktop request is pixel-classified before any click. A
             # DiplomacyActionView context can remain technically visible while
             # the ordinary map is in front; treating its counter alone as proof
@@ -4252,10 +4701,8 @@ def _play(args: argparse.Namespace) -> int:
         return 5
     print("in a configured game; the agent holds the seat from here")
 
-    # Hold the foreground for the whole game. Anything else taking focus --
-    # a browser, another agent's automation -- throttles the game to almost no
-    # frames, and the turn loop runs off game-core events, so the run stops
-    # without a single log line saying why.
+    # Unattended upkeep is optional on a shared desktop. Keep processing
+    # retirement and game events even when periodic GUI upkeep is disabled.
     last_focus = [0.0]
     session_was_locked = [False]
     retire_flow = {
@@ -4314,14 +4761,9 @@ def _play(args: argparse.Namespace) -> int:
 
     def keep_foreground() -> None:
         process_operator_retirement()
-        now = time.monotonic()
-        if now - last_focus[0] < args.focus_every:
-            return
-        last_focus[0] = now
-        focus_game()
-        # Safe here and only here: the game is in play, so there is no menu
-        # being read off the screen for a resize to invalidate.
-        place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+        last_focus[0] = maintain_game_focus(
+            args.focus_every, last_focus[0], place=True,
+        )
 
     # ⚠ THE POLL INTERVAL IS THE OUTBOUND LEG OF THE DECISION LOOP. With CIVVIS
     # deciding, the mod holds its turn open until orders arrive, and orders cannot
@@ -4564,6 +5006,8 @@ def _play(args: argparse.Namespace) -> int:
             "StrikePreview": args.strike_preview,
             "MoveFallback": args.move_fallback,
             "ReplanFrames": args.replan_frames,
+            "ActionTransitions": getattr(args, "action_transitions", False),
+            "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": args.tile_delta,
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
@@ -4627,6 +5071,22 @@ def _play(args: argparse.Namespace) -> int:
         marks = civ6_ladder.tech_marks(run_dir / "events.jsonl")
         if marks:
             summary["tech_marks"] = marks
+        # And the culture clock beside it: the leading rival's share of the
+        # culture victory and the staycationer bar we set against it, from the
+        # same frame. The Emperor record's rival victories are majority culture
+        # and land ~30 turns earlier than the science ones. Absent when the run
+        # never reached t100 or predates the tourism export.
+        culture = civ6_ladder.culture_marks(run_dir / "events.jsonl")
+        if culture:
+            summary["culture_marks"] = culture
+        # And the space race to the run's last board: first Spaceport turn,
+        # launches completed of four, and the turn of the latest one. Emperor
+        # games that reach t200 get 1–3 launches in before a rival wins at
+        # t213–228, and the row could not say so. Absent when the mod predates
+        # the `science_projects` export.
+        launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
+        if launches:
+            summary["launch_marks"] = launches
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log
@@ -4745,7 +5205,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="enable an optional game mode (repeatable; default none). "
                          "CIVVIS models none of them, so a run with one on is not "
                          "measuring the game CIVVIS is compared against.")
-    ap.add_argument("--map", default="Continents.lua")
+    # Constrained to the scripted maps the panel can be driven to. A value
+    # outside this set has no rendered label to click and no legal read-back, so
+    # `set_dropdown` would refuse it -- after a game launch. Refuse it here, at
+    # the command line, where the cost is a message instead of an attempt.
+    ap.add_argument("--map", default="Continents.lua", choices=OPTIONS["map_type"])
     # ★★★★ THE MAP SIZE IS THE PLAYER COUNT, so this is the lobby, not a detail.
     #
     # Civilization VI derives majors and city-states from the size — Duel 2, Tiny 4,
@@ -4772,8 +5236,7 @@ def main(argv: list[str] | None = None) -> int:
                         "to an in-game outcome (the supplied value is ignored)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
-                    help="accepted for compatibility; live games always select "
-                         "Rome's Trajan")
+                    help="Civ VI leader identifier (default: Trajan)")
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
@@ -4843,6 +5306,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
+    ap.add_argument("--action-transitions", action="store_true", default=False,
+                    help="capture before/after request-boundary observations for action replay; requires state exports")
+    ap.add_argument("--isolated-action-probes", action="store_true", default=False,
+                    help="DIAGNOSTIC ONLY: hold normal orders for one observed movement probe per turn during turns 1-10")
     ap.add_argument("--probe-channels", action="store_true", default=False,
                     help="ask every candidate inbound API what it holds, once a turn")
     ap.add_argument("--campus-specialist", action="store_true", default=False,
@@ -5067,7 +5534,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lock-wait", type=float, default=0.0,
                     help="seconds to wait for another run to finish")
     ap.add_argument("--focus-every", type=float, default=15.0,
-                    help="seconds between raising the game window (0 disables)")
+                    help="seconds between raising the game window (0 disables); "
+                         "~/.civvis-shared-desktop also disables periodic raising "
+                         "and placement live; setup/recovery may still use the GUI")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(raw_argv)
     global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
@@ -5076,7 +5545,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.status:
         return status()
-    args.leader = enforce_roman_leader(args.leader, caller="civ6_play")
+    args.leader = resolve_live_leader(args.leader)
     if args.tag is None:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))

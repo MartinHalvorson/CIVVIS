@@ -70,7 +70,7 @@ gene is on and when gene is off."*
 | lanes | **all six**; no restricted-lane regime |
 | civs | shuffled per map |
 | majors' rung | **Emperor** — `--difficulty emperor`, the documented invocation since 2026-08-25: the live Civilization VI verification ladder plays Emperor and above, and a screen at the engine's Prince default prices genes against a slower economy than the one they are verified in. ⚠ Provenance, not an enforced leg: the code's default stays Prince (nothing was changed silently), the header records the rung, and the ledger pools both — read `difficulty` on a source before comparing two |
-| barbarians | Immortal, their own rung whatever the majors play |
+| barbarians | Deity, their own tournament rung whatever the majors play |
 
 `gene_screen --games N --difficulty emperor --out rows.jsonl` *is* the
 screen. Every **map** flag still exists, and every one of them turns a batch
@@ -533,6 +533,76 @@ screen never seats two versions together and the ledger never ships two, an
 hand-built seat — but write it so the newer version's enable turns the older
 one off anyway, so a hand-built seat cannot play both.
 
+## ⚠⚠ A batch publish kills every open gene PR, silently (2026-09-09)
+
+A publish rewrites `docs/gene_ledger.json`, `GENE_HEURISTIC_RANKING.md`,
+`docs/GENE_RANKING_EVIDENCE.md`, `docs/EVAL_STATUS.md`, `docs/eval_manifest.json`
+and the `BATCH_COLUMNS` table inside `src/ai/advanced/genes.rs`. **Every open PR
+that touches a gene touches those same files**, so every publish conflicts with
+all of them at once.
+
+That alone would be routine. What makes it a trap is the interaction:
+
+1. the gene PR goes ready and arms auto-merge;
+2. a batch publishes before it merges;
+3. the PR turns `CONFLICTING` — **and a conflicting PR gets no CI runs**;
+4. so the armed auto-merge has no green checks to act on, and never will.
+
+The PR then reads as healthy — auto-merge armed, no failing check, nothing
+obviously wrong — while being permanently stopped. Two were found in exactly that
+state on 2026-09-09, #3258 and #3259, eleven hours after their last push, with
+their authors' sessions gone. Nothing in the tooling reports it; the only symptom
+is a PR that never merges.
+
+**The window is hours, not days.** Publishes on 2026-09-09 landed 1, 12, 17 and 24
+hours apart — four in one day. A gene PR that sits ready overnight will be caught.
+
+### What to do
+
+- **Merge gene PRs promptly once green.** The cost of waiting is not a stale
+  branch, it is a dead one.
+- **When resolving, regenerate — never hand-merge.** Five of the six conflicting
+  files are generated, and so is the conflicting region of `genes.rs`. Take the
+  newer side and run `tools/genes.py write` and `tools/eval_manifest.py --write`.
+- **Expect `overwrite-guard` to fail and answer it honestly.** The regeneration
+  rewrites lines the publish added, so it wants `Supersedes: #<publish>`. Before
+  declaring it, check the regeneration *preserved* that publish rather than
+  reverting it: compare `BATCH_COLUMNS` against the newer side for a few tags, and
+  compare `rules.hysteresis_held`. The declaration is cheap; being entitled to it
+  is not.
+- **⛔ Re-check the PR's premise against the new batch before shipping.** This is
+  the important one, and the reason a mechanical resolution is dangerous. Fixing a
+  conflict makes a PR mergeable; it says nothing about whether its reasoning still
+  holds. #3258 culled "four war genes the ranking condemns" — after #3330's
+  3,173-game batch, three of the four read positive on the newest column and
+  `naval-recon-2` had climbed 94 places to P(>0) = 51.3%. Resolved mechanically, it
+  would have deleted working code under an all-green checklist.
+
+### 🔴 It recurred on 2026-09-11, and the consequence was worse
+
+This section was written on 2026-09-09 and left in a draft PR. It therefore
+protected nobody, and #3258 sat **ready with auto-merge still armed** for two
+more days. Re-checked on 09-11 against the ranking of that day:
+
+| gene | #3258's reading (09-09) | 09-11 on `main` |
+| --- | --- | --- |
+| `requisitions` | rank 265, P(>0) 0.6%, Diff −1.36 | rank **286**, Diff **−1.95%** |
+| `peace-when-the-war-does-not-pay` | rank 259, P(>0) 2.0%, Diff −0.94 | rank **69**, P(>0) **81.4%**, Diff **+0.34%**, **ships on** |
+| `coalition-before-war-2` | rank 251, Diff −0.71 | rank **206**, P(>0) 36.5% |
+| `naval-recon-2` | rank 255, Diff −0.81 | rank **175**, P(>0) **47.3%** |
+
+One of the four has crossed from the bottom of the table to **rank 69 and
+deployed**, on 37,552 on-seats. The PR deletes its field, its constant, its
+clause in the peace desk, its toggles, its registry row and its test. Had its
+conflict been resolved mechanically at any point in those two days, the armed
+auto-merge would have removed a gene the ledger currently says helps.
+
+⭐ **So the lesson is one turn stronger than the section above states.** The
+premise re-check is not merely advisable before shipping — a gene PR left ready
+and armed carries the risk on its own, with no further action by anyone. If a
+gene PR cannot be merged today, **take it out of ready** rather than leaving a
+stale premise armed against a ranking that moves four times a day.
+
 ## Cost
 
 The same run prices the runtime cost of every gene without adding a timer to
@@ -611,6 +681,59 @@ from noise*, and no pairwise coupling among the repairs has been visible at any
 size run so far. Interactions are far noisier than main effects from the same
 run; read the multiplicity bar.
 
+## ⚠⚠ THE WIN COLUMN CANNOT BE READ AT EMPEROR (2026-09-11)
+
+An Emperor seat wins **5.6%** of the time (360 seats, deployment shape). A
+Prince seat wins **16.7%**. That difference decides what a run can measure,
+and it is the reason a day of Emperor experiments can produce six "wins did
+not move" lines that are not findings at all.
+
+Seats **per arm** needed to detect a *relative* win-rate gain at 80% power:
+
+| base win rate | +10% | +25% | +50% |
+|---|---:|---:|---:|
+| Emperor, 5.6% | 26,400 | **4,230** | 1,060 |
+| Prince, 16.7% | 7,800 | **1,250** | 310 |
+
+The ledger's standard screens run **10,000–19,000 seats per arm**, which is why
+they work — and they run at **Prince**.
+
+A 40-game Emperor probe gives 57–187 seats per arm. To detect a 25% relative
+improvement it is **23–74× short**. `--analyze` says so itself, in the
+`resolution:` line:
+
+    120 seats -> resolves a win Δ of ±15.4 pp
+    360 seats -> resolves a win Δ of ±6.6 pp
+
+⭐ **Read that against a base rate of 5.6% with a floor of 0%.** The
+resolution is wider than the entire range the statistic can occupy. A run like
+that is not measuring a small effect badly; it is not measuring at all.
+
+### What to read instead
+
+1. **The mechanism the gene is about.** It is the same seats and far better
+   resolved. Worked examples from 2026-09-11: `first-research-building-reserve`
+   moved buildings per city +11% then +21% and techs-at-end +3.76 (z +2.97)
+   over 360 seats whose win column said nothing; `army-target-weighs-enemy`
+   left the military ratio *lower* than baseline; `lane-votes-its-favor` moved
+   own Diplomatic Victory Points 12.0 → 11.0. Each of those is a real answer
+   from a run whose win Δ was noise.
+2. **Score share.** `--analyze` resolves it to ±1.85–3.93 pp on the same runs —
+   three to four times tighter than the win Δ, because every seat contributes a
+   continuous number instead of a rare event.
+3. **The endings census** (`what a denial gene has to reduce`) for which lane
+   is ending the games.
+
+### What NOT to conclude
+
+⚠ **"Wins did not move at Emperor" is not evidence that a gene is useless.** It
+is usually evidence that nothing was measured. Say which of the two you have.
+
+⚠ And the converse: a well-powered **Prince** win number is real evidence about
+**Prince**. It is not evidence about the rung the ladder plays, where the field
+is handicapped and the seat is not — see `handicap` above and
+`tools/civ6_trajectory_fidelity.py`.
+
 ## Instrumentation: how a game was lost, not only that it was
 
 Every row also carries `founded_religion`, `foreign_faith_cities` (our own
@@ -648,11 +771,16 @@ than the field, so an old file is byte for byte what it was:
 (`Seats::contrast`: the regression on `[1, sign]`, errors clustered by game)
 — no new estimator. The JSON carries three blocks per gene, each
 `{diff, se, z, n_on, n_off}` on the same arms the win column counts:
-`science_pace` (`techs_150`), `techs_end` (`techs`) and `science_end`. A file
-whose rows lack a field reads **`null`** there, never a Δ of zero; one row
-without it is enough. The printed analysis adds a `science pace` block after
-the decisiveness block, sorted by |z| of `techs@150Δ`, only when the rows carry
-it.
+`science_pace` (`techs_150`), `techs_end` (`techs`) and `science_end`, and two
+more of the same shape for the **boosted share** — `techs_boosted_share_pp`
+(`techs_boosted / techs_researched`, in points) and `civics_inspired_share_pp`
+(`civics_inspired / civics_adopted`) — the direct read of a boost gene, the one
+that says whether its plan fired at all, which win and pace cannot (a seat
+that researched nothing reads zero; a file whose rows all lack the census reads
+`null`). A file whose rows lack a field reads **`null`** there, never a Δ of
+zero; one row without it is enough. The printed analysis adds a `science pace` block after
+the decisiveness block, sorted by |z| of `techs@150Δ`, and a `boosted share`
+block after that, each only when the rows carry it.
 
 **The ranking.** `GENE_HEURISTIC_RANKING.md` does not display a science-pace
 column. The `science_pace` JSON block and the printed analysis remain available
@@ -749,6 +877,27 @@ Under `operator-retained-selection` a reporting rotation carries the recorded
 genome forward, so the rule reading a gene `off` does not remove it — four of
 the five genes held off on 2026-08-26 read `off` and shipped anyway. Adding
 the tag to `OPERATOR_DEFAULT_OFF` is what takes it out, under either policy.
+
+⭐ **A reselection has hysteresis (operator, 2026-09-09).** A batch
+publication (`python3 tools/genes.py write --reselect-deployment-defaults`,
+what `continuous_batch_scheduler.py` runs) re-decides the retained genome
+from each gene's completed-total-seat-weighted average over its available
+readings in the three displayed batches, wins per 10,000 total seats — but
+against the previous published selection, not from zero: a gene that was
+**off** turns on only when that average is strictly above **+3**; a gene that
+was **on** stays on unless it is strictly below **−3** (a gene that was on and
+no batch priced keeps its default). #3236 turned 32 defaults off from one
+batch's reading — `bounded-recovery` left with verdict Helps, P(>0) = 100%,
+pooled Diff +0.53 pp and readings −14 / +45 / +10 — and 20 of them came back
+under the band. "Was on" is the `deployment_genome` of the ledger `write`
+reads (`--prior-ledger FILE` names an older published one); the ledger records
+the list it read as `rules.prior_deployment_genome` and the genes kept on by
+the band alone as `rules.hysteresis_held`, so `check` and
+`tools/test_genes.py` re-derive the same answer. A family still ships exactly
+one version: qualifying versions compete by that average, ties to the higher
+version, so a version held on by the band alone yields to a sibling that
+clears +3. `tools/genes.py::retained_deployment_genome_from_batches` is the
+rule.
 
 ⭐ **Moving a versioned family's ship.** Pin the version you want on and hold
 the one you want off: on 2026-08-26 `settler-target-hysteresis-2` joined
@@ -2180,7 +2329,15 @@ combat, experience and era-boost bonuses of `data/difficulties.json` — and
 every screen so far played the engine's Prince default while the live
 Civilization VI verification ladder plays Emperor and above. Two flags now
 name the majors' rung, and the barbarian seat keeps its own rung
-(`default_barbarian_difficulty`, Immortal) whatever the majors play:
+(`SCREEN_BARBARIAN_DIFFICULTY`, Deity) whatever the majors play. The
+2026-09-10 operator change applies only to new tournament games; normal
+games retain their Immortal default. New headers record `barbarian_difficulty`
+and analysis refuses to merge segments with different recorded barbarian
+rungs. Historical headers without that field remain explicitly unrecorded,
+not retroactively labeled Deity. Keep the existing Immortal batch separate
+when switching to a new Deity batch.
+
+The majors' flags remain independent:
 
 - `--difficulty emperor` — one rung for every game; the header records
   `difficulty: "emperor"` and every row carries `difficulty`.

@@ -15,6 +15,30 @@
 // cache's argument for a mechanism deleted in #2163 (#2556).
 #![allow(rustdoc::private_intra_doc_links)]
 
+// ⭐ EVERY NATIVE BINARY ALLOCATES THROUGH mimalloc, NOT THE PLATFORM.
+//
+// The simulator clones whole boards to search, so allocation is not incidental
+// work here — it is the inner loop's tax. `docs/SIMULATOR_PERFORMANCE.md` puts
+// allocator and libc memory primitives at a **16.84%** roll-up, with macOS's own
+// `_xzm_free` the largest single leaf in the profile at 3.66% self.
+//
+// One line in the library covers all twelve binaries, which is the point:
+// `#[global_allocator]` is chosen by the final artifact, so stating it per
+// binary means twelve chances for the next `[[bin]]` to be added without it and
+// measure the platform allocator while every document says otherwise. Setting
+// it in a library is normally rude because it overrides the choice of whoever
+// links you — nobody links this one. The crate docs above say so in their first
+// sentence: the Python implementation was removed, this is the only one, and
+// nothing here is published.
+//
+// ⚠ Gated to native. `mimalloc` vendors a C library with no wasm32 target, and
+// `Cargo.toml` gates the dependency itself to match; both halves are needed,
+// because a `cfg`-ed out `static` still leaves an unbuildable crate in the
+// dependency graph for `cargo check --target wasm32-unknown-unknown`.
+#[cfg(not(target_arch = "wasm32"))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 // The action encoder's consumers are all in `experiments/closed/`; the module
 // compiles only `kind_name` without the `closed-experiments` feature.
 pub mod action_space;

@@ -538,8 +538,9 @@ impl Game {
                         to: destination,
                     });
                 }
-                if spec.class == "military" && !embarked {
-                    if spec.has_ranged_attack()
+                if spec.class == "military" {
+                    if !embarked
+                        && spec.has_ranged_attack()
                         && u.attacks_left > 0
                         && (!spec.siege
                             || !u.moved
@@ -584,12 +585,7 @@ impl Game {
                     }
                     if spec.is_melee_capable() && u.attacks_left > 0 {
                         for pos in self.nbrs(u.pos) {
-                            if self.map.tiles.contains_key(&pos)
-                                && self.enemy_combat_target_at(pid, pos)
-                                && self.unit_can_melee_target_domain(uid, pos)
-                                && self.can_pay_melee_entry(uid, pos)
-                                && !self.strike_blocked(uid, pos)
-                            {
+                            if self.melee_order_is_legal(pid, uid, pos) {
                                 acts.push(Action::Attack {
                                     unit: uid,
                                     target: pos,
@@ -1875,7 +1871,11 @@ impl Game {
             return false;
         };
         self.rules.units[unit.kind].is_melee_capable()
-            && !self.is_embarked(unit)
+            && (!self.is_embarked(unit)
+                || self
+                    .map
+                    .get(target)
+                    .is_some_and(|tile| !self.rules.is_water(tile)))
             && unit.moves_left > 0.0
             && unit.attacks_left > 0
             && self.wdist(unit.pos, target) == 1
@@ -1883,6 +1883,27 @@ impl Game {
             && self.unit_can_melee_target_domain(uid, target)
             && self.can_pay_melee_entry(uid, target)
             && !self.strike_blocked(uid, target)
+    }
+
+    /// City melee strengths shared by the resolver and capture estimates.
+    /// Embarked units attack with their land strength and a landing penalty;
+    /// their embarked defensive strength is not an attack strength.
+    pub(crate) fn city_melee_exchange_strengths(&self, uid: u32, cid: u32) -> Option<(f64, f64)> {
+        let attacker = self.units.get(&uid)?;
+        let city = self.cities.get(&cid)?;
+        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let mut attack =
+            self.unit_unembarked_strength(attacker) + self.vs_bonus(attacker.owner, city.owner);
+        if self.is_embarked(attacker) && unamphibious {
+            attack -= 10.0;
+        }
+        let defense = self.city_strength(cid)
+            + if self.crosses_river(attacker.pos, city.pos) && unamphibious {
+                5.0
+            } else {
+                0.0
+            };
+        Some((effective_strength(attack, attacker.hp), defense))
     }
 
     /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
@@ -1973,17 +1994,56 @@ impl Game {
         {
             att_base -= 17.0;
         }
+        Some((
+            effective_strength(att_base, shooter.hp),
+            self.ranged_defender_strength(defender, target, shooter.owner),
+        ))
+    }
+
+    fn ranged_defender_strength(&self, defender: &Unit, target: Pos, attacker_owner: usize) -> f64 {
         let def_base = self.unit_strength(defender, true)
             + self.ranged_defense_bonus(defender, false)
-            + if defender_spec.domain.as_deref() == Some("air") {
+            + if self.rules.units[defender.kind].domain.as_deref() == Some("air") {
                 0.0
             } else {
                 self.tile_defense_bonus(target)
             }
-            + self.vs_bonus(defender.owner, shooter.owner);
-        Some((
-            effective_strength(att_base, shooter.hp),
-            effective_strength(def_base, defender.hp),
+            + self.vs_bonus(defender.owner, attacker_owner);
+        effective_strength(def_base, defender.hp)
+    }
+
+    /// A memory-policy estimate using a full-health, unpromoted unit type,
+    /// not an unseen unit's actual combat state. Known defender bonuses use
+    /// the same arithmetic as a real shot. This is not a maximum-damage bound.
+    pub(crate) fn nominal_ranged_damage_from_kind(
+        &self,
+        kind: Name,
+        attacker_owner: usize,
+        did: u32,
+        target: Pos,
+    ) -> Option<f64> {
+        let spec = &self.rules.units[kind];
+        if !spec.has_ranged_attack() {
+            return None;
+        }
+        let mut defender = self.units.get(&did)?.clone();
+        if defender.pos != target {
+            defender.pos = target;
+            defender.fortify_turns = 0;
+        }
+        let defender_is_sea = self.rules.units[defender.kind].domain.as_deref() == Some("sea");
+        let mut attack = spec.ranged_strength.max(spec.bombard_strength)
+            + self.vs_bonus(attacker_owner, defender.owner);
+        if (spec.bombard_strength > 0.0 && !defender_is_sea)
+            || (spec.ranged_strength > 0.0
+                && spec.domain.as_deref() != Some("sea")
+                && defender_is_sea)
+        {
+            attack -= 17.0;
+        }
+        Some(expected_damage(
+            attack,
+            self.ranged_defender_strength(&defender, target, attacker_owner),
         ))
     }
 
@@ -3371,20 +3431,7 @@ impl Game {
                 let defender = self.cities[&cid].owner;
                 self.record_war_unit_participation(&attacker, defender);
                 self.record_war_city_garrison_participation(cid, attacker.owner);
-                let mut att_base = self.unit_unembarked_strength(&attacker)
-                    + self.vs_bonus(pid, self.cities[&cid].owner);
-                if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
-                    att_base -= 10.0;
-                }
-                let att = effective_strength(att_base, attacker.hp);
-                let cs = self.city_strength(cid)
-                    + if self.crosses_river(u.pos, target)
-                        && self.promotion_effect(&attacker, "amphibious") == 0.0
-                    {
-                        5.0
-                    } else {
-                        0.0
-                    };
+                let (att, cs) = self.city_melee_exchange_strengths(uid, cid).unwrap();
                 let dmg_out = damage(att, cs, &mut self.rng);
                 let dmg_in = damage(cs, att, &mut self.rng);
                 // battering ram: full melee damage vs ancient walls;
@@ -4051,6 +4098,55 @@ impl Game {
         operations
     }
 
+    /// What [`Self::do_builder_operation`] would pay for `operation` on `pos`,
+    /// as `(yield type, amount)` rows.
+    ///
+    /// The executor calls this, so an agent that prices a chop before ordering
+    /// one reads the number it is actually going to be paid. Keeping the two
+    /// on one function is the point: a separate estimate in the controller is
+    /// free to drift from the rule, and would drift silently.
+    ///
+    /// Shipped bases: `Feature_Removes` (Forest 20 Production, Jungle 10
+    /// Production + 10 Food, Marsh 20 Food) and `Resource_Harvests`, both read
+    /// out of `data/*.json`. They scale with the world era, and Magnus'
+    /// `harvest_pct` applies to removals and harvests alike.
+    pub(crate) fn builder_operation_payout(
+        &self,
+        pid: usize,
+        pos: Pos,
+        operation: &str,
+    ) -> Vec<(String, f64)> {
+        let Some(tile) = self.map.get(pos) else {
+            return Vec::new();
+        };
+        let Some(cid) = tile.owner_city else {
+            return Vec::new();
+        };
+        let scale = (self.world_era as f64 + 1.0)
+            * (1.0 + self.governor_effect(pid, cid, "harvest_pct") / 100.0);
+        match operation {
+            "chop_woods" | "chop_rainforest" | "clear_marsh" => tile
+                .feature
+                .as_deref()
+                .and_then(|feature| self.rules.features.get(feature))
+                .map(|spec| {
+                    spec.chop
+                        .iter()
+                        .map(|(yield_type, base)| (yield_type.clone(), base * scale))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            "harvest_resource" => tile
+                .resource
+                .as_deref()
+                .and_then(|resource| self.rules.resources.get(resource))
+                .and_then(|spec| spec.harvest.as_ref())
+                .map(|harvest| vec![(harvest.yield_type.clone(), harvest.amount * scale)])
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
     pub(super) fn do_builder_operation(
         &mut self,
         pid: usize,
@@ -4069,17 +4165,16 @@ impl Game {
             return Err("builder cannot perform that operation".into());
         }
         let cid = self.map.tiles[&unit.pos].owner_city.unwrap();
-        // The shipped Feature_Removes and Resource_Harvests base yields scale
-        // with the era, and Magnus applies to harvests and removals alike.
-        let scale = (self.world_era as f64 + 1.0)
-            * (1.0 + self.governor_effect(pid, cid, "harvest_pct") / 100.0);
         let removed_feature = self.map.tiles[&unit.pos].feature;
-        let mut payouts: Vec<(String, f64)> = Vec::new();
+        // ⭐ ONE RULE, TWO READERS. The payout is computed by the same
+        // function an agent prices the operation with, so a controller that
+        // chooses to chop cannot be reading a different number from the one
+        // this pays. See `builder_operation_payout`.
+        let payouts = self.builder_operation_payout(pid, unit.pos, operation);
         match operation {
             "chop_woods" | "chop_rainforest" | "clear_marsh" => {
-                let feature = removed_feature.ok_or_else(|| "no feature to clear".to_string())?;
-                for (yield_type, base) in &self.rules.features[feature].chop {
-                    payouts.push((yield_type.clone(), base * scale));
+                if removed_feature.is_none() {
+                    return Err("no feature to clear".into());
                 }
                 self.map.tiles.get_mut(&unit.pos).unwrap().feature = None;
             }
@@ -4087,22 +4182,14 @@ impl Game {
                 self.map.tiles.get_mut(&unit.pos).unwrap().feature = Some(crate::name!("forest"));
             }
             "harvest_resource" => {
-                let resource = self
-                    .map
-                    .tiles
-                    .get_mut(&unit.pos)
-                    .unwrap()
-                    .resource
-                    .take()
-                    .unwrap();
-                let harvest = self.rules.resources[resource]
-                    .harvest
-                    .clone()
-                    .ok_or_else(|| "that resource cannot be harvested".to_string())?;
-                payouts.push((harvest.yield_type.clone(), harvest.amount * scale));
+                // `builder_operations` only offers this on a resource with a
+                // shipped `Resource_Harvests` row whose technology is in hand,
+                // and the gate above proves this operation came from it.
+                self.map.tiles.get_mut(&unit.pos).unwrap().resource = None;
             }
             _ => return Err("unknown builder operation".into()),
         }
+        let payouts_total: f64 = payouts.iter().map(|(_, amount)| *amount).sum();
         for (yield_type, amount) in payouts {
             match yield_type.as_str() {
                 "production" => self.cities.get_mut(&cid).unwrap().production += amount,
@@ -4114,11 +4201,7 @@ impl Game {
             self.congress_effect_active("deforestation_treaty", "A", feature)
         }) && matches!(operation, "chop_woods" | "chop_rainforest" | "clear_marsh")
         {
-            let total: f64 = removed_feature
-                .as_deref()
-                .map(|feature| self.rules.features[feature].chop.values().sum::<f64>() * scale)
-                .unwrap_or(0.0);
-            self.players[pid].gold += total;
+            self.players[pid].gold += payouts_total;
         }
         let builder = self.units.get_mut(&uid).unwrap();
         builder.charges -= 1;
@@ -4209,11 +4292,10 @@ impl Game {
             // is an Archaeologist action, not a persistent tile improvement.
             if excavates_artifact {
                 t.resource = None;
-                t.improvement = None;
             } else {
                 t.improvement = Some(Name::new(imp));
+                t.pillaged = false;
             }
-            t.pillaged = false;
             if removes {
                 t.feature = None;
             }
@@ -4566,6 +4648,14 @@ impl Game {
         position: Pos,
     ) -> Option<(f64, i32, u32)> {
         if let Some(unit) = band {
+            if self
+                .host_unit_facts
+                .get(&unit.id)
+                .and_then(|facts| facts.concert_plots.as_ref())
+                .is_some_and(|plots| !plots.contains(&position))
+            {
+                return None;
+            }
             if self.players[pid]
                 .counters
                 .get(&format!(
@@ -8293,6 +8383,13 @@ impl Game {
     }
 
     pub(super) fn player_tech_era(&self, pid: usize) -> usize {
+        if let Some(era) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.tech_era)
+        {
+            return era;
+        }
         self.players[pid]
             .techs
             .iter()
@@ -9135,6 +9232,7 @@ impl Game {
         self.players[deal.to].gold += deal.give_gold - deal.request_gold;
         if Self::diplomatic_deal_is_gift(&deal) {
             self.record_gift(deal.from, deal.to);
+            self.score_aid_gold_gift(deal.from, deal.to, deal.give_gold);
         }
         if deal.peace {
             self.conclude_peace(deal.from, deal.to, peace_terms);
@@ -10357,16 +10455,30 @@ impl Game {
             .or_insert(0) += 1;
         if request.is_empty() {
             self.record_gift(from, to);
+            self.score_aid_gold_gift(from, to, offer.gold);
         }
         Ok(())
     }
 
     /// The gift ledger: what a seat gave for nothing, and what it was given.
-    /// A controller that reads `gifts_given` above zero on its own seat has
-    /// done something no controller here is meant to do.
+    /// This is not relationship credit. An eligible Aid Request can separately
+    /// award competition score for the Gold actually transferred.
     pub(super) fn record_gift(&mut self, from: usize, to: usize) {
         bump(&mut self.players[from], "gifts_given");
         bump(&mut self.players[to], "gifts_received");
+    }
+
+    /// Score only a completed gift to the currently running request's target.
+    /// Sending an offer, paying for goods, and giving to an unrelated rival do
+    /// not satisfy the shipped FromGold source. Host scores remain host-owned.
+    fn score_aid_gold_gift(&mut self, from: usize, to: usize, gold: f64) {
+        if self
+            .competition
+            .as_ref()
+            .is_some_and(|running| running.target == Some(to))
+        {
+            self.score_native_competition(from, CompetitionScoreSource::GoldGift, gold);
+        }
     }
 
     /// A diplomatic deal that only hands over Gold: legal as a gift, worth

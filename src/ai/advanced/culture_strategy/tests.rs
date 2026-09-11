@@ -33,6 +33,132 @@ fn board() -> Game {
 }
 
 #[test]
+fn culture_researches_a_government_its_chooser_will_adopt() {
+    let mut g = board();
+    let withheld = [
+        "conservation",
+        "class_struggle",
+        "suffrage",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("monarchy".to_string());
+    g.players[0].civic = None;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = false;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    assert!(g.available_civics(0).contains(&crate::name!("suffrage")));
+    let mut capacity = g.clone();
+    ai.government_capacity_fallback = true;
+    ai.advanced_research(&mut capacity, 0, &plan);
+    assert_eq!(capacity.players[0].civic.as_deref(), Some("class_struggle"));
+    ai.government_capacity_fallback = false;
+    let mut matching = g.clone();
+    matching.players[2].government = Some("communism".to_string());
+    ai.advanced_research(&mut matching, 0, &plan);
+    assert_eq!(
+        matching.players[0].civic.as_deref(),
+        Some("class_struggle"),
+        "matching the leading Culture defender remains an eligible goal"
+    );
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("suffrage"));
+    g.players[0].civics.insert(crate::name!("suffrage"));
+    ai.strategic_government(&mut g, 0, GrandStrategy::Recovery);
+    assert_eq!(g.players[0].government.as_deref(), Some("democracy"));
+}
+
+#[test]
+fn cold_war_window_keeps_the_opening_and_resumes_the_culture_chain() {
+    let mut g = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert!(!ai.culture_cold_war_window);
+    ai.enable_culture_cold_war_window();
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("humanism"));
+    g.players[0].civics.insert(crate::name!("humanism"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("conservation"));
+    g.players[0].civics.insert(crate::name!("conservation"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("cold_war"));
+    ai.disable_culture_cold_war_window();
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+    ai.enable_culture_cold_war_window();
+    g.victory_conditions.culture = false;
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+    g.victory_conditions.culture = true;
+    g.players[0].civics.insert(crate::name!("cold_war"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+}
+
+#[test]
+fn cold_war_window_changes_the_legal_civic_order_only_for_culture() {
+    let mut g = board();
+    let withheld = [
+        "cold_war",
+        "professional_sports",
+        "cultural_heritage",
+        "space_race",
+        "environmentalism",
+        "social_media",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|c| !withheld.contains(&c.as_str()))
+        .collect();
+    g.players[0].civic = None;
+    assert!(g.available_civics(0).contains(&crate::name!("cold_war")));
+    assert!(g
+        .available_civics(0)
+        .contains(&crate::name!("professional_sports")));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    for target in [VictoryTarget::Culture, VictoryTarget::Science] {
+        let mut control = g.clone();
+        let mut treatment = g.clone();
+        let mut ai = AdvancedAi::targeting(target);
+        ai.advanced_research(&mut control, 0, &plan);
+        ai.enable_culture_cold_war_window();
+        ai.advanced_research(&mut treatment, 0, &plan);
+        if target == VictoryTarget::Culture {
+            assert_eq!(
+                control.players[0].civic.as_deref(),
+                Some("professional_sports")
+            );
+            assert_eq!(treatment.players[0].civic.as_deref(), Some("cold_war"));
+        } else {
+            assert_eq!(control.players[0].civic, treatment.players[0].civic);
+        }
+    }
+}
+
+#[test]
 fn defense_uses_the_global_bar_and_only_known_living_opponents() {
     let mut g = board();
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
@@ -201,6 +327,38 @@ fn culture_chain_stays_valuable_during_expansion_but_must_finish_in_time() {
 }
 
 #[test]
+fn explicit_culture_target_keeps_theater_buildings_through_recovery() {
+    let mut g = board();
+    for pid in 1..3 {
+        Arc::make_mut(&mut g.observed_public_empire_stats)
+            .get_mut(&pid)
+            .unwrap()
+            .foreign_tourists = Some(0);
+    }
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let culture_lane =
+        ai.culture_race_production_bonus(&g, 0, &amphitheater, GrandStrategy::Culture, 5.0);
+    let recovery_lane =
+        ai.culture_race_production_bonus(&g, 0, &amphitheater, GrandStrategy::Recovery, 5.0);
+    let science_lane = AdvancedAi::targeting(VictoryTarget::Science).culture_race_production_bonus(
+        &g,
+        0,
+        &amphitheater,
+        GrandStrategy::Recovery,
+        5.0,
+    );
+    assert_eq!(
+        recovery_lane - culture_lane,
+        CULTURE_TARGETED_THEATER_POSTURE_BONUS,
+        "Recovery keeps the explicit Culture building lane at its full posture premium"
+    );
+    assert_eq!(science_lane, 0.0);
+}
+
+#[test]
 fn science_defense_lifts_the_culture_building_veto_without_switching_victory() {
     let mut g = board();
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
@@ -333,4 +491,312 @@ fn censorship_amenity_cost_ends_even_without_a_replacement_card() {
     assert!(!g.players[0]
         .policies
         .contains(&crate::name!("music_censorship")));
+}
+
+/// `culture-threat-early`: the registry row ships off, its toggles are twins,
+/// and off the defence keeps version one's 50-percent bar exactly.
+#[test]
+fn culture_threat_early_ships_off_and_keeps_the_halfway_bar_off() {
+    let gene = crate::ai::GENES
+        .iter()
+        .find(|gene| gene.tag == "culture-threat-early")
+        .unwrap();
+    assert!(gene.opt_in());
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(!ai.culture_threat_early, "the gene ships off");
+    assert!(!AdvancedAi::legacy().culture_threat_early);
+    assert_eq!(ai.culture_threat_pressure(), CULTURE_THREAT_PRESSURE);
+    assert_eq!(CULTURE_THREAT_PRESSURE, 50);
+    (gene.enable)(&mut ai);
+    assert!(ai.culture_threat_early);
+    assert_eq!(ai.culture_threat_pressure(), CULTURE_THREAT_PRESSURE_EARLY);
+    assert_eq!(CULTURE_THREAT_PRESSURE_EARLY, 30);
+    (gene.disable)(&mut ai);
+    assert!(!ai.culture_threat_early);
+    assert_eq!(ai.culture_threat_pressure(), 50);
+}
+
+/// A rival at 35 percent of the bar is a threat only with the gene on; one
+/// at 29 percent is a threat to neither, and the urgency follows the bar.
+#[test]
+fn early_threshold_admits_a_thirty_five_percent_rival_and_off_keeps_fifty() {
+    let mut g = board();
+    // Player 1's pressure is 100 * foreign / max(other domestic) = foreign / 100.
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(35);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(
+        ai.culture_trade_threats(&g, 0).is_empty(),
+        "off, 35 percent is below the halfway bar"
+    );
+    assert_eq!(ai.culture_defense_urgency(&g, 0), 0.0);
+    assert!(ai.culture_defense_cards(&g, 0).is_empty());
+    ai.enable_culture_threat_early();
+    assert_eq!(ai.culture_trade_threats(&g, 0), BTreeSet::from([1]));
+    assert_eq!(ai.culture_defense_urgency(&g, 0), 0.35);
+    assert_eq!(
+        ai.culture_defense_cards(&g, 0),
+        vec!["future_counter_culture"]
+    );
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(29);
+    assert!(ai.culture_trade_threats(&g, 0).is_empty());
+    assert_eq!(ai.culture_defense_urgency(&g, 0), 0.0);
+    // The same guards as version one: an unmet or dead rival is no threat.
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(35);
+    g.players[0].met.remove(&1);
+    assert!(ai.culture_trade_threats(&g, 0).is_empty());
+    g.record_contact(0, 1);
+    g.players[1].alive = false;
+    assert!(ai.culture_trade_threats(&g, 0).is_empty());
+}
+
+/// With the gene on nothing is sold to the threat itself; sales to other
+/// buyers and purchases from the threat stay open, and off the filter is
+/// exactly version one's.
+#[test]
+fn early_defense_refuses_every_sale_to_the_threat_only() {
+    let threats = BTreeSet::from([1]);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut deal = QuickDeal {
+        partner: 1,
+        category: "luxury".into(),
+        item: "silk".into(),
+        direction: "sell".into(),
+        offer: DealItems::default(),
+        request: DealItems::default(),
+        my_value: 100.0,
+        partner_value: 100.0,
+    };
+    assert!(AdvancedAi::culture_deal_safe(&deal, &threats));
+    assert!(
+        ai.culture_deal_allowed(&deal, &threats),
+        "off: version one sells luxuries"
+    );
+    ai.enable_culture_threat_early();
+    assert!(!ai.culture_deal_allowed(&deal, &threats));
+    for (category, item) in [
+        ("strategic", "iron"),
+        ("gold", "gold"),
+        ("diplomatic", "open_borders"),
+    ] {
+        deal.category = category.into();
+        deal.item = item.into();
+        assert!(
+            !ai.culture_deal_allowed(&deal, &threats),
+            "{category}/{item}"
+        );
+    }
+    deal.category = "luxury".into();
+    deal.item = "silk".into();
+    deal.partner = 2;
+    assert!(
+        ai.culture_deal_allowed(&deal, &threats),
+        "a bystander may buy"
+    );
+    deal.partner = 1;
+    deal.direction = "buy".into();
+    assert!(
+        ai.culture_deal_allowed(&deal, &threats),
+        "buying from the threat is fine"
+    );
+    deal.direction = "sell".into();
+    deal.category = "great_work".into();
+    deal.partner = 2;
+    assert!(
+        !ai.culture_deal_allowed(&deal, &threats),
+        "version one's great-work veto still holds for every buyer"
+    );
+    assert!(
+        ai.culture_deal_allowed(&deal, &BTreeSet::new()),
+        "no threat, no veto"
+    );
+}
+
+/// The threat is denounced once, the most pressing first, only with the
+/// gene on, and only while the engine calls the denouncement legal.
+#[test]
+fn early_defense_denounces_the_culture_threat_once() {
+    let mut g = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(ai.culture_trade_threats(&g, 0), BTreeSet::from([1]));
+    assert_eq!(ai.culture_threat_denunciation(&mut g, 0), None, "off");
+    assert!(g.players[0].denounced_until.is_empty());
+    ai.enable_culture_threat_early();
+    assert_eq!(ai.culture_threat_denunciation(&mut g, 0), Some(1));
+    assert!(g.players[0]
+        .denounced_until
+        .get(&1)
+        .is_some_and(|until| *until > g.turn));
+    assert_eq!(
+        ai.culture_threat_denunciation(&mut g, 0),
+        None,
+        "an active denouncement is not repeated"
+    );
+    // A second threat under a friendship cannot be denounced; nothing else is.
+    let mut friends = board();
+    Arc::make_mut(&mut friends.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(0);
+    Arc::make_mut(&mut friends.observed_public_empire_stats)
+        .get_mut(&2)
+        .unwrap()
+        .foreign_tourists = Some(40);
+    friends.players[0]
+        .friends_until
+        .insert(2, friends.turn + 30);
+    assert_eq!(ai.culture_trade_threats(&friends, 0), BTreeSet::from([2]));
+    assert_eq!(ai.culture_threat_denunciation(&mut friends, 0), None);
+    assert!(friends.players[0].denounced_until.is_empty());
+}
+
+/// A threat's own passage proposal is refused with the gene on and valued
+/// as version one values it when the gene is off.
+#[test]
+fn early_defense_refuses_the_threats_open_borders_proposal() {
+    let g = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let deal = crate::game::DiplomaticDeal {
+        id: 1,
+        from: 1,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: true,
+        friendship: false,
+        peace: false,
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target: None,
+        promise: None,
+        demand: false,
+        expires: g.turn + 5,
+    };
+    let off = ai.incoming_deal_value(&g, 0, &deal, &plan);
+    assert!(off > 0.0, "version one accepts passage: {off}");
+    ai.enable_culture_threat_early();
+    assert_eq!(ai.incoming_deal_value(&g, 0, &deal, &plan), -1_000.0);
+    let mut bystander = deal.clone();
+    bystander.from = 2;
+    assert_eq!(ai.incoming_deal_value(&g, 0, &bystander, &plan), off);
+}
+
+#[test]
+fn an_assigned_culture_racer_keeps_conservation_while_behind_on_visitors() {
+    let mut g = board();
+    g.turn = 150;
+    let withheld = ["conservation", "capitalism"];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].civic = None;
+    assert!(g
+        .available_civics(0)
+        .contains(&crate::name!("conservation")));
+    assert!(g.victory_races(1, 0).culture > g.victory_races(0, 0).culture);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_lane_release_when_hopeless();
+    ai.lane_lost = ai.assigned_lane_is_lost(&g, 0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("conservation"));
+    assert!(
+        !ai.lane_lost,
+        "low accumulated tourism is not a verdict on an assigned Culture finish"
+    );
+}
+
+#[test]
+fn a_ready_culture_museum_unlocks_archaeology_before_another_government() {
+    let mut g = board();
+    let withheld = [
+        "civil_engineering",
+        "natural_history",
+        "class_struggle",
+        "suffrage",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("monarchy".to_string());
+    g.players[0].civic = None;
+    let cid = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("archaeological_museum"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = true;
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut ready = g.clone();
+    ai.advanced_research(&mut ready, 0, &plan);
+    assert_eq!(ready.players[0].civic.as_deref(), Some("natural_history"));
+    ready.players[0]
+        .civics
+        .insert(crate::name!("natural_history"));
+    ready.players[0].civic = None;
+    ai.advanced_research(&mut ready, 0, &plan);
+    assert_eq!(ready.players[0].civic.as_deref(), Some("civil_engineering"));
+    plan.strategy = GrandStrategy::Recovery;
+    let mut recovery = g.clone();
+    ai.advanced_research(&mut recovery, 0, &plan);
+    assert_eq!(
+        recovery.players[0].civic.as_deref(),
+        Some("civil_engineering")
+    );
+    plan.strategy = GrandStrategy::Culture;
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .retain(|building| building != "archaeological_museum");
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("civil_engineering"));
 }

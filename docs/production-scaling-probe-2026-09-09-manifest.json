@@ -1,0 +1,41 @@
+{
+  "source_sha256": "d8b3203d88a9b6240e843972229690b2bf6850d9d932660355bd9e88e6313c4d",
+  "experiments": [
+    {
+      "tag": "district-control",
+      "revision": "8cfc5ca75a11d9c3832b5c3b8879512b125cef12",
+      "binary_sha256": "efb2a9a9bee4225c09fe7cb9c5c711138f19e5c99a9147f01cc57682ef50f811",
+      "arguments": [
+        "260909145",
+        "4"
+      ]
+    },
+    {
+      "tag": "district",
+      "revision": "d4b77881359482e4b743f29a65ee9183b18bb7dd",
+      "binary_sha256": "e6124e77a2f94ea112afc21237045b0f23b512332dc89836b70a832ebbbdc342",
+      "arguments": [
+        "260909145",
+        "4"
+      ]
+    },
+    {
+      "tag": "combined-control",
+      "revision": "f8124494d3e4c8d56fb291ecba30feaea9b39be6",
+      "binary_sha256": "f785d4b1e4e4ebb152e5d6e69c0d522452525c1fd1dff7b6e34e94c716115c14",
+      "arguments": [
+        "260909145",
+        "4"
+      ]
+    },
+    {
+      "tag": "combined",
+      "revision": "1279295151ecb7863a6e8c55613014c485ba3330",
+      "binary_sha256": "d9d36c3928fb869685f01aaf939be7011b9f53886d3c4118d5250a0438f878fd",
+      "arguments": [
+        "260909145",
+        "4"
+      ]
+    }
+  ]
+}

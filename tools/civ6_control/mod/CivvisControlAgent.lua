@@ -76,6 +76,35 @@ CivvisPolicy = {
 	attempt_turn = -1,
 	pending = nil,
 };
+-- Match GovernmentScreen_Expansion2.lua:IsPolicyAvailable. Unlocked is not
+-- sufficient: government exclusives and Congress bans can still reject a card.
+CivvisPolicy.isAvailable = function(culture, hash)
+	local ok, value = pcall(function()
+		local banned = culture:IsPolicyBanned(hash);
+		local slottable = culture:CanPolicyBeSlotted(hash);
+		local obsolete = culture:IsPolicyObsolete(hash);
+		if type(banned) ~= "boolean" or type(slottable) ~= "boolean"
+				or type(obsolete) ~= "boolean" then return nil; end
+		return not banned and slottable and not obsolete;
+	end);
+	if ok then return value; end
+	return nil;
+end;
+CivvisPolicy.availableNames = function(culture)
+	local ok, names = pcall(function()
+		local result = {};
+		for card in GameInfo.Policies() do
+			local available = CivvisPolicy.isAvailable(culture, card.Hash);
+			-- An incomplete observation is unknown, not an empty legal slate.
+			if available == nil then return nil; end
+			if available then result[#result + 1] = card.PolicyType; end
+		end
+		table.sort(result);
+		return result;
+	end);
+	if ok then return names; end
+	return nil;
+end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -284,6 +313,11 @@ local function resolveActions()
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
+		-- Parameterless Culture actions: Base/Assets/Gameplay/Data/UnitOperations.xml
+		-- :73 (park), :77 (excavate), and DLC/Expansion2/Data/Expansion2_UnitOperations.xml
+		-- :11 (concert). None has InterfaceMode: UnitPanel.lua:2518-2535 requests
+		-- the operation directly. The generic tail preserves CanStartOperation.
+		"UNITOPERATION_EXCAVATE", "UNITOPERATION_DESIGNATE_PARK", "UNITOPERATION_TOURISM_BOMB",
 		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
 		-- light cavalry's pillage-before-combat could not happen on the live
 		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
@@ -528,7 +562,11 @@ local function survey()
 		map = try(function() return MapConfiguration.GetScript(); end, "?"),
 		size = typeName(GameInfo.Maps,
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
-		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
+		-- The running game can retain 250 even after SetMaxTurns(650) updates
+		-- the configuration. WorldRankings.lua:1053 reads this native API for
+		-- the actual horizon. Unknown stays unknown instead of reporting the
+		-- requested cap as though the engine had accepted it.
+		max_turns = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		-- ★★★ WHICH OPTIONAL GAME MODES ARE ON, read from inside the game.
 		-- Exactly the `victories` argument below, and it went the same way: the
 		-- modes are the one setting on the Create Game screen that PERSISTS
@@ -609,6 +647,8 @@ local function survey()
 		-- strike) is exported again and the same turn re-planned, up to
 		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		action_transitions = cfg.ActionTransitions == true,
+		isolated_action_probes = cfg.IsolatedActionProbes == true,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
 		-- deltas, not only with the periodic sweep. See CivvisTiles.
 		tile_delta = cfg.TileDelta ~= false,
@@ -950,6 +990,75 @@ CivvisMilitaryFormation = function(unit)
 		return -1;
 	end, -1);
 end;
+
+-- UnitPanel.lua:2806-2814 names a unit with NAME_UNIT/PARAM_NAME.
+-- TOURISM_BOMB requires a band name (Expansion2_InGameText.xml:940).
+-- Do this before planning: an unnamed band's empty activation highlights must
+-- not strand it before it can ever receive a concert order. Requests are async;
+-- a later snapshot supplies the name and refreshed destinations.
+do
+    local rockBandNameRequests = {};
+    function CivvisNameRockBands(player, pid, turn)
+        for _, unit in player:GetUnits():Members() do
+            pcall(function()
+                local row = GameInfo.Units[unit:GetUnitType()];
+                if row == nil or row.UnitType ~= "UNIT_ROCK_BAND" then return; end
+                local current = unit:GetName();
+                if current == nil or current ~= row.Name then return; end
+                local command = UnitCommandTypes.NAME_UNIT;
+                local parameter = UnitCommandTypes.PARAM_NAME;
+                if command == nil or parameter == nil then return; end
+                local key = tostring(pid) .. ":" .. tostring(unit:GetID());
+                if rockBandNameRequests[key] == turn then return; end
+                local params = {};
+                params[parameter] = "Civvis Band " .. tostring(unit:GetID());
+                if not UnitManager.CanStartCommand(unit, command, false) then return; end
+                rockBandNameRequests[key] = turn;
+                UnitManager.RequestCommand(unit, command, params);
+                emit("rock_band_name_requested", { turn = turn, unit = unit:GetID(), name = params[parameter] });
+            end);
+        end
+    end
+
+end
+
+-- SelectedUnit_Expansion2.lua:65-70 asks this unit's RockBand component for
+-- activation highlights. Do not replace an unreadable API with "no venues".
+function CivvisRockBandConcertPlots(unit, name)
+    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    return try(function()
+        local raw = unit:GetRockBand():GetActivationHighlightPlots();
+        if type(raw) ~= "table" then return nil; end
+        local plots = {};
+        for _, index in ipairs(raw) do
+            local plot = Map.GetPlotByIndex(index);
+            if plot == nil then return nil; end
+            plots[#plots + 1] = { x = plot:GetX(), y = plot:GetY() };
+        end
+        return plots;
+    end, nil);
+end
+
+-- Base/Assets/UI/Popups/UnitPromotionPopup.lua:81-82 reads this exact menu.
+function CivvisRockBandPromotionChoices(unit, name)
+    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    return try(function()
+        local command = GameInfo.UnitCommands["UNITCOMMAND_PROMOTE"];
+        if command == nil then return nil; end
+        local can, results = UnitManager.CanStartCommand(unit, command.Hash, true, true);
+        if can == false then return {}; end
+        local offered = results ~= nil and results[UnitCommandResults.PROMOTIONS] or nil;
+        if can ~= true or type(offered) ~= "table" then return nil; end
+        local names = {};
+        for _, index in ipairs(offered) do
+            local row = GameInfo.UnitPromotions[index];
+            if row == nil or row.UnitPromotionType == nil then return nil; end
+            names[#names + 1] = row.UnitPromotionType;
+        end
+        table.sort(names);
+        return names;
+    end, nil);
+end
 
 -- Facts that decide what a unit may do next. Reconstructing every live unit from
 -- its type defaults reset Apostles to full charges with no promotion and military
@@ -1466,6 +1575,29 @@ end
 -- you start this" rather than reasoning about terrain, charges and movement
 -- keeps the controller honest: a rule this code does not model refuses the
 -- order, and the next one down is tried instead.
+-- ★★★★ AND WHEN NOTHING STARTS, SAY SO. `operate` returns false when the host
+-- answers `CanStartOperation` with "no", and the caller then simply moves on.
+-- The bridge sees only the consequence — the unit is not fortified — and cannot
+-- tell a host refusal from an order the mod never issued.
+--
+-- That ambiguity is the whole of the largest unexplained failure on the ledger.
+-- Over the 42 recorded live runs of 2026-09-10/11, **82.5% of FORTIFY orders
+-- fail** (7,711 against 1,637 verified) and FORTIFY is 36% of every failed
+-- order, second only to MOVE_TO. Of the 5,442 that read `not_fortified`, 95%
+-- are a MOVE followed by a FORTIFY — the case `later_moved_units` flagged in
+-- August as "should have stuck; a real question" — and 72% are still not
+-- fortified three turns later, so they are not an early verdict.
+--
+-- Two explanations were ruled out from the recorded runs before adding this:
+-- the units are NOT on the `UNITOPERATION_ALERT` fallback (their activity mix
+-- matches every other unit's, with LESS sentry, not more), and the `moves`
+-- those records show is the turn's opening value rather than what remained
+-- after the move, so "it had no movement left" is unsupported either way.
+--
+-- MOVE_TO already has this: `move_noop` carries a `why` and the bridge reads it
+-- as `host_noop_<why>`. This is the same instrument for the operations that
+-- happen in place. It fires once per call rather than once per candidate, so a
+-- FORTIFY that fell through to ALERT and started is not reported at all.
 local function firstOperation(unit, names)
 	for _, name in ipairs(names) do
 		local hash = OP[name];
@@ -1473,6 +1605,12 @@ local function firstOperation(unit, names)
 			return name;
 		end
 	end
+	emit("operation_refused", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		unit = try(function() return unit:GetID(); end, -1),
+		unit_kind = unitTypeName(unit),
+		tried = names,
+	});
 	return nil;
 end
 
@@ -4897,6 +5035,23 @@ CivvisChooseSpyEscapeRoute = function(pid)
 	end, false);
 end
 
+-- ChooseArtifact.lua:11-19 reads the next extracting Archaeologist and its
+-- artifact; :79-81 chooses ActingPlayerID with CHOOSE_ARTIFACT_PLAYER.
+-- Notifications.xml:130 has AutoNotify="False", so the popup callback alone
+-- cannot guarantee this required choice gets answered on an unattended seat.
+CivvisChooseArtifactPlayer = function(pid)
+	return try(function()
+		local unit = Players[pid]:GetUnits():GetNextExtractingArchaeologist();
+		if unit == nil then return false; end
+		local artifact = Game.GetArtifactByIndex(unit:GetArchaeology():GetArtifactIndex());
+		if artifact == nil or type(artifact.ActingPlayerID) ~= "number" then return false; end
+		local params = {};
+		params[PlayerOperations.PARAM_PLAYER_ONE] = artifact.ActingPlayerID;
+		UI.RequestPlayerOperation(pid, PlayerOperations.CHOOSE_ARTIFACT_PLAYER, params);
+		return true;
+	end, false);
+end
+
 -- Not every blocker actually blocks. "Units have moves" and its relatives are
 -- the interface nagging that something could still be done this turn -- the
 -- shipped end-turn button cycles to the next idle unit instead of ending, but
@@ -5458,7 +5613,7 @@ end
 -- makes Palace slots take all non-artifact kinds) and, when the slot's
 -- building hangs off a district, THAT DISTRICT'S PLOT INDEX — the tile a
 -- person must stand on for the engine to take Activate. Wonders keep
--- `plot = nil`: their buildings name no `PrerequisiteDistrict`, so their tile
+-- `plot = nil`: their buildings name no `PrereqDistrict`, so their tile
 -- stays unknown and the walk falls back to the engine's own highlight.
 --
 -- `district_plots` is every completed district tile we own, any type: a
@@ -5546,9 +5701,9 @@ CivvisGreatWorks.survey = function(player, turn)
 							if acceptSet ~= nil then
 								survey.slots[#survey.slots + 1] = {
 									accepts = acceptSet,
-									plot = buildingInfo.PrerequisiteDistrict ~= nil
+									plot = buildingInfo.PrereqDistrict ~= nil
 										and plotByDistrict[
-											buildingInfo.PrerequisiteDistrict]
+											buildingInfo.PrereqDistrict]
 										or nil,
 								};
 							end
@@ -5937,7 +6092,19 @@ CivvisGreatPersonActivationPlots = function(unit, gp, pid, gwSurvey, openPlots)
 	return activationPlots;
 end;
 
-local function exportState(player, pid, turn, frame)
+-- WorldInput.lua:1041 gates foreign units on BOTH visible terrain and
+-- PlayersVisibility:IsUnitVisible(unit); MapSearchPanel.lua:475 does too.
+-- A submarine on a visible plot is not necessarily detected. Missing API
+-- evidence must not silently grant the controller omniscience.
+CivvisUnitVisible = function(pid, unit)
+	return try(function()
+		local visibility = PlayersVisibility[pid];
+		return visibility:IsVisible(unit:GetX(), unit:GetY())
+			and visibility:IsUnitVisible(unit);
+	end, false) == true;
+end;
+
+local function exportState(player, pid, turn, frame, eventKind)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
 	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a
@@ -6838,6 +7005,10 @@ local function exportState(player, pid, turn, frame)
 					and individualRow.GreatPersonIndividualType or nil, classType));
 			local activationPlots = CivvisGreatPersonActivationPlots(
 				unit, gp, pid, gwSurvey, openPlots);
+			-- Export the same spending policy to civvis_orders, whose explicit
+			-- activation/movement orders otherwise bypass the fallback driver.
+			local spaceTargets = CivvisSpaceBoost.forUnit(player, unit, turn);
+			activationPlots = CivvisSpaceBoost.filterPlots(player, spaceTargets, activationPlots);
 			greatPerson = {
 				individual = individualRow ~= nil
 					and individualRow.GreatPersonIndividualType or nil,
@@ -6858,6 +7029,8 @@ local function exportState(player, pid, turn, frame)
 					and individualRow.ActionRequiresCityGreatWorkObjectType or nil,
 				charges = try(function() return gp:GetActionCharges(); end, 0),
 				can_activate = try(function()
+					if not CivvisSpaceBoost.cityKey(player, spaceTargets,
+							unit:GetX(), unit:GetY()) then return false; end
 					return UnitManager.CanStartCommand(
 						unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"], nil, {});
 				end, false),
@@ -7084,6 +7257,9 @@ local function exportState(player, pid, turn, frame)
 			spy_operation_end_turn = spyEnds,
 			spy_missions_available = spyMissions,
 			great_person = greatPerson,
+			concert_plots = CivvisRockBandConcertPlots(unit, name),
+			offered_promotions = CivvisRockBandPromotionChoices(unit, name),
+			rock_band_name = name == "UNIT_ROCK_BAND" and try(function() return unit:GetName(); end, nil) or nil,
 		};
 	end);
 
@@ -7174,7 +7350,7 @@ local function exportState(player, pid, turn, frame)
 						-- answers in a gameplay context. A visible tile is not a
 						-- detection result, though: `other:GetUnits()` still contains
 						-- a foreign Spy while its operation remains secret.
-						if name ~= "UNIT_SPY" and PlayersVisibility[pid]:IsVisible(ux, uy) then
+						if name ~= "UNIT_SPY" and CivvisUnitVisible(pid, unit) then
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
@@ -7699,7 +7875,7 @@ local function exportState(player, pid, turn, frame)
 				for _, unit in minor:GetUnits():Members() do
 					pcall(function()
 						local ux, uy = unit:GetX(), unit:GetY();
-						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+						if CivvisUnitVisible(pid, unit) then
 							local name = unitTypeName(unit);
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
@@ -8027,7 +8203,7 @@ local function exportState(player, pid, turn, frame)
 		pcall(function()
 			for _, unit in other:GetUnits():Members() do
 				local ux, uy = unit:GetX(), unit:GetY();
-				if PlayersVisibility[pid]:IsVisible(ux, uy) then
+				if CivvisUnitVisible(pid, unit) then
 					local name = try(function()
 						return GameInfo.Units[unit:GetUnitType()].UnitType;
 					end, "?");
@@ -8381,7 +8557,7 @@ local function exportState(player, pid, turn, frame)
 			end);
 		end
 	end
-	emit("state", {
+	emit(eventKind or "state", {
 		turn = turn,
 		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
 		-- (see CivvisFrames). The brain re-plans the same turn on a frame.
@@ -8422,6 +8598,7 @@ local function exportState(player, pid, turn, frame)
 		religions = religions,
 		prophet_pending = prophet_pending,
 		policies = policies,
+		available_policies = CivvisPolicy.availableNames(pcult),
 		policy_slots = policy_slots,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
@@ -10275,8 +10452,17 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	local session = trade.sessions[other];
 	if session == nil then return; end
 	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
-	local sessionID = type(kVariants) == "table" and kVariants.SessionID or nil;
-	if session.sessionID == nil and sessionID ~= nil then session.sessionID = sessionID; end
+	-- Firaxis dispatches by StatementType and separates a MAKE_DEAL opening
+	-- acknowledgement from evaluation (DiplomacyActionView.lua:2547-2559,
+	-- 2757-2761). A greeting or another session must not consume this offer.
+	if type(kVariants) ~= "table" then return; end
+	local sessionID = kVariants.SessionID;
+	if sessionID == nil or (session.sessionID ~= nil and session.sessionID ~= sessionID) then return; end
+	local statementType = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementType);
+	end, nil);
+	if statementType ~= "MAKE_DEAL" then return; end
+	if session.sessionID == nil then session.sessionID = sessionID; end
 	if not session.sent then
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
@@ -10290,7 +10476,14 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
-	local dealAction = type(kVariants) == "table" and kVariants.DealAction or nil;
+	local dealAction = kVariants.DealAction;
+	if dealAction == nil then return; end
+	local opening = try(function()
+		return DiplomacyManager.GetKeyName(kVariants.StatementSubType) == "NONE"
+			and (kVariants.ResponseType == DiplomacyResponseTypes.INITIAL
+				or kVariants.ResponseType == DiplomacyResponseTypes.ACKNOWLEDGE);
+	end, false);
+	if opening then return; end
 	trade.unanswered = 0;
 	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
 		session = session.sessionID or -1, deal_action = tostring(dealAction) });
@@ -10775,6 +10968,26 @@ CivvisLedger.refuseWarStarter = function(actor, subject, verb, x, y, turn)
 		end, -1),
 	});
 	return "would_declare_war:" .. table.concat(names, ",");
+end;
+
+-- A selected native survival gene can disagree with Firaxis's damage model.
+-- Honor a fresh, known-lethal host preview at issue time, including after a
+-- queued approach. Base/Assets/UI/Panels/UnitPanel.lua:3924 uses
+-- CombatManager.SimulateAttackInto for this preview; :1774 reads the unit's
+-- GetMaxDamage. An unavailable result adds no new veto.
+CivvisLedger.refuseLethalPreview = function(unit, subject, verb, x, y, turn, row)
+	if row._civvis_survival_guard ~= true then return nil; end
+	local preview = CivvisLedger.preview(unit, verb, x, y);
+	local damage = preview and tonumber(preview.damage_to_attacker);
+	local wounds = tonumber(try(function() return unit:GetDamage(); end, nil));
+	local maximum = tonumber(try(function() return unit:GetMaxDamage(); end, nil));
+	if damage == nil or wounds == nil or maximum == nil
+			or damage < maximum - wounds then return nil; end
+	emit("strike_survival_refused", {
+		turn = turn, unit = subject, verb = verb, x = x, y = y,
+		hp = maximum - wounds, preview = preview,
+	});
+	return "lethal_host_preview";
 end;
 
 -- Called from `applyOrder` before a strike is requested: emit the preview and
@@ -12301,6 +12514,25 @@ local function applyOrder(player, pid, row, turn)
 	--
 	-- Policy cards are not marginal here -- already measured as mattering
 	-- (p=0.0023).
+	-- RequestChangeGovernment is asynchronous. Ordering it first does not make
+	-- the new slot indices observable in this tick. Do not clear the old deck
+	-- until the requested government is read back; a fresh turn releases an
+	-- unconfirmed request so a refused transition cannot block policies forever.
+	if (kind == "policy_deck" or kind == "policy") and CivvisPolicy.government_pending ~= nil then
+		local pending = CivvisPolicy.government_pending;
+		local current = try(function() return player:GetCulture():GetCurrentGovernment(); end, -1);
+		if current == pending.index or turn > pending.turn then
+			CivvisPolicy.government_pending = nil;
+		else
+			local desired = {};
+			for name in string.gmatch(verb, "[^,]+") do desired[#desired + 1] = name; end
+			emit(kind == "policy_deck" and "policy_deck_deferred" or "policy_deferred", {
+				turn = turn, desired = desired, why = "government_change_pending",
+				government = pending.name, requested_turn = pending.turn,
+			});
+			return false, "policy_government_pending";
+		end
+	end
 	if kind == "policy_deck" then
 		local culture = try(function() return player:GetCulture(); end);
 		if culture == nil then return false, "no_culture"; end
@@ -12313,6 +12545,9 @@ local function applyOrder(player, pid, row, turn)
 			end
 			if not try(function() return culture:IsPolicyUnlocked(card.Hash); end, false) then
 				return false, "locked_" .. resolved;
+			end
+			if CivvisPolicy.isAvailable(culture, card.Hash) == false then
+				return false, "unavailable_" .. resolved;
 			end
 			if not seen[card.Index] then
 				desired[#desired + 1] = card;
@@ -12603,11 +12838,14 @@ local function applyOrder(player, pid, row, turn)
 		if try(function() return culture:GetCurrentGovernment(); end, -1) == row2.Index then
 			return false, "already_" .. resolved;
 		end
-		local ok = pcall(function() culture:RequestChangeGovernment(row2.Hash); end);
+		local ok, accepted = pcall(function() return culture:RequestChangeGovernment(row2.Hash); end);
+		if ok and accepted ~= false then
+			CivvisPolicy.government_pending = { index = row2.Index, name = resolved, turn = turn };
+		end
 		-- Tell the game the prompt has been dealt with either way, or it re-raises
 		-- the blocker every turn.
 		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
-		return ok, ok and resolved or "throw";
+		return ok and accepted ~= false, not ok and "throw" or (accepted == false and "government_rejected" or resolved);
 	end
 
 	-- CIVVIS names the dedication it selected; the host operation accepts the
@@ -13407,6 +13645,10 @@ local function applyOrder(player, pid, row, turn)
 		local unit = liveUnit(pid, subject);
 		if unit == nil then return false, "unit_gone:" .. tostring(subject); end
 		if verb == "ACTIVATE_GREAT_PERSON" then
+			local spaceTargets = CivvisSpaceBoost.forUnit(player, unit, turn);
+			local spaceCity = CivvisSpaceBoost.cityKey(player, spaceTargets,
+				unit:GetX(), unit:GetY());
+			if not spaceCity then return false, "reserved_space_boost"; end
 			local activated = commandUnit(
 				unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]);
 			if not activated then
@@ -13416,6 +13658,9 @@ local function applyOrder(player, pid, row, turn)
 					x = try(function() return unit:GetX(); end, -1),
 					y = try(function() return unit:GetY(); end, -1),
 				});
+			end
+			if activated and spaceTargets ~= nil then
+				CivvisSpaceBoost.spent[spaceCity] = turn;
 			end
 			return activated, verb;
 		end
@@ -13714,6 +13959,8 @@ local function applyOrder(player, pid, row, turn)
 					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
 				end
 				if verb == "ATTACK" then
+					local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+					if survivalRefusal ~= nil then return false, survivalRefusal; end
 					CivvisLedger.strike(unit, subject, verb, x, y, turn);
 				end
 			end
@@ -13830,6 +14077,8 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
+			if survivalRefusal ~= nil then return false, survivalRefusal; end
 			CivvisLedger.strike(unit, subject, verb, x, y, turn);
 			local accepted = operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params);
 			if not accepted then
@@ -14449,12 +14698,104 @@ end
 -- Exposed solely for the Lua 5.1 regression.  A bare global is required: the
 -- Civilization VI UI sandbox has no `_G` table.  Reusing the existing local
 -- handler avoids consuming another main-chunk register.
+-- Opt-in request-boundary evidence. These exports deliberately are NOT
+-- `state` events: the brain must never wake on a half-executed order batch.
+-- A request can enqueue asynchronous work, so these are issue-time readings,
+-- never an assertion that movement/combat has settled.
+CivvisTransitions = { sequence = 0, apply = applyOrder };
+applyOrder = function(player, pid, row, turn)
+	if cfg.ActionTransitions ~= true then
+		return CivvisTransitions.apply(player, pid, row, turn);
+	end
+	CivvisTransitions.sequence = CivvisTransitions.sequence + 1;
+	local sequence = CivvisTransitions.sequence;
+	local frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0;
+	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = frame,
+		order = { kind = row.kind, subject = row.subject, verb = row.verb, x = row.x, y = row.y } });
+	local before = pcall(function() exportState(player, pid, turn, frame, "action_transition_before"); end);
+	local safe, accepted, why = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
+	local after = pcall(function() exportState(player, pid, turn, frame, "action_transition_after"); end);
+	emit("action_transition_end", { sequence = sequence, turn = turn, frame = frame,
+		accepted = safe and accepted == true, why = tostring(why or ""),
+		before_export = before, after_export = after, phase = "request_boundary", threw = not safe });
+	if not safe then error(accepted); end
+	return accepted, why;
+end;
 CivvisApplyOrder = applyOrder;
 CivvisResolveActions = resolveActions;
 CivvisOrdersReady = ordersReady;
 CivvisFetchOrders = fetchOrders;
 CivvisExportState = exportState;
 CivvisExportTiles = exportTiles;
+
+-- Diagnostic-only serial movement probes, before the normal opening planner.
+-- While pending, tick returns before beginTurn/settleTurn can issue any other
+-- orders. Readiness is an observed arrival AND spent movement, not a timer or
+-- RequestOperation's acknowledgement. No production run enables this mode.
+CivvisActionProbe = { lastTurn = -1, preparing = -1, pending = nil };
+CivvisActionProbe.tick = function(player, pid, turn)
+	if cfg.IsolatedActionProbes ~= true then return false; end
+	local pending = CivvisActionProbe.pending;
+	if pending ~= nil then
+		pending.ticks = pending.ticks + 1;
+		local unit = liveUnit(pid, pending.row.subject);
+		local arrived = unit ~= nil and try(function()
+			return unit:GetX() == pending.row.x and unit:GetY() == pending.row.y
+				and unit:GetMovesRemaining() < pending.moves;
+		end, false);
+		if not arrived and pending.ticks < 120 and turn == pending.turn then return true; end
+		local after = pcall(function()
+			exportState(player, pid, turn, 0, "action_transition_after");
+		end);
+		emit("action_transition_end", { sequence = pending.sequence, turn = turn, frame = 0,
+			accepted = pending.accepted, before_export = pending.before, after_export = after,
+			threw = false, phase = "settled", settled = arrived == true and turn == pending.turn,
+			why = arrived and "observed_arrival" or "probe_timeout", isolated = true });
+		CivvisActionProbe.pending = nil;
+		return false;
+	end
+	if turn > 10 or CivvisActionProbe.lastTurn == turn then return false; end
+	if CivvisActionProbe.preparing ~= turn then
+		CivvisActionProbe.preparing = turn;
+		CivvisBoard.cancelQueuedPaths(player, pid, turn);
+		return true;
+	end
+	CivvisActionProbe.lastTurn = turn;
+	local row, moves;
+	eachUnit(player, function(unit)
+		if row ~= nil then return; end
+		local spec = GameInfo.Units[unitTypeName(unit)];
+		if spec == nil or (spec.Combat or 0) <= 0 or unit:GetMovesRemaining() <= 0 then return; end
+		for direction = 0, 5 do
+			local plot = Map.GetAdjacentPlot(unit:GetX(), unit:GetY(), direction);
+			if plot ~= nil and not plot:IsWater() and not plot:IsImpassable()
+				and PlayersVisibility[pid]:IsVisible(plot:GetX(), plot:GetY())
+				and (plot:GetOwner() == pid or plot:GetOwner() < 0)
+				and plot:GetUnitCount() == 0 then
+				row = { kind = "unit", subject = unit:GetID(), verb = "MOVE_TO", x = plot:GetX(), y = plot:GetY() };
+				moves = unit:GetMovesRemaining();
+				break;
+			end
+		end
+	end);
+	if row == nil then return false; end
+	exportTiles(player, pid, turn);
+	CivvisTransitions.sequence = CivvisTransitions.sequence + 1;
+	local sequence = CivvisTransitions.sequence;
+	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = 0, order = row,
+		isolated = true, source = "diagnostic_probe" });
+	local before = pcall(function() exportState(player, pid, turn, 0, "action_transition_before"); end);
+	local safe, accepted = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
+	if not safe or not accepted then
+		emit("action_transition_end", { sequence = sequence, turn = turn, frame = 0,
+			accepted = false, before_export = before, after_export = false, threw = not safe,
+			phase = "settled", settled = false, isolated = true, why = "probe_refused" });
+		return false;
+	end
+	CivvisActionProbe.pending = { row = row, moves = moves, sequence = sequence,
+		turn = turn, accepted = true, before = before, ticks = 0 };
+	return true;
+end;
 
 -- Pick the major civilization that is closest to a diplomatic victory.  The
 -- World Congress vote needs this independently of the rest of the turn loop,
@@ -14620,6 +14961,86 @@ local function gpName(gp)
 	return individual or "GP_INDIVIDUAL_UNKNOWN", class or "GP_CLASS_UNKNOWN";
 end
 
+-- Finite grants are attached to the district's CITY, so both activation and
+-- movement must inspect that city's current project. Shipped GreatPeople_
+-- Engineers.xml:39,70 and GreatPeople_Scientists.xml:47,87 identify these two
+-- charge consumers; Goddard/von Braun/Kwolek grant permanent modifiers instead.
+CivvisSpaceBoost = { spent = {} };
+CivvisSpaceBoost.finite = function(individual)
+	return individual == "GREAT_PERSON_INDIVIDUAL_SERGEI_KOROLEV"
+		or individual == "GREAT_PERSON_INDIVIDUAL_CARL_SAGAN";
+end
+CivvisSpaceBoost.targets = function(player, individual, turn)
+	if not CivvisSpaceBoost.finite(individual) then return nil; end
+	local charges = 0;
+	try(function()
+		for _, other in player:GetUnits():Members() do
+			local person = greatPersonOf(other);
+			if person ~= nil and CivvisSpaceBoost.finite(gpName(person)) then
+				charges = charges + math.max(0, person:GetActionCharges());
+			end
+		end
+	end);
+	local exoplanet = try(function()
+		return GameInfo.Projects["PROJECT_LAUNCH_EXOPLANET_EXPEDITION"];
+	end, nil);
+	local launched = exoplanet ~= nil and try(function()
+		return player:GetStats():GetNumProjectsAdvanced(exoplanet.Index) > 0;
+	end, false);
+	local cities = {};
+	try(function()
+		for _, city in player:GetCities():Members() do
+			local queue = city:GetBuildQueue();
+			local row = GameInfo.Projects[queue:GetCurrentProductionTypeHash()];
+			local project = row and row.ProjectType;
+			local late = project == "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
+				or (launched and (project == "PROJECT_ORBITAL_LASER"
+					or project == "PROJECT_TERRESTRIAL_LASER"))
+				or ((exoplanet == nil or charges > 1) and (
+					project == "PROJECT_LAUNCH_MARS_BASE"
+					or project == "PROJECT_LAUNCH_MARS_REACTOR"
+					or project == "PROJECT_LAUNCH_MARS_HABITATION"
+					or project == "PROJECT_LAUNCH_MARS_HYDROPONICS"));
+			-- Keep the last charge for Exoplanet even while its technology is
+			-- locked. Early launches can finish during that research wait.
+			-- Never spend a charge on a project completing naturally next turn.
+			local turns = row and try(function()
+				return queue:GetTurnsLeft(row.ProjectType);
+			end, -1) or -1;
+			local key = tostring(city:GetOwner()) .. ":" .. tostring(city:GetID());
+			if late and (turns < 0 or turns > 1)
+					and CivvisSpaceBoost.spent[key] ~= turn then
+				cities[city:GetID()] = key;
+			end
+		end
+	end);
+	return cities;
+end
+CivvisSpaceBoost.cityKey = function(player, targets, x, y)
+	if targets == nil then return true; end
+	return try(function()
+		local city = Cities.GetPlotPurchaseCity(Map.GetPlot(x, y));
+		if city == nil or city:GetOwner() ~= player:GetID() then return nil; end
+		return targets[city:GetID()];
+	end, nil);
+end
+
+CivvisSpaceBoost.forUnit = function(player, unit, turn)
+	local gp = greatPersonOf(unit);
+	if gp == nil then return nil; end
+	return CivvisSpaceBoost.targets(player, gpName(gp), turn);
+end
+CivvisSpaceBoost.filterPlots = function(player, targets, plots)
+	if targets == nil then return plots; end
+	local eligible = {};
+	for _, plot in ipairs(plots) do
+		if CivvisSpaceBoost.cityKey(player, targets, plot.x, plot.y) then
+			eligible[#eligible + 1] = plot;
+		end
+	end
+	return eligible;
+end
+
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "retired" | "idle", or nil when the unit is not a Great Person this code
 -- should touch.
@@ -14667,13 +15088,17 @@ local function orderGreatPerson(player, unit, id, turn)
 		end
 		return "idle";
 	end
-	-- 1. If the engine will take Activate here and now, press it.
+	local spaceTargets = CivvisSpaceBoost.targets(player, individual, turn);
+	local spaceCity = CivvisSpaceBoost.cityKey(player, spaceTargets,
+		unit:GetX(), unit:GetY());
+	-- 1. If the engine will take Activate here and the project is worth it, press it.
 	-- UnitRemovedFromMap is the host's completion witness for this command;
 	-- retain the turn BEFORE requesting it because a host event may fire
 	-- synchronously inside commandUnit.
 	local activationKey = tostring(id);
 	CivvisLedger.expected_gp_activation[activationKey] = turn;
-	if commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
+	if spaceCity and commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
+		if spaceTargets ~= nil then CivvisSpaceBoost.spent[spaceCity] = turn; end
 		gpPending[id] = nil;
 		emit("gp", { turn = turn, unit = id, individual = individual,
 			class = class, action = "activated",
@@ -14740,7 +15165,9 @@ local function orderGreatPerson(player, unit, id, turn)
 				-- no tile worth reaching: marching is motion without progress,
 				-- and the mirror's needs machinery — not this walk — is what
 				-- builds capacity. Fall through to the idle report instead.
-				if rank < 2 and (slotCount == nil or slotCount > 0) then
+				if rank < 2 and (slotCount == nil or slotCount > 0)
+						and CivvisSpaceBoost.cityKey(player, spaceTargets,
+							plot:GetX(), plot:GetY()) then
 					local px, py = plot:GetX(), plot:GetY();
 					if activationReachable(px, py) ~= false then
 						local d = try(function()
@@ -14788,7 +15215,7 @@ local function orderGreatPerson(player, unit, id, turn)
 	if before == nil or (turn - before) >= 25 then
 		gpIdleReported[id] = turn;
 		emit("gp", { turn = turn, unit = id, individual = individual,
-			class = class, action = "idle",
+			class = class, action = spaceTargets ~= nil and "reserved_space_boost" or "idle",
 			empty_slots = slotCount,
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1) });
@@ -16043,10 +16470,23 @@ CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function(pid, turn, rows)
 				return true, "path";
 			end
 		end
-		local baseMoves = tonumber(try(function()
-			local definition = GameInfo.Units[threat.unit:GetUnitType()];
-			return definition ~= nil and definition.BaseMoves;
-		end, nil)) or 2;
+		local definition = try(function()
+			return GameInfo.Units[threat.unit:GetUnitType()];
+		end, nil);
+		-- A distance fallback is not a naval path. In the native 20260909T064545Z
+		-- t29 export, a galley caused a land Settler to flee toward a hidden warrior.
+		-- Keep a positive host path above, and preserve city/district transitions
+		-- (including canals), water captures, and unavailable terrain information.
+		if definition ~= nil and definition.Domain == "DOMAIN_SEA" then
+			local plot = try(function() return Map.GetPlot(x, y); end, nil);
+			local water = try(function() return plot:IsWater(); end, nil);
+			local city = try(function() return plot:IsCity(); end, nil);
+			local district = tonumber(try(function() return plot:GetDistrictType(); end, nil));
+			if water == false and city == false and district ~= nil and district < 0 then
+				return false, "naval_land";
+			end
+		end
+		local baseMoves = tonumber(definition ~= nil and definition.BaseMoves) or 2;
 		local distance = tonumber(try(function()
 			return Map.GetPlotDistance(x, y, threat.x, threat.y);
 		end, -1)) or -1;
@@ -16512,6 +16952,61 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 			end
 		end
 	end
+	-- civvis-20260909T143651Z t15: the Builder's retreat was held, but
+	-- its stacked Scout was allowed to leave. The adjacent Slinger then
+	-- captured the stationary Builder. A refused move is not protection:
+	-- retain a co-located guard when the current tile is exposed and the
+	-- Builder has no accepted departure. Recompute from the live stack on
+	-- every frame, including batches that do not mention the Builder.
+	local departing = {};
+	for _, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and row._civvis_builder_barbarian_capture_hold ~= true then
+			local id = tonumber(row.subject);
+			if id ~= nil and held[id] == nil and departing[id] == nil then departing[id] = row; end
+		end
+	end
+	eachUnit(player, function(builder)
+		if unitTypeName(builder) ~= "UNIT_BUILDER" then return; end
+		local builderId = tonumber(try(function() return builder:GetID(); end, nil));
+		local x = tonumber(try(function() return builder:GetX(); end, nil));
+		local y = tonumber(try(function() return builder:GetY(); end, nil));
+		if builderId == nil or x == nil or y == nil or onOwnCity(x, y) then return; end
+		local departure = departing[builderId];
+		if departure ~= nil then
+			local dx, dy = tonumber(departure.x), tonumber(departure.y);
+			if dx ~= nil and dy ~= nil then
+				local capped = CivvisBoard.capToTurn(builder, dx, dy);
+				if type(capped) == "table" then dx, dy = capped.x, capped.y; end
+				if capped ~= false and (dx ~= x or dy ~= y)
+						and CivvisBoard.reachesThisTurn(builder, dx, dy) then return; end
+			end
+		end
+		local currentThreat = nil;
+		for _, threat in ipairs(threats) do
+			if threatReaches(threat, x, y) then currentThreat = threat; break; end
+		end
+		if currentThreat == nil then return; end
+		eachUnit(player, function(guard)
+			if not CivvisBoard.isCombatEscort(guard) then return; end
+			local guardId = tonumber(try(function() return guard:GetID(); end, nil));
+			if guardId == nil or try(function() return guard:GetX(); end, nil) ~= x
+					or try(function() return guard:GetY(); end, nil) ~= y then return; end
+			CivvisBoard.escortHolds[guardId] = true;
+			for _, row in ipairs(rows) do
+				local verb = tostring(row.verb or "");
+				if tostring(row.kind or "") == "unit" and tonumber(row.subject) == guardId
+						and (verb == "MOVE_TO" or verb == "ATTACK" or verb == "CAPTURE") then
+					row._civvis_builder_barbarian_guard_hold = true;
+				end
+			end
+			emit("builder_barbarian_guard_hold", {
+				turn = turn, builder = builderId, guard = guardId, at = { x, y },
+				hostile = currentThreat.id, hostile_type = currentThreat.name,
+				hostile_pos = { currentThreat.x, currentThreat.y },
+			});
+		end);
+	end);
 	-- A Builder can receive a follow-up MOVE_TO in a later replan frame.  Mark
 	-- every move for a held Builder, not only the first row that established the
 	-- threat, so a second frame cannot reintroduce the same exposed leg.
@@ -16814,6 +17309,16 @@ CivvisFrames.repairProduction = function(player, pid, turn)
 end;
 
 local function applyOrders(player, pid, turn, rows)
+	-- Consume only the recognized batch directive. Attach the policy to the
+	-- rows themselves so delayed strikes retain it without global frame state.
+	local survival = false;
+	for i = #rows, 1, -1 do
+		local row = rows[i];
+		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
+			survival = true;
+			table.remove(rows, i);
+		end
+	end
 	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
 	-- Per kind, beside the per-turn totals: how many orders of each kind were
@@ -16856,6 +17361,16 @@ local function applyOrders(player, pid, turn, rows)
 	CivvisBoard.holdVisibleBarbarianCombatCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdVisibleBuilderCaptureLegs(pid, turn, rows);
 	CivvisBoard.holdActiveFireCivilianLegs(pid, turn, rows);
+	for _, row in ipairs(rows) do
+		row._civvis_survival_guard = survival and row.kind == "unit"
+			and (row.verb == "ATTACK" or row.verb == "RANGE_ATTACK");
+	end
+	if survival then
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "DOOMED_BLOW_VETO",
+		});
+	end
 	local shadowRows = 0;
 	for _, row in ipairs(rows) do
 		if row._civvis_escort_shadow == true then shadowRows = shadowRows + 1; end
@@ -16911,6 +17426,11 @@ local function applyOrders(player, pid, turn, rows)
 		local subject = tonumber(row.subject);
 		local shadow = row._civvis_escort_shadow == true;
 		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if row._civvis_builder_barbarian_guard_hold == true then
+			countRefusal(kind, "builder_barbarian_guard_hold");
+			ordered[index] = true;
+			return false, "builder_barbarian_guard_hold";
+		end
 		if row._civvis_builder_barbarian_capture_hold == true then
 			countRefusal(kind, "builder_barbarian_capture_hold");
 			ordered[index] = true;
@@ -17048,6 +17568,8 @@ local function applyOrders(player, pid, turn, rows)
 	-- correctly, and `data/governments.json` matches `Government_SlotCounts` for
 	-- all 13 governments — checked before touching anything, because the obvious
 	-- read is that the deck chooser is broken and it is not.
+	-- Request order alone is insufficient: the policy handler also waits for
+	-- the asynchronous government change to become observable before clearing cards.
 	for index, row in ipairs(rows) do
 		if not ordered[index] and tostring(row.kind or "") == "government" then
 			runOrder(index, row);
@@ -17507,6 +18029,7 @@ local function beginTurn(player, pid, turn)
 	warTarget = findWarTarget(player, pid);
 	CivvisBoard.reset();
 	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
+	CivvisNameRockBands(player, pid, turn);
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
@@ -18583,34 +19106,16 @@ local function tick()
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
-		-- ★★★★★ THE BALLOT IS CAST WHEN THE POPUP ASKS, NOT WHEN THE BLOCKER
-		-- APPEARS. `voteWorldCongress` below is also called from the blocker
-		-- ladder, and that call has never registered a vote: `wc_vote` says
-		-- `spent 760` at t201 of civvis-20260816T184500Z and Favor reads
-		-- 822→829→836 across it; `wc_outcome` shows our selection on every
-		-- resolution as the core's default `option 1, votes 1` — the free vote
-		-- cast FOR the diplomatic leader. The shipped screen votes from inside
-		-- the WorldCongressPopup in stage 1; the autoclose shim standing in
-		-- front of that popup raises `LuaEvents.CivvisCongressBallot` right
-		-- before its `OnAccept`, and this is the handler. Registered once, from
-		-- inside `tick` because `voteWorldCongress` is nested here (a file-scope
-		-- local would cross the 200-register ceiling); the flag hangs off
-		-- `envoyTally` for the same reason. `source` on the event tells the two
-		-- call sites apart in the ledger; the popup one is the one that counts.
-		-- ⚠⚠ AND THE FIRST POPUP-MOMENT ATTEMPT NEVER FIRED EITHER: batch-9
-		-- game civvis-20260816T223457Z has no `source:"popup"` row at all —
-		-- the shim's WorldCongressPopup ladder runs its `OnPass` rung, not the
-		-- `OnAccept` one the event was raised in. Two triggers now, either of
-		-- which casts once per turn: the game core's own
-		-- `Events.WorldCongressStage1(playerID)` — the very event the shipped
-		-- popup opens on, i.e. the earliest moment a person could vote — and
-		-- the shim's ballot event, now raised from the rung that runs.
-		-- `castBallot` is shared; `envoyTally.ballot_turn` is the once-per-turn
-		-- latch and is only set when something was cast, so a trigger that
-		-- arrives before the resolutions are readable does not spend the turn.
-		-- The blocker path below defers to these and only falls back a forfeit
-		-- cycle later. Every ballot reports its trigger, the core's `Stage`,
-		-- and Favor before, so the next `wc_outcome` says which moment took.
+		-- Submit from the popup's voting callback, after its setup, matching
+		-- WorldCongressPopup.lua:2222-2271. WorldCongressStage1 announces the
+		-- stage; it is not proof that a player-operation ballot can land yet.
+		-- In civvis-20260909T043723Z-cont1, stage1 requested 3/12/13/14 votes
+		-- on turns 134/154/174/194, but every review recorded one. The early
+		-- request also latched ballot_turn, blocking the later popup callback.
+		-- Keep stage1 observable without submitting there. A popup with no
+		-- readable resolutions leaves the latch open for a later callback; the
+		-- bounded blocker fallback remains available if the popup never calls.
+		-- Only the later native review proves count, option, and target landed.
 		local function castBallot(trigger)
 			local ballotPlayer, ballotPid = localPlayer();
 			if ballotPlayer == nil then return; end
@@ -18662,7 +19167,12 @@ local function tick()
 			end);
 			local hookedStage = pcall(function()
 				Events.WorldCongressStage1.Add(function(playerID)
-					if tonumber(playerID) == pid then castBallot("stage1"); end
+					if tonumber(playerID) == pid then
+						emit("wc_vote", {
+							turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+							source = "stage1", cast = 0, spent = 0, why = "awaiting_popup",
+						});
+					end
 				end);
 			end);
 			emit("wc_ballot_hooked", { turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
@@ -18674,7 +19184,9 @@ local function tick()
 		if turn ~= lastTurnSeen then
 			-- See `movementNotYetRestored`: the board waits for the engine to
 			-- hand the units their turn's movement, not the previous turn's dregs.
-			if cfg.CivvisDecides and CivvisBoard.movementNotYetRestored(player, turn) then return; end
+			if cfg.CivvisDecides and not (cfg.IsolatedActionProbes == true and CivvisActionProbe.preparing == turn)
+				and CivvisBoard.movementNotYetRestored(player, turn) then return; end
+			if CivvisActionProbe.tick(player, pid, turn) then return; end
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
 			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
@@ -18724,8 +19236,12 @@ local function tick()
 		local blocker = currentBlocker(pid);
 		local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
 		local same_pass_forced = false;
+		local congressBallotPending = false;
 		if blocker ~= nil and blocker ~= none then
 			local name = blockerName(blocker);
+			congressBallotPending = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
+				and envoyTally.ballot_turn ~= turn
+				and (softSeen[name] == nil or softSeen[name].voted_turn ~= turn);
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
@@ -18736,6 +19252,9 @@ local function tick()
 				if name == "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE" then
 					answered = CivvisChooseSpyEscapeRoute(pid)
 						and "escape_route:city_center" or nil;
+				elseif name == "ENDTURN_BLOCKING_ARTIFACT" then
+					answered = CivvisChooseArtifactPlayer(pid)
+						and "artifact_player:first" or nil;
 				elseif cfg.CivvisDecides then
 					-- CIVVIS has already made and applied its complete unit-order
 					-- pass in settleTurn. A soft blocker is only a UI reminder; the
@@ -19103,15 +19622,15 @@ local function tick()
 								and seen.voted_turn ~= turn then
 							-- ⚠ THE BLOCKER IS SEEN BEFORE THE SESSION IS OPEN FOR
 							-- VOTING (its ballot never registered; see `castBallot`
-							-- above), so it defers: if the stage-1/popup ballot has
+							-- above), so it defers: if the popup ballot has
 							-- cast this turn there is nothing to do, and otherwise
-							-- it waits one forfeit cycle for those triggers before
+							-- it waits one forfeit cycle for that callback before
 							-- falling back to the old vote-and-submit, so a session
 							-- that neither trigger reaches still ends.
 							if envoyTally.ballot_turn == turn then
 								seen.voted_turn = turn;
 								emit("wc_vote", { turn = turn, cast = 0, spent = 0,
-								                  why = "cast_at_stage1", source = "blocker" });
+								                  why = "cast_at_popup", source = "blocker" });
 							elseif seen.forfeits >= 2 then
 								seen.voted_turn = turn;
 								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
@@ -19125,7 +19644,7 @@ local function tick()
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						-- ⚠⚠⚠ ONE BLOCKER MUST NOT BE FORCED PAST YET. The congress session
 						-- defers its ballot by one forfeit cycle on purpose (the vote arm just
-						-- above): forfeit 1 waits for the stage-1/popup ballot to land, and only
+						-- above): forfeit 1 waits for the popup ballot to land, and only
 						-- forfeit 2 falls back to vote-and-submit. Forcing the turn at forfeit 1
 						-- ends it before either can happen, so the session is dismissed unvoted
 						-- every time -- and this seat plays for a DIPLOMATIC victory, where those
@@ -19134,7 +19653,13 @@ local function tick()
 						-- like any other and is forced with the rest.
 						local holdForVote = name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 							and seen.voted_turn ~= turn;
-						local dropped = dismissBlocker(pid, blocker);
+						congressBallotPending = holdForVote;
+						-- Native run 20260909T061606Z t56 dismissed the session
+						-- while waiting for its popup and advanced with default votes.
+						-- Holding only UserForced was insufficient: keep both the
+						-- notification and the ordinary end-turn request pending.
+						local dropped = false;
+						if not holdForVote then dropped = dismissBlocker(pid, blocker); end
 						emit("dismissed", { turn = turn, blocker = name,
 						                    dismissed = dropped, attempts = attempts,
 						                    answered = answered, parked = parked,
@@ -19190,7 +19715,7 @@ local function tick()
 			-- Only if the same blocker has survived a whole turn's worth of
 			-- attempts is the notification dropped, and that is reported as the
 			-- forfeit it is.
-			if attempts >= (cfg.MaxBlockedAttempts or 40) then
+			if attempts >= (cfg.MaxBlockedAttempts or 40) and not congressBallotPending then
 				local dropped = dismissBlocker(pid, blocker);
 				emit("dismissed", { turn = turn, blocker = name,
 				                    dismissed = dropped, attempts = attempts });
@@ -19198,7 +19723,7 @@ local function tick()
 			end
 		end
 
-		if not same_pass_forced then
+		if not same_pass_forced and not congressBallotPending then
 			pcall(function()
 				if UI.GetInterfaceMode() ~= InterfaceModeTypes.SELECTION then
 					UI.SetInterfaceMode(InterfaceModeTypes.SELECTION);
@@ -19254,7 +19779,7 @@ local function ensureStarted()
 		emit("turn_limit", {
 			asked = cfg.MaxTurns,
 			config = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
-			game = try(function() return Game.GetMaxTurns(); end, -1),
+			game = try(function() return Game.GetMaxGameTurns(); end, -1) or -1,
 		});
 	end
 

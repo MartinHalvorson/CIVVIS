@@ -25,6 +25,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_civvis_climb as climb
 
 
+class CrashAlertCleanupTest(unittest.TestCase):
+    def test_teardown_cleanup_uses_the_crash_only_modal_path(self):
+        with mock.patch.object(climb, "run", return_value=""), \
+             mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
+            climb.dismiss_crash_dialogs()
+        dismiss.assert_called_once_with(civ6_crashes_only=True)
+
+    def test_accessibility_failure_cannot_break_teardown(self):
+        with mock.patch.object(climb, "run", return_value=""), \
+             mock.patch.object(climb.desktop_control, "dismiss_modals", side_effect=OSError("unavailable")):
+            climb.dismiss_crash_dialogs()
+
+
 class BusyOnlyCountsARealGame(unittest.TestCase):
     """`pgrep -f` matches command lines, so anything that NAMES the harness hits.
 
@@ -565,6 +578,58 @@ class _Harness:
         binary.write_text("")
         climb.launcher.game_binary = lambda: binary
 
+        # ⚠⚠ AND EVERY PRECONDITION THAT LIVES IN THE DEVELOPER'S OWN HOME.
+        # Steam and the game binary are stubbed above; the durable operator
+        # HALT MARKER was not, and neither was the operator's VICTORY LANE
+        # file. Both are real files on a Civilization VI seat, both are
+        # consulted per attempt, and both are supposed to override what this
+        # harness asks for -- that is their whole purpose. So on the seats
+        # where these tests matter most they did not test the climb, they
+        # tested the seat: `blocked_reason` returned the seat's halt and
+        # `main()` wrote no ledger row, while `operator_victory_lane` replaced
+        # the requested lane with the seat's own.
+        #
+        # Measured on `mbp-m5-max-128` against clean `origin/main`: 16 failures
+        # and 6 errors, and 182 OK under an empty `HOME`. Twenty-two tests
+        # across `ClimbBudgetTests`, `FrozenBuildTests`, `OneDeciderTests` and
+        # `ResumeFromAutosaveTests` failed for a reason no diff could cause,
+        # which is a validation nobody can read and nobody trusts.
+        #
+        # ⭐ DISCOVERED, NEVER LISTED. A hand-written list of state files is
+        # complete the day it is written; this repository has paid for that
+        # three times. Every `Path` constant these modules hold that points
+        # into `$HOME` is redirected under the test's own temporary root, so a
+        # constant added later is isolated the day it appears. Paths inside the
+        # checkout itself (`HERE`) are left alone -- they are code, not state.
+        # `RUN_ROOT` and `LEDGER` are already pointed at the temporary root
+        # above and so are skipped here, keeping this sweep out of their way.
+        #
+        # The PATHS are redirected rather than the readers stubbed out, so each
+        # marker is still genuinely READ -- through its own missing-file branch
+        # -- and a regression that stopped consulting one would still be caught
+        # by `BlockedReasonTests` and `TheOperatorsLaneOutlivesAStaleEnvironment`.
+        # ⚠ Resolve BOTH sides. On macOS a relocated `HOME` under `/var/folders`
+        # resolves to `/private/var/folders`, and comparing an unresolved
+        # constant against a resolved home matched nothing -- the sweep silently
+        # did nothing, which its own assertion below now refuses to allow.
+        home = Path.home().resolve()
+        checkout = Path(climb.__file__).resolve().parent.parent
+        self.saved_home_state: list[tuple[object, str, Path]] = []
+        for module in (climb, climb.gamelock, climb.launcher):
+            for name, value in list(vars(module).items()):
+                if not isinstance(value, Path):
+                    continue
+                resolved = Path(value).resolve()
+                if not resolved.is_relative_to(home):
+                    continue
+                if resolved.is_relative_to(checkout):
+                    continue          # code in this worktree, not seat state
+                self.saved_home_state.append((module, name, value))
+                setattr(module, name,
+                        root / "home" / resolved.relative_to(home))
+        self.assertTrue(self.saved_home_state,
+                        "the sweep found nothing; it has stopped working")
+
     def tearDown(self):
         for name, value in self.saved.items():
             setattr(climb, name, value)
@@ -573,6 +638,8 @@ class _Harness:
         climb.time = self.saved_time
         climb.launcher.steam_running = self.saved_steam
         climb.launcher.game_binary = self.saved_binary
+        for module, name, value in self.saved_home_state:
+            setattr(module, name, value)
         self.tmp.cleanup()
 
     def climb_with(self, outcomes, attempts=3, argv_extra=(), revs=None):
@@ -676,6 +743,91 @@ class BlockedReasonTests(unittest.TestCase):
 
         steam.assert_not_called()
         binary.assert_not_called()
+
+
+class TheHarnessOwnsItsOwnSeatState(_Harness, unittest.TestCase):
+    """The suite must not read the seat's own operator state.
+
+    Every other precondition `blocked_reason` checks was already stubbed in
+    `_Harness.setUp`; the durable halt marker was not, and it is the one that
+    is routinely PRESENT on a Civilization VI seat. That made twenty-two tests
+    in four classes fail on this machine against clean `origin/main` and pass
+    under an empty `HOME` -- a red that no diff could cause and no reader
+    could act on.
+    """
+
+    def test_no_state_path_still_points_into_the_real_home(self):
+        """The sweep's own check: after setUp, nothing these modules read is
+        under `$HOME` any more except the checkout itself."""
+        home = Path.home().resolve()
+        checkout = Path(climb.__file__).resolve().parent.parent
+        leaks = []
+        for module in (climb, climb.gamelock, climb.launcher):
+            for name, value in sorted(vars(module).items()):
+                if not isinstance(value, Path):
+                    continue
+                resolved = Path(value).resolve()
+                if resolved.is_relative_to(home) and not resolved.is_relative_to(
+                        checkout):
+                    leaks.append(f"{module.__name__}.{name} = {resolved}")
+        self.assertEqual(leaks, [], "these still read the developer's own home")
+
+    def test_the_halt_marker_and_the_lane_file_start_absent(self):
+        """An unhalted, unpinned seat is what an unconfigured test should see."""
+        self.assertFalse(Path(climb.gamelock.OPERATOR_HALT).exists())
+        self.assertFalse(Path(climb.VICTORY_LANE_FILE).exists())
+
+    def test_an_unhalted_seat_plays_the_whole_batch(self):
+        """The regression these three attempts stand for: with no halt present
+        the batch runs and writes its rows, whatever the real seat is doing.
+
+        `1` is three attempts played without a win, which is a RESULT; `3` is
+        the blocked exit that says no conclusion is available, and is what the
+        seat's real halt marker used to produce here.
+        """
+        code, rows = self.climb_with(
+            [{"last_turn": 120, "last_score": 200}] * 3, attempts=3)
+        self.assertEqual(code, 1, "three games played and none won")
+        self.assertEqual(len(rows), 3)
+        for row in rows:
+            self.assertIsNotNone(row["attempt"], "a played game spends a rung")
+
+    def test_a_halt_at_the_redirected_path_still_blocks(self):
+        """Redirecting the PATH rather than stubbing the reader keeps the halt
+        genuinely wired: written to where the suite now points, it blocks."""
+        marker = Path(climb.gamelock.OPERATOR_HALT)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({
+            "pid": 1, "since": "2026-09-09T00:00:00Z", "reason": "test halt",
+        }))
+        reason = climb.blocked_reason()
+        self.assertIsNotNone(reason, "a halt marker must still stop a start")
+        self.assertIn("explicitly halted", reason)
+        self.assertIn("test halt", reason)
+        code, rows = self.climb_with([{"last_turn": 120}], attempts=1)
+        self.assertEqual(code, 3,
+                         "a halted batch is the no-conclusion exit, not a loss")
+        self.assertEqual(rows, [],
+                         "a game that never started is not a ledger row")
+
+    def test_a_lane_file_at_the_redirected_path_still_overrides(self):
+        """The other half of the leak, and the same fidelity argument: the
+        operator's lane file is MEANT to override the requested lane
+        (`TheOperatorsLaneOutlivesAStaleEnvironment`). Redirecting the path
+        keeps that wired, where stubbing the reader would have hidden it -- and
+        it is the seat's real `science` pin that used to answer for
+        `--victory domination`.
+        """
+        lane = Path(climb.VICTORY_LANE_FILE)
+        lane.parent.mkdir(parents=True, exist_ok=True)
+        lane.write_text("culture\n")
+        warnings: list[str] = []
+        self.assertEqual(
+            climb.operator_victory_lane("domination", warn=warnings.append),
+            "culture")
+        self.assertTrue(any("overriding" in line for line in warnings))
+        lane.unlink()
+        self.assertEqual(climb.operator_victory_lane("domination"), "domination")
 
 
 class ClimbBudgetTests(_Harness, unittest.TestCase):
@@ -2052,7 +2204,8 @@ class BatchRefreshSecondsTests(unittest.TestCase):
     def _play_args(**changes):
         from types import SimpleNamespace
         values = dict(
-            difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+            difficulty="DIFFICULTY_SETTLER", map="Continents.lua",
+            map_size="MAPSIZE_SMALL",
             speed="GAMESPEED_ONLINE", leader=None, max_turns=250,
             timeout=7200.0, timeout_ceiling=None, probe_citizens=False,
             campus_specialist=False, envoys=False, envoy_place=False,
@@ -2126,15 +2279,50 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertIn("batch's own arm", climb.screen_refusal(
             self._play_args(screen_gene=host_only, without=[host_only])))
 
-    def test_the_play_command_always_selects_rome(self):
-        """Even a direct caller cannot pass another leader through the climb."""
-        for requested in (None, "LEADER_TOKUGAWA", "LEADER_TRAJAN"):
-            with self.subTest(requested=requested):
-                cmd = climb.play_command(
-                    self._play_args(leader=requested), "t",
-                    Path("orders.sqlite"), Path("civvis_orders"))
-                leader = cmd.index("--leader")
-                self.assertEqual(cmd[leader + 1], climb.ROMAN_LEADER)
+    def test_play_command_preserves_leader_in_new_and_resumed_games(self):
+        for requested in (None, "LEADER_PERICLES", "LEADER_TRAJAN"):
+            for save in (None, Path("AutoSave.Civ6Save")):
+                with self.subTest(requested=requested, save=save):
+                    cmd = climb.play_command(
+                        self._play_args(leader=requested), "t",
+                        Path("orders.sqlite"), Path("civvis_orders"), load_save=save)
+                    self.assertEqual(cmd[cmd.index("--leader") + 1],
+                                     requested or climb.ROMAN_LEADER)
+
+    def test_the_lobby_reaches_the_play_command_for_new_and_resumed_games(self):
+        """★ THE MAP WAS NEVER FORWARDED, so every ladder game played the
+        `civ6_play` default whatever a host asked for. Size and speed were
+        forwarded but the map had no flag at all to forward. All three cross
+        verbatim now, and a resumed attempt is driven by the same world as the
+        attempt it continues — reloading a Pangaea autosave into a command line
+        that says Continents would describe the wrong game in the ledger."""
+        args = self._play_args(map="Pangaea.lua", map_size="MAPSIZE_TINY",
+                               speed="GAMESPEED_STANDARD")
+        for save in (None, Path("AutoSave.Civ6Save")):
+            with self.subTest(save=save):
+                cmd = climb.play_command(args, "t", Path("orders.sqlite"),
+                                         Path("civvis_orders"), load_save=save)
+                for flag, expected in (("--map", "Pangaea.lua"),
+                                       ("--map-size", "MAPSIZE_TINY"),
+                                       ("--speed", "GAMESPEED_STANDARD")):
+                    self.assertEqual(cmd[cmd.index(flag) + 1], expected)
+
+    def test_the_climb_offers_exactly_the_maps_play_can_be_driven_to(self):
+        """Discovered from `civ6_play.OPTIONS`, never restated: a second copy of
+        the list is complete the day it is written and wrong afterwards."""
+        import civ6_play
+        self.assertEqual(climb.MAP_SCRIPTS, list(civ6_play.OPTIONS["map_type"]))
+        self.assertIn("Pangaea.lua", climb.MAP_SCRIPTS)
+
+    def test_new_and_resumed_games_keep_firaxis_in_the_upper_left(self):
+        for save in (None, Path("AutoSave.Civ6Save")):
+            with self.subTest(save=save):
+                cmd = climb.play_command(self._play_args(), "t",
+                                         Path("orders.sqlite"), Path("civvis_orders"),
+                                         load_save=save)
+                for flag, expected in (("--window-side", "left"),
+                                       ("--window-frac", "0.5"), ("--window-vfrac", "0.5")):
+                    self.assertEqual(cmd[cmd.index(flag) + 1], expected)
 
     def test_the_mid_turn_frames_reach_the_play_command(self):
         """The combat frame (#2132) was never forwarded by the climb, so no

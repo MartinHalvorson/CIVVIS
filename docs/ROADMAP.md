@@ -26,8 +26,11 @@ Everything the old roadmap called planned has shipped and then some:
 - **civvis.ai is live**: the WebAssembly client shipped, with a `/test` lane
   redeployed from head half-hourly, a stable front page moved by operator
   judgment (`docs/SPECTATOR_DEPLOY.md`), native/wasm build-parity gates, and
-  a home page selling two products — full-game simulations and Tactics
-  battles (historical scenarios on real terrain, an era rolled per battle).
+  a home page selling one product in two forms — a full game watched as an
+  AI simulation, or played as one civilization against AI rivals. The
+  Tactics row came off the menu 2026-09-10: the arena is still in the
+  engine and still reachable by a hand-typed `?map=battlefield…`, but the
+  site no longer offers it.
 - **The AI is scripted and measured**: `AdvancedAi`, whose behaviours are
   boolean genes in one registry (`src/ai/advanced/genes.rs`), priced by the
   random-genome gene screen (`docs/GENE_SCREEN.md`) and shipped by the gene
@@ -102,7 +105,10 @@ Everything the old roadmap called planned has shipped and then some:
    |---|---:|---|
    | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
    | `src/ai/advanced/tests.rs` | 24% | size — 31.7k lines, cut out of `advanced.rs` by #1918 and now longer than it |
-   | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` treatments |
+
+   On 2026-09-11, the same check removes `src/bin/civvis_orders.rs`
+   from this target table: its current 200-merge touch rate is 4%, below the
+   5% floor. The historical 10% reading no longer justifies a split target.
 
    ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked
    `(rs|js|py|sh)` only, so the fifth-most-contended file in the repository

@@ -2027,7 +2027,20 @@ impl Session {
                 if p.is_minor || p.is_barbarian {
                     Box::new(BasicAi::new())
                 } else {
-                    Box::new(AdvancedAi::new())
+                    let mut ai = AdvancedAi::new();
+                    // The native spectator constructs its controller directly;
+                    // keep the measured science drive that the live bridge's
+                    // deployment ledger already seats. A science-leading or
+                    // credible science-focused empire must be allowed to
+                    // build and run the launch chain instead of spending the
+                    // endgame on filler work.
+                    ai.enable_science_victory_drive();
+                    // The deployed native controller holds exploration goals
+                    // across turns. Let the same proven loop guard used by the
+                    // live bridge retire a goal once the unit is visibly
+                    // cycling, so a committed Scout can choose fresh ground.
+                    ai.enable_explore_dead_targets();
+                    Box::new(ai)
                 }
             })
             .collect()

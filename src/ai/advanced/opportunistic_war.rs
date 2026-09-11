@@ -359,7 +359,7 @@ impl AdvancedAi {
     /// The best raid on the table this turn, if any clears the bar.
     pub(crate) fn raid_opportunity(&self, g: &Game, pid: usize) -> Option<RaidOpportunity> {
         if self.active_victory_target(g) == Some(VictoryTarget::Science)
-            || !self.opportunistic_war
+            || !(self.opportunistic_war || self.opportunistic_war_2)
             || self.raid_war.is_some()
             || g.turn < g.standard_duration(RAID_MIN_TURN)
             || g.turn < self.peace_until
@@ -390,7 +390,32 @@ impl AdvancedAi {
             if !self.raid_target_admissible(g, pid, target) {
                 continue;
             }
-            let prizes = self.raid_prizes_against(g, pid, target, &strikers);
+            let mut prizes = self.raid_prizes_against(g, pid, target, &strikers);
+            if self.opportunistic_war_2 {
+                // Distance is only a cheap candidate filter. Check the route on
+                // the board AFTER the declaration, where the target's closed
+                // borders permit entry and its civilians can be captured.
+                if prizes.iter().map(|prize| prize.value()).sum::<f64>() + 1e-9 < RAID_WAR_MIN_VALUE
+                {
+                    continue;
+                }
+                let Some(opening) = self.raid_opening(g, pid, target) else {
+                    continue;
+                };
+                let mut raid_board = g.speculative_clone();
+                if raid_board.apply(pid, &opening).is_err() {
+                    continue;
+                }
+                prizes.retain(|prize| {
+                    strikers.iter().any(|striker| {
+                        (!matches!(prize, RaidPrize::Pillage { .. }) || !striker.lone_garrison)
+                            && g.wdist(striker.pos, prize.pos()) <= striker.reach
+                            && raid_board
+                                .route_distance(striker.uid, prize.pos(), 0)
+                                .is_some_and(|steps| steps <= striker.reach as usize)
+                    })
+                });
+            }
             if !Self::raid_prizes_can_challenge_score_leader(g.score(pid), g.score(target), &prizes)
             {
                 continue;
@@ -411,8 +436,11 @@ impl AdvancedAi {
     }
 
     /// The declaration itself: a casus belli if one happens to be legal (a
-    /// matured denouncement, a reconquest), otherwise the surprise war.
-    fn raid_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
+    /// matured denouncement, a reconquest), otherwise the surprise war. Never
+    /// a `Denounce`: `preferred_war_opening` answers with one to start the
+    /// Formal War clock, and that is not a declaration. Shared with
+    /// `early-conquest-opening`, whose assembled force wants the same rule.
+    pub(super) fn raid_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
         let legal = g.legal_actions_within(pid, ActionFamilies::DIPLOMACY);
         if let Some(action) = self.preferred_war_opening(g, pid, target) {
             if matches!(action, Action::DeclareWarWithCasusBelli { .. }) {
@@ -447,7 +475,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
-        if !self.opportunistic_war {
+        if !(self.opportunistic_war || self.opportunistic_war_2) {
             self.raid_war = None;
             return false;
         }
@@ -540,15 +568,10 @@ impl AdvancedAi {
             return;
         }
         let expired = age >= g.standard_duration(RAID_MAX_TURNS);
-        let prizes_left = if expired {
-            0
+        let prize_left = if expired {
+            false
         } else {
-            let strikers = self.raid_strikers(g, pid);
-            self.raid_prizes_against(g, pid, raid.target, &strikers)
-                .into_iter()
-                .filter(|prize| !matches!(prize, RaidPrize::Pillage { .. }))
-                .count()
-                + self.pillage_tiles_under_our_soldiers(g, pid, raid.target)
+            self.raid_has_survivable_prize(g, pid, plan, raid.target)
         };
         // A raid that turned into a real war — the plan now wants that
         // city — is the elective machinery's to finish.
@@ -559,7 +582,7 @@ impl AdvancedAi {
                 .and_then(|cid| g.cities.get(&cid))
                 .is_some_and(|city| city.owner == raid.target)
             && self.last_campaign_progress >= raid.declared;
-        if prizes_left > 0 || campaign_wants_it {
+        if prize_left || campaign_wants_it {
             return;
         }
         let peace_pending = g.pending_deals.iter().any(|deal| {
@@ -575,7 +598,7 @@ impl AdvancedAi {
                "Offering peace to {}", g.players[raid.target].civ;
                "the raid that opened the war on turn {} has {}; {} Settler{}, {} Builder{} and {} pillage tile{} were its prizes",
                raid.declared,
-               if expired { "run its course" } else { "nothing left in reach" },
+               if expired { "run its course" } else { "no survivable prize step left" },
                raid.settlers, if raid.settlers == 1 { "" } else { "s" },
                raid.builders, if raid.builders == 1 { "" } else { "s" },
                raid.pillage_tiles, if raid.pillage_tiles == 1 { "" } else { "s" });
@@ -594,20 +617,62 @@ impl AdvancedAi {
         );
     }
 
-    /// Pillage tiles of the raid target within one turn of our soldiers.
-    fn pillage_tiles_under_our_soldiers(&self, g: &Game, pid: usize, target: usize) -> usize {
-        let strikers: Vec<RaidStriker> = self
-            .raid_strikers(g, pid)
-            .into_iter()
-            .map(|striker| RaidStriker {
-                reach: striker.reach / RAID_STRIKE_TURNS,
-                ..striker
+    /// A visible prize keeps the raid open only while some striker has a
+    /// legal step to it that the visible response is expected to let survive.
+    /// This mirrors the lethal pursuit gate in `raid_prize_step`: once every
+    /// remaining prize is either unreachable or suicidal, holding the war
+    /// open only spends turns waiting for a move the unit will never take.
+    fn raid_has_survivable_prize(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        target: usize,
+    ) -> bool {
+        let strikers = self.raid_strikers(g, pid);
+        let prizes = self.raid_prizes_against(g, pid, target, &strikers);
+        if prizes.is_empty() {
+            return false;
+        }
+        let mut danger = super::battle_planner::DangerField::new(g, pid);
+        prizes.into_iter().any(|prize| {
+            strikers.iter().any(|striker| {
+                let Some(unit) = g.units.get(&striker.uid) else {
+                    return false;
+                };
+                if plan.threatened_city.is_some_and(|cid| {
+                    g.cities
+                        .get(&cid)
+                        .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
+                }) {
+                    return false;
+                }
+                if matches!(prize, RaidPrize::Pillage { .. }) && striker.lone_garrison {
+                    return false;
+                }
+                if matches!(prize, RaidPrize::Pillage { .. })
+                    && unit.pos == prize.pos()
+                    && g.pillageable_at(pid, unit.pos)
+                {
+                    return true;
+                }
+                let reach = if matches!(prize, RaidPrize::Pillage { .. }) {
+                    striker.reach / RAID_STRIKE_TURNS
+                } else {
+                    striker.reach
+                };
+                if g.wdist(unit.pos, prize.pos()) > reach {
+                    return false;
+                }
+                let Some(next) = g
+                    .route_step(striker.uid, prize.pos(), 0)
+                    .filter(|next| g.can_move(striker.uid, *next))
+                else {
+                    return false;
+                };
+                danger.danger(next, striker.uid) < f64::from(unit.hp)
             })
-            .collect();
-        self.raid_prizes_against(g, pid, target, &strikers)
-            .into_iter()
-            .filter(|prize| matches!(prize, RaidPrize::Pillage { .. }))
-            .count()
+        })
     }
 
     /// The raid's unit step: pillage under our feet, or walk to the nearest
@@ -622,7 +687,7 @@ impl AdvancedAi {
         decline_settlers: bool,
     ) -> Option<bool> {
         let raid = self.raid_war.clone()?;
-        if !self.opportunistic_war || !g.is_at_war(pid, raid.target) {
+        if !(self.opportunistic_war || self.opportunistic_war_2) || !g.is_at_war(pid, raid.target) {
             return None;
         }
         let unit = g.units.get(&uid)?.clone();
@@ -686,7 +751,19 @@ impl AdvancedAi {
         let next = g
             .route_step(uid, goal, 0)
             .filter(|next| g.can_move(uid, *next))?;
+        // A prize does not justify walking a soldier onto a tile where the
+        // visible response is expected to kill it next turn. Keep this a
+        // lethal-only gate: non-lethal fire can still be the right price for
+        // a fast capture, while a dead raider turns the bounded war into a
+        // gift to the defender.
         let kind = unit.kind.as_str();
+        let incoming = super::battle_planner::danger(g, pid, next, uid);
+        if incoming >= f64::from(unit.hp) {
+            think!(self.journal(), Military, Decision,
+                   "{kind} {uid} holds before a raid prize";
+                   "visible return fire is expected to kill it on {next:?} ({incoming:.1} damage against {} hp)", unit.hp);
+            return None;
+        }
         think!(self.journal(), Military, Decision,
                "{kind} {uid} marches on a raid prize";
                "{} has something unguarded {} tiles away", g.players[raid.target].civ, g.wdist(unit.pos, goal);
@@ -705,164 +782,4 @@ impl AdvancedAi {
 }
 
 #[cfg(test)]
-mod raid_score_safety_tests {
-    use super::{AdvancedAi, RaidPrize, VictoryTarget, SETTLER_PRIZE};
-    use crate::game::Game;
-    use crate::Pos;
-    use std::sync::Arc;
-
-    /// A two-major board with six visible enemy mines inside a warrior's
-    /// two-turn reach.  It is deliberately a pillage-only opportunity: the
-    /// score guard, rather than a missing prize or power gate, must decide it.
-    fn pillage_raid_board() -> Game {
-        let mut game = Game::new_full(2, 28, 18, 8_131, 250, 0, false);
-        let mut capitals = Vec::new();
-        for pid in 0..2 {
-            let settler = game
-                .player_unit_ids(pid)
-                .into_iter()
-                .find(|uid| game.units[uid].kind == "settler")
-                .expect("each fixture major begins with a Settler");
-            let position = game.units[&settler].pos;
-            capitals.push(game.found_city_for(pid, position, None));
-            game.remove_unit(settler);
-        }
-        for pid in 0..2 {
-            for uid in game.player_unit_ids(pid) {
-                game.remove_unit(uid);
-            }
-        }
-
-        let ours = game.cities[&capitals[0]].pos;
-        let theirs = game.cities[&capitals[1]].pos;
-        let second_city = game
-            .map
-            .tiles
-            .iter()
-            .find_map(|(position, tile)| {
-                (game.rules.is_passable(tile)
-                    && !game.rules.is_water(tile)
-                    && game.wdist(*position, ours) >= 3
-                    && game.wdist(*position, theirs) >= 3)
-                    .then_some(*position)
-            })
-            .expect("fixture has a legal second-city tile");
-        game.found_city_for(0, second_city, None);
-
-        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
-        for position in positions {
-            let water = {
-                let tile = game.map.tiles.get(&position).unwrap();
-                game.rules.is_water(tile)
-            };
-            if !water {
-                let tile = game.map.tiles.get_mut(&position).unwrap();
-                tile.terrain = crate::name!("plains");
-                tile.feature = None;
-                tile.hills = false;
-                tile.wonder = None;
-            }
-            game.players[0].explored.insert(position);
-        }
-        game.record_contact(0, 1);
-        game.players[0].met.insert(1);
-        game.players[1].met.insert(0);
-        game.turn = 30;
-        game.current = 0;
-
-        let enemy_city = game.player_city_ids(1)[0];
-        let mines: Vec<Pos> = game.cities[&enemy_city]
-            .owned_tiles
-            .iter()
-            .copied()
-            .filter(|position| {
-                *position != theirs
-                    && game
-                        .map
-                        .tiles
-                        .get(position)
-                        .is_some_and(|tile| !game.rules.is_water(tile))
-            })
-            .take(6)
-            .collect();
-        assert_eq!(mines.len(), 6, "fixture capital owns six usable mine tiles");
-        for position in mines {
-            game.map.tiles.get_mut(&position).unwrap().improvement = Some(crate::name!("mine"));
-        }
-        let warrior_at = game
-            .map
-            .tiles
-            .iter()
-            .find_map(|(position, tile)| {
-                (game.rules.is_passable(tile)
-                    && !game.rules.is_water(tile)
-                    && game.units_at(*position).is_empty()
-                    && game.wdist(*position, theirs) == 2)
-                    .then_some(*position)
-            })
-            .expect("fixture has a nearby warrior post");
-        game.spawn_test_unit("warrior", 0, warrior_at);
-        game.world_era = 2;
-        game
-    }
-
-    #[test]
-    fn pillage_only_raids_do_not_challenge_a_score_leader() {
-        let pillage = [RaidPrize::Pillage {
-            pos: (0, 0),
-            value: 125.0,
-        }];
-        assert!(
-            !AdvancedAi::raid_prizes_can_challenge_score_leader(272, 479, &pillage),
-            "three pillage tiles must not reopen the 272-to-479 live-run loss"
-        );
-        assert!(
-            AdvancedAi::raid_prizes_can_challenge_score_leader(479, 272, &pillage),
-            "a score lead still permits a bounded pillage raid"
-        );
-
-        let decisive_settler = [RaidPrize::Settler {
-            pos: (0, 0),
-            value: SETTLER_PRIZE,
-        }];
-        assert!(
-            AdvancedAi::raid_prizes_can_challenge_score_leader(272, 479, &decisive_settler),
-            "a capturable Settler remains worth a bounded opportunity against a leader"
-        );
-    }
-
-    #[test]
-    fn pillage_raid_selection_respects_the_public_score_lead() {
-        let mut game = pillage_raid_board();
-        let mut ai = AdvancedAi::new();
-        ai.enable_opportunistic_war();
-        ai.enable_raid_pillage_prizes();
-
-        Arc::make_mut(&mut game.observed_score).insert(0, 272);
-        Arc::make_mut(&mut game.observed_score).insert(1, 479);
-        assert!(
-            ai.raid_opportunity(&game, 0).is_none(),
-            "a three-mine raid must not reopen the 272-to-479 score-leader loss"
-        );
-
-        Arc::make_mut(&mut game.observed_score).insert(0, 479);
-        Arc::make_mut(&mut game.observed_score).insert(1, 272);
-        assert!(
-            ai.raid_opportunity(&game, 0).is_some(),
-            "the same legal, power-safe pillage raid remains available at score parity or better"
-        );
-    }
-
-    #[test]
-    fn science_target_does_not_open_an_opportunistic_raid() {
-        let game = pillage_raid_board();
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-        ai.enable_opportunistic_war();
-        ai.enable_raid_pillage_prizes();
-
-        assert!(
-            ai.raid_opportunity(&game, 0).is_none(),
-            "an explicit Science lane must not trade its research race for a raid"
-        );
-    }
-}
+mod tests;

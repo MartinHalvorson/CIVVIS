@@ -64,9 +64,12 @@ DirectionTypes = {
 -- Plot index = y * 100 + x on this fake map.
 local function plotIndex(x, y) return y * 100 + x end
 local featurePlots = {}
+local terrainPlots = {}
 Map = {
 	GetPlotDistance = function(x1, y1, x2, y2) return math.max(math.abs(x1 - x2), math.abs(y1 - y2)) end,
 	GetPlot = function(x, y)
+		local terrain = terrainPlots[plotIndex(x, y)]
+		if terrain ~= nil then return terrain end
 		local feature = featurePlots[plotIndex(x, y)]
 		if feature == nil then return nil end
 		return { GetFeatureType = function() return feature end }
@@ -92,6 +95,9 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	end
 	if k == "Units" then
 		return setmetatable({}, { __index = function(_, name)
+			if name == "UNIT_GALLEY" then
+				return { UnitType = name, Combat = 30, RangedCombat = 0, BaseMoves = 3, Domain = "DOMAIN_SEA" }
+			end
 			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER" or name == "UNIT_TRADER" then
 				return { UnitType = name, Combat = 0, RangedCombat = 0 }
 			end
@@ -252,6 +258,7 @@ local function reset()
 	host.units, host.cities, host.barbarians, host.hidden, host.ops, host.cmds, host.paths,
 		host.queued, host.blocked, LOG = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
 	featurePlots = {}
+	terrainPlots = {}
 	config.SettlerEscortCapSync = nil
 	queue.reset(7); board.reset()
 end
@@ -742,6 +749,37 @@ check("two-step fallback reach: setter stays out of capture leg", ops(52), "")
 check("two-step fallback reach: distance names the threat", has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile":103')
 	and has(lastEvent("settler_barbarian_combat_capture_hold"), '"hostile_reach":"base_moves"'), true)
 
+-- A galley's distance-only envelope cannot capture a civilian on ordinary
+-- land. This false threat redirected the t29 settler in 20260909T064545Z.
+-- Keep native path proof and water/city/district or unknown-terrain behavior.
+for _, case in ipairs({
+ { name = "plain land", water = false, city = false, district = -1, held = false },
+ { name = "water", water = true, city = false, district = -1, held = true },
+ { name = "city", water = false, city = true, district = -1, held = true },
+ { name = "district", water = false, city = false, district = 5, held = true },
+ { name = "unknown", held = true },
+ { name = "native path", water = false, city = false, district = -1, path = true, held = true },
+}) do
+ reset()
+ host.units[53] = { id = 53, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 2 }
+ host.barbarians[104] = { id = 104, kind = "UNIT_GALLEY", x = 4, y = 1, moves = 0 }
+ if case.water ~= nil then
+  terrainPlots[plotIndex(2, 1)] = {
+   IsWater = function() return case.water end,
+   IsCity = function() return case.city end,
+   GetDistrictType = function() return case.district end,
+  }
+ end
+ host.paths["53:" .. plotIndex(2, 1)] = {
+  plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+ if case.path then
+  host.paths["104:" .. plotIndex(2, 1)] = {
+   plots = { plotIndex(4, 1), plotIndex(3, 1), plotIndex(2, 1) }, turns = { 0, 1, 1 } }
+ end
+ applyOrders(player, PID, 7, { row(53, "MOVE_TO", 2, 1) })
+ check("naval capture " .. case.name, ops(53), case.held and "" or "UNITOPERATION_MOVE_TO@2,1")
+end
+
 -- A visible combat unit outside the adjacent-capture geometry does not freeze
 -- normal expansion movement.
 reset()
@@ -846,6 +884,65 @@ applyOrders(player, PID, 7, { row(62, "MOVE_TO", 1, 2), row(63, "MOVE_TO", 1, 2)
 check("proven builder escort: builder still moves", ops(62), "UNITOPERATION_MOVE_TO@1,2")
 check("proven builder escort: guard still moves", ops(63), "UNITOPERATION_MOVE_TO@1,2")
 check("proven builder escort: no hold", lastEvent("builder_barbarian_capture_hold"), nil)
+
+-- Live run civvis-20260909T143651Z, t15: the Builder at (49,37)
+-- was refused a retreat to (49,36), while its stacked Scout left for (48,36).
+-- A Slinger at (49,38) captured the now-uncovered Builder. No safe path is
+-- supplied here, so the actuation floor must retain the existing protection.
+reset()
+host.units[72] = { id = 72, kind = "UNIT_BUILDER", x = 49, y = 37, moves = 2 }
+host.units[73] = { id = 73, kind = "UNIT_SCOUT", x = 49, y = 37, moves = 3 }
+host.barbarians[111] = { id = 111, kind = "UNIT_SLINGER", x = 49, y = 38, moves = 0 }
+host.paths["72:" .. plotIndex(49, 36)] = {
+	plots = { plotIndex(49, 37), plotIndex(49, 36) }, turns = { 0, 1 } }
+applyOrders(player, PID, 15, { row(73, "MOVE_TO", 48, 36), row(72, "MOVE_TO", 49, 36) })
+check("stranded builder: retreat remains held", ops(72), "")
+check("stranded builder: scout cannot abandon it", ops(73), "")
+check("stranded builder: guard refusal is named", has(lastEvent("orders"),
+	'builder_barbarian_guard_hold'), true)
+check("stranded builder: guard event identifies both units", has(lastEvent("builder_barbarian_guard_hold"),
+	'"builder":72') and has(lastEvent("builder_barbarian_guard_hold"), '"guard":73'), true)
+-- A subsequent same-turn replan may omit the Builder entirely. Re-evaluate
+-- the live stack; protecting only the original batch would re-open the hole.
+applyOrders(player, PID, 15, { row(73, "MOVE_TO", 49, 36) })
+check("stranded builder: later guard-only frame stays held", ops(73), "")
+applyOrders(player, PID, 15, { row(73, "CAPTURE", 49, 38) })
+check("stranded builder: capture cannot abandon it", ops(73), "")
+applyOrders(player, PID, 15, { row(73, "ATTACK", 49, 38) })
+check("stranded builder: melee departure stays held", ops(73), "")
+applyOrders(player, PID, 15, { row(72, "MOVE_TO", 49, 37), row(73, "MOVE_TO", 49, 36) })
+check("stranded builder: no-op civilian move does not release guard", ops(73), "")
+host.paths["72:" .. plotIndex(50, 36)] = { plots = { plotIndex(49, 37) }, turns = { 0 } }
+applyOrders(player, PID, 15, { row(72, "MOVE_TO", 50, 36), row(73, "MOVE_TO", 49, 36) })
+check("stranded builder: no-path civilian move does not release guard", ops(73), "")
+-- In-place ranged fire is allowed to clear the threat.
+applyOrders(player, PID, 15, { row(73, "RANGE_ATTACK", 49, 38) })
+check("stranded builder: in-place fire remains available", ops(73), "UNITOPERATION_RANGE_ATTACK@49,38")
+host.ops = {}
+host.barbarians = {}
+applyOrders(player, PID, 16, { row(73, "MOVE_TO", 49, 36) })
+check("stranded builder: guard released when danger clears", ops(73), "UNITOPERATION_MOVE_TO@49,36")
+
+-- A safe civilian escape must leave the guard's independent order intact.
+reset()
+host.units[74] = { id = 74, kind = "UNIT_BUILDER", x = 1, y = 2, moves = 2 }
+host.units[75] = { id = 75, kind = "UNIT_WARRIOR", x = 1, y = 2, moves = 2 }
+host.barbarians[112] = { id = 112, kind = "UNIT_SLINGER", x = 1, y = 4, moves = 0 }
+host.paths["74:" .. plotIndex(1, 1)] = {
+	plots = { plotIndex(1, 2), plotIndex(1, 1) }, turns = { 0, 1 } }
+applyOrders(player, PID, 7, { row(74, "MOVE_TO", 1, 3), row(75, "MOVE_TO", 2, 1) })
+check("builder safely escapes: escape still executes", ops(74), "UNITOPERATION_MOVE_TO@1,1")
+check("builder safely escapes: guard released", ops(75), "UNITOPERATION_MOVE_TO@2,1")
+
+-- A safe city origin does not justify reserving its garrison just because a
+-- Builder's outbound job was refused.
+reset()
+host.cities[1] = { x = 1, y = 1 }
+host.units[76] = { id = 76, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+host.units[77] = { id = 77, kind = "UNIT_WARRIOR", x = 1, y = 1, moves = 2 }
+host.barbarians[113] = { id = 113, kind = "UNIT_SLINGER", x = 1, y = 3, moves = 0 }
+applyOrders(player, PID, 7, { row(76, "MOVE_TO", 1, 2), row(77, "MOVE_TO", 2, 1) })
+check("city builder: refused job does not freeze garrison", ops(77), "UNITOPERATION_MOVE_TO@2,1")
 
 -- Gathering Storm's forest-fire table kills civilians during the active
 -- FEATURE_BURNING_* phase, even when a combat escort is present.  A burnt

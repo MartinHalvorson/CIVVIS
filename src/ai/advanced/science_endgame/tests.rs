@@ -287,6 +287,146 @@ fn actual_research_dispatch_skips_old_optional_branches_for_the_launch() {
 }
 
 #[test]
+fn queued_launch_keeps_science_production_committed_during_recovery() {
+    let (mut g, city, _) = board();
+    g.players[0].science_projects.clear();
+    g.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: project("launch_earth_satellite"),
+        },
+    )
+    .unwrap();
+
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(ai.science_endgame_production_committed(&g, 0));
+}
+
+#[test]
+fn committed_late_launch_research_preempts_optional_wartime_upgrades() {
+    let (mut g, _, _) = board();
+    g.players[0].techs.remove(&crate::name!("offworld_mission"));
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+    assert!(!ai.science_endgame_research_preempts_wartime(&g, 0, Some("robotics")));
+}
+
+#[test]
+fn completed_expedition_keeps_late_research_after_a_lane_switch() {
+    let (mut g, _, _) = board();
+    g.players[0].techs.remove(&Name::new("offworld_mission"));
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+
+    assert!(ai.science_endgame_committed(&g, 0));
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+}
+
+#[test]
+fn queued_expedition_keeps_late_research_after_a_lane_switch() {
+    let (mut g, city, _) = board();
+    g.players[0].science_projects.remove("exoplanet_expedition");
+    g.players[0].techs.remove(&Name::new("offworld_mission"));
+    g.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: project("exoplanet_expedition"),
+        },
+    )
+    .unwrap();
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+
+    assert!(ai.science_endgame_committed(&g, 0));
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+}
+
+#[test]
+fn completed_expedition_keeps_late_research_without_victory_planning() {
+    let (mut g, _, _) = board();
+    g.players[0].techs.remove(&Name::new("offworld_mission"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.victory_planning = false;
+
+    assert!(!ai.science_endgame_committed(&g, 0));
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+}
+
+#[test]
+fn completed_expedition_keeps_laser_sprint_without_victory_planning() {
+    let (mut g, a, b) = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.victory_planning = false;
+
+    assert!(!ai.science_endgame_committed(&g, 0));
+    assert!(ai.science_endgame_lane_committed(&g, 0));
+    let assessed_turn = g.turn;
+    ai.space_race_production(
+        &mut g,
+        0,
+        &StrategicPlan {
+            strategy: GrandStrategy::Culture,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn,
+            rush: false,
+        },
+    );
+    for city in [a, b] {
+        assert_eq!(g.cities[&city].queue.first(), Some(&project(LASERS[0])));
+    }
+}
+
+#[test]
+fn generic_production_keeps_a_fresh_laser_commitment() {
+    let (mut g, a, b) = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let assessed_turn = g.turn;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn,
+        rush: false,
+    };
+
+    ai.space_race_production(&mut g, 0, &plan);
+    for city in [a, b] {
+        assert_eq!(g.cities[&city].queue.first(), Some(&project(LASERS[0])));
+    }
+
+    ai.advanced_production(&mut g, 0, &plan, false);
+    for city in [a, b] {
+        assert_eq!(
+            g.cities[&city].queue.first(),
+            Some(&project(LASERS[0])),
+            "generic production must preserve the laser commitment in city {city}"
+        );
+    }
+}
+
+#[test]
 fn completed_launch_hands_every_pad_to_lasers_on_the_next_decision() {
     let (mut g, a, b) = board();
     g.players[0].science_projects.remove("exoplanet_expedition");
@@ -319,9 +459,12 @@ fn repeated_parallel_lasers_finish_the_flight_before_the_old_one_queue_dispatch(
         production(&mut g, cid, 180.0);
     }
     let finish = |mut game: Game, modern: bool| {
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        let ai = if modern {
+            AdvancedAi::targeting(VictoryTarget::Science)
+        } else {
+            AdvancedAi::legacy()
+        };
         // Retain the original science_production path as the local control.
-        ai.victory_planning = modern;
         for _ in 1..=60 {
             if game.current == 0 {
                 ai.science_production(&mut game, 0);

@@ -38,6 +38,9 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+mod host_deaths;
+pub use host_deaths::HostUnitDeath;
+
 use crate::{
     name::Name,
     setup::{GameSpeed, MapScript},
@@ -2139,6 +2142,10 @@ pub struct StateCity {
 /// One unit as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateUnit {
+    /// Rock Band activation highlights from the host, in offset coordinates.
+    /// An empty list is authoritative; missing means the API was not read.
+    #[serde(default)]
+    pub concert_plots: Option<Vec<StateActivationPlot>>,
     #[serde(default)]
     pub id: i64,
     /// ★★★★★ `type` IS AN ALIAS AND IT WAS MISSING, SO EVERY BARBARIAN WAS DROPPED.
@@ -2288,6 +2295,9 @@ pub struct StateUnit {
     pub level: Option<i32>,
     #[serde(default)]
     pub promotions: Option<Vec<String>>,
+    /// Current native Rock Band menu; empty is an observed lack of choices.
+    #[serde(default)]
+    pub offered_promotions: Option<Vec<String>>,
     /// Civilization VI separates builder and religious charges. CIVVIS has one
     /// typed charge counter, so the mirror selects the applicable observed pool.
     #[serde(default)]
@@ -3190,6 +3200,9 @@ where
 /// The whole board as one `state` event described it.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
+    /// Confirmed combat deaths preceding this exported frame, never predicted kills.
+    #[serde(skip)]
+    pub confirmed_unit_deaths: Vec<HostUnitDeath>,
     pub turn: u32,
     /// 0 for the turn's opening board; N for the Nth mid-turn combat frame
     /// (`CivvisFrames` in the mod), on which the brain re-plans the same turn
@@ -3301,6 +3314,10 @@ pub struct StateSnapshot {
     /// 23 `already_*` in 61 turns of run civvis-20260731T070956Z.
     #[serde(default)]
     pub policies: Vec<String>,
+    /// Current native eligibility, including government exclusives and bans.
+    /// None is unknown (older mod); Some(empty) means no available cards.
+    #[serde(default)]
+    pub available_policies: Option<Vec<String>>,
     /// How many policy slots this government actually has. Choosing a card for a slot
     /// that does not exist is an uninformed decision, not a bad one.
     #[serde(default)]
@@ -4589,6 +4606,7 @@ fn apply_great_person_points(
         ),
         (None, None) => None,
     };
+    game.players[0].live_open_great_work_slots = live_open_great_work_slots(&game.rules, state);
     apply_live_great_person_offer_blockers(game, state, unmapped);
 }
 
@@ -4754,6 +4772,71 @@ fn live_great_work_offer_has_capacity(game: &crate::game::Game, pid: usize, kind
         }
     }
     game.can_house_great_works(pid, kind, 1)
+}
+
+/// Native works remain in their reported building: the bridge does not issue
+/// relocation orders. Global modeled housing can free a Palace by moving its
+/// writing elsewhere, which is not an immediately usable slot in the host.
+fn live_open_great_work_slots(
+    rules: &crate::rules::Rules,
+    state: &StateSnapshot,
+) -> Option<BTreeSet<String>> {
+    let mut open = BTreeSet::new();
+    for city in &state.cities {
+        let works = city.great_works.as_ref()?;
+        if works.iter().any(|work| work.building.is_empty()) {
+            return None;
+        }
+        let buildings: BTreeSet<_> = city
+            .buildings
+            .iter()
+            .chain(city.wonders.iter().map(|wonder| &wonder.kind))
+            .collect();
+        for building in buildings {
+            let slots = civvis_node_name(&rules.buildings, building, "BUILDING_")
+                .map(|name| rules.buildings[&name].great_work_slots.clone())
+                .or_else(|| {
+                    civvis_node_name(&rules.wonders, building, "BUILDING_")
+                        .map(|name| rules.wonders[&name].great_work_slots.clone())
+                });
+            let Some(mut slots) = slots else {
+                continue;
+            };
+            let mut seen = BTreeSet::new();
+            for work in works.iter().filter(|work| &work.building == building) {
+                if !seen.insert(work.slot) {
+                    continue;
+                }
+                let Some(kind) = great_work_kind(&work.object) else {
+                    slots.clear();
+                    break;
+                };
+                let compatible = slots
+                    .keys()
+                    .find(|slot| {
+                        slot.as_str() == kind
+                            || (matches!(kind, "art" | "religious_art")
+                                && matches!(slot.as_str(), "art" | "religious_art"))
+                    })
+                    .cloned()
+                    .or_else(|| slots.contains_key("any").then(|| "any".to_string()));
+                if let Some(slot) = compatible {
+                    *slots.get_mut(&slot).unwrap() -= 1;
+                } else {
+                    // Unmapped native capacity cannot establish a free slot.
+                    slots.clear();
+                    break;
+                }
+            }
+            open.extend(
+                slots
+                    .into_iter()
+                    .filter(|(_, count)| *count > 0)
+                    .map(|(kind, _)| kind),
+            );
+        }
+    }
+    Some(open)
 }
 
 fn apply_live_great_person_offer_blockers(
@@ -5613,6 +5696,7 @@ const UNIT_KEYS: &[&str] = &[
     "xp",
     "level",
     "promotions",
+    "offered_promotions",
     "build_charges",
     "spread_charges",
     "religion",
@@ -5637,6 +5721,7 @@ const UNIT_KEYS: &[&str] = &[
     "spy_operation",
     "spy_operation_end_turn",
     "spy_missions_available",
+    "concert_plots",
 ];
 
 const PUBLIC_STATS_KEYS: &[&str] = &[
@@ -5703,7 +5788,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "religions", "prophet_pending",
-        "policies", "policy_slots", "gold", "gold_per_turn",
+        "policies", "available_policies", "policy_slots", "gold", "gold_per_turn",
         "unit_maintenance_total", "building_maintenance_total", "district_maintenance_total",
         "faith", "faith_per_turn",
         "faith_sources", "science",
@@ -6097,11 +6182,13 @@ pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
 pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<StateSnapshot> {
     let raw = std::fs::read_to_string(path).ok()?;
     let mut best: Option<StateSnapshot> = None;
+    let mut deaths = host_deaths::HostDeaths::default();
     // Identity rides in the `seat` event, which is emitted once at startup rather
     // than every turn, so it is collected separately and merged into whichever
     // state wins. Newest-wins here too: a run that reloads re-emits it.
     let mut seat: Option<Seat> = None;
     for line in raw.lines() {
+        deaths.observe(line);
         if line.contains("\"seat\"") {
             if let Ok(found) = serde_json::from_str::<Seat>(line) {
                 if !found.civ.is_empty() {
@@ -6112,7 +6199,7 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
         if !line.contains("\"state\"") {
             continue;
         }
-        let Ok(state) = state_from_json(line) else {
+        let Ok(mut state) = state_from_json(line) else {
             continue;
         };
         match turn {
@@ -6120,6 +6207,7 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
             _ => {}
         }
         if best.as_ref().map(|b| state.turn >= b.turn).unwrap_or(true) {
+            state.confirmed_unit_deaths = deaths.through(state.turn);
             best = Some(state);
         }
     }
@@ -6160,6 +6248,19 @@ fn blocked_policies_from(
         .filter_map(|civ6| civvis_node_name(&rules.policies, civ6, "POLICY_"))
         .map(|name| Name::new(&name))
         .collect()
+}
+
+fn apply_host_policy_choices(game: &mut crate::game::Game, state: &StateSnapshot) {
+    if let Some(names) = &state.available_policies {
+        let choices = names
+            .iter()
+            .filter_map(|name| civvis_node_name(&game.rules.policies, name, "POLICY_"))
+            .map(|name| Name::new(&name))
+            .collect();
+        game.host_policy_choices.insert(0, choices);
+    } else {
+        game.host_policy_choices.remove(&0);
+    }
 }
 
 /// Translate the completed one-time projects from Civilization VI's project
@@ -6717,90 +6818,8 @@ const GREAT_PERSON_UNIQUES: &[&str] = &["UNIT_COMANDANTE_GENERAL"];
 /// from revealed WATER, read by ships alone (`come_ashore` keeps the land army out of
 /// the water and could not do so for fog that has no domain yet if it shared the land
 /// flag). Both flags may sit on one tile.
-pub(crate) fn grow_frontier(game: &mut crate::game::Game, snapshot: &Snapshot, depth: u32) {
-    // Recompute rather than accumulate. As the revealed edge advances, yesterday's
-    // frontier may lie beyond today's configured depth.
-    for tile in game.map.tiles.values_mut() {
-        if tile.terrain == "unknown" {
-            tile.assumed_traversable = false;
-            tile.assumed_navigable = false;
-        }
-    }
-    if depth == 0 {
-        return;
-    }
-    grow_frontier_from(game, snapshot, depth, false);
-    grow_frontier_from(game, snapshot, depth, true);
-}
-
-/// One domain's half of [`grow_frontier`]: seed from the revealed tiles of that
-/// domain (`water` selects revealed water, else revealed land) and mark the
-/// matching prior on the unknown tiles reached within `depth` rings.
-fn grow_frontier_from(game: &mut crate::game::Game, snapshot: &Snapshot, depth: u32, water: bool) {
-    let width = snapshot.width.max(1);
-    let height = snapshot.height.max(1);
-    // Grown one ring at a time so depth means "tiles beyond what we have seen",
-    // and so each ring is seeded only by ground the previous ring established.
-    //
-    // ⚠ ONE RING WAS NOT ENOUGH, and the failure was quiet: CIVVIS could only ever
-    // aim one tile past its own border, and the map refreshes on a cadence, so
-    // exploration crawled. Measured on civvis-20260730T120107Z: revealed plots went
-    // 25 -> 109 across 64 turns, `met = 1`, and **zero** rival cities ever seen —
-    // so the army had nothing to attack and domination was unreachable. The
-    // heuristic path, which hands scouts to AUTOMATE_EXPLORE, had 468 by t190.
-    // `seen` is the seed set — revealed land, or revealed passable water — and then
-    // every unknown tile the growth has already claimed.
-    let mut seen: std::collections::BTreeSet<crate::Pos> = std::collections::BTreeSet::new();
-    for y in 0..height {
-        for x in 0..width {
-            if !snapshot.is_revealed((x, y)) {
-                continue;
-            }
-            let pos = crate::hex::offset_to_axial(x, y);
-            if game
-                .map
-                .get(pos)
-                .map(|tile| {
-                    !game.rules.is_unknown(tile)
-                        && game.rules.is_water(tile) == water
-                        && (!water || game.rules.is_passable(tile))
-                })
-                .unwrap_or(false)
-            {
-                seen.insert(pos);
-            }
-        }
-    }
-    let mut edge: Vec<crate::Pos> = seen.iter().copied().collect();
-    for _ in 0..depth {
-        let mut next_edge: Vec<crate::Pos> = Vec::new();
-        for pos in &edge {
-            for neighbour in crate::hex::neighbors(*pos) {
-                let (nx, ny) = crate::hex::axial_to_offset(neighbour.0, neighbour.1);
-                if nx < 0 || ny < 0 || nx >= width || ny >= height {
-                    continue;
-                }
-                // Never mark ground the seat has actually seen as speculative.
-                if snapshot.is_revealed((nx, ny)) || seen.contains(&neighbour) {
-                    continue;
-                }
-                if let Some(tile) = game.map.tiles.get_mut(&neighbour) {
-                    debug_assert_eq!(tile.terrain.as_str(), "unknown");
-                    if water {
-                        tile.assumed_navigable = true;
-                    } else {
-                        tile.assumed_traversable = true;
-                    }
-                }
-                seen.insert(neighbour);
-                next_edge.push(neighbour);
-            }
-        }
-        if next_edge.is_empty() {
-            break;
-        }
-        edge = next_edge;
-    }
+pub(crate) fn grow_frontier(game: &mut crate::game::Game, _snapshot: &Snapshot, depth: u32) {
+    game.grow_player_frontier(depth);
 }
 
 /// Every site Civilization VI has refused to found a city on, in AXIAL coordinates.
@@ -7262,11 +7281,51 @@ fn host_unavailable_wonders_from(
         .collect()
 }
 
-/// Translate recent host production refusals onto CIVVIS city ids and typed keys.
-/// Translate host promotion refusals onto CIVVIS unit ids.
-///
-/// Keyed by unit AND promotion: a refusal is specific to both, and another unit of
-/// the same kind may legitimately take a promotion this one cannot.
+/// Translate current native Rock Band choices onto mirrored unit ids.
+fn host_band_promotions_from(
+    state: &StateSnapshot,
+    unit_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, crate::game::HostBandPromotions> {
+    unit_ids
+        .iter()
+        .filter_map(|(uid, native)| {
+            let unit = state.units.iter().find(|unit| unit.id == *native)?;
+            if unit.kind != "UNIT_ROCK_BAND" {
+                return None;
+            }
+            let offered = unit.offered_promotions.as_ref()?;
+            let names = offered
+                .iter()
+                .map(|name| civvis_unit_promotion_name(name))
+                .filter(|name| {
+                    rules
+                        .promotions
+                        .get(name)
+                        .is_some_and(|spec| spec.class == "rock_band")
+                })
+                .map(|name| Name::new(&name))
+                .collect();
+            let held = unit
+                .promotions
+                .as_ref()?
+                .iter()
+                .map(|name| civvis_unit_promotion_name(name))
+                .filter(|name| rules.promotions.contains_key(name))
+                .map(|name| Name::new(&name))
+                .collect();
+            Some((
+                *uid,
+                crate::game::HostBandPromotions {
+                    held,
+                    offered: names,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Translate refusals per unit: another band may have a different legal menu.
 fn blocked_promotions_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     unit_ids: &std::collections::BTreeMap<u32, i64>,
@@ -7623,7 +7682,8 @@ fn apply_foreign_unit_strikes(game: &mut crate::game::Game, uid: u32, unit: &Sta
 /// for the host's movement allowance in threat floods.
 fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
     let finite = |value: Option<f64>| value.filter(|value| value.is_finite());
-    let exported = unit.upgrade_to.is_some()
+    let exported = unit.concert_plots.is_some()
+        || unit.upgrade_to.is_some()
         || unit.upgrade_cost.is_some()
         || unit.upgrade_blocked_reason.is_some()
         || unit.maintenance.is_some()
@@ -7673,6 +7733,12 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
         uid,
         crate::game::HostUnitFacts {
             civ6_id: Some(unit.id),
+            concert_plots: unit.concert_plots.as_ref().map(|plots| {
+                plots
+                    .iter()
+                    .map(|plot| crate::hex::offset_to_axial(plot.x, plot.y))
+                    .collect()
+            }),
             upgrade,
             maintenance: finite(unit.maintenance).filter(|bill| *bill >= 0.0),
             religious_strength: finite(unit.religious_strength),
@@ -9597,8 +9663,15 @@ fn apply_unit_observation(
         .chain(state.spread_charges)
         .filter(|charges| *charges >= 0)
         .max();
-    if let Some(charges) = observed_charges {
-        live.charges = charges;
+    // Naturalists and Archaeologists execute DESIGNATE_PARK / EXCAVATE,
+    // not BUILD_IMPROVEMENT. Their reported Builder/spread zero is not an
+    // exhausted Culture operation counter. Keep the simulator's planning
+    // budget; native CanStartOperation remains the final legality check.
+    // This is deliberately not an assertion of remaining native artifacts.
+    if !matches!(live.kind.as_str(), "naturalist" | "archaeologist") {
+        if let Some(charges) = observed_charges {
+            live.charges = charges;
+        }
     }
     live.fortified = state.fortified;
     live.fortify_turns = state.fortify_turns.clamp(0, 2);
@@ -11062,6 +11135,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("human_seat", REBUILD, step_human_seat),
             ("map_script", REBUILD, step_map_script),
             ("refused_site_blocks", REBUILD, step_refused_site_blocks),
+            ("policy_choices", BOTH, step_policy_choices),
             ("identity", BOTH, step_identity),
         ],
     ),
@@ -11217,6 +11291,10 @@ fn step_map_script(ctx: &mut HostStepCtx<'_>) {
     if let Some(map_script) = civvis_map_script(&ctx.state.seat.map) {
         ctx.game.map_script = map_script;
     }
+}
+
+fn step_policy_choices(ctx: &mut HostStepCtx<'_>) {
+    apply_host_policy_choices(ctx.game, ctx.state);
 }
 
 fn step_refused_site_blocks(ctx: &mut HostStepCtx<'_>) {
@@ -12450,6 +12528,7 @@ pub fn rebuild_from_state(
         &unit_ids,
         &game.rules,
     ));
+    game.host_band_promotions = Arc::new(host_band_promotions_from(state, &unit_ids, &game.rules));
     game.blocked_strikes = Arc::new(blocked_strikes_from(&state.refused_strikes, &unit_ids));
     game.host_previews = Arc::new(host_previews_from(&state.host_previews, &unit_ids));
 
@@ -13659,6 +13738,11 @@ impl LiveMirror {
         // the same reason the production blocks are.
         self.game.blocked_promotions = Arc::new(blocked_promotions_from(
             &state.refused_promotions,
+            &self.civ6_of,
+            &self.game.rules,
+        ));
+        self.game.host_band_promotions = Arc::new(host_band_promotions_from(
+            state,
             &self.civ6_of,
             &self.game.rules,
         ));

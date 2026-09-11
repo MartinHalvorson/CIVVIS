@@ -602,7 +602,11 @@ impl AdvancedAi {
         reach: &BarbarianReach,
     ) -> Vec<Pos> {
         let here_covering = reach.raiders_covering(g, current);
-        if here_covering == 0 {
+        // Reach alone is not capture risk: an owned city or a surviving bound
+        // guard protects this tile. Keep the normal safe-progress search above
+        // this fallback, but never "escape" protection into an exposed neighbour.
+        if here_covering == 0 || self.civilian_safe_at(g, g.units[&uid].owner, uid, current, reach)
+        {
             return Vec::new();
         }
         let here_nearest = reach.nearest(g, current);
@@ -1113,6 +1117,9 @@ mod tests {
                 ai.disable_exhaustion_loyalty_guard();
             }
             ai.attach_journal(Journal::recording());
+            // Isolate this optional guard from the fixed production safety
+            // pass, which now also runs in native tournaments.
+            ai.disable_live_settler_capture_lessons();
             assert!(
                 ai.base.valid_settle_site(&g, 0, doomed),
                 "fixture: the doomed plot is a legal site"
@@ -1786,6 +1793,140 @@ mod tests {
                 .iter()
                 .any(|thought| thought.headline.starts_with("Settler is stranded")),
             "the hold is named"
+        );
+    }
+
+    fn protected_retreat_board(city: bool) -> (Game, AdvancedAi, u32, Pos, u32) {
+        let mut g = Game::new_full(2, 28, 18, 91_337, 120, 0, true);
+        g.current = 0;
+        let founding = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        let here = g.units[&founding].pos;
+        let positions: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for pos in &positions {
+            let tile = g.map.tiles.get_mut(pos).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        g.players[0].explored.extend(positions);
+        if city {
+            g.apply(0, &Action::FoundCity { unit: founding }).unwrap();
+        }
+        let units: Vec<u32> = g.units.keys().copied().collect();
+        for uid in units {
+            g.remove_unit(uid);
+        }
+        let settler = g.spawn_test_unit("settler", 0, here);
+        let raider_at = g
+            .nbrs(here)
+            .into_iter()
+            .find(|p| g.map.get(*p).is_some())
+            .unwrap();
+        let raider = g.spawn_test_unit("warrior", g.barb_pid.unwrap(), raider_at);
+        let mut ai = AdvancedAi::new();
+        ai.enable_settler_guard_holds();
+        ai.enable_live_settler_capture_lessons();
+        (g, ai, settler, here, raider)
+    }
+
+    #[test]
+    fn protected_city_refuses_cornered_retreat_but_still_releases_a_safe_march() {
+        let (mut g, mut ai, settler, here, raider) = protected_retreat_board(true);
+        let reach = ai.barbarian_reach(&g, 0, here, REACH_SCAN_RADIUS);
+        assert!(
+            reach.raiders_covering(&g, here) > 0,
+            "the city is inside hostile reach"
+        );
+        assert!(ai.civilian_safe_at(&g, 0, settler, here, &reach));
+        assert!(
+            ai.cornered_retreats(&g, settler, here, &reach).is_empty(),
+            "raw raider coverage must not send a protected settler out of its city"
+        );
+        let target = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|p| {
+                g.wdist(here, *p) == 4
+                    && ai.base.valid_settle_site(&g, 0, *p)
+                    && g.route_step(settler, *p, 0).is_some()
+            })
+            .unwrap();
+        ai.settler_targets.insert(settler, target);
+        g.remove_unit(raider);
+        assert!(
+            ai.settler_watchdog_step(&mut g, 0, settler),
+            "city protection must not prevent a safe departure when the threat clears"
+        );
+        assert_ne!(g.units[&settler].pos, here);
+        assert!(g.wdist(g.units[&settler].pos, target) < g.wdist(here, target));
+    }
+
+    #[test]
+    fn protected_city_can_depart_safely_while_a_raider_still_covers_the_city() {
+        let (mut g, mut ai, settler, here, raider) = protected_retreat_board(true);
+        g.remove_unit(raider);
+        let hostile = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|p| g.wdist(here, *p) == 2)
+            .unwrap();
+        g.spawn_test_unit("warrior", g.barb_pid.unwrap(), hostile);
+        let reach = ai.barbarian_reach(&g, 0, here, REACH_SCAN_RADIUS);
+        assert!(reach.raiders_covering(&g, here) > 0);
+        let target = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|p| {
+                g.wdist(here, *p) == 4
+                    && ai.base.valid_settle_site(&g, 0, *p)
+                    && g.route_step(settler, *p, 0)
+                        .is_some_and(|next| ai.watchdog_tile_is_safe(&g, 0, settler, next, &reach))
+            })
+            .expect("a safe departure away from the raider");
+        ai.settler_targets.insert(settler, target);
+        assert!(ai.settler_watchdog_step(&mut g, 0, settler));
+        let arrived = g.units[&settler].pos;
+        assert_ne!(arrived, here);
+        assert!(g.wdist(arrived, target) < g.wdist(here, target));
+        assert!(
+            !reach.covers(&g, arrived),
+            "the accepted step is outside capture reach"
+        );
+    }
+
+    #[test]
+    fn protected_guard_blocks_retreat_only_while_it_really_protects_the_settler() {
+        let (mut g, mut ai, settler, here, _) = protected_retreat_board(false);
+        let guard = g.spawn_test_unit("warrior", 0, here);
+        ai.settler_guards.insert(settler, guard);
+        let reach = ai.barbarian_reach(&g, 0, here, REACH_SCAN_RADIUS);
+        assert!(reach.raiders_covering(&g, here) > 0);
+        assert!(ai.civilian_safe_at(&g, 0, settler, here, &reach));
+        assert!(
+            ai.cornered_retreats(&g, settler, here, &reach).is_empty(),
+            "a surviving bound guard is protection, not an emergency retreat trigger"
+        );
+        g.units.get_mut(&guard).unwrap().hp = 20;
+        assert!(!ai.civilian_safe_at(&g, 0, settler, here, &reach));
+        assert!(
+            !ai.cornered_retreats(&g, settler, here, &reach).is_empty(),
+            "a wounded guard must not suppress a useful escape"
+        );
+        g.units.get_mut(&guard).unwrap().hp = 100;
+        ai.settler_guards.remove(&settler);
+        assert!(
+            !ai.cornered_retreats(&g, settler, here, &reach).is_empty(),
+            "an unbound bystander may leave and must not suppress escape"
         );
     }
 

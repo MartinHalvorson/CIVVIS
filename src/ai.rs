@@ -1,5 +1,7 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
+pub mod finishing;
+pub mod player;
 use crate::game::{
     effective_strength, expected_damage, Action, ActionFamilies, Game, Item, PolicyReadSet,
     TraversalClass,
@@ -120,6 +122,20 @@ const UNIT_RETREAT_TURNS: u32 = 2;
 pub(crate) const VETERAN_HP_PER_PROMOTION: i32 = 10;
 /// `veterans-withdraw-early`: the most a veteran keeps in hand (three promotions).
 pub(crate) const VETERAN_HP_MARGIN_CAP: i32 = 30;
+/// `ranged-hp-reserve`: hit points a ranged unit keeps in hand against the
+/// lethal pool. An archer's value is the shots it takes over many turns; a
+/// melee unit's is the blow it lands now. So the archer withdraws from a tile
+/// where the enemy's exact next-turn attacks would leave it THIS close to
+/// dead — and comes back to shoot again — where a warrior of the same health
+/// stays and trades. Siege pieces are excluded: they must sit in reach of the
+/// walls they exist to breach.
+///
+/// ⚠ 20, NOT 35. Measured in the archer-under-archer fixture: an even archer
+/// volley lands for ~70, so a 35-point reserve read every duel as a loss
+/// (65 left after our own shot + 35 ≥ 100) and the archer would never stand
+/// anywhere a peer could reach it — no shots, no war. Twenty lets it trade at
+/// full health and break off early instead of trading down.
+pub(crate) const RANGED_HP_RESERVE: i32 = 20;
 
 /// `game::damage` rolls every blow at `uniform(0.8, 1.2)` around the centre
 /// this controller prices with, so the average is not the number a survival
@@ -313,6 +329,8 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
 mod movement_risk;
+mod scout_first;
+mod scout_inference;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
@@ -471,6 +489,10 @@ pub struct PlanReport {
 }
 
 pub trait Ai {
+    /// Whether this controller needs last-seen world memory for deliberation.
+    fn uses_player_observation(&self) -> bool {
+        false
+    }
     fn take_turn(&mut self, g: &mut Game, pid: usize);
 
     fn strategy_label(&self) -> Option<&'static str> {
@@ -511,6 +533,9 @@ pub trait Ai {
 }
 
 impl<T: Ai + ?Sized> Ai for Box<T> {
+    fn uses_player_observation(&self) -> bool {
+        (**self).uses_player_observation()
+    }
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         (**self).take_turn(g, pid);
     }
@@ -557,13 +582,10 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
 /// loop takes a visitor. `run_game` is this with a visitor that does nothing,
 /// so headless play is byte for byte what it was.
 pub fn run_game_observed<A: Ai>(g: &mut Game, ais: &mut [A], mut observe: impl FnMut(&Game)) {
-    // A headless rollout never serializes a player observation between
-    // actions. Explored ground, contacts and Natural-Wonder discovery remain
-    // gameplay state and are still maintained; only the large last-seen tile
-    // and city copies used to render fog are omitted. Interactive server
-    // stepping does not use `run_game`, so spectator and player displays keep
-    // complete observation memory.
-    g.set_fog_memory(false);
+    // Production players deliberate from last-seen memory even in headless
+    // tournaments. Historical controllers that do not read it keep the old
+    // rollout cost and replay contract.
+    g.set_fog_memory(ais.iter().any(Ai::uses_player_observation));
     // Same reasoning for the narrated war ledger: no observer reads a
     // half-finished headless turn, so the per-action re-sync buys nothing.
     // Declarations, peaces, and turn boundaries still sync it, so the ledger
@@ -2052,6 +2074,59 @@ pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 /// without converting it to a second shared slice allocation.
 type CoveredTiles = (std::sync::Arc<AttackEnvelopes>, std::sync::Arc<Vec<Pos>>);
 
+/// The three route priorities used by a recovering unit. They are immutable
+/// while a board and hostile-envelope table are unchanged, so frontier clones
+/// can share one full-map scan instead of repeating it per unit.
+#[derive(Debug, PartialEq, Eq)]
+struct SafeHealingTargets {
+    cities: HashSet<Pos>,
+    friendly_tiles: HashSet<Pos>,
+    neutral_tiles: HashSet<Pos>,
+}
+
+/// A cache slot that a clone does NOT inherit.
+///
+/// ⚠⚠ Every other `Arc<Mutex<..>>` cache on `BasicAi` is keyed by CONTENT --
+/// `covered_tiles_cache` by the envelope `Arc`'s identity, `envelope_board` by
+/// `attack_envelope_fingerprint` -- so sharing it with a cloned AI is safe. The
+/// safe-healing entry is keyed by `Game`'s monotonic COUNTERS, which answer "did
+/// this board change since I looked" and cannot answer "are these two boards the
+/// same": two siblings that each took one write carry the same counter
+/// (`sibling_clones_share_a_healing_stamp_so_the_cache_may_not_cross_boards`
+/// pins exactly that). Resetting on clone keeps the counter key sound, and costs
+/// only the first scan on a branched board.
+struct FreshOnClone<T>(std::sync::Mutex<Option<T>>);
+
+// Derived `Default` would demand `T: Default`, which a cache entry has no
+// meaningful empty value for; the slot's empty value is `None`.
+impl<T> Default for FreshOnClone<T> {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl<T> Clone for FreshOnClone<T> {
+    fn clone(&self) -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl<T> FreshOnClone<T> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<T>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// A safe-healing scan together with every input that selects its tiles.
+struct SafeHealingTargetCache {
+    pid: usize,
+    stamp: (u64, u64, u64, u64),
+    envelopes: std::sync::Arc<AttackEnvelopes>,
+    targets: std::sync::Arc<SafeHealingTargets>,
+}
+
 /// One enemy's envelope, with the key that says when it may be reused.
 ///
 /// ★★★★★ THE BOARD KEY IS TOO COARSE AND THAT IS MOST OF THE COST. The
@@ -2580,6 +2655,11 @@ pub struct BasicAi {
     /// Experience only compounds on a unit that survives; a green unit
     /// reads its hit points as before. Set by `AdvancedAi`'s toggle.
     pub(crate) veteran_retreat_margin: bool,
+    /// `ranged-hp-reserve`: a ranged, non-siege unit reads the lethal pool
+    /// with `RANGED_HP_RESERVE` in hand, so it leaves a tile the enemy could
+    /// nearly kill it on and keeps shooting from the next one. Only the
+    /// lethal-pool test — the withdrawal line stays `one_shot_recovery`'s.
+    pub(crate) ranged_hp_reserve: bool,
     /// A unit one enemy blow from death withdraws to safe healing ground, and
     /// leaves that ground again the moment an enemy can strike it.
     ///
@@ -2647,6 +2727,10 @@ pub struct BasicAi {
     /// Every tile any hostile envelope covers, unioned once and kept against
     /// the exact envelope table it was built from. See [`Self::covered_tiles`].
     covered_tiles_cache: std::sync::Arc<std::sync::Mutex<Option<CoveredTiles>>>,
+    /// Safe recovery destinations, reused across this seat's own recovering
+    /// units while the board state and hostile-envelope table stay identical.
+    /// NOT inherited by a cloned AI -- see `FreshOnClone`.
+    safe_healing_targets_cache: FreshOnClone<SafeHealingTargetCache>,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -2701,8 +2785,9 @@ pub struct BasicAi {
     /// native constructors and the frozen anchor keep the plain goal.
     pub(crate) explore_dead_targets: bool,
     /// Per unit: the exploration goal it was last sent at, where it stood, and
-    /// how many consecutive turns it has stood there aiming at that goal.
-    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32)>>,
+    /// how many consecutive turns it has stood there aiming at that goal,
+    /// and the last game turn observed. Replanning does not advance the clock.
+    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32, u32)>>,
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
@@ -2999,8 +3084,8 @@ pub struct BasicAi {
     /// old gate vetoes every Trader when any city in the empire has a local
     /// barbarian alarm, so one Galley beside a remote coast can leave a safe
     /// capital's route capacity empty through insolvency. Entrant
-    /// `solvency-first-trade-slot`; deployment-on after its +8.07 pp displayed
-    /// pooled Diff.
+    /// `solvency-first-trade-slot`; Advanced production turns it on after its
+    /// repeated positive standard-screen result.
     pub(crate) solvency_first_trade_slot: bool,
     /// Whether a Builder whose nearest improvable tile cannot be stepped
     /// toward tries the next one instead of giving up the turn. Opt-in gene
@@ -3096,6 +3181,71 @@ pub struct BasicAi {
     /// pantheon, or site ranking. It reserves the capital's next empty production choice,
     /// uses the measured opening-band pipeline, and keeps the legal
     /// population and payback gates in step with the strategic controller.
+    /// 🛑 2026-09-11, RETRACTED THE SAME DAY: the reading below is an artefact
+    /// of the probe's own length. Keep reading; the retraction is the point.
+    ///
+    /// Priced by withholding at the shape the live seat plays — 60×38, 4
+    /// players, standard speed, Emperor, `--rivals firaxis-mix --handicap
+    /// rivals` — 90 games, 270 seats, `--turns 80 --p-default-on 0.5`:
+    ///
+    ///     gene                              on     off    diff       z
+    ///     rapid-city-expansion-2          2.66    2.93   -0.27   -2.69
+    ///     expansion-scales-with-difficulty 2.70    2.89   -0.19   -1.88
+    ///     expansion-schedule               2.83    2.78   +0.05   +0.48
+    ///     settler-walk-deadline            2.80    2.81   -0.01   -0.13
+    ///
+    /// It persists rather than washing out: cities at turn 80 read −0.28
+    /// (z −2.60) on the same split, and both city columns agree. The arms are
+    /// balanced on the other three genes (largest imbalance 0.11), so it is not
+    /// the draw.
+    ///
+    /// ⚠⚠ THIS IS NOT A PROMOTION ARGUMENT AND MUST NOT BE READ AS ONE. An
+    /// 80-turn probe completes no game, so it carries no win column and is not
+    /// a ledger source; the default rule reads the two win columns of native
+    /// screens and nothing here touches them. Four genes were tested, so the
+    /// family-wise bar is nearer z 2.50 than 2.00 and −2.69 clears it only
+    /// narrowly. And an expansion gene may well pay after turn 80 — this says
+    /// what it costs in the opening, not what it is worth in a game.
+    ///
+    /// ## 🛑🛑 RETRACTED — `--turns 80` MOVED THIS GENE'S OWN BAND TO TURN 19
+    ///
+    /// `rapid_city_expansion::band_turn` is `turn_limit() *
+    /// EXPANSION_BAND_SHARE`, and that share is **0.24**. At the screen's normal
+    /// 250 turns the band lands on turn 60, which is the measured opening band.
+    /// At the `--turns 80` the probe used it lands on **turn 19** — so
+    /// `pipeline_width` returned `None` for turns 19 to 80 and the caller's
+    /// `unwrap_or(1)` held the pipeline at a single walker for the whole window
+    /// the probe then measured. The probe shortened the game and the gene
+    /// dutifully shortened its opening to match.
+    ///
+    /// Re-run at `--turns 250`, same shape, 60 games, 180 seats:
+    ///
+    ///     column                    on      off     diff       z
+    ///     cities_at_game_turn_60  2.918   2.867   +0.050   +0.42
+    ///     cities (final)          7.649   8.892   -1.242   -2.75
+    ///     score_share             0.204   0.212   -0.008   -0.70
+    ///     win                     0.082   0.108   -0.026   -0.59
+    ///
+    /// **The opening cost is gone**: +0.05 against the claimed −0.27. What is
+    /// left is a −1.24 on final cities at z −2.75, which is one column of seven
+    /// at a bar that seven comparisons put near 2.7, and which **neither share
+    /// nor win follows** (z −0.70 and −0.59). That is the shape of a mechanism
+    /// moving without an outcome, and `docs/SURROGATE_ENDPOINT.md` is the
+    /// standing reason not to bank it. The gene keeps shipping on.
+    ///
+    /// ## ⚠⚠ AND THE METHOD LESSON IS BIGGER THAN THE GENE
+    ///
+    /// `--turns N` does not truncate a game, it **rescales the agent**. There
+    /// are 46 call sites of `Game::turn_limit()` and 54 of `standard_duration`
+    /// across the AI: deadlines, bands, cadences and lane windows are all
+    /// expressed as a share of the game's length. Shorten the game and every one
+    /// of them moves.
+    ///
+    /// ⭐ It is not always fatal — the deployment-shape opening reads 2.59 at
+    /// both 80 and 250 turns, because there the binding constraint is land and
+    /// production rather than any schedule. But **no gene-level question may be
+    /// answered on a shortened game**, and a probe that was cheap because it was
+    /// short is not cheap if it answers a different question.
     pub(crate) rapid_city_expansion_2: bool,
     /// `capital-settler-after-completion`: once the capital is population two
     /// and has no queued work, start a legal Settler instead of letting the
@@ -3104,6 +3254,8 @@ pub struct BasicAi {
     /// emergency choices remain authoritative. Set through
     /// `AdvancedAi::enable_capital_settler_after_completion`.
     pub(crate) capital_settler_after_completion: bool,
+    /// Independent first-slot exploration experiment.
+    pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -4907,6 +5059,7 @@ impl BasicAi {
             unit_objective_memory: false,
             precise_evacuation: true,
             veteran_retreat_margin: false,
+            ranged_hp_reserve: false,
             one_shot_recovery: false,
             w: Weights::default(),
             book_pos: 0,
@@ -4922,6 +5075,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -4968,6 +5122,7 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -5359,6 +5514,7 @@ impl BasicAi {
             unit_objective_memory: false,
             precise_evacuation: true,
             veteran_retreat_margin: false,
+            ranged_hp_reserve: false,
             one_shot_recovery: false,
             w,
             book_pos: 0,
@@ -5374,6 +5530,7 @@ impl BasicAi {
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -5420,6 +5577,7 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            scout_first_opening: false,
             expansion_pantheon: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
@@ -6413,29 +6571,36 @@ impl BasicAi {
             .collect()
     }
 
-    fn safe_healing_step(
+    /// Every route target [`Self::safe_healing_step`] would select before it
+    /// asks the moving unit for a path.
+    ///
+    /// ★★★★ THE KEY COVERS EVERY READ, NOT JUST THE OBVIOUS MAP. The exact
+    /// hostile-envelope `Arc` protects coverage, while
+    /// `Game::healing_target_stamp` changes for every map, city, player, or
+    /// diplomacy input used below. The cache entry retains that `Arc`, so
+    /// pointer identity cannot be recycled under a live entry. This is one
+    /// immutable full-map scan per shared frontier board rather than one per
+    /// recovering unit.
+    fn safe_healing_targets(
         &self,
         g: &Game,
         pid: usize,
-        uid: u32,
         envelopes: &std::sync::Arc<AttackEnvelopes>,
-    ) -> Option<Pos> {
-        // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
-        // and it used to price every tile with `evacuation_tile` — a defender
-        // strength, every covering enemy's attack strength, and a scan of
-        // every hostile city with `is_at_war` per city — 3,404 times per unit
-        // on a 74×46 map. That was half the simulator after #2059. The scan
-        // only keeps a tile whose incoming damage is exactly zero, and
-        // `evacuation_incoming_damage` is zero precisely when the tile is a
-        // garrison district or lies outside every enemy envelope AND out of
-        // strike range of every hostile walled city and encampment (each
-        // covering source contributes at least the clamp's floor of one).
-        // So the safety test is a set lookup, computed once, and the tile
-        // loop pays only for its heal-rate read — under a query-memo scope, so
-        // `suzerain_of` is answered once per minor, not once per tile.
-        let _memo = g.query_memo();
+    ) -> std::sync::Arc<SafeHealingTargets> {
+        let stamp = g.healing_target_stamp();
+        let slot = self.safe_healing_targets_cache.lock();
+        if let Some(cached) = slot.as_ref() {
+            if cached.pid == pid
+                && cached.stamp == stamp
+                && std::sync::Arc::ptr_eq(&cached.envelopes, envelopes)
+            {
+                return std::sync::Arc::clone(&cached.targets);
+            }
+        }
+        drop(slot);
+
         let covered = self.covered_tiles(envelopes);
-        let strike_sources: Vec<Pos> = Self::district_strike_sources(g, pid);
+        let strike_sources = Self::district_strike_sources(g, pid);
         let struck = |position: Pos| {
             strike_sources.iter().any(|source| {
                 g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position)
@@ -6473,9 +6638,46 @@ impl BasicAi {
                 neutral_tiles.insert(position);
             }
         }
-        g.route_step_to_any(uid, &cities)
-            .or_else(|| g.route_step_to_any(uid, &friendly_tiles))
-            .or_else(|| g.route_step_to_any(uid, &neutral_tiles))
+        let targets = std::sync::Arc::new(SafeHealingTargets {
+            cities,
+            friendly_tiles,
+            neutral_tiles,
+        });
+        let mut slot = self.safe_healing_targets_cache.lock();
+        *slot = Some(SafeHealingTargetCache {
+            pid,
+            stamp,
+            envelopes: std::sync::Arc::clone(envelopes),
+            targets: std::sync::Arc::clone(&targets),
+        });
+        targets
+    }
+
+    fn safe_healing_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        envelopes: &std::sync::Arc<AttackEnvelopes>,
+    ) -> Option<Pos> {
+        // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
+        // and it used to price every tile with `evacuation_tile` — a defender
+        // strength, every covering enemy's attack strength, and a scan of
+        // every hostile city with `is_at_war` per city — 3,404 times per unit
+        // on a 74×46 map. That was half the simulator after #2059. The scan
+        // only keeps a tile whose incoming damage is exactly zero, and
+        // `evacuation_incoming_damage` is zero precisely when the tile is a
+        // garrison district or lies outside every enemy envelope AND out of
+        // strike range of every hostile walled city and encampment (each
+        // covering source contributes at least the clamp's floor of one).
+        // So the safety test is a set lookup, computed once, and the tile
+        // loop pays only for its heal-rate read — under a query-memo scope, so
+        // `suzerain_of` is answered once per minor, not once per tile.
+        let _memo = g.query_memo();
+        let targets = self.safe_healing_targets(g, pid, envelopes);
+        g.route_step_to_any(uid, &targets.cities)
+            .or_else(|| g.route_step_to_any(uid, &targets.friendly_tiles))
+            .or_else(|| g.route_step_to_any(uid, &targets.neutral_tiles))
             .filter(|next| g.can_move(uid, *next))
     }
 
@@ -6483,7 +6685,11 @@ impl BasicAi {
     /// this unit alive outside the remaining enemy envelopes. This is a small
     /// exact forward check, not a combat-score guess: it lets a unit finish a
     /// kill or create a safe trade when that is genuinely better than fleeing.
-    fn can_survive_by_attacking(&self, g: &Game, pid: usize, uid: u32) -> bool {
+    /// ``reserve`` is `ranged_hp_reserve`'s answer for this unit: a ranged unit
+    /// has not "survived" a trade that leaves it standing but below the hit
+    /// points it keeps in hand — that is the near-fatal hit the gene exists to
+    /// refuse. Zero for everything else, so nothing else changes.
+    fn can_survive_by_attacking(&self, g: &Game, pid: usize, uid: u32, reserve: i32) -> bool {
         g.legal_actions_within(pid, ActionFamilies::UNITS)
             .into_iter()
             .filter(|action| {
@@ -6505,6 +6711,7 @@ impl BasicAi {
                 };
                 let envelopes = self.enemy_attack_envelopes(&future, pid);
                 Self::evacuation_incoming_damage(&future, pid, uid, survivor.pos, &envelopes)
+                    + f64::from(reserve)
                     < f64::from(survivor.hp)
             })
     }
@@ -6610,12 +6817,15 @@ impl BasicAi {
         )?;
         // `veterans-withdraw-early`: the pool is lethal to a veteran once it
         // would leave less than the margin the unit keeps in hand.
-        let lethal = holding.incoming > 0.0
-            && holding.incoming + f64::from(self.veteran_hp_margin(g, uid)) >= f64::from(hp);
+        // `ranged-hp-reserve` adds to the same margin: an archer reads the pool
+        // as lethal while it would still be left standing, and leaves.
+        let margin = self.veteran_hp_margin(g, uid) + self.ranged_hp_reserve(g, uid);
+        let lethal =
+            holding.incoming > 0.0 && holding.incoming + f64::from(margin) >= f64::from(hp);
         if remembered.is_none() && !lethal {
             return None;
         }
-        if lethal && self.can_survive_by_attacking(g, pid, uid) {
+        if lethal && self.can_survive_by_attacking(g, pid, uid, self.ranged_hp_reserve(g, uid)) {
             return None;
         }
 
@@ -7221,14 +7431,13 @@ impl BasicAi {
     /// one-hex dead end can consume the whole war.  The coordinated mover may
     /// make one exception for an A* route after this becomes true, because the
     /// route can need to cross an already-visited square before it exits the
-    /// pocket.  Keeping that exception behind `recorded_tactical_step` leaves
-    /// every native controller on its historical movement path.
+    /// pocket.  The exception is independent of the live movement recorder:
+    /// the motion ledger is also populated by the ordinary turn-based path,
+    /// and the route escape still applies its own legality and danger checks.
     pub(crate) fn live_livelock_route_escape(&self, uid: u32) -> bool {
-        self.recorded_tactical_step
-            && self
-                .unit_motion
-                .get(&uid)
-                .is_some_and(|motion| motion.looping)
+        self.unit_motion
+            .get(&uid)
+            .is_some_and(|motion| motion.looping)
     }
 
     /// Whether a plain pathing step should be refused because it walks back
@@ -9213,6 +9422,11 @@ impl BasicAi {
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
+            // Reserve the first slot before population-two Settler genes can
+            // claim it. Successful production consumes exactly one book slot.
+            if self.play_scout_first_opening(g, pid, *cid) {
+                continue;
+            }
             // The normal production picker sits after the scripted opening
             // book. Let `capital-settler-after-completion` reserve the first
             // newly empty capital queue once it reaches population two,
@@ -9616,6 +9830,25 @@ impl BasicAi {
         }
         let promotions = g.units.get(&uid).map_or(0, |unit| unit.promotions.len()) as i32;
         (promotions * VETERAN_HP_PER_PROMOTION).min(VETERAN_HP_MARGIN_CAP)
+    }
+
+    /// `ranged-hp-reserve`: `RANGED_HP_RESERVE` for a ranged unit that is not a
+    /// siege piece and not aircraft, else 0. Zero while the gene is off.
+    pub(crate) fn ranged_hp_reserve(&self, g: &Game, uid: u32) -> i32 {
+        if !self.ranged_hp_reserve {
+            return 0;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return 0;
+        };
+        let Some(spec) = g.rules.units.get(unit.kind.as_str()) else {
+            return 0;
+        };
+        if spec.has_ranged_attack() && !spec.siege && spec.domain.as_deref() != Some("air") {
+            RANGED_HP_RESERVE
+        } else {
+            0
+        }
     }
 
     /// The upgrade loop itself: strongest gain per Gold first, never
@@ -10817,13 +11050,41 @@ impl BasicAi {
                         "lagrange_laser_station" | "terrestrial_laser_station"
                     )
             })
-            .map(|(project, _)| Item::Project { project: *project })
-            .filter(|item| g.can_produce(pid, cid, item))
-            .min_by(|left, right| {
-                g.item_cost_for_city(pid, cid, left)
-                    .total_cmp(&g.item_cost_for_city(pid, cid, right))
-                    .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
+            .filter_map(|(project, spec)| {
+                let item = Item::Project { project: *project };
+                if !g.can_produce(pid, cid, &item) {
+                    return None;
+                }
+                // These yields accrue each turn as a percentage of Production,
+                // not only on completion. A cheap loyalty project cannot repair
+                // a deficit, and must not win an alphabetical tie over research.
+                let gold = spec.ongoing_yields.get("gold").copied().unwrap_or(0.0);
+                let output = spec
+                    .ongoing_yields
+                    .iter()
+                    .map(|(yield_type, value)| {
+                        let weight = match yield_type.as_str() {
+                            "production" => 5.0,
+                            "food" | "gold" => 3.0,
+                            "science" | "culture" => 2.0,
+                            _ => 1.0,
+                        };
+                        value.max(0.0) * weight
+                    })
+                    .sum::<f64>();
+                let cost = g.item_cost_for_city(pid, cid, &item);
+                let points = spec.completion_gpp.values().sum::<f64>() / cost.max(1.0);
+                Some((gold, output, points, cost, *project, item))
             })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.total_cmp(&right.1))
+                    .then_with(|| left.2.total_cmp(&right.2))
+                    .then_with(|| right.3.total_cmp(&left.3))
+                    .then_with(|| right.4.cmp(&left.4))
+            })
+            .map(|(_, _, _, _, _, item)| item)
     }
 
     fn minor_district_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
@@ -10883,12 +11144,70 @@ impl BasicAi {
                 return Some(wall);
             }
         }
+        // Once the city is already taking damage, a range-one Slinger is
+        // not the emergency fallback. Walls retain priority, then a missing
+        // Archer; before Archery, retain the melee rescue.
+        if let Some(shooter) = self.early_local_shooter_item(g, pid, cid) {
+            if matches!(&shooter, Item::Unit { unit } if g.rules.units[unit].range >= 2) {
+                return Some(shooter);
+            }
+        }
         // This damage-only path is live-bridge-only, so choose the local land
         // defender rather than the highest-bombard siege unit.
         let defender = self.best_military(g, pid, cid, Some(false));
         defender.map(|unit| Item::Unit {
             unit: Name::new(&unit),
         })
+    }
+
+    /// The live opening needs a shooter at home even when its Warrior escorts
+    /// a Settler. Prefer a range-two defender; before its unlock, train one
+    /// Slinger to defend now and upgrade later. Existing local shooters and
+    /// nearby shooter queues satisfy this bounded request.
+    fn early_local_shooter_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !self.garrison_under_fire || !advanced::AdvancedAi::early_archers_window_open(g, pid) {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        let shooter = |spec: &crate::rules::UnitSpec| {
+            spec.class == "military"
+                && matches!(spec.domain.as_deref(), None | Some("land"))
+                && spec.promotion_class != "recon"
+                && !spec.siege
+                && spec.has_ranged_attack()
+        };
+        if g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.wdist(unit.pos, city.pos) <= 2
+                && shooter(&g.rules.units[unit.kind])
+        }) || g.cities.values().any(|other| {
+            other.owner == pid
+                && other.id != cid
+                && g.wdist(other.pos, city.pos) <= 4
+                && other.queue.first().is_some_and(|item| match item {
+                    Item::Unit { unit } | Item::Formation { unit, .. } => {
+                        shooter(&g.rules.units[unit])
+                    }
+                    _ => false,
+                })
+        }) {
+            return None;
+        }
+        g.rules
+            .units
+            .iter()
+            .filter(|(_, spec)| shooter(spec))
+            .filter_map(|(unit, spec)| {
+                let item = Item::Unit { unit: *unit };
+                g.can_produce(pid, cid, &item).then_some((
+                    spec.range >= 2,
+                    spec.ranged_attack_strength(),
+                    *unit,
+                    item,
+                ))
+            })
+            .max_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)))
+            .map(|(_, _, _, item)| item)
     }
 
     /// Land defenders that can answer a barbarian raid from this city's tile.
@@ -10951,12 +11270,26 @@ impl BasicAi {
             .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
             .filter(|unit| self.barbarian_raider_counts_as_threat(g, pid, unit))
             .count();
-        let wanted: usize = if raiders >= 2 { 2 } else { 1 };
+        // The live opening cannot call two bodies sufficient against an
+        // entire raid. Athens' t18--20 horse raid still saw a zero gap with
+        // two local defenders, so its Settler queue remained the answer.
+        // Match the observed party up to a bounded four-body response while
+        // the seat is in the Ancient/Classical window. The demand recedes
+        // with the raiders; later eras and unarmed controllers keep the old
+        // floor. Existing threat/visibility and naval-triage filters apply.
+        let wanted = if self.garrison_under_fire
+            && advanced::AdvancedAi::early_archers_window_open(g, pid)
+        {
+            raiders.clamp(1, 4)
+        } else {
+            raiders.clamp(1, 2)
+        };
         wanted.saturating_sub(self.barbarian_local_defenders_for_controller(g, pid, cid))
     }
 
     /// The local defenders `barbarian_defense_gap` credits. Under
-    /// `siege-preempts-the-queue` a recon unit is not one of them: a Scout
+    /// `siege-preempts-the-queue` or the live garrison policy, a recon unit
+    /// is not one of them: a Scout
     /// is class `military` and was counted, so on live run
     /// civvis-20260901T193130Z t36 a Scout bought two turns earlier made the
     /// gap read zero with a barbarian Slinger adjacent to the capital, and
@@ -10971,7 +11304,7 @@ impl BasicAi {
             return 0;
         };
         let defenders = Self::barbarian_local_defenders(g, pid, city);
-        if !self.siege_preempts_the_queue {
+        if !self.siege_preempts_the_queue && !self.garrison_under_fire {
             return defenders;
         }
         let recon = g
@@ -11000,6 +11333,10 @@ impl BasicAi {
             || !self.barbarian_local_alarm_for_controller(g, pid, cid)
         {
             return None;
+        }
+        // A local body count does not replace the first city-defense shooter.
+        if let Some(shooter) = self.early_local_shooter_item(g, pid, cid) {
+            return Some(shooter);
         }
         if self.barbarian_defense_gap(g, pid, cid) > 0 {
             // A ring of shooters wants a shooter back. See
@@ -11118,6 +11455,62 @@ impl BasicAi {
         None
     }
 
+    fn live_great_person_military_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        need: &crate::game::LiveGreatPersonActivationNeed,
+    ) -> Option<Item> {
+        if !matches!(need.kind.as_str(), "general" | "admiral") {
+            return None;
+        }
+
+        // A host-required Encampment or Harbor must be finished before the
+        // body can activate the person. A queued or map-founded district is
+        // handled by the earlier district path and must not cause a unit to
+        // be parked ahead of its infrastructure.
+        if let Some(family) = need.required_district.as_deref() {
+            let district_ready = family == "city_center"
+                || g.player_city_ids(pid)
+                    .into_iter()
+                    .any(|city| g.city_has_district_family(&g.cities[&city], Name::new(family)));
+            if !district_ready {
+                return None;
+            }
+        }
+
+        match need.kind.as_str() {
+            "general" => {
+                let land_queued = g.player_city_ids(pid).into_iter().any(|city| {
+                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
+                        if g.rules.units[unit].class == "military"
+                            && g.rules.units[unit].domain.as_deref() != Some("sea"))
+                });
+                if land_queued {
+                    return None;
+                }
+                self.best_military(g, pid, cid, None)
+                    .map(|unit| Item::Unit {
+                        unit: Name::new(&unit),
+                    })
+            }
+            "admiral" => {
+                let navy_queued = g.player_city_ids(pid).into_iter().any(|city| {
+                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
+                        if g.rules.units[unit].class == "military"
+                            && g.rules.units[unit].domain.as_deref() == Some("sea"))
+                });
+                if navy_queued {
+                    return None;
+                }
+                self.best_naval_unit(g, pid, cid)
+                    .map(|unit| Item::Unit { unit })
+            }
+            _ => None,
+        }
+    }
+
     /// Production that turns an already-owned physical Great Person into a
     /// usable action. Ordinary/headless games never enter this path because
     /// their mirror-only need list is empty.
@@ -11175,35 +11568,8 @@ impl BasicAi {
 
             // Formation and promotion people can have infrastructure yet no
             // eligible body. Create one instead of parking the person forever.
-            let no_special_district = need
-                .required_district
-                .as_deref()
-                .is_none_or(|family| family == "city_center");
-            if no_special_district && need.kind == "general" {
-                let land_queued = g.player_city_ids(pid).into_iter().any(|city| {
-                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
-                        if g.rules.units[unit].class == "military"
-                            && g.rules.units[unit].domain.as_deref() != Some("sea"))
-                });
-                if !land_queued {
-                    if let Some(unit) = self.best_military(g, pid, cid, None) {
-                        return Some(Item::Unit {
-                            unit: Name::new(&unit),
-                        });
-                    }
-                }
-            }
-            if no_special_district && need.kind == "admiral" {
-                let navy_queued = g.player_city_ids(pid).into_iter().any(|city| {
-                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
-                        if g.rules.units[unit].class == "military"
-                            && g.rules.units[unit].domain.as_deref() == Some("sea"))
-                });
-                if !navy_queued {
-                    if let Some(unit) = self.best_naval_unit(g, pid, cid) {
-                        return Some(Item::Unit { unit });
-                    }
-                }
+            if let Some(item) = self.live_great_person_military_item(g, pid, cid, need) {
+                return Some(item);
             }
         }
         None
@@ -11284,6 +11650,58 @@ impl BasicAi {
                 continue;
             }
             if g.can_produce(pid, cid, &item) {
+                return Some(item);
+            }
+        }
+
+        // A physical person can remain stranded while its required or default
+        // district is missing: the city may be spending its only queue on a
+        // Market, Granary, or repeatable project. That queue is safe to bank
+        // in the same way as a paused district foundation, so open the exact
+        // missing district before the ordinary governor spends another turn
+        // on it. Military bodies, repairs, walls, wonders, and one-shot
+        // projects remain protected by `queue_can_yield` above.
+        for need in &g.players[pid].live_great_person_activation_needs {
+            if need.kind == "engineer"
+                && matches!(
+                    need.individual.as_deref(),
+                    Some("imhotep" | "gustave_eiffel")
+                )
+            {
+                // These named Engineers use the wonder path above; their
+                // default Industrial Zone is not an activation prerequisite.
+                continue;
+            }
+            let Some(family) = Self::live_great_person_district(need) else {
+                continue;
+            };
+            if !Self::empire_district_family_ready_or_queued(g, pid, family) {
+                if let Some(item) = Self::live_great_person_district_item(g, pid, cid, family) {
+                    return Some(item);
+                }
+            }
+        }
+
+        // A physical cultural person can remain stranded even after its
+        // Theater Square is complete: every compatible Great Work slot may be
+        // full while the city spends its only queue on ordinary production.
+        // Open the exact missing slot chain before the ordinary governor
+        // spends another turn on it.
+        for need in &g.players[pid].live_great_person_activation_needs {
+            let Some(family) = Self::live_great_person_district(need) else {
+                continue;
+            };
+            if !Self::empire_district_family_ready_or_queued(g, pid, family) {
+                continue;
+            }
+            if let Some(work) = Self::live_great_person_work(need) {
+                if let Some(item) = Self::live_great_person_cultural_item(g, pid, cid, work) {
+                    if g.can_produce(pid, cid, &item) {
+                        return Some(item);
+                    }
+                }
+            }
+            if let Some(item) = self.live_great_person_military_item(g, pid, cid, need) {
                 return Some(item);
             }
         }
@@ -14881,23 +15299,27 @@ impl BasicAi {
         } else {
             None
         };
+        let opening_wonder_recon = self.garrison_under_fire
+            && g.player_city_ids(pid).len() <= 2
+            && advanced::AdvancedAi::early_archers_window_open(g, pid);
         // Visible hostiles at war with us: ground around them is not a goal.
         // Live vision only — a threat the seat cannot see does not steer it.
-        let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
-            let visible = g.player_vision_frame(pid);
-            g.units
-                .values()
-                .filter(|unit| {
-                    unit.owner != pid
-                        && g.is_at_war(pid, unit.owner)
-                        && g.rules.units[unit.kind].class == "military"
-                        && g.sees(&visible, unit.pos)
-                })
-                .map(|unit| unit.pos)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let threats: Vec<Pos> =
+            if (self.explore_commit || opening_wonder_recon) && !g.players[pid].is_barbarian {
+                let visible = g.player_vision_frame(pid);
+                g.units
+                    .values()
+                    .filter(|unit| {
+                        unit.owner != pid
+                            && g.is_at_war(pid, unit.owner)
+                            && g.rules.units[unit.kind].class == "military"
+                            && g.sees(&visible, unit.pos)
+                    })
+                    .map(|unit| unit.pos)
+                    .collect()
+            } else {
+                Vec::new()
+            };
         let threatened = |pos: Pos| {
             threats
                 .iter()
@@ -14907,9 +15329,9 @@ impl BasicAi {
         // walked before any frontier, held goal or not. V1 clears every nearby
         // wonder's unseen pocket nearest-tile first; V2 preserves every trigger
         // and allows at most one extra tile to reveal more of that pocket.
-        if self.wonder_ring_recon || self.wonder_ring_recon_2 {
+        if self.wonder_ring_recon || self.wonder_ring_recon_2 || opening_wonder_recon {
             let reserved = self.reserved_explore_goals(g, pid, uid);
-            let wonder_goal = if self.wonder_ring_recon_2 {
+            let wonder_goal = if self.wonder_ring_recon_2 || opening_wonder_recon {
                 self.wonder_ring_goal_2(g, pid, uid, dry_only, &dead, &threats, &reserved)
             } else {
                 self.wonder_ring_goal(g, pid, uid, dry_only, &dead, &threats, &reserved)
@@ -15067,12 +15489,12 @@ impl BasicAi {
                 )
             })
         } else if self.explore_commit {
-            // The most revealing goal, and among those the one farthest from
-            // home: the walk sweeps outward and along the frontier instead of
-            // hugging the fringe nearest the unit. See `explore_commit`.
+            // Information gain plus a bounded, charted-terrain rival prior.
+            // Distance from home breaks ties so explorers fan outward.
             candidates.into_iter().max_by_key(|target| {
                 (
-                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    Self::frontier_reveal_value(g, pid, uid, *target) as i32 * 4
+                        + Self::rival_frontier_prior(g, pid, uid, *target, home),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
                     std::cmp::Reverse(*target),
@@ -15301,12 +15723,15 @@ impl BasicAi {
                         // Same goal from the same tile as last turn: one more
                         // turn of proof the order went nowhere.
                         Some(entry) if entry.0 == target && entry.1 == upos => {
-                            entry.2 += 1;
+                            if g.turn > entry.3 {
+                                entry.2 += 1;
+                                entry.3 = g.turn;
+                            }
                             entry.2
                         }
                         // A new goal, or the unit did move: start counting.
                         _ => {
-                            last.insert(uid, (target, upos, 0));
+                            last.insert(uid, (target, upos, 0, g.turn));
                             0
                         }
                     }
@@ -17707,7 +18132,7 @@ mod tests {
 
         let mut ai = BasicAi::new();
         assert!(
-            !ai.can_survive_by_attacking(&game, 0, defender),
+            !ai.can_survive_by_attacking(&game, 0, defender, 0),
             "a counterattack cannot make this three-warrior pool survivable"
         );
         assert_eq!(ai.healing_step(&mut game, 0, defender), Some(true));
@@ -17784,6 +18209,19 @@ mod tests {
         );
         assert!(ai.retreads_a_loop(scout, ground[1]));
         assert!(!ai.retreads_a_loop(scout, ground[7]));
+    }
+
+    #[test]
+    fn a_proven_loop_can_use_the_coordinated_route_escape() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_WINDOW + 2).map(|turn| turn % 2).collect();
+        let (ai, _g, _ground, scout) = observe_walk(&shuttle, None);
+
+        assert!(
+            !ai.recorded_tactical_step,
+            "the coordinated production path does not enable live movement recording"
+        );
+        assert!(ai.unit_motion[&scout].looping);
+        assert!(ai.live_livelock_route_escape(scout));
     }
 
     /// The host can move a Scout around an obstacle without ever taking the
@@ -18348,6 +18786,80 @@ mod tests {
         unit.promotions.insert(crate::name!("ambush"));
         unit.promotions.insert(crate::name!("zweihander"));
         assert_eq!(ai.veteran_hp_margin(&game, ours), VETERAN_HP_MARGIN_CAP);
+    }
+
+    /// `ranged-hp-reserve`: our archer stands where an enemy archer can shoot
+    /// it next turn. Below the lethal pool both controllers leave; above it a
+    /// controller with no reserve stays, and the reserve controller keeps
+    /// leaving for another `RANGED_HP_RESERVE` hit points — the band in which
+    /// a hit would not kill it but would leave it too hurt to keep shooting.
+    fn an_archer_under_one_archer() -> (Game, u32, Pos) {
+        let (mut game, warrior, front, _home) = a_warrior_under_one_archer();
+        game.remove_unit(warrior);
+        let ours = game.spawn_test_unit("archer", 0, front);
+        (game, ours, front)
+    }
+
+    #[test]
+    fn a_ranged_unit_keeps_a_reserve_against_the_lethal_pool() {
+        let (game, ours, _front) = an_archer_under_one_archer();
+        let controller = |reserve: bool| {
+            let mut ai = BasicAi::new();
+            ai.ranged_hp_reserve = reserve;
+            ai
+        };
+        assert_eq!(controller(false).ranged_hp_reserve(&game, ours), 0);
+        assert_eq!(
+            controller(true).ranged_hp_reserve(&game, ours),
+            RANGED_HP_RESERVE
+        );
+
+        // A fresh controller per reading: `retreat_step` remembers danger it has
+        // seen, and a memory from a low-hp reading would make a healthy one leave.
+        let leaves = |reserve: bool, hp: i32| {
+            let mut g = game.clone();
+            g.units.get_mut(&ours).unwrap().hp = hp;
+            controller(reserve).retreat_step(&mut g, 0, ours).is_some()
+        };
+        // The pool is fixed by the fixture (~45 at full health, ~55 when hurt);
+        // find where each controller stops leaving as hit points rise, rather
+        // than restating the damage table.
+        let last_leave = |reserve: bool| (1..=100).rev().find(|hp| leaves(reserve, *hp));
+        let plain_edge = last_leave(false).expect("a low-hp archer under fire leaves");
+        let reserve_edge = last_leave(true).expect("the reserve controller leaves too");
+        assert!(
+            reserve_edge > plain_edge,
+            "reserve leaves from {reserve_edge} hp, plain from {plain_edge}: the archer \
+             must leave while it would still be left standing"
+        );
+        // At full health it holds its ground and takes the duel: the reserve is
+        // for breaking off early, not for refusing to fight.
+        assert!(
+            !leaves(true, 100),
+            "a full-health archer must still stand and shoot"
+        );
+    }
+
+    #[test]
+    fn melee_and_siege_read_no_ranged_reserve() {
+        let (mut game, ours, front, _home) = a_warrior_under_one_archer();
+        let mut ai = BasicAi::new();
+        ai.ranged_hp_reserve = true;
+        assert_eq!(
+            ai.ranged_hp_reserve(&game, ours),
+            0,
+            "a warrior trades blows"
+        );
+        game.remove_unit(ours);
+        let catapult = game.spawn_test_unit("catapult", 0, front);
+        assert!(
+            game.rules.units["catapult"].siege && game.rules.units["catapult"].has_ranged_attack()
+        );
+        assert_eq!(
+            ai.ranged_hp_reserve(&game, catapult),
+            0,
+            "a siege piece must sit under the walls"
+        );
     }
 
     /// `modernize-before-spending`: the same Gold goes to the promoted unit
@@ -19027,6 +19539,244 @@ mod tests {
         assert!(matches!(
             game.cities[&city].queue.first(),
             Some(Item::Unit { unit }) if unit == "warrior"
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_writer_can_bank_a_safe_queue_for_a_work_slot() {
+        let mut game = Game::new_full(1, 20, 14, 41_111, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        let repeatable_project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        assert!(
+            game.can_produce(0, city, &repeatable_project),
+            "the fixture must expose a safe repeatable queue"
+        );
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: repeatable_project,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 11.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "writer".to_string(),
+                individual: Some("homer".to_string()),
+                required_district: Some("theater_square".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building })
+                if game.building_is_family(building, crate::name!("amphitheater"))
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_general_builds_a_body_after_encampment() {
+        let mut game = Game::new_full(1, 20, 14, 41_112, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let encampment = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&encampment).unwrap().district = Some(crate::name!("encampment"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("encampment"), encampment);
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "general".to_string(),
+                individual: Some("sun_tzu".to_string()),
+                required_district: Some("encampment".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit })
+                if game.rules.units[unit].class == "military"
+                    && game.rules.units[unit].domain.as_deref() != Some("sea")
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_general_can_bank_a_safe_queue_for_a_body() {
+        let mut game = Game::new_full(1, 20, 14, 41_113, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let mut specialty_tiles = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| *position != game.cities[&city].pos);
+        let encampment = specialty_tiles.next().unwrap();
+        let theater = specialty_tiles.next().unwrap();
+        game.map.tiles.get_mut(&encampment).unwrap().district = Some(crate::name!("encampment"));
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("encampment"), encampment);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        let repeatable_project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        assert!(
+            game.can_produce(0, city, &repeatable_project),
+            "the fixture must expose a safe repeatable queue"
+        );
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: repeatable_project,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 11.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "general".to_string(),
+                individual: Some("sun_tzu".to_string()),
+                required_district: Some("encampment".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit })
+                if game.rules.units[unit].class == "military"
+                    && game.rules.units[unit].domain.as_deref() != Some("sea")
+        ));
+    }
+
+    #[test]
+    fn a_stranded_live_merchant_can_bank_a_safe_queue_for_a_commercial_hub() {
+        let mut game = Game::new_full(1, 20, 14, 41_114, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 5;
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        grant_tech_with_prerequisites(&mut game, 0, "currency");
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        let repeatable_project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        assert!(
+            game.can_produce(0, city, &repeatable_project),
+            "the fixture must expose a safe repeatable queue"
+        );
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: repeatable_project,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 11.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "merchant".to_string(),
+                individual: Some("marco_polo".to_string()),
+                required_district: Some("commercial_hub".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, .. })
+                if game.district_family(*district) == "commercial_hub"
         ));
     }
 
@@ -22150,6 +22900,150 @@ mod tests {
         );
     }
 
+    /// ⚠⚠ THE STAMP CANNOT TELL TWO DIVERGENT BOARDS APART, WHICH IS WHY THE
+    /// CACHE MUST NOT BE SHARED ACROSS THEM.
+    ///
+    /// `Tiles::epoch` documents "two reads of the same epoch saw the same map".
+    /// That holds for one map's history and NOT across clones: two siblings that
+    /// each take one write carry the same counter and different content, as this
+    /// pins. `healing_target_stamp` is built from four such counters.
+    ///
+    /// So the safe-healing entry is deliberately **per AI instance and reset on
+    /// clone** (see `FreshOnClone`). A shared entry keyed on these counters could
+    /// hand one board's target sets to another board that merely happens to have
+    /// taken the same number of writes.
+    #[test]
+    fn sibling_clones_share_a_healing_stamp_so_the_cache_may_not_cross_boards() {
+        let game = Game::new_full(3, 24, 16, 91_485, 120, 1, false);
+        let mut a = game.clone();
+        let mut b = game.clone();
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().take(2).collect();
+        // One mutable open each, on DIFFERENT tiles: same counter, different map.
+        a.map.tiles.get_mut(&positions[0]);
+        b.map.tiles.get_mut(&positions[1]);
+        assert_eq!(
+            a.healing_target_stamp(),
+            b.healing_target_stamp(),
+            "these boards differ; if the stamp ever starts distinguishing them, \
+             the FreshOnClone reset below may be relaxed"
+        );
+        // And the reset is what keeps that harmless: a cloned AI starts empty.
+        let ai = BasicAi::new();
+        let envelopes = std::sync::Arc::new(Vec::new());
+        let first = ai.safe_healing_targets(&a, 0, &envelopes);
+        let cloned_ai = ai.clone();
+        assert!(
+            !std::sync::Arc::ptr_eq(&first, &cloned_ai.safe_healing_targets(&b, 0, &envelopes)),
+            "a cloned AI must not answer board B from board A's entry"
+        );
+    }
+
+    /// The target scan is deliberately shared by the cloned boards a frontier
+    /// planner creates, but no state it reads may cross that boundary stale.
+    #[test]
+    fn safe_healing_targets_share_clones_and_refresh_every_board_input() {
+        let mut game = Game::new_full(3, 24, 16, 91_485, 120, 1, false);
+        for pid in [0, 1] {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each major begins with a settler");
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("found the fixture capital");
+        }
+        assert!(game.at_war.insert((0, 1)), "the fixture begins at peace");
+        let hostile_city = game
+            .cities
+            .values()
+            .find(|city| city.owner == 1)
+            .map(|city| city.id)
+            .expect("the second major begins with a city");
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("the fixture seats one city-state");
+        // Keep the identical table on every board below. That makes every
+        // refresh prove the board stamp rather than merely a new envelope.
+        let envelopes = std::sync::Arc::new(Vec::new());
+        let ai = BasicAi::new();
+        let first = ai.safe_healing_targets(&game, 0, &envelopes);
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &ai.safe_healing_targets(&game, 0, &envelopes)
+        ));
+        let clone = game.clone();
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &ai.safe_healing_targets(&clone, 0, &envelopes)
+        ));
+
+        let assert_refresh = |label: &str, board: &Game| {
+            let before = ai.safe_healing_targets(&game, 0, &envelopes);
+            let warm = ai.safe_healing_targets(board, 0, &envelopes);
+            assert!(
+                !std::sync::Arc::ptr_eq(&before, &warm),
+                "{label}: the changed board reused the original target set"
+            );
+            let cold = BasicAi::new().safe_healing_targets(board, 0, &envelopes);
+            assert_eq!(
+                warm.as_ref(),
+                cold.as_ref(),
+                "{label}: the warm cache differs from a fresh scan"
+            );
+        };
+
+        let mut map_changed = game.clone();
+        let owned_tile = map_changed
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                map_changed.city_at(*position).is_none()
+                    && map_changed.map.tiles[position].owner_city == Some(hostile_city)
+            })
+            .expect("the hostile capital owns at least one non-centre tile");
+        map_changed
+            .map
+            .tiles
+            .get_mut(&owned_tile)
+            .unwrap()
+            .owner_city = None;
+        assert_refresh("tile ownership", &map_changed);
+
+        let mut city_changed = game.clone();
+        city_changed.cities.get_mut(&hostile_city).unwrap().wall_hp += 1;
+        assert_refresh("city strike state", &city_changed);
+
+        let mut player_changed = game.clone();
+        player_changed
+            .players
+            .get_mut(0)
+            .unwrap()
+            .envoys
+            .push((minor, 3));
+        assert_refresh("suzerain input", &player_changed);
+
+        let mut diplomacy_changed = game.clone();
+        assert!(
+            diplomacy_changed.at_war.insert((0, 2)),
+            "the added war must change diplomacy"
+        );
+        assert_refresh("war ledger", &diplomacy_changed);
+
+        let different_envelopes = std::sync::Arc::new(Vec::new());
+        let original = ai.safe_healing_targets(&game, 0, &envelopes);
+        let different = ai.safe_healing_targets(&game, 0, &different_envelopes);
+        assert!(
+            !std::sync::Arc::ptr_eq(&original, &different),
+            "a different hostile coverage table reused its target set"
+        );
+    }
+
     /// The pool and the largest blow are different questions, and the pool
     /// answers the survival one wrongly in both directions: three Warriors
     /// that cannot kill anything add up to a lethal tile, while the single
@@ -22384,6 +23278,70 @@ mod tests {
                 .any(|progress| (*progress - 9.0).abs() < f64::EPSILON),
             "the delayed Settler keeps its accumulated production"
         );
+    }
+
+    #[test]
+    fn live_opening_trains_a_shooter_before_more_settlers_despite_a_scout() {
+        for (archery, expected) in [(false, "slinger"), (true, "archer")] {
+            let (mut g, city, _) = barbarian_at_the_gates_game(91_504);
+            for uid in g.player_unit_ids(0) {
+                g.remove_unit(uid);
+            }
+            let home = g.cities[&city].pos;
+            g.spawn_test_unit("scout", 0, home);
+            g.cities.get_mut(&city).unwrap().pop = 2;
+            if archery {
+                g.players[0].techs.insert(crate::name!("archery"));
+            }
+            let settler = Item::Unit {
+                unit: crate::name!("settler"),
+            };
+            g.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: settler,
+                },
+            )
+            .unwrap();
+            g.cities.get_mut(&city).unwrap().production = 9.0;
+            let mut ai = BasicAi::new();
+            ai.garrison_under_fire = true;
+            assert_eq!(ai.barbarian_local_defenders_for_controller(&g, 0, city), 0);
+            ai.cities(&mut g, 0);
+            assert_eq!(
+                g.cities[&city].queue.first(),
+                Some(&Item::Unit {
+                    unit: Name::new(expected)
+                })
+            );
+            assert!(g.cities[&city]
+                .production_progress
+                .values()
+                .any(|p| (*p - 9.0).abs() < f64::EPSILON));
+        }
+    }
+
+    #[test]
+    fn live_shooter_request_is_local_bounded_and_not_a_siege_piece() {
+        let (mut g, city, _) = barbarian_at_the_gates_game(91_505);
+        g.players[0].techs.insert(crate::name!("archery"));
+        g.players[0].techs.insert(crate::name!("engineering"));
+        let mut ai = BasicAi::new();
+        assert!(ai.early_local_shooter_item(&g, 0, city).is_none());
+        ai.garrison_under_fire = true;
+        let archer = Item::Unit {
+            unit: crate::name!("archer"),
+        };
+        assert_eq!(ai.barbarian_defense_item(&g, 0, city), Some(archer.clone()));
+        g.cities.get_mut(&city).unwrap().hp = 100;
+        assert_eq!(ai.besieged_city_item(&g, 0, city), Some(archer));
+        let home = g.cities[&city].pos;
+        let uid = g.spawn_test_unit("archer", 0, home);
+        assert!(ai.early_local_shooter_item(&g, 0, city).is_none());
+        g.remove_unit(uid);
+        g.players[0].techs.insert(crate::name!("machinery"));
+        assert!(ai.early_local_shooter_item(&g, 0, city).is_none());
     }
 
     #[test]
@@ -27712,3 +28670,12 @@ mod attack_envelope_key_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod recovery_project_tests;
+
+#[cfg(test)]
+mod opening_defense_tests;
+
+#[cfg(test)]
+mod exploration_replan_tests;

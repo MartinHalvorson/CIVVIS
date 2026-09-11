@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import time
@@ -14,6 +15,113 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import follow  # noqa: E402
+
+
+#: Seat state this module must not read, redirected for the whole file.
+_SEAT_STATE: list[tuple[str, str]] = []
+_SEAT_STATE_ROOT: tempfile.TemporaryDirectory | None = None
+
+
+def setUpModule() -> None:
+    """Point every seat-state path `follow` holds at a temporary root.
+
+    ⚠⚠ THIS SUITE READ THE SEAT IT WAS RUNNING ON. `follow.OPERATOR_HALT`
+    defaults to `~/.civvis-operator-halt.json`, and the follower is
+    deliberately gated on it — its own comment says "A halt means there is no
+    session to follow", after it survived a halt teardown as a launchd orphan
+    and kept respawning the mirror over a manually launched game. So on any
+    Civilization VI seat that has ever been stopped, `main()` returned before
+    serving and five tests in `FinishedRunStaysOffTheScreen` and `FollowTest`
+    failed — on `mbp-m5-max-128` against clean `origin/main`, green under an
+    empty `HOME`. A validation that is red whatever you change is one nobody
+    reads, and this is the machine the ladder plays on.
+
+    ⭐ DISCOVERED, NEVER LISTED, and the same sweep #3275 put on the climb
+    suite. Every `str` attribute of `follow` that is an absolute path into
+    `$HOME` but NOT inside this checkout is seat state and is redirected;
+    `RIG`, `BIN`, `LOG`, `STATUS` and `STAGE` live under the checkout and are
+    code, so they are left alone. A seat-state path added later is isolated the
+    day it appears, and the assertion below fails if the sweep ever matches
+    nothing.
+
+    The PATHS are redirected rather than the readers stubbed, so each file is
+    still genuinely read through its own missing-file branch — a regression
+    that stopped consulting the halt would still be caught by the tests that
+    write one.
+    """
+    global _SEAT_STATE_ROOT
+    _SEAT_STATE_ROOT = tempfile.TemporaryDirectory()
+    home = os.path.realpath(os.path.expanduser("~"))
+    checkout = os.path.realpath(follow.RIG)
+    for name in sorted(vars(follow)):
+        if name.startswith("__"):
+            continue
+        value = getattr(follow, name)
+        if not isinstance(value, str) or not value.startswith(os.sep):
+            continue
+        resolved = os.path.realpath(value)
+        if not resolved.startswith(home + os.sep):
+            continue
+        if resolved.startswith(checkout + os.sep) or resolved == checkout:
+            continue          # code in this worktree, not seat state
+        _SEAT_STATE.append((name, value))
+        setattr(follow, name,
+                os.path.join(_SEAT_STATE_ROOT.name,
+                             os.path.relpath(resolved, home)))
+    assert _SEAT_STATE, "the seat-state sweep found nothing; it has stopped working"
+
+
+def tearDownModule() -> None:
+    for name, value in _SEAT_STATE:
+        setattr(follow, name, value)
+    _SEAT_STATE.clear()
+    if _SEAT_STATE_ROOT is not None:
+        _SEAT_STATE_ROOT.cleanup()
+
+
+class TheSuiteOwnsItsOwnSeatState(unittest.TestCase):
+    """The sweep's own check: nothing `follow` reads still points into `$HOME`.
+
+    Except the checkout itself, which is code rather than state.
+    """
+
+    def test_no_seat_state_path_still_points_into_the_real_home(self):
+        home = os.path.realpath(os.path.expanduser("~"))
+        checkout = os.path.realpath(follow.RIG)
+        leaks = []
+        for name in sorted(vars(follow)):
+            if name.startswith("__"):
+                continue
+            value = getattr(follow, name)
+            if not isinstance(value, str) or not value.startswith(os.sep):
+                continue
+            resolved = os.path.realpath(value)
+            if resolved.startswith(home + os.sep) and not (
+                    resolved == checkout or resolved.startswith(checkout + os.sep)):
+                leaks.append(f"follow.{name} = {resolved}")
+        self.assertEqual(leaks, [], "these still read the seat this test runs on")
+
+    def test_the_halt_marker_is_redirected_and_absent(self):
+        """An unhalted seat is what an unconfigured test should see."""
+        self.assertFalse(os.path.exists(follow.OPERATOR_HALT))
+        self.assertIn("OPERATOR_HALT", dict(_SEAT_STATE))
+
+    def test_the_redirect_is_load_bearing(self):
+        """The halt is read as `os.path.exists(OPERATOR_HALT)` inside the tick,
+        so redirecting the CONSTANT is what isolates it -- no reader is stubbed
+        and the file is still genuinely consulted. Pinned against the source so
+        a rename cannot leave this suite reading the seat again in silence."""
+        source = (Path(follow.__file__)).read_text(encoding="utf-8")
+        self.assertIn("os.path.exists(OPERATOR_HALT)", source)
+        marker = follow.OPERATOR_HALT
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        try:
+            with open(marker, "w", encoding="utf-8") as handle:
+                handle.write('{"since": "2026-09-09T00:00:00Z"}')
+            self.assertTrue(os.path.exists(follow.OPERATOR_HALT))
+        finally:
+            os.unlink(marker)
+        self.assertFalse(os.path.exists(follow.OPERATOR_HALT))
 
 
 class FollowTest(unittest.TestCase):

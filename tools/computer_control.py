@@ -17,9 +17,9 @@ Every verb here exists because ad-hoc control of this host already failed in a
 measured way (2026-08-07, macOS 26.5.1, the session the Steam reinstall forced):
 
 - **Windows drift.** The operator's standing layout is quadrants — terminal
-  lower-left, CIVVIS upper-left, Civilization VI upper-right, lower-right kept
+  lower-left, CIVVIS upper-right, Civilization VI upper-left, lower-right kept
   free for the operator — and only the game's own placement was scripted
-  (`civ6_play --window-side right`). The rest was hand osascript, re-derived
+  (`civ6_play --window-side left`). The rest was hand osascript, re-derived
   every session, and one wrong `key code` opened Mission Control over the game.
 - **Modals are load-bearing.** A macOS Gatekeeper sheet ("damaged and can't be
   opened", owner `CoreServicesUIAgent`) reads exactly like a slow launch: the
@@ -64,7 +64,7 @@ import civ6_env as env  # noqa: E402
 
 MENU_BAR_PT = 33
 
-# The operator's standing layout (2026-08-02, reconfirmed 2026-08-07): the
+# The operator's standing layout (2026-09-09): the
 # lower-right quadrant is deliberately ABSENT so it stays free for them.
 #
 # CIVVIS is matched by window TITLE, not process: the live mirror is a browser
@@ -72,8 +72,8 @@ MENU_BAR_PT = 33
 # title is the page's. The game and terminal are stable process names.
 STANDARD_LAYOUT = (
     {"quadrant": "lower-left", "process": "Terminal", "title": None},
-    {"quadrant": "upper-left", "process": None, "title": r"CIVVIS|127\.0\.0\.1"},
-    {"quadrant": "upper-right", "process": "Civ6", "title": None},
+    {"quadrant": "upper-right", "process": None, "title": r"CIVVIS|127\.0\.0\.1"},
+    {"quadrant": "upper-left", "process": "Civ6", "title": None},
 )
 
 # Modal owners this project has actually been stopped by, with the buttons that
@@ -373,6 +373,13 @@ def modal_census() -> "list[dict]":
     return found
 
 
+def is_civ6_crash_alert(modal: dict) -> bool:
+    """The macOS alert observed covering the turn-114 recovery on 2026-09-09."""
+    return modal.get("owner") == "UserNotificationCenter" and bool(re.search(
+        r'\bcivilization vi["”]?\s+quit unexpectedly\b',
+        modal.get("text") or "", re.IGNORECASE))
+
+
 def choose_dismissal(modal: dict) -> "str | None":
     """The button to press for this modal, or None to leave it alone.
 
@@ -384,6 +391,9 @@ def choose_dismissal(modal: dict) -> "str | None":
     if spec is None:
         return None
     buttons = modal.get("buttons") or []
+    if is_civ6_crash_alert(modal):
+        # Reopen starts a second, unowned game. Ignore only closes this report.
+        return "Ignore" if "Ignore" in buttons else None
     for name in spec["safe_buttons"]:
         if name in buttons:
             return name
@@ -396,9 +406,11 @@ def choose_dismissal(modal: dict) -> "str | None":
     return None
 
 
-def dismiss_modals() -> "list[dict]":
+def dismiss_modals(*, civ6_crashes_only: bool = False) -> "list[dict]":
     report = []
     for modal in modal_census():
+        if civ6_crashes_only and not is_civ6_crash_alert(modal):
+            continue
         button = choose_dismissal(modal)
         entry = dict(modal, action=button or "left alone")
         if button:

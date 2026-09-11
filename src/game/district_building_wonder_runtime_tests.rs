@@ -464,6 +464,29 @@ fn routes_level_per_tile_and_engineers_lay_railroads() {
     }
     let warrior = game.spawn_unit("warrior", 0, a);
     assert!((game.unit_step_cost(warrior, a, b) - 2.0).abs() < 1e-9);
+    // A route on the destination alone does not flatten an off-road entry.
+    // Live Pikeman 2818080 stopped on this first hill of a two-step retreat;
+    // pricing it at one point invented movement toward the final refuge.
+    for level in 1..=5 {
+        game.map.tiles.get_mut(&b).unwrap().road = level;
+        assert_eq!(
+            game.unit_step_cost(warrior, a, b),
+            2.0,
+            "road level {level} cannot discount an off-road origin"
+        );
+        let mut moved = game.clone();
+        moved.units.get_mut(&warrior).unwrap().moves_left = 2.0;
+        moved
+            .apply(
+                0,
+                &Action::Move {
+                    unit: warrior,
+                    to: b,
+                },
+            )
+            .unwrap();
+        assert_eq!(moved.units[&warrior].moves_left, 0.0);
+    }
     // The shipped ladder, per tile: Ancient/Medieval 1 MP, Industrial
     // 0.75, Modern 0.5, Railroad 0.25.
     for (level, expected) in [(1, 1.0), (2, 1.0), (3, 0.75), (4, 0.5), (5, 0.25)] {
@@ -564,6 +587,26 @@ fn a_bridged_river_crossing_costs_its_route_and_never_returns_movement() {
             "a level {level} bridge costs {cost} MP, expected {expected}"
         );
     }
+
+    // Amphibious removes the river penalty; it must not replace a valid
+    // route discount with the destination's terrain cost afterwards.
+    game.units
+        .get_mut(&warrior)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("amphibious"));
+    game.map.tiles.get_mut(&a).unwrap().road = 3;
+    game.map.tiles.get_mut(&b).unwrap().road = 3;
+    game.map.tiles.get_mut(&b).unwrap().hills = true;
+    assert_eq!(game.unit_step_cost(warrior, a, b), 0.75);
+    game.map.tiles.get_mut(&a).unwrap().road = 0;
+    assert_eq!(
+        game.unit_step_cost(warrior, a, b),
+        2.0,
+        "Amphibious waives the river, not an off-road hill entry"
+    );
+    game.units.get_mut(&warrior).unwrap().promotions.clear();
+    game.map.tiles.get_mut(&b).unwrap().hills = false;
 
     // The price is not why this matters. A step costing less than nothing
     // *returns* movement, so a unit crossing a bridge and back regains MP
@@ -2016,4 +2059,48 @@ fn climate_accords_projects_consume_the_exact_host_power_plant() {
             );
         }
     }
+}
+
+#[test]
+fn host_concert_plots_bound_destination_scoring_and_performance() {
+    let (mut game, city, venue) = one_city(774_4063);
+    let rival = game.players.len();
+    game.players.push(Player::new(rival, "Venue Rival", false));
+    game.cities.get_mut(&city).unwrap().owner = rival;
+    install_district(&mut game, city, venue, "theater_square");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("broadcast_center"));
+    let band = game.spawn_test_unit("rock_band", 0, venue);
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    assert!(game.rock_concert_ai_value(0, band, venue).is_some());
+    assert!(game.rock_concert_tourism(0, band).is_some());
+    for plots in [BTreeSet::new(), BTreeSet::from([(venue.0 + 1, venue.1)])] {
+        Arc::make_mut(&mut game.host_unit_facts).insert(
+            band,
+            HostUnitFacts {
+                concert_plots: Some(plots),
+                ..Default::default()
+            },
+        );
+        assert_eq!(game.rock_concert_ai_value(0, band, venue), None);
+        assert_eq!(game.rock_concert_tourism(0, band), None);
+        assert!(game
+            .apply(0, &Action::PerformConcert { unit: band })
+            .is_err());
+    }
+    Arc::make_mut(&mut game.host_unit_facts)
+        .get_mut(&band)
+        .unwrap()
+        .concert_plots = Some(BTreeSet::from([venue]));
+    assert!(game.rock_concert_ai_value(0, band, venue).is_some());
+    assert!(game
+        .apply(0, &Action::PerformConcert { unit: band })
+        .is_ok());
 }

@@ -163,6 +163,30 @@ class AProfileOfTheWrongProcessIsRefused(unittest.TestCase):
     def test_a_real_profile_passes_the_same_check(self):
         parsed().check_is_this_program()  # must not raise
 
+    def test_a_parked_coordinator_does_not_hide_a_real_game_worker(self):
+        parked = """    2000 Thread_coordinator
+      2000 __sigsuspend
+"""
+        profile = parsed(SAMPLE.replace("Call graph:\n", "Call graph:\n" + parked))
+        profile.check_is_this_program()
+        self.assertIn("Thread_1", profile.thread["name"])
+        self.assertEqual(profile.process_total, 3040)
+
+    def test_a_crate_bearing_parked_worker_loses_to_active_work(self):
+        parked = """    2000 Thread_parked_game
+      2000 civvis::worker
+        1900 _pthread_cond_wait
+          1900 __psynch_cvwait
+"""
+        profile = parsed(SAMPLE.replace("Call graph:\n", "Call graph:\n" + parked))
+        self.assertEqual(profile.thread_working_samples(profile.threads[0]), 100)
+        self.assertIn("Thread_1", profile.thread["name"])
+
+    def test_crate_frames_after_four_hundred_nodes_are_not_lost(self):
+        prefix = "".join("      1 unrelated_frame_%d\n" % i for i in range(401))
+        text = SAMPLE.replace("      1000 start", prefix + "      1000 start")
+        parsed(text).check_is_this_program()
+
     def test_a_report_with_no_call_graph_says_so(self):
         with self.assertRaises(SystemExit):
             profiler.Profile("Analysis of sampling time\n", rustfilt=None)
@@ -243,10 +267,61 @@ class TheShapeComesFromTheScreen(unittest.TestCase):
         command = profiler.simulate_command(
             Path("/bin/civvis"), 7311001, 250, profiler.screen_shape(REPO))
         for flag in ("--players", "--width", "--height", "--city-states",
-                     "--map", "--speed", "--turns", "--jobs"):
+                     "--map", "--shape", "--speed", "--turns", "--jobs"):
             self.assertIn(flag, command)
         self.assertEqual(command[command.index("--turns") + 1], "250")
         self.assertEqual(command[command.index("--jobs") + 1], "1")
+
+    def test_the_topology_is_the_one_the_screen_gets_by_not_asking(self):
+        """★★★ THE SIXTH LEG, AND THE ONLY ONE `simulate` DISAGREES ABOUT.
+
+        `gene_screen` names no `map_topology`, so it plays the enum's
+        `#[default]` -- Flat -- while `civvis simulate` falls back to Planet. A
+        profile taken without `--shape` was of a globe, which runs
+        `Sphere::distance` and `arc_is_clear` that the batch never touches.
+        """
+        self.assertEqual(profiler.screen_topology(REPO), "flat")
+        source = (REPO / "src" / "setup.rs").read_text(encoding="utf-8")
+        self.assertIn("pub enum MapTopology", source)
+        # Derived, not pinned: the screen is what decides it.
+        screen = (REPO / "src" / "bin" / "gene_screen.rs").read_text(encoding="utf-8")
+        self.assertNotIn("map_topology:", screen,
+                         "the screen now names a topology; screen_topology must "
+                         "read THAT, and this test should assert it instead")
+
+    def test_a_screen_that_names_a_topology_wins_over_the_default(self):
+        class Fake:
+            def __init__(self):
+                self.wanted = "gene_screen.rs"
+
+            def __truediv__(self, other):
+                self.wanted = str(other)
+                return self
+
+            def read_text(self, **_kwargs):
+                if self.wanted.endswith("gene_screen.rs"):
+                    return "map_topology: MapTopology::Planet,"
+                return "pub enum MapTopology {\n    #[default]\n    Flat,\n}"
+
+        self.assertEqual(profiler.screen_topology(Fake()), "planet")
+
+    def test_an_enum_with_no_default_fails_loudly(self):
+        class Fake:
+            def __init__(self):
+                self.wanted = ""
+
+            def __truediv__(self, other):
+                self.wanted = str(other)
+                return self
+
+            def read_text(self, **_kwargs):
+                if self.wanted.endswith("gene_screen.rs"):
+                    return "const SCREEN_PLAYERS: usize = 6;"
+                return "pub enum MapTopology {\n    Flat,\n    Planet,\n}"
+
+        with self.assertRaises(SystemExit) as raised:
+            profiler.screen_topology(Fake())
+        self.assertIn("#[default]", str(raised.exception))
 
     def test_a_renamed_constant_fails_loudly(self):
         class Fake:

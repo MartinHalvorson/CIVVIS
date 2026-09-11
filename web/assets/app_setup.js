@@ -525,16 +525,6 @@ function updateRestartSimulationButton() {
   setupStart.textContent = button.querySelector(".lbl").textContent;
   setupStart.title = button.title;
 }
-function openSinglePlayerSetup() {
-  if (newSimulationBusy) return;
-  document.getElementById("humanplayers").value = "single";
-  document.getElementById("gamemode").value = "civ";
-  syncSetupMode();
-  updateRestartSimulationButton();
-  openGameMenu();
-  document.getElementById("leader").focus({preventScroll: true});
-  refreshSaves();
-}
 function stageSelectedSimulationSettings() {
   updateRestartSimulationButton();
   if (worldSetupInputError()) return;
@@ -560,7 +550,7 @@ function setNewSimulationBusy(busy) {
     ...document.querySelectorAll("#newgame-options select, #newgame-options input, #newgame-options button"),
     document.getElementById("restart-sim"), document.getElementById("specpause"),
     document.getElementById("collapsepause"),
-    document.getElementById("single-player-entry"), document.getElementById("setup-start"),
+    document.getElementById("setup-start"),
   ].filter(Boolean);
   if (busy) {
     for (const control of controls) {
@@ -866,41 +856,15 @@ function battlefieldSize(id) {
 function isBattlefieldMapScript(id) {
   return id === "battlefield" || battlefieldScripts().some(script => script.id === id);
 }
-// The world on screen right now, in the one term the mode chip cares about.
-// Before the first observation the query string is the only evidence there
-// is, and a link into a battlefield carries the map in it — so a deep link
-// never spends its first seconds offering the mode it just opened.
+// The world on screen right now, in the one term the arena's own rules care
+// about. Before the first observation the query string is the only evidence
+// there is, and a link into a battlefield carries the map in it — so a deep
+// link is read as an arena from its first frame rather than its second.
 function watchingBattlefield() {
   if (state && state.map && state.map.script !== undefined)
     return isBattlefieldMapScript(state.map.script);
   const asked = new URL(location.href).searchParams.get("map") || "";
   return isBattlefieldMapScript(asked.trim().toLowerCase());
-}
-// The world the Tactics side of the chip opens: the same two even armies on
-// the same 20x20 field the home page's Tactics card offers, so the site has
-// one Tactics world rather than two that differ for no reason. `era=random`
-// is the lobby's own Tactics default — a fresh era every battle — said in the
-// link, because a link that names nothing leaves the rule on whatever the
-// previous world set.
-const TACTICS_CHIP_QUERY = "map=battlefield&players=2&era=random&arena=20x20";
-// The mode chip beside Home. It always names the mode the deck is NOT
-// showing, which makes the whole distance between Civvis and Tactics one click
-// in either direction. Going back to Civvis asks for nothing at all, because a
-// visit that names no settings is the stock exhibition. Both destinations
-// keep the path this document was served from: the front page and /test are
-// different builds of the viewer, and choosing a game mode is no reason to
-// move a viewer off the lane they came in on.
-function syncModeLink(tactics = watchingBattlefield()) {
-  const link = document.getElementById("modelink");
-  if (!link) return;
-  // A circle crossed by its own equator and meridian: the astronomer's Earth,
-  // and the brand mark directly above it. Both marks are drawn in outline
-  // because the ⌂ they stand beside is — a filled ◉ shouts over it.
-  link.textContent = tactics ? "⊕ Civvis" : "⚔ Tactics";
-  link.href = tactics ? location.pathname : `${location.pathname}?${TACTICS_CHIP_QUERY}`;
-  link.title = tactics
-    ? "Leave the arena for the full game: whole civilizations on a fresh world"
-    : "Watch the Tactics mode: two even armies on one bounded field";
 }
 function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
@@ -1421,16 +1385,14 @@ async function playOnPastVictory(mode, paused) {
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
 document.getElementById("setup-start").onclick = startNewSimulation;
-document.getElementById("single-player-entry").onclick = openSinglePlayerSetup;
 document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
 
 // ── deferred cross-file init ─────────────────────────────────────────────────
 // app.js loads before this file, so its load-time init cannot call anything
-// defined here (readSetting, syncModeLink, …) — the first such call threw and
-// the crash cascaded until the page never registered as a viewer. Those calls
-// live HERE, at the very end of the second script, where every declaration in
-// both files is guaranteed initialized. Order preserved: the advanced-settings
-// composition first, then the mode chip, both still ahead of the engine's
-// first /state answer (boot's synchronous prefix ends at its first await).
+// defined here (readSetting, initAdvancedSettings, …) — the first such call
+// threw and the crash cascaded until the page never registered as a viewer.
+// Those calls live HERE, at the very end of the second script, where every
+// declaration in both files is guaranteed initialized, and still ahead of the
+// engine's first /state answer (boot's synchronous prefix ends at its first
+// await).
 initAdvancedSettings();
-syncModeLink();

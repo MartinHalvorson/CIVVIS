@@ -69,6 +69,7 @@ sys.path.insert(0, str(HERE))
 from civ6_control import (gamelock, install, launcher, macos_input,
                           macos_window, popup_clear)  # noqa: E402
 import civ6_env as env  # noqa: E402
+import computer_control as desktop_control  # noqa: E402
 # The objective list is not restated here. This launcher's `--victory` is
 # forwarded verbatim to `civ6_play.py --civvis-victory`, which forwards it
 # verbatim to `civvis_orders --victory`; a second copy of the names is a second
@@ -77,7 +78,13 @@ import civ6_env as env  # noqa: E402
 # The default is imported for the same reason the list is: this launcher used
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
-from civ6_play import ROMAN_LEADER, VICTORY_LANES, enforce_roman_leader  # noqa: E402
+from civ6_play import ROMAN_LEADER, VICTORY_LANES, resolve_live_leader  # noqa: E402
+from civ6_play import OPTIONS as SETUP_OPTIONS  # noqa: E402
+
+# The map scripts `civ6_play` can drive the Create Game panel to. Taken from
+# that module rather than restated here: a list copied into a second file is
+# complete on the day it is written and silently wrong afterwards.
+MAP_SCRIPTS = list(SETUP_OPTIONS["map_type"])
 # The run's supplied binary can come from another checkout than this bridge.
 # Reuse the same provenance and digest helpers the brain writes into
 # `runtime_updates.jsonl`, so the human-facing climb log and the durable dossier
@@ -232,6 +239,12 @@ def dismiss_crash_dialogs() -> None:
     end tell
     """
     run(["osascript", "-e", script], timeout=25.0)
+    # Newer macOS crash alerts belong to UserNotificationCenter. Its other
+    # windows may be permission prompts, so use the text-gated crash-only path.
+    try:
+        desktop_control.dismiss_modals(civ6_crashes_only=True)
+    except Exception:
+        pass  # Accessibility being unavailable must not prevent recovery.
 
 
 def _cleanup_ownership_path(tag: str) -> Path:
@@ -2047,9 +2060,10 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--tag", tag,
          "--orders-db", str(orders_db),
          "--difficulty", args.difficulty,
+         "--map", args.map,
          "--map-size", args.map_size,
          "--speed", args.speed,
-         "--leader", ROMAN_LEADER]
+         "--leader", resolve_live_leader(getattr(args, "leader", None))]
         + (["--load-save", str(load_save)] if load_save is not None else [])
         + [
          "--max-turns", str(args.max_turns),
@@ -2094,7 +2108,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          # frame was never forwarded here, so no ladder run has played it.
          "--combat-frames", str(args.combat_frames),
          "--replan-frames", str(args.replan_frames),
-         "--window-side", "right",
+         "--window-side", "left",
          "--window-frac", "0.5", "--window-vfrac", "0.5"]
     )
 
@@ -2419,7 +2433,15 @@ def main() -> int:
                     help="allow prompt-clearing when --envoys is enabled; use "
                          "--no-envoy-consider for an isolated run")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER")
+    # The map script the Create Game panel is driven to. It was never forwarded
+    # from here, so every ladder game played the `civ6_play` default whatever a
+    # host's policy asked for; on Continents a seat can start alone, which a
+    # domination lane cannot recover from. `civ6_play` verifies the choice twice
+    # -- on the panel, and against `MapConfiguration.GetScript()` in the `seat`
+    # event -- so forwarding it is safe to do and visible when it misses.
+    ap.add_argument("--map", default="Continents.lua", choices=MAP_SCRIPTS)
     # Six players, because the size IS the player count — see `civ6_play.py`.
+    # MAPSIZE_TINY is four, MAPSIZE_DUEL two.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
@@ -2453,11 +2475,9 @@ def main() -> int:
     # consecutive rows comparable at all. Rows recorded before this change carry a
     # random seat and cannot be pooled with rows recorded after it.
     #
-    # The operator has since made this an invariant rather than a launcher
-    # default: any explicit non-Roman value is recorded and coerced below.
+    # Keep the default deterministic and forward explicit operator selections.
     ap.add_argument("--leader", default=ROMAN_LEADER,
-                    help="accepted for compatibility; live games always select "
-                         "Rome's Trajan")
+                    help="Civ VI leader identifier (default: Trajan)")
     ap.add_argument("--timeout", type=float, default=5400.0)
     # ⚠⚠⚠ THE OUTER WATCHDOG MUST SIT ABOVE THE INNER CEILING, NOT ABOVE
     # `--timeout`, AND FOR TEN DAYS IT DID BOTH BECAUSE THEY WERE THE SAME
@@ -2653,7 +2673,7 @@ def main() -> int:
                     help="allow the code to change mid-batch; rows stop being "
                          "comparable and the ledger can only say so afterwards")
     args = ap.parse_args()
-    args.leader = enforce_roman_leader(args.leader, caller="civ6_civvis_climb")
+    args.leader = resolve_live_leader(args.leader)
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
     args.victory = operator_victory_lane(args.victory)

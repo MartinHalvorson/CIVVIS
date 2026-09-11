@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -85,6 +86,23 @@ class TheGuardIsSelective(unittest.TestCase):
         # Settings window's close button is the other, separate, operation).
         self.assertEqual(len(re.findall(r"perform act\b", script)), 1)
         self.assertEqual(script.count('perform action "AXPress"'), 1)
+
+    def test_it_stands_off_while_a_person_is_using_the_mac(self):
+        """It closes System Settings windows. Done under someone's hands that is
+        the interference the guard exists to spare the GAME, done to the person.
+        Same idle clock and threshold as tools/civ6_control/operator_presence.py."""
+        import re
+        source = GUARD.read_text(encoding="utf-8")
+        self.assertIn("HIDIdleTime", source)
+        self.assertIn("operator_active", source)
+        loop = source[source.index("while true; do"):]
+        self.assertLess(loop.index("if operator_active; then"), loop.index("OFF"),
+                        "presence is checked before the pass, not after it")
+        default = re.search(r"PRESENCE_IDLE_S=\$\{CIVVIS_PRESENCE_IDLE_S:-(\d+)\}", source)
+        self.assertIsNotNone(default)
+        sys.path.insert(0, str(GUARD.parent.parent / "civ6_control"))
+        from civ6_control import operator_presence
+        self.assertEqual(int(default.group(1)), int(operator_presence.DEFAULT_THRESHOLD_SECONDS))
 
     def test_it_derives_its_paths(self):
         executable = [line for line in GUARD.read_text().splitlines()
@@ -197,9 +215,23 @@ class TheGuardRunsWhereItShould(unittest.TestCase):
         every pass on the host hung; a pass is bounded now."""
         with TemporaryDirectory() as raw:
             home = Path(raw)
+            # ⚠⚠ A UNIQUE DURATION, BECAUSE `pgrep -f` SEARCHES THE WHOLE
+            # MACHINE. This asserted below that no `sleep 30` was left running
+            # anywhere, which is only the guard's own child on an otherwise idle
+            # host. On `mbp-m5-max-128` it matched the civvis spectator runner's
+            # poll loop (`tools/ops/civvis-spectator-runner.sh`, pid 1566) and
+            # the test failed for a reason that had nothing to do with the
+            # guard — red on a real seat, green on a CI runner where nothing
+            # else happens to sleep for thirty seconds.
+            #
+            # The fraction makes the pattern this run's own. `sleep` takes a
+            # fractional operand, so the stub still blocks for ~30s and the
+            # bound the test measures is unchanged.
+            nonce = f"30.{uuid.uuid4().int % 100000:05d}"
             # Not `osascript`: _env writes the fast stub under that name.
             slow = home / "slow-osascript"
-            slow.write_text("#!/bin/zsh\ncat > /dev/null\nsleep 30\nprint -r -- 'alerts=0 closed=0 settings=0'\n")
+            slow.write_text(f"#!/bin/zsh\ncat > /dev/null\nsleep {nonce}\n"
+                            "print -r -- 'alerts=0 closed=0 settings=0'\n")
             slow.chmod(0o755)
             env = self._env(raw, CIVVIS_FOREGROUND_GUARD_LANE="1",
                             CIVVIS_FOREGROUND_GUARD_PASS_TIMEOUT="1",
@@ -209,9 +241,10 @@ class TheGuardRunsWhereItShould(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
             self.assertLess(time.monotonic() - started, 10, "the pass must be bounded")
             self.assertEqual(done.stdout.strip(), "timeout")
-            self.assertEqual(subprocess.run(["pgrep", "-f", f"[s]leep 30"],
-                                            capture_output=True, text=True).stdout, "",
-                             "the slow osascript must not be left running")
+            self.assertEqual(
+                subprocess.run(["pgrep", "-f", f"[s]leep {nonce}"],
+                               capture_output=True, text=True).stdout, "",
+                "the slow osascript must not be left running")
 
     def test_a_guard_whose_lock_is_gone_exits(self):
         """A test's temporary HOME, a reaped directory: the guard's lock lives

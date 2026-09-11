@@ -984,8 +984,29 @@ impl HostMoveRefusals {
             self.same_turn_deal_orders.clear();
             self.same_turn_production_orders.clear();
         }
+        // A planner may revise a queue several times before this batch is
+        // sent (for example, restoring a military build after an economic
+        // pass). Only its final choice should acquire the host-turn lease.
+        // Later calls still cannot overwrite a choice already sent this turn.
+        let final_production: std::collections::BTreeMap<_, _> = orders
+            .iter()
+            .enumerate()
+            .filter(|(_, order)| order.kind == "produce" && order.verb.is_some())
+            .filter_map(|(index, order)| order.subject.map(|city| (city, index)))
+            .collect();
+        let before = orders.len();
+        let mut index = 0;
+        orders.retain(|order| {
+            let keep = order.kind != "produce"
+                || order.verb.is_none()
+                || order
+                    .subject
+                    .is_none_or(|city| final_production[&city] == index);
+            index += 1;
+            keep
+        });
         let frame = state.frame;
-        let mut dropped = 0;
+        let mut dropped = before - orders.len();
         orders.retain(|order| {
             if order.kind == "produce" {
                 if let (Some(city), Some(verb)) = (order.subject, order.verb.as_deref()) {
@@ -1257,6 +1278,162 @@ impl HostMoveRefusals {
             }
         }
     }
+}
+
+/// ⭐ THE ACTUATION CONTRACT: an order earns a verified outcome or an explained
+/// refusal, and one the host has provably refused stops being re-sent.
+///
+/// ## What was happening instead
+///
+/// The bridge already checks every order it sends. `settle_pending_orders`
+/// pairs each `IssuedOrder` with a [`Verdict`] on the next turn's frame and
+/// ships the answers back as `order_verified` / `order_failed` rows. Nothing
+/// then reads them. The verdicts are a ledger, and the decision that produced
+/// the order never sees one — so an order the host refuses is re-derived from
+/// the same persistent agent state next turn, re-translated to a byte-identical
+/// `Order`, and sent again. Recorded live: **13.9% of all orders come back
+/// `did_not_move`**, and the same refused `MOVE_TO` has been re-issued **eleven
+/// turns running**. `suppress_same_turn_replays` cannot see it: it resets on
+/// every new turn, so it stops a duplicate within a turn and never a repeat
+/// across one.
+///
+/// ## What this does
+///
+/// Counts *consecutive identical* failures. An order is identified by
+/// everything the host is told — kind, verb, subject and target plot — so a
+/// re-planned destination is a different order and starts clean. After
+/// [`ORDER_REFUSAL_STRIKES`] failures with the same reason, that exact order is
+/// withheld for [`ORDER_REFUSAL_COOLDOWN_TURNS`] host turns and the reply says
+/// so by name. Any `Verified` for that identity clears the record immediately.
+///
+/// ⚠ **The reason is compared, not classified.** `HostMoveRefusals` keeps a
+/// hand-written list of two reason strings it trusts as proof of dead ground
+/// and rejects the rest as transient. That list is right for the question it
+/// asks and would be wrong here, and a hand-written list of reasons is exactly
+/// the shape that goes stale as the mod learns to name new ones. A genuinely
+/// transient condition — no movement left, a unit in the way this turn — does
+/// not produce the *same* reason three turns running; a standing refusal does.
+/// So the rule needs no list and cannot fall behind the mod.
+///
+/// ⚠ `Unverifiable` never counts, in either direction. An order whose effect
+/// the frame cannot show is not evidence of anything, so it neither earns a
+/// strike nor clears one.
+const ORDER_REFUSAL_STRIKES: u32 = 3;
+
+/// How long a struck-out order stays withheld, in host turns. Long enough that
+/// the agent's own re-planning gets a clear run at the problem, short enough
+/// that ground which genuinely opens up — a war ending, a border opening, a
+/// blocking unit leaving — is retried inside one era.
+const ORDER_REFUSAL_COOLDOWN_TURNS: u32 = 10;
+
+/// Everything the host is told about one order. Two orders with the same
+/// identity are the same request; anything else is a new one.
+type OrderIdentity = (String, Option<String>, Option<i64>, Option<(i32, i32)>);
+
+fn order_identity(order: &IssuedOrder) -> OrderIdentity {
+    (
+        order.kind.clone(),
+        order.verb.clone(),
+        order.subject,
+        order.pos,
+    )
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RefusalRecord {
+    /// Consecutive failures carrying `reason`.
+    strikes: u32,
+    reason: String,
+    /// The turn the cooldown expires on, once the strikes are spent.
+    until: Option<u32>,
+}
+
+#[derive(Default)]
+struct HostOrderRefusals {
+    seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
+}
+
+impl HostOrderRefusals {
+    /// Read one turn's checks. `turn` is the turn the orders were sent on.
+    fn observe(&mut self, checks: &[OrderCheck], turn: u32) {
+        for check in checks {
+            let identity = order_identity(&check.order);
+            match &check.verdict {
+                // The host did what was asked, so whatever went before is
+                // history: this order works.
+                Verdict::Verified => {
+                    self.seen.remove(&identity);
+                }
+                Verdict::Failed(reason) => {
+                    let record = self.seen.entry(identity).or_insert(RefusalRecord {
+                        strikes: 0,
+                        reason: reason.clone(),
+                        until: None,
+                    });
+                    if record.reason == *reason {
+                        record.strikes += 1;
+                    } else {
+                        // A different answer is a different problem. The host
+                        // is not standing on one refusal, so the count starts
+                        // again rather than accumulating across causes.
+                        record.reason = reason.clone();
+                        record.strikes = 1;
+                    }
+                    record.until = (record.strikes >= ORDER_REFUSAL_STRIKES)
+                        .then_some(turn + ORDER_REFUSAL_COOLDOWN_TURNS);
+                }
+                Verdict::Unverifiable => {}
+            }
+        }
+    }
+
+    /// Why this order is withheld, if it is.
+    fn withheld(&self, order: &Order, turn: u32) -> Option<&str> {
+        let identity = (
+            order.kind.to_string(),
+            order.verb.clone(),
+            order.subject,
+            order.pos,
+        );
+        self.seen
+            .get(&identity)
+            .filter(|record| record.until.is_some_and(|until| turn < until))
+            .map(|record| record.reason.as_str())
+    }
+
+    /// Drop records whose cooldown has run out, so the table tracks the live
+    /// problem rather than the whole game's history.
+    fn sweep(&mut self, turn: u32) {
+        self.seen
+            .retain(|_, record| record.until.is_none_or(|until| turn < until));
+    }
+}
+
+/// Withhold the orders that have struck out, and name each one.
+///
+/// Returns the surviving orders and one `kind:verb reason` line per withheld
+/// order, so a refusal that stops being sent is visible in the reply rather
+/// than simply absent.
+fn withhold_refused_orders(
+    orders: Vec<Order>,
+    turn: u32,
+    refusals: &mut HostOrderRefusals,
+) -> (Vec<Order>, Vec<String>) {
+    refusals.sweep(turn);
+    let mut allowed = Vec::with_capacity(orders.len());
+    let mut withheld = Vec::new();
+    for order in orders {
+        match refusals.withheld(&order, turn) {
+            Some(reason) => withheld.push(format!(
+                "{}:{} {}",
+                order.kind,
+                order.verb.as_deref().unwrap_or("-"),
+                reason
+            )),
+            None => allowed.push(order),
+        }
+    }
+    (allowed, withheld)
 }
 
 /// Withhold only peace orders whose known Firaxis cooldown has not expired.
@@ -2089,6 +2266,7 @@ fn append_border_buy_order(
 // under `LUXURY_BUY_CEILING_MIN` — two Gold a turn, the cheapest ask on
 // record — is not worth a deal window.
 const LUXURY_BUY_MIN_DEFICIT: f64 = 2.0;
+const LUXURY_BUY_EMERGENCY_DEFICIT: f64 = 4.0;
 const LUXURY_BUY_GOLD_RESERVE: i64 = 60;
 const LUXURY_BUY_INCOME_FLOOR: f64 = 4.0;
 const LUXURY_BUY_CEILING_BASE: i32 = 135;
@@ -2117,7 +2295,8 @@ fn append_luxury_buy_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> Option<&'static str> {
-    if amenity_deficit(state) < LUXURY_BUY_MIN_DEFICIT {
+    let deficit = amenity_deficit(state);
+    if deficit < LUXURY_BUY_MIN_DEFICIT {
         return Some("luxury_buy_hold:content");
     }
     if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
@@ -2126,9 +2305,23 @@ fn append_luxury_buy_order(
     let Some(income) = state.gold_per_turn.filter(|income| income.is_finite()) else {
         return Some("luxury_buy_hold:income_unknown");
     };
-    let carried = (25.0 * (income - LUXURY_BUY_INCOME_FLOOR))
+    let income_carried = (25.0 * (income - LUXURY_BUY_INCOME_FLOOR))
         .floor()
         .clamp(0.0, LUXURY_BUY_CEILING_MAX as f64) as i32;
+    // A severe amenity deficit can itself push income below the ordinary
+    // safety floor through the host's yield penalty. Preserve that floor for
+    // ordinary shortages, but let the treasury carry one emergency luxury
+    // ask when four or more amenities are missing and the reserve can survive
+    // it. The ask remains bounded by the normal ceiling.
+    let carried = if deficit >= LUXURY_BUY_EMERGENCY_DEFICIT {
+        income_carried.max(
+            (state.gold - LUXURY_BUY_GOLD_RESERVE)
+                .max(0)
+                .min(LUXURY_BUY_CEILING_MAX as i64) as i32,
+        )
+    } else {
+        income_carried
+    };
     let worth = LUXURY_BUY_CEILING_BASE
         + LUXURY_BUY_CEILING_PER_CITY * state.cities.len().min(i32::MAX as usize) as i32;
     let ceiling = worth.min(LUXURY_BUY_CEILING_MAX).min(carried);
@@ -2476,16 +2669,8 @@ fn append_work_sale_order(
 // ordinary emergency purchases, and will never spend more score than the
 // official project gives.  The current tracker—not a guessed opponent total—
 // sets the exact amount required to move strictly ahead.
-const AID_GIFT_FINISH_WINDOW: i64 = 3;
-const AID_GIFT_GOLD_RESERVE: i64 = 100;
-const AID_GIFT_SCORE_MAX: i64 = 200;
-
-fn aid_request_kind(kind: &str) -> bool {
-    matches!(
-        kind.trim(),
-        "EMERGENCY_SEND_AID" | "EMERGENCY_SEND_MILITARY_AID"
-    )
-}
+#[cfg(test)]
+use civvis::ai::player::aid::FINISH_WINDOW as AID_GIFT_FINISH_WINDOW;
 
 /// The share of the treasury a ROUTED peace offer may carry as tribute on
 /// its retry, and the most it may ever carry. ★ 2026-08-24: over 42 live
@@ -2508,24 +2693,6 @@ fn peace_tribute_cap(state: &civvis::mirror::StateSnapshot, routed: bool) -> i32
         return 0;
     }
     ((state.gold as f64 * PEACE_TRIBUTE_SHARE).floor() as i64).clamp(0, PEACE_TRIBUTE_MAX) as i32
-}
-
-/// The smallest integral gift that puts our tracker score strictly above every
-/// finite score Firaxis currently reports.  `None` says the host has not given
-/// an authoritative enough board, or the gap exceeds the bounded fallback.
-fn aid_gift_needed_score(emergency: &civvis::mirror::StateEmergency) -> Option<i64> {
-    let ours = emergency.ours.score.filter(|score| score.is_finite())?;
-    let leader = emergency
-        .scores
-        .iter()
-        .map(|entry| entry.score)
-        .filter(|score| score.is_finite())
-        .fold(ours, f64::max);
-    let needed = (leader - ours).floor() + 1.0;
-    if !needed.is_finite() || needed < 1.0 || needed > AID_GIFT_SCORE_MAX as f64 {
-        return None;
-    }
-    Some(needed as i64)
 }
 
 /// A host-reported Send Aid project already reaches the current emergency's
@@ -2558,34 +2725,34 @@ fn append_aid_gift_order(
     let Some(emergencies) = state.emergencies.as_ref() else {
         return Some("aid_gift_hold:no_tracker");
     };
-    let spendable = state.gold.saturating_sub(AID_GIFT_GOLD_RESERVE);
-    let candidate = emergencies
+    let opportunities: Vec<_> = emergencies
         .iter()
-        .filter(|emergency| {
-            aid_request_kind(&emergency.kind)
-                && emergency.begun
-                && emergency.turns_left >= 0
-                && emergency.turns_left <= AID_GIFT_FINISH_WINDOW
-                && emergency.ours.member
-                && emergency.target >= 0
-                && !aid_project_finishes_by_deadline(state, emergency)
-        })
-        .filter_map(|emergency| {
-            let amount = aid_gift_needed_score(emergency)?;
-            if amount > spendable {
-                return None;
-            }
-            let target_is_peaceful_met_major = state
+        .map(|emergency| civvis::ai::player::aid::Opportunity {
+            kind: &emergency.kind,
+            target: emergency.target,
+            turns_left: emergency.turns_left,
+            begun: emergency.begun,
+            member: emergency.ours.member,
+            ours: emergency.ours.score,
+            leader: emergency.ours.score.map(|_| {
+                emergency
+                    .scores
+                    .iter()
+                    .filter(|entry| entry.player != i64::from(state.seat.local_player))
+                    .map(|entry| entry.score)
+                    .filter(|score| score.is_finite())
+                    .fold(0.0, f64::max)
+            }),
+            peaceful_met_target: state
                 .rivals
                 .iter()
-                .any(|rival| rival.player as i64 == emergency.target && !rival.at_war);
-            target_is_peaceful_met_major.then_some((emergency, amount))
+                .any(|rival| rival.player as i64 == emergency.target && !rival.at_war),
+            project_finishes: aid_project_finishes_by_deadline(state, emergency),
         })
-        // If rare overlapping Aid Requests are both finishable, bank the
-        // earliest deadline; the lower exact spend is the deterministic tie
-        // breaker, then the actual host recipient id.
-        .min_by_key(|(emergency, amount)| (emergency.turns_left, *amount, emergency.target));
-    let Some((emergency, amount)) = candidate else {
+        .collect();
+    let Some((emergency, amount)) =
+        civvis::ai::player::aid::choose(state.gold as f64, &opportunities)
+    else {
         return Some("aid_gift_hold:no_finishable_lead");
     };
     let target = emergency.target;
@@ -3147,317 +3314,10 @@ fn release_foreign_production(
     released
 }
 
-#[derive(Default)]
-struct WarFinishingVolley {
-    /// Wounded military enemies at war that the exact planning model removed
-    /// before ordinary movement.
-    targets: usize,
-    /// Direct attacks to send from the exported frame, including one reserve
-    /// attacker when Firaxis may leave a modelled kill alive.
-    actions: Vec<Action>,
-    reserves: usize,
-}
-
-#[derive(Clone)]
-struct FinishingCandidate {
-    unit: u32,
-    /// Exact CIVVIS actions used to prove and score the line.
-    simulation: Vec<Action>,
-    /// One order the host can execute from its exported frame. A melee order
-    /// may collapse approach moves plus the final attack into MOVE_TO(enemy).
-    order: Action,
-    kills: bool,
-    ranged: bool,
-    damage: i32,
-    attacker_loss: i32,
-}
-
-/// Legal attacks a mapped unit can make on `target` from the exported frame.
-///
-/// Geometry alone is not enough here: line of sight, siege setup, remaining
-/// attacks and promotions can all make an apparently direct shot illegal. Each
-/// candidate therefore has to survive the engine's own `apply` on a private
-/// board before it can pre-empt the unit's ordinary movement order.
-fn live_finishing_candidates(
-    game: &civvis::game::Game,
-    pid: usize,
-    target: u32,
-    mapped: &std::collections::BTreeMap<u32, i64>,
-    committed: &std::collections::BTreeSet<u32>,
-) -> Vec<FinishingCandidate> {
-    let Some(defender) = game.units.get(&target) else {
-        return Vec::new();
-    };
-    let target_pos = defender.pos;
-    let target_hp = defender.hp;
-    let mut candidates = Vec::new();
-
-    for unit in game.player_unit_ids(pid) {
-        if committed.contains(&unit) || !mapped.contains_key(&unit) {
-            continue;
-        }
-        let friendly = &game.units[&unit];
-        let spec = &game.rules.units[friendly.kind];
-        if spec.class != "military"
-            || friendly.moves_left <= 0.0
-            || friendly.attacks_left <= 0
-            || friendly
-                .linked_to
-                .and_then(|peer| game.units.get(&peer))
-                .is_some_and(|peer| game.rules.units[peer.kind].class != "military")
-        {
-            continue;
-        }
-        let distance = game.wdist(friendly.pos, target_pos);
-        let mut modes = Vec::with_capacity(3);
-        if spec.has_ranged_attack() && distance <= game.unit_attack_range(unit) {
-            let order = Action::Ranged {
-                unit,
-                target: target_pos,
-            };
-            modes.push((true, vec![order.clone()], order));
-        }
-        if spec.is_melee_capable() && distance == 1 {
-            let order = Action::Attack {
-                unit,
-                target: target_pos,
-            };
-            modes.push((false, vec![order.clone()], order));
-        } else if spec.is_melee_capable() && distance > 1 {
-            // Civ VI resolves melee through MOVE_TO on the occupied tile, so
-            // one host order can cover an approach and its blow. Prove the
-            // corresponding line with CIVVIS's own pathfinder first; a route
-            // stopped by terrain, stacking, ZOC or exhausted movement never
-            // becomes a host order.
-            let mut approach = game.clone();
-            let mut simulation = Vec::new();
-            for _ in 0..game.map.tiles.len() {
-                if approach.wdist(approach.units[&unit].pos, target_pos) <= 1 {
-                    break;
-                }
-                let Some(next) = approach.route_step(unit, target_pos, 1) else {
-                    break;
-                };
-                let step = Action::Move { unit, to: next };
-                if approach.apply(pid, &step).is_err() {
-                    break;
-                }
-                simulation.push(step);
-            }
-            if approach.wdist(approach.units[&unit].pos, target_pos) == 1 {
-                let attack = Action::Attack {
-                    unit,
-                    target: target_pos,
-                };
-                if approach.apply(pid, &attack).is_ok() {
-                    simulation.push(attack);
-                    modes.push((
-                        false,
-                        simulation,
-                        Action::Attack {
-                            unit,
-                            target: target_pos,
-                        },
-                    ));
-                }
-            }
-        }
-
-        for (ranged, simulation, order) in modes {
-            let attacker_hp = friendly.hp;
-            let mut after = game.clone();
-            let mut legal = true;
-            for action in &simulation {
-                if after.apply(pid, action).is_err() {
-                    legal = false;
-                    break;
-                }
-            }
-            if !legal || !after.units.contains_key(&unit) {
-                continue;
-            }
-            let remaining = after.units.get(&target).map(|unit| unit.hp).unwrap_or(0);
-            let damage = (target_hp - remaining).max(0);
-            if damage == 0 {
-                continue;
-            }
-            let attacker_loss = attacker_hp - after.units[&unit].hp;
-            candidates.push(FinishingCandidate {
-                unit,
-                simulation,
-                order,
-                kills: !after.units.contains_key(&target),
-                ranged,
-                damage,
-                attacker_loss,
-            });
-        }
-    }
-
-    // A certain kill first; otherwise make the shortest volley. Ranged fire
-    // breaks a tie without risking a melee body, then damage and retaliation
-    // distinguish otherwise equivalent blows.
-    candidates.sort_by(|left, right| {
-        right
-            .kills
-            .cmp(&left.kills)
-            .then_with(|| right.ranged.cmp(&left.ranged))
-            .then_with(|| right.damage.cmp(&left.damage))
-            .then_with(|| left.attacker_loss.cmp(&right.attacker_loss))
-            .then_with(|| left.unit.cmp(&right.unit))
-    });
-    // A unit with both attack modes still contributes only one seat to the
-    // volley. The preferred mode is first after the ordering above.
-    let mut seen = std::collections::BTreeSet::new();
-    candidates.retain(|candidate| seen.insert(candidate.unit));
-    candidates
-}
-
-/// Finish exposed wounded enemies before their attackers receive campaign moves.
-///
-/// The old live-only repair rewrote every wounded barbarian to 100 HP on the
-/// planning board. That kept a second defender from being released after a
-/// simulated kill, but it also erased the decisive tactical fact: this unit is
-/// one blow from death. The active run `civvis-20260815T095258Z` then showed
-/// barbarians survive successive exported frames on 1, 3, 6, 8, 16 and 20 HP
-/// while nearby units promoted or marched. The reserve was firing throughout.
-///
-/// Keep the exported HP. For every wounded military unit belonging to a player
-/// we are currently at war with, prove a kill using only attacks legal *right
-/// now*, apply that shortest volley before the normal AI turn, and reserve one
-/// additional direct attacker when one is available. This covers barbarians,
-/// rivals, city-states, and Free Cities without treating a visible peacetime
-/// unit as a target. Damage-only opportunities remain the normal tactical
-/// planner's decision.
-///
-/// The extra order preserves the host/model safety margin: if Firaxis leaves a
-/// predicted kill alive it gets the second blow; if the first blow killed it, a
-/// ranged order is refused and a melee order can only enter the cleared tile or
-/// be blocked by the first attacker.
 #[cfg(test)]
-fn finish_live_war_units(
-    planned_game: &mut civvis::game::Game,
-    pid: usize,
-    mapped: &std::collections::BTreeMap<u32, i64>,
-) -> WarFinishingVolley {
-    finish_live_war_units_excluding(
-        planned_game,
-        pid,
-        mapped,
-        &std::collections::BTreeSet::new(),
-    )
-}
-
-/// [`finish_live_war_units`] with `excluded` units left out of the volley
-/// entirely — a settler's bound guard under
-/// `AdvancedAi::settler_stack_discipline`, which stays out of this pre-pass
-/// for the same reason.
-fn finish_live_war_units_excluding(
-    planned_game: &mut civvis::game::Game,
-    pid: usize,
-    mapped: &std::collections::BTreeMap<u32, i64>,
-    excluded: &std::collections::BTreeSet<u32>,
-) -> WarFinishingVolley {
-    let mapped: std::collections::BTreeMap<u32, i64> = mapped
-        .iter()
-        .filter(|(uid, _)| !excluded.contains(uid))
-        .map(|(uid, civ6)| (*uid, *civ6))
-        .collect();
-    let mapped = &mapped;
-    let mut targets = planned_game
-        .units
-        .values()
-        .filter(|unit| {
-            unit.owner != pid
-                && planned_game.is_at_war(pid, unit.owner)
-                && planned_game.rules.units[unit.kind].class == "military"
-                && unit.hp < 100
-        })
-        .map(|unit| (unit.hp, unit.pos, unit.id))
-        .collect::<Vec<_>>();
-    targets.sort_unstable();
-
-    let mut result = WarFinishingVolley::default();
-    let mut committed = std::collections::BTreeSet::new();
-    for (_, _, target) in targets {
-        if !planned_game.units.contains_key(&target) {
-            continue;
-        }
-        let initial = live_finishing_candidates(planned_game, pid, target, mapped, &committed);
-        if initial.is_empty() {
-            continue;
-        }
-
-        // Prove that a direct volley actually removes the target before taking
-        // any unit away from the ordinary AI. Damage-only opportunities remain
-        // the ordinary tactical path's decision.
-        let mut proof = planned_game.clone();
-        let mut proof_committed = committed.clone();
-        let mut chosen = Vec::new();
-        while proof.units.contains_key(&target) {
-            let Some(candidate) =
-                live_finishing_candidates(&proof, pid, target, mapped, &proof_committed)
-                    .into_iter()
-                    .next()
-            else {
-                break;
-            };
-            let mut legal = true;
-            for action in &candidate.simulation {
-                if proof.apply(pid, action).is_err() {
-                    legal = false;
-                    break;
-                }
-            }
-            if !legal {
-                break;
-            }
-            proof_committed.insert(candidate.unit);
-            chosen.push(candidate);
-        }
-        if proof.units.contains_key(&target) {
-            continue;
-        }
-
-        for candidate in &chosen {
-            let mut legal = true;
-            for action in &candidate.simulation {
-                if planned_game.apply(pid, action).is_err() {
-                    legal = false;
-                    break;
-                }
-            }
-            if !legal {
-                break;
-            }
-            committed.insert(candidate.unit);
-            result.actions.push(candidate.order.clone());
-        }
-        if planned_game.units.contains_key(&target) {
-            continue;
-        }
-        result.targets += 1;
-
-        // One predicted attack plus one available attacker is the exact shape
-        // the old durability rewrite was trying to preserve. Keep the reserve
-        // explicit instead of making the target look healthy to every scorer.
-        if chosen.len() == 1 {
-            if let Some(backup) = initial
-                .into_iter()
-                .find(|candidate| !committed.contains(&candidate.unit))
-            {
-                if let Some(unit) = planned_game.units.get_mut(&backup.unit) {
-                    unit.moves_left = 0.0;
-                    unit.attacks_left = 0;
-                }
-                committed.insert(backup.unit);
-                result.actions.push(backup.order);
-                result.reserves += 1;
-            }
-        }
-    }
-    result
-}
+use civvis::ai::finishing::finish_live_war_units_excluding;
+#[cfg(test)]
+use civvis::ai::finishing::{finish_live_war_units, live_finishing_candidates};
 
 /// The skipped-reason key for a move whose destination is the unit's own tile.
 ///
@@ -3699,6 +3559,8 @@ struct DecisionMemory<'a> {
     ours: &'a mut std::collections::BTreeMap<i64, String>,
     host_peace_retries: &'a mut HostPeaceRetries,
     host_move_refusals: &'a mut HostMoveRefusals,
+    /// The actuation contract's memory: orders the host has provably refused.
+    host_order_refusals: &'a mut HostOrderRefusals,
 }
 
 fn decide(
@@ -3713,6 +3575,7 @@ fn decide(
         ours,
         host_peace_retries,
         host_move_refusals,
+        host_order_refusals,
     } = memory;
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
@@ -3751,14 +3614,12 @@ fn decide(
     // a settler stepping afterwards must keep pricing them — the host has
     // been measured leaving such kills alive. And a settler's bound guard is
     // not the volley's to spend one tile away from the civilian it shields.
-    ai.observe_turn_start_hostiles(&planned_game, 0);
-    let bound_guards = ai.bound_settler_guards(&planned_game, 0);
-    let war_finishers =
-        finish_live_war_units_excluding(&mut planned_game, 0, &mirror_state.civ6_of, &bound_guards);
+    ai.observe_confirmed_host_deaths(&planned_game, state);
+    let (war_finishers, ai_actions_begin) =
+        civvis::ai::player::plan_frame(ai, &mut planned_game, 0, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
     // order that was intentionally not applied to the planning board. Ordinary
     // AI actions start after the attacks that were applied there.
-    let ai_actions_begin = planned_game.log.len();
     // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
     // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
     // would have been read as "CIVVIS cannot declare war" when it only meant "I asked
@@ -3812,8 +3673,6 @@ fn decide(
         .values()
         .filter(|u| u.owner == 0 && u.moves_left > 0.0)
         .count();
-    ai.take_turn(&mut planned_game, 0);
-
     let mut orders: Vec<Order> = war_finishers
         .actions
         .iter()
@@ -3867,6 +3726,18 @@ fn decide(
             mirror_state.game.trade_capacity(0),
             mirror_state.game.active_routes(0),
             pre_traders.join("; ")
+        ));
+    }
+    if war_finishers.roll_rejections > 0 {
+        note_bits.push(format!(
+            "war_unit_finishing_roll_rejections={}",
+            war_finishers.roll_rejections
+        ));
+    }
+    if war_finishers.survival_rejections > 0 {
+        note_bits.push(format!(
+            "war_unit_finishing_survival_rejections={}",
+            war_finishers.survival_rejections
         ));
     }
     if war_finishers.targets > 0 {
@@ -4349,6 +4220,21 @@ fn decide(
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));
     }
 
+    // ⭐ THE ACTUATION CONTRACT. An order that has come back Failed with the
+    // same reason `ORDER_REFUSAL_STRIKES` times running is not sent again for
+    // `ORDER_REFUSAL_COOLDOWN_TURNS`. Placed after every other suppressor, so
+    // the strike list is applied to the orders that would really have gone,
+    // and before `record`, which is the ledger of what was actually sent.
+    let (mut orders, refused_before) =
+        withhold_refused_orders(orders, state.turn, host_order_refusals);
+    if !refused_before.is_empty() {
+        note_bits.push(format!(
+            "withheld_refused={} [{}]",
+            refused_before.len(),
+            refused_before.join("; ")
+        ));
+    }
+
     // Remember where each move sends which host unit, so next turn's positions
     // can prove a destination unwalkable. See `HostMoveRefusals`.
     host_move_refusals.record(&orders, state, &first_unknown_steps);
@@ -4517,16 +4403,45 @@ fn decide(
         snapshot.revealed_count()
     ));
 
+    // Batch metadata travels through the existing five-column order transport.
+    // The controller attaches it to each queued strike; no persistent host
+    // setting can leak the selected gene into a later frame or experiment.
+    if ai.live_strike_survival_enabled()
+        && orders.iter().any(|order| {
+            order.kind == "unit" && matches!(order.verb.as_deref(), Some("ATTACK" | "RANGE_ATTACK"))
+        })
+    {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("DOOMED_BLOW_VETO".to_string()),
+            pos: None,
+        });
+    }
     let body = orders
         .iter()
         .map(|o| o.to_json())
         .collect::<Vec<_>>()
         .join(",");
+    let decision = serde_json::json!({
+        "schema": 1,
+        "player_contract": civvis::ai::player::CONTRACT,
+        "turn": state.turn,
+        "frame": state.frame,
+        "native_actions": planned_game.log.since(before)
+            .filter(|(seat,_)| *seat == 0)
+            .map(|(_,action)| action).collect::<Vec<_>>(),
+        "finishing_lines": war_finishers.execution,
+        "unit_ids": mirror_state.civ6_of,
+        "city_ids": mirror_state.cid_of,
+        "unmapped": mirror_state.unmapped,
+    });
     format!(
-        "{{\"turn\":{},\"orders\":[{}],\"note\":{}}}",
+        "{{\"turn\":{},\"orders\":[{}],\"note\":{},\"decision\":{}}}",
         state.turn,
         body,
-        quote(&note_bits.join("; "))
+        quote(&note_bits.join("; ")),
+        decision,
     )
 }
 
@@ -4934,20 +4849,24 @@ fn translate(
                 verb: None,
                 pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
             }),
-        Action::Improve { unit, improvement } => civ6_of
-            .get(unit)
-            .map(|civ6| Order {
-                kind: "unit",
-                subject: Some(*civ6),
-                verb: Some("IMPROVE".to_string()),
-                pos: None,
-            })
-            .map(|mut order| {
-                // The improvement name rides in `verb` alongside the operation, because the
-                // order row has no spare column; the mod splits them.
-                order.verb = Some(format!("IMPROVE:{}", civ6_improvement_type(improvement)));
-                order
+        Action::Improve { unit, improvement } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            // These simulator improvements are native operations, not rows in
+            // Firaxis' Improvements table. Both land and sea artifacts use EXCAVATE.
+            verb: Some(match improvement.as_str() {
+                "archaeological_dig" | "shipwreck_excavation" => "EXCAVATE".to_string(),
+                "national_park" => "DESIGNATE_PARK".to_string(),
+                _ => format!("IMPROVE:{}", civ6_improvement_type(improvement)),
             }),
+            pos: None,
+        }),
+        Action::PerformConcert { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("TOURISM_BOMB".to_string()),
+            pos: None,
+        }),
         // A builder repair is a distinct Firaxis unit operation.  Dropping it
         // strands pillaged improvements even though CIVVIS already chose the
         // repair and the builder is standing on the target tile.
@@ -5605,6 +5524,18 @@ const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
         "PATROL",
         "the frame carries no patrol state; where a deployed fighter stands next frame is the host's",
     ),
+    // A Rock Band's concert is the shipped `UNITOPERATION_TOURISM_BOMB`
+    // (`DLC/Expansion2/Data/Expansion2_UnitOperations.xml:11`). The frame
+    // exports no band level and no per-unit tourism, so the only consequence
+    // it can show is the player's whole-turn tourism — which the passive rate
+    // moves every turn anyway. Same shape as HEAL: real, and not separable
+    // from doing nothing. Declared rather than checked, so that a verb which
+    // genuinely cannot be verified says so instead of vanishing through the
+    // fallthrough.
+    (
+        "TOURISM_BOMB",
+        "the frame carries no band level and a whole-turn tourism delta cannot separate a concert from the passive rate",
+    ),
 ];
 
 fn unverifiable_kind(kind: &str) -> bool {
@@ -5617,6 +5548,8 @@ fn unverifiable_unit_verb(op: &str) -> bool {
 
 /// Ledger event kinds the checks read as evidence between two frames.
 const EVIDENCE_KINDS: &[&str] = &[
+    "combat_policy_applied",
+    "strike_survival_refused",
     "combat",
     "deal_closed",
     "deal_declined",
@@ -5739,6 +5672,84 @@ fn later_fortified_units(
 ///
 /// Named separately, it stays out of the applied count (it genuinely did not
 /// apply) while saying whose decision it was.
+///
+/// ## 🔴 2026-09-11: THIS SPLIT WORKED, AND WHAT IT LEFT BEHIND IS REAL
+///
+/// Re-measured over the 42 recorded live runs of 2026-09-10/11. The
+/// classification above now carries its own weight: `superseded_by_move` takes
+/// **2,050** verdicts, and of the **5,442** that remain `not_fortified`:
+///
+///     95.0%  MOVE then FORTIFY   (5,169 — the "real question" above)
+///      5.0%  no move that turn     (273)
+///      0.0%  FORTIFY then MOVE   — the split now catches every one
+///
+/// The mix moved from 39% to 95% because the decider's own overrides were named
+/// and removed. **What is left is the case the note flagged and nobody
+/// answered**, and it is now essentially all of it.
+///
+/// ⚠ And it is not a checking-window artefact for most of them. Following each
+/// failed subject into the next three turns' state frames (n = 1,770 with a
+/// later frame):
+///
+///     72.0%  still not fortified
+///     28.0%  fortified on a later turn
+///
+/// So roughly seven in ten genuinely never dig in, and the remaining three in
+/// ten are a verdict read too early — widening `checked_on` for FORTIFY would
+/// reclaim those without changing any behaviour.
+///
+/// ⚠⚠ The obvious mechanism — the unit spent its movement and the host refuses
+/// FORTIFY at zero moves — is NOT established, and the tempting reading of the
+/// data is wrong. The `moves` field in a turn's first state frame is the
+/// PREVIOUS turn's value (see the frame-0 caution on the tactics ledger), so
+/// the `moves = 3` those records show is the allowance before the move, not
+/// after it. Answering this needs the host's own refusal reason on the FORTIFY
+/// call, which the event does not carry today.
+///
+/// ⭐ For scale before anyone prices the work: **82.5% of all FORTIFY orders
+/// fail** (7,711 against 1,637 verified), and FORTIFY is 36% of every failed
+/// order on the bridge, second only to MOVE_TO at 51%.
+///
+/// ## ✅ ANSWERED, AND ALMOST NONE OF IT IS THE BRIDGE
+///
+/// `operation_refused` (the mod's `firstOperation`, added for this) shipped and
+/// ran. In the first run carrying it, **2 of 181** `not_fortified` verdicts had
+/// a host refusal recorded — **1%**. So `CanStartOperation` says yes and the
+/// order is issued; the mod declining is not the cause. (The 67 refusals it did
+/// record are civilians: 41 Traders, 9 Builders, 6 Settlers, asked to skip or
+/// dig in and legitimately unable to.)
+///
+/// Following every `not_fortified` subject into the NEXT turn (n = 2,507):
+///
+///     64.6%  the decider MOVED IT AGAIN next turn
+///     29.2%  fortified on a later frame after all
+///      6.2%  neither
+///
+/// ⭐⭐ So this note's own opening sentence holds one turn further out than it
+/// was written: **a FORTIFY the decider itself overrode is not a bridge
+/// failure**, and `superseded_by_move` catches only the same-turn override.
+/// Two thirds of what is left is the identical thing on the following turn.
+/// Roughly 1% is a host refusal, and about three in ten are a verdict read
+/// before the state settled. The genuinely unexplained residue is ~6%.
+///
+/// ### The two pieces of work this names, in order of size
+///
+/// 1. **Extend the supersession to the next turn.** It needs turn+1 frames,
+///    which are not in hand at verification time the way same-turn frames are,
+///    so it is a real change rather than a wider filter. Name it separately —
+///    `superseded_next_turn` — so the two stay countable apart.
+/// 2. **Widen `checked_on` for FORTIFY.** Reclaims the 29.2% that do fortify,
+///    with no behaviour change at all.
+///
+/// ### ⚠ And the strategic question underneath, which is the bigger one
+///
+/// Two thirds of the time CIVVIS asks a unit to dig in and then walks it away
+/// the next turn, so **the unit never collects the fortification it was told to
+/// take**. That is a decider question, not a bridge one, and it is worth asking
+/// against the standing puzzle that 234 of 304 unit deaths happen with no
+/// visible threat. Unproven as a link — but the accounting above means the
+/// defence bonus is almost never actually held, which is the first thing to
+/// check.
 fn later_moved_units(
     frames: &[PendingOrders],
     turn: u32,
@@ -6082,6 +6093,12 @@ fn strike_refusal_reason(
         .any(|event| of_kind(event, "war_refused") && aimed_here(event))
     {
         return Some("would_declare_war".to_string());
+    }
+    if evidence
+        .iter()
+        .any(|event| of_kind(event, "strike_survival_refused") && aimed_here(event))
+    {
+        return Some("lethal_host_preview".to_string());
     }
     let refused = evidence
         .iter()
@@ -6453,7 +6470,21 @@ fn verify_unit_order(
                 Verdict::Failed("still_exists".to_string())
             }
         }
-        "IMPROVE" | "REPAIR" => {
+        // ⚠⚠ FOUND BY `every_issued_unit_verb_is_checked_or_declared_unverifiable`.
+        // `Action::Improve` does not always translate to `IMPROVE:<type>`: a
+        // National Park is `DESIGNATE_PARK` and both artifact digs are
+        // `EXCAVATE`, and neither had an arm — both fell through to
+        // `Unverifiable`, so a Naturalist's park and an Archaeologist's dig
+        // were excluded from every actuation rate. They share this arm because
+        // they share its evidence: the operation spends a charge, and a unit
+        // spending its last one is consumed.
+        //
+        // The tile test differs by verb. `IMPROVE` names the improvement it
+        // wants in `arg`; `DESIGNATE_PARK` names none, and what the plot must
+        // show is the park itself. `EXCAVATE` leaves no improvement at all —
+        // it lifts the artifact and clears the site — so it rests on the
+        // charge, the unit and the `improved` event.
+        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" => {
             let charges_spent = match (
                 was.and_then(|u| u.build_charges),
                 now.and_then(|u| u.build_charges),
@@ -6465,6 +6496,8 @@ fn verify_unit_order(
                 tiles.plot((u.x, u.y)).is_some_and(|plot| {
                     (op == "IMPROVE" && !arg.is_empty() && plot.im.as_deref() == Some(arg))
                         || (op == "REPAIR" && !plot.p)
+                        || (op == "DESIGNATE_PARK"
+                            && plot.im.as_deref() == Some("IMPROVEMENT_NATIONAL_PARK"))
                 })
             });
             let improved_event = was.is_some_and(|u| {
@@ -6493,7 +6526,15 @@ fn verify_unit_order(
                 Verdict::Failed("not_pillaged".to_string())
             }
         }
-        "ENTER_FORMATION" => match now {
+        // ⚠ FOUND BY `every_issued_unit_verb_is_checked_or_declared_unverifiable`,
+        // in the change that added it. `Action::CombineUnits` translates to
+        // `FORM_CORPS` or `FORM_ARMY` depending on the two units' tiers, and
+        // neither had an arm here — both fell through the `_` at the bottom to
+        // `Unverifiable`, so every corps and every army CIVVIS has ever ordered
+        // was excluded from both actuation rates and no floor could see one.
+        // The postcondition is `ENTER_FORMATION`'s: the subject is now part of
+        // a formation of more than one body.
+        "ENTER_FORMATION" | "FORM_CORPS" | "FORM_ARMY" => match now {
             None => gone(),
             Some(u) if u.formation_count > 1 => Verdict::Verified,
             Some(_) => Verdict::Failed("not_in_formation".to_string()),
@@ -6575,6 +6616,17 @@ fn verify_order_with_context(
     let verb = order.verb.as_deref().unwrap_or("");
     let failed = |why: String| Verdict::Failed(why);
     match order.kind.as_str() {
+        "combat_policy" => {
+            if evidence.iter().any(|event| {
+                event["kind"] == "combat_policy_applied"
+                    && event["turn"].as_u64() == Some(u64::from(turn))
+                    && event["policy"].as_str() == Some(verb)
+            }) {
+                Verdict::Verified
+            } else {
+                failed("combat_policy_not_acknowledged".to_string())
+            }
+        }
         "unit" => verify_unit_order(
             order,
             turn,
@@ -6972,6 +7024,7 @@ fn settle_pending_orders(
     events: &Path,
     after: &civvis::mirror::StateSnapshot,
     tiles: &civvis::mirror::Snapshot,
+    refusals: &mut HostOrderRefusals,
 ) -> Vec<Order> {
     let answered: Vec<PendingOrders> = {
         let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(pending)
@@ -7020,6 +7073,11 @@ fn settle_pending_orders(
             ));
     }
     for (turn, checks) in by_turn {
+        // The contract's memory reads the checks here, where an `IssuedOrder`
+        // is still paired with its own verdict. The verdict ROWS below carry
+        // the turn in `pos` and cannot be joined back to the order that earned
+        // them, which is why nothing downstream has ever been able to.
+        refusals.observe(&checks, turn);
         rows.extend(verdict_rows(turn, &checks));
     }
     rows
@@ -8442,6 +8500,7 @@ fn main() {
         let mut ours = std::collections::BTreeMap::new();
         let mut host_peace_retries = HostPeaceRetries::default();
         let mut host_move_refusals = HostMoveRefusals::default();
+        let mut host_order_refusals = HostOrderRefusals::default();
         let reply = decide(
             &mut live,
             &mut ai,
@@ -8452,6 +8511,7 @@ fn main() {
                 ours: &mut ours,
                 host_peace_retries: &mut host_peace_retries,
                 host_move_refusals: &mut host_move_refusals,
+                host_order_refusals: &mut host_order_refusals,
             },
         );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
@@ -8489,6 +8549,7 @@ fn main() {
     // diagnostic fresh AI cannot repeat a host-cooldown peace request.
     let mut host_peace_retries = HostPeaceRetries::default();
     let mut host_move_refusals = HostMoveRefusals::default();
+    let mut host_order_refusals = HostOrderRefusals::default();
     // The Firaxis repair cooldown belongs to the host, not the reconstructed
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
@@ -8514,8 +8575,13 @@ fn main() {
                 // The verdicts on the previous turn's orders ride at the end of
                 // this turn's reply; the checks read the frame the decision is
                 // about to read, before anything is decided on it.
-                let verdicts =
-                    settle_pending_orders(&mut pending_orders, &events, &state, &snapshot);
+                let verdicts = settle_pending_orders(
+                    &mut pending_orders,
+                    &events,
+                    &state,
+                    &snapshot,
+                    &mut host_order_refusals,
+                );
                 // The verdicts include Firaxis's named answer for an exact
                 // frontier probe. Read it before rebuilding the mirror so a
                 // transient failure cannot be mistaken for dead terrain.
@@ -8620,6 +8686,7 @@ fn main() {
                             ours: &mut ours,
                             host_peace_retries: &mut host_peace_retries,
                             host_move_refusals: &mut host_move_refusals,
+                            host_order_refusals: &mut host_order_refusals,
                         },
                     );
                     live = Some(board);
@@ -8648,6 +8715,7 @@ fn main() {
                                     ours: &mut ours,
                                     host_peace_retries: &mut host_peace_retries,
                                     host_move_refusals: &mut host_move_refusals,
+                                    host_order_refusals: &mut host_order_refusals,
                                 },
                             );
                             live = Some(fresh);
@@ -8682,6 +8750,7 @@ fn main() {
                                         ours: &mut ours,
                                         host_peace_retries: &mut host_peace_retries,
                                         host_move_refusals: &mut host_move_refusals,
+                                        host_order_refusals: &mut host_order_refusals,
                                     },
                                 )
                             } else {
@@ -8695,6 +8764,7 @@ fn main() {
                                         ours: &mut ours,
                                         host_peace_retries: &mut host_peace_retries,
                                         host_move_refusals: &mut host_move_refusals,
+                                        host_order_refusals: &mut host_order_refusals,
                                     },
                                 )
                             }
@@ -9747,6 +9817,7 @@ mod tests {
                 ours: &mut ours,
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -9790,6 +9861,7 @@ mod tests {
                 ours: &mut confirmed_ours,
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         ))
         .expect("the confirmed decision is JSON");
@@ -10387,6 +10459,38 @@ mod tests {
     }
 
     #[test]
+    fn the_final_city_queue_in_one_batch_survives_the_replay_filter() {
+        let (_, state) = production_board();
+        let mut refusals = HostMoveRefusals::default();
+        let mut ours = std::collections::BTreeMap::new();
+        let mut orders = vec![
+            production_order(7, "PROJECT_ENHANCE_DISTRICT_THEATER"),
+            production_order(8, "BUILDING_LIGHTHOUSE"),
+            unit_order(9, "MOVE_TO", Some((4, 5))),
+            production_order(7, "UNIT_CUIRASSIER"),
+        ];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut orders, &state, &mut ours),
+            1
+        );
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0].subject, Some(8));
+        assert_eq!(orders[1].kind, "unit");
+        assert_eq!(orders[2].verb.as_deref(), Some("UNIT_CUIRASSIER"));
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_CUIRASSIER"));
+        let mut replan = vec![production_order(7, "UNIT_BUILDER")];
+        assert_eq!(
+            refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
+            1
+        );
+        assert!(
+            replan.is_empty(),
+            "a later call still cannot replace the sent choice"
+        );
+        assert_eq!(ours.get(&7).map(String::as_str), Some("UNIT_CUIRASSIER"));
+    }
+
+    #[test]
     fn a_same_turn_replan_keeps_the_first_city_queue_and_ownership() {
         let (_snapshot, mut state) = production_board();
         state.turn = 43;
@@ -10954,6 +11058,333 @@ mod tests {
         (snapshot, state)
     }
 
+    fn finishing_survival_field(
+        with_archer: bool,
+        ranged_primary: bool,
+    ) -> civvis::mirror::LiveMirror {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.units.retain(|unit| unit.id == 101);
+        state.units[0].hp = 56.0;
+        if ranged_primary {
+            state.units.push(StateUnit {
+                id: 102,
+                kind: "UNIT_ARCHER".to_string(),
+                x: 5,
+                y: 6,
+                hp: 100.0,
+                moves: 2.0,
+                combat: 15.0,
+                ranged: 25.0,
+                ..StateUnit::default()
+            });
+        }
+        state.hostiles[0].id = 200;
+        state.hostiles[0].hp = 1.0;
+        if with_archer {
+            state.hostiles.push(StateUnit {
+                id: 201,
+                kind: "UNIT_ARCHER".to_string(),
+                x: 5,
+                y: 2,
+                hp: 100.0,
+                combat: 15.0,
+                ranged: 25.0,
+                moves: 0.0,
+                ..StateUnit::default()
+            });
+        }
+        civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0)
+    }
+
+    #[test]
+    fn one_native_damage_roll_does_not_prove_a_live_finishing_kill() {
+        let mirror = finishing_survival_field(false, false);
+        let uid = mirror.uid_of[&101];
+        let target = mirror.foreign_uid_of[&200];
+        let mut found = false;
+        for hp in 20..60 {
+            let mut game = mirror.game.clone();
+            game.units.get_mut(&uid).unwrap().hp = 100;
+            game.units.get_mut(&target).unwrap().hp = hp;
+            let (attack, defense) = game.melee_exchange_strengths(uid, target).unwrap();
+            let low_damage = (civvis::game::expected_damage(attack, defense) * 0.8)
+                .round()
+                .clamp(1.0, 100.0) as i32;
+            let candidates = live_finishing_candidates(
+                &game,
+                0,
+                target,
+                &mirror.civ6_of,
+                &std::collections::BTreeSet::new(),
+            );
+            if low_damage >= hp || !candidates.iter().any(|candidate| candidate.kills) {
+                continue;
+            }
+            found = true;
+            let volley = finish_live_war_units(&mut game, 0, &mirror.civ6_of);
+            assert_eq!(volley.targets, 0,
+                "a sampled kill cannot reserve the lone attacker when a lower damage roll leaves the target alive");
+            assert!(volley.actions.is_empty());
+            break;
+        }
+        assert!(
+            found,
+            "the fixture must include a sampled kill that a lower roll does not finish"
+        );
+    }
+
+    #[test]
+    fn finishing_volley_respects_selected_wounded_withdrawals() {
+        let mut mirror = finishing_survival_field(true, false);
+        let uid = mirror.uid_of[&101];
+        mirror.game.units.get_mut(&uid).unwrap().hp = 40;
+        let mut off = mirror.game.clone();
+        assert_eq!(
+            finish_live_war_units(&mut off, 0, &mirror.civ6_of).targets,
+            1
+        );
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_wounded_out_of_reach();
+        let mut on = mirror.game.clone();
+        let volley = finish_live_war_units_excluding(
+            &mut on,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert!(volley.actions.is_empty());
+        assert_eq!(on.units[&uid].hp, 40);
+        assert_eq!(on.units[&uid].pos, mirror.game.units[&uid].pos);
+    }
+
+    #[test]
+    fn finishing_survival_policy_rejects_the_kill_before_a_visible_archer_reply() {
+        let mirror = finishing_survival_field(true, false);
+        let mut old = mirror.game.clone();
+        assert_eq!(
+            finish_live_war_units(&mut old, 0, &mirror.civ6_of).targets,
+            1
+        );
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let mut planned = mirror.game.clone();
+        let volley = finish_live_war_units_excluding(
+            &mut planned,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert!(
+            volley.actions.is_empty(),
+            "the pre-pass must not spend a striker the survival policy rejects"
+        );
+        assert_eq!(planned.units.len(), mirror.game.units.len());
+        assert_eq!(planned.log.len(), mirror.game.log.len());
+    }
+
+    #[test]
+    fn finishing_survival_policy_keeps_a_kill_without_the_archer_reply() {
+        let mut mirror = finishing_survival_field(false, false);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let volley = finish_live_war_units_excluding(
+            &mut mirror.game,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.actions.len(), 1);
+    }
+
+    #[test]
+    fn finishing_survival_policy_also_covers_version_one() {
+        let mut mirror = finishing_survival_field(true, false);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto();
+        let volley = finish_live_war_units_excluding(
+            &mut mirror.game,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert!(volley.actions.is_empty());
+        assert_eq!(volley.survival_rejections, 1);
+    }
+
+    #[test]
+    fn finishing_survival_policy_does_not_reserve_an_unsafe_melee_followup() {
+        let mirror = finishing_survival_field(true, true);
+        let mut old = mirror.game.clone();
+        let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
+        assert_eq!(old_volley.reserves, 1);
+        let guard = *mirror.civ6_of.iter().find(|(_, id)| **id == 101).unwrap().0;
+        let mut planned = mirror.game.clone();
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let volley = finish_live_war_units_excluding(
+            &mut planned,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.reserves, 0);
+        assert_eq!(volley.actions.len(), 1);
+        assert!(matches!(volley.actions[0], Action::Ranged { .. }));
+        assert_eq!(
+            planned.units[&guard].moves_left,
+            mirror.game.units[&guard].moves_left
+        );
+        assert_eq!(
+            planned.units[&guard].attacks_left,
+            mirror.game.units[&guard].attacks_left
+        );
+    }
+
+    #[test]
+    fn finishing_survival_policy_keeps_a_safe_reserve() {
+        let mut mirror = finishing_survival_field(false, true);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        let volley = finish_live_war_units_excluding(
+            &mut mirror.game,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.reserves, 1);
+        assert_eq!(volley.actions.len(), 2);
+    }
+
+    #[test]
+    fn finishing_survival_policy_prices_the_whole_volley_after_its_kill() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.units[0].hp = 30.0;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut old = mirror.game.clone();
+        let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
+        assert!(old_volley.actions.len() > 1);
+        assert_eq!(old_volley.reserves, 1);
+        let primary = &old_volley.actions[..old_volley.actions.len() - old_volley.reserves];
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_doomed_blow_veto_2();
+        assert!(!ai.live_finishing_actions_survive(&mirror.game, 0, &old_volley.actions[..1]));
+        assert!(ai.live_finishing_actions_survive(&mirror.game, 0, primary));
+        let mut planned = mirror.game.clone();
+        let volley = finish_live_war_units_excluding(
+            &mut planned,
+            0,
+            &mirror.civ6_of,
+            &std::collections::BTreeSet::new(),
+            &ai,
+        );
+        assert_eq!(volley.targets, 1);
+        assert_eq!(volley.actions, old_volley.actions);
+    }
+
+    #[test]
+    fn finishing_survival_policy_does_not_restore_the_unsafe_wounded_followup() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.cities[0].x = 5;
+        state.cities[0].y = 5;
+        state.units.retain(|unit| unit.id == 101);
+        state.units[0].hp = 56.0;
+        state.units.push(StateUnit {
+            id: 102,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 6,
+            y: 4,
+            hp: 100.0,
+            moves: 2.0,
+            ..StateUnit::default()
+        });
+        state.hostiles[0].id = 200;
+        state.hostiles[0].hp = 50.0;
+        state.hostiles.push(StateUnit {
+            id: 201,
+            kind: "UNIT_ARCHER".to_string(),
+            x: 5,
+            y: 2,
+            hp: 100.0,
+            combat: 15.0,
+            ranged: 25.0,
+            moves: 0.0,
+            ..StateUnit::default()
+        });
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut old = mirror.game.clone();
+        let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
+        let old_strikers: Vec<_> = old_volley
+            .actions
+            .iter()
+            .filter_map(|action| {
+                if let Action::Attack { unit, .. } = action {
+                    Some(mirror.civ6_of[unit])
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            old_strikers,
+            vec![102, 101],
+            "the original pre-pass spends the wounded finisher"
+        );
+        let mut ai = victory_lane("science").unwrap();
+        ai.enable_doomed_blow_veto_2();
+        ai.enable_battle_planner_2();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut std::collections::BTreeMap::new(),
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| {
+                    order["kind"] == "combat_policy" && order["verb"] == "DOOMED_BLOW_VETO"
+                })
+                .count(),
+            1,
+            "the full bridge reply must carry the selected survival policy"
+        );
+        let strikers: Vec<_> = reply["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|order| order["verb"] == "ATTACK" && order["x"] == 5 && order["y"] == 4)
+            .map(|order| order["subject"].as_i64().unwrap())
+            .collect();
+        assert_eq!(
+            strikers.last(),
+            Some(&102),
+            "the ordinary planner must not restore the unsafe wounded followup: {reply}"
+        );
+        assert!(reply["note"]
+            .as_str()
+            .unwrap()
+            .contains("war_unit_finishing_survival_rejections=1"));
+    }
+
     #[test]
     fn local_barbarian_finishing_volley_keeps_exported_hp_and_proves_the_kill() {
         let (snapshot, state) = local_barbarian_defense_board();
@@ -11003,6 +11434,7 @@ mod tests {
                 ours: &mut ours,
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         ))
         .unwrap();
@@ -11068,6 +11500,7 @@ mod tests {
                 ours: &mut ours,
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         ))
         .unwrap();
@@ -12539,6 +12972,56 @@ mod tests {
             .verb
             .as_deref()
             .is_some_and(|verb| verb.starts_with("PROMOTE:")));
+    }
+
+    #[test]
+    fn culture_operations_cross_as_native_unit_operations() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 156,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(5, 5)],
+        }]);
+        for (kind, improvement, verb) in [
+            ("UNIT_ARCHAEOLOGIST", Some("archaeological_dig"), "EXCAVATE"),
+            (
+                "UNIT_ARCHAEOLOGIST",
+                Some("shipwreck_excavation"),
+                "EXCAVATE",
+            ),
+            ("UNIT_NATURALIST", Some("national_park"), "DESIGNATE_PARK"),
+            ("UNIT_ROCK_BAND", None, "TOURISM_BOMB"),
+            ("UNIT_BUILDER", Some("farm"), "IMPROVE:IMPROVEMENT_FARM"),
+        ] {
+            let state = StateSnapshot {
+                turn: 156,
+                units: vec![StateUnit {
+                    id: 92,
+                    kind: kind.to_string(),
+                    x: 5,
+                    y: 5,
+                    build_charges: Some(0),
+                    spread_charges: Some(0),
+                    ..StateUnit::default()
+                }],
+                ..StateSnapshot::default()
+            };
+            let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+            let unit = mirror.uid_of[&92];
+            let action = match improvement {
+                Some(name) => Action::Improve {
+                    unit,
+                    improvement: name.into(),
+                },
+                None => Action::PerformConcert { unit },
+            };
+            let order = translate(&action, &mirror, &state).expect("Culture action crosses");
+            assert_eq!(order.kind, "unit");
+            assert_eq!(order.subject, Some(92));
+            assert_eq!(order.verb.as_deref(), Some(verb));
+            assert_eq!(order.pos, None);
+        }
     }
 
     #[test]
@@ -15028,6 +15511,21 @@ mod tests {
             append_luxury_buy_order(&thin, &mut held),
             Some("luxury_buy_hold:income")
         );
+        // A severe deficit can be the reason income is already below the
+        // normal floor. Use only treasury room above the reserve for one
+        // emergency ask; ordinary thin income remains held above.
+        let mut emergency = thin.clone();
+        emergency.gold = 132;
+        emergency.gold_per_turn = Some(-3.5);
+        emergency.cities = vec![short(8.0, 4.0)];
+        let mut emergency_orders = Vec::new();
+        assert_eq!(
+            append_luxury_buy_order(&emergency, &mut emergency_orders),
+            None
+        );
+        assert_eq!(emergency_orders.len(), 1);
+        assert_eq!(emergency_orders[0].subject, Some(4));
+        assert_eq!(emergency_orders[0].pos, Some((72, 0)));
         let mut poor = state.clone();
         poor.gold = 59;
         assert_eq!(
@@ -15124,7 +15622,7 @@ mod tests {
     }
 
     /// ★★★★★ The whole envoy chain inside the bridge: the held count reaches
-    /// the board, the deployed controller spends it on the planning clone, and
+    /// the board, the spend-all controller spends it on the planning clone, and
     /// each `SendEnvoy` crosses as an `envoy` order naming Firaxis's minor
     /// player id — including a city-state met before its centre is in view,
     /// which has no mirrored city to resolve through.
@@ -15207,9 +15705,12 @@ mod tests {
         // A major seat is not a city-state.
         assert!(translate(&Action::SendEnvoy { player: 1 }, &mirror, &state).is_none());
 
-        // The deployed controller spends what the board holds.
+        // Pin the spend-all policy: this checks order translation, not the
+        // tournament-selected defaults for saving envoys for future dividends.
         let mut ai = civvis::ai::AdvancedAi::new();
         ai.enable_live_bridge();
+        ai.disable_envoy_building_dividends();
+        ai.disable_bank_envoys();
         let mut planned = mirror.game.clone();
         let begin = planned.log.len();
         ai.take_turn(&mut planned, 0);
@@ -15307,6 +15808,7 @@ mod tests {
                 ours: &mut ours,
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -15477,6 +15979,7 @@ mod tests {
                 ours: &mut Default::default(),
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -15918,6 +16421,7 @@ mod tests {
                 ours: &mut Default::default(),
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         );
 
@@ -15995,6 +16499,7 @@ mod tests {
                 ours: &mut Default::default(),
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         ))
         .expect("the decision is JSON");
@@ -16071,6 +16576,7 @@ mod tests {
                 ours: &mut Default::default(),
                 host_peace_retries: &mut HostPeaceRetries::default(),
                 host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
             },
         );
 
@@ -16867,6 +17373,37 @@ mod order_postcondition_tests {
     }
 
     #[test]
+    fn combat_policy_requires_host_acknowledgement_and_names_lethal_refusals() {
+        let before = frame(7);
+        let after = frame(8);
+        let policy = order("combat_policy", None, Some("DOOMED_BLOW_VETO"), None);
+        assert!(EVIDENCE_KINDS.contains(&"combat_policy_applied"));
+        assert!(EVIDENCE_KINDS.contains(&"strike_survival_refused"));
+        assert_eq!(
+            check(&policy, &before, &after, &[]),
+            failed("combat_policy_not_acknowledged")
+        );
+        let ack = event(r#"{"kind":"combat_policy_applied","turn":7,"policy":"DOOMED_BLOW_VETO"}"#);
+        assert_eq!(check(&policy, &before, &after, &[ack]), Verdict::Verified);
+        let stale =
+            event(r#"{"kind":"combat_policy_applied","turn":6,"policy":"DOOMED_BLOW_VETO"}"#);
+        assert_eq!(
+            check(&policy, &before, &after, &[stale]),
+            failed("combat_policy_not_acknowledged")
+        );
+        let refusal =
+            event(r#"{"kind":"strike_survival_refused","turn":7,"unit":10,"x":31,"y":42}"#);
+        assert_eq!(
+            strike_refusal_reason(std::slice::from_ref(&refusal), 7, 10, Some((31, 42))).as_deref(),
+            Some("lethal_host_preview")
+        );
+        assert_eq!(
+            strike_refusal_reason(&[refusal], 7, 11, Some((31, 42))),
+            None
+        );
+    }
+
+    #[test]
     fn a_bought_plot_is_verified_by_its_owner_on_the_board() {
         let mut before = frame(20);
         before.seat.local_player = 4;
@@ -17252,6 +17789,327 @@ mod order_postcondition_tests {
         }
     }
 
+    /// The twin of `every_issued_order_kind_is_checked_or_declared_unverifiable`,
+    /// for the axis that had no guard.
+    ///
+    /// ⚠⚠ The kind list has been discovered-not-listed since it was written;
+    /// the unit VERBS never were. `verify_unit_order` ends in
+    /// `_ => Verdict::Unverifiable`, so a verb added to `translate` without a
+    /// matching arm leaves the actuation contract in silence — no failure, no
+    /// notice, and no row in any rate, because `Unverifiable` orders are
+    /// excluded from both floors. That is the same shape as the SWAP verb
+    /// falling through `translate`'s own `_ => None` and being counted
+    /// `unit_action_untranslated` for as long as it did.
+    #[test]
+    fn every_issued_unit_verb_is_checked_or_declared_unverifiable() {
+        // Discover, never list: every unit verb this file can put on the wire.
+        //
+        // ⚠ A byte WINDOW around `kind: "unit"` was tried first and is wrong.
+        // It swept in a neighbouring `kind: "war"` literal's DECLARE, and
+        // whether it reached a verb at all depended on how many bytes of
+        // comment happened to sit between — it found DESIGNATE_PARK on one
+        // revision of this file and missed EXCAVATE beside it. So the unit of
+        // discovery is the `Order { … }` LITERAL, taken to its balanced brace,
+        // which no edit above or below can shift.
+        //
+        // Two shapes carry a verb: the literal `verb: Some("FORTIFY"…)` inside
+        // such a block, and a `let verb = if … { "CAPTURE" } else { "MOVE_TO" }`
+        // above one. Both are read. Comments are stripped first — they quote
+        // verbs, and they quote ordinary shouted words too ("ZERO captures"),
+        // which a bare literal scan cannot tell apart.
+        let source = include_str!("civvis_orders.rs");
+        let code: String = source
+            .lines()
+            .map(|line| match line.find("//") {
+                Some(at) if line[..at].matches('"').count() % 2 == 0 => &line[..at],
+                _ => line,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fn upper_literals(block: &str, into: &mut std::collections::BTreeSet<String>) {
+            for (at, _) in block.match_indices('"') {
+                let rest = &block[at + 1..];
+                let Some(close) = rest.find('"') else {
+                    continue;
+                };
+                let verb = &rest[..close];
+                let shaped = (4..=32).contains(&verb.len())
+                    && verb
+                        .bytes()
+                        .all(|b| b.is_ascii_uppercase() || b == b'_' || b.is_ascii_digit())
+                    && verb.bytes().any(|b| b.is_ascii_uppercase());
+                if shaped {
+                    into.insert(verb.to_string());
+                }
+            }
+        }
+        /// The text of one brace-balanced block starting at `from`, never
+        /// longer than `LITERAL_CAP`.
+        ///
+        /// ⚠ The cap is load-bearing. Brace counting over raw source is fooled
+        /// by a brace inside a string — `format!("{kind}:{verb}")` is one — and
+        /// an unbalanced count runs to the end of the file, sweeping in every
+        /// upper-case word of every JSON test fixture on the way. An `Order`
+        /// literal is a few hundred bytes, so a block that has not closed by
+        /// here did not parse and is truncated rather than trusted.
+        const LITERAL_CAP: usize = 600;
+        fn balanced(code: &str, from: usize) -> &str {
+            let mut depth = 0usize;
+            for (offset, ch) in code[from..].char_indices() {
+                if offset >= LITERAL_CAP {
+                    break;
+                }
+                if ch == '{' {
+                    depth += 1;
+                } else if ch == '}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &code[from..from + offset + 1];
+                    }
+                }
+            }
+            let end = code[from..]
+                .char_indices()
+                .map(|(offset, ch)| offset + ch.len_utf8())
+                .take_while(|offset| *offset <= LITERAL_CAP)
+                .last()
+                .unwrap_or(0);
+            &code[from..from + end]
+        }
+        let mut verbs: std::collections::BTreeSet<String> = Default::default();
+        for (index, _) in code.match_indices("Order {") {
+            let block = balanced(&code, index + "Order ".len());
+            if !block.contains("kind: \"unit\"") {
+                continue;
+            }
+            upper_literals(block, &mut verbs);
+            // A unit order whose verb is a variable took it from the nearest
+            // `let verb =` above — and only that one, so a `let verb` feeding
+            // a `kind: "city"` order (KEEP, RAZE, LIBERATE) is never swept in.
+            if block.contains("verb: Some(verb") {
+                // Bounded, for the same reason the block is: the assignment
+                // that feeds this order sits directly above it, and an
+                // unbounded `rfind` would sweep every literal back to the last
+                // `let verb` anywhere in the file.
+                let from = index.saturating_sub(LITERAL_CAP);
+                if let Some(assign) = code[from..index].rfind("let verb = ") {
+                    upper_literals(&code[from + assign..index], &mut verbs);
+                }
+            }
+        }
+        // Firaxis type names travel in a unit order's `pos` and `subject`
+        // payloads; they are not verbs.
+        const NOT_A_VERB: &[&str] = &[
+            "UNIT_",
+            "DISTRICT_",
+            "BUILDING_",
+            "IMPROVEMENT_",
+            "TECH_",
+            "CIVIC_",
+            "LOC_",
+            "COMMEMORATION_",
+            "GOVERNOR_",
+            "POLICY_",
+            "PROJECT_",
+            "RESOURCE_",
+            "TERRAIN_",
+            "FEATURE_",
+            "GREAT_PERSON",
+            "RELIGION_",
+            "BELIEF_",
+            "PANTHEON_",
+            "LEADER_",
+            "CIVILIZATION_",
+            "ERA_",
+            "GOVERNMENT_",
+            "PROMOTION_",
+            "MODIFIER_",
+            "YIELD_",
+            "CIVVIS",
+            "UNITOPERATION_",
+            "UNITCOMMAND_",
+            "OPERATION_",
+            "WONDER_",
+            "PLAYER_",
+            "DIPLOACTION_",
+            "TRAIT_",
+            "AGENDA_",
+            "ABILITY_",
+            "UNITAI_",
+            "GAMESPEED_",
+        ];
+        let issued: Vec<String> = verbs
+            .into_iter()
+            .filter(|verb| !NOT_A_VERB.iter().any(|prefix| verb.starts_with(prefix)))
+            .filter(|verb| !verb.starts_with("SPY_"))
+            .collect();
+        assert!(
+            issued.len() > 10,
+            "the scan found only {issued:?}; it has stopped seeing the verbs"
+        );
+        let mut before = frame(1);
+        before.units = vec![unit(1, "UNIT_WARRIOR", 1, 1)];
+        let after = frame(2);
+        for verb in issued {
+            let verb = verb.as_str();
+            let probe = order("unit", Some(1), Some(verb), Some((9, 9)));
+            let verdict = check(&probe, &before, &after, &[]);
+            assert!(
+                (verdict != Verdict::Unverifiable) != unverifiable_unit_verb(verb),
+                "unit verb {verb:?} is neither checked by `verify_unit_order` nor listed in \
+                 UNVERIFIABLE_UNIT_VERBS with a reason (got {verdict:?})"
+            );
+        }
+    }
+
+    fn refused(order: &IssuedOrder, why: &str) -> OrderCheck {
+        OrderCheck {
+            order: order.clone(),
+            verdict: failed(why),
+        }
+    }
+
+    fn wire(issued: &IssuedOrder) -> Order {
+        Order {
+            kind: match issued.kind.as_str() {
+                "unit" => "unit",
+                other => Box::leak(other.to_string().into_boxed_str()),
+            },
+            subject: issued.subject,
+            verb: issued.verb.clone(),
+            pos: issued.pos,
+        }
+    }
+
+    #[test]
+    fn an_order_is_withheld_only_after_the_same_refusal_three_times() {
+        let issued = order("unit", Some(1), Some("MOVE_TO"), Some((4, 4)));
+        let mut refusals = HostOrderRefusals::default();
+        for turn in 1..ORDER_REFUSAL_STRIKES {
+            refusals.observe(&[refused(&issued, "did_not_move")], turn);
+            assert_eq!(
+                refusals.withheld(&wire(&issued), turn + 1),
+                None,
+                "two strikes is not yet a standing refusal"
+            );
+        }
+        refusals.observe(&[refused(&issued, "did_not_move")], ORDER_REFUSAL_STRIKES);
+        assert_eq!(
+            refusals.withheld(&wire(&issued), ORDER_REFUSAL_STRIKES + 1),
+            Some("did_not_move")
+        );
+    }
+
+    /// A genuinely transient block does not answer the same way three turns
+    /// running, which is what makes the reason comparison a sufficient test.
+    #[test]
+    fn a_changing_reason_restarts_the_count() {
+        let issued = order("unit", Some(1), Some("MOVE_TO"), Some((4, 4)));
+        let mut refusals = HostOrderRefusals::default();
+        refusals.observe(&[refused(&issued, "did_not_move")], 1);
+        refusals.observe(&[refused(&issued, "host_refused_impassable")], 2);
+        refusals.observe(&[refused(&issued, "did_not_move")], 3);
+        assert_eq!(refusals.withheld(&wire(&issued), 4), None);
+    }
+
+    #[test]
+    fn a_verified_order_clears_its_record_at_once() {
+        let issued = order("unit", Some(1), Some("MOVE_TO"), Some((4, 4)));
+        let mut refusals = HostOrderRefusals::default();
+        for turn in 1..=ORDER_REFUSAL_STRIKES {
+            refusals.observe(&[refused(&issued, "did_not_move")], turn);
+        }
+        assert!(refusals
+            .withheld(&wire(&issued), ORDER_REFUSAL_STRIKES + 1)
+            .is_some());
+        refusals.observe(
+            &[OrderCheck {
+                order: issued.clone(),
+                verdict: Verdict::Verified,
+            }],
+            ORDER_REFUSAL_STRIKES + 1,
+        );
+        assert_eq!(
+            refusals.withheld(&wire(&issued), ORDER_REFUSAL_STRIKES + 2),
+            None
+        );
+    }
+
+    /// Re-planning is not punished: the destination is part of the identity.
+    #[test]
+    fn a_new_destination_is_a_new_order() {
+        let issued = order("unit", Some(1), Some("MOVE_TO"), Some((4, 4)));
+        let elsewhere = order("unit", Some(1), Some("MOVE_TO"), Some((5, 5)));
+        let mut refusals = HostOrderRefusals::default();
+        for turn in 1..=ORDER_REFUSAL_STRIKES {
+            refusals.observe(&[refused(&issued, "did_not_move")], turn);
+        }
+        assert_eq!(
+            refusals.withheld(&wire(&elsewhere), ORDER_REFUSAL_STRIKES + 1),
+            None
+        );
+    }
+
+    #[test]
+    fn an_unverifiable_answer_neither_strikes_nor_clears() {
+        let issued = order("unit", Some(1), Some("SKIP_TURN"), None);
+        let mut refusals = HostOrderRefusals::default();
+        for turn in 1..=ORDER_REFUSAL_STRIKES {
+            refusals.observe(
+                &[OrderCheck {
+                    order: issued.clone(),
+                    verdict: Verdict::Unverifiable,
+                }],
+                turn,
+            );
+        }
+        assert_eq!(
+            refusals.withheld(&wire(&issued), ORDER_REFUSAL_STRIKES + 1),
+            None
+        );
+    }
+
+    #[test]
+    fn the_cooldown_expires_and_the_record_is_swept() {
+        let issued = order("unit", Some(1), Some("MOVE_TO"), Some((4, 4)));
+        let mut refusals = HostOrderRefusals::default();
+        for turn in 1..=ORDER_REFUSAL_STRIKES {
+            refusals.observe(&[refused(&issued, "did_not_move")], turn);
+        }
+        let expiry = ORDER_REFUSAL_STRIKES + ORDER_REFUSAL_COOLDOWN_TURNS;
+        assert!(refusals.withheld(&wire(&issued), expiry - 1).is_some());
+        assert_eq!(refusals.withheld(&wire(&issued), expiry), None);
+        refusals.sweep(expiry);
+        assert!(
+            refusals.seen.is_empty(),
+            "the table tracks the live problem"
+        );
+    }
+
+    /// The withheld order is named in the reply rather than simply absent.
+    #[test]
+    fn a_withheld_order_is_reported_by_name() {
+        let issued = order("unit", Some(1), Some("MOVE_TO"), Some((4, 4)));
+        let mut refusals = HostOrderRefusals::default();
+        for turn in 1..=ORDER_REFUSAL_STRIKES {
+            refusals.observe(&[refused(&issued, "did_not_move")], turn);
+        }
+        let other = Order {
+            kind: "research",
+            subject: None,
+            verb: Some("TECH_POTTERY".to_string()),
+            pos: None,
+        };
+        let (allowed, withheld) = withhold_refused_orders(
+            vec![wire(&issued), other],
+            ORDER_REFUSAL_STRIKES + 1,
+            &mut refusals,
+        );
+        assert_eq!(allowed.len(), 1, "the unrelated order still goes");
+        assert_eq!(allowed[0].kind, "research");
+        assert_eq!(withheld, vec!["unit:MOVE_TO did_not_move".to_string()]);
+    }
+
     #[test]
     fn every_issued_order_kind_is_checked_or_declared_unverifiable() {
         // Discover, never list: every `kind: "..."` literal this file can emit.
@@ -17505,15 +18363,28 @@ mod order_postcondition_tests {
         // A combat frame of the same turn answers nothing.
         let mut same_turn = frame(42);
         same_turn.frame = 1;
-        assert!(settle_pending_orders(&mut pending, &events, &same_turn, &no_tiles()).is_empty());
+        assert!(settle_pending_orders(
+            &mut pending,
+            &events,
+            &same_turn,
+            &no_tiles(),
+            &mut HostOrderRefusals::default(),
+        )
+        .is_empty());
         assert_eq!(pending.len(), 1);
 
         let mut next = frame(43);
         next.units = vec![unit(7, "UNIT_WARRIOR", 2, 1)];
-        let rows: Vec<String> = settle_pending_orders(&mut pending, &events, &next, &no_tiles())
-            .iter()
-            .map(Order::to_json)
-            .collect();
+        let rows: Vec<String> = settle_pending_orders(
+            &mut pending,
+            &events,
+            &next,
+            &no_tiles(),
+            &mut HostOrderRefusals::default(),
+        )
+        .iter()
+        .map(Order::to_json)
+        .collect();
         assert!(pending.is_empty());
         assert_eq!(
             rows,

@@ -3,9 +3,85 @@
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::{Game, Item, QuickDeal};
+use crate::name::Name;
 use std::collections::BTreeSet;
 
+/// An explicit Culture target must keep valuing Theater Squares and their
+/// buildings while the temporary war posture is Expansion, Conquest or
+/// Recovery. Those postures are allowed to price defense and expansion first,
+/// but letting them erase the theater lane leaves the target with no new
+/// tourism sources to host its existing chain.
+const CULTURE_TARGETED_THEATER_POSTURE_BONUS: f64 = 850.0;
+
+/// Version one prepares at half the culture-victory bar. The Emperor ladder
+/// (`docs/civ6_ladder.json`) lost most of its games to a rival culture
+/// finish between turns 155 and 208, and one game with that defence in
+/// place still lost at t177: by the time a rival shows 50 percent the
+/// Theater chain, the policy cards and the trade denial all arrive late.
+pub(super) const CULTURE_THREAT_PRESSURE: i32 = 50;
+
+/// `culture-threat-early`: the same defence, armed at 30 percent.
+pub(super) const CULTURE_THREAT_PRESSURE_EARLY: i32 = 30;
+
 impl AdvancedAi {
+    pub(super) fn culture_museum_unlock_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if g.players[pid]
+            .civics
+            .contains(&crate::name!("natural_history"))
+        {
+            return None;
+        }
+        (g.player_city_ids(pid).into_iter().any(|cid| {
+            g.cities[&cid]
+                .buildings
+                .contains(&crate::name!("archaeological_museum"))
+        }) && g.can_house_additional_great_work(pid, "artifact"))
+        .then_some("natural_history")
+    }
+
+    /// `culture-cold-war-window` changes only the order of the Culture civic
+    /// milestones. Cold War is otherwise reached through the later Space Race
+    /// goal. It does not bypass government, survival, or Great Person goals in
+    /// the caller, and the unchanged purchase pass still pays for every band.
+    pub(super) fn culture_civic_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        let goals: &[&str] = if self.culture_cold_war_window && g.victory_conditions.culture {
+            &[
+                "humanism",
+                "conservation",
+                "cold_war",
+                "professional_sports",
+                "cultural_heritage",
+                "space_race",
+                "environmentalism",
+                "social_media",
+            ]
+        } else {
+            &[
+                "humanism",
+                "conservation",
+                "professional_sports",
+                "cultural_heritage",
+                "space_race",
+                "environmentalism",
+                "social_media",
+            ]
+        };
+        goals
+            .iter()
+            .copied()
+            .find(|civic| !g.players[pid].civics.contains(&Name::new(civic)))
+    }
+
+    /// The rival pressure, as a percent of the global culture-victory bar,
+    /// at which a rival becomes a defensive threat. Off, version one's 50.
+    pub(super) fn culture_threat_pressure(&self) -> i32 {
+        if self.culture_threat_early {
+            CULTURE_THREAT_PRESSURE_EARLY
+        } else {
+            CULTURE_THREAT_PRESSURE
+        }
+    }
+
     /// Public counters, not score or our own small domestic total. Firaxis's
     /// WorldRankings.lua:1674-1687 compares visitors with the largest rival
     /// staycationer count. Halfway is a preparation threshold, not a forecast
@@ -14,13 +90,14 @@ impl AdvancedAi {
         if !self.victory_planning || !g.victory_conditions.culture {
             return BTreeSet::new();
         }
+        let bar = self.culture_threat_pressure();
         self.rival_culture_pressures(g)
             .into_iter()
             .filter(|(rival, pressure)| {
                 *rival != pid
                     && !g.same_team(pid, *rival)
                     && g.has_met(pid, *rival)
-                    && *pressure >= 50
+                    && *pressure >= bar
             })
             .map(|(rival, _)| rival)
             .collect()
@@ -35,6 +112,35 @@ impl AdvancedAi {
         }
         deal.category != "great_work"
             && !(deal.item == "open_borders" && threats.contains(&deal.partner))
+    }
+
+    /// `culture-threat-early`: while a threat exists, nothing at all is sold
+    /// to the threatening rival. Version one keeps luxury, strategic and
+    /// Gold sales open to it, and every one of them finances the finish it
+    /// is defending against. Off, exactly [`AdvancedAi::culture_deal_safe`].
+    pub(super) fn culture_deal_allowed(&self, deal: &QuickDeal, threats: &BTreeSet<usize>) -> bool {
+        Self::culture_deal_safe(deal, threats)
+            && !(self.culture_threat_early
+                && deal.direction == "sell"
+                && threats.contains(&deal.partner))
+    }
+
+    /// `culture-threat-early`: a culture threat is a denunciation candidate.
+    /// The denouncement starts the Formal War clock the war desk already
+    /// reads (`preferred_war_opening`) and costs the rival the friendship and
+    /// alliance routes to our market. One per turn, the most pressing rival
+    /// first, on the primitive [`AdvancedAi::denounce_most_pressing`] that
+    /// `science-threat-denial` shares: the engine's own legality (met, at
+    /// peace, not friends or allied, not already denounced) is read from the
+    /// diplomacy family rather than assumed. Returns the denounced rival.
+    pub(super) fn culture_threat_denunciation(&self, g: &mut Game, pid: usize) -> Option<usize> {
+        if !self.culture_threat_early {
+            return None;
+        }
+        let pressures = self.rival_culture_pressures(g);
+        let mut ranked: Vec<usize> = self.culture_trade_threats(g, pid).into_iter().collect();
+        ranked.sort_by_key(|rival| (-pressures.get(rival).copied().unwrap_or(0), *rival));
+        Self::denounce_most_pressing(g, pid, &ranked)
     }
 
     /// Late tourism defense is useful even when someone else holds the
@@ -63,13 +169,14 @@ impl AdvancedAi {
             return 0.0;
         }
         let ours = g.domestic_tourists(pid).max(0) as f64;
+        let bar = self.culture_threat_pressure();
         self.rival_culture_pressures(g)
             .into_iter()
             .filter(|(rival, pressure)| {
                 *rival != pid
                     && !g.same_team(pid, *rival)
                     && g.has_met(pid, *rival)
-                    && *pressure >= 50
+                    && *pressure >= bar
             })
             .map(|(rival, pressure)| {
                 let bar = g
@@ -112,6 +219,14 @@ impl AdvancedAi {
                     .district
                     .is_some_and(|d| g.district_family(d) == "theater_square");
                 let chain = if theater {
+                    let posture_bonus = if self.active_victory_target(g)
+                        == Some(VictoryTarget::Culture)
+                        && strategy != GrandStrategy::Culture
+                    {
+                        CULTURE_TARGETED_THEATER_POSTURE_BONUS
+                    } else {
+                        0.0
+                    };
                     420.0
                         + spec.great_work_slots.values().sum::<i32>().max(0) as f64 * 60.0
                         + ["writer", "artist", "musician"]
@@ -119,13 +234,21 @@ impl AdvancedAi {
                             .map(|kind| spec.great_person_points.get(*kind).copied().unwrap_or(0.0))
                             .sum::<f64>()
                             * 80.0
+                        + posture_bonus
                 } else {
                     0.0
                 };
                 (spec.yields.culture.max(0.0), chain)
             }
             Item::District { district, .. } if g.district_family(*district) == "theater_square" => {
-                (2.0, 500.0)
+                let posture_bonus = if self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                    && strategy != GrandStrategy::Culture
+                {
+                    CULTURE_TARGETED_THEATER_POSTURE_BONUS
+                } else {
+                    0.0
+                };
+                (2.0, 500.0 + posture_bonus)
             }
             _ => return 0.0,
         };

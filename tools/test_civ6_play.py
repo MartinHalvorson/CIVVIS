@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import io
+import ast
 import builtins
 import json
 import os
 import re
 import sys
+import subprocess
 import tempfile
 import time
 import unittest
@@ -49,6 +51,230 @@ def args(**changes):
     return SimpleNamespace(**values)
 
 
+class CityDevelopmentTests(unittest.TestCase):
+    """`record_development` is the live half of the conversion comparison.
+
+    The empire holds 0.83 of the Emperor leader's cities and turns each into
+    0.30 of their science; `gene_screen` has recorded districts and buildings
+    per seat since 2026-09-10 and the live row carried nothing to set beside
+    it. Both sides count every district a city holds, the city centre
+    included, so the pair compares without translating a Firaxis type name.
+    """
+
+    @staticmethod
+    def frame(cities):
+        return {"kind": "state", "cities": cities}
+
+    def test_it_totals_districts_and_buildings_over_our_cities(self):
+        state = {}
+        civ6_play.record_development(
+            state,
+            self.frame(
+                [
+                    {"districts": [{"type": "DISTRICT_CITY_CENTER"}, {"type": "X"}],
+                     "buildings": ["BUILDING_MONUMENT", "BUILDING_WALLS"]},
+                    {"districts": [{"type": "DISTRICT_CITY_CENTER"}], "buildings": []},
+                ]
+            ),
+        )
+        self.assertEqual(state["districts"], 3)
+        self.assertEqual(state["buildings"], 2)
+        self.assertEqual(state["developed_cities"], 2)
+
+    def test_a_later_frame_replaces_an_earlier_one(self):
+        state = {}
+        civ6_play.record_development(state, self.frame([{"districts": [1], "buildings": []}]))
+        civ6_play.record_development(
+            state, self.frame([{"districts": [1, 2], "buildings": ["b"]}])
+        )
+        self.assertEqual(state["districts"], 2)
+        self.assertEqual(state["buildings"], 1)
+
+    def test_an_empty_or_malformed_frame_never_clobbers_a_reading(self):
+        """A frame without cities is not a reading of zero development."""
+        state = {}
+        civ6_play.record_development(
+            state, self.frame([{"districts": [1, 2, 3], "buildings": ["a"]}])
+        )
+        for bad in ([], None, "not a list", [None], ["not a dict"]):
+            with self.subTest(bad=bad):
+                civ6_play.record_development(state, {"kind": "state", "cities": bad})
+                self.assertEqual(state["districts"], 3)
+                self.assertEqual(state["buildings"], 1)
+                self.assertEqual(state["developed_cities"], 1)
+
+    def test_a_city_with_neither_key_counts_as_a_city_with_none(self):
+        state = {}
+        civ6_play.record_development(state, self.frame([{}, {"buildings": ["a"]}]))
+        self.assertEqual(state["districts"], 0)
+        self.assertEqual(state["buildings"], 1)
+        self.assertEqual(state["developed_cities"], 2)
+
+
+class SharedDesktopRescueTests(unittest.TestCase):
+    def test_marker_and_foreground_control_optional_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.operator_presence, "operator_active",
+                          return_value=False), \
+             patch.object(civ6_play.popup_clear, "frontmost") as front:
+            self.assertFalse(civ6_play.shared_desktop_in_use())
+            front.assert_not_called()
+            (Path(tmp) / ".civvis-shared-desktop").touch()
+            for name, deferred in (("Google Chrome", True), ("Terminal", True),
+                                   ("", True), ("Civ6_Exe_Child", False)):
+                front.return_value = name
+                self.assertEqual(civ6_play.shared_desktop_in_use(), deferred)
+            front.side_effect = subprocess.TimeoutExpired("osascript", 5)
+            self.assertTrue(civ6_play.shared_desktop_in_use())
+
+    def test_a_person_at_the_keyboard_makes_the_desktop_shared_without_a_marker(self):
+        """The whole point: no marker to remember. Sit down and the harness keeps
+        its hands off; walk away and upkeep resumes on its own."""
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.operator_presence, "operator_active") as active, \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"):
+            active.return_value = True
+            self.assertTrue(civ6_play.shared_desktop_in_use())
+            active.return_value = False
+            self.assertFalse(civ6_play.shared_desktop_in_use())
+
+    def test_a_game_the_person_put_in_front_is_still_fair_game(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.operator_presence, "operator_active", return_value=True), \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Civ6_Exe_Child"):
+            self.assertFalse(civ6_play.shared_desktop_in_use())
+
+    def test_focus_upkeep_defers_to_a_present_operator(self):
+        with patch.object(civ6_play, "shared_desktop_in_use", return_value=True), \
+             patch.object(civ6_play, "screen_locked", return_value=False), \
+             patch.object(civ6_play, "focus_game") as focus:
+            self.assertEqual(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
+        focus.assert_not_called()
+        with patch.object(civ6_play, "shared_desktop_in_use", return_value=False), \
+             patch.object(civ6_play, "screen_locked", return_value=False), \
+             patch.object(civ6_play, "focus_game") as focus:
+            self.assertGreater(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
+        focus.assert_called_once()
+
+    def test_presence_is_logged_on_transitions_only(self):
+        """A person working beside the game for an hour is one line, not one per
+        poll."""
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"), \
+             patch.object(civ6_play.operator_presence, "operator_active") as active, \
+             patch.dict(civ6_play._SHARED_DESKTOP_STATE, {"deferring": False}), \
+             patch("sys.stdout", out):
+            for value in (True, True, True, False, False):
+                active.return_value = value
+                civ6_play.shared_desktop_in_use()
+        lines = [line for line in out.getvalue().splitlines() if line.startswith("[desktop]")]
+        self.assertEqual(len(lines), 2, lines)
+
+    def test_real_event_handler_preserves_events_without_gui_or_budget_work(self):
+        # Execute the actual nested callback; no game or GUI bootstrap is needed.
+        tree = ast.parse(Path(civ6_play.__file__).read_text())
+        callback = next(n for n in ast.walk(tree)
+                        if isinstance(n, ast.FunctionDef) and n.name == "record")
+        code = compile(ast.Module(body=[callback], type_ignores=[]),
+                       civ6_play.__file__, "exec")
+        ledger = io.StringIO()
+        with patch.object(civ6_play, "shared_desktop_in_use", return_value=True) as shared, \
+             patch.object(civ6_play.popup_clear, "capture_pause_reason") as capture, \
+             patch.object(civ6_play, "DESKTOP_RESCUE_BUDGET") as budget, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "dismiss_visually_confirmed_popup") as dialogue, \
+             patch.object(civ6_play, "dismiss_world_congress_between_turns") as congress, \
+             patch.object(civ6_play, "press_escape") as escape:
+            namespace = dict(vars(civ6_play), events=ledger, state={"turn": 24},
+                             run_dir=Path("/unused"))
+            exec(code, namespace)
+            for kind in ("autoclose_desktop", "autoclose_stuck"):
+                for screen in ("DiplomacyActionView", "WorldCongressBetweenTurns",
+                               "ChooseArtifact"):
+                    namespace["record"]({"kind": kind, "screen": screen})
+            rows = [json.loads(line) for line in ledger.getvalue().splitlines()]
+            self.assertEqual(len(rows), 6)
+            self.assertTrue(all("utc" in row for row in rows))
+            self.assertEqual(shared.call_count, 6)
+            for action in (capture, screenshot, dialogue, congress, escape):
+                action.assert_not_called()
+            budget.spend.assert_not_called()
+            shared.return_value = False
+            budget.spend.return_value = (True, "capture available")
+            dialogue.return_value = (False, "no safe visible dialogue (map)")
+            namespace["record"]({"kind": "autoclose_desktop",
+                                  "screen": "DiplomacyActionView", "attempts": 4})
+            dialogue.assert_called_once()
+            budget.spend.assert_called_once()
+
+
+class SharedDesktopFocusTests(unittest.TestCase):
+    def test_disabled_interval_never_raises_or_places_the_game(self):
+        with patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "place_game") as place:
+            for interval in (0, -1):
+                self.assertEqual(civ6_play.maintain_game_focus(
+                    interval, 0, place=True), 0)
+        focus.assert_not_called()
+        place.assert_not_called()
+
+    def test_marker_can_disable_and_restore_upkeep_without_a_restart(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.time, "monotonic", return_value=100), \
+             patch.object(civ6_play, "screen_locked", return_value=False), \
+             patch.object(civ6_play.operator_presence, "operator_active", return_value=False), \
+             patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"), \
+             patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "place_game") as place:
+            marker = Path(tmp) / ".civvis-shared-desktop"
+            marker.touch()
+            self.assertEqual(civ6_play.maintain_game_focus(
+                15, 0, place=True), 0)
+            focus.assert_not_called()
+            place.assert_not_called()
+            marker.unlink()
+            self.assertEqual(civ6_play.maintain_game_focus(
+                15, 0, place=True), 100)
+            focus.assert_called_once_with()
+            place.assert_called_once_with(civ6_play.GAME_SIDE,
+                                          civ6_play.GAME_FRACTION,
+                                          civ6_play.GAME_VFRACTION)
+            self.assertEqual(civ6_play.maintain_game_focus(
+                15, 100, place=True), 100)
+            self.assertEqual(focus.call_count, 1)
+
+    def test_locked_session_is_untouched_and_attach_never_repositions(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(civ6_play.Path, "home", return_value=Path(tmp)), \
+             patch.object(civ6_play.time, "monotonic", return_value=100), \
+             patch.object(civ6_play, "screen_locked", return_value=True) as locked, \
+             patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "place_game") as place:
+            self.assertEqual(civ6_play.maintain_game_focus(15, 0), 0)
+            focus.assert_not_called()
+            locked.return_value = False
+            self.assertEqual(civ6_play.maintain_game_focus(15, 0), 100)
+            focus.assert_called_once_with()
+            place.assert_not_called()
+
+    def test_both_game_loops_use_shared_upkeep_and_retirement_stays_active(self):
+        source = Path(civ6_play.__file__).read_text()
+        attach = source[source.index("def _attach_running_game("):]
+        self.assertIn("last_focus = maintain_game_focus(args.focus_every, last_focus)",
+                      attach)
+        normal = source[source.index("    def keep_foreground() -> None:"):]
+        callback = normal[:normal.index("    # ⚠ THE POLL INTERVAL")]
+        self.assertLess(callback.index("process_operator_retirement()"),
+                        callback.index("maintain_game_focus("))
+        self.assertIn("args.focus_every, last_focus[0], place=True", callback)
+
+
 class AttachRunningTests(unittest.TestCase):
     """A loaded save has an ownership path that never touches its process."""
 
@@ -73,7 +299,7 @@ class AttachRunningTests(unittest.TestCase):
 
     def test_cli_exposes_the_autosave_turn_to_the_attach_owner(self) -> None:
         with patch.object(civ6_play, "play", return_value=0) as play, \
-             patch.object(civ6_play, "enforce_roman_leader",
+             patch.object(civ6_play, "resolve_live_leader",
                           return_value="LEADER_TRAJAN"):
             self.assertEqual(civ6_play.main([
                 "--tag", "saved-game", "--attach-running",
@@ -207,6 +433,101 @@ class AttachSummaryTests(unittest.TestCase):
         self.assertEqual(summary["tech_marks"],
                          {100: {"techs": 14, "rival_techs": 19},
                           150: {"techs": 31, "rival_techs": 47}})
+
+    def test_attached_summary_carries_the_culture_clock_to_the_ladder_row(self):
+        """★ THE WHOLE PATH, NOT THE WIRING STRING.
+
+        `culture_marks` has unit tests and `attached_summary` was pinned by
+        asserting a source string. A source check passes even when the call
+        lands in a branch that never runs, and until the halt lifts no live game
+        can prove otherwise -- so this drives the real path end to end:
+        `events.jsonl` -> `attached_summary` -> `entry_from` -> the four flat
+        columns a reader actually queries.
+
+        The board is the one the Emperor record keeps losing to: a rival whose
+        visiting tourists already clear the bar, scored against a bar it does
+        not itself set.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-culture"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 100, "frame": 0,
+                     "techs": ["TECH_MINING"],
+                     "foreign_tourists": 30, "domestic_tourists": 40,
+                     "rivals": [{"foreign_tourists": 90, "domestic_tourists": 10},
+                                {"foreign_tourists": 50, "domestic_tourists": 80}]},
+                    {"kind": "state", "turn": 150, "frame": 0,
+                     "techs": ["TECH_MINING", "TECH_POTTERY"],
+                     "foreign_tourists": 44, "domestic_tourists": 55,
+                     "rivals": [{"foreign_tourists": 120, "domestic_tourists": 11},
+                                {"foreign_tourists": 60, "domestic_tourists": 88}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 160, "score": 300, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+
+        # The second rival draws FEWER tourists and is still closer, because its
+        # own staycationers do not shield it: 100*50/40 = 125% against
+        # 100*90/80 = 112.5%. A single board-wide bar would report 112.5%.
+        self.assertEqual(summary["culture_marks"][100], {
+            "tourists": 30, "domestic": 40, "rival_tourists": 90,
+            "rival_percent": 125.0, "percent": 37.5,
+        })
+        # t150: the leader must clear the OTHER rival's 88 staycationers, not
+        # our 55 -- 100*120/88 = 136.36%. The second rival clears only our 55,
+        # 100*60/55 = 109.09%, so the leader is the one with the higher bar.
+        self.assertEqual(summary["culture_marks"][150]["rival_percent"], 136.36)
+
+        # And the columns a reader queries, from that same summary.
+        import civ6_ladder
+        entry = civ6_ladder.entry_from(dict(summary, tag=run_dir.name))
+        self.assertEqual(entry["rival_culture_at_100"], 125.0)
+        self.assertEqual(entry["domestic_tourists_at_100"], 40)
+        self.assertEqual(entry["rival_culture_at_150"], 136.36)
+        self.assertEqual(entry["domestic_tourists_at_150"], 55)
+
+    def test_attached_summary_carries_the_space_race_to_the_last_board(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-launches"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "state", "turn": 201, "frame": 0,
+                     "science_projects": [],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                    {"kind": "state", "turn": 219, "frame": 0,
+                     "science_projects": ["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                          "PROJECT_LAUNCH_MOON_LANDING"],
+                     "cities": [{"districts": [
+                         {"type": "DISTRICT_SPACEPORT", "complete": True}]}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="science",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_EMPEROR",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 226, "score": 470, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+        self.assertEqual(summary["launch_marks"],
+                         {"spaceport_turn": 201, "launches_completed": 2,
+                          "last_launch_turn": 219})
 
     def test_write_attached_summary_indexes_the_run_after_writing_it(self):
         import civ6_ladder
@@ -799,6 +1120,9 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_civvis_decision_mode_always_enables_state_export(self) -> None:
         self.assertTrue(civ6_play.state_export_enabled(
+            SimpleNamespace(export_state=False, civvis_decides=False, action_transitions=True)
+        ))
+        self.assertTrue(civ6_play.state_export_enabled(
             SimpleNamespace(export_state=False, civvis_decides=True)
         ))
         self.assertTrue(civ6_play.state_export_enabled(
@@ -816,14 +1140,13 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("bypasses CIVVIS's war decision", error.getvalue())
 
-    def test_live_launcher_coerces_an_explicit_non_roman_leader(self) -> None:
-        """A direct harness call must not bypass the standing Rome policy."""
-        with patch.object(civ6_play, "play", return_value=0) as play:
-            result = civ6_play.main(
-                ["--tag", "rome-policy", "--leader", "LEADER_TOKUGAWA"])
-
-        self.assertEqual(result, 0)
-        self.assertEqual(play.call_args.args[0].leader, civ6_play.ROMAN_LEADER)
+    def test_live_launcher_honors_selected_leader_and_defaults_to_rome(self) -> None:
+        for flags, expected in (([], civ6_play.ROMAN_LEADER),
+                                (["--leader", "LEADER_PERICLES"], "LEADER_PERICLES")):
+            with self.subTest(flags=flags), patch.object(civ6_play, "play", return_value=0) as play:
+                result = civ6_play.main(["--tag", "leader-policy"] + flags)
+                self.assertEqual(result, 0)
+                self.assertEqual(play.call_args.args[0].leader, expected)
 
     def test_setup_does_not_start_when_a_required_dropdown_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
@@ -845,6 +1168,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_setup_starts_only_after_every_required_dropdown_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True) as setter, \
+             patch.object(civ6_play, "select_requested_map", return_value=True) as mapper, \
              patch.object(civ6_play, "select_requested_leader", return_value=True) as leader, \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point",
@@ -867,6 +1191,11 @@ class Civ6PlayTest(unittest.TestCase):
                      panel=None, panel_out=mock.ANY),
             ],
         )
+        # The map is a required row too, but it is NOT a dropdown: it opens the
+        # SELECT MAP browser, so it goes through its own driver.
+        mapper.assert_called_once_with(
+            (100, 33, 756, 480), "Continents.lua", Path(temporary),
+            panel=None, panel_out=mock.ANY)
         shared = setter.call_args_list[0].kwargs["panel_out"]
         self.assertTrue(all(c.kwargs["panel_out"] is shared for c in setter.call_args_list))
         leader.assert_called_once_with(
@@ -884,6 +1213,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_setup_refuses_to_start_without_a_visible_start_game_control(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True), \
+             patch.object(civ6_play, "select_requested_map", return_value=True), \
              patch.object(civ6_play, "select_requested_leader", return_value=True), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point", return_value=None), \
@@ -909,6 +1239,7 @@ class Civ6PlayTest(unittest.TestCase):
                 return True
 
             with patch.object(civ6_play, "set_dropdown", return_value=True), \
+                 patch.object(civ6_play, "select_requested_map", return_value=True), \
                  patch.object(civ6_play, "select_requested_leader",
                               side_effect=select_leader), \
                  patch.object(civ6_play, "screenshot", return_value=False), \
@@ -929,6 +1260,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_setup_refuses_to_start_when_requested_leader_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True), \
+             patch.object(civ6_play, "select_requested_map", return_value=True), \
              patch.object(civ6_play, "select_requested_leader", return_value=False), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "click_at") as click:
@@ -1578,6 +1910,462 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class ExitConfirmationTests(unittest.TestCase):
+    """★★★★★ THE POLITE QUIT ASKS A QUESTION AND NOTHING WAS ANSWERING IT.
+
+    `civ6_env.request_macos_quit()` clicks *Quit Civilization VI* in the game's
+    own menu. From inside a game or the Create Game screen that raises an
+    in-engine modal — EXIT TO DESKTOP / OK · Cancel — rather than exiting. The
+    SIGTERM that follows cannot get through a modal and `quit_game` rightly
+    will not escalate to SIGKILL, so the process sits there and the supervisor
+    reports `LANE STALLED ... it needs an operator`. It needed one twice on
+    2026-09-10 and both times the fix was one click.
+    """
+
+    BOUNDS = (0, 33, 864, 542)
+
+    def _confirm(self, points):
+        clicks = []
+
+        def labels(shot, label, bounds, strip=None):
+            return points.get(label, [])
+
+        with mock.patch.object(civ6_play, "game_window", return_value=self.BOUNDS), \
+             mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_observed_label_points", labels), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "click_at",
+                               side_effect=lambda x, y: clicks.append((x, y))):
+            answered = civ6_play.confirm_exit_dialog()
+        return answered, clicks
+
+    def test_ok_is_cancel_mirrored_about_the_heading(self):
+        """⚠⚠ OK CANNOT BE FOUND BY OCR — the readers demand an exact match
+        under ten characters and `OK` is two. These are real coordinates from
+        the two live stalls: heading x=433 with Cancel (480, 334) gives
+        (386, 334), and heading x=431 gives (382, 334). Both exited the game.
+        `(385 + 480) / 2 = 432.5` lands on the heading, which is what makes the
+        mirror a rule rather than a lucky constant."""
+        for heading_x, expected in ((433, 386), (431, 382)):
+            with self.subTest(heading_x=heading_x):
+                answered, clicks = self._confirm({
+                    "Exit To Desktop": [(heading_x, 294)],
+                    "Cancel": [(480, 334)],
+                })
+                self.assertTrue(answered)
+                self.assertEqual(clicks, [(expected, 334)])
+
+    def test_no_dialog_means_no_click(self):
+        for points in ({}, {"Exit To Desktop": [(433, 294)]}, {"Cancel": [(480, 334)]}):
+            with self.subTest(points=sorted(points)):
+                answered, clicks = self._confirm(points)
+                self.assertFalse(answered)
+                self.assertEqual(clicks, [])
+
+    def test_a_mirror_outside_the_game_window_is_not_this_dialog(self):
+        """Cancel far to the left of the heading mirrors to a point off the
+        window. That is not a symmetric dialog, so nothing is clicked."""
+        answered, clicks = self._confirm({
+            "Exit To Desktop": [(60, 294)],
+            "Cancel": [(840, 334)],
+        })
+        self.assertFalse(answered)
+        self.assertEqual(clicks, [])
+
+    def test_an_unreadable_frame_is_not_a_guessed_click(self):
+        with mock.patch.object(civ6_play, "game_window", return_value=self.BOUNDS), \
+             mock.patch.object(civ6_play, "screenshot", return_value=False), \
+             mock.patch.object(civ6_play, "click_at") as click:
+            self.assertFalse(civ6_play.confirm_exit_dialog())
+        click.assert_not_called()
+        with mock.patch.object(civ6_play, "game_window", return_value=None), \
+             mock.patch.object(civ6_play, "click_at") as click:
+            self.assertFalse(civ6_play.confirm_exit_dialog())
+        click.assert_not_called()
+
+
+class MapPickerTests(unittest.TestCase):
+    """★★★★★ THE MAP ROW OPENS A BROWSER, NOT A DROPDOWN.
+
+    `set_dropdown` clicked the row and looked for the requested name in what it
+    assumed was a short open list. What actually appears is a full panel titled
+    `SELECT MAP`: filter tabs, a two-column scrolling grid of globe tiles with
+    the map name captioned under each, and a `Select Map` button at the foot
+    that commits. The browser opens on the alphabetical head of the roster, so
+    `Pangaea` is several screens below the fold and no amount of retrying makes
+    it visible. Measured live on run civvis-20260910T175742Z: three attempts,
+    `requested option was not visible` each time, then a refusal and no game.
+    """
+
+    BOUNDS = (0, 33, 864, 542)
+
+    def _drive(self, *, current, frames, commit=(432, 566),
+               verified=("Pangaea.lua", (432, 300)), pages=None):
+        """Run the picker against a scripted screen; return what it did.
+
+        ``frames`` is one list of caption points per wheel step: an empty list
+        is a frame the caption is not on. ``current`` is what the Create Game
+        row reads before the browser opens.
+        """
+        clicks: list[tuple[int, int]] = []
+        wheel: list[int] = []
+        reads = [current] + ([verified] if verified else [None, None])
+        frame = iter(frames)
+
+        def picker_open(path, bounds):
+            # Still in the browser unless the commit click has been sent.
+            return commit is None or (432, 566) not in clicks
+
+        # Each frame shows a different page unless a test says otherwise, so the
+        # end-of-list stop does not fire in tests that are about something else.
+        page = iter(pages if pages is not None
+                    else (frozenset({f"page{n}"}) for n in range(1000)))
+
+        def page_labels(path, bounds):
+            try:
+                return next(page)
+            except StopIteration:
+                return frozenset()
+
+        def labels(path, bounds, label):
+            if label == "Select Map":
+                return [(432, 120), commit] if commit else []
+            if label == "Back":
+                return [(700, 120)]
+            try:
+                return next(frame)
+            except StopIteration:
+                return []
+
+        def current_value(path, bounds, name):
+            return reads.pop(0) if reads else None
+
+        with mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_map_picker_labels", labels), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]), \
+             mock.patch.object(civ6_play, "_map_picker_open", side_effect=picker_open), \
+             mock.patch.object(civ6_play, "_map_picker_page_labels", page_labels), \
+             mock.patch.object(civ6_play, "_setup_current_value", current_value), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "park_setup_pointer"), \
+             mock.patch.object(civ6_play, "press_escape"), \
+             mock.patch.object(civ6_play, "click_at",
+                               side_effect=lambda x, y: clicks.append((x, y))), \
+             mock.patch.object(civ6_play.macos_input, "move"), \
+             mock.patch.object(civ6_play.macos_input, "scroll",
+                               side_effect=wheel.append), \
+             mock.patch.object(civ6_play.time, "sleep"):
+            chosen = civ6_play.select_requested_map(
+                self.BOUNDS, "Pangaea.lua", Path("/tmp"))
+        return chosen, clicks, wheel
+
+    def test_the_map_already_shown_never_opens_the_browser(self):
+        """The fast path is the one that protects every other host. A run that
+        wants the map the row already shows must not click anything at all —
+        which is why enabling map selection cannot disturb a Continents host."""
+        chosen, clicks, wheel = self._drive(
+            current=("Pangaea.lua", (432, 300)), frames=[])
+        self.assertTrue(chosen)
+        self.assertEqual(clicks, [])
+        self.assertEqual(wheel, [])
+
+    def test_the_browser_is_walked_until_the_caption_appears(self):
+        """Three empty frames, then the caption: the wheel steps three times,
+        the caption is clicked, and the commit button after it."""
+        chosen, clicks, wheel = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[], [], [], [(500, 430)]])
+        self.assertTrue(chosen)
+        self.assertEqual(clicks, [(432, 300), (500, 430), (432, 566)])
+        # One reset to the top of the roster, then one step per empty frame.
+        self.assertEqual(wheel, [civ6_play.MAP_PICKER_SCROLL_RESET]
+                         + [civ6_play.MAP_PICKER_SCROLL_AMOUNT] * 3)
+
+    def test_the_roster_is_rewound_before_it_is_walked(self):
+        """⚠ Firaxis retains the grid's scroll position between openings, so a
+        retry can begin BELOW the wanted map and never reach it going down."""
+        _, _, wheel = self._drive(current=("Continents.lua", (432, 300)),
+                                  frames=[[(500, 430)]])
+        self.assertEqual(wheel[0], civ6_play.MAP_PICKER_SCROLL_RESET)
+        self.assertGreater(civ6_play.MAP_PICKER_SCROLL_RESET, 0, "rewind scrolls UP")
+        self.assertLess(civ6_play.MAP_PICKER_SCROLL_AMOUNT, 0, "walking scrolls DOWN")
+
+    def test_one_wheel_tick_per_step_because_a_tick_is_about_three_rows(self):
+        """⚠⚠ THIS WAS -3 AND IT STEPPED CLEAN OVER THE MAP IT WANTED.
+
+        Measured live on run civvis-20260910T182338Z: the rewind landed on the
+        top of the roster and ONE -3 step landed on the very bottom — every
+        later frame identical, the list already at its end. `Pangaea` lives
+        exactly in the gap between Fractal and Seven Seas that the single step
+        jumped, so it was never on any frame.
+
+        A frame shows five rows and one tick moves about three of them, so
+        consecutive frames overlap and no caption can hide between two.
+        """
+        self.assertEqual(civ6_play.MAP_PICKER_SCROLL_AMOUNT, -1)
+
+    def test_the_walk_stops_when_the_grid_stops_moving(self):
+        """A page that cannot move has nothing left to show. Without this the
+        walk photographed the same bottom-of-list page twenty-three times and
+        then reported a map it had genuinely never seen — which reads like
+        flaky OCR rather than a wheel that overshot."""
+        stuck = frozenset({"seven seas", "shuffle", "terra"})
+        chosen, clicks, wheel = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[] for _ in range(civ6_play.MAP_PICKER_SCROLL_STEPS)],
+            pages=[frozenset({"top of list"}), stuck, stuck, stuck])
+        self.assertFalse(chosen)
+        # Rewind, then one step off the first page, then one off the repeat that
+        # proved the list had settled. It stops there, not at step 24.
+        self.assertEqual(len(wheel), 3)
+        self.assertNotIn((500, 430), clicks)
+
+    def test_a_caption_that_never_appears_is_refused_rather_than_guessed(self):
+        """No tile is clicked and no coordinate is invented; the caller refuses
+        to start, which is what kept a wrong map off the ledger."""
+        chosen, clicks, wheel = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[] for _ in range(civ6_play.MAP_PICKER_SCROLL_STEPS)])
+        self.assertFalse(chosen)
+        # The row click that opened the browser, then the Back control. No tile.
+        self.assertEqual(clicks, [(432, 300), (700, 120)])
+        self.assertEqual(len(wheel), civ6_play.MAP_PICKER_SCROLL_STEPS + 1)
+
+    def test_a_commit_that_did_not_take_is_not_reported_as_success(self):
+        """The panel can highlight a tile and commit nothing. The Create Game
+        row is the only witness that counts."""
+        chosen, clicks, _ = self._drive(
+            current=("Continents.lua", (432, 300)),
+            frames=[[(500, 430)]],
+            verified=None)
+        self.assertFalse(chosen)
+        # Committed and back on Create Game, so `Back` is a different control
+        # now and must not be clicked on the way out.
+        self.assertNotIn((700, 120), clicks)
+
+    def test_a_lone_heading_is_never_taken_for_the_commit_button(self):
+        """⚠⚠ "LOWEST WINS" IS ONLY RIGHT WHILE BOTH ARE LEGIBLE.
+
+        On run civvis-20260910T184530Z only the heading was read — the button is
+        small and sits BELOW the grid crop, so only the 1x full-desktop pass can
+        reach it and that pass missed it. The lowest of one match is the
+        heading; the click landed on the title, the browser never closed, and
+        the run reported `Pangaea was committed but the row still reads
+        Lakes.lua`. Position decides now, not order.
+        """
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(431, 122)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
+            self.assertIsNone(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS))
+
+    def test_the_commit_button_is_found_in_the_panels_foot(self):
+        """The button reads reliably only in its own enlarged crop, which the
+        grid crop cannot cover: it is at ~0.98 of the window and the grid strip
+        stops at 0.94. Real coordinates from the live frames."""
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(431, 122)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip",
+                               return_value=[(432, 566)]):
+            self.assertEqual(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS),
+                (432, 566))
+        # The foot threshold separates them: 122 is 0.16 of the window, 566 is 0.98.
+        y, h = self.BOUNDS[1], self.BOUNDS[3]
+        self.assertLess((122 - y) / h, civ6_play.MAP_PICKER_COMMIT_MIN_Y)
+        self.assertGreater((566 - y) / h, civ6_play.MAP_PICKER_COMMIT_MIN_Y)
+
+    def test_the_row_is_not_read_through_a_browser_that_is_still_open(self):
+        """⚠⚠ With the panel up there is no `Choose Map Type` heading on screen,
+        so `_setup_current_value` falls through to its overlapping band fallback
+        and returns a TILE CAPTION. That is how a run with nothing committed
+        reported the row as `Lakes.lua`."""
+        reads = []
+
+        def never_closes(path, bounds):
+            return True
+
+        def current_value(path, bounds, name):
+            reads.append(path.name)
+            return ("Lakes.lua", (432, 219))
+
+        with mock.patch.object(civ6_play, "screenshot", return_value=True), \
+             mock.patch.object(civ6_play, "_map_picker_labels",
+                               side_effect=lambda p, b, l: {"Select Map": [(432, 566)],
+                                                            "Back": [(700, 120)]}.get(l, [])), \
+             mock.patch.object(civ6_play, "_map_picker_tile_point",
+                               return_value=(500, 430)), \
+             mock.patch.object(civ6_play, "_map_picker_commit_point",
+                               return_value=(432, 566)), \
+             mock.patch.object(civ6_play, "_map_picker_open", never_closes), \
+             mock.patch.object(civ6_play, "_setup_current_value",
+                               side_effect=[("Continents.lua", (432, 300))] + [None] * 8), \
+             mock.patch.object(civ6_play, "focus_game"), \
+             mock.patch.object(civ6_play, "park_setup_pointer"), \
+             mock.patch.object(civ6_play, "press_escape"), \
+             mock.patch.object(civ6_play, "click_at"), \
+             mock.patch.object(civ6_play.macos_input, "move"), \
+             mock.patch.object(civ6_play.macos_input, "scroll"), \
+             mock.patch.object(civ6_play.time, "sleep"):
+            self.assertFalse(civ6_play.select_requested_map(
+                self.BOUNDS, "Pangaea.lua", Path("/tmp")))
+        # The verification frames were never handed to the row reader.
+        self.assertNotIn("map-picker-selected.png", reads)
+
+    def test_the_commit_button_is_the_lowest_select_map_on_screen(self):
+        """⚠⚠ THE HEADING AND THE BUTTON CARRY THE SAME WORDS. `SELECT MAP`
+        titles the panel and `Select Map` commits it, and `_normalized_label`
+        casefolds both to one string — so taking the first match clicks the
+        heading, which does nothing, and the game never starts."""
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(432, 120), (432, 566), (432, 300)]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
+            self.assertEqual(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS),
+                (432, 566))
+        with mock.patch.object(civ6_play, "_map_picker_labels", return_value=[]), \
+             mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]):
+            self.assertIsNone(
+                civ6_play._map_picker_commit_point(Path("/tmp/x.png"), self.BOUNDS))
+
+    def test_the_map_info_pane_is_not_mistaken_for_a_tile(self):
+        """⚠⚠ THE SELECTED MAP'S NAME IS ON SCREEN TWICE — the grid captions it
+        under its globe and the read-only `Map Info` pane captions it again.
+
+        These are the real coordinates: on the live frame from run
+        civvis-20260910T175742Z, `Continents` came back as (585, 223) — the info
+        pane — and (432, 292) — the tile — with the PANE FIRST. Clicking the
+        first match selects nothing, and the walk would give up on a map that
+        was on screen the whole time.
+        """
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(585, 223), (432, 292)]):
+            self.assertEqual(
+                civ6_play._map_picker_tile_point(Path("/tmp/x.png"), self.BOUNDS,
+                                                 "Continents"),
+                (432, 292))
+        # A name only in the pane is not a tile that can be clicked.
+        with mock.patch.object(civ6_play, "_map_picker_labels",
+                               return_value=[(585, 223)]):
+            self.assertIsNone(
+                civ6_play._map_picker_tile_point(Path("/tmp/x.png"), self.BOUNDS,
+                                                 "Continents"))
+
+    def test_one_select_map_label_is_not_enough_to_call_the_browser_open(self):
+        """A single match cannot separate a live panel from one stray label, so
+        the panel is only 'open' on two matches or on its own filter tab."""
+        def labels(path, bounds, label):
+            return {"Select Map": [(432, 120)], "All Maps": []}.get(label, [])
+
+        with mock.patch.object(civ6_play, "_map_picker_labels", labels):
+            self.assertFalse(civ6_play._map_picker_open(Path("/tmp/x.png"), self.BOUNDS))
+
+        def both(path, bounds, label):
+            return {"Select Map": [(432, 120), (432, 566)]}.get(label, [])
+
+        with mock.patch.object(civ6_play, "_map_picker_labels", both):
+            self.assertTrue(civ6_play._map_picker_open(Path("/tmp/x.png"), self.BOUNDS))
+
+        def tab(path, bounds, label):
+            return {"All Maps": [(500, 150)]}.get(label, [])
+
+        with mock.patch.object(civ6_play, "_map_picker_labels", tab):
+            self.assertTrue(civ6_play._map_picker_open(Path("/tmp/x.png"), self.BOUNDS))
+
+
+class MapSelectionTests(unittest.TestCase):
+    """★★★★★ THE MAP WAS THE ONE LOBBY ROW THE PANEL NEVER SET.
+
+    `MapScript` in the baked config is ignored — the FrontEnd context that reads
+    it never loads on this install — so a game plays what the Create Game panel
+    says, and the panel was never told. Every run was Continents, on which a seat
+    can start ALONE: one reached turn 118 with `met = 0` and first contact at
+    turn 130, far too late for a domination lane that needs three capitals.
+
+    An earlier attempt clicked a guessed row index, broke setup outright (four
+    attempts, no `seat` event) and was reverted with two conditions written down:
+    OCR the dropdown rows, or read the selection back before Start Game.
+    `set_dropdown` does both for every row, so the map goes through the same
+    verified path as difficulty, size and speed — no special case, and no
+    special refusal.
+    """
+
+    @staticmethod
+    def _args(**changes):
+        values = dict(difficulty="DIFFICULTY_EMPEROR", map="Pangaea.lua",
+                      map_size="MAPSIZE_TINY", speed="GAMESPEED_STANDARD",
+                      leader="LEADER_SIMON_BOLIVAR")
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    def _rows_driven(self, args):
+        """The (row, value) pairs `configure_and_start` drives, in order.
+
+        The leader step answers False so the call stops immediately after the
+        dropdown loop: this is about which rows are set, not about the rest of
+        the Create Game flow.
+        """
+        driven = []
+
+        def record(bounds, name, value, run_dir, panel=None, panel_out=None):
+            driven.append((name, value))
+            return True
+
+        def record_map(bounds, value, run_dir, panel=None, panel_out=None):
+            driven.append(("map_type", value))
+            return True
+
+        with mock.patch.object(civ6_play, "set_dropdown", record), \
+             mock.patch.object(civ6_play, "select_requested_map", record_map), \
+             mock.patch.object(civ6_play, "select_requested_leader",
+                               return_value=False):
+            started = civ6_play.configure_and_start(
+                (0, 0, 864, 528), args, Path("/tmp"))
+        self.assertFalse(started)
+        return driven
+
+    def test_the_requested_map_is_driven_like_every_other_setup_row(self):
+        self.assertIn(("map_type", "Pangaea.lua"), self._rows_driven(self._args()))
+
+    def test_the_map_is_chosen_before_the_size_it_constrains(self):
+        """The size list is the one the chosen script offers, so the size is
+        verified against the final map rather than against the outgoing one."""
+        rows = [name for name, _ in self._rows_driven(self._args())]
+        self.assertLess(rows.index("map_type"), rows.index("map_size"))
+
+    def test_a_non_default_map_is_no_longer_refused_outright(self):
+        """The refusal this replaces returned False before touching the panel,
+        so `--map Pangaea.lua` could not start a game at all."""
+        self.assertEqual(len(self._rows_driven(self._args())), 4)
+        source = (Path(civ6_play.__file__)).read_text(encoding="utf-8")
+        self.assertNotIn("map selection is disabled pending verification", source)
+
+    def test_the_map_the_game_generated_is_what_makes_a_seat_configured(self):
+        """The check on the far side of the click: the mod reports
+        `MapConfiguration.GetScript()` and a seat that generated another script
+        is not `configured`, so a missed selection ends the attempt instead of
+        quietly playing the wrong world for three hours."""
+        args = self._args(game_mode=[], ruleset="RULESET_EXPANSION_2")
+        seat = {"difficulty": "DIFFICULTY_EMPEROR", "size": "MAPSIZE_TINY",
+                "speed": "GAMESPEED_STANDARD", "map": "Pangaea.lua",
+                "leader": "LEADER_SIMON_BOLIVAR", "modes": [],
+                "ruleset": "RULESET_EXPANSION_2"}
+        self.assertTrue(civ6_play.seat_matches_requested(seat, args)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            {**seat, "map": "Continents.lua"}, args)[0])
+
+    def test_the_command_line_refuses_a_map_the_panel_cannot_be_driven_to(self):
+        """Rejected at argparse, where the cost is a message — not inside
+        `set_dropdown`, minutes into a launched game."""
+        self.assertIn("Pangaea.lua", civ6_play.OPTIONS["map_type"])
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr), \
+                self.assertRaises(SystemExit) as refused:
+            civ6_play.main(["--map", "Atlantis.lua"])
+        self.assertEqual(refused.exception.code, 2)
+        self.assertIn("--map", stderr.getvalue())
+
+
 class DialogueCloseConfigTests(unittest.TestCase):
     @staticmethod
     def _config(dialogue_seconds):
@@ -2071,6 +2859,22 @@ class TheRulesetIsReadBackFromTheGame(unittest.TestCase):
     def test_the_asked_for_ruleset_matches(self):
         self.assertEqual(
             civ6_play.seat_matches_requested(self._seat(), args()), (True, True, True))
+
+    def test_action_capture_must_be_read_back_when_requested(self):
+        requested = args(action_transitions=True)
+        self.assertFalse(civ6_play.seat_matches_requested(self._seat(), requested)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            self._seat(action_transitions=False), requested)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self._seat(action_transitions=True), requested)[0])
+
+    def test_isolated_probes_must_be_read_back_when_requested(self):
+        requested = args(isolated_action_probes=True)
+        self.assertFalse(civ6_play.seat_matches_requested(self._seat(), requested)[0])
+        self.assertFalse(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=False), requested)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self._seat(isolated_action_probes=True), requested)[0])
 
     def test_a_vanilla_game_is_refused_and_fails_the_whole_config(self):
         configured, modes, ruleset = civ6_play.seat_matches_requested(
@@ -3183,6 +3987,18 @@ class AStoppedRunStillLeavesARecord(unittest.TestCase):
         self.assertIn('civ6_ladder.tech_marks(run_dir / "events.jsonl")', block)
         self.assertIn('partial["tech_marks"] = marks', block)
         self.assertLess(block.index('partial["tech_marks"]'),
+                        block.index("path.write_text"))
+
+    def test_the_fallback_measures_the_space_race_before_writing(self):
+        """The deep Emperor games that get launches in are the ones the
+        harness ends by hand, so the shutdown hook must carry them too."""
+        source = (Path(__file__).resolve().parent
+                  / "civ6_play.py").read_text(encoding="utf-8")
+        block = source[source.index("def _partial_summary_if_stopped"):
+                       source.index("atexit.register(_partial_summary_if_stopped)")]
+        self.assertIn('civ6_ladder.launch_marks(run_dir / "events.jsonl")', block)
+        self.assertIn('partial["launch_marks"] = launches', block)
+        self.assertLess(block.index('partial["launch_marks"]'),
                         block.index("path.write_text"))
 
     def test_the_fallback_is_registered_and_never_overwrites(self):

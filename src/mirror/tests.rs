@@ -13231,10 +13231,11 @@ fn host_state_step_list_is_the_recorded_order() {
             "human_seat",
             "map_script",
             "refused_site_blocks",
+            "policy_choices",
             "identity",
         ]
     );
-    assert_eq!(sync(HostPhase::Empire), ["identity"]);
+    assert_eq!(sync(HostPhase::Empire), ["policy_choices", "identity"]);
 
     // ⚠ `host_gold` sits either side of `host_maintenance` depending on the
     // pass. Both orders are what shipped, and neither helper reads what the
@@ -13695,5 +13696,314 @@ fn a_hostiles_attacks_remaining_reaches_the_planted_unit_on_both_paths() {
         (attacks_of(&absent, 131072), attacks_of(&absent, 65537)),
         (1, 1),
         "rebuild without the key: unchanged"
+    );
+}
+
+#[test]
+fn native_policy_choices_replace_temporary_restrictions_without_affecting_rivals() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 208,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+    }]);
+    let rules = crate::rules::Rules::embedded();
+    let mut state = StateSnapshot {
+        turn: 208,
+        government: Some("GOVERNMENT_COMMUNISM".into()),
+        civics: rules
+            .civics
+            .keys()
+            .map(|name| format!("CIVIC_{}", name.as_str().to_ascii_uppercase()))
+            .collect(),
+        ..StateSnapshot::default()
+    };
+    let new_deal = Name::new("new_deal");
+    let legacy = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    assert!(legacy.game.available_policies(0).contains(&new_deal));
+    state.available_policies = Some(vec![
+        "POLICY_COLLECTIVIZATION".into(),
+        "POLICY_HOST_ONLY_UNKNOWN".into(),
+    ]);
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    assert!(!mirror.game.available_policies(0).contains(&new_deal));
+    assert!(mirror
+        .game
+        .available_policies(0)
+        .contains(&Name::new("collectivization")));
+    assert!(mirror
+        .game
+        .apply(0, &crate::game::Action::SlotPolicy { policy: new_deal })
+        .is_err());
+    mirror.game.players[1].civics = mirror.game.players[0].civics.clone();
+    assert!(
+        mirror.game.available_policies(1).contains(&new_deal),
+        "native slate belongs only to the mirrored seat"
+    );
+
+    state.turn += 1;
+    state.government = Some("GOVERNMENT_DEMOCRACY".into());
+    state.available_policies = Some(vec!["POLICY_NEW_DEAL".into()]);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        mirror.game.available_policies(0).contains(&new_deal),
+        "government change must release the old restriction"
+    );
+    assert!(mirror
+        .game
+        .apply(0, &crate::game::Action::SlotPolicy { policy: new_deal })
+        .is_ok());
+
+    state.turn += 1;
+    state.available_policies = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        mirror.game.available_policies(0).is_empty(),
+        "empty host slate must not fall back to local eligibility"
+    );
+    state.turn += 1;
+    state.available_policies = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        mirror.game.available_policies(0).contains(&new_deal),
+        "unknown legacy observation must not retain a stale ban"
+    );
+}
+
+#[test]
+fn native_policy_choices_deserialize_unknown_and_empty_distinctly() {
+    let absent: StateSnapshot = serde_json::from_str(r#"{"turn":1}"#).unwrap();
+    let empty: StateSnapshot =
+        serde_json::from_str(r#"{"turn":1,"available_policies":[]}"#).unwrap();
+    assert_eq!(absent.available_policies, None);
+    assert_eq!(empty.available_policies, Some(vec![]));
+}
+
+#[test]
+fn concert_plots_survive_rebuild_and_refresh_on_sync_without_defaulting_missing_to_empty() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 120,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(4, 4, "TERRAIN_GRASS")],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 120,
+        units: vec![serde_json::from_value(serde_json::json!({
+            "id": 78, "kind": "UNIT_ROCK_BAND", "x": 3, "y": 3,
+            "concert_plots": [{"x": 4, "y": 3}]
+        }))
+        .unwrap()],
+        cities: vec![StateCity {
+            id: 1,
+            x: 4,
+            y: 4,
+            pop: 4,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let uid = mirror.uid_of[&78];
+    assert_eq!(
+        mirror.game.host_unit_facts[&uid].concert_plots,
+        Some(BTreeSet::from([crate::hex::offset_to_axial(4, 3)]))
+    );
+    state.turn += 1;
+    state.units[0].concert_plots = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror.game.host_unit_facts[&mirror.uid_of[&78]].concert_plots,
+        Some(BTreeSet::new())
+    );
+    state.turn += 1;
+    state.units[0].concert_plots = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror.game.host_unit_facts[&mirror.uid_of[&78]].concert_plots,
+        None
+    );
+}
+
+#[test]
+fn native_open_work_slots_do_not_relocate_palace_writing() {
+    let rules = crate::rules::Rules::embedded();
+    let mut state = StateSnapshot {
+        cities: vec![
+            StateCity {
+                id: 1,
+                x: 3,
+                y: 3,
+                pop: 4,
+                buildings: vec!["BUILDING_PALACE".into()],
+                great_works: Some(vec![StateGreatWork {
+                    kind: "GREATWORK_QU_YUAN_1".into(),
+                    object: "GREATWORKOBJECT_WRITING".into(),
+                    building: "BUILDING_PALACE".into(),
+                    slot: 0,
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+            StateCity {
+                id: 2,
+                x: 5,
+                y: 5,
+                pop: 4,
+                buildings: vec!["BUILDING_AMPHITHEATER".into()],
+                great_works: Some(vec![]),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 0,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(5, 5, "TERRAIN_GRASS")],
+    }]);
+    let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let open = live_open_great_work_slots(&rules, &state).unwrap();
+    assert_eq!(
+        mirror.game.players[0].live_open_great_work_slots.as_ref(),
+        Some(&open)
+    );
+    assert!(open.contains("writing"));
+    assert!(!open.contains("music") && !open.contains("any"));
+    state.cities[1]
+        .buildings
+        .push("BUILDING_BROADCAST_CENTER".into());
+    assert!(live_open_great_work_slots(&rules, &state)
+        .unwrap()
+        .contains("music"));
+    state.turn += 1;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(mirror.game.players[0]
+        .live_open_great_work_slots
+        .as_ref()
+        .unwrap()
+        .contains("music"));
+    state.cities[1].great_works = None;
+    state.turn += 1;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.players[0].live_open_great_work_slots, None);
+    assert_eq!(live_open_great_work_slots(&rules, &state), None);
+    state.cities[1].great_works = Some(vec![]);
+    state.cities[0].great_works.as_mut().unwrap().clear();
+    assert!(live_open_great_work_slots(&rules, &state)
+        .unwrap()
+        .contains("any"));
+}
+
+#[test]
+fn native_band_choices_override_refusals_and_refresh_without_stale_offers() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 186,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots: (0..12)
+            .flat_map(|x| (0..12).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let mut state = StateSnapshot {
+        turn: 186,
+        cities: vec![StateCity {
+            id: 1,
+            name: "Athens".into(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        }],
+        units: vec![StateUnit {
+            id: 6815767,
+            kind: "UNIT_ROCK_BAND".into(),
+            x: 5,
+            y: 5,
+            xp: Some(15),
+            level: Some(1),
+            promotions: Some(vec![]),
+            offered_promotions: Some(vec![
+                "PROMOTION_GOES_TO".into(),
+                "PROMOTION_POP".into(),
+                "PROMOTION_INDIE".into(),
+            ]),
+            ..StateUnit::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    state.refused_promotions.insert(
+        6815767,
+        [
+            "PROMOTION_MUSIC_FESTIVAL".into(),
+            "PROMOTION_ALBUM_COVER_ART".into(),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let uid = *mirror
+        .civ6_of
+        .iter()
+        .find(|(_, native)| **native == 6815767)
+        .unwrap()
+        .0;
+    let expected: BTreeSet<Name> = ["goes_to_11", "pop_star", "indie"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    assert_eq!(
+        mirror
+            .game
+            .available_promotions(uid)
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        expected,
+        "a current native menu overrides both prior refusals and simulated random choices"
+    );
+    // Native menus also govern readiness when the simulator's XP disagrees.
+    state.units[0].xp = Some(0);
+    state.units[0].offered_promotions =
+        Some(vec!["PROMOTION_SURF_ROCK".into(), "PROMOTION_POP".into()]);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror.game.available_promotions(uid),
+        vec![crate::name!("pop_star"), crate::name!("surf_band")]
+    );
+    assert!(mirror.game.promotion_pending(uid));
+    assert!(
+        mirror
+            .game
+            .apply(
+                0,
+                &crate::game::Action::Promote {
+                    unit: uid,
+                    promotion: crate::name!("surf_band")
+                }
+            )
+            .is_ok(),
+        "the host choice must be executable, not just displayed"
+    );
+    assert!(
+        !mirror.game.promotion_pending(uid),
+        "consuming a promotion invalidates the entire old menu"
+    );
+    state.units[0].offered_promotions = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(mirror.game.available_promotions(uid).is_empty());
+    state.units[0].offered_promotions = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        !mirror.game.host_band_promotions.contains_key(&uid),
+        "unreadable or legacy menus must clear stale offers"
+    );
+    assert!(
+        mirror.game.available_promotions(uid).is_empty(),
+        "legacy refusal behavior remains the fallback"
     );
 }
