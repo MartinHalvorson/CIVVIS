@@ -801,7 +801,7 @@ impl AdvancedAi {
 
     /// The enemy city a group is on: the one at its objective, or the
     /// plan's target city within reach while no city of ours is threatened.
-    fn siege_city_of(
+    pub(super) fn siege_city_of(
         &self,
         g: &Game,
         pid: usize,
