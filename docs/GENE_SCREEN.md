@@ -578,6 +578,31 @@ hours apart — four in one day. A gene PR that sits ready overnight will be cau
   `naval-recon-2` had climbed 94 places to P(>0) = 51.3%. Resolved mechanically, it
   would have deleted working code under an all-green checklist.
 
+### 🔴 It recurred on 2026-09-11, and the consequence was worse
+
+This section was written on 2026-09-09 and left in a draft PR. It therefore
+protected nobody, and #3258 sat **ready with auto-merge still armed** for two
+more days. Re-checked on 09-11 against the ranking of that day:
+
+| gene | #3258's reading (09-09) | 09-11 on `main` |
+| --- | --- | --- |
+| `requisitions` | rank 265, P(>0) 0.6%, Diff −1.36 | rank **286**, Diff **−1.95%** |
+| `peace-when-the-war-does-not-pay` | rank 259, P(>0) 2.0%, Diff −0.94 | rank **69**, P(>0) **81.4%**, Diff **+0.34%**, **ships on** |
+| `coalition-before-war-2` | rank 251, Diff −0.71 | rank **206**, P(>0) 36.5% |
+| `naval-recon-2` | rank 255, Diff −0.81 | rank **175**, P(>0) **47.3%** |
+
+One of the four has crossed from the bottom of the table to **rank 69 and
+deployed**, on 37,552 on-seats. The PR deletes its field, its constant, its
+clause in the peace desk, its toggles, its registry row and its test. Had its
+conflict been resolved mechanically at any point in those two days, the armed
+auto-merge would have removed a gene the ledger currently says helps.
+
+⭐ **So the lesson is one turn stronger than the section above states.** The
+premise re-check is not merely advisable before shipping — a gene PR left ready
+and armed carries the risk on its own, with no further action by anyone. If a
+gene PR cannot be merged today, **take it out of ready** rather than leaving a
+stale premise armed against a ranking that moves four times a day.
+
 ## Cost
 
 The same run prices the runtime cost of every gene without adding a timer to
