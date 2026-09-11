@@ -14212,6 +14212,8 @@ impl AdvancedAi {
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
+            let endgame_research_preempts_wartime =
+                self.science_endgame_research_preempts_wartime(g, pid, endgame_goal);
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
@@ -14267,6 +14269,11 @@ impl AdvancedAi {
                 // the strongest upgrade supported by the army already in the
                 // field; `goal_pick` below walks its prerequisites.
                 _ if barbarian_military_goal.is_some() => barbarian_military_goal.as_deref(),
+                // A committed launch chain has already paid for its Spaceport
+                // and serial projects. Finish the next science rung before an
+                // optional standing-army upgrade, so a Recovery turn cannot
+                // strand the expedition without its next launch or laser tech.
+                _ if endgame_research_preempts_wartime => endgame_goal,
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
@@ -40844,6 +40851,7 @@ impl AdvancedAi {
                 && (g.players[pid]
                     .science_projects
                     .contains("exoplanet_expedition")
+                    || self.science_endgame_production_committed(g, pid)
                     || self.science_drive_opens(plan.strategy)
                     || (specialization_active
                         && (plan.strategy == GrandStrategy::Science

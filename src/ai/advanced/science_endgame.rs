@@ -29,6 +29,20 @@ impl AdvancedAi {
                         .any(|project| g.players[pid].science_projects.contains(*project))))
     }
 
+    /// A launch that has started is a finite commitment, even when the next
+    /// turn's strategic posture is Recovery. Keep the serial chain's queue
+    /// authority alive until it reaches the expedition; an emergency plan may
+    /// still replace an illegal or threatened queue, but it must not turn a
+    /// completed Earth Satellite into an abandoned Moon Landing.
+    pub(super) fn science_endgame_production_committed(&self, g: &Game, pid: usize) -> bool {
+        self.science_endgame_committed(g, pid)
+            && self.raced_target() == Some(VictoryTarget::Science)
+            && LAUNCHES.iter().any(|project| {
+                g.players[pid].science_projects.contains(*project)
+                    || Self::science_project_is_queued(g, pid, project)
+            })
+    }
+
     pub(super) fn science_endgame_research_goal(
         &self,
         g: &Game,
@@ -45,6 +59,31 @@ impl AdvancedAi {
         ["nanotechnology", "smart_materials", "offworld_mission"]
             .into_iter()
             .find(|tech| !g.players[pid].techs.contains(&Name::new(tech)))
+    }
+
+    /// Once the serial launch chain has reached its late research rungs, the
+    /// next Science technology is the remaining victory clock. It outranks an
+    /// optional wartime upgrade so a committed expedition can unlock its next
+    /// launch or laser station before the turn cap. The caller still keeps the
+    /// ordinary war and recovery priorities when no launch chain is committed.
+    pub(super) fn science_endgame_research_preempts_wartime(
+        &self,
+        g: &Game,
+        pid: usize,
+        goal: Option<&str>,
+    ) -> bool {
+        self.raced_target() == Some(VictoryTarget::Science)
+            && goal.is_some_and(|goal| {
+                matches!(
+                    goal,
+                    "nanotechnology" | "smart_materials" | "offworld_mission"
+                )
+            })
+            && (g.players[pid]
+                .science_projects
+                .contains("launch_moon_landing")
+                || Self::science_project_is_queued(g, pid, "launch_moon_landing"))
+            && self.science_endgame_committed(g, pid)
     }
 
     /// Use remaining production, local modifiers and whole turn boundaries.
