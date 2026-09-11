@@ -48902,6 +48902,20 @@ fn culture_unlocks_bands_before_the_late_government_ladder() {
     assert!(ai
         .government_ladder_goal(&game, 0, GrandStrategy::Culture)
         .is_some());
+    let mut parks = game.clone();
+    parks.players[0]
+        .civics
+        .remove(&crate::name!("conservation"));
+    ai.advanced_research(&mut parks, 0, &plan);
+    assert_eq!(parks.players[0].civic.as_deref(), Some("conservation"));
+    parks.players[0].civic = None;
+    ai.culture_cold_war_window = false;
+    ai.advanced_research(&mut parks, 0, &plan);
+    assert_eq!(
+        parks.players[0].civic.as_deref(),
+        Some("professional_sports")
+    );
+    ai.enable_culture_cold_war_window();
     let mut culture = game.clone();
     ai.advanced_research(&mut culture, 0, &plan);
     assert_eq!(culture.players[0].civic.as_deref(), Some("cold_war"));
