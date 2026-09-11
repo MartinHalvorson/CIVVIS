@@ -4478,6 +4478,10 @@ pub struct ObservedPublicEmpireStats {
     pub nuclear_devices: Option<i64>,
     pub thermonuclear_devices: Option<i64>,
     pub techs: Option<usize>,
+    /// Highest research era, independent of the private technology identities.
+    /// Colonial War must not read a redacted tree as an Ancient-era rival.
+    #[serde(default)]
+    pub tech_era: Option<usize>,
     pub civics: Option<usize>,
     pub tourism_per_turn: Option<f64>,
     /// The culture victory's two public counters as the host's World Rankings

@@ -199,6 +199,7 @@ impl Game {
                     ObservedPublicEmpireStats {
                         city_count: Some(self.player_city_ids(other).len()),
                         techs: Some(source.techs.len()),
+                        tech_era: Some(self.player_tech_era(other)),
                         civics: Some(source.civics.len()),
                         foreign_tourists: Some(self.foreign_tourists(other).max(0) as usize),
                         domestic_tourists: Some(self.domestic_tourists(other).max(0) as usize),
@@ -429,3 +430,6 @@ fn public_city(c: &RememberedCity) -> City {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod colonial_war_tests;
