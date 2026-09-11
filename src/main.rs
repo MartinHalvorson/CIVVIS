@@ -70,14 +70,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x4a8a_d4ca_1dd9_8783;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0xf49f_29f4_564a_dc6e;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 18_845;
+const ANCHOR_DECISIONS: usize = 18_911;
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -428,7 +428,7 @@ fn game_options(
         );
         std::process::exit(2);
     }
-    // The barbarian seat's own rung, Immortal by default whatever the majors
+    // The barbarian seat's own rung, Emperor by default whatever the majors
     // play at; see `default_barbarian_difficulty`.
     let barbarian_difficulty = arg_text(
         args,
@@ -1842,7 +1842,7 @@ fn main() {
                       [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
-                      [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, immortal by default>] \
+                      [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, emperor by default>] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--turn-structure sequential|simultaneous (everything defaults to \

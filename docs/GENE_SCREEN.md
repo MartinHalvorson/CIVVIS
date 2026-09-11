@@ -2329,13 +2329,13 @@ combat, experience and era-boost bonuses of `data/difficulties.json` — and
 every screen so far played the engine's Prince default while the live
 Civilization VI verification ladder plays Emperor and above. Two flags now
 name the majors' rung, and the barbarian seat keeps its own rung
-(`SCREEN_BARBARIAN_DIFFICULTY`, Deity) whatever the majors play. The
-2026-09-10 operator change applies only to new tournament games; normal
-games retain their Immortal default. New headers record `barbarian_difficulty`
-and analysis refuses to merge segments with different recorded barbarian
-rungs. Historical headers without that field remain explicitly unrecorded,
-not retroactively labeled Deity. Keep the existing Immortal batch separate
-when switching to a new Deity batch.
+(`SCREEN_BARBARIAN_DIFFICULTY`, Deity) whatever the majors play. New normal
+games use the sixth named rung, Emperor, as the barbarian default; tournament
+games still use their explicit Deity setting. New headers record
+`barbarian_difficulty` and analysis refuses to merge segments with different
+recorded barbarian rungs. Historical headers without that field remain
+explicitly unrecorded, not retroactively labeled Deity. Keep existing
+Immortal batches separate from new Emperor-default batches.
 
 The majors' flags remain independent:
 

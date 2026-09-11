@@ -1653,7 +1653,7 @@ pub struct DifficultySpec {
     /// Extra Gold a human receives for clearing a Barbarian camp.
     pub human_camp_gold: f64,
     /// Scales the size of barbarian raiding parties. Read from the barbarian
-    /// seat's own rung (`Game::barbarian_spec`, Immortal by default), not the
+    /// seat's own rung (`Game::barbarian_spec`, Emperor by default), not the
     /// majors' — see `Game::default_barbarian_difficulty`.
     #[serde(default = "done")]
     pub barb_force_scale: f64,

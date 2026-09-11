@@ -2117,3 +2117,19 @@ The unchanged five-profile probe reproduces the v38 baseline exactly:
 rules change; native outcome comparisons must account for this boundary.
 Neither the fingerprint nor the focused legality tests establish a Domination
 victory improvement; matched full games measure that separately.
+
+
+## v40 (2026-09-11) — new games use Emperor barbarians by default
+
+The default barbarian difficulty now uses `emperor`, the sixth named Civ VI
+rung and the last standard `BarbarianAttackForces` band. The serialized
+save-field fallback follows the same default, while explicit tournament setup
+continues to use Deity and saves with an explicit difficulty remain unchanged.
+This is an intentional public setup change so ordinary Civvis games provide a
+stronger barbarian challenge without changing the tournament treatment.
+
+The unchanged five-profile anchor reproduces the v39 baseline exactly:
+**18,845 decisions / `0x4a8a_d4ca_1dd9_8783`**. With the Emperor default it
+measures **18,911 decisions / `0xf49f_29f4_564a_dc6e`**. The re-pin records the
+deliberate setup change; native outcome comparisons across this boundary must
+account for the changed barbarian pressure.

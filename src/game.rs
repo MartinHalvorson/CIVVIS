@@ -5552,7 +5552,7 @@ pub fn default_difficulty() -> String {
     "prince".to_string()
 }
 
-/// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — IMMORTAL, NOT THE SEAT'S.
+/// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — EMPEROR, NOT THE SEAT'S.
 ///
 /// Operator directive 2026-08-24: *"We need to make the barbarians in civvis
 /// more aggressive. Should still roughly match the Civ 6 behavior. But weak
@@ -5560,18 +5560,16 @@ pub fn default_difficulty() -> String {
 /// wrong genes … we are playing on level 5 and higher in Civ 6 verification
 /// games. Let's make the barbarians level 6 barbarians in civvis for now."*
 ///
-/// Level 6 on the ladder is Immortal, and Immortal is exactly where the
-/// game's own `BarbarianAttackForces` switches band: `HighDifficultyStandardRaid`
-/// assembles three melee and two ranged units (against two and one) at a
-/// `SpawnRate` of 1 (against 2), i.e. twice as often — the rows
-/// `data/difficulties.json` already transcribes as `barb_force_scale 1.5` and
-/// `barb_spawn_scale 0.5`. Until now the barbarian seat read those from the
-/// *seat's* difficulty, and every native screen runs at the Prince default,
-/// so every gene ever priced was priced against the Standard band. This key
-/// is what the barbarian seat plays by, whatever the majors' rung is; the
-/// seat difficulty still governs the human's camp Gold and the AI handicaps.
+/// The sixth named rung on the ladder is Emperor. Emperor is the last rung in
+/// the game's standard `BarbarianAttackForces` band: it assembles two melee
+/// and one ranged unit at a `SpawnRate` of 2, while Immortal and Deity switch
+/// to the high band. Until now the barbarian seat read its band from the
+/// *seat's* difficulty, and every native screen ran at the Prince default, so
+/// the setting was not stable for public games. This key is what the
+/// barbarian seat plays by, whatever the majors' rung is; the seat difficulty
+/// still governs the human's camp Gold and the AI handicaps.
 pub fn default_barbarian_difficulty() -> String {
-    "immortal".to_string()
+    "emperor".to_string()
 }
 
 pub fn default_speed() -> String {
@@ -6197,7 +6195,7 @@ pub struct Game {
     pub difficulty: String,
     /// Key into `rules.difficulties` for the barbarian seat's raid band and
     /// spawn cadence, independent of the seat's rung; a save without it
-    /// plays Immortal barbarians. See [`default_barbarian_difficulty`].
+    /// plays Emperor barbarians. See [`default_barbarian_difficulty`].
     #[serde(default = "default_barbarian_difficulty")]
     pub barbarian_difficulty: String,
     /// Key into `rules.speeds`. Scales everything bought with a yield.
