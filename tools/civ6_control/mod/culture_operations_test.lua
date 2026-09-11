@@ -74,9 +74,8 @@ unit.GetName = function() return bandName end
 UnitCommandTypes.NAME_UNIT = 501
 UnitCommandTypes.PARAM_NAME = 'name'
 local nameRequests, canName = 0, true
-UnitManager.CanStartCommand = function(u, command, testVisible, params)
+UnitManager.CanStartCommand = function(u, command, testVisible)
     assert(u == unit and command == 501 and testVisible == false)
-    assert(params.name == 'Civvis Band 92')
     return canName
 end
 UnitManager.RequestCommand = function(u, command, params)

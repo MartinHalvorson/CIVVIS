@@ -1011,7 +1011,7 @@ function CivvisNameRockBands(player, pid, turn)
             if rockBandNameRequests[key] == turn then return; end
             local params = {};
             params[parameter] = "Civvis Band " .. tostring(unit:GetID());
-            if not UnitManager.CanStartCommand(unit, command, false, params) then return; end
+            if not UnitManager.CanStartCommand(unit, command, false) then return; end
             rockBandNameRequests[key] = turn;
             UnitManager.RequestCommand(unit, command, params);
             emit("rock_band_name_requested", { turn = turn, unit = unit:GetID(), name = params[parameter] });
