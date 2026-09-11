@@ -49042,3 +49042,101 @@ fn culture_fortifies_before_a_visible_peacetime_siege_party_attacks() {
         "visible siege preparations should not wait for an actual declaration"
     );
 }
+
+/// ★★★★ THE PLAZA IS BUILT AT TURN 112 AND THE OPENING NEEDED IT AT 40.
+///
+/// Over the 38 recorded live runs of 2026-09-10/11 a `DISTRICT_GOVERNMENT`
+/// stands in 25 at a median turn 112 and the Ancestral Hall in 8 at a median
+/// turn 119, while the fourth city the opening band needs by turn 60 arrives at
+/// a median turn 77. `expansion_hall` prices the Hall and says in its own note
+/// that the plaza's placement keeps its price, so the plot the Hall stands on
+/// scores like an empty one. See `expansion_hall_district`.
+#[test]
+fn an_expansion_district_is_worth_the_hall_it_hosts() {
+    let (game, capital, _home) = empire_with_a_capital(71_117);
+    let hall = &game.rules.buildings["ancestral_hall"];
+    let expected = (hall.effects["free_builder_new_city"] * EXPANSION_HALL_BUILDER_VALUE
+        + (hall.effects["settler_production_pct"] / 50.0) * EXPANSION_HALL_SETTLER_VALUE)
+        * HOSTED_EXPANSION_DISCOUNT;
+
+    assert_eq!(
+        AdvancedAi::hosted_expansion_path(&game, 0, &crate::name!("government_plaza")),
+        expected,
+        "the Ancestral Hall is the land-grab building the plaza hosts"
+    );
+    assert_eq!(
+        AdvancedAi::hosted_expansion_path(&game, 0, &crate::name!("campus")),
+        0.0,
+        "a Campus hosts nothing that pays the land grab"
+    );
+
+    let site = game
+        .district_sites(capital, crate::name!("government_plaza"))
+        .into_iter()
+        .next()
+        .expect("the capital has a plot for a Government Plaza");
+    let plaza = Item::District {
+        district: crate::name!("government_plaza"),
+        pos: site,
+    };
+    let short = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 9,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+
+    let ordinary = AdvancedAi::new();
+    assert!(!ordinary.expansion_hall_district, "the gene ships off");
+    let frozen = AdvancedAi::legacy();
+    assert!(!frozen.expansion_hall_district);
+    let stock = ordinary.production_value(&game, 0, capital, &plaza, &short, &counts);
+    assert_eq!(
+        frozen.production_value(&game, 0, capital, &plaza, &short, &counts),
+        stock,
+        "the frozen anchor prices the plaza exactly as the ordinary controller"
+    );
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_expansion_hall_district();
+    let paid = treated.production_value(&game, 0, capital, &plaza, &short, &counts);
+    assert!(
+        paid > stock,
+        "a plaza worth nothing on its own is worth the Hall it will host: \
+         {paid} against {stock}"
+    );
+
+    // ⭐ AND THE CREDIT FADES WITH THE SHORTFALL, on the building arm's own
+    // scale, so the district's term reaches zero on the turn the Hall's does.
+    let met = StrategicPlan {
+        desired_cities: 0,
+        ..short.clone()
+    };
+    assert_eq!(
+        treated.production_value(&game, 0, capital, &plaza, &met, &counts),
+        ordinary.production_value(&game, 0, capital, &plaza, &met, &counts),
+        "an empire no longer short of seats prices the plaza as stock does"
+    );
+
+    // And nothing else moves: a district that hosts no land-grab building is
+    // priced identically with the gene on.
+    if let Some(campus_site) = game
+        .district_sites(capital, crate::name!("campus"))
+        .into_iter()
+        .next()
+    {
+        let campus = Item::District {
+            district: crate::name!("campus"),
+            pos: campus_site,
+        };
+        assert_eq!(
+            treated.production_value(&game, 0, capital, &campus, &short, &counts),
+            ordinary.production_value(&game, 0, capital, &campus, &short, &counts),
+            "a Campus is priced the same with the gene on"
+        );
+    }
+}
