@@ -5119,7 +5119,9 @@ impl Game {
                     }
                 }
                 None if spec.resource_only => continue,
-                None if t.resource.is_some() => continue, // unrevealed resource
+                // An undiscovered deposit cannot veto an otherwise legal
+                // improvement: the player's observed board has no resource
+                // here and must agree with execution until it is revealed.
                 None => {}
             }
             // Unique replacements suppress their base improvement for that civ.
@@ -7746,3 +7748,6 @@ impl Game {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod hidden_resource_improvement_tests;
