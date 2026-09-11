@@ -81,6 +81,15 @@ impl Game {
             .filter(|c| c.owner == pid)
             .map(|c| c.id)
             .collect();
+        // Owners can read their city's total loyalty rate even when the
+        // population producing its pressure is outside their observations.
+        // Capture that readback before removing hidden cities and rival data.
+        view.observed_city_loyalty_per_turn = Arc::new(
+            own_cities
+                .iter()
+                .map(|id| (*id, self.city_loyalty_per_turn(&self.cities[id])))
+                .collect(),
+        );
         view.cities.clear();
         for id in &own_cities {
             view.cities.insert(*id, self.cities[id].clone());
