@@ -280,9 +280,45 @@ def partial_summary(tag: str, config: dict, state: dict) -> dict:
         "last_turn": state.get("turn"),
         "last_score": state.get("score"),
         "cities_at_60": state.get("cities_at_60"),
+        "districts": state.get("districts"),
+        "buildings": state.get("buildings"),
+        "developed_cities": state.get("developed_cities"),
         "outcome": state.get("outcome"),
         "abandoned": state.get("abandoned"),
     }
+
+
+def record_development(state: dict, event: dict) -> None:
+    """Total districts and buildings over our cities, from a `state` frame.
+
+    The frame lists only this seat's cities (`original_owner` is us on every
+    one), each with a `districts` list and a `buildings` list. Both counts are
+    RAW totals and both include what `gene_screen`'s columns include — the
+    city centre is a district on each side — so the two are comparable without
+    translating a single Firaxis type name. `developed_cities` is the divisor
+    the frame itself saw, so a run that lost a city is not divided by the
+    count it ended with.
+
+    ⚠ Specialty districts are deliberately not counted here. Telling which
+    Firaxis type is a specialty needs a name map (`DISTRICT_THEATER` is
+    `theater_square`), and a wrong map would produce a confident wrong number.
+    The raw pair answers the question being asked.
+
+    Overwrites on every frame, so the value is the last one the run saw.
+    """
+    cities = event.get("cities")
+    if not isinstance(cities, list) or not cities:
+        return
+    districts = 0
+    buildings = 0
+    for city in cities:
+        if not isinstance(city, dict):
+            return
+        districts += len(city.get("districts") or [])
+        buildings += len(city.get("buildings") or [])
+    state["districts"] = districts
+    state["buildings"] = buildings
+    state["developed_cities"] = len(cities)
 
 
 def below_leader_score_reading(
@@ -3598,6 +3634,15 @@ def _attach_running_game(args: argparse.Namespace) -> int:
         "ruleset": None,
         "founds": [],
         "cities_at_60": None,
+        # ⭐ CITY DEVELOPMENT, from the last `state` frame that listed cities.
+        # The empire's Emperor failure is conversion rather than width — it
+        # holds 0.83 of the leader's cities and turns each into 0.30 of their
+        # science — and `gene_screen` records these per seat since 2026-09-10.
+        # The live row carried nothing comparable, so the ledger could not ask
+        # whether the simulator builds the way the live seat does.
+        "districts": None,
+        "buildings": None,
+        "developed_cities": None,
         "operator_retire_event": None,
         "operator_retired": None,
     }
@@ -3617,6 +3662,8 @@ def _attach_running_game(args: argparse.Namespace) -> int:
                 turn = -1
             if turn >= 0:
                 state["turn"] = max(state["turn"], turn)
+        if kind == "state":
+            record_development(state, event)
         if kind == "seat":
             state["seat"] = event
             configured, modes_match, ruleset_match = seat_matches_requested(event, args)
@@ -3969,6 +4016,9 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         "city_two_turn": (sorted(state.get("founds") or [])[1]
                           if len(state.get("founds") or []) >= 2 else None),
         "cities_at_60": state.get("cities_at_60"),
+        "districts": state.get("districts"),
+        "buildings": state.get("buildings"),
+        "developed_cities": state.get("developed_cities"),
     }
     try:
         import civ6_ladder
