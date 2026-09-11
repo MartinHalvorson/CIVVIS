@@ -4947,6 +4947,14 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    capture_hold_chain: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    capital_campaign_router: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    culture_faith_reservation: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    culture_tourism_payback: bool,
     /// `domination-siege-research`: unlock the first land siege capability
     /// for a Conquest objective with observed walls, before elective detours.
     domination_siege_research: bool,
@@ -4969,26 +4977,6 @@ pub struct AdvancedAi {
     /// lost to a religious victory at turns 278 and 163 while the board read
     /// "the first half is reserved for expansion".
     denial_outranks_expansion: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub victory_deadline_budget: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub culture_tourism_payback: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub siege_positive_damage_budget: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub culture_faith_reservation: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub capital_campaign_router: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub great_work_completion_value: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub upgrade_window_campaign: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub tourism_land_reservation: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub reinforce_before_stall: bool,
-    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
-    pub capture_hold_chain: bool,
     conversion: victory_conversion::ConversionState,
     /// `domination-lane-hands-over`: with the Domination lane assigned, stop
     /// deferring to "keep expanding" once the empire holds
@@ -5686,6 +5674,8 @@ pub struct AdvancedAi {
     /// it is still walking. Unit-keyed and remapped with the live bridge.
     early_settler_homes: BTreeMap<u32, Pos>,
     // ---- append: g-k ------------------------------------------------
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    great_work_completion_value: bool,
     /// `industrial-chain-debt`: an Industrial Zone owes its Workshop,
     /// Factory and power plant the same flat debt a Campus owes its
     /// Library, and a regional building is worth the production it reaches.
@@ -6124,6 +6114,8 @@ pub struct AdvancedAi {
     one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    reinforce_before_stall: bool,
     /// The stock alliance desk asks for a Research Alliance, on any turn,
     /// ranked by the partner's science, and holds the slot for it; the first
     /// route to that ally carries a premium while its level still climbs.
@@ -6308,6 +6300,8 @@ pub struct AdvancedAi {
     power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    siege_positive_damage_budget: bool,
     /// Deny a rival the science victory rather than only race it: no new
     /// alliance, no passage and no Great Work sold to a science threat, a
     /// denunciation of the most pressing one, and one spy posted to its
@@ -6501,6 +6495,12 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    tourism_land_reservation: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    upgrade_window_campaign: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    victory_deadline_budget: bool,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     trade_building_before_bankruptcy: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -8057,21 +8057,15 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            capture_hold_chain: false,
+            capital_campaign_router: false,
+            culture_faith_reservation: false,
+            culture_tourism_payback: false,
             domination_siege_research: false,
             domination_capital_focus: false,
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
             denial_outranks_expansion: false,
-            victory_deadline_budget: false,
-            culture_tourism_payback: false,
-            siege_positive_damage_budget: false,
-            culture_faith_reservation: false,
-            capital_campaign_router: false,
-            great_work_completion_value: false,
-            upgrade_window_campaign: false,
-            tourism_land_reservation: false,
-            reinforce_before_stall: false,
-            capture_hold_chain: false,
             conversion: victory_conversion::ConversionState::default(),
             domination_lane_hands_over: false,
             chop_for_expansion: false,
@@ -8164,6 +8158,7 @@ impl AdvancedAi {
             early_settler_homes: BTreeMap::new(),
 
             // ---- append: g-k ----------------------------------------
+            great_work_completion_value: false,
             industrial_chain_debt: false,
             guard_breaks_the_pin: false,
             hostile_memory: false,
@@ -8205,6 +8200,7 @@ impl AdvancedAi {
             one_war: None,
 
             // ---- append: p-r ----------------------------------------
+            reinforce_before_stall: false,
             research_alliance_first: false,
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
@@ -8230,6 +8226,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_positive_damage_budget: false,
             science_threat_denial: false,
             science_denial_war: false,
             standing_still_is_a_risk: false,
@@ -8265,6 +8262,9 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            tourism_land_reservation: false,
+            upgrade_window_campaign: false,
+            victory_deadline_budget: false,
             trade_building_before_bankruptcy: false,
             trade_building_before_bankruptcy_2: false,
             war_policy_via_board: false,
@@ -29301,7 +29301,15 @@ impl AdvancedAi {
         // the city wants and never argue with what it may not build; and only
         // on a positive score, so scaling can never turn a penalty into an
         // attraction by shrinking it.
-        let raw = raw + self.conversion_production_adjustment(g, pid, cid, item, plan, turns, raw);
+        let raw = raw
+            + self.conversion_production_adjustment(
+                g,
+                pid,
+                cid,
+                item,
+                plan,
+                victory_conversion::ProductionQuote { turns, raw },
+            );
         let raw = if raw > 0.0 {
             raw * self.production_category_gene(item)
         } else {

@@ -141,11 +141,33 @@ fn deadline_cuts_late_settlers_but_preserves_emergency_defense() {
     };
     ai.conversion.horizon = Some(12.0);
     assert_eq!(
-        ai.conversion_production_adjustment(&g, 0, home, &settler, &p, 10.0, 1000.0),
+        ai.conversion_production_adjustment(
+            &g,
+            0,
+            home,
+            &settler,
+            &p,
+            ProductionQuote {
+                turns: 10.0,
+                raw: 1000.0
+            }
+        ),
         0.0
     );
     ai.enable_victory_deadline_budget();
-    assert!(ai.conversion_production_adjustment(&g, 0, home, &settler, &p, 10.0, 1000.0) < 0.0);
+    assert!(
+        ai.conversion_production_adjustment(
+            &g,
+            0,
+            home,
+            &settler,
+            &p,
+            ProductionQuote {
+                turns: 10.0,
+                raw: 1000.0
+            }
+        ) < 0.0
+    );
     p.threatened_city = Some(home);
     assert_eq!(
         ai.conversion_production_adjustment(
@@ -156,8 +178,10 @@ fn deadline_cuts_late_settlers_but_preserves_emergency_defense() {
                 unit: crate::name!("archer")
             },
             &p,
-            20.0,
-            1000.0
+            ProductionQuote {
+                turns: 20.0,
+                raw: 1000.0
+            }
         ),
         0.0
     );
@@ -174,7 +198,17 @@ fn tourism_payback_values_housing_that_activates_owned_works() {
     let p = plan(&g, enemy, GrandStrategy::Culture);
     let before = g.tourism_per_turn_model(0);
     ai.enable_culture_tourism_payback();
-    let early = ai.conversion_production_adjustment(&g, 0, home, &item, &p, 5.0, 1000.0);
+    let early = ai.conversion_production_adjustment(
+        &g,
+        0,
+        home,
+        &item,
+        &p,
+        ProductionQuote {
+            turns: 5.0,
+            raw: 1000.0,
+        },
+    );
     assert!(early > 0.0, "housing preview must activate owned writings");
     assert_eq!(
         g.tourism_per_turn_model(0),
@@ -183,7 +217,19 @@ fn tourism_payback_values_housing_that_activates_owned_works() {
     );
     ai.enable_victory_deadline_budget();
     ai.conversion.horizon = Some(5.0);
-    assert!(ai.conversion_production_adjustment(&g, 0, home, &item, &p, 10.0, 1000.0) < early);
+    assert!(
+        ai.conversion_production_adjustment(
+            &g,
+            0,
+            home,
+            &item,
+            &p,
+            ProductionQuote {
+                turns: 10.0,
+                raw: 1000.0
+            }
+        ) < early
+    );
 }
 
 #[test]
@@ -196,11 +242,113 @@ fn completion_gene_prices_a_filled_building_above_an_empty_one() {
     let p = plan(&g, enemy, GrandStrategy::Culture);
     ai.enable_great_work_completion_value();
     assert_eq!(
-        ai.conversion_production_adjustment(&g, 0, home, &item, &p, 5.0, 1000.0),
+        ai.conversion_production_adjustment(
+            &g,
+            0,
+            home,
+            &item,
+            &p,
+            ProductionQuote {
+                turns: 5.0,
+                raw: 1000.0
+            }
+        ),
         0.0
     );
     g.players[0].counters.insert("great_work:writing".into(), 4);
-    assert!(ai.conversion_production_adjustment(&g, 0, home, &item, &p, 5.0, 1000.0) > 0.0);
+    assert!(
+        ai.conversion_production_adjustment(
+            &g,
+            0,
+            home,
+            &item,
+            &p,
+            ProductionQuote {
+                turns: 5.0,
+                raw: 1000.0
+            }
+        ) > 0.0
+    );
+}
+
+#[test]
+fn live_housing_preview_sees_a_blocked_creator_without_mutating_the_snapshot() {
+    let (mut g, _, home, _) = board(VictoryTarget::Culture);
+    theater(&mut g, home);
+    g.observed_great_work_housing = Some(Arc::new(BTreeMap::new()));
+    g.players[0].live_great_person_activation_needs.push(
+        crate::game::LiveGreatPersonActivationNeed {
+            kind: "writer".into(),
+            required_great_work: Some("writing".into()),
+            ..Default::default()
+        },
+    );
+    let (gain, completes) =
+        AdvancedAi::building_tourism_gain(&g, 0, home, crate::name!("amphitheater"));
+    assert!(gain > 0.3 && completes);
+    assert!(g.observed_great_work_housing.as_ref().unwrap().is_empty());
+    assert!(!g.players[0].counters.contains_key("great_work:writing"));
+    assert!(!g.cities[&home]
+        .buildings
+        .contains(&crate::name!("amphitheater")));
+}
+
+#[test]
+fn first_band_uses_a_known_reachable_venue_and_a_real_purchase_city() {
+    let (mut g, mut ai, home, enemy) = board(VictoryTarget::Culture);
+    let venue = g.nbrs(g.cities[&enemy].pos)[0];
+    g.map.tiles.get_mut(&venue).unwrap().owner_city = Some(enemy);
+    g.map.tiles.get_mut(&venue).unwrap().wonder = Some(crate::name!("pyramids"));
+    g.cities
+        .get_mut(&enemy)
+        .unwrap()
+        .wonders
+        .insert(crate::name!("pyramids"), venue);
+    g.players[0].civics.insert(crate::name!("cold_war"));
+    g.players[0].faith = 10_000.0;
+    ai.enable_culture_faith_reservation();
+    assert_eq!(
+        ai.tourism_opportunity(&g, 0),
+        None,
+        "hidden venues cannot justify buying a band"
+    );
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    let (kind, _, city) = ai
+        .tourism_opportunity(&g, 0)
+        .expect("a reachable first tour");
+    assert_eq!(kind, "rock_band");
+    assert_eq!(city, home);
+    assert!(ai.conversion_culture_purchase(&mut g, 0));
+    assert!(g
+        .units
+        .values()
+        .any(|u| u.owner == 0 && u.kind == "rock_band" && u.pos == g.cities[&home].pos));
+}
+
+#[test]
+fn work_deal_preview_values_a_real_transfer_without_executing_it() {
+    let (mut g, mut ai, home, enemy) = board(VictoryTarget::Culture);
+    for cid in [home, enemy] {
+        theater(&mut g, cid);
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+    }
+    g.players[0].gold = 1_000.0;
+    g.players[1].gold = 1_000.0;
+    g.grant_great_work(1, "writing", 2, "test-writer");
+    let deal = g
+        .quick_deals(0)
+        .into_iter()
+        .find(|d| d.category == "great_work" && d.direction == "buy")
+        .expect("legal work quote");
+    assert_eq!(ai.completion_deal_bonus(&g, 0, &deal), 0.0);
+    ai.enable_great_work_completion_value();
+    assert!(ai.completion_deal_bonus(&g, 0, &deal) > 0.0);
+    assert_eq!(g.players[0].gold, 1_000.0);
+    assert_eq!(g.players[1].counters["great_work:writing"], 2);
 }
 
 #[test]
@@ -250,8 +398,10 @@ fn land_reservation_precedes_unlock_and_never_changes_real_terrain() {
             home,
             &item,
             &plan(&g, enemy, GrandStrategy::Culture),
-            5.0,
-            1000.0
+            ProductionQuote {
+                turns: 5.0,
+                raw: 1000.0
+            }
         ) < 0.0
     );
     assert!(!g.players[0].civics.contains(&crate::name!("conservation")));
@@ -294,10 +444,34 @@ fn reinforcement_orders_the_missing_breach_role_and_stops_at_the_deadline() {
     let siege = Item::Unit {
         unit: crate::name!("catapult"),
     };
-    assert!(ai.conversion_production_adjustment(&g, 0, home, &siege, &p, 5.0, 1000.0) > 0.0);
+    assert!(
+        ai.conversion_production_adjustment(
+            &g,
+            0,
+            home,
+            &siege,
+            &p,
+            ProductionQuote {
+                turns: 5.0,
+                raw: 1000.0
+            }
+        ) > 0.0
+    );
     ai.enable_victory_deadline_budget();
     ai.conversion.horizon = Some(2.0);
-    assert!(ai.conversion_production_adjustment(&g, 0, home, &siege, &p, 5.0, 1000.0) <= 0.0);
+    assert!(
+        ai.conversion_production_adjustment(
+            &g,
+            0,
+            home,
+            &siege,
+            &p,
+            ProductionQuote {
+                turns: 5.0,
+                raw: 1000.0
+            }
+        ) <= 0.0
+    );
 }
 
 #[test]
@@ -336,6 +510,7 @@ fn upgrade_window_reserves_a_package_and_never_declares_before_it_is_ready() {
         ai.conversion.upgrade_reserve, 0.0,
         "resource shortage must not bank forever"
     );
+    assert!(ai.conversion_upgrade_launch_ready(&g, 0));
 }
 
 #[test]
@@ -368,8 +543,10 @@ fn capture_hold_uses_time_to_revolt_and_prioritizes_victor_and_repairs() {
             enemy,
             &repair,
             &plan(&g, enemy, GrandStrategy::Conquest),
-            3.0,
-            1000.0
+            ProductionQuote {
+                turns: 3.0,
+                raw: 1000.0
+            }
         ) > 0.0
     );
 }
@@ -395,8 +572,10 @@ fn all_genes_respect_recovery_and_other_victory_targets() {
                 building: crate::name!("library")
             },
             &p,
-            5.0,
-            1000.0
+            ProductionQuote {
+                turns: 5.0,
+                raw: 1000.0
+            }
         ),
         0.0
     );

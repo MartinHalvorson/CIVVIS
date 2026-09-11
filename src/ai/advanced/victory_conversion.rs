@@ -7,6 +7,13 @@ use super::*;
 use crate::game::{expected_damage, QuickDeal};
 use std::collections::VecDeque;
 
+/// The production picker has already priced construction and its raw value.
+#[derive(Clone, Copy)]
+pub(super) struct ProductionQuote {
+    pub(super) turns: f64,
+    pub(super) raw: f64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct ConversionState {
     samples: BTreeMap<usize, VecDeque<(u32, GrandStrategy, f64)>>,
@@ -196,9 +203,9 @@ impl AdvancedAi {
         cid: u32,
         item: &Item,
         plan: &StrategicPlan,
-        turns: f64,
-        raw: f64,
+        quote: ProductionQuote,
     ) -> f64 {
+        let ProductionQuote { turns, raw } = quote;
         if raw <= 0.0 || plan.strategy == GrandStrategy::Recovery {
             return 0.0;
         }
@@ -266,7 +273,7 @@ impl AdvancedAi {
             }
         }
         if domination && (self.reinforce_before_stall || self.siege_positive_damage_budget) {
-            bonus += self.conversion_reinforcement_bonus(g, pid, cid, item, plan, turns, raw);
+            bonus += self.conversion_reinforcement_bonus(g, pid, cid, item, plan, quote);
         }
         if self.capture_hold_chain && domination && g.cities[&cid].occupied_from.is_some() {
             let city = &g.cities[&cid];
@@ -407,11 +414,24 @@ impl AdvancedAi {
             if band_window {
                 let mut probe = future.clone();
                 let uid = probe.spawn_unit("rock_band", pid, g.cities[&cid].pos);
+                // A new band must take its free promotion before it can perform.
+                // Use an actually offered starter promotion only in the preview.
+                if let Some(promotion) = probe.available_promotions(uid).first().copied() {
+                    probe
+                        .units
+                        .get_mut(&uid)
+                        .unwrap()
+                        .promotions
+                        .insert(promotion);
+                }
                 let mut venues: Vec<_> = probe
                     .map
                     .tiles
                     .keys()
                     .filter_map(|pos| {
+                        if !g.players[pid].explored.contains(pos) {
+                            return None;
+                        }
                         let value = probe.rock_concert_ai_value(pid, uid, *pos)?;
                         Some((
                             value / (1.0 + g.wdist(g.cities[&cid].pos, *pos) as f64),
@@ -1023,9 +1043,9 @@ impl AdvancedAi {
         cid: u32,
         item: &Item,
         plan: &StrategicPlan,
-        turns: f64,
-        raw: f64,
+        quote: ProductionQuote,
     ) -> f64 {
+        let ProductionQuote { turns, raw } = quote;
         let (Item::Unit { unit } | Item::Formation { unit, .. }) = item else {
             return 0.0;
         };
