@@ -48941,3 +48941,104 @@ fn culture_unlocks_bands_before_the_late_government_ladder() {
         Some("professional_sports")
     );
 }
+
+#[test]
+fn culture_fortifies_before_a_visible_peacetime_siege_party_attacks() {
+    let (mut game, city, home) = empire_with_a_capital(65_3504);
+    game.at_war.clear();
+    game.turn = 65;
+    game.players[0].met.insert(1);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    let nearby: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| game.wdist(home, *pos) == 1)
+        .take(3)
+        .collect();
+    assert_eq!(nearby.len(), 3);
+    for (kind, pos) in ["catapult", "warrior", "archer"].into_iter().zip(nearby) {
+        game.spawn_test_unit(kind, 1, pos);
+    }
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_peacetime_deterrence();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let wall = Item::Building {
+        building: crate::name!("walls"),
+    };
+    assert!(game.can_produce(0, city, &wall));
+    let mut disabled = ai.clone();
+    disabled.peacetime_deterrence = false;
+    assert!(disabled
+        .culture_border_siege_walls_item(&game, 0, city, &plan)
+        .is_none());
+    let mut friendly = game.clone();
+    friendly.players[0].friends_until.insert(1, game.turn + 30);
+    assert!(ai
+        .culture_border_siege_walls_item(&friendly, 0, city, &plan)
+        .is_none());
+    let mut no_siege = game.clone();
+    let siege = no_siege
+        .units
+        .values()
+        .find(|u| u.owner == 1 && u.kind == "catapult")
+        .unwrap()
+        .id;
+    no_siege.units.remove(&siege);
+    assert!(ai
+        .culture_border_siege_walls_item(&no_siege, 0, city, &plan)
+        .is_none());
+    let mut unknown = game.clone();
+    unknown.players[0].met.remove(&1);
+    assert!(ai
+        .culture_border_siege_walls_item(&unknown, 0, city, &plan)
+        .is_none());
+    let mut unseen = game.clone();
+    let visible = unseen.player_vision_frame(0);
+    let hidden = unseen
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| unseen.wdist(home, *pos) <= 4 && !unseen.sees(&visible, *pos))
+        .expect("the fixture has nearby fog outside the capital's view");
+    for unit in unseen.units.values_mut().filter(|unit| unit.owner == 1) {
+        unit.pos = hidden;
+    }
+    assert!(
+        ai.culture_border_siege_walls_item(&unseen, 0, city, &plan)
+            .is_none(),
+        "nearby siege units in the fog cannot influence production"
+    );
+    let mut recovery = plan.clone();
+    recovery.strategy = GrandStrategy::Recovery;
+    assert!(ai
+        .culture_border_siege_walls_item(&game, 0, city, &recovery)
+        .is_none());
+    let mut defender = game.clone();
+    defender.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("warrior"),
+    }];
+    ai.advanced_production(&mut defender, 0, &plan, false);
+    assert_eq!(
+        defender.cities[&city].queue[0],
+        Item::Unit {
+            unit: crate::name!("warrior")
+        }
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&wall),
+        "visible siege preparations should not wait for an actual declaration"
+    );
+}
