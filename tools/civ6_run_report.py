@@ -77,6 +77,22 @@ BAND_MEASURED_ON = "MAPSIZE_SMALL"
 #: How a run reports a size it never recorded. Older runs predate the field.
 UNKNOWN_MAP_SIZE = "unrecorded"
 
+#: What `AdvancedAi::opening_settler_waits` claims its own opening does, in its
+#: doc comment on `src/ai/advanced.rs`: "the `SCOUT,BUILDER,SETTLER…` half of
+#: the recorded openings orders its first Settler at t9-13 and founds city 2 at
+#: t19-24". Recorded here so the claim can be CHECKED against runs rather than
+#: trusted -- `AGENTS.md` opens on exactly this defect class, a sentence stating
+#: a fact that nothing verifies.
+#:
+#: ⚠ It is stated unconditionally in that comment but was measured before the
+#: lobby applied a map size, so like `WIN_BAND` it belongs to `BAND_MEASURED_ON`.
+DOCUMENTED_CITY_TWO = (19, 24)
+
+#: A city arrives at population one when it is FOUNDED. A captured city arrives
+#: with the population it had, so this is how the report tells settling from
+#: conquest without an event for either.
+FOUNDED_POP = 1
+
 #: The four launch projects in the order the engine requires them, under the
 #: host's own identifiers. `src/mirror.rs` maps these to the engine's names;
 #: the Gathering Storm ruleset the ladder plays calls the third MARS_BASE, not
@@ -421,10 +437,14 @@ def report(run: Path, every: int) -> dict:
     cities_at_60 = (len(at60[-1].get("cities") or [])
                     if at60 and reached_60 else None)
     size = map_size(run)
+    founded = founding_turns(rows)
     return {
         "run": run.name,
         "turns": rows[-1]["turn"],
         "map_size": size,
+        "founding_turns": founded,
+        "city_two_turn": founded[1] if len(founded) > 1 else None,
+        "fourth_city_turn": founded[3] if len(founded) > 3 else None,
         "band_applies": size == BAND_MEASURED_ON,
         "cities_at_60": cities_at_60,
         "in_win_band": (cities_at_60 is not None
@@ -559,6 +579,32 @@ def render(data: dict) -> str:
     return "\n".join(lines)
 
 
+def founding_turns(rows: list[dict]) -> list[int]:
+    """The turn each of our cities first appears at population one.
+
+    There is no founding event in the record, so this reads the state frames:
+    a city seen for the first time at `FOUNDED_POP` was settled, and one that
+    arrives larger was captured. Conquest is excluded deliberately -- this
+    measures the settler pipeline, and a captured city says nothing about it.
+    """
+    first: dict[object, tuple[int, object]] = {}
+    for row in rows:
+        turn = row.get("turn")
+        if turn is None:
+            continue
+        for city in row.get("cities") or []:
+            if not isinstance(city, dict):
+                continue
+            key = city.get("id")
+            if key is None:
+                key = city.get("name")
+            if key is None or key in first:
+                continue
+            first[key] = (turn, city.get("pop"))
+    return sorted(turn for turn, pop in first.values()
+                  if pop is None or pop == FOUNDED_POP)
+
+
 def map_size(run: Path) -> str:
     """The size this run actually played, from its own summary.
 
@@ -594,6 +640,8 @@ def aggregate(root: Path, every: int) -> dict:
         raise ReportError(f"no run directories under {root}")
     by_cities: dict[int, list[bool]] = {}
     by_size: dict[str, dict] = {}
+    cadence: dict[int, list[int]] = {}
+    fourth_by_sixty = fourth_seen = 0
     crossovers: list[int] = []
     never_led = wins = completed = skipped_unfinished = skipped_short = 0
     ballots_multi = ballot_count_matches = 0
@@ -635,6 +683,12 @@ def aggregate(root: Path, every: int) -> dict:
         completed += 1
         won = bool(data["ending"].get("won"))
         wins += won
+        for index, turn in enumerate(data.get("founding_turns") or []):
+            cadence.setdefault(index + 1, []).append(turn)
+        fourth = data.get("fourth_city_turn")
+        if fourth is not None:
+            fourth_seen += 1
+            fourth_by_sixty += fourth <= 60
         cities = data["cities_at_60"]
         size = data.get("map_size", UNKNOWN_MAP_SIZE)
         if cities is None:
@@ -669,6 +723,12 @@ def aggregate(root: Path, every: int) -> dict:
         "by_cities_at_60": {c: {"games": len(v), "wins": sum(v)}
                             for c, v in sorted(by_cities.items())},
         "band_measured_on": BAND_MEASURED_ON,
+        "founding_cadence": {
+            n: {"runs": len(v), "median_turn": sorted(v)[len(v) // 2]}
+            for n, v in sorted(cadence.items()) if v
+        },
+        "documented_city_two": list(DOCUMENTED_CITY_TWO),
+        "fourth_city_by_turn_60": {"runs": fourth_seen, "in_time": fourth_by_sixty},
         "by_map_size": {
             size: {
                 "games": v["games"], "wins": v["wins"], "in_band": v["in_band"],
@@ -717,6 +777,23 @@ def render_aggregate(data: dict) -> str:
         lines.append(f"    launches: {spread}")
         lines.append(f"    the race was refused at least once in "
                      f"{race['refused']}; the drive engaged in {race['drove']}")
+    cadence = data.get("founding_cadence") or {}
+    if cadence:
+        lines.append("")
+        lines.append("  when each city was FOUNDED (captured cities excluded):")
+        lines.append(f"  {'city':>6} {'runs':>5} {'median turn':>12}")
+        for n, cell in sorted(cadence.items(), key=lambda kv: int(kv[0])):
+            note = ""
+            if int(n) == 2:
+                lo, hi = data.get("documented_city_two", DOCUMENTED_CITY_TWO)
+                if not lo <= cell["median_turn"] <= hi:
+                    note = (f"   ⚠ the opening book's own doc says t{lo}-{hi}")
+            lines.append(f"  {n:>6} {cell['runs']:>5} {cell['median_turn']:>12}{note}")
+        fourth = data.get("fourth_city_by_turn_60") or {}
+        if fourth.get("runs"):
+            lines.append(f"  a fourth city by turn 60 -- the bottom of the "
+                         f"{band} band -- in {fourth['in_time']} of "
+                         f"{fourth['runs']} runs")
     sizes = data.get("by_map_size") or {}
     if sizes:
         lines.append("")

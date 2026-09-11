@@ -559,3 +559,98 @@ class TheBandBelongsToAMapSize(unittest.TestCase):
             self.assertTrue(data["in_win_band"], "5 cities is inside 4-6")
             self.assertFalse(data["band_applies"],
                              "but the band was never measured on Tiny")
+
+
+def founding_run(root: Path, name: str, founded: list[int],
+                 captured: tuple[int, int] | None = None, last_turn: int = 200):
+    """A run whose cities appear at given turns; `captured` is (turn, pop>1)."""
+    run = root / name
+    run.mkdir()
+    turns = sorted({1, *founded, *( [captured[0]] if captured else []), last_turn})
+    lines = []
+    for t in turns:
+        cities = [{"id": f"f{i}", "pop": 1}
+                  for i, ft in enumerate(founded) if ft <= t]
+        if captured and captured[0] <= t:
+            cities.append({"id": "taken", "pop": captured[1]})
+        lines.append(json.dumps({"kind": "state", "turn": t, "score": 100 + t,
+                                 "rivals": [{"score": 90}], "cities": cities,
+                                 "techs": []}))
+    lines.append(json.dumps({"kind": "victory", "turn": last_turn, "won": False,
+                             "victory": 5, "local_player": 0, "team": 3,
+                             "local_team": 0}))
+    (run / "events.jsonl").write_text("\n".join(lines) + "\n")
+    (run / "summary.json").write_text(json.dumps(
+        {"tag": name, "map_size": "MAPSIZE_SMALL", "last_turn": last_turn}))
+    return run
+
+
+class TheOpeningCadenceIsMeasured(unittest.TestCase):
+    """`opening_settler_waits` states in its doc that the book founds city 2 at
+    t19-24. Nothing checked it, and the recorded runs do not agree."""
+
+    def test_a_captured_city_is_not_a_founding(self) -> None:
+        """It arrives at the population it had. Counting it would credit the
+        settler pipeline with a conquest and hide the real cadence."""
+        with TemporaryDirectory() as d:
+            run = founding_run(Path(d), "civvis-20260101T000001Z",
+                               founded=[1, 30, 55], captured=(129, 2))
+            rows = [json.loads(l) for l in
+                    (run / "events.jsonl").read_text().splitlines()]
+            rows = [r for r in rows if r.get("kind") == "state"]
+            self.assertEqual(rr.founding_turns(rows), [1, 30, 55])
+
+    def test_a_city_without_an_id_is_tracked_by_name(self) -> None:
+        rows = [{"turn": 1, "cities": [{"name": "Bogota", "pop": 1}]},
+                {"turn": 9, "cities": [{"name": "Bogota", "pop": 2},
+                                       {"name": "Quito", "pop": 1}]}]
+        self.assertEqual(rr.founding_turns(rows), [1, 9])
+
+    def test_a_city_growing_past_pop_one_is_not_counted_twice(self) -> None:
+        rows = [{"turn": 1, "cities": [{"id": 1, "pop": 1}]},
+                {"turn": 20, "cities": [{"id": 1, "pop": 4}]}]
+        self.assertEqual(rr.founding_turns(rows), [1])
+
+    def test_the_aggregate_reports_a_median_turn_per_city(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            founding_run(root, "civvis-20260101T000001Z", [1, 20, 50, 70])
+            founding_run(root, "civvis-20260101T000002Z", [1, 30, 60, 80])
+            founding_run(root, "civvis-20260101T000003Z", [1, 40, 70, 90])
+            data = rr.aggregate(root, every=20)
+            cadence = data["founding_cadence"]
+            self.assertEqual(cadence[2]["median_turn"], 30)
+            self.assertEqual(cadence[4]["median_turn"], 80)
+            self.assertEqual(cadence[4]["runs"], 3)
+
+    def test_a_fourth_city_after_turn_sixty_is_counted_as_late(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            founding_run(root, "civvis-20260101T000001Z", [1, 20, 40, 55])
+            founding_run(root, "civvis-20260101T000002Z", [1, 30, 60, 80])
+            data = rr.aggregate(root, every=20)
+            self.assertEqual(data["fourth_city_by_turn_60"],
+                             {"runs": 2, "in_time": 1})
+
+    def test_the_render_flags_a_city_two_outside_the_documented_window(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            founding_run(root, "civvis-20260101T000001Z", [1, 32, 60, 77])
+            text = rr.render_aggregate(rr.aggregate(root, every=20))
+            self.assertIn("the opening book's own doc says", text)
+
+    def test_a_city_two_inside_the_documented_window_is_not_flagged(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            founding_run(root, "civvis-20260101T000001Z", [1, 21, 40, 55])
+            text = rr.render_aggregate(rr.aggregate(root, every=20))
+            self.assertNotIn("the opening book's own doc says", text)
+
+    def test_a_single_run_carries_its_own_cadence(self) -> None:
+        with TemporaryDirectory() as d:
+            run = founding_run(Path(d), "civvis-20260101T000001Z",
+                               [1, 29, 48, 88], captured=(129, 2))
+            data = rr.report(run, every=20)
+            self.assertEqual(data["founding_turns"], [1, 29, 48, 88])
+            self.assertEqual(data["city_two_turn"], 29)
+            self.assertEqual(data["fourth_city_turn"], 88)
