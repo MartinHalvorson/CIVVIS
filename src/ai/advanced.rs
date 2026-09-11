@@ -5512,6 +5512,46 @@ pub struct AdvancedAi {
     /// holds the Campus, so it is one purchase in a city that has already paid
     /// for the district, not a research programme. Opt-in gene
     /// `first-research-building-reserve`.
+    ///
+    /// ## ⭐ 2026-09-11: THE RANKING'S −14 IS A PRINCE NUMBER, AND AT EMPEROR
+    /// ## THE MECHANISM WORKS
+    ///
+    /// The ranking has this at rank 235, off, −14 and −14 wins per 10,000.
+    /// Every standard screen runs at `difficulty: "prince"`, where 52% of
+    /// games end on score at the clock and research speed is close to
+    /// invisible — about the worst rung at which to price a science building.
+    ///
+    /// Screened instead at the shape the ladder plays (`--difficulty emperor
+    /// --rivals firaxis-mix --handicap rivals --rival-chairs 3`, 120 measured
+    /// seats), per city:
+    ///
+    /// | | off | on | |
+    /// |---|---:|---:|---|
+    /// | buildings | 5.92 | **6.60** | +11% |
+    /// | specialty districts | 2.25 | 2.15 | flat |
+    /// | science | 11.74 | **13.40** | **+14%** |
+    /// | techs | 5.44 | 5.88 | +8% |
+    /// | cities | 9.0 | 9.0 | flat |
+    ///
+    /// Science per turn moved **+35.7 ± 18.8 (z +1.90)**, just under the
+    /// family-wise bar. The gene does exactly what it is for: more buildings
+    /// in the same number of districts, in the same number of cities, and more
+    /// science out of them. Four metrics move together in the predicted
+    /// direction, which is worth more than any one z at this size.
+    ///
+    /// ⚠ **Wins did not move** (−0.1 pp, z −0.03) and could not: the run
+    /// resolves ±9.1 pp and an Emperor seat wins 3.3% of the time. This is a
+    /// mechanism result, not a win result, and it is one run.
+    ///
+    /// ⚠ It is also NOT in `deploy/live-force-on.txt` any more, though
+    /// `docs/` records it being forced on live on 2026-08-30.
+    ///
+    /// Why this one is worth re-pricing rather than filed as a null: it is
+    /// "finish what you started", not "prefer science" — the actuation class
+    /// this project has measured as the one that pays, against valuation tunes
+    /// that do not. The empire pays for the Campus and declines the Library;
+    /// measured over 24 Emperor games its cities hold 0.70 of the leader's
+    /// districts, 0.51 of their buildings and 0.30 of their science.
     first_research_building_reserve: bool,
     /// While the opening is behind the pace every recorded win came from,
     /// open the settler pipeline by the shortfall. Opt-in gene
