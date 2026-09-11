@@ -7916,7 +7916,7 @@ mod tests {
     #[test]
     fn tournaments_use_deity_barbarians_without_changing_normal_games() {
         let options = GameOptions::new(2, 12, 10, 42, 5, 0);
-        assert_eq!(options.barbarian_difficulty, "immortal");
+        assert_eq!(options.barbarian_difficulty, "emperor");
         let normal_rung = options.difficulty.clone();
         let game = Game::new_with(tournament_options(options));
         assert_eq!(game.barbarian_difficulty, "deity");

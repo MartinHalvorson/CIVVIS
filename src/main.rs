@@ -428,7 +428,7 @@ fn game_options(
         );
         std::process::exit(2);
     }
-    // The barbarian seat's own rung, Immortal by default whatever the majors
+    // The barbarian seat's own rung, Emperor by default whatever the majors
     // play at; see `default_barbarian_difficulty`.
     let barbarian_difficulty = arg_text(
         args,
@@ -1842,7 +1842,7 @@ fn main() {
                       [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
-                      [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, immortal by default>] \
+                      [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, emperor by default>] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--turn-structure sequential|simultaneous (everything defaults to \

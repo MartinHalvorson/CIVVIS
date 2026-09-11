@@ -218,7 +218,7 @@ fn the_picket_draws_orders_in_a_real_game() {
     use crate::ai::Ai;
     let mut game = Game::new_full(4, 44, 28, 26_082_413, 140, 2, true);
     // This pins the recon gene on the board it was written against; the
-    // barbarian seat's rung moved to Immortal by default on 2026-08-24
+    // barbarian seat's rung moved to Emperor by default on 2026-09-11
     // and is not what is under test here.
     game.set_barbarian_difficulty("prince").unwrap();
     game.set_fog_memory(false);
