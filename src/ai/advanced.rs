@@ -5340,7 +5340,7 @@ pub struct AdvancedAi {
     /// `EXPANSION_HALL_*` constants, and the caller multiplies by the identical
     /// shortfall, so the district's credit fades to nothing on exactly the turn
     /// the Hall's does. Opt-in gene `expansion-hall-district`.
-    pub expansion_hall_district: bool,
+    expansion_hall_district: bool,
     /// Take a small neighbour's city in the opening: a met rival's known
     /// city within twelve tiles of the capital, the capital's production
     /// reserved for three shooters and two melee bodies ahead of the second
