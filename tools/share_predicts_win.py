@@ -183,6 +183,51 @@ def seat_scale(rows):
     return statistics.median(r["share_se"] * math.sqrt(r["seats"]) for r in sized)
 
 
+def detection_comparison(by_gene):
+    """DETECTION is a different question from ESTIMATION, and it has a different
+    answer.
+
+    The crossover above asks how precisely a share reading pins down the *size*
+    of a win effect, and there the structural floor eventually loses to seats.
+    Asking merely *whether a gene does anything* never meets that floor: it
+    compares |z| on one axis against |z| on the other, and no seat count changes
+    which is larger.
+
+    ⚠⚠ The reading to avoid is that share is 6x the detector because its
+    standard error is 6x smaller. The effect it is resolving is about 3x smaller
+    on that axis too, so most of the ratio cancels. What survives is measured
+    here rather than derived, because the structural residual eats the rest.
+    """
+    both = share_only = win_only = neither = 0
+    agree = disagree = 0
+    z_ratios = []
+    for records in by_gene.values():
+        share, share_se = inverse_variance_mean(
+            [r["share"] for r in records], [r["share_se"] for r in records])
+        win, win_se = inverse_variance_mean(
+            [r["win"] for r in records], [r["win_se"] for r in records])
+        zs, zw = share / share_se, win / win_se
+        if abs(zs) >= 2 and abs(zw) >= 2:
+            both += 1
+            if (share > 0) == (win > 0):
+                agree += 1
+            else:
+                disagree += 1
+        elif abs(zs) >= 2:
+            share_only += 1
+        elif abs(zw) >= 2:
+            win_only += 1
+        else:
+            neither += 1
+        if abs(zw) > 1e-9:
+            z_ratios.append(abs(zs) / abs(zw))
+    z_ratios.sort()
+    return dict(both=both, share_only=share_only, win_only=win_only,
+                neither=neither, agree=agree, disagree=disagree,
+                median_z_ratio=z_ratios[len(z_ratios) // 2] if z_ratios else float("nan"),
+                genes=len(by_gene))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--screens", default=DEFAULT_SCREENS)
@@ -219,7 +264,8 @@ def main(argv=None):
                        genes_used=genes_used, slope=slope,
                        structural_residual_pp=structural, win_se_over_share_se=ratio,
                        crossover_share_se_pp=crossover,
-                       crossover_seats=(scale / crossover) ** 2 if scale and crossover == crossover else None),
+                       crossover_seats=(scale / crossover) ** 2 if scale and crossover == crossover else None,
+                       detection=detection_comparison(by_gene)),
                   sys.stdout, indent=2)
         print()
         return 0
@@ -257,6 +303,28 @@ def main(argv=None):
         print()
         print(f"   CROSSOVER at share SE {crossover:.4f} pp, about {seats:,.0f} seats.")
         print( "   Below that a direct win reading is strictly the better instrument.")
+
+    det = detection_comparison(by_gene)
+    print()
+    print("DETECTION IS A DIFFERENT QUESTION, AND IT HAS A DIFFERENT ANSWER.")
+    print("The table above prices the SIZE of a win effect. Merely asking whether")
+    print("a gene does ANYTHING compares |z| against |z| and never meets the floor,")
+    print("so it has no crossover -- share is the better detector at every seat count.")
+    print()
+    print(f"   pooled over every screen, {det['genes']} genes:")
+    print(f"     detected on BOTH axes    {det['both']:4}"
+          f"   (signs agree {det['agree']}, disagree {det['disagree']})")
+    print(f"     detected on SHARE only   {det['share_only']:4}")
+    print(f"     detected on WIN only     {det['win_only']:4}")
+    print(f"     detected on neither      {det['neither']:4}")
+    print(f"   median |z on share| / |z on win|: {det['median_z_ratio']:.2f}x")
+    print()
+    print(f"   ⚠⚠ NOT {ratio:.2f}x, which is what the standard errors alone suggest.")
+    print( "   The effect is about 3x smaller on the share axis too, so most of that")
+    print( "   ratio cancels; the structural residual eats much of the rest. Share is")
+    print(f"   worth roughly {det['median_z_ratio'] ** 2:.1f}x the seats for detection, not"
+          f" {ratio ** 2:.0f}x.")
+    print()
 
     if args.bands:
         print()
