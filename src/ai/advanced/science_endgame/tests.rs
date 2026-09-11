@@ -397,6 +397,36 @@ fn completed_expedition_keeps_laser_sprint_without_victory_planning() {
 }
 
 #[test]
+fn generic_production_keeps_a_fresh_laser_commitment() {
+    let (mut g, a, b) = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let assessed_turn = g.turn;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn,
+        rush: false,
+    };
+
+    ai.space_race_production(&mut g, 0, &plan);
+    for city in [a, b] {
+        assert_eq!(g.cities[&city].queue.first(), Some(&project(LASERS[0])));
+    }
+
+    ai.advanced_production(&mut g, 0, &plan, false);
+    for city in [a, b] {
+        assert_eq!(
+            g.cities[&city].queue.first(),
+            Some(&project(LASERS[0])),
+            "generic production must preserve the laser commitment in city {city}"
+        );
+    }
+}
+
+#[test]
 fn completed_launch_hands_every_pad_to_lasers_on_the_next_decision() {
     let (mut g, a, b) = board();
     g.players[0].science_projects.remove("exoplanet_expedition");

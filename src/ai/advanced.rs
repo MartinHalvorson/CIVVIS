@@ -25650,10 +25650,19 @@ impl AdvancedAi {
                     && (matches!(item, Item::Wonder { .. })
                         || g.item_invested_production(cid, item) > 0.0)
             });
+            let science_endgame_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                g.can_produce(pid, cid, item)
+                    && self.science_endgame_queue_authoritative(g, pid, item)
+            });
             if committed.as_ref().is_some_and(|(value, _)| {
-                !self.victory_planning || (value.is_finite() && *value > -1_000.0)
+                !self.victory_planning
+                    || (value.is_finite() && *value > -1_000.0)
+                    || science_endgame_commitment
             }) && !recovery_preemption
-                && (finish_investment || preempt_margin <= 1.0 || economic_recovery)
+                && (finish_investment
+                    || science_endgame_commitment
+                    || preempt_margin <= 1.0
+                    || economic_recovery)
             {
                 continue;
             }
