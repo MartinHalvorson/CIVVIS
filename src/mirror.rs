@@ -4603,6 +4603,7 @@ fn apply_great_person_points(
         ),
         (None, None) => None,
     };
+    game.players[0].live_open_great_work_slots = live_open_great_work_slots(&game.rules, state);
     apply_live_great_person_offer_blockers(game, state, unmapped);
 }
 
@@ -4768,6 +4769,71 @@ fn live_great_work_offer_has_capacity(game: &crate::game::Game, pid: usize, kind
         }
     }
     game.can_house_great_works(pid, kind, 1)
+}
+
+/// Native works remain in their reported building: the bridge does not issue
+/// relocation orders. Global modeled housing can free a Palace by moving its
+/// writing elsewhere, which is not an immediately usable slot in the host.
+fn live_open_great_work_slots(
+    rules: &crate::rules::Rules,
+    state: &StateSnapshot,
+) -> Option<BTreeSet<String>> {
+    let mut open = BTreeSet::new();
+    for city in &state.cities {
+        let works = city.great_works.as_ref()?;
+        if works.iter().any(|work| work.building.is_empty()) {
+            return None;
+        }
+        let buildings: BTreeSet<_> = city
+            .buildings
+            .iter()
+            .chain(city.wonders.iter().map(|wonder| &wonder.kind))
+            .collect();
+        for building in buildings {
+            let slots = civvis_node_name(&rules.buildings, building, "BUILDING_")
+                .map(|name| rules.buildings[&name].great_work_slots.clone())
+                .or_else(|| {
+                    civvis_node_name(&rules.wonders, building, "BUILDING_")
+                        .map(|name| rules.wonders[&name].great_work_slots.clone())
+                });
+            let Some(mut slots) = slots else {
+                continue;
+            };
+            let mut seen = BTreeSet::new();
+            for work in works.iter().filter(|work| &work.building == building) {
+                if !seen.insert(work.slot) {
+                    continue;
+                }
+                let Some(kind) = great_work_kind(&work.object) else {
+                    slots.clear();
+                    break;
+                };
+                let compatible = slots
+                    .keys()
+                    .find(|slot| {
+                        slot.as_str() == kind
+                            || (matches!(kind, "art" | "religious_art")
+                                && matches!(slot.as_str(), "art" | "religious_art"))
+                    })
+                    .cloned()
+                    .or_else(|| slots.contains_key("any").then(|| "any".to_string()));
+                if let Some(slot) = compatible {
+                    *slots.get_mut(&slot).unwrap() -= 1;
+                } else {
+                    // Unmapped native capacity cannot establish a free slot.
+                    slots.clear();
+                    break;
+                }
+            }
+            open.extend(
+                slots
+                    .into_iter()
+                    .filter(|(_, count)| *count > 0)
+                    .map(|(kind, _)| kind),
+            );
+        }
+    }
+    Some(open)
 }
 
 fn apply_live_great_person_offer_blockers(

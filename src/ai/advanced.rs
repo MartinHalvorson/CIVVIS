@@ -19298,6 +19298,32 @@ impl AdvancedAi {
             if !g.great_person_class_offered_now(pid, kind) {
                 continue;
             }
+            // Paying for a creator should yield a usable work now. Native
+            // recruitment may legally hold the unit, but hypothetical movement
+            // of existing works must not spend the Culture Faith budget.
+            let work = match kind {
+                "writer" => Some("writing"),
+                "artist" => Some("art"),
+                "musician" => Some("music"),
+                _ => None,
+            };
+            if self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                && work.is_some_and(|work| {
+                    !g.players[pid]
+                        .live_open_great_work_slots
+                        .as_ref()
+                        .map_or_else(
+                            || g.can_house_additional_great_work(pid, work),
+                            |slots| {
+                                slots.contains(work)
+                                    || slots.contains("any")
+                                    || (work == "art" && slots.contains("religious_art"))
+                            },
+                        )
+                })
+            {
+                continue;
+            }
             if !g.can_activate_current_great_person(pid, kind) {
                 continue;
             }

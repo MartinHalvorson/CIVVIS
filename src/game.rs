@@ -4661,6 +4661,11 @@ pub struct Player {
     /// recruited this turn.
     #[serde(default)]
     pub live_great_person_offers: Option<BTreeSet<String>>,
+    /// Open native Great Work slot kinds after retaining each work in its
+    /// observed building. None means occupancy was not exported; this is a
+    /// spending input, not a restriction on recruiting a physical Great Person.
+    #[serde(default)]
+    pub live_open_great_work_slots: Option<BTreeSet<String>>,
     /// The exact named individual Firaxis is offering for each class. A
     /// mirrored controller uses this to distinguish a Space Race Engineer
     /// from an otherwise-valid Engineer whose effect belongs to another
@@ -4938,6 +4943,7 @@ impl Player {
             envoys_free: 0,
             gpp: BTreeMap::new(),
             live_great_person_offers: None,
+            live_open_great_work_slots: None,
             live_great_person_offer_individuals: BTreeMap::new(),
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
