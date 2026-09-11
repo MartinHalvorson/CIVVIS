@@ -59,6 +59,24 @@ VICTORY_NAMES = {
 #: The band every recorded Settler win has sat in at turn 60.
 WIN_BAND = (4, 6)
 
+#: ⚠⚠ AND THE MAP SIZE IT WAS MEASURED ON. `WIN_BAND` is not a fact about
+#: Civilization VI; it is a fact about 218 completed live runs that were all
+#: `MAPSIZE_SMALL`, because the lobby ignored the configured size until the
+#: fixes of 2026-09-10 (`civvis-the-lobby-was-never-a-policy-20260910`). Land
+#: per civilization is not the same on another size, so neither is the number
+#: of cities an opening can reach, and a band carried across that line is a
+#: claim nobody measured.
+#:
+#: This mattered immediately. The first 17 runs after the size began to be
+#: applied were `MAPSIZE_TINY` and **0 of 17** sat inside the band, against
+#: 59% of the 389 `MAPSIZE_SMALL` attempts that recorded the column — a shift
+#: from a mean of 3.83 cities to 2.53. Pooling the two sizes in one aggregate
+#: hides that, which is why `aggregate` now splits on it.
+BAND_MEASURED_ON = "MAPSIZE_SMALL"
+
+#: How a run reports a size it never recorded. Older runs predate the field.
+UNKNOWN_MAP_SIZE = "unrecorded"
+
 #: The four launch projects in the order the engine requires them, under the
 #: host's own identifiers. `src/mirror.rs` maps these to the engine's names;
 #: the Gathering Storm ruleset the ladder plays calls the third MARS_BASE, not
@@ -402,9 +420,12 @@ def report(run: Path, every: int) -> dict:
     reached_60 = rows[-1]["turn"] >= 60
     cities_at_60 = (len(at60[-1].get("cities") or [])
                     if at60 and reached_60 else None)
+    size = map_size(run)
     return {
         "run": run.name,
         "turns": rows[-1]["turn"],
+        "map_size": size,
+        "band_applies": size == BAND_MEASURED_ON,
         "cities_at_60": cities_at_60,
         "in_win_band": (cities_at_60 is not None
                         and WIN_BAND[0] <= cities_at_60 <= WIN_BAND[1]),
@@ -538,6 +559,21 @@ def render(data: dict) -> str:
     return "\n".join(lines)
 
 
+def map_size(run: Path) -> str:
+    """The size this run actually played, from its own summary.
+
+    Read rather than assumed: the lobby ignored the configured size until
+    2026-09-10, so a run's size is a property of the run and not of the policy
+    that launched it.
+    """
+    try:
+        doc = json.loads((run / "summary.json").read_text())
+    except (OSError, ValueError):
+        return UNKNOWN_MAP_SIZE
+    size = doc.get("map_size") if isinstance(doc, dict) else None
+    return size if isinstance(size, str) and size else UNKNOWN_MAP_SIZE
+
+
 def aggregate(root: Path, every: int) -> dict:
     """The same questions, asked of every recorded run instead of one.
 
@@ -557,6 +593,7 @@ def aggregate(root: Path, every: int) -> dict:
     if not runs:
         raise ReportError(f"no run directories under {root}")
     by_cities: dict[int, list[bool]] = {}
+    by_size: dict[str, dict] = {}
     crossovers: list[int] = []
     never_led = wins = completed = skipped_unfinished = skipped_short = 0
     ballots_multi = ballot_count_matches = 0
@@ -599,10 +636,17 @@ def aggregate(root: Path, every: int) -> dict:
         won = bool(data["ending"].get("won"))
         wins += won
         cities = data["cities_at_60"]
+        size = data.get("map_size", UNKNOWN_MAP_SIZE)
         if cities is None:
             skipped_short += 1
         else:
             by_cities.setdefault(cities, []).append(won)
+            seat = by_size.setdefault(size, {"games": 0, "wins": 0, "in_band": 0,
+                                             "cities": []})
+            seat["games"] += 1
+            seat["wins"] += won
+            seat["in_band"] += WIN_BAND[0] <= cities <= WIN_BAND[1]
+            seat["cities"].append(cities)
         if won:
             continue
         cross = data["crossover"]
@@ -624,6 +668,16 @@ def aggregate(root: Path, every: int) -> dict:
         "skipped_before_turn_60": skipped_short,
         "by_cities_at_60": {c: {"games": len(v), "wins": sum(v)}
                             for c, v in sorted(by_cities.items())},
+        "band_measured_on": BAND_MEASURED_ON,
+        "by_map_size": {
+            size: {
+                "games": v["games"], "wins": v["wins"], "in_band": v["in_band"],
+                "mean_cities_at_60": round(sum(v["cities"]) / v["games"], 2),
+                "band_applies": size == BAND_MEASURED_ON,
+            }
+            for size, v in sorted(by_size.items(),
+                                  key=lambda kv: -kv[1]["games"])
+        },
         "never_led": never_led,
         "crossovers": crossovers,
         "crossover_median": crossovers[len(crossovers) // 2] if crossovers else None,
@@ -663,6 +717,23 @@ def render_aggregate(data: dict) -> str:
         lines.append(f"    launches: {spread}")
         lines.append(f"    the race was refused at least once in "
                      f"{race['refused']}; the drive engaged in {race['drove']}")
+    sizes = data.get("by_map_size") or {}
+    if sizes:
+        lines.append("")
+        measured = data.get("band_measured_on", BAND_MEASURED_ON)
+        lines.append(f"  the {band} band was measured on {measured} ONLY. Land per")
+        lines.append("  civilization differs by size, so the opening it can reach does too:")
+        lines.append(f"  {'map size':>22} {'games':>6} {'mean c@60':>10} "
+                     f"{'in band':>8} {'wins':>5}")
+        for size, cell in sizes.items():
+            mark = "" if cell["band_applies"] else "   ⚠ band not measured here"
+            share = cell["in_band"] / cell["games"]
+            lines.append(f"  {size:>22} {cell['games']:>6} "
+                         f"{cell['mean_cities_at_60']:>10.2f} "
+                         f"{cell['in_band']:>3} ({share:>3.0%}) {cell['wins']:>5}{mark}")
+        if len(sizes) > 1:
+            lines.append("  ⚠⚠ MORE THAN ONE SIZE IS POOLED IN THE TABLE BELOW.")
+            lines.append("  Read the split above before reading the pooled rate.")
     lines.append("")
     lines.append(f"  {'cities@60':>9} {'games':>6} {'wins':>5} {'rate':>6}")
     inside = outside = inside_won = outside_won = 0
