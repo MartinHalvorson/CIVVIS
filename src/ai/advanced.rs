@@ -5385,9 +5385,11 @@ pub struct AdvancedAi {
     /// cities. Screened there — 60 games, 180 seats, `--turns 80 --p-on 0.5`,
     /// 44×26 4p, `--rivals firaxis-mix --handicap rivals`:
     ///
+    /// ```text
     ///     gene                              on     off    diff       z
     ///     expansion-hall-district         2.31    2.33   -0.03   -0.22
     ///     expansion-scales-with-difficulty 2.34    2.27   +0.07   +0.44
+    /// ```
     ///
     /// ⚠ **This gene does nothing where it is needed**, and the reason is
     /// legible: it prices a Government Plaza for the land grab, and a seat
