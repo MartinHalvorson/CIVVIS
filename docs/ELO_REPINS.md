@@ -2069,3 +2069,28 @@ change rather than hiding an accidental gene leak. Native outcome comparisons
 across this boundary must account for the changed engine rules. Focused tests
 cover off-road entry at all five route levels, actual movement exhaustion,
 connected-road pricing, bridges, and Amphibious crossings.
+
+
+## v38 (2026-09-11) — ordinary improvements over undiscovered resources
+
+#3503 removes the authoritative improvement veto for an unrevealed resource.
+Resource-specific requirements still use the visible resource, and terrain,
+feature, technology, territory, and charge checks still apply. This changes
+shared engine legality for every controller, including `AdvancedAi::legacy()`;
+it is not a new AI policy leaking through a gene gate.
+
+In the native observed seed 26091100 trace, turn 160 Builder 348 stands on
+forested hills containing undiscovered coal. The decision view correctly hides
+the coal and permits a lumber mill, but the authoritative board returns no
+legal improvement. Repeated builder refusals interrupt later military orders.
+The regression now executes that observed improvement, preserves the coal,
+and spends a builder charge. Revealed coal still rejects a lumber mill, and
+a tile without forest still fails the feature requirement.
+
+The unchanged five-profile anchor probe now measures **18,809 decisions and
+`0x4158_db2a_5305_81b0`**, replacing the v37 pin of **19,620 decisions and
+`0x4657_4d87_b9c1_7640`**. The initial full suite exposed the count change; an
+independent probe copied the existing profiles and hashing function to obtain
+both values. This re-pin records the deliberate engine correction. Native
+outcome comparisons across this boundary must account for the changed rules;
+these fingerprints do not demonstrate stronger tactics or a Domination win.
