@@ -63,26 +63,25 @@ impl AdvancedAi {
 
     /// Once the serial launch chain has reached its late research rungs, the
     /// next Science technology is the remaining victory clock. It outranks an
-    /// optional wartime upgrade so a committed expedition can unlock its next
-    /// launch or laser station before the turn cap. The caller still keeps the
-    /// ordinary war and recovery priorities when no launch chain is committed.
+    /// optional wartime upgrade so a completed expedition can unlock its laser
+    /// station before the turn cap even if the public lane changed afterward.
+    /// The caller still keeps the ordinary war and recovery priorities when no
+    /// launch chain is committed.
     pub(super) fn science_endgame_research_preempts_wartime(
         &self,
         g: &Game,
         pid: usize,
         goal: Option<&str>,
     ) -> bool {
-        self.raced_target() == Some(VictoryTarget::Science)
-            && goal.is_some_and(|goal| {
-                matches!(
-                    goal,
-                    "nanotechnology" | "smart_materials" | "offworld_mission"
-                )
-            })
-            && (g.players[pid]
-                .science_projects
-                .contains("launch_moon_landing")
-                || Self::science_project_is_queued(g, pid, "launch_moon_landing"))
+        goal.is_some_and(|goal| {
+            matches!(
+                goal,
+                "nanotechnology" | "smart_materials" | "offworld_mission"
+            )
+        }) && (g.players[pid]
+            .science_projects
+            .contains("launch_moon_landing")
+            || Self::science_project_is_queued(g, pid, "launch_moon_landing"))
             && self.science_endgame_committed(g, pid)
     }
 
