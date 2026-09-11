@@ -73,38 +73,49 @@ WIN_BAND = (4, 6)
 #: from a mean of 3.83 cities to 2.53. Pooling the two sizes in one aggregate
 #: hides that, which is why `aggregate` now splits on it.
 #:
-#: ## ⭐⭐⭐ 2026-09-11: IT IS THE RIVALS, NOT THE MAP, AND NOT THE BRIDGE
+#: ## ⭐⭐⭐ 2026-09-11: IT IS THE HANDICAP, NOT THE MAP, THE RIVALS, OR THE BRIDGE
+#:
+#: 🛑 An earlier version of this section blamed the Firaxis rivals. A fourth arm
+#: shows that was wrong: `--handicap rivals` and `--rivals firaxis-mix` are
+#: coupled by the tool — the first is refused without the second — and I moved
+#: both at once. Moving only the rivals costs nothing.
 #:
 #: The paragraph above reads as "the size change cost us the band". Three
 #: simulator arms at the Tiny shape (44×26, 4 players, 4 city-states, 80 turns,
 #: one variable moved at a time) say otherwise:
 #:
-#:     arm                                              seats  mean  in band
-#:     Tiny shape · online   · prince  · CIVVIS rivals    120  3.42     48%
-#:     Tiny shape · standard · emperor · CIVVIS rivals    120  3.68     57%
-#:     Tiny shape · standard · emperor · FIRAXIS rivals    90  2.23      3%
-#:     LIVE       · Tiny     · emperor · Firaxis            17  2.53      0%
+#:     arm                                                    seats  mean  in band
+#:     Tiny · standard · emperor · CIVVIS  rivals · handicap all   120  3.68     57%
+#:     Tiny · standard · emperor · FIRAXIS rivals · handicap all    90  3.73     53%
+#:     Tiny · standard · emperor · FIRAXIS rivals · handicap rivals 90  2.23      3%
+#:     LIVE · Tiny     · emperor · Firaxis        · handicap rivals 17  2.53      0%
 #:
-#: ⭐ **The live seat is not losing cities to the bridge.** Matched on shape,
-#: speed, difficulty and rivals, the simulator lands on 2.23 against live's
-#: 2.53 — the same answer. Whatever is happening happens in the game, not in
-#: the plumbing.
+#: ⭐ **Rival identity is worth nothing here: 3.68 against 3.73.** Put the
+#: Emperor handicap on everyone and a Firaxis neighbour costs us no cities at
+#: all. Move the handicap off our seat and onto the rival chairs — changing
+#: nothing else — and we lose **1.50 cities at turn 60**, from 53% in band to 3%.
 #:
-#: ⭐⭐ **And the Tiny map alone is survivable.** Against CIVVIS rivals the same
-#: 44×26 board yields 3.68 cities and 57% in band, which is the Small-map live
-#: figure (3.83, 59%) to within noise. Swapping in Firaxis rivals — and nothing
-#: else — costs **1.45 cities at turn 60** and takes in-band from 57% to 3%.
+#: ⭐⭐ **The live seat is not losing cities to the bridge.** Matched on shape,
+#: speed, difficulty, rivals AND handicap, the simulator lands on 2.23 against
+#: live's 2.53 — the same answer. There is no live-versus-simulator divergence
+#: here to go looking for.
 #:
-#: 🔴 So the finding is an INTERACTION, and neither half of it alone: a small
-#: board is fine until the neighbours actually contest it, and Firaxis AI at
-#: Emperor contests it. On `MAPSIZE_SMALL` against the same rivals the live seat
-#: reached the band 59% of the time; on `MAPSIZE_TINY` it reaches it never.
+#: 🔴 AND THIS IS NOT A DEFECT. `--handicap rivals` exempting the measured seat
+#: is what Emperor *means*: the rivals get the rung's yield and Settler bonus and
+#: we do not. The finding is that on a `MAPSIZE_TINY` board that asymmetry is
+#: decisive by turn 60, while on `MAPSIZE_SMALL` against the same rivals at the
+#: same rung the live seat still reached the band 59% of the time. Small boards
+#: do not leave room to lose a land race you are handicapped in.
 #:
-#: ⚠ Two cautions on these numbers. The simulator's 44×26 approximates
-#: `MAPSIZE_TINY` rather than reproducing its map script, and the live arm is 17
-#: runs. What carries the weight is the 90-seat Firaxis arm reproducing the live
-#: mean, and the 120-seat CIVVIS arm differing from it by more than a city on an
-#: identical board.
+#: ⚠ So the open question is a configuration one and it belongs to the operator:
+#: **is Tiny-at-Emperor a winnable shape?** Nothing here says the agent is
+#: broken; it says the agent is playing a board where the rung's head start
+#: decides the opening.
+#:
+#: ⚠ Cautions. The simulator's 44×26 approximates `MAPSIZE_TINY` rather than
+#: reproducing its map script; the live arm is 17 runs; and the two flags are
+#: coupled, so the isolation above comes from moving `--handicap` while holding
+#: `--rivals` fixed, not the reverse.
 BAND_MEASURED_ON = "MAPSIZE_SMALL"
 
 #: How a run reports a size it never recorded. Older runs predate the field.
