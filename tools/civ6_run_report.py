@@ -142,6 +142,47 @@ WIN_BAND = (4, 6)
 #: 60** — that is the target, and it is a far smaller thing than the raw 2.59
 #: against a 4-6 band suggests.
 #:
+#: ## ⭐⭐⭐⭐ THE BAND HOLDS AT THE DEPLOYMENT SHAPE, DERIVED THERE
+#:
+#: `WIN_BAND` and `BAND_MEASURED_ON` above record that the 4-6 band is a
+#: `MAPSIZE_SMALL` fact, and the ladder's own split puts most of its evidence at
+#: King or below. It had never been derived at the shape the live seat plays.
+#: Pooling 270 FULL-LENGTH seats from that shape — 60×38, 4 players, standard,
+#: Emperor, firaxis-mix rivals, handicap rivals, `--turns 250` — gives 24 wins
+#: and this:
+#:
+#:     cities@60   seats   wins   win rate
+#:             1      20      0       0.0%
+#:             2      59      5       8.5%
+#:             3     144     10       6.9%
+#:             4      46      9      19.6%
+#:
+#:     in the 4-6 band :  46 seats,  9 wins  19.6%
+#:     outside         : 224 seats, 15 wins   6.7%
+#:
+#: ⭐ **Reaching four cities by turn 60 nearly triples the win rate** — 19.6%
+#: against 6.7%, a difference of 12.9 points at z = 2.80. So the band is not an
+#: artefact of the rung or the board it was first measured on; it survives being
+#: re-derived at Emperor on the deployment shape with full-length games.
+#:
+#: ⚠ Note the ceiling. **No seat in 270 reached five**, so at this shape "4-6"
+#: is really "4 or more", and four is the top of what the board and the rung
+#: allow.
+#:
+#: ⚠⚠ AND IT IS A CORRELATION, NOT A LEVER. `cities@60` is not randomised here:
+#: a seat that reached four may simply have started on better ground, and the
+#: same objection applies to the live band this confirms. What the number
+#: licenses is "seats that open wide win more", NOT "make the opening wider and
+#: the win rate follows". Only an intervention arm can say the second thing, and
+#: #3534 is the standing reminder of what happens when a cheap probe is asked a
+#: question it cannot answer.
+#:
+#: ⭐ With that said, it sizes the prize. The seat averages 2.59 cities and
+#: reaches four in 46 of 270 seats; #3528 puts the gap to parity with a
+#: handicapped rival at 0.47 cities. Closing that gap moves seats from the 6.9%
+#: bucket to the 19.6% one, which is the largest single prize this record
+#: currently names.
+#:
 #: ## ⭐⭐⭐ AND THE BOARD SIZE IS WORTH ABOUT AS MUCH AGAIN
 #:
 #: The ladder's own attempts, split by rung, put the live seat on `MAPSIZE_SMALL`
