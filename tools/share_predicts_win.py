@@ -72,13 +72,36 @@ MIN_SCREENS_PER_GENE = 2
 BAND_MIN_SNR = 1.5
 
 
-def load_screens(pattern):
+#: The ledger curates a small subset of the screens on disk as its SOURCES, and
+#: the promotion rule reads only those. This file reads them all by default,
+#: which is right for measuring a relationship between two columns and wrong for
+#: pricing any single gene -- see `--sources` and the doc.
+LEDGER = "docs/gene_ledger.json"
+
+
+def ledger_sources(path=LEDGER):
+    """The screens the ledger actually treats as evidence."""
+    try:
+        doc = json.load(open(path))
+    except (OSError, ValueError):
+        raise SystemExit(f"cannot read {path!r} to find the ledger's sources")
+    paths = {s["path"] for s in doc.get("sources") or [] if isinstance(s, dict)
+             and s.get("path")}
+    if not paths:
+        raise SystemExit(f"{path!r} lists no sources")
+    return paths
+
+
+def load_screens(pattern, shape=None, sources_only=False):
     """Every (gene, screen) record that carries both readings and both errors."""
     paths = sorted(glob.glob(pattern))
     if not paths:
         raise SystemExit(f"no screens matched {pattern!r} -- nothing to analyse")
+    keep = ledger_sources() if sources_only else None
     rows, skipped = [], 0
     for path in paths:
+        if keep is not None and path not in keep:
+            continue
         try:
             doc = json.load(open(path))
         except (OSError, ValueError):
@@ -86,6 +109,8 @@ def load_screens(pattern):
             continue
         if not isinstance(doc, dict):
             skipped += 1
+            continue
+        if shape is not None and doc.get("shape") != shape:
             continue
         for gene in doc.get("genes") or []:
             if not isinstance(gene, dict):
@@ -101,8 +126,13 @@ def load_screens(pattern):
                      win=wd, win_se=ws, seats=gene.get("seats") or 0)
             )
     if not rows:
-        raise SystemExit(f"{len(paths)} screens matched {pattern!r} but none "
-                         "reported share and win with standard errors")
+        where = f"{len(paths)} screens matched {pattern!r}"
+        if shape is not None:
+            where += f" with shape {shape!r}"
+        if sources_only:
+            where += " among the ledger's sources"
+        raise SystemExit(f"{where} but none reported share and win with "
+                         "standard errors")
     return rows, paths, skipped
 
 
@@ -231,6 +261,12 @@ def detection_comparison(by_gene):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--screens", default=DEFAULT_SCREENS)
+    ap.add_argument("--shape", default=None,
+                    help="only screens recording this shape, e.g. 'standard'")
+    ap.add_argument("--sources", action="store_true",
+                    help="only the screens the ledger treats as sources -- a much "
+                         "smaller and differently shaped corpus, and the slope "
+                         "differs; see docs/SURROGATE_ENDPOINT.md")
     ap.add_argument("--splits", type=int, default=200,
                     help="random disjoint splits to median over")
     ap.add_argument("--bands", action="store_true",
@@ -238,7 +274,8 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args(argv)
 
-    rows, paths, skipped = load_screens(args.screens)
+    rows, paths, skipped = load_screens(args.screens, shape=args.shape,
+                                        sources_only=args.sources)
     by_gene = collections.defaultdict(list)
     for r in rows:
         by_gene[r["tag"]].append(r)
@@ -270,8 +307,15 @@ def main(argv=None):
         print()
         return 0
 
+    corpus = "every screen on disk"
+    if args.sources:
+        corpus = "the LEDGER'S SOURCES only"
+    if args.shape:
+        corpus += f", shape {args.shape!r}"
     print(f"{len(rows)} gene-by-screen records | {len(by_gene)} genes | "
-          f"{len(paths)} screens" + (f" | {skipped} unreadable" if skipped else ""))
+          f"{len({r['screen'] for r in rows})} screens | {corpus}"
+          + (f" | {skipped} unreadable" if skipped else ""))
+    print("⚠ the slope below is a property of THIS corpus. Quote them together.")
     print()
     w = within_screen_fit(rows)
     print("WITHIN ONE SCREEN -- both readings from the SAME seats, so the errors")
