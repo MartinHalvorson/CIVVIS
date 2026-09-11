@@ -2204,7 +2204,8 @@ class BatchRefreshSecondsTests(unittest.TestCase):
     def _play_args(**changes):
         from types import SimpleNamespace
         values = dict(
-            difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+            difficulty="DIFFICULTY_SETTLER", map="Continents.lua",
+            map_size="MAPSIZE_SMALL",
             speed="GAMESPEED_ONLINE", leader=None, max_turns=250,
             timeout=7200.0, timeout_ceiling=None, probe_citizens=False,
             campus_specialist=False, envoys=False, envoy_place=False,
@@ -2278,15 +2279,50 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertIn("batch's own arm", climb.screen_refusal(
             self._play_args(screen_gene=host_only, without=[host_only])))
 
-    def test_the_play_command_always_selects_rome(self):
-        """Even a direct caller cannot pass another leader through the climb."""
-        for requested in (None, "LEADER_TOKUGAWA", "LEADER_TRAJAN"):
-            with self.subTest(requested=requested):
-                cmd = climb.play_command(
-                    self._play_args(leader=requested), "t",
-                    Path("orders.sqlite"), Path("civvis_orders"))
-                leader = cmd.index("--leader")
-                self.assertEqual(cmd[leader + 1], climb.ROMAN_LEADER)
+    def test_play_command_preserves_leader_in_new_and_resumed_games(self):
+        for requested in (None, "LEADER_PERICLES", "LEADER_TRAJAN"):
+            for save in (None, Path("AutoSave.Civ6Save")):
+                with self.subTest(requested=requested, save=save):
+                    cmd = climb.play_command(
+                        self._play_args(leader=requested), "t",
+                        Path("orders.sqlite"), Path("civvis_orders"), load_save=save)
+                    self.assertEqual(cmd[cmd.index("--leader") + 1],
+                                     requested or climb.ROMAN_LEADER)
+
+    def test_the_lobby_reaches_the_play_command_for_new_and_resumed_games(self):
+        """★ THE MAP WAS NEVER FORWARDED, so every ladder game played the
+        `civ6_play` default whatever a host asked for. Size and speed were
+        forwarded but the map had no flag at all to forward. All three cross
+        verbatim now, and a resumed attempt is driven by the same world as the
+        attempt it continues — reloading a Pangaea autosave into a command line
+        that says Continents would describe the wrong game in the ledger."""
+        args = self._play_args(map="Pangaea.lua", map_size="MAPSIZE_TINY",
+                               speed="GAMESPEED_STANDARD")
+        for save in (None, Path("AutoSave.Civ6Save")):
+            with self.subTest(save=save):
+                cmd = climb.play_command(args, "t", Path("orders.sqlite"),
+                                         Path("civvis_orders"), load_save=save)
+                for flag, expected in (("--map", "Pangaea.lua"),
+                                       ("--map-size", "MAPSIZE_TINY"),
+                                       ("--speed", "GAMESPEED_STANDARD")):
+                    self.assertEqual(cmd[cmd.index(flag) + 1], expected)
+
+    def test_the_climb_offers_exactly_the_maps_play_can_be_driven_to(self):
+        """Discovered from `civ6_play.OPTIONS`, never restated: a second copy of
+        the list is complete the day it is written and wrong afterwards."""
+        import civ6_play
+        self.assertEqual(climb.MAP_SCRIPTS, list(civ6_play.OPTIONS["map_type"]))
+        self.assertIn("Pangaea.lua", climb.MAP_SCRIPTS)
+
+    def test_new_and_resumed_games_keep_firaxis_in_the_upper_left(self):
+        for save in (None, Path("AutoSave.Civ6Save")):
+            with self.subTest(save=save):
+                cmd = climb.play_command(self._play_args(), "t",
+                                         Path("orders.sqlite"), Path("civvis_orders"),
+                                         load_save=save)
+                for flag, expected in (("--window-side", "left"),
+                                       ("--window-frac", "0.5"), ("--window-vfrac", "0.5")):
+                    self.assertEqual(cmd[cmd.index(flag) + 1], expected)
 
     def test_the_mid_turn_frames_reach_the_play_command(self):
         """The combat frame (#2132) was never forwarded by the climb, so no

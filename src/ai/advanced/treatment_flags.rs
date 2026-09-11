@@ -220,7 +220,7 @@ impl AdvancedAi {
     /// selling duplicate works to make room. A class earned and blocked
     /// reserves a city for the slot building, district, wonder or soldier that
     /// lifts the block, and a due cultural person sells duplicate works to make
-    /// room. See [`AdvancedAi::great_person_housing`]. Opt-in gene.
+    /// room. See [`AdvancedAi::great_person_housing`]. Production gene.
     pub fn enable_great_person_housing(&mut self) {
         self.great_person_housing = true;
     }
@@ -234,7 +234,7 @@ impl AdvancedAi {
     /// exposed nearby, then sue for peace. Open a surprise war on a neighbour
     /// whose unescorted Settlers, Builders or unpillaged tiles lie within a
     /// short march of our soldiers, take them, and sue for peace. See
-    /// [`AdvancedAi::opportunistic_war`]. Opt-in gene.
+    /// [`AdvancedAi::opportunistic_war`]. Production gene.
     pub fn enable_opportunistic_war(&mut self) {
         self.opportunistic_war = true;
         self.opportunistic_war_2 = false;
@@ -921,6 +921,16 @@ impl AdvancedAi {
         self.culture_lane_forecast = false;
     }
 
+    /// Test the Rock Band unlock before the Culture lane's stadium and
+    /// museum-tourism civics, while retaining Humanism and Conservation first.
+    pub fn enable_culture_cold_war_window(&mut self) {
+        self.culture_cold_war_window = true;
+    }
+
+    pub fn disable_culture_cold_war_window(&mut self) {
+        self.culture_cold_war_window = false;
+    }
+
     /// Read a rival's Science clock from the prerequisite chain it has
     /// climbed, not only from the launches it has made. See
     /// [`Self::science_chain_alarm`].
@@ -1115,6 +1125,7 @@ impl AdvancedAi {
     /// `gene_screen` starts here and sets each gene to its drawn state; the
     /// membership tests read this body. Deployment is `enable_live_bridge`.
     pub fn enable_live_bridge_universe(&mut self) {
+        self.observed_player = true;
         // Every `live()` gene in the registry: the repairs and the host-only
         // adapters. The reason each exists is on its row in `genes.rs`.
         for gene in super::GENES.iter().filter(|gene| gene.live()) {
@@ -1122,45 +1133,11 @@ impl AdvancedAi {
         }
         self.apply_shared_city_target_contract();
     }
-
-    /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
-    /// without the deployment-profile treatments that do not apply to native
-    /// CIVVIS evaluation.
-    ///
-    /// ★★★★★ THE WHOLE BUNDLE HAS NEVER BEEN PRICED NATIVELY. The bridge set
-    /// grew one measured repair at a time, and each was gated "live-bridge
-    /// only" so the frozen `advanced_v1` anchor and the recorded ladders kept
-    /// running the controller they were rated with. That is a versioning
-    /// decision, not a finding about strength — and the defects themselves are
-    /// properties of *this* engine's rules, every one of them measured on
-    /// native CIVVIS runs: an army admitted at `command_radius` and judged at
-    /// half of it, so it never clears its own muster gate (5/85 turns); a siege
-    /// that walks away from a city at 25 hp and is refunded 200 hp of healing;
-    /// a relief column that marches at the besieger nearest *itself* rather
-    /// than the one killing the city; an army target that never asks how strong
-    /// the rival is (94 of 188 war turns already "satisfied").
-    ///
-    /// `live` has only ever been compared with its own `live_without_*`
-    /// ablations, so what the bundle is worth against the production
-    /// `advanced` incumbent is simply unmeasured. Ablation cannot answer it
-    /// either, because these repairs are *serially coupled*: readiness gates
-    /// the march, the march gates the siege, the siege gates the capture, and
-    /// the army target decides whether there is anything to march with.
-    /// Removing one from a bundle that still contains the other forty prices a
-    /// link in a chain that is otherwise whole; it does not price the chain
-    /// against no chain at all.
-    ///
-    /// The core Firaxis adapters are deliberately excluded:
-    ///
-    /// | excluded | why |
-    /// |---|---|
-    /// | `live_trader_route_adapter` | adapts a live Trader's zero walking movement to a distinct route-start action; no native game has that action |
-    /// | `live_religious_purchase_guard` | enforces Firaxis' city-majority purchase rule, which is not a CIVVIS rule |
-    /// | `solvent_faith_army` | prices a faith-bought soldier's GOLD upkeep under Firaxis' economy |
-    ///
-    /// `enable_live_bridge` is therefore this function plus the host-only
-    /// genes (`Kind::HostOnly` in `genes.rs`). Both bundles are loops over the
-    /// one registry, so they cannot drift apart.
+    /// The deployment player under native execution. This is intentionally
+    /// the same fixed policy bundle and ledger as `enable_live_bridge`.
+    /// Historically the host-only flags were omitted here, including several
+    /// strategic safeguards; that made a tournament genome a different player.
+    /// True host representation adapters remain inert without their host facts.
     pub fn enable_engine_repairs(&mut self) {
         self.enable_engine_repairs_universe();
         self.apply_gene_ledger();
@@ -1171,9 +1148,7 @@ impl AdvancedAi {
     /// repairs, so this production-profile policy remains fixed across every
     /// tournament genome. See `enable_live_bridge_universe`.
     pub fn enable_engine_repairs_universe(&mut self) {
-        self.enable_engine_repairs_war();
-        self.enable_engine_repairs_economy();
-        self.apply_shared_city_target_contract();
+        self.enable_live_bridge_universe();
     }
 
     /// The military half of [`AdvancedAi::enable_engine_repairs`]: force
@@ -2026,7 +2001,7 @@ impl AdvancedAi {
     /// Reserve the first empty trade route slot ahead of ordinary production in
     /// any city that can start a safe route. A barbarian alarm at a remote city
     /// no longer vetoes the whole empire. See
-    /// `BasicAi::solvency_first_trade_slot`; opt-in gene
+    /// `BasicAi::solvency_first_trade_slot`; production gene
     /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
     /// append-point check reads a method line's first identifier.
     pub fn enable_solvency_first_trade_slot(&mut self) {
@@ -3926,6 +3901,79 @@ impl AdvancedAi {
     pub fn disable_veteran_retreat_margin(&mut self) {
         self.base.veteran_retreat_margin = false;
     }
+    /// A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal
+    /// pool. See `BasicAi::ranged_hp_reserve`; opt-in gene `ranged-hp-reserve`.
+    pub fn enable_ranged_hp_reserve(&mut self) {
+        self.base.ranged_hp_reserve = true;
+    }
+    /// The twin of `enable_ranged_hp_reserve`.
+    pub fn disable_ranged_hp_reserve(&mut self) {
+        self.base.ranged_hp_reserve = false;
+    }
+
+    /// `chop-for-expansion`: a Builder turns a forest into a Settler. See
+    /// `advanced/chop_for_expansion.rs`.
+    pub fn enable_chop_for_expansion(&mut self) {
+        self.chop_for_expansion = true;
+    }
+
+    /// The twin of `enable_chop_for_expansion`.
+    pub fn disable_chop_for_expansion(&mut self) {
+        self.chop_for_expansion = false;
+    }
+
+    /// `conquest-takes-the-soft-city`: rank the early conquest target by what
+    /// can be taken before what is worth most. See `advanced/early_conquest.rs`.
+    pub fn enable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = true;
+    }
+
+    /// The twin of `enable_conquest_takes_the_soft_city`.
+    pub fn disable_conquest_takes_the_soft_city(&mut self) {
+        self.conquest_takes_the_soft_city = false;
+    }
+
+    /// `counter-culture-by-conquest`: answer a culture leader with war aimed
+    /// at its Great Works. See `advanced/victory_heuristics.rs`.
+    pub fn enable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = true;
+    }
+
+    /// The twin of `enable_counter_culture_by_conquest`.
+    pub fn disable_counter_culture_by_conquest(&mut self) {
+        self.counter_culture_by_conquest = false;
+    }
+    /// A rival close to winning is answered before the lane's expansion rule.
+    /// See the `denial_outranks_expansion` field; opt-in gene
+    /// `denial-outranks-expansion`.
+    pub fn enable_denial_outranks_expansion(&mut self) {
+        self.denial_outranks_expansion = true;
+    }
+    /// The twin of `enable_denial_outranks_expansion`.
+    pub fn disable_denial_outranks_expansion(&mut self) {
+        self.denial_outranks_expansion = false;
+    }
+    /// The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES`
+    /// instead of waiting for a growing city target. Opt-in gene
+    /// `domination-lane-hands-over`.
+    pub fn enable_domination_lane_hands_over(&mut self) {
+        self.domination_lane_hands_over = true;
+    }
+    /// The twin of `enable_domination_lane_hands_over`.
+    pub fn disable_domination_lane_hands_over(&mut self) {
+        self.domination_lane_hands_over = false;
+    }
+
+    /// `boost-planner-builds`: the boost planner serves `building:` triggers.
+    /// See `advanced/boost_planner.rs`.
+    pub fn enable_boost_planner_builds(&mut self) {
+        self.boost_planner_builds = true;
+    }
+
+    /// The twin of `enable_boost_planner_builds`.
+    pub fn disable_boost_planner_builds(&mut self) {
+        self.boost_planner_builds = false;
+    }
 
     /// The army's turn planned from a ranked Objective Board — rows valued in
     /// hammers with a requirement and a deadline — and served by persistent
@@ -4099,6 +4147,125 @@ impl AdvancedAi {
     /// The twin of `enable_culture_threat_early`.
     pub fn disable_culture_threat_early(&mut self) {
         self.culture_threat_early = false;
+    }
+
+    /// Plan the next six technologies' and four civics' boosts: classify each
+    /// trigger by what it costs the plan and turn the cheap ones into at most
+    /// three deadlined side objectives, each a share-of-value premium on the
+    /// one production or Builder choice that fires it. See
+    /// `advanced/boost_planner.rs`. Opt-in gene `boost-planner`. Filed here
+    /// rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_boost_planner(&mut self) {
+        self.boost_planner = true;
+    }
+
+    /// The twin of `enable_boost_planner`.
+    pub fn disable_boost_planner(&mut self) {
+        self.boost_planner = false;
+    }
+
+    /// Take a small neighbour's city in the opening: a met rival's known
+    /// city within twelve tiles of the capital, the capital's production
+    /// reserved for three shooters and two melee bodies ahead of the second
+    /// Settler, the war declared once the force is assembled and the bill
+    /// covered, and no strike-force body ending its move beside unseen
+    /// ground. See `advanced/early_conquest.rs`. Opt-in gene
+    /// `early-conquest-opening`; off in production, opted into by name.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_early_conquest_opening(&mut self) {
+        self.early_conquest_opening = true;
+    }
+
+    /// The twin of `enable_early_conquest_opening`.
+    pub fn disable_early_conquest_opening(&mut self) {
+        self.early_conquest_opening = false;
+    }
+
+    /// Scale the opening city target, the opening deadline, the Settler
+    /// cadence and the expansion cards with the difficulty rung: the measured
+    /// 4-6 band is a King-level reading and every rung above it widens the
+    /// rival field. See `advanced/expansion_scales_with_difficulty.rs`.
+    /// Opt-in gene `expansion-scales-with-difficulty`. Filed above the
+    /// markers: the append-point check reads a method line's first identifier.
+    pub fn enable_expansion_scales_with_difficulty(&mut self) {
+        self.expansion_scales_with_difficulty = true;
+    }
+
+    /// The twin of `enable_expansion_scales_with_difficulty`.
+    pub fn disable_expansion_scales_with_difficulty(&mut self) {
+        self.expansion_scales_with_difficulty = false;
+    }
+
+    /// Deny a rival the science victory rather than only race it: the
+    /// diplomatic refusals, the denunciation and one spy's disruption of the
+    /// launch pad. See `advanced/science_threat_denial.rs`. Opt-in gene
+    /// `science-threat-denial`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_science_threat_denial(&mut self) {
+        self.science_threat_denial = true;
+    }
+
+    /// The twin of `enable_science_threat_denial`. The war rung's own flag
+    /// is left as it is; it is inert without this one.
+    pub fn disable_science_threat_denial(&mut self) {
+        self.science_threat_denial = false;
+    }
+
+    /// The pad raid and the bounded war that opens it, on top of the base
+    /// denial. Opt-in gene `science-denial-war`; it REQUIRES
+    /// `science-threat-denial` and arms it, so the tag fires on its own and a
+    /// seat that drew the war without the base still plays the whole ladder.
+    /// See `advanced/science_threat_denial.rs`.
+    pub fn enable_science_denial_war(&mut self) {
+        self.science_threat_denial = true;
+        self.science_denial_war = true;
+    }
+
+    /// The twin of `enable_science_denial_war`: the base stays as it was.
+    pub fn disable_science_denial_war(&mut self) {
+        self.science_denial_war = false;
+    }
+
+    /// The stock alliance desk asks for a Research Alliance on any turn,
+    /// ranks the partner by science, holds the slot for it while Scientific
+    /// Theory is still short, and pays a premium for the first route to that
+    /// ally while its level still climbs. See
+    /// `advanced/research_alliance.rs`. Opt-in gene
+    /// `research-alliance-first`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_research_alliance_first(&mut self) {
+        self.research_alliance_first = true;
+    }
+
+    /// The twin of `enable_research_alliance_first`.
+    pub fn disable_research_alliance_first(&mut self) {
+        self.research_alliance_first = false;
+    }
+
+    /// Unlock the first land siege capability for a walled Conquest objective.
+    pub fn enable_domination_siege_research(&mut self) {
+        self.domination_siege_research = true;
+    }
+    pub fn disable_domination_siege_research(&mut self) {
+        self.domination_siege_research = false;
+    }
+
+    /// Rank required capitals within the selected domination campaign front.
+    pub fn enable_domination_capital_focus(&mut self) {
+        self.domination_capital_focus = true;
+    }
+    pub fn disable_domination_capital_focus(&mut self) {
+        self.domination_capital_focus = false;
+    }
+
+    /// See `AdvancedAi::expansion_hall_district`.
+    pub fn enable_expansion_hall_district(&mut self) {
+        self.expansion_hall_district = true;
+    }
+    pub fn disable_expansion_hall_district(&mut self) {
+        self.expansion_hall_district = false;
     }
 
     // ---- append: a-b ------------------------------------------------

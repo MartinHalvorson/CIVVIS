@@ -498,11 +498,15 @@ impl AdvancedAi {
             return false;
         }
         let fronts = Self::air_surge_fronts(g, pid);
-        // An explicit Science race has a fixed lane to protect. At peace the
-        // air package would divert research into Advanced Flight and spend
-        // production on an elective war; retain the capability for the
-        // defensive one-front counter below.
-        if self.victory_target == Some(VictoryTarget::Science) && fronts.is_empty() {
+        // An explicit Science or Culture race has a fixed lane to protect. At
+        // peace the air package would divert research into Advanced Flight
+        // and spend production on an elective war; retain the capability for
+        // the defensive one-front counter below.
+        if matches!(
+            self.active_victory_target(g),
+            Some(VictoryTarget::Science | VictoryTarget::Culture)
+        ) && fronts.is_empty()
+        {
             return false;
         }
         let reserve = g.standard_duration(AIR_SURGE_ENDGAME_RESERVE);
@@ -973,6 +977,42 @@ impl AdvancedAi {
         if !wants_field && !wants_bomber && !wants_body {
             return false;
         }
+        let launch_missing = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(status.bombers_committed);
+        let wing_turns = |city| {
+            let item = Item::Unit { unit: bomber? };
+            let rate = (g.city_yields(city).production * g.item_prod_mult(pid, city, Some(&item)))
+                .max(0.1);
+            Some(launch_missing as f64 * g.item_cost_for_city(pid, city, &item) / rate)
+        };
+        // A single slow base can monopolize the whole wing while the rest of
+        // the empire trains escorts. Permit one faster alternative, including
+        // its construction cost, before the launch wing is committed.
+        let existing_wing_turns =
+            (status.aerodromes_committed == 1 && status.metal_ready && launch_missing > 0)
+                .then(|| {
+                    g.player_city_ids(pid)
+                        .into_iter()
+                        .filter(|cid| {
+                            field.is_some_and(|family| {
+                                g.city_has_district_family(&g.cities[cid], family)
+                                    || g.cities[cid].queue.iter().any(|item| {
+                                        matches!(item, Item::District { district, .. }
+                                        if g.district_family(*district) == family)
+                                    })
+                            })
+                        })
+                        .filter_map(|cid| {
+                            let waiting = g.cities[&cid].queue.first().map_or(0.0, |item| {
+                                g.item_remaining_cost_for_city(pid, cid, item)
+                                    / (g.city_yields(cid).production
+                                        * g.item_prod_mult(pid, cid, Some(item)))
+                                    .max(0.1)
+                            });
+                            Some(waiting + wing_turns(cid)?)
+                        })
+                        .min_by(f64::total_cmp)
+                })
+                .flatten();
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
         let mut best: Option<(u8, f64, u32, String, Item)> = None;
         for cid in g.player_city_ids(pid) {
@@ -983,9 +1023,17 @@ impl AdvancedAi {
             for item in g.producible_items(pid, cid) {
                 let rank = match &item {
                     Item::District { district, .. }
-                        if wants_field
-                            && field
-                                .is_some_and(|family| g.district_family(*district) == family) =>
+                        if field.is_some_and(|family| g.district_family(*district) == family)
+                            && (wants_field
+                                || existing_wing_turns.is_some_and(|deadline| {
+                                    let field_turns = g
+                                        .item_remaining_cost_for_city(pid, cid, &item)
+                                        / (production * g.item_prod_mult(pid, cid, Some(&item)))
+                                            .max(0.1);
+                                    wing_turns(cid).is_some_and(|wing| {
+                                        field_turns + wing + f64::EPSILON < deadline
+                                    })
+                                })) =>
                     {
                         0
                     }

@@ -482,7 +482,7 @@ fn close_seat_turn(g: &mut Game, seat: usize, forced: &mut u64) -> bool {
 fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> SimultaneousCensus {
     // Same headless observation mode as `run_game`: fog memory is a display
     // cache, not a gameplay input, and planning clones inherit the setting.
-    g.set_fog_memory(false);
+    g.set_fog_memory(ais.iter().any(Ai::uses_player_observation));
     // And the same narrated-war-ledger mode: nobody reads a half-finished
     // headless turn, declarations, peaces, and turn boundaries still sync
     // it unconditionally, and here every planning world inherits the skip

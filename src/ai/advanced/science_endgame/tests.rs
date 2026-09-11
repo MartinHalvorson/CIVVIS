@@ -287,6 +287,74 @@ fn actual_research_dispatch_skips_old_optional_branches_for_the_launch() {
 }
 
 #[test]
+fn queued_launch_keeps_science_production_committed_during_recovery() {
+    let (mut g, city, _) = board();
+    g.players[0].science_projects.clear();
+    g.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: project("launch_earth_satellite"),
+        },
+    )
+    .unwrap();
+
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    assert!(ai.science_endgame_production_committed(&g, 0));
+}
+
+#[test]
+fn committed_late_launch_research_preempts_optional_wartime_upgrades() {
+    let (mut g, _, _) = board();
+    g.players[0].techs.remove(&crate::name!("offworld_mission"));
+    let ai = AdvancedAi::targeting(VictoryTarget::Science);
+
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+    assert!(!ai.science_endgame_research_preempts_wartime(&g, 0, Some("robotics")));
+}
+
+#[test]
+fn completed_expedition_keeps_late_research_after_a_lane_switch() {
+    let (mut g, _, _) = board();
+    g.players[0].techs.remove(&Name::new("offworld_mission"));
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+
+    assert!(ai.science_endgame_committed(&g, 0));
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+}
+
+#[test]
+fn queued_expedition_keeps_late_research_after_a_lane_switch() {
+    let (mut g, city, _) = board();
+    g.players[0].science_projects.remove("exoplanet_expedition");
+    g.players[0].techs.remove(&Name::new("offworld_mission"));
+    g.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: project("exoplanet_expedition"),
+        },
+    )
+    .unwrap();
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+
+    assert!(ai.science_endgame_committed(&g, 0));
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+}
+
+#[test]
 fn completed_launch_hands_every_pad_to_lasers_on_the_next_decision() {
     let (mut g, a, b) = board();
     g.players[0].science_projects.remove("exoplanet_expedition");

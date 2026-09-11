@@ -1,4 +1,4 @@
-"""What the desktop rescue costs a run, reported by the tool built to find it."""
+"""Recovery-request observation gaps, without causal cost attribution."""
 import json
 import sys
 import tempfile
@@ -16,12 +16,7 @@ def stamp(seconds: float) -> str:
 
 
 class RescueStallsTest(unittest.TestCase):
-    """★ THE ONE NUMBER THE PER-TURN TABLE HIDES.
-
-    An `autoclose` event carries no turn, so a stall lands inside whichever
-    turn spans it and reads as a slow turn. Measured directly it was 25.8 min
-    of run civvis-20260902T095330Z's 68.6 -- 37.6 %.
-    """
+    """Unnumbered recovery requests retain their next-event gap for diagnosis."""
 
     def write(self, events) -> Path:
         handle = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
@@ -31,7 +26,7 @@ class RescueStallsTest(unittest.TestCase):
         self.addCleanup(lambda: Path(handle.name).unlink(missing_ok=True))
         return Path(handle.name)
 
-    def test_the_gap_after_each_ask_is_the_cost(self):
+    def test_the_gap_after_each_ask_is_labeled_as_an_observation(self):
         path = self.write([
             {"kind": "state", "utc": stamp(0)},
             {"kind": "autoclose_desktop", "screen": "DiplomacyActionView", "utc": stamp(10)},
@@ -41,6 +36,7 @@ class RescueStallsTest(unittest.TestCase):
         ])
         found = rescue_stalls(path)
         self.assertEqual(found["asks"], 2)
+        self.assertEqual(found["metric"], "request_to_next_event_gap")
         self.assertAlmostEqual(found["seconds"], 47.0, places=3)
         self.assertAlmostEqual(found["worst"], 23.5, places=3)
         self.assertAlmostEqual(found["screens"]["DiplomacyActionView"], 47.0, places=3)
@@ -63,9 +59,9 @@ class RescueStallsTest(unittest.TestCase):
         self.assertEqual(found["asks"], 1)
         self.assertAlmostEqual(found["seconds"], 23.5, places=3)
 
-    def test_an_absurd_gap_is_not_counted_as_rescue_time(self):
+    def test_an_absurd_gap_is_not_counted(self):
         """A run that was killed and resumed leaves an hour between two lines;
-        that is not what the rescue cost."""
+        that is outside this diagnostic window."""
         path = self.write([
             {"kind": "autoclose_desktop", "screen": "X", "utc": "2026-09-02T10:00:00.000Z"},
             {"kind": "await", "utc": "2026-09-02T12:00:00.000Z"},

@@ -33,6 +33,132 @@ fn board() -> Game {
 }
 
 #[test]
+fn culture_researches_a_government_its_chooser_will_adopt() {
+    let mut g = board();
+    let withheld = [
+        "conservation",
+        "class_struggle",
+        "suffrage",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("monarchy".to_string());
+    g.players[0].civic = None;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = false;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    assert!(g.available_civics(0).contains(&crate::name!("suffrage")));
+    let mut capacity = g.clone();
+    ai.government_capacity_fallback = true;
+    ai.advanced_research(&mut capacity, 0, &plan);
+    assert_eq!(capacity.players[0].civic.as_deref(), Some("class_struggle"));
+    ai.government_capacity_fallback = false;
+    let mut matching = g.clone();
+    matching.players[2].government = Some("communism".to_string());
+    ai.advanced_research(&mut matching, 0, &plan);
+    assert_eq!(
+        matching.players[0].civic.as_deref(),
+        Some("class_struggle"),
+        "matching the leading Culture defender remains an eligible goal"
+    );
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("suffrage"));
+    g.players[0].civics.insert(crate::name!("suffrage"));
+    ai.strategic_government(&mut g, 0, GrandStrategy::Recovery);
+    assert_eq!(g.players[0].government.as_deref(), Some("democracy"));
+}
+
+#[test]
+fn cold_war_window_keeps_the_opening_and_resumes_the_culture_chain() {
+    let mut g = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert!(!ai.culture_cold_war_window);
+    ai.enable_culture_cold_war_window();
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("humanism"));
+    g.players[0].civics.insert(crate::name!("humanism"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("conservation"));
+    g.players[0].civics.insert(crate::name!("conservation"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("cold_war"));
+    ai.disable_culture_cold_war_window();
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+    ai.enable_culture_cold_war_window();
+    g.victory_conditions.culture = false;
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+    g.victory_conditions.culture = true;
+    g.players[0].civics.insert(crate::name!("cold_war"));
+    assert_eq!(ai.culture_civic_goal(&g, 0), Some("professional_sports"));
+}
+
+#[test]
+fn cold_war_window_changes_the_legal_civic_order_only_for_culture() {
+    let mut g = board();
+    let withheld = [
+        "cold_war",
+        "professional_sports",
+        "cultural_heritage",
+        "space_race",
+        "environmentalism",
+        "social_media",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|c| !withheld.contains(&c.as_str()))
+        .collect();
+    g.players[0].civic = None;
+    assert!(g.available_civics(0).contains(&crate::name!("cold_war")));
+    assert!(g
+        .available_civics(0)
+        .contains(&crate::name!("professional_sports")));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    for target in [VictoryTarget::Culture, VictoryTarget::Science] {
+        let mut control = g.clone();
+        let mut treatment = g.clone();
+        let mut ai = AdvancedAi::targeting(target);
+        ai.advanced_research(&mut control, 0, &plan);
+        ai.enable_culture_cold_war_window();
+        ai.advanced_research(&mut treatment, 0, &plan);
+        if target == VictoryTarget::Culture {
+            assert_eq!(
+                control.players[0].civic.as_deref(),
+                Some("professional_sports")
+            );
+            assert_eq!(treatment.players[0].civic.as_deref(), Some("cold_war"));
+        } else {
+            assert_eq!(control.players[0].civic, treatment.players[0].civic);
+        }
+    }
+}
+
+#[test]
 fn defense_uses_the_global_bar_and_only_known_living_opponents() {
     let mut g = board();
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
@@ -198,6 +324,38 @@ fn culture_chain_stays_valuable_during_expansion_but_must_finish_in_time() {
         ai.culture_race_production_bonus(&g, 0, &amph, GrandStrategy::Culture, 5.0),
         0.0
     );
+}
+
+#[test]
+fn explicit_culture_target_keeps_theater_buildings_through_recovery() {
+    let mut g = board();
+    for pid in 1..3 {
+        Arc::make_mut(&mut g.observed_public_empire_stats)
+            .get_mut(&pid)
+            .unwrap()
+            .foreign_tourists = Some(0);
+    }
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let culture_lane =
+        ai.culture_race_production_bonus(&g, 0, &amphitheater, GrandStrategy::Culture, 5.0);
+    let recovery_lane =
+        ai.culture_race_production_bonus(&g, 0, &amphitheater, GrandStrategy::Recovery, 5.0);
+    let science_lane = AdvancedAi::targeting(VictoryTarget::Science).culture_race_production_bonus(
+        &g,
+        0,
+        &amphitheater,
+        GrandStrategy::Recovery,
+        5.0,
+    );
+    assert_eq!(
+        recovery_lane - culture_lane,
+        CULTURE_TARGETED_THEATER_POSTURE_BONUS,
+        "Recovery keeps the explicit Culture building lane at its full posture premium"
+    );
+    assert_eq!(science_lane, 0.0);
 }
 
 #[test]
@@ -538,4 +696,107 @@ fn early_defense_refuses_the_threats_open_borders_proposal() {
     let mut bystander = deal.clone();
     bystander.from = 2;
     assert_eq!(ai.incoming_deal_value(&g, 0, &bystander, &plan), off);
+}
+
+#[test]
+fn an_assigned_culture_racer_keeps_conservation_while_behind_on_visitors() {
+    let mut g = board();
+    g.turn = 150;
+    let withheld = ["conservation", "capitalism"];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].civic = None;
+    assert!(g
+        .available_civics(0)
+        .contains(&crate::name!("conservation")));
+    assert!(g.victory_races(1, 0).culture > g.victory_races(0, 0).culture);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_lane_release_when_hopeless();
+    ai.lane_lost = ai.assigned_lane_is_lost(&g, 0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("conservation"));
+    assert!(
+        !ai.lane_lost,
+        "low accumulated tourism is not a verdict on an assigned Culture finish"
+    );
+}
+
+#[test]
+fn a_ready_culture_museum_unlocks_archaeology_before_another_government() {
+    let mut g = board();
+    let withheld = [
+        "civil_engineering",
+        "natural_history",
+        "class_struggle",
+        "suffrage",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("monarchy".to_string());
+    g.players[0].civic = None;
+    let cid = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("archaeological_museum"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = true;
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut ready = g.clone();
+    ai.advanced_research(&mut ready, 0, &plan);
+    assert_eq!(ready.players[0].civic.as_deref(), Some("natural_history"));
+    ready.players[0]
+        .civics
+        .insert(crate::name!("natural_history"));
+    ready.players[0].civic = None;
+    ai.advanced_research(&mut ready, 0, &plan);
+    assert_eq!(ready.players[0].civic.as_deref(), Some("civil_engineering"));
+    plan.strategy = GrandStrategy::Recovery;
+    let mut recovery = g.clone();
+    ai.advanced_research(&mut recovery, 0, &plan);
+    assert_eq!(
+        recovery.players[0].civic.as_deref(),
+        Some("civil_engineering")
+    );
+    plan.strategy = GrandStrategy::Culture;
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .retain(|building| building != "archaeological_museum");
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].civic.as_deref(), Some("civil_engineering"));
 }

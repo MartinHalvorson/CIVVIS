@@ -329,6 +329,67 @@ def _exact_interactive_capture(command):
         return False
 
 
+#: What macOS writes a screen recording into. The Cmd-Shift-5 helper picks its
+#: destination through the UI, never on its command line, so the open FILE is the
+#: only place a recording in progress is visible from outside the process.
+RECORDING_OUTPUT_SUFFIXES = (".mov", ".mp4", ".m4v", ".qtz")
+RECORDING_PATH_MARKERS = ("screen recording", "screenrecording")
+RECORDING_LSOF_TIMEOUT_S = 3.0
+
+
+def writes_a_recording(pid):
+    """Whether this helper is holding a movie file open — i.e. it is RECORDING.
+
+    ★★★★★ THIS IS THE ONLY THING BETWEEN A STALE TOOLBAR AND A USER'S RECORDING.
+
+    Every other condition in :func:`stale_interactive_capture_processes` is
+    satisfied by a Cmd-Shift-5 recording that has simply been running a while:
+    it is this user's, its parent IS `SystemUIServer`, its `screencaptureui`
+    companion IS alive beside it, and its argv IS exactly
+    ``/usr/sbin/screencapture -pdiU -z keyboard.interactive`` — a *video*
+    capture takes no output path on the command line, so the exact-argv rule
+    that excludes a file-backed still capture does not exclude it.  Past five
+    minutes it was therefore reclassified from "an active recording, stand
+    down" (:func:`native_recording_ui_active` returns True for exactly this
+    pair) to "a stale stream" and sent SIGTERM and then SIGKILL — while
+    Civilization VI was frontmost, which during a recorded verification game is
+    not a coincidence but the normal state the harness maintains.
+
+    So the guard "only when Civ VI is frontmost" did not protect a recording of
+    the game; it selected for one. This file's own `_process_rows` header warned
+    about "turning a broad ``killall screencapture`` into a user's recording
+    stop" — this is that, reached the long way round.
+
+    ⚠ Unreadable answers count as recording. Failing closed costs a stale helper
+    the ladder waits on and reports, which it already knows how to do; failing
+    open destroys a recording that cannot be recovered.
+    """
+    try:
+        result = subprocess.run(
+            ["lsof", "-p", str(int(pid)), "-Fn"],
+            capture_output=True,
+            text=True,
+            timeout=RECORDING_LSOF_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError, TypeError, ValueError):
+        # lsof missing, or it hung: no evidence either way, so do not kill.
+        return True
+    # 0 is "files listed", 1 is "nothing matched" -- including a process that
+    # has already gone. Both are real answers. Anything else is not.
+    if result.returncode not in (0, 1):
+        return True
+    for line in result.stdout.splitlines():
+        if not line.startswith("n"):
+            continue
+        name = line[1:].casefold()
+        if name.endswith(RECORDING_OUTPUT_SUFFIXES):
+            return True
+        if any(marker in name for marker in RECORDING_PATH_MARKERS):
+            return True
+    return False
+
+
 def stale_interactive_capture_processes(rows=None):
     """Find only long-lived, same-user Cmd-Shift-5 helpers with their UI alive.
 
@@ -372,6 +433,10 @@ def stale_interactive_capture_processes(rows=None):
         except (IndexError, ValueError):
             continue
         if parent_name != "SystemUIServer":
+            continue
+        # Last, because it is the only condition that costs a subprocess: a
+        # helper writing a movie is recording, not stale. See `writes_a_recording`.
+        if writes_a_recording(row["pid"]):
             continue
         found.append(row)
     return found
@@ -759,7 +824,9 @@ def click_target(kind, targets, width):
     not recognize well enough to find a left acknowledgement is left for the
     in-game closer or an operator rather than guessed at.
     """
-    if not targets:
+    if not targets or kind == "leader":
+        # Button geometry cannot distinguish accepting their capital from
+        # revealing ours. The mod reads the actual diplomacy statement.
         return None
     if kind == "advisor":
         return next((point for point in targets if point[0] < width * 0.50), None)
@@ -1170,6 +1237,8 @@ def main():
                         no_target_passes += 1
                     else:
                         no_target_passes = 0
+                elif kind == "leader":
+                    log("leader decision belongs to the statement-aware in-game handler")
                 elif (choice := click_target(kind, targets, window.size[0])) is None:
                     # ⚠⚠⚠ "LEAVING IT ALONE" MEANT LEAVING THE GAME DEAD.
                     #

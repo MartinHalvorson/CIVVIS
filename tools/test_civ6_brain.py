@@ -18,6 +18,50 @@ import civ6_brain
 import civ6_play  # noqa: E402
 
 
+class EventJournalTailTest(unittest.TestCase):
+    def test_split_board_arrives_once_and_keeps_utf8_intact(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "events.jsonl"
+            first = b'{"kind":"seat"}\n'
+            board = '{"kind":"state","turn":7,"name":"Roma \u00e9"}\n'.encode("utf-8")
+            split = board.index(b"\xc3") + 1
+            path.write_bytes(first + board[:split])
+            lines, offset = civ6_brain.read_event_lines(path, 0)
+            self.assertEqual(lines, [first.decode()])
+            self.assertEqual(offset, len(first))
+            self.assertEqual(civ6_brain.read_event_lines(path, offset), ([], offset))
+            with path.open("ab") as stream:
+                stream.write(board[split:])
+            lines, offset = civ6_brain.read_event_lines(path, offset)
+            self.assertEqual([json.loads(line) for line in lines],
+                             [{"kind": "state", "turn": 7, "name": "Roma \u00e9"}])
+            self.assertEqual(civ6_brain.read_event_lines(path, offset), ([], offset))
+
+    def test_crlf_and_invalid_utf8_keep_the_resume_position(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "events.jsonl"
+            path.write_bytes(b'bad\xff\r\n{"turn":8')
+            lines, offset = civ6_brain.read_event_lines(path, 0)
+            self.assertEqual(lines, ['bad\ufffd\n'])
+            with path.open("ab") as stream:
+                stream.write(b'}\r\n')
+            lines, offset = civ6_brain.read_event_lines(path, offset)
+            self.assertEqual(json.loads(lines[0]), {"turn":8})
+            self.assertEqual(civ6_brain.read_event_lines(path, offset), ([], offset))
+
+    def test_complete_batch_does_not_consume_an_unterminated_record(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "events.jsonl"
+            path.write_bytes(b'{}\ninvalid\n{"turn":8}')
+            lines, offset = civ6_brain.read_event_lines(path, 0)
+            self.assertEqual(lines, ['{}\n', 'invalid\n'])
+            with path.open("ab") as stream:
+                stream.write(b'\n{"turn":9}\n')
+            lines, offset = civ6_brain.read_event_lines(path, offset)
+            self.assertEqual([json.loads(line) for line in lines], [{"turn":8}, {"turn":9}])
+            self.assertEqual(offset, path.stat().st_size)
+
+
 class FakeProc:
     def __init__(self, lines: list[str]) -> None:
         self.stdout = io.StringIO("".join(lines))

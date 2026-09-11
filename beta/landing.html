@@ -157,76 +157,18 @@
   .intro { max-width: 860px; margin: 14px 0 18px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
-  /* The menu: which game runs down the rows — Tactics above, Civ below —
-     and who is at the keyboard across the columns — Watch (AI simulations)
-     on the left, Play (single player) on the right. */
-  /* The row index rides the menu's left edge and stays put while the page
-     scrolls: every row, in page order, one click away — so the whole menu
-     is legible in one glance even when its lower rows sit past the fold.
-
-     Two pieces of furniture stand to the left of the cards — the index and
-     the column of vertical row labels — and between them they were taking
-     147 of the shell's 996 pixels, which is a seventh of the menu spent on
-     signposting rather than on the two cards it points at. Where the
-     viewport is wide enough to have a margin, the whole menu slides left by
-     exactly that much (`--menu-inset`) so the furniture rides in the margin
-     and the cards keep the shell to themselves.
-
-     The inset is computed from the two widths rather than written down
-     beside them, so it cannot drift out of step with what it is insetting:
-     change a width and the slide follows. Both widths are therefore fixed
-     rather than content-sized. */
+  /* The menu: one row of cards, and who is at the keyboard across the
+     columns — Watch (AI simulations) on the left, Play (single player) on
+     the right. The site offers the full game and nothing else, so the menu
+     is the pair of cards and the two column heads above them: there is no
+     row index down the left edge and no vertical row label beside the
+     cards, because with one row neither had a row to tell apart. */
   :root {
     --menu-gap: 16px;
-    --row-nav-w: 80px;
-    /* One line box of the vertical label: `.row-label`'s own font size
-       through the body's line height. Bump one, bump this. */
-    --row-label-w: 35px;
-    --menu-inset: calc(var(--row-nav-w) + var(--row-label-w) + 2 * var(--menu-gap));
   }
-  .home-layout { display: flex; align-items: flex-start; gap: var(--menu-gap); }
-  /* Wide enough for the whole rail to clear the viewport edge with room to
-     spare: the shell's 1060, plus twice what the rail needs past the shell's
-     own padding, plus a margin of its own. Below that, and above the
-     one-column layout, the index alone goes out — it is the wider of the two
-     and the easier to spare. Below that again the rail stands in the menu as
-     it did, because there is no margin for it to stand in. */
-  @media (min-width: 1340px) { .home-layout { margin-left: calc(-1 * var(--menu-inset)); } }
-  @media (min-width: 1240px) and (max-width: 1339.98px) {
-    .home-layout { margin-left: calc(-1 * (var(--row-nav-w) + var(--menu-gap))); }
-  }
-  .row-nav {
-    position: sticky;
-    top: 14px;
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    gap: 6px;
-    width: var(--row-nav-w);
-  }
-  .row-nav a {
-    padding: 6px 10px;
-    text-align: center;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: var(--panel);
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-decoration: none;
-    text-transform: uppercase;
-  }
-  .row-nav a:hover,
-  .row-nav a:focus-visible { border-color: var(--accent); color: #fff; }
-  .row-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* A narrow first column carries the vertical row labels; the two card
-     columns share the rest. Fixed rather than `auto` so `--menu-inset` can
-     be computed from it. */
   .quadrants {
     display: grid;
-    flex: 1;
-    grid-template-columns: var(--row-label-w) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px var(--menu-gap);
     min-width: 0;
   }
@@ -244,19 +186,6 @@
     text-transform: uppercase;
   }
   .col-head span { color: var(--faint); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; }
-  .row-label {
-    align-self: center;
-    justify-self: center;
-    margin: 0;
-    writing-mode: vertical-rl;
-    transform: rotate(180deg);
-    color: var(--faint);
-    font-size: 22.5px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-  }
-
   .mode-card {
     display: flex;
     flex-direction: column;
@@ -265,8 +194,8 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--panel);
-    /* The row index scrolls to a row's first card; land it just clear of
-       the viewport edge. */
+    /* Closing a panel scrolls back to the card that opened it; land it
+       just clear of the viewport edge. */
     scroll-margin-top: 14px;
   }
   /* The photograph is a way in, not decoration: it opens the same preset the
@@ -364,19 +293,14 @@
   .mode-card.muted:hover,
   .mode-card.muted:focus-within { opacity: 1; }
 
-  /* The customization panels: each one lives inside the menu grid as a
-     full-width row directly below the pair of cards it customizes — the
-     battle picker below the Tactics row, the world picker below the CIVVIS
-     row — so Customize and the tags open options in place rather than
-     leaving the menu.
-
-     From the second column, not the first: a panel is as wide as the pair of
-     cards it belongs to, and the label column is furniture beside them.
-     Spanning that column too would hang the panel out past the cards' left
-     edge — into the margin the labels ride in, once the menu is inset. */
+  /* The customization panel lives inside the menu grid as a full-width row
+     directly below the pair of cards it customizes, so Customize and the
+     tags open options in place rather than leaving the menu. It spans both
+     card columns and nothing else: with the row-label column gone there is
+     no furniture beside the cards for it to hang out past. */
   .picker-panel {
     display: grid;
-    grid-column: 2 / -1;
+    grid-column: 1 / -1;
     gap: 14px;
     min-width: 0;
     padding: 18px;
@@ -420,29 +344,11 @@
   .picker-modes { display: flex; flex-wrap: wrap; gap: 8px; }
   .picker-back:focus-visible,
   .picker-lens:focus-visible,
-  .battle-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .picker-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .picker-lenses { display: flex; flex-wrap: wrap; gap: 8px; }
   .picker-groups { display: grid; gap: 8px; min-width: 0; }
-  .picker-group { overflow: hidden; border: 1px solid var(--border); border-radius: 3px; background: var(--bg); }
-  .picker-group > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 10px 12px;
-    color: var(--text);
-    cursor: pointer;
-    list-style: none;
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .picker-group > summary::-webkit-details-marker { display: none; }
-  .picker-group > summary::after { content: "+"; color: var(--faint); font-size: 16px; line-height: 1; }
-  .picker-group[open] > summary { border-bottom: 1px solid var(--border); }
-  .picker-group[open] > summary::after { content: "\2212"; }
-  .picker-group-count { color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-  .picker-battles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; padding: 10px; }
-  .battle-card {
+  .picker-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; padding: 10px; }
+  .picker-card {
     display: block;
     min-width: 0;
     padding: 11px 13px;
@@ -452,38 +358,18 @@
     color: var(--text);
     text-decoration: none;
   }
-  .battle-card:hover,
-  .battle-card:focus-visible { background: var(--panel-raised); border-color: var(--accent); }
-  .battle-card.custom { border-color: var(--border-strong); }
-  .battle-card-name { display: block; color: #fff; font-size: 15.5px; font-weight: 700; }
-  .battle-card-meta,
-  .battle-card-detail { display: block; margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
-  .battle-card-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-  .battle-badge {
-    display: inline-block;
-    padding: 2px 7px;
-    border: 1px solid var(--border-strong);
-    border-radius: 3px;
-    color: var(--muted);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-  .picker-empty { padding: 12px; color: var(--faint); font-size: 13px; line-height: 1.5; }
+  .picker-card:hover,
+  .picker-card:focus-visible { background: var(--panel-raised); border-color: var(--accent); }
+  .picker-card-name { display: block; color: #fff; font-size: 15.5px; font-weight: 700; }
+  .picker-card-meta,
+  .picker-card-detail { display: block; margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 
   @media (max-width: 760px) {
-    /* One column of cards; the row index turns into a chip row on top, so it
-       gives up the fixed width it is given for the inset arithmetic. With no
-       label column left there is nothing beside a panel to skip either. */
-    .home-layout { display: block; }
-    .row-nav { position: static; flex-direction: row; flex-wrap: wrap; width: auto; margin-bottom: 12px; }
+    /* One column of cards: the two column heads describe a pair standing
+       side by side, and each card names who is at the keyboard itself. */
     .quadrants { grid-template-columns: 1fr; }
-    .picker-panel { grid-column: 1 / -1; }
-    .col-head,
-    .row-label,
-    .grid-corner { display: none; }
-    .picker-battles { grid-template-columns: 1fr; }
+    .col-head { display: none; }
+    .picker-cards { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -520,51 +406,37 @@
       to really customize your own experience.
     </p>
     <p class="intro">
-      Everything here is a best-effort work in progress; the historical battle
-      maps and the AI logic in particular still need a good bit of work. Feel
+      Everything here is a best-effort work in progress; the AI logic in
+      particular still needs a good bit of work. Feel
       free to request new features or
       <a href="https://github.com/MartinHalvorson/CIVVIS/issues" target="_blank" rel="noreferrer">report any issues</a>
       you run into.
     </p>
 
-    <!-- Which game runs down the rows — Tactics above, the full game below —
-         and who is at the keyboard across the columns — Watch (AI
-         simulations) on the left, Play (single player) on the right. Each
-         card reads top to bottom as name, description, actions, tags: the
-         title line carries the card's name on the left and who is at the
-         keyboard on the right; the photograph, the name and the card's own
-         colour-carrying verb all open the simulator immediately on the
-         card's preset. Four buttons stand in a row to begin with — Watch and
-         Customize on the left, Play and Customize on the right — and they
-         stand level: the description holds to one line and the tag shelf
-         below the buttons reserves two, so a card whose tags wrap cannot
-         stagger its neighbour's buttons. Customize
-         opens the row's shared customization panel in place, directly below
-         the row — the battle picker for Tactics, the world picker for the
-         full game — and each tag opens that panel on the section the tag
-         names. Opening it merges the row's two pairs into one set: both
-         Customize buttons retire into the panel (whose own chips now switch
-         who is at the keyboard), the selected card highlights and the other
-         is muted, and the pairs come back when the panel closes. Without
-         scripting, the buttons and tags still land somewhere honest: the
-         preset itself, the stock Tactics world, or the simulator's own Game
-         setup drawer (`?setup=1`). Each card's photograph is a real capture
-         of its own preset. -->
-    <!-- The row index: every row of the menu in page order, always in view
-         on the left — the whole menu legible in one glance even when the
-         rows below run past the fold, one click to any row. A new row of
-         cards adds one link here. -->
-    <div class="home-layout">
-    <nav class="row-nav" aria-label="Menu rows">
-      <a href="#row-civ">CIVVIS</a>
-      <a href="#row-tactics">Tactics</a>
-    </nav>
+    <!-- The menu: one row of cards, and who is at the keyboard across the
+         columns — Watch (AI simulations) on the left, Play (single player)
+         on the right. Each card reads top to bottom as name, description,
+         actions, tags: the title line carries the card's name on the left
+         and who is at the keyboard on the right; the photograph, the name
+         and the card's own colour-carrying verb all open the simulator
+         immediately on the card's preset. Four buttons stand in a row to
+         begin with — Watch and Customize on the left, Play and Customize on
+         the right — and they stand level: the description holds to one line
+         and the tag shelf below the buttons reserves two, so a card whose
+         tags wrap cannot stagger its neighbour's buttons. Customize opens
+         the row's shared world picker in place, directly below the row, and
+         each tag opens that panel on the section the tag names. Opening it
+         merges the row's two pairs into one set: both Customize buttons
+         retire into the panel (whose own chips now switch who is at the
+         keyboard), the selected card highlights and the other is muted, and
+         the pairs come back when the panel closes. Without scripting, the
+         buttons and tags still land somewhere honest: the preset itself, or
+         the simulator's own Game setup drawer (`?setup=1`). Each card's
+         photograph is a real capture of its own preset. -->
     <section class="quadrants" aria-label="Game menu">
-      <div class="grid-corner" aria-hidden="true"></div>
       <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
       <h2 class="col-head">Play <span>Single player</span></h2>
 
-      <div class="row-label" aria-hidden="true">CIVVIS</div>
       <div class="mode-card" id="row-civ">
         <a class="card-thumb-link" href="../">
           <img class="card-thumb" src="assets/watch-civ.jpg" alt="Watch CIVVIS: a CIVVIS globe at mid-game, AI empires sharing two continents, borders and cities drawn across the planet." fetchpriority="high">
@@ -641,88 +513,7 @@
         <div class="picker-groups" id="game-groups"></div>
       </section>
 
-      <div class="row-label" aria-hidden="true">Tactics</div>
-      <div class="mode-card" id="row-tactics">
-        <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20">
-          <img class="card-thumb" src="assets/watch-tactics.jpg" alt="Watch CIVVIS Tactics: two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield.">
-        </a>
-        <div class="card-body">
-          <div class="card-title-row">
-            <h3 class="card-title" id="watch-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20">Watch CIVVIS Tactics</a></h3>
-            <span class="card-mode">AI simulation</span>
-          </div>
-          <p class="card-desc">Two AI commanders battle in a fresh era.</p>
-          <div class="card-actions">
-            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
-            <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
-          </div>
-          <ul class="card-tags" aria-label="Watch CIVVIS Tactics features">
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="custom">AI vs AI</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="custom">Custom Maps</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="era">Historical Battles</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="eras">Any Era</a></li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="mode-card">
-        <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play">
-          <img class="card-thumb" src="assets/play-tactics.jpg" alt="Play CIVVIS Tactics: a CIVVIS naval battle at Lepanto, the player's galleys closing with the Ottoman line.">
-        </a>
-        <div class="card-body">
-          <div class="card-title-row">
-            <h3 class="card-title" id="play-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play">Play CIVVIS Tactics</a></h3>
-            <span class="card-mode">Single player</span>
-          </div>
-          <p class="card-desc">Command one side vs the AI in a fresh era.</p>
-          <div class="card-actions">
-            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
-            <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
-          </div>
-          <ul class="card-tags" aria-label="Play CIVVIS Tactics features">
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">AI Strategies &amp; Difficulties</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">Custom Maps</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="era">Historical Battles</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="eras">Any Era</a></li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- The battle picker: the historical scenario library, opened in
-           place below the Tactics row by either Tactics card. Custom is one
-           card — the site's stock Tactics world — the three catalog lenses
-           browse the same battles by era, by commander and by terrain, and
-           Any era deals the custom field in whichever era is chosen. Every
-           card is a link into the simulator carrying the battle and who is
-           playing it. -->
-      <section class="picker-panel" id="battle-picker" hidden aria-labelledby="battle-picker-title" tabindex="-1">
-        <div class="picker-heading">
-          <div>
-            <h3 id="battle-picker-title">Choose the battle</h3>
-            <p id="battle-picker-copy">Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, their era rolled fresh for every battle, and every other setting is yours in the simulator&#8217;s Game setup.</p>
-          </div>
-          <!-- Who is at the keyboard, said large and in the verb button's
-               own colour, riding beside Back at the panel's top right. -->
-          <div class="picker-controls">
-            <button class="picker-back" type="button" id="battle-picker-back">← Back</button>
-            <span class="picker-mode-badge watch" id="battle-picker-mode">Watch CIVVIS Tactics · AI simulation</span>
-          </div>
-        </div>
-        <div class="picker-modes" id="battle-modes" role="group" aria-label="Who is at the keyboard">
-          <button class="picker-lens" type="button" data-mode="watch" aria-pressed="true">AI simulation</button>
-          <button class="picker-lens" type="button" data-mode="play" aria-pressed="false">Single player</button>
-        </div>
-        <div class="picker-lenses" id="battle-lenses" role="tablist" aria-label="Battle catalog view">
-          <button class="picker-lens" type="button" role="tab" data-lens="custom" aria-selected="true">Custom</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="era" aria-selected="false">Era-based</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="person" aria-selected="false">Person-based</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="terrain" aria-selected="false">Terrain-based</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="eras" aria-selected="false">Any era</button>
-        </div>
-        <div class="picker-groups" id="battle-groups"></div>
-      </section>
     </section>
-    </div>
   </main>
 
   <!-- The report dialog: feedback straight onto the project's GitHub issue
@@ -919,120 +710,19 @@
   })();
   </script>
 
-  <!-- The battle catalog, one row per battle, copied from the engine's
-       `historical_scenarios::all()` by tools/landing_battles.py and pinned to
-       it by a test — a static page cannot ask the WebAssembly module before
-       the module is loaded, so it carries the answer. -->
-  <script id="battle-catalog" type="application/json">
-[
-{"civs":["Egypt","Gaul"],"date":"1274 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Ramesses II","label":"Egyptian field army","units":["maryannu_chariot_archer","archer","spearman","warrior"]},{"commander":"Muwatalli II","label":"Hittite coalition","units":["heavy_chariot","heavy_chariot","swordsman","archer"]}],"height":16,"id":"kadesh","location":"Orontes river valley","map":"River valley · chariot lanes and a defended crossing","name":"Kadesh","objective":"Break the Hittite counterattack before it reaches the Egyptian camp.","summary":"Ramesses II's expeditionary army is surprised beside the Orontes while Muwatalli II's chariots sweep in from the north. Hold the crossing, then turn the ambush into a withdrawal.","terrain":"land_water","turns":34,"width":22},
-{"civs":["Greece","Persia"],"date":"490 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Miltiades","label":"Athenian hoplite line","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Datis","label":"Persian landing force","units":["archer","archer","spearman","spearman"]}],"height":14,"id":"marathon","location":"Marathon coastal plain","map":"Coastal plain · marsh, beach, and open running ground","name":"Marathon","objective":"Cross the killing ground and break the Persian landing force.","summary":"Miltiades refuses to wait behind the Athenian wall. Hoplites must cross the open plain quickly enough to deny Persian archery its full advantage while the wings close on the center.","terrain":"land_water","turns":28,"width":20},
-{"civs":["Greece","Persia"],"date":"480 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Leonidas","label":"Hellenic rearguard","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Xerxes I","label":"Persian expedition","units":["spearman","archer","horseman","swordsman"]}],"height":14,"id":"thermopylae","location":"The Gates of Thermopylae","map":"Mountain pass · a narrow road below the ridge","name":"Thermopylae","objective":"Hold the pass long enough for the allied army to withdraw.","summary":"Leonidas turns a bottleneck into a force multiplier. The Persian host has numbers, but only a few can fight at once—until the mountain path opens a second front.","terrain":"land","turns":24,"width":26},
-{"civs":["Macedon","Persia"],"date":"331 BCE","disasters":[],"era":"Classical","era_index":1,"forces":[{"commander":"Alexander the Great","label":"Macedonian army","units":["horseman","pikeman","swordsman","spearman","archer"]},{"commander":"Darius III","label":"Achaemenid host","units":["horseman","heavy_chariot","archer","spearman","swordsman"]}],"height":18,"id":"gaugamela","location":"Nineveh plain","map":"Open plain · prepared lanes for cavalry and chariots","name":"Gaugamela","objective":"Punch through to the Persian center without losing the flanks.","summary":"Alexander pulls the Persian line apart with a feint, then drives the Companion cavalry at Darius. The wings must survive the numerical tide while the center makes the decisive charge.","terrain":"land","turns":40,"width":24},
-{"civs":["Phoenicia","Rome"],"date":"216 BCE","disasters":[],"era":"Classical","era_index":1,"forces":[{"commander":"Hannibal Barca","label":"Carthaginian army","units":["swordsman","horseman","horseman","spearman","archer"]},{"commander":"Varro","label":"Roman consular army","units":["legion","legion","spearman","archer","horseman"]}],"height":16,"id":"cannae","location":"Aufidus river plain","map":"Windy plain · river bend and enveloping wings","name":"Cannae","objective":"Complete the double envelopment before the Roman legions escape.","summary":"Hannibal offers a deliberately yielding center and holds his veteran African infantry on the wings. Rome's mass becomes its trap when the cavalry closes the rear.","terrain":"land","turns":38,"width":22},
-{"civs":["Rome","Egypt"],"date":"31 BCE","disasters":[],"era":"Classical","era_index":1,"forces":[{"commander":"Agrippa","label":"Octavian's fleet","units":["galley","galley","quadrireme","archer"]},{"commander":"Mark Antony","label":"Antonian fleet","units":["quadrireme","quadrireme","galley","archer"]}],"height":18,"id":"actium","location":"Ambracian Gulf","map":"Gulf and headlands · fleets fighting for the channel","name":"Actium","objective":"Force a passage through the strait while keeping the shore army covered.","summary":"Octavian seals the gulf and waits for Antony and Cleopatra to break out. The fleet battle is decided by the channel, the wind, and the moment the flagship squadron commits.","terrain":"land_water","turns":36,"width":24},
-{"civs":["England","France"],"date":"1066","disasters":[],"era":"Medieval","era_index":2,"forces":[{"commander":"Harold Godwinson","label":"English shieldwall","units":["man_at_arms","man_at_arms","spearman","spearman"]},{"commander":"William the Conqueror","label":"Norman host","units":["knight","knight","crossbowman","man_at_arms"]}],"height":16,"id":"hastings","location":"Senlac Hill","map":"Ridge and open slope · shieldwall frontage","name":"Hastings","objective":"Break the English shieldwall without letting the pursuit destroy the army.","summary":"Harold's housecarls hold the ridge while William alternates pressure with feigned retreats. A single undisciplined pursuit can open the gate the Norman cavalry needs.","terrain":"land","turns":34,"width":20},
-{"civs":["Arabia","England"],"date":"1187","disasters":["drought"],"era":"Medieval","era_index":2,"forces":[{"commander":"Saladin","label":"Ayyubid field army","units":["horseman","horseman","crossbowman","man_at_arms"]},{"commander":"Guy of Lusignan","label":"Crusader host","units":["knight","knight","man_at_arms","crossbowman"]}],"height":16,"id":"hattin","location":"Horns of Hattin","map":"Dry hills · smoke, heat, and a blocked spring","name":"Hattin","objective":"Cut the crusader army off from water and close around the True Cross.","summary":"Saladin turns thirst into a weapon. The crusader host must cross broken ground toward the lake while mounted archers and disciplined reserves deny every clean escape.","terrain":"land","turns":36,"width":22},
-{"civs":["England","France"],"date":"1415","disasters":[],"era":"Medieval","era_index":2,"forces":[{"commander":"Henry V","label":"English army","units":["crossbowman","crossbowman","crossbowman","man_at_arms"]},{"commander":"Charles d'Albret","label":"French host","units":["knight","knight","man_at_arms","crossbowman"]}],"height":16,"id":"agincourt","location":"Pas de Calais","map":"Mudbound corridor · hedges, stakes, and two woods","name":"Agincourt","objective":"Let the mud and stakes break the French charge, then survive the crush.","summary":"Henry V's exhausted army occupies the narrowest ground it can find. English longbow fire turns the French advantage in armor and numbers into a series of isolated collisions.","terrain":"land","turns":35,"width":20},
-{"civs":["Ottomans","Byzantium"],"date":"1453","disasters":[],"era":"Renaissance","era_index":3,"forces":[{"commander":"Mehmed II","label":"Ottoman besieging army","units":["bombard","man_at_arms","knight","crossbowman"]},{"commander":"Constantine XI","label":"Constantinopolitan garrison","units":["crossbowman","man_at_arms","spearman","bombard"]}],"height":18,"id":"constantinople_1453","location":"Theodosian Walls","map":"Walled city · sea walls, land walls, and the Golden Horn","name":"Constantinople","objective":"Open a breach before the defenders can shift the reserve across the walls.","summary":"Mehmed II brings the new age of gunpowder to the oldest walls in Europe. The defenders have a narrow inner line, a chain across the harbor, and no depth once the breach opens.","terrain":"land_water","turns":42,"width":24},
-{"civs":["Venice","Ottomans"],"date":"1571","disasters":[],"era":"Renaissance","era_index":3,"forces":[{"commander":"Don John of Austria","label":"Holy League fleet","units":["galley","galley","quadrireme","quadrireme"]},{"commander":"Ali Pasha","label":"Ottoman fleet","units":["galley","galley","quadrireme","quadrireme"]}],"height":18,"id":"lepanto","location":"Gulf of Patras","map":"Enclosed sea · three squadrons and a crowded center","name":"Lepanto","objective":"Break the opposing center before the flank galleys can turn inward.","summary":"The Holy League and Ottoman fleet meet in the last great galley battle. The board is all formation: hold the line, protect the flagship, and use the wings before the center locks.","terrain":"water","turns":32,"width":24},
-{"civs":["Spain","England"],"date":"1588","disasters":["hurricane"],"era":"Renaissance","era_index":3,"forces":[{"commander":"Alonso Pérez de Guzmán","label":"Spanish Armada","units":["frigate","frigate","caravel","galley"]},{"commander":"Charles Howard","label":"English fleet","units":["frigate","frigate","caravel","galley"]}],"height":18,"id":"spanish_armada","location":"English Channel","map":"Channel sea lanes · shoals, wind, and a lee shore","name":"Spanish Armada","objective":"Escort the invasion fleet through the channel while denying English fire ships.","summary":"The Armada's crescent tries to preserve a tight formation and reach the rendezvous in the Netherlands. English ships need distance, weather, and one opening in the line.","terrain":"water","turns":34,"width":26},
-{"civs":["France","England"],"date":"1815","disasters":[],"era":"Industrial","era_index":4,"forces":[{"commander":"Napoleon Bonaparte","label":"French Army of the North","units":["line_infantry","cuirassier","field_cannon","cavalry","infantry"]},{"commander":"Arthur Wellesley","label":"Anglo-Allied army","units":["line_infantry","field_cannon","cavalry","infantry","line_infantry"]}],"height":18,"id":"waterloo","location":"Mont-Saint-Jean ridge","map":"Rolling ridge · sunken road, farms, and a final reserve","name":"Waterloo","objective":"Hold the ridge until the Prussian arrival, or break it before dusk.","summary":"Napoleon must crack Wellington's reverse-slope defense before Blücher's army appears. The French attack has to synchronize artillery, infantry, cavalry, and the Imperial Guard reserve.","terrain":"land","turns":44,"width":28},
-{"civs":["America","America"],"date":"1863","disasters":[],"era":"Industrial","era_index":4,"forces":[{"commander":"George G. Meade","label":"Union Army of the Potomac","units":["line_infantry","field_cannon","cavalry","infantry","field_cannon"]},{"commander":"Robert E. Lee","label":"Confederate Army of Northern Virginia","units":["line_infantry","field_cannon","cavalry","infantry","line_infantry"]}],"height":20,"id":"gettysburg","location":"Pennsylvania crossroads","map":"Ridges and wheat fields · the Round Tops anchor the flank","name":"Gettysburg","objective":"Take the high ground before the opposing army can entrench it.","summary":"A meeting engagement hardens around Cemetery Ridge. The attacker has room to maneuver but must pay for every slope; the defender must keep the line from being rolled at either end.","terrain":"land","turns":46,"width":26},
-{"civs":["England","France"],"date":"1805","disasters":[],"era":"Industrial","era_index":4,"forces":[{"commander":"Horatio Nelson","label":"Royal Navy","units":["frigate","frigate","frigate","frigate"]},{"commander":"Pierre-Charles Villeneuve","label":"Combined Fleet","units":["frigate","frigate","frigate","frigate"]}],"height":24,"id":"trafalgar","location":"Cape Trafalgar","map":"Open sea and Andalusian lee shore · two crossing columns","name":"Trafalgar","objective":"Break the Combined Fleet's line before its van can turn back into the battle.","summary":"Nelson's two columns bear down on Villeneuve's crescent. The existing fixed chart preserves the unequal sixty-ship order of battle and the British approach that made this battle decisive.","terrain":"water","turns":40,"width":30},
-{"civs":["Russia","Germany"],"date":"1942–43","disasters":["blizzard"],"era":"Modern","era_index":5,"forces":[{"commander":"Georgy Zhukov","label":"Soviet defenders","units":["infantry","infantry","artillery","tank","machine_gun"]},{"commander":"Friedrich Paulus","label":"German Sixth Army","units":["infantry","infantry","artillery","tank","bomber"]}],"height":20,"id":"stalingrad","location":"Volga industrial district","map":"Ruined city · factories, river bank, and shattered blocks","name":"Stalingrad","objective":"Take the factories without opening a corridor for the encircling relief force.","summary":"The battle is fought in meters inside the city while the wider front decides whether the pocket survives. Close infantry combat and the Soviet counterstroke share one board.","terrain":"land_air","turns":48,"width":28},
-{"civs":["America","Germany"],"date":"6 June 1944","disasters":["hurricane"],"era":"Modern","era_index":5,"forces":[{"commander":"Dwight D. Eisenhower","label":"Allied landing force","units":["infantry","infantry","tank","artillery","fighter"]},{"commander":"Erwin Rommel","label":"German coastal defense","units":["infantry","infantry","field_cannon","tank","fighter"]}],"height":20,"id":"normandy","location":"Normandy beaches and bocage","map":"Beachhead · surf, seawalls, hedgerows, and air cover","name":"Normandy","objective":"Secure the beachhead and connect the separated landing sectors before the armor arrives.","summary":"The opening hours of D-Day ask three questions at once: can the landing craft reach shore, can infantry clear the exits, and can the defenders move reserves through the bocage under allied air power?","terrain":"land_water_air","turns":46,"width":28},
-{"civs":["America","Japan"],"date":"1942","disasters":[],"era":"Modern","era_index":5,"forces":[{"commander":"Chester W. Nimitz","label":"United States carrier force","units":["aircraft_carrier","destroyer","fighter","bomber"]},{"commander":"Isoroku Yamamoto","label":"Japanese Combined Fleet","units":["aircraft_carrier","destroyer","fighter","bomber"]}],"height":20,"id":"midway","location":"Central Pacific","map":"Open ocean · carrier search arcs around the island","name":"Midway","objective":"Find the enemy carriers first and preserve enough air strength for the second strike.","summary":"Midway is a contest of scouting, timing, and the fragile bridge between a carrier deck and an enemy flight deck. The island is an anchor; the decision lives in the air above the water.","terrain":"water_air","turns":42,"width":28},
-{"civs":["America","Korea"],"date":"1950","disasters":[],"era":"Atomic","era_index":6,"forces":[{"commander":"Douglas MacArthur","label":"X Corps landing force","units":["infantry","tank","artillery","destroyer"]},{"commander":"Kim Il-sung","label":"Korean People's Army","units":["infantry","tank","artillery","field_cannon"]}],"height":18,"id":"inchon","location":"Inchon tidal harbor","map":"Tidal estuary · seawalls, mudflats, and a city objective","name":"Inchon","objective":"Seize the port at high tide and cut the opposing army's supply line to Seoul.","summary":"MacArthur's landing turns the Korean War's front. The approach is narrow and tidal, so the first wave must hold the seawall before the road network becomes a battlefield.","terrain":"land_water","turns":40,"width":24},
-{"civs":["France","Vietnam"],"date":"1954","disasters":["river_flood"],"era":"Atomic","era_index":6,"forces":[{"commander":"Christian de Castries","label":"French entrenched camp","units":["infantry","artillery","field_cannon","machine_gun"]},{"commander":"Vo Nguyen Giap","label":"Viet Minh siege army","units":["infantry","artillery","field_cannon","infantry"]}],"height":18,"id":"dien_bien_phu","location":"Muong Thanh valley","map":"Valley fortress · surrounding hills and a threatened airstrip","name":"Dien Bien Phu","objective":"Keep the airstrip open while the surrounding artillery positions close in.","summary":"A garrison that expected to control the valley finds itself overlooked by a concealed siege. Every artillery piece is a position to find, and every supply flight is a turn the perimeter must survive.","terrain":"land_air","turns":44,"width":22},
-{"civs":["Israel","Egypt"],"date":"1967","disasters":[],"era":"Atomic","era_index":6,"forces":[{"commander":"Moshe Dayan","label":"Israeli Defense Forces","units":["modern_armor","modern_armor","fighter","infantry"]},{"commander":"Abdel Hakim Amer","label":"Egyptian field army","units":["modern_armor","infantry","fighter","artillery"]}],"height":18,"id":"six_day_war","location":"Sinai and the Levant","map":"Desert frontier · armored corridors and airfields","name":"Six-Day War","objective":"Win the opening air battle, then turn the armored breakthrough into a collapse.","summary":"The campaign compresses air superiority and mobile ground warfare into a few violent days. Armor can move far, but only if the first strike keeps the sky clear.","terrain":"land_air","turns":38,"width":26},
-{"civs":["America","Arabia"],"date":"1991","disasters":["dust_storm"],"era":"Information","era_index":7,"forces":[{"commander":"Norman Schwarzkopf","label":"Coalition VII Corps","units":["modern_armor","modern_armor","rocket_artillery","jet_fighter","helicopter"]},{"commander":"Saddam Hussein","label":"Iraqi Republican Guard","units":["modern_armor","modern_armor","rocket_artillery","fighter","infantry"]}],"height":18,"id":"desert_storm","location":"Kuwait and southern Iraq","map":"Open desert · armored hook under a precision-air umbrella","name":"Desert Storm","objective":"Break the prepared line and complete the armored envelopment before reserves regroup.","summary":"The ground campaign is short because the air campaign has already changed the geometry. Armor, artillery, and aircraft must keep the corridor moving rather than chase every position.","terrain":"land_air","turns":40,"width":28},
-{"civs":["America","Arabia"],"date":"2004","disasters":[],"era":"Information","era_index":7,"forces":[{"commander":"James Mattis","label":"Multi-National Force","units":["infantry","modern_armor","machine_gun","helicopter"]},{"commander":"Abu Musab al-Zarqawi","label":"Insurgent defense","units":["infantry","machine_gun","rocket_artillery","infantry"]}],"height":18,"id":"fallujah","location":"Fallujah, Iraq","map":"Dense city · alleys, compounds, and overwatch lanes","name":"Fallujah","objective":"Clear the city block by block while preserving the breach force for the next district.","summary":"Urban combat makes every street a decision. The attacker needs armor and infantry to cooperate at close range; the defender wins time by turning buildings into mutually supporting strongpoints.","terrain":"land_air","turns":42,"width":22},
-{"civs":["Arabia","America"],"date":"2016–17","disasters":["dust_storm"],"era":"Information","era_index":7,"forces":[{"commander":"Abadi coalition","label":"Iraqi Security Forces","units":["infantry","modern_armor","rocket_artillery","drone","helicopter"]},{"commander":"Mosul garrison","label":"Islamic State defense","units":["infantry","machine_gun","modern_at","drone","rocket_artillery"]}],"height":20,"id":"mosul","location":"Mosul and the Tigris","map":"River city · bridges, dense districts, and drone overwatch","name":"Mosul","objective":"Take the east bank, secure the bridges, and isolate the old city.","summary":"The battle combines an urban siege with a river crossing and a persistent sensor battle. The coalition's advantage is coordination; the defender's is the density and depth of the city.","terrain":"land_water_air","turns":48,"width":26}
-]
-</script>
   <script>
   (() => {
-    const catalog = JSON.parse(document.getElementById("battle-catalog").textContent);
-    const picker = document.getElementById("battle-picker");
-    const groups = document.getElementById("battle-groups");
-    const lensBar = document.getElementById("battle-lenses");
     const gamePicker = document.getElementById("game-picker");
     const gameGroups = document.getElementById("game-groups");
     const gameLensBar = document.getElementById("game-lenses");
     const quadrants = [...document.querySelectorAll(".mode-card [data-pick]")];
-    if (!picker || !groups || !lensBar || !gamePicker || !gameGroups || !gameLensBar || !quadrants.length) return;
-    // The site's one stock Tactics world: the same field the viewer's own
-    // Tactics chip opens, so a Custom pick here and a Custom pick there agree.
+    if (!gamePicker || !gameGroups || !gameLensBar || !quadrants.length) return;
     // Lane-relative like every link on this page (the page lives at
     // <lane>/home/), so the test lane's picker opens the test viewer.
-    const CUSTOM = "../?map=battlefield&players=2&era=random&arena=20x20";
-    const HASH = { play: "#play-tactics", watch: "#watch-tactics", "play-civ": "#play-civ", "watch-civ": "#watch-civ" };
-    const ERAS = ["Ancient", "Classical", "Medieval", "Renaissance", "Industrial", "Modern", "Atomic", "Information", "Future"];
-    const TERRAINS = [["land", "Land"], ["land_water", "Land & Water"], ["water", "Water"],
-      ["water_air", "Water & Air"], ["land_air", "Land & Air"], ["land_water_air", "Land/Water/Air"]];
-    let mode = "watch";
-    let lens = "custom";
-    let civMode = "watch-civ";
-    let civLens = "worlds";
+    const HASH = { "play-civ": "#play-civ", "watch-civ": "#watch-civ" };
+    let mode = "watch-civ";
+    let lens = "worlds";
     const esc = value => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-    const titleCase = value => String(value).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-    const terrainName = id => (TERRAINS.find(([key]) => key === id) || [id, titleCase(id)])[1];
-    // Every link carries who is playing: a played battle seats the visitor,
-    // a watched one leaves both sides to the AI, exactly as the quadrants do.
-    const into = query => query + (mode === "play" ? "&mode=play" : "");
-    const groupsFor = view => {
-      if (view === "era") return ERAS.map(name => ({ name, battles: catalog.filter(b => b.era === name) }));
-      if (view === "terrain") return TERRAINS.map(([id, name]) => ({ name, battles: catalog.filter(b => b.terrain === id) }));
-      if (view === "person") {
-        const commanders = [...new Set(catalog.flatMap(b => b.forces.map(f => f.commander)))].sort((a, b) => a.localeCompare(b));
-        return commanders.map(name => ({ name, battles: catalog.filter(b => b.forces.some(f => f.commander === name)) }));
-      }
-      return [];
-    };
-    const battleCard = b =>
-      `<a class="battle-card" href="${esc(into(`../?map=${b.id}&players=2`))}">` +
-      `<span class="battle-card-name">${esc(b.name)}</span>` +
-      `<span class="battle-card-meta">${esc(b.date)} · ${esc(b.location)}</span>` +
-      `<span class="battle-card-detail">${esc(b.map)}</span>` +
-      `<span class="battle-card-badges"><span class="battle-badge">${esc(terrainName(b.terrain))}</span>` +
-      `<span class="battle-badge">${esc(b.era)}</span><span class="battle-badge">${esc(b.turns)}-turn brief</span></span></a>`;
-    const groupMarkup = (group, index) => {
-      const open = group.battles.length > 0 && (index === 0 || (lens === "person" && index < 2));
-      const count = group.battles.length ? `${group.battles.length} battle${group.battles.length === 1 ? "" : "s"}` : "No mapped battles yet";
-      return `<details class="picker-group"${open ? " open" : ""}>` +
-        `<summary><span>${esc(group.name)}</span><span class="picker-group-count">${esc(count)}</span></summary>` +
-        (group.battles.length
-          ? `<div class="picker-battles">${group.battles.map(battleCard).join("")}</div>`
-          : `<div class="picker-empty">This branch of the catalog is reserved for future historical maps.</div>`) +
-        `</details>`;
-    };
-    const customMarkup = () =>
-      `<div class="picker-battles">` +
-      `<a class="battle-card custom" href="${esc(into(CUSTOM))}">` +
-      `<span class="battle-card-name">Custom battlefield</span>` +
-      `<span class="battle-card-meta">Field · 20×20 · two even armies</span>` +
-      `<span class="battle-card-detail">A bounded field of open ground, mountains, rivers, woods and water, both sides dealt the same army — its era rolled fresh for every battle, so a match runs from spearmen to modern armour and back. Any Era beside this picks one rung and keeps it. Every other setting — the world type, map and size, fog, the flag, the arena economy — is yours in the simulator&#8217;s Game setup.</span>` +
-      `<span class="battle-card-badges"><span class="battle-badge">Land</span><span class="battle-badge">Era rolled per battle</span><span class="battle-badge">Even sides</span></span></a>` +
-      `</div>`;
-    // Any era: the same custom field, dealt in whichever era is chosen —
-    // both sides get even armies of that era's units.
-    const erasMarkup = () =>
-      `<div class="picker-battles">` +
-      ERAS.map(name =>
-        `<a class="battle-card" href="${esc(into(`../?map=battlefield&players=2&era=${name.toLowerCase()}&arena=20x20`))}">` +
-        `<span class="battle-card-name">${esc(name)}</span>` +
-        `<span class="battle-card-meta">Custom field · 20×20 · two even armies</span>` +
-        `<span class="battle-card-detail">The same bounded field, both sides dealt even ${esc(name)}-era armies.</span>` +
-        `<span class="battle-card-badges"><span class="battle-badge">Land</span><span class="battle-badge">${esc(name)}</span><span class="battle-badge">Even sides</span></span></a>`).join("") +
-      `</div>`;
-    const render = () => {
-      for (const button of lensBar.querySelectorAll("[data-lens]"))
-        button.setAttribute("aria-selected", String(button.dataset.lens === lens));
-      groups.innerHTML = lens === "custom" ? customMarkup()
-        : lens === "eras" ? erasMarkup()
-        : groupsFor(lens).map(groupMarkup).join("");
-    };
 
     // The world picker's catalogs. The world types carry the engine's own
     // names and descriptions (src/setup.rs `CIV6_MAP_SCRIPTS`), the sizes are
@@ -1072,19 +762,18 @@
       ["domination", "Domination", "Take every other capital."],
       ["score", "Score", "Bank the highest score at the turn limit."],
     ];
-    // Who is at the keyboard travels on every world-picker link, the same
-    // way the battle picker's `into` carries it: a played world seats the
+    // Who is at the keyboard travels on every link: a played world seats the
     // visitor, a watched one leaves every seat to the AI.
     const civInto = query => query
-      ? `../?${query}${civMode === "play-civ" ? "&mode=play" : ""}`
-      : (civMode === "play-civ" ? "../?mode=play" : "../");
-    const civSetup = () => civMode === "play-civ" ? "../?mode=play&setup=1" : "../?setup=1";
+      ? `../?${query}${mode === "play-civ" ? "&mode=play" : ""}`
+      : (mode === "play-civ" ? "../?mode=play" : "../");
+    const civSetup = () => mode === "play-civ" ? "../?mode=play&setup=1" : "../?setup=1";
     const gameCard = (href, name, meta, detail) =>
-      `<a class="battle-card" href="${esc(href)}">` +
-      `<span class="battle-card-name">${esc(name)}</span>` +
-      (meta ? `<span class="battle-card-meta">${esc(meta)}</span>` : "") +
-      `<span class="battle-card-detail">${esc(detail)}</span></a>`;
-    const seatsMarkup = () => civMode === "play-civ"
+      `<a class="picker-card" href="${esc(href)}">` +
+      `<span class="picker-card-name">${esc(name)}</span>` +
+      (meta ? `<span class="picker-card-meta">${esc(meta)}</span>` : "") +
+      `<span class="picker-card-detail">${esc(detail)}</span></a>`;
+    const seatsMarkup = () => mode === "play-civ"
       ? [gameCard(civInto(""), "Your seat", "Single player · first chair", "Take one civilization yourself; the AI plays every rival. Your leader and difficulty are chosen in Game setup."),
          gameCard(civSetup(), "AI rivals", "The rated roster", "Your rivals are seated from the AI player pool — the league's proven strategies. How many of the best are eligible, per civ, is the AI player pool setting in Game setup."),
          gameCard(civSetup(), "Everything else", "Game setup", "Leader, difficulty, teams, mercy rule, seeds and the rest — the simulator's Game setup drawer opens on arrival.")]
@@ -1092,88 +781,66 @@
          gameCard(civSetup(), "AI player pool", "Who may be seated", "How many of the roster's best strategies may play — best 1, 2, 3 or 5 per civ, or all of them — is the AI player pool setting in Game setup."),
          gameCard(civSetup(), "Everything else", "Game setup", "Victory rules, teams, mercy rule, seeds and the rest — the simulator's Game setup drawer opens on arrival.")];
     const gameGroupsMarkup = () => {
-      if (civLens === "sizes")
-        return `<div class="picker-battles">` + SIZES.map(([n, name, detail]) =>
+      if (lens === "sizes")
+        return `<div class="picker-cards">` + SIZES.map(([n, name, detail]) =>
           gameCard(civInto(`players=${n}`), name, null, detail)).join("") + `</div>`;
-      if (civLens === "victory")
-        return `<div class="picker-battles">` +
+      if (lens === "victory")
+        return `<div class="picker-cards">` +
           gameCard(civInto(""), "Every lane open", "The stock rules", "All six victory conditions enabled; the first civilization to bank any one of them wins.") +
           VICTORIES.map(([id, name, detail]) =>
             gameCard(civInto(`victories=${id}`), name, "The only lane that wins", detail)).join("") + `</div>`;
-      if (civLens === "seats")
-        return `<div class="picker-battles">` + seatsMarkup().join("") + `</div>`;
-      return `<div class="picker-battles">` + WORLDS.map(([id, name, detail]) =>
+      if (lens === "seats")
+        return `<div class="picker-cards">` + seatsMarkup().join("") + `</div>`;
+      return `<div class="picker-cards">` + WORLDS.map(([id, name, detail]) =>
         gameCard(civInto(`map=${id}`), name, null, detail)).join("") + `</div>`;
     };
     const renderGame = () => {
       for (const button of gameLensBar.querySelectorAll("[data-lens]"))
-        button.setAttribute("aria-selected", String(button.dataset.lens === civLens));
+        button.setAttribute("aria-selected", String(button.dataset.lens === lens));
       gameGroups.innerHTML = gameGroupsMarkup();
     };
     const heading = {
-      play: ["Play CIVVIS Tactics · single player", "Choose your battle",
-        "You take the first seat and the AI takes the other. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, their era rolled fresh for every battle, and every other setting is yours in the simulator’s Game setup."],
-      watch: ["Watch CIVVIS Tactics · AI simulation", "Choose the battle",
-        "Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, their era rolled fresh for every battle, and every other setting is yours in the simulator’s Game setup."],
       "play-civ": ["Play CIVVIS · single player", "Set up your game",
         "Take one civilization against AI rivals. Each card starts that game with you in the first chair; your leader, difficulty and every other setting are in the simulator’s Game setup."],
       "watch-civ": ["Watch CIVVIS · AI simulation", "Set up the world",
         "A fresh world every visit, played end to end by AI civilizations. Each card starts that simulation; every other setting is in the simulator’s Game setup."],
     };
-    const isCiv = which => which === "watch-civ" || which === "play-civ";
-    // The two cards of a row are their shared panel's mode selector. While
-    // the row's panel is open, the card whose mode is selected highlights
-    // and the row's other option is muted; the panel's own mode chips say
-    // the same thing in place. `merged` is the same fact told to the
-    // buttons: with the panel open the row's two Customize buttons have
-    // become the panel and its chips, so both retire until it closes and
-    // each card keeps only the verb that starts the game.
+    // The two cards of the row are their shared panel's mode selector. While
+    // the panel is open, the card whose mode is selected highlights and the
+    // other is muted; the panel's own mode chips say the same thing in
+    // place. `merged` is the same fact told to the buttons: with the panel
+    // open the row's two Customize buttons have become the panel and its
+    // chips, so both retire until it closes and each card keeps only the
+    // verb that starts the game.
     const markPicking = () => {
       for (const card of document.querySelectorAll(".mode-card")) {
         const pick = card.querySelector("[data-pick]")?.dataset.pick;
         if (!pick) continue;
-        const shown = isCiv(pick) ? !gamePicker.hidden : !picker.hidden;
-        const selected = shown && pick === (isCiv(pick) ? civMode : mode);
+        const shown = !gamePicker.hidden;
+        const selected = shown && pick === mode;
         card.classList.toggle("picking", selected);
         card.classList.toggle("muted", shown && !selected);
         card.classList.toggle("merged", shown);
       }
       for (const chip of document.querySelectorAll(".picker-modes [data-mode]"))
-        chip.setAttribute("aria-pressed",
-          String(chip.dataset.mode === (isCiv(chip.dataset.mode) ? civMode : mode)));
+        chip.setAttribute("aria-pressed", String(chip.dataset.mode === mode));
     };
-    // Either panel opens directly below its own row of cards — the battle
-    // picker under the Tactics row, the world picker under the CIVVIS row —
-    // on the section the click named: Customize opens the stock section, a
-    // tag opens the section it names.
+    // The panel opens directly below the row of cards, on the section the
+    // click named: Customize opens the stock section, a tag opens the
+    // section it names.
     const open = (which, section, focus = true) => {
-      if (isCiv(which)) {
-        civMode = which;
-        civLens = section || "worlds";
-        const [eyebrow, title, copy] = heading[civMode];
-        const badge = document.getElementById("game-picker-mode");
-        badge.textContent = eyebrow;
-        badge.classList.toggle("watch", civMode === "watch-civ");
-        badge.classList.toggle("play", civMode === "play-civ");
-        document.getElementById("game-picker-title").textContent = title;
-        document.getElementById("game-picker-copy").textContent = copy;
-        gamePicker.hidden = false;
-        renderGame();
-      } else {
-        mode = which === "play" ? "play" : "watch";
-        lens = section || "custom";
-        const [eyebrow, title, copy] = heading[mode];
-        const badge = document.getElementById("battle-picker-mode");
-        badge.textContent = eyebrow;
-        badge.classList.toggle("watch", mode === "watch");
-        badge.classList.toggle("play", mode === "play");
-        document.getElementById("battle-picker-title").textContent = title;
-        document.getElementById("battle-picker-copy").textContent = copy;
-        picker.hidden = false;
-        render();
-      }
+      mode = which;
+      lens = section || "worlds";
+      const [eyebrow, title, copy] = heading[mode];
+      const badge = document.getElementById("game-picker-mode");
+      badge.textContent = eyebrow;
+      badge.classList.toggle("watch", mode === "watch-civ");
+      badge.classList.toggle("play", mode === "play-civ");
+      document.getElementById("game-picker-title").textContent = title;
+      document.getElementById("game-picker-copy").textContent = copy;
+      gamePicker.hidden = false;
+      renderGame();
       markPicking();
-      const panel = isCiv(which) ? gamePicker : picker;
       if (location.hash !== HASH[which]) history.replaceState(null, "", location.pathname + location.search + HASH[which]);
       if (focus) {
         // Land the row, not just the panel: the bottom of the row's
@@ -1182,17 +849,17 @@
         // mid-screen. The one-column phone layout stacks the row, so there
         // the panel itself is the only honest target.
         const anchor = matchMedia("(max-width: 760px)").matches
-          ? panel
-          : document.getElementById(isCiv(which) ? "row-civ" : "row-tactics").querySelector(".card-body");
+          ? gamePicker
+          : document.getElementById("row-civ").querySelector(".card-body");
         anchor.scrollIntoView({ behavior: "smooth", block: "start" });
-        panel.focus({ preventScroll: true });
+        gamePicker.focus({ preventScroll: true });
       }
     };
-    const close = panel => {
-      panel.hidden = true;
+    const close = () => {
+      gamePicker.hidden = true;
       markPicking();
-      const owned = panel === picker ? [HASH.watch, HASH.play] : [HASH["watch-civ"], HASH["play-civ"]];
-      if (owned.includes(location.hash)) history.replaceState(null, "", location.pathname + location.search);
+      if (Object.values(HASH).includes(location.hash))
+        history.replaceState(null, "", location.pathname + location.search);
     };
     for (const card of quadrants) card.addEventListener("click", event => {
       // Plain clicks open the panel; a modified click (new tab) keeps the
@@ -1201,91 +868,33 @@
       event.preventDefault();
       open(card.dataset.pick, card.dataset.lens);
     });
-    lensBar.addEventListener("click", event => {
-      const button = event.target.closest("[data-lens]");
-      if (!button) return;
-      lens = button.dataset.lens;
-      render();
-    });
     gameLensBar.addEventListener("click", event => {
       const button = event.target.closest("[data-lens]");
       if (!button) return;
-      civLens = button.dataset.lens;
+      lens = button.dataset.lens;
       renderGame();
     });
     // The chips switch who is at the keyboard without closing the panel or
     // scrolling away; the section that was open stays open.
-    for (const bar of [document.getElementById("battle-modes"), document.getElementById("game-modes")])
-      bar.addEventListener("click", event => {
-        const chip = event.target.closest("[data-mode]");
-        if (!chip) return;
-        open(chip.dataset.mode, isCiv(chip.dataset.mode) ? civLens : lens, false);
-      });
-    document.getElementById("battle-picker-back").addEventListener("click", () => {
-      close(picker);
-      document.querySelector(".quadrants").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("game-modes").addEventListener("click", event => {
+      const chip = event.target.closest("[data-mode]");
+      if (!chip) return;
+      open(chip.dataset.mode, lens, false);
     });
     document.getElementById("game-picker-back").addEventListener("click", () => {
-      close(gamePicker);
+      close();
       document.getElementById("watch-civ-title").closest(".mode-card").scrollIntoView({ behavior: "smooth", block: "start" });
     });
-    // A link straight to a panel — the hash names which one — opens it
-    // without a click, and the back buttons close it the same way.
+    // A link straight to the panel — the hash names which side of the row
+    // it opens on — opens it without a click, and Back closes it the same
+    // way.
     const fromHash = () => {
       const which = Object.keys(HASH).find(key => HASH[key] === location.hash);
       if (which) open(which, null, false);
-      else {
-        if (!picker.hidden) close(picker);
-        if (!gamePicker.hidden) close(gamePicker);
-      }
+      else if (!gamePicker.hidden) close();
     };
     window.addEventListener("hashchange", fromHash);
     fromHash();
-
-    // The row index parks the row it names slightly above the middle of the
-    // screen instead of jamming its top edge under the header: the row reads
-    // as the thing that was asked for, with the page still visible around it.
-    // The centre lands at ROW_CENTRE of the viewport measured DOWN from the
-    // top — 0.45 is 55% of the screen's height measured up from the bottom,
-    // which is where the eye reads a block as centred.
-    const ROW_CENTRE = 0.45;
-    // A row taller than the screen cannot be centred without pushing its own
-    // top off it, so a stacked single-column row aligns its top instead. The
-    // inset matches `.mode-card`'s own `scroll-margin-top`.
-    const ROW_EDGE = 14;
-    // `scrollTo` is deliberately left on `auto`: `html { scroll-behavior }` at
-    // the top of this file is already gated on `prefers-reduced-motion`, so
-    // deferring to it means a reader who asked for less motion gets the jump
-    // rather than the glide, without this handler asking a second time.
-    const parkRow = anchor => {
-      const cards = [anchor];
-      for (let el = anchor.nextElementSibling; el && el.classList.contains("mode-card"); el = el.nextElementSibling)
-        cards.push(el);
-      const box = cards.map(card => card.getBoundingClientRect());
-      const top = Math.min(...box.map(r => r.top));
-      const bottom = Math.max(...box.map(r => r.bottom));
-      const wanted = bottom - top > innerHeight - 2 * ROW_EDGE
-        ? top - ROW_EDGE
-        : (top + bottom) / 2 - innerHeight * ROW_CENTRE;
-      const floor = document.documentElement.scrollHeight - innerHeight;
-      scrollTo({ top: Math.max(0, Math.min(scrollY + wanted, floor)) });
-    };
-    for (const link of document.querySelectorAll(".row-nav a"))
-      link.addEventListener("click", event => {
-        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        const anchor = document.getElementById(link.hash.slice(1));
-        if (!anchor) return;
-        event.preventDefault();
-        // The hash still changes, so the link deep-links and copies as before
-        // — but through `replaceState`, which does not fire the browser's own
-        // jump to the element. `fromHash` then runs by hand to keep what the
-        // native navigation did: a row hash names no panel, so an open picker
-        // closes, and it must close BEFORE the row is measured or the panel's
-        // height is still in the page and the row parks too low.
-        history.replaceState(null, "", link.hash);
-        fromHash();
-        parkRow(anchor);
-      });
   })();
   </script>
 </body>

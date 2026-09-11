@@ -269,22 +269,6 @@ fn unit_power(g: &Game, uid: u32) -> f64 {
     effective_strength(g.unit_strength(unit, true), unit.hp)
 }
 
-/// The train: the group's land combat units and any of ours already within
-/// reach of the city, so two groups on one city read one bill.
-fn siege_force(g: &Game, pid: usize, city: &CityView, group_units: &[u32]) -> Vec<u32> {
-    let mut force: BTreeSet<u32> = group_units
-        .iter()
-        .copied()
-        .filter(|uid| arm_of(g, *uid) != Arm::Other)
-        .collect();
-    for uid in g.player_unit_ids(pid) {
-        if arm_of(g, uid) != Arm::Other && g.wdist(g.units[&uid].pos, city.pos) <= OBJECTIVE_REACH {
-            force.insert(uid);
-        }
-    }
-    force.into_iter().collect()
-}
-
 /// What the city asks of the force that takes it.
 fn siege_bill(g: &Game, pid: usize, city: &CityView) -> f64 {
     let defenders: f64 = g
@@ -357,11 +341,13 @@ fn siege_support_adjacent(g: &Game, pid: usize, city_pos: Pos) -> (bool, bool) {
 /// attacker's strength at its hit points against `city_strength`, at the
 /// centre of the roll, routed through the wall pool.
 pub(super) fn taker_blow(g: &Game, pid: usize, uid: u32, cid: u32) -> f64 {
-    let (Some(unit), Some(city)) = (g.units.get(&uid), CityView::of(g, cid)) else {
+    let (Some((att, defense)), Some(city)) = (
+        g.city_melee_exchange_strengths(uid, cid),
+        CityView::of(g, cid),
+    ) else {
         return 0.0;
     };
-    let att = effective_strength(g.unit_strength(unit, false), unit.hp);
-    let mean = expected_damage(att, g.city_strength(cid));
+    let mean = expected_damage(att, defense);
     let (_, tower) = siege_support_adjacent(g, pid, city.pos);
     city.through(mean, tower)
 }
@@ -415,7 +401,19 @@ fn designate_taker(g: &Game, city: &CityView, force: &[u32]) -> Option<u32> {
     let candidates: Vec<u32> = force
         .iter()
         .copied()
-        .filter(|uid| arm_of(g, *uid) == Arm::Melee && g.units[uid].attacks_left > 0)
+        .filter(|uid| {
+            let unit = &g.units[uid];
+            let arm = arm_of(g, *uid);
+            // A hybrid keeps firing during the reduction. Once the city is
+            // ready, its melee capability can finish a siege too; treating
+            // every shooter as unable to capture stranded lone robots at 1 HP.
+            let hybrid_finisher = arm == Arm::Shooter
+                && g.rules.units[unit.kind].is_melee_capable()
+                && unit.moves_left > 0.0
+                && city.wall_hp <= 0
+                && f64::from(city.hp) <= taker_blow(g, unit.owner, *uid, city.id);
+            unit.attacks_left > 0 && (arm == Arm::Melee || hybrid_finisher)
+        })
         .collect();
     let rank = |uid: &u32| {
         let unit = &g.units[uid];
@@ -639,7 +637,7 @@ fn siege_posts(
     let mut melee: Vec<u32> = force
         .iter()
         .copied()
-        .filter(|uid| arm_of(g, *uid) == Arm::Melee)
+        .filter(|uid| arm_of(g, *uid) == Arm::Melee || Some(*uid) == taker)
         .collect();
     melee.sort_by_key(|uid| (g.wdist(g.units[uid].pos, city.pos), *uid));
     for uid in &melee {
@@ -693,6 +691,7 @@ fn siege_posts(
     let mut guns: Vec<u32> = force
         .iter()
         .copied()
+        .filter(|uid| Some(*uid) != taker)
         .filter(|uid| matches!(arm_of(g, *uid), Arm::Siege | Arm::Shooter))
         .collect();
     guns.sort_by_key(|uid| {
@@ -723,6 +722,7 @@ fn siege_posts(
                     && !ring_taken.contains(pos)
                     && open_land(*pos)
                     && g.unit_can_traverse(uid, *pos)
+                    && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                     && g.unit_ids_at(*pos).is_empty()
             })
             .min_by_key(|pos| {
@@ -760,7 +760,22 @@ impl AdvancedAi {
         if !self.siege_train && !self.anvil {
             return None;
         }
-        if arm_of(g, uid) == Arm::Other || self.guard_is_bound_to_any_settler(uid) {
+        if self.guard_is_reserved_for_civilian(uid) {
+            return None;
+        }
+        // An adjacent landing capture does not require a dry siege-ring post.
+        // Keep embarked units out of the ordinary shooter and screen roles.
+        if self.siege_train && g.units.get(&uid).is_some_and(|unit| g.is_embarked(unit)) {
+            if let Some(city) = plan.target_city.and_then(|cid| CityView::of(g, cid)) {
+                if city.wall_hp <= 0
+                    && g.melee_order_is_legal(pid, uid, city.pos)
+                    && f64::from(city.hp) <= taker_blow(g, pid, uid, city.id)
+                {
+                    return Some(self.taker_step(g, pid, uid, &city));
+                }
+            }
+        }
+        if arm_of(g, uid) == Arm::Other {
             return None;
         }
         let group = self
@@ -786,7 +801,7 @@ impl AdvancedAi {
 
     /// The enemy city a group is on: the one at its objective, or the
     /// plan's target city within reach while no city of ours is threatened.
-    fn siege_city_of(
+    pub(super) fn siege_city_of(
         &self,
         g: &Game,
         pid: usize,
@@ -809,9 +824,44 @@ impl AdvancedAi {
         })
     }
 
+    /// Only groups whose orders serve this city supply its siege roster.
+    /// Neighboring sieges must not reserve each other's takers or posts.
+    fn siege_force(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &CityView,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) -> Vec<u32> {
+        self.force_groups
+            .iter()
+            .chain(std::iter::once(group))
+            .filter(|group| {
+                group.domain == ForceDomain::Land
+                    && self.siege_city_of(g, pid, plan, group) == Some(city.id)
+            })
+            .flat_map(|group| group.units.iter().copied())
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| unit.owner == pid)
+                    && arm_of(g, *uid) != Arm::Other
+                    && !self.guard_is_reserved_for_civilian(*uid)
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     /// The state machine, once a turn per city: the bill, the strength, the
     /// ring, the stage, the taker, the census and the journal line.
-    fn assess_siege(&mut self, g: &Game, pid: usize, cid: u32, group: &ForceGroup) {
+    fn assess_siege(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) {
         let turn = g.turn;
         if self
             .sieges
@@ -828,7 +878,7 @@ impl AdvancedAi {
         self.reserved_units
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         let arena = g.is_arena();
-        let force = siege_force(g, pid, &city, &group.units);
+        let force = self.siege_force(g, pid, &city, plan, group);
         let strength: f64 = force.iter().map(|uid| unit_power(g, *uid)).sum();
         let staged: f64 = force
             .iter()
@@ -955,7 +1005,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<bool> {
-        self.assess_siege(g, pid, cid, group);
+        self.assess_siege(g, pid, cid, plan, group);
         let siege = self.sieges.get(&cid)?.clone();
         let city = CityView::of(g, cid)?;
         if city.owner == pid || siege.stage == SiegeStage::Hold {
@@ -1645,6 +1695,18 @@ impl AdvancedAi {
 }
 
 #[cfg(test)]
+mod ownership_tests;
+
+#[cfg(test)]
+mod capture_tests;
+
+#[cfg(test)]
+mod landing_tests;
+
+#[cfg(test)]
+mod firing_tests;
+
+#[cfg(test)]
 mod tests {
     use super::super::GrandStrategy;
     use super::*;
@@ -1652,7 +1714,7 @@ mod tests {
 
     /// `the_storming`'s board with its army removed: a 200-hit-point city
     /// of player 1 behind 100 points of wall, and nothing else.
-    fn walled_city() -> (Game, u32) {
+    pub(super) fn walled_city() -> (Game, u32) {
         let mut g = build(position("the_storming").expect("known"), 3).expect("buildable");
         let seeded: Vec<u32> = (0..2).flat_map(|pid| g.player_unit_ids(pid)).collect();
         for uid in seeded {
@@ -1664,7 +1726,7 @@ mod tests {
         (g, cid)
     }
 
-    fn plan_against(g: &Game, cid: u32) -> StrategicPlan {
+    pub(super) fn plan_against(g: &Game, cid: u32) -> StrategicPlan {
         StrategicPlan {
             strategy: GrandStrategy::Conquest,
             target_player: Some(1),
@@ -1689,7 +1751,7 @@ mod tests {
     }
 
     /// The ring tiles of a city, sorted.
-    fn ring_of(g: &Game, cid: u32) -> Vec<Pos> {
+    pub(super) fn ring_of(g: &Game, cid: u32) -> Vec<Pos> {
         let pos = g.cities[&cid].pos;
         let mut ring: Vec<Pos> = g
             .wdisk(pos, 1)
@@ -1701,7 +1763,7 @@ mod tests {
     }
 
     /// Tiles at exactly `distance` from the city, sorted.
-    fn at_distance(g: &Game, cid: u32, distance: i32) -> Vec<Pos> {
+    pub(super) fn at_distance(g: &Game, cid: u32, distance: i32) -> Vec<Pos> {
         let pos = g.cities[&cid].pos;
         let mut out: Vec<Pos> = g
             .wring(pos, distance)
@@ -1740,7 +1802,13 @@ mod tests {
     }
 
     /// One unit through the doctrine alone, the rest of the force standing.
-    fn step_unit(ai: &mut AdvancedAi, g: &mut Game, pid: usize, uid: u32, plan: &StrategicPlan) {
+    pub(super) fn step_unit(
+        ai: &mut AdvancedAi,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) {
         ai.rebuild_force_groups(g, pid, plan);
         for _ in 0..8 {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {

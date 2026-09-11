@@ -276,10 +276,13 @@ impl Game {
     }
 
     /// The districts Civilization VI counts as *specialty* — the ones the
-    /// Insulae and Medina Quarter housing cards key off. `pub(crate)` so the
-    /// policy chooser asks this instead of keeping a second list of district
-    /// families that would drift the first time Firaxis moved one.
-    pub(crate) fn city_specialty_district_count(&self, city: &City) -> usize {
+    /// Insulae and Medina Quarter housing cards key off, and the ones that
+    /// carry the yield buildings. Public for the same reason it was
+    /// `pub(crate)`: every caller asks this instead of keeping a second list
+    /// of district families that would drift the first time Firaxis moved
+    /// one. `gene_screen` is the caller outside the crate, recording
+    /// development per seat.
+    pub fn city_specialty_district_count(&self, city: &City) -> usize {
         city.districts
             .keys()
             .filter(|district| self.rules.districts[district].specialty)
@@ -313,8 +316,11 @@ impl Game {
         position: Pos,
     ) -> bool {
         !self.map.tiles[&position].pillaged
-            && !(self.district_is_family(district, crate::name!("encampment"))
-                && city.encampment_pillaged)
+            // Resolve the family only when the city-wide encampment flag
+            // could disable it. Yield and upkeep queries ask this for every
+            // district/building, almost always with the flag clear.
+            && !(city.encampment_pillaged
+                && self.district_is_family(district, crate::name!("encampment")))
     }
 
     pub(super) fn city_has_active_district_family(&self, city: &City, family: impl AsName) -> bool {
@@ -5113,7 +5119,9 @@ impl Game {
                     }
                 }
                 None if spec.resource_only => continue,
-                None if t.resource.is_some() => continue, // unrevealed resource
+                // An undiscovered deposit cannot veto an otherwise legal
+                // improvement: the player's observed board has no resource
+                // here and must agree with execution until it is revealed.
                 None => {}
             }
             // Unique replacements suppress their base improvement for that civ.
@@ -5146,7 +5154,7 @@ impl Game {
         let tile = self.map.get(pos)?;
         if tile.flooded
             || tile.submerged
-            || tile.improvement.is_some()
+            || tile.improvement.as_deref() == Some("national_park")
             || tile.district.is_some()
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
@@ -6172,14 +6180,30 @@ impl Game {
         }
     }
 
+    /// Work already assigned to this exact item, including a paused build.
+    /// An idle city's unassigned overflow is not an investment in every menu item.
+    pub(crate) fn item_invested_production(&self, cid: u32, item: &Item) -> f64 {
+        let city = &self.cities[&cid];
+        let saved = city
+            .production_progress
+            .get(&Self::item_progress_key(item))
+            .copied()
+            .unwrap_or(0.0);
+        saved
+            + if city.queue.first() == Some(item) {
+                city.production
+            } else {
+                0.0
+            }
+    }
+
     /// Production still required after active progress, item-specific paused
     /// progress, and unassigned overflow are applied. Search agents use this
     /// instead of treating a nearly complete build like a fresh one.
     pub(crate) fn item_remaining_cost_for_city(&self, pid: usize, cid: u32, item: &Item) -> f64 {
         let city = &self.cities[&cid];
-        let key = Self::item_progress_key(item);
-        let mut invested = city.production_progress.get(&key).copied().unwrap_or(0.0);
-        if city.queue.is_empty() || city.queue.first() == Some(item) {
+        let mut invested = self.item_invested_production(cid, item);
+        if city.queue.is_empty() {
             invested += city.production;
         }
         (self.item_cost_for_city(pid, cid, item) - invested).max(0.0)
@@ -6658,7 +6682,10 @@ impl Game {
             kind: "EMERGENCY_SEND_AID",
             diplomatic_victory_points: 2,
             first_place_favor: 100.0,
-            scoring: &[CompetitionScoreSource::Project],
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::GoldGift,
+            ],
             trigger: NativeCompetitionTrigger::RandomDisasterPopulationLoss,
             duration: 30,
             lockout: 30,
@@ -6670,7 +6697,10 @@ impl Game {
             kind: "EMERGENCY_SEND_MILITARY_AID",
             diplomatic_victory_points: 2,
             first_place_favor: 100.0,
-            scoring: &[CompetitionScoreSource::Project],
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::GoldGift,
+            ],
             trigger: NativeCompetitionTrigger::WarWithGrievances,
             duration: 30,
             lockout: 30,
@@ -6800,6 +6830,7 @@ impl Game {
             return false;
         };
         competition.scoring.iter().any(|source| match source {
+            CompetitionScoreSource::GoldGift => self.players[pid].gold >= 1.0,
             // Every empire generates Great Person Points and Diplomatic Favor,
             // so there is no ground to hold and nothing to gate on.
             CompetitionScoreSource::GreatPersonPointsPerTurn
@@ -6853,7 +6884,7 @@ impl Game {
         source: CompetitionScoreSource,
         amount: f64,
     ) {
-        if amount <= 0.0 || !self.victory_eligible(pid) {
+        if !amount.is_finite() || amount <= 0.0 || !self.victory_eligible(pid) {
             return;
         }
         let turn = self.turn;
@@ -7717,3 +7748,6 @@ impl Game {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod hidden_resource_improvement_tests;

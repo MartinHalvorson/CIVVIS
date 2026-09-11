@@ -60,6 +60,33 @@ async function displayPage() {
   return pages.find(page => page.type === "page" && page.url.includes(`127.0.0.1:${mirrorPort}`)) || null;
 }
 
+// ⚠⚠ THIS WINDOW WAS LAUNCHED ON TOP OF THE GAME IT MIRRORS.
+//
+// `civ6_civvis_climb` hands `civ6_play` `--window-side left --window-frac 0.5
+// --window-vfrac 0.5` for every attempt, new or resumed, and
+// `macos_window.place_game` turns that into x=0, y=33 (clear of the menu bar),
+// width = screen*0.5, height = (screen-33)*0.5. On the 1728x1117-point display
+// this keeper was measured on, that is exactly 0,33 at 864x542 — which is what
+// these constants used to be, to the pixel. So the dedicated display existed,
+// reported healthy frames, and sat directly BEHIND Civilization VI, which this
+// keeper's own header explains is deliberately held frontmost. Nobody watching
+// the machine could see the decisions it was drawing.
+//
+// Beside the game, not behind it: same size, same top edge, the other side.
+//
+// ⚠ The numbers stay constants rather than being read from the display. Asking
+// macOS for the desktop bounds means osascript, and on a host whose Terminal
+// has never been granted control, macOS queues that call behind a consent
+// dialog no unattended run will ever answer — that is how a pending consent
+// killed the whole mirror follower on 2026-08-14 (see `chrome()` in
+// tools/follow.py). A keeper that hangs is worse than one measured for the
+// fleet's display; `tools/test_ops_display_keeper.py` fails if the game's own
+// placement rule ever moves out from under them.
+const displayWidth = 864;
+const displayHeight = 542;
+const displayX = displayWidth;   // immediately right of a game window this wide
+const displayY = 33;             // level with the game, clear of the menu bar
+
 function launchDisplay() {
   const now = Date.now();
   if (now - lastLaunchAt < recoveryCooldownMs) return;
@@ -77,7 +104,8 @@ function launchDisplay() {
     "--disable-backgrounding-occluded-windows",
     "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling",
     "--no-first-run", "--no-default-browser-check",
-    "--window-position=0,33", "--window-size=864,542",
+    `--window-position=${displayX},${displayY}`,
+    `--window-size=${displayWidth},${displayHeight}`,
   ];
   const child = spawn("/usr/bin/open", args, { detached: true, stdio: "ignore" });
   child.unref();

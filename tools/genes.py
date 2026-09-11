@@ -616,6 +616,44 @@ FIELDLESS = {
     "contested_field": "",
     "native_competitions": False,
 }
+#: ⭐ THE FIELD THE LEDGER'S GENES WERE MEASURED AGAINST, AND THE SECOND THING
+#: STANDING BETWEEN IT AND A BATCH THAT PLAYED A DIFFERENT GAME.
+#:
+#: `FIELDLESS` above catches a contested board. This catches the other axis a
+#: batch can differ on while matching every map leg: **the rung, and who
+#: carries its handicap.**
+#:
+#: `data/difficulties.json` hands every rung above Prince a yield, experience
+#: and free-unit bonus, and every rung below it hands the HUMAN an experience
+#: bonus; Prince alone tilts neither way. `gene_screen --handicap` then decides
+#: who receives it, and its DEFAULT gives it to every major — our measured
+#: seats included — which is symmetric and cancels. `--rivals firaxis-mix`
+#: seats a fixed unmeasured opponent in one chair.
+#:
+#: Every one of those changes the field a gene's win rate is a statement about,
+#: and none of them changes a single map leg, so without this check they read
+#: `standard` and pool — re-pricing a hundred genes against a board none of
+#: them was measured on. That is the exact sentence `FIELDLESS` was written
+#: for; the rung had only a "read with care" comment.
+#:
+#: ⚠ Every existing source records none of these, and the one batch that
+#: records a rung records `prince`, so nothing is reclassified: the defaults
+#: here ARE the ledger's field. A batch that names something else is `legacy`
+#: — history, refused at the write path unless deliberate — which is the
+#: correct home for the Immortal/Deity test bed
+#: (`--difficulty immortal --rivals firaxis-mix --handicap rivals`). It is
+#: real evidence about a different field, not a column to average in.
+#:
+#: ⚠ `difficulty_rotate` is here too. A rotation draws a rung per game from the
+#: seed, so unlike `victory_mask` — whose lanes are all live across the batch —
+#: it makes the batch a MIXTURE of fields rather than the ledger's one.
+DEPLOYMENT_FIELD = {
+    "difficulty": "prince",
+    "difficulty_rotate": "",
+    "handicap": "",
+    "rivals": "",
+    "rival_chairs": 0,
+}
 #: ⭐ PROVENANCE RECORDED WHEN SET, AND NOT A SHAPE LEG. `gene_screen
 #: --victory-mask rotate:N` closes N of the five real conditions per game from
 #: the game's seed, score always on; `victories` in its header is still the
@@ -636,7 +674,7 @@ FIELDLESS = {
 #: win column of such a source is a statement about the seat against
 #: handicapped rivals, not the self-play column beside it (`column_estimate`).
 RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate", "rivals",
-                     "handicap", "rival_chairs")
+                     "handicap", "rival_chairs", "player_contract", "target_mix")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since
@@ -786,12 +824,27 @@ def wins_per_10k(win_rate: float, players: int) -> int:
     return round((win_rate - chance) * PER)
 
 
+def player_epoch(profile: dict) -> tuple | None:
+    """Legacy files retain their historical arithmetic; new contracts do not pool with it."""
+    if not profile.get("player_contract"):
+        return None
+    return (profile["player_contract"], profile.get("target_mix", ""),
+            profile.get("native_competitions", False))
+
+
+def current_player_evidence(history: list[dict]) -> list[dict]:
+    epoch = next((row["player_epoch"] for row in reversed(history)
+                  if row.get("player_epoch") is not None), None)
+    return [row for row in history if row.get("player_epoch") == epoch]
+
+
 def pooled_win_rates(history: list[dict]) -> tuple[float, float]:
     """The on-arm-seat-weighted on and off win rates across every screen that priced
     the gene — `GENE_HEURISTIC_RANKING.md`'s two *Total* columns. Each entry
     carries `win_on`/`win_off` and the seat observations behind each arm.
     `tools/genes.py` imports this, so the printed totals and
     the ledger's published *Diff* are one arithmetic."""
+    history = current_player_evidence(history)
     on_seats = sum(m["n_on"] for m in history)
     off_seats = sum(m["n_off"] for m in history)
     on = sum(m["win_on"] * m["n_on"] for m in history) / on_seats
@@ -917,7 +970,7 @@ def pooled_posterior(history: list[dict],
 
     Returns `None` when no reading carries an error. Units are the win
     column's: wins added per 10,000 on-arm seats."""
-    readings = screen_readings(history, shapes)
+    readings = screen_readings(current_player_evidence(history), shapes)
     if not readings:
         return None
     k = len(readings)
@@ -1268,18 +1321,30 @@ def shape_of(profile: dict) -> str:
 
     ⚠ `FIELDLESS` is checked beside `SCREEN` and is the only thing standing
     between the ledger and a contested-field batch, which matches every map leg
-    the screen has."""
-    if any(profile.get(k, v) != v for k, v in FIELDLESS.items()):
+    the screen has.
+
+    ⚠ The rung and who carries its handicap are deliberately NOT legs here:
+    the ladder plays Emperor and above and a screen may follow it without the
+    ledger holding two worlds. What that costs is that two columns can play
+    different fields and still pool, which `field_of` and `field_drift` below
+    make impossible to do silently."""
+    expected = dict(FIELDLESS)
+    if profile.get("player_contract") == "observed-player-v1":
+        expected["native_competitions"] = True
+    if any(profile.get(k, FIELDLESS[k]) != v for k, v in expected.items()):
         return "legacy"
     return "standard" if all(profile.get(k) == v for k, v in SCREEN.items()) else "legacy"
 
 
 def shape_gap(profile: dict) -> str:
     """The legs that differ from the screen, for the refusal message."""
+    expected = {**SCREEN, **FIELDLESS}
+    if profile.get("player_contract") == "observed-player-v1":
+        expected["native_competitions"] = True
     return ", ".join(
         f"{key}={profile.get(key, fieldless)!r} (screen: {fieldless!r})"
-        for key, fieldless in {**SCREEN, **FIELDLESS}.items()
-        if profile.get(key, fieldless) != fieldless
+        for key, fieldless in expected.items()
+        if profile.get(key, FIELDLESS.get(key, fieldless)) != fieldless
     )
 
 
@@ -1608,6 +1673,40 @@ def latest_reporting_batches(entered: list[Path], recorded: list[Path]) -> list[
     ]
 
 
+def field_of(profile: dict) -> tuple:
+    """The field a batch played: the rung, and who carried its handicap.
+
+    Defaulted, so a header that records nothing reads as what its absence
+    means — `gene_screen` omits each of these when it is at its default.
+    """
+    return tuple(
+        (key, profile.get(key, default)) for key, default in DEPLOYMENT_FIELD.items()
+    )
+
+
+def field_name(field: tuple) -> str:
+    """`prince, handicap all` — the legs that are set, for a message."""
+    said = [
+        f"{key}={value!r}"
+        for key, value in field
+        if value != DEPLOYMENT_FIELD[key]
+    ]
+    return ", ".join(said) if said else "the ledger's own field (prince, unhandicapped)"
+
+
+def field_drift(records: list[dict]) -> dict[str, list[str]]:
+    """Which reporting batches played which field, when more than one did.
+
+    Empty when every column played the same game, which is the only state in
+    which averaging them means anything.
+    """
+    seen: dict[str, list[str]] = {}
+    for record in records:
+        seen.setdefault(field_name(field_of(record.get("profile", {})))
+                        , []).append(record.get("path", "?"))
+    return seen if len(seen) > 1 else {}
+
+
 def reporting_batch_records(paths: list[Path],
                             build_notes: dict[str, str] | None = None) -> list[dict]:
     """Validate and record fixed display-batch artifacts without pricing rules.
@@ -1631,6 +1730,32 @@ def reporting_batch_records(paths: list[Path],
         if reason:
             record["unverified"] = reason
         records.append(record)
+    # ⭐⭐ THE RANKING AVERAGES THESE THREE COLUMNS, SO THEY HAVE TO BE ONE GAME.
+    #
+    # The rung and who carries its handicap are deliberately not shape legs —
+    # see `shape_of` — so the ladder can follow the deployment up without the
+    # ledger holding two worlds. The cost of that decision is that two columns
+    # CAN play different fields and still pool, and the weighted latest-three
+    # average would then be a mixture nobody can see. `handicap`'s own note
+    # asks a reader to "read with care"; this is what makes that possible.
+    #
+    # A rung batch is exactly the evidence the Emperor ladder needs, so this
+    # never refuses one on its own — it refuses only the SILENT MIXTURE, and
+    # the fix is to let the new field fill all three columns rather than to
+    # average it against the old one.
+    drift = field_drift(records)
+    if drift:
+        lines = "\n".join(
+            f"  {name}: " + ", ".join(paths) for name, paths in sorted(drift.items())
+        )
+        raise SystemExit(
+            "gene ledger: the three reporting columns did not play the same "
+            "field, so their weighted average is a mixture of different games:"
+            f"\n{lines}\n"
+            "Every column the ranking averages must play one field. Either let "
+            "the new field fill all three columns, or keep the columns on the "
+            "field the ledger's genes were priced on."
+        )
     return records
 
 
@@ -1986,6 +2111,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     # `wins_third_10k` record. They are evidence; the default is decided by
     # the reporting batches' total-seat columns below.
     columns: dict[str, list[int]] = {}
+    column_epochs: dict[str, tuple | None] = {}
     # Every screen's two arms, for the pooled on-off difference and posterior.
     # Unlike the columns this keeps the whole record, not the tail.
     arms: dict[str, list[dict]] = {}
@@ -2012,6 +2138,10 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             if known and gene["tag"] not in known:
                 dropped.add(gene["tag"])
                 continue
+            epoch = player_epoch(profile)
+            if gene["tag"] in column_epochs and column_epochs[gene["tag"]] != epoch:
+                columns[gene["tag"]] = []
+            column_epochs[gene["tag"]] = epoch
             measures[gene["tag"]] = measure_from(gene, name)
             if "win_on" not in gene:
                 raise SystemExit(
@@ -2026,6 +2156,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             # whole - the live question the moment a `standard` source lands
             # beside the `legacy` ones.
             arms.setdefault(gene["tag"], []).append({
+                **({"player_epoch": epoch} if epoch is not None else {}),
                 "win_on": float(gene["win_on"]),
                 "win_off": float(gene["win_off"]),
                 "n_on": int(gene.get("n_on", seat_pairs(gene_seats(gene)))),
@@ -2590,6 +2721,20 @@ def sources_from_args(args, notes: dict[str, str] | None = None) -> list[Path]:
     escape = getattr(args, "unverified_build", None)
     for path in paths:
         data = load_source(path)
+        # ⭐ A FIDELITY RUN IS NOT A SCREEN, AND `--legacy-shape` MUST NOT
+        # LET ONE IN. `gene_screen --deployment-genome` gives every measured
+        # seat the genome the ledger ships and screens NOTHING, so the file
+        # holds no seat with a gene off to price it against. There is no
+        # escape for this one because there is nothing to excuse: the batch
+        # does not disagree with the screen about the board, it simply
+        # contains no measurement of any gene.
+        if data.get("deployment_genome"):
+            raise SystemExit(
+                f"{path.name} is a fidelity run (`--deployment-genome`): every "
+                "seat played the shipped genome and no gene was screened, so it "
+                "prices nothing.\nIt belongs to `civ6_trajectory_fidelity.py`, "
+                "not to the ledger."
+            )
         profile = profile_of(data)
         if not args.legacy_shape and shape_of(profile) != "standard":
             raise SystemExit(
@@ -2812,6 +2957,7 @@ def measurements_from_source(data: dict, name: str, shape: str) -> dict[str, dic
     """One source's per-gene observations, retaining real on/off seat counts."""
     rows: dict[str, dict] = {}
     source_total_seats = source_seats(data)
+    epoch = player_epoch(profile_of(data))
     for gene in data.get("genes", []):
         # Only legacy sources need this fallback. Do not evaluate it for an
         # independent batch that recorded both arms but no `pairs`.
@@ -2819,6 +2965,7 @@ def measurements_from_source(data: dict, name: str, shape: str) -> dict[str, dic
         if gene.get("n_on") is None or gene.get("n_off") is None:
             legacy_arm_seats = seat_pairs(gene_seats(gene))
         rows[gene["tag"]] = {
+            **({"player_epoch": epoch} if epoch is not None else {}),
             "win_on": float(gene["win_on"]),
             "win_off": float(gene["win_off"]),
             "n_on": int(gene["n_on"] if gene.get("n_on") is not None else legacy_arm_seats),
@@ -2852,19 +2999,25 @@ def load_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
         for tag, row in measurements_from_source(data, name, src["shape"]).items():
             history.setdefault(tag, []).append(row)
             newest_src[tag] = name
-    return history, newest_src
+    return {tag: current_player_evidence(rows) for tag, rows in history.items()}, newest_src
 
 
 def load_reporting_batches(ledger: dict) -> list[dict]:
     """The three fixed batch columns, newest first, with their source rows."""
     batches = []
+    contracts = set()
     for meta in ledger.get("reporting_batches", []):
         data = load_source(ROOT / meta["path"])
+        profile = data.get("profile", {})
+        contracts.add((profile.get("player_contract", ""), profile.get("target_mix", ""),
+                       profile.get("native_competitions", False)))
         name = Path(meta["path"]).name
         batches.append({
             "meta": meta,
             "rows": measurements_from_source(data, name, meta["shape"]),
         })
+    if len(contracts) > 1:
+        raise SystemExit("reporting batches mix player/visibility contracts or target mixes; start a fresh reporting epoch")
     return batches
 
 
@@ -2885,6 +3038,8 @@ def load_display_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str,
         for tag, row in batch["rows"].items():
             history.setdefault(tag, []).append(row)
             newest_src[tag] = row["source"]
+    history = {tag: current_player_evidence(rows) for tag, rows in history.items()}
+    newest_src = {tag: rows[-1]["source"] for tag, rows in history.items() if rows}
     return history, newest_src
 
 

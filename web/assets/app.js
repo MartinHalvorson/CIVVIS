@@ -937,6 +937,20 @@ try {
     if (typeof savedOverlays[name] === "boolean") OVERLAY_VISIBILITY[name] = savedOverlays[name];
   }
 } catch (error) {}
+// The dedicated CIVVIS display (`?display=dedicated`, opened by
+// tools/ops/civvis-display-keeper.mjs beside a live Civilization VI) exists to
+// show the player HUD. Nobody sits at that window to switch an overlay back
+// on, and its Chrome profile keeps this page's localStorage across launches —
+// so one stray click that hid the players overlay hid it for every game after,
+// and on 2026-09-10 the display beside a live Emperor game showed a bare map.
+// The saved choice still applies to a person's own browser; the dedicated
+// display always starts with the HUD and the turn tracker showing. The tech
+// and civics tree is a modal that opens only on request and stays closed.
+const DEDICATED_DISPLAY = new URLSearchParams(location.search).get("display") === "dedicated";
+if (DEDICATED_DISPLAY) {
+  OVERLAY_VISIBILITY.players = true;
+  OVERLAY_VISIBILITY.victory = true;
+}
 function applyOverlayVisibility() {
   for (const name of OVERLAY_NAMES) {
     document.body.classList.toggle(`overlay-${name}-hidden`, !OVERLAY_VISIBILITY[name]);
@@ -1969,8 +1983,8 @@ const PLAYER_HUD_COLUMNS = [
       ["faith", "Faith", worldStandingsInPlay],
       ["gold", "Gold", worldStandingsInPlay], ["military", "Military"],
       ["nukes", "Nuclear stockpile", nuclearStandingsInPlay],
-      ["wonders", "Wonders", worldStandingsInPlay],
       ["suzerain", "Suzerainty", worldStandingsInPlay],
+      ["wonders", "Wonders", worldStandingsInPlay],
       ["score", "Score", worldStandingsInPlay]]
     .map(([key, label, exists]) =>
       ({key, label, block:"stats", min:"--hud-stat-min", width:1, exists})),
@@ -2365,8 +2379,8 @@ const PLAYER_HUD_HEAD_LABELS = {
   science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
   faith:["FPT", "Faith per turn"], gold:["GPT", "Net Gold per turn"],
   military:["MIL", "Military strength"], nukes:["NUK", "Nuclear devices held"],
-  wonders:["WNDR", "World wonders controlled"],
-  suzerain:["SUZ", "City-states under suzerainty"], score:["SCORE", "Score"],
+  suzerain:["SUZ", "City-states under suzerainty"],
+  wonders:["WNDR", "World wonders controlled"], score:["SCORE", "Score"],
 };
 
 // One heading cell per visible column. Every head carries the key of the
@@ -7609,12 +7623,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       document.getElementById("gamemode").value = "civ";
       syncSetupMode();
     }
-    // The masthead chip reads the world, not the setup panel: a viewer who
-    // opens the drawer and flips the mode select has not left the game they
-    // are watching, and the chip must keep offering the other one.
-    syncModeLink(tactics);
-    // So does the between-game default: a Tactics world counts down in 3s
-    // unless the viewer has picked an interval by hand.
+    // The between-game default reads the world, not the setup panel: a
+    // Tactics world counts down in 3s unless the viewer has picked an
+    // interval by hand.
     applyBetweenGameCountdownDefault(tactics);
     // And the watch pace: a Tactics world opens at Blitz, a full game at
     // whatever the viewer's own pace is.
@@ -23780,8 +23791,8 @@ function playerHudStats(player, rank) {
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
     ["nukes", "NUK", playerNuclearStockpile(player), nuclearStockpileTitle(player)],
-    ["wonders", "WNDR", player.wonder_count, `World wonders controlled: ${exactStat(player.wonder_count)}`],
     ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
+    ["wonders", "WNDR", player.wonder_count, `World wonders controlled: ${exactStat(player.wonder_count)}`],
     ["score", "SCORE", player.score, `Score: ${exactStat(player.score)} · rank ${rank}`],
   ];
 }
@@ -33030,11 +33041,11 @@ if (savedSidebarCollapsed === "1") togglePanel(true, false);
 else if (savedSidebarCollapsed === "0") togglePanel(false, false);
 else if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true, false);
 resize();
-// syncModeLink() is NOT called here: it lives in app_setup.js, which loads
-// after this file, so a load-time call throws and boot() below never runs —
-// the page stays behind the "Joining the live world" veil with viewers 0.
-// app_setup.js settles the chip at its own load time, still before the
-// engine's first answer (boot's synchronous prefix ends at its first await).
+// Nothing defined in app_setup.js is called here: that file loads after this
+// one, so a load-time call throws and boot() below never runs — the page
+// stays behind the "Joining the live world" veil with viewers 0. Those calls
+// live at the end of app_setup.js, still before the engine's first answer
+// (boot's synchronous prefix ends at its first await).
 boot();
 
 // `?setup=1` lands with the sidebar's Game setup drawer open: the home page's

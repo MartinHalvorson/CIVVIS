@@ -1,0 +1,10 @@
+{
+  "note": "Worst per-subsystem divergence between the live corpus and the simulator, in matched configurations \u2014 a configuration being difficulty, speed, map size AND which side carries the rung's handicap. Written only by `civ6_trajectory_fidelity.py --write`; a value may tighten and never loosens, and `--check` fails only past it plus a regression margin (see FIDELITY_SLACK).",
+  "tolerances": {
+    "emperor/online/small/rivals|boost_coverage": 1.8048,
+    "emperor/online/small/rivals|cities_lost": 1.0,
+    "emperor/online/small/rivals|cities_taken": 1.0,
+    "emperor/online/small/rivals|standing": 1.263,
+    "prince/online/small/n/a|standing": 1.0117
+  }
+}

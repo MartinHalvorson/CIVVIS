@@ -91,7 +91,8 @@ impl AdvancedAi {
         if !self.fire_plan {
             return;
         }
-        let shots = Self::priced_shots(g, pid);
+        let mut shots = Self::priced_shots(g, pid);
+        shots.retain(|shot| !self.builder_guard_reserved(shot.unit));
         if shots.is_empty() {
             return;
         }
