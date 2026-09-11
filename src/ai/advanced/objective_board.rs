@@ -1978,11 +1978,38 @@ impl AdvancedAi {
     ///     reassigned  median 1    mean 1.71   (56% of evaluations move someone)
     ///     rows short  median 1    mean 1.9
     ///
-    /// ⭐ With a median of **two forces**, a mean of 1.71 reassignments means
-    /// most of the army changes objective on most evaluations — and ~2 rows are
-    /// left short every time regardless. The units are not flapping between two
-    /// equally good homes; they are being pulled around by rows that cannot all
-    /// be filled.
+    /// ⭐ Roughly **a fifth of the army changes objective on every evaluation**,
+    /// and ~2 rows are left short every time regardless. The units are not
+    /// flapping between two equally good homes; they are being pulled around by
+    /// rows that cannot all be filled.
+    ///
+    /// ⚠ An earlier draft of this paragraph read "most of the army" off the
+    /// two-force median. That was wrong — a force holds several units, not one.
+    /// Counted directly from the state frames of the same runs, our military
+    /// unit total is:
+    ///
+    ///     turns     0-39   40-79   80-119  120-159  160-199  200-239  240-279
+    ///     median       2       5        8        8        8        8        6
+    ///
+    /// So ~8 units in ~2 forces, and 1.71 reassignments is about 21% of them
+    /// per evaluation. Still high, and not "most".
+    ///
+    /// ## ⭐⭐ AND THE ARMY NEVER GROWS
+    ///
+    /// It reaches eight by turn 80 and is still eight at turn 240, while
+    /// **about a third of everything the empire produces is military units**
+    /// (49% of city-turns carry a unit, of which Builders are 10.8% and
+    /// Settlers 7.1%). Over the same runs the combat ledger records 601 of our
+    /// units lost. An empire that spends a third of its output on an army and
+    /// holds eight units is on a treadmill, not building a force.
+    ///
+    /// ⚠ And it is not that the army loses its fights. Filtered the way
+    /// `docs/LIVE_TACTICS.md`'s junk-row rule prescribes — both sides real
+    /// units, and only combats we are actually in — the exchange is **1.06
+    /// kills per loss** (188 against 199). We trade evenly and still cannot
+    /// accumulate, which points at what a unit COSTS us rather than at how it
+    /// fights, and lands back on the conversion gap the rest of the record
+    /// keeps finding.
     ///
     /// ⚠⚠ So `HYSTERESIS_GAIN` is not missing here — it already asks 25% more
     /// contribution before a unit leaves a served force. Raising it, or adding
