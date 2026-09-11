@@ -104,3 +104,21 @@ fn rejected_territory_access_still_requires_immediate_observation() {
     batch(&mut g, unaffordable_trade(true), gun, target);
     assert_eq!(g.units[&target].hp, 1000);
 }
+
+#[test]
+fn rejected_district_placement_still_invalidates_the_tactical_tail() {
+    let (mut g, city, target, gun) = battle();
+    let rejected = Action::Produce {
+        city,
+        item: Item::District {
+            district: "encampment".into(),
+            pos: g.cities[&city].pos,
+        },
+    };
+    assert_eq!(
+        g.clone().apply(0, &rejected).unwrap_err(),
+        "cannot produce that"
+    );
+    batch(&mut g, rejected, gun, target);
+    assert_eq!(g.units[&target].hp, 1000);
+}

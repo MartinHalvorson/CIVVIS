@@ -199,10 +199,11 @@ fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Opti
         // orders executable. Refresh after the batch: stopping here can
         // repeat the same economic refusal in every frame and never reach
         // the army. Orders still pay their authoritative costs when applied.
-        // City transfers and access treaties can change tactical facts, so
-        // a refusal of those trades still invalidates the remaining plan.
+        // District foundations clear terrain; city transfers and access
+        // treaties change tactical facts too. Their refusals still invalidate
+        // the remaining plan.
         let economic = match action {
-            Action::Produce { .. } => true,
+            Action::Produce { item, .. } => !matches!(item, crate::game::Item::District { .. }),
             Action::Trade { offer, request, .. } => {
                 offer.cities.is_empty()
                     && request.cities.is_empty()
