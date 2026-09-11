@@ -1039,6 +1039,27 @@ function CivvisRockBandConcertPlots(unit, name)
     end, nil);
 end
 
+-- Base/Assets/UI/Popups/UnitPromotionPopup.lua:81-82 reads this exact menu.
+function CivvisRockBandPromotionChoices(unit, name)
+    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    return try(function()
+        local command = GameInfo.UnitCommands["UNITCOMMAND_PROMOTE"];
+        if command == nil then return nil; end
+        local can, results = UnitManager.CanStartCommand(unit, command.Hash, true, true);
+        if can == false then return {}; end
+        local offered = results ~= nil and results[UnitCommandResults.PROMOTIONS] or nil;
+        if can ~= true or type(offered) ~= "table" then return nil; end
+        local names = {};
+        for _, index in ipairs(offered) do
+            local row = GameInfo.UnitPromotions[index];
+            if row == nil or row.UnitPromotionType == nil then return nil; end
+            names[#names + 1] = row.UnitPromotionType;
+        end
+        table.sort(names);
+        return names;
+    end, nil);
+end
+
 -- Facts that decide what a unit may do next. Reconstructing every live unit from
 -- its type defaults reset Apostles to full charges with no promotion and military
 -- units to level one on every turn, so CIVVIS repeatedly chose actions Firaxis had
@@ -7208,6 +7229,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			spy_missions_available = spyMissions,
 			great_person = greatPerson,
 			concert_plots = CivvisRockBandConcertPlots(unit, name),
+			offered_promotions = CivvisRockBandPromotionChoices(unit, name),
 			rock_band_name = name == "UNIT_ROCK_BAND" and try(function() return unit:GetName(); end, nil) or nil,
 		};
 	end);

@@ -2295,6 +2295,9 @@ pub struct StateUnit {
     pub level: Option<i32>,
     #[serde(default)]
     pub promotions: Option<Vec<String>>,
+    /// Current native Rock Band menu; empty is an observed lack of choices.
+    #[serde(default)]
+    pub offered_promotions: Option<Vec<String>>,
     /// Civilization VI separates builder and religious charges. CIVVIS has one
     /// typed charge counter, so the mirror selects the applicable observed pool.
     #[serde(default)]
@@ -7277,11 +7280,51 @@ fn host_unavailable_wonders_from(
         .collect()
 }
 
-/// Translate recent host production refusals onto CIVVIS city ids and typed keys.
-/// Translate host promotion refusals onto CIVVIS unit ids.
-///
-/// Keyed by unit AND promotion: a refusal is specific to both, and another unit of
-/// the same kind may legitimately take a promotion this one cannot.
+/// Translate current native Rock Band choices onto mirrored unit ids.
+fn host_band_promotions_from(
+    state: &StateSnapshot,
+    unit_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, crate::game::HostBandPromotions> {
+    unit_ids
+        .iter()
+        .filter_map(|(uid, native)| {
+            let unit = state.units.iter().find(|unit| unit.id == *native)?;
+            if unit.kind != "UNIT_ROCK_BAND" {
+                return None;
+            }
+            let offered = unit.offered_promotions.as_ref()?;
+            let names = offered
+                .iter()
+                .map(|name| civvis_unit_promotion_name(name))
+                .filter(|name| {
+                    rules
+                        .promotions
+                        .get(name)
+                        .is_some_and(|spec| spec.class == "rock_band")
+                })
+                .map(|name| Name::new(&name))
+                .collect();
+            let held = unit
+                .promotions
+                .as_ref()?
+                .iter()
+                .map(|name| civvis_unit_promotion_name(name))
+                .filter(|name| rules.promotions.contains_key(name))
+                .map(|name| Name::new(&name))
+                .collect();
+            Some((
+                *uid,
+                crate::game::HostBandPromotions {
+                    held,
+                    offered: names,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Translate refusals per unit: another band may have a different legal menu.
 fn blocked_promotions_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     unit_ids: &std::collections::BTreeMap<u32, i64>,
@@ -12484,6 +12527,7 @@ pub fn rebuild_from_state(
         &unit_ids,
         &game.rules,
     ));
+    game.host_band_promotions = Arc::new(host_band_promotions_from(state, &unit_ids, &game.rules));
     game.blocked_strikes = Arc::new(blocked_strikes_from(&state.refused_strikes, &unit_ids));
     game.host_previews = Arc::new(host_previews_from(&state.host_previews, &unit_ids));
 
@@ -13693,6 +13737,11 @@ impl LiveMirror {
         // the same reason the production blocks are.
         self.game.blocked_promotions = Arc::new(blocked_promotions_from(
             &state.refused_promotions,
+            &self.civ6_of,
+            &self.game.rules,
+        ));
+        self.game.host_band_promotions = Arc::new(host_band_promotions_from(
+            state,
             &self.civ6_of,
             &self.game.rules,
         ));

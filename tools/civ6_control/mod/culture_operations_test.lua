@@ -105,3 +105,27 @@ unit.GetName = function() error('unreadable') end
 CivvisNameRockBands(player, 0, 204)
 assert(nameRequests == 2, 'unknown names must not be overwritten')
 print('Rock Band naming: prerequisite, pending retry, existing names and refusal passed')
+
+GameInfo.UnitCommands.UNITCOMMAND_PROMOTE = { Hash = 602 }
+GameInfo.UnitPromotions = {
+    [1] = { UnitPromotionType = 'PROMOTION_GOES_TO' },
+    [2] = { UnitPromotionType = 'PROMOTION_POP' },
+}
+UnitCommandResults = { PROMOTIONS = 'choices' }
+local promotionCan, promotionChoices = true, {1, 2}
+UnitManager.CanStartCommand = function(u, command, visible, results)
+    assert(u == unit and command == 602 and visible == true and results == true)
+    return promotionCan, { choices = promotionChoices }
+end
+local choices = CivvisRockBandPromotionChoices(unit, 'UNIT_ROCK_BAND')
+assert(#choices == 2 and choices[1] == 'PROMOTION_GOES_TO' and choices[2] == 'PROMOTION_POP')
+assert(CivvisRockBandPromotionChoices(unit, 'UNIT_WARRIOR') == nil)
+promotionCan = false
+assert(#CivvisRockBandPromotionChoices(unit, 'UNIT_ROCK_BAND') == 0)
+promotionCan, promotionChoices = true, nil
+assert(CivvisRockBandPromotionChoices(unit, 'UNIT_ROCK_BAND') == nil)
+promotionChoices = {99}
+assert(CivvisRockBandPromotionChoices(unit, 'UNIT_ROCK_BAND') == nil)
+UnitManager.CanStartCommand = function() error('unreadable') end
+assert(CivvisRockBandPromotionChoices(unit, 'UNIT_ROCK_BAND') == nil)
+print('Rock Band promotions: native offers, denial and unreadable menus passed')
