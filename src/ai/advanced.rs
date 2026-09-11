@@ -11841,9 +11841,11 @@ impl AdvancedAi {
                     actionable_denial
                         .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                         .map(|(rival, _)| rival)
-                        // A domination contract's eligible original capital
-                        // also chooses the opponent, before optional economic
-                        // conquests can divert the next campaign.
+                        // A secured capital advances the Domination campaign
+                        // to another capital owner, even when its frontier
+                        // must be taken first. Otherwise prefer an eligible
+                        // capital before optional economic conquests.
+                        .or_else(|| self.domination_followup_target(g, pid, None))
                         .or_else(|| domination_capital.map(|(owner, _)| owner))
                         // `city_campaign`: the plan's rival before the generic
                         // value sort. See `advanced/city_campaign.rs`.
@@ -18775,6 +18777,7 @@ impl AdvancedAi {
                 if let Some(peace) = one_war_peace {
                     let key = match peace {
                         one_war::OneWarPeace::SecondFront => "one_war:peace:second_front",
+                        one_war::OneWarPeace::CapitalSecured => "one_war:peace:capital_secured",
                         one_war::OneWarPeace::TideTurned => "one_war:peace:tide",
                         one_war::OneWarPeace::Rout => "one_war:peace:rout",
                     };
