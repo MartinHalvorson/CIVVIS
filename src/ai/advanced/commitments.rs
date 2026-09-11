@@ -146,6 +146,8 @@ pub struct Commitment {
     /// phase-and-hit-points for a capture.
     pub best: i32,
     pub best_turn: u32,
+    /// Last game turn counted; observation refreshes do not age the decision.
+    pub observed_turn: u32,
     /// Where the owner stood at the last reading (units only).
     pub last_pos: Option<Pos>,
     /// What stood on the target tile when the decision was made (Improve).
@@ -346,8 +348,14 @@ impl CommitmentLedger {
             return;
         };
         let census = self.census.slot(key.0);
-        census.open_turns += 1;
-        c.turns_open += 1;
+        let new_turn = turn > c.observed_turn;
+        if new_turn {
+            c.observed_turn = turn;
+            census.open_turns += 1;
+            c.turns_open += 1;
+        }
+        // A fresh observation can reveal progress in the same turn. Update
+        // the reading and reset streaks, without charging another turn.
         if reading < c.best {
             c.best = reading;
             c.best_turn = turn;
@@ -358,22 +366,26 @@ impl CommitmentLedger {
         }
         match acted {
             Some(false) => {
-                c.forgotten_turns += 1;
-                c.forgotten_streak += 1;
+                if new_turn {
+                    c.forgotten_turns += 1;
+                    c.forgotten_streak += 1;
+                    census.forgotten_turns += 1;
+                    *self.forgotten_why.entry((key.0, why)).or_default() += 1;
+                }
                 c.stalled_streak = 0;
-                census.forgotten_turns += 1;
-                *self.forgotten_why.entry((key.0, why)).or_default() += 1;
             }
             Some(true) if turn.saturating_sub(c.best_turn) >= STALL_TURNS => {
                 c.forgotten_streak = 0;
-                c.stalled_turns += 1;
-                c.stalled_streak += 1;
-                census.stalled_turns += 1;
+                if new_turn {
+                    c.stalled_turns += 1;
+                    c.stalled_streak += 1;
+                    census.stalled_turns += 1;
+                }
             }
             Some(true) => c.forgotten_streak = 0,
             None => {}
         }
-        if turn > c.eta {
+        if new_turn && turn > c.eta {
             census.late_turns += 1;
         }
         if pos.is_some() {
@@ -504,6 +516,7 @@ impl CommitmentLedger {
                         initial: hexes,
                         best: hexes,
                         best_turn: turn,
+                        observed_turn: turn,
                         last_pos: Some(unit.pos),
                         improvement_then: g.map.get(*site).and_then(|tile| tile.improvement),
                         retargets: retargets + 1,
@@ -547,6 +560,7 @@ impl CommitmentLedger {
                     initial: hexes,
                     best: hexes,
                     best_turn: turn,
+                    observed_turn: turn,
                     last_pos: Some(unit.pos),
                     improvement_then: g.map.get(site).and_then(|tile| tile.improvement),
                     retargets: 0,
@@ -622,6 +636,7 @@ impl CommitmentLedger {
                 initial: w.reading,
                 best: w.reading,
                 best_turn: turn,
+                observed_turn: turn,
                 last_pos: None,
                 improvement_then: None,
                 retargets: 0,
@@ -1293,6 +1308,7 @@ mod tests {
             initial: hexes,
             best: hexes,
             best_turn: turn,
+            observed_turn: turn,
             last_pos: None,
             improvement_then: None,
             retargets: 0,
@@ -1370,6 +1386,7 @@ mod tests {
             initial: 4200,
             best: 4200,
             best_turn: 50,
+            observed_turn: 50,
             last_pos: None,
             improvement_then: None,
             retargets: 0,
@@ -1428,7 +1445,7 @@ mod tests {
     /// With the gene off the ledger only counts, and nothing is written.
     /// Two rival cities, a war, and the rival city farthest from our capital
     /// as the objective — out of our starting units' reach.
-    fn conquest_fixture() -> (Game, u32) {
+    pub(super) fn conquest_fixture() -> (Game, u32) {
         use crate::game::Action;
 
         let fixture = || {
@@ -1477,7 +1494,7 @@ mod tests {
     }
 
     /// Aim a Conquest plan at `target`.
-    fn aim(ai: &mut AdvancedAi, game: &Game, target: u32) {
+    pub(super) fn aim(ai: &mut AdvancedAi, game: &Game, target: u32) {
         use super::super::StrategicPlan;
         ai.plan = Some(StrategicPlan {
             strategy: GrandStrategy::Conquest,
@@ -1563,6 +1580,7 @@ mod tests {
             initial: 300,
             best: 300,
             best_turn: 50,
+            observed_turn: 50,
             last_pos: None,
             improvement_then: None,
             retargets: 0,
@@ -2051,3 +2069,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod replan_tests;
