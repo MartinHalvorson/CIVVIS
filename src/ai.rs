@@ -2785,8 +2785,9 @@ pub struct BasicAi {
     /// native constructors and the frozen anchor keep the plain goal.
     pub(crate) explore_dead_targets: bool,
     /// Per unit: the exploration goal it was last sent at, where it stood, and
-    /// how many consecutive turns it has stood there aiming at that goal.
-    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32)>>,
+    /// how many consecutive turns it has stood there aiming at that goal,
+    /// and the last game turn observed. Replanning does not advance the clock.
+    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32, u32)>>,
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
@@ -15657,12 +15658,15 @@ impl BasicAi {
                         // Same goal from the same tile as last turn: one more
                         // turn of proof the order went nowhere.
                         Some(entry) if entry.0 == target && entry.1 == upos => {
-                            entry.2 += 1;
+                            if g.turn > entry.3 {
+                                entry.2 += 1;
+                                entry.3 = g.turn;
+                            }
                             entry.2
                         }
                         // A new goal, or the unit did move: start counting.
                         _ => {
-                            last.insert(uid, (target, upos, 0));
+                            last.insert(uid, (target, upos, 0, g.turn));
                             0
                         }
                     }
@@ -28607,3 +28611,6 @@ mod recovery_project_tests;
 
 #[cfg(test)]
 mod opening_defense_tests;
+
+#[cfg(test)]
+mod exploration_replan_tests;
