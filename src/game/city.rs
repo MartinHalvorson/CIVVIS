@@ -5416,11 +5416,17 @@ impl Game {
             }) {
                 continue;
             }
+            // Undiscovered deposits cannot veto a site the owner observes as
+            // resource-free, including through the removal-technology check.
+            let visible_resource = t
+                .resource
+                .as_deref()
+                .filter(|resource| self.resource_visible_to(city.owner, resource));
             // Antiquity Sites and Shipwrecks are buried, not deposits: they
             // are invisible until Natural History or Cultural Heritage and
             // never reserve a tile. Building over one destroys it, exactly as
             // a Bonus resource is destroyed.
-            if t.resource.as_ref().is_some_and(|resource| {
+            if visible_resource.is_some_and(|resource| {
                 !matches!(
                     self.rules.resources[resource].class.as_str(),
                     "bonus" | "artifact"
@@ -5446,7 +5452,7 @@ impl Game {
             {
                 continue;
             }
-            if let Some(resource) = &t.resource {
+            if let Some(resource) = visible_resource {
                 let improvement = &self.rules.resources[resource].improvement;
                 if self.rules.improvements[improvement]
                     .tech
@@ -7751,3 +7757,6 @@ mod tests;
 
 #[cfg(test)]
 mod hidden_resource_improvement_tests;
+
+#[cfg(test)]
+mod hidden_resource_district_tests;

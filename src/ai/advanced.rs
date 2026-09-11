@@ -5348,6 +5348,7 @@ pub struct AdvancedAi {
     /// columns of that run mean nothing and are not quoted. What eighty turns
     /// does cover is the only window this gene acts in.
     ///
+    /// ```text
     ///     column                     on       off      diff      z
     ///     cities_at_game_turn_60   4.224    4.096    +0.128   +0.84
     ///     cities_60                3.098    2.972    +0.127   +1.30
@@ -5355,6 +5356,7 @@ pub struct AdvancedAi {
     ///     districts                5.667    5.407    +0.260   +0.89
     ///     specialty_districts      5.142    4.994    +0.148   +0.56
     ///     buildings               11.251   11.023    +0.229   +0.41
+    /// ```
     ///
     /// ⭐ Six columns, six positive signs, nothing past z = 1.43. The signs are
     /// encouraging and are NOT six independent confirmations — those columns
