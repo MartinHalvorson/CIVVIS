@@ -60,5 +60,30 @@ check, not statistical evidence for promotion.
 
 ## Validation record
 
-Validation results and the paired pilot artifact are recorded here after the
-final implementation has been checked. No deployment defaults are changed.
+- Full local Rust suite: 3,657 passed, zero failures; 53 existing/manual tests
+  ignored. Includes all 16 focused conversion checks.
+- Changed-line formatting and Clippy gate: passed.
+- Ten individual six-game screens completed (60 games). The registry-wide
+  `gene_fires.py --max 0` gate passes: 305 evidenced genes, zero waivers.
+- Gene registry, generated evaluation manifest, and 14 treatment append-point
+  checks: passed.
+- [Paired Emperor pilot](2026-09-11-victory-conversion-pilot.json): eight
+  completed games, two seed pairs per lane. Culture target wins: control 0/2,
+  treatment 0/2. Domination target wins: control 0/2, treatment 0/2.
+  On the surviving culture seed, foreign tourists changed 57 → 64; on one
+  domination seed, surviving cities changed 1 → 3. These isolated observations
+  do not establish benefit or harm, and the sample cannot estimate a 10× gain.
+
+The pilot records its exact source commit. Individual six-game screens use
+separate seeds beginning at 91,120,000, incremented by 100 in the table's
+order, with one measured seat per game, Emperor bonuses only for three
+rivals, and a 0.5 probability of enabling the screened gene. They are
+single-gene random-assignment probes, not paired estimates or deployment
+pricing; the screen artifacts live under `docs/gene_screens/fires/` using
+each gene's tag. All ten remain default-off.
+
+Original probe configurations and binary fingerprints are preserved in
+[screen inputs](2026-09-11-victory-conversion-screen-inputs.json). All probes
+used the same binary; later headers honestly report `unstamped-tree-moved`
+after the worktree merged main during the batch. These artifacts are not
+submitted to the deployment ledger.
