@@ -5411,11 +5411,13 @@ pub struct AdvancedAi {
     /// bands at a share of length. So both are superseded by this one. Same
     /// deployment shape, `--turns 250`, 75 games, 225 seats:
     ///
+    /// ```text
     ///     gene                              c@60      z    share      z     win      z
     ///     expansion-hall-district         -0.032  -0.32  -0.0179  -1.84  -0.075  -2.16
     ///     expansion-scales-with-difficulty -0.152 -1.51  +0.0051  +0.51  +0.011  +0.32
     ///     expansion-schedule              +0.123  +1.22  -0.0110  -1.12  -0.009  -0.26
     ///     settler-walk-deadline           -0.028  -0.27  -0.0030  -0.30  -0.004  -0.12
+    /// ```
     ///
     /// **This gene reads negative on both outcome columns** — win −0.075 at
     /// z −2.16 and share −0.018 at z −1.84 — where the 80-turn probes had it at

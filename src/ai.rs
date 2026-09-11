@@ -3188,11 +3188,13 @@ pub struct BasicAi {
     /// players, standard speed, Emperor, `--rivals firaxis-mix --handicap
     /// rivals` — 90 games, 270 seats, `--turns 80 --p-default-on 0.5`:
     ///
+    /// ```text
     ///     gene                              on     off    diff       z
     ///     rapid-city-expansion-2          2.66    2.93   -0.27   -2.69
     ///     expansion-scales-with-difficulty 2.70    2.89   -0.19   -1.88
     ///     expansion-schedule               2.83    2.78   +0.05   +0.48
     ///     settler-walk-deadline            2.80    2.81   -0.01   -0.13
+    /// ```
     ///
     /// It persists rather than washing out: cities at turn 80 read −0.28
     /// (z −2.60) on the same split, and both city columns agree. The arms are
@@ -3220,11 +3222,13 @@ pub struct BasicAi {
     ///
     /// Re-run at `--turns 250`, same shape, 60 games, 180 seats:
     ///
+    /// ```text
     ///     column                    on      off     diff       z
     ///     cities_at_game_turn_60  2.918   2.867   +0.050   +0.42
     ///     cities (final)          7.649   8.892   -1.242   -2.75
     ///     score_share             0.204   0.212   -0.008   -0.70
     ///     win                     0.082   0.108   -0.026   -0.59
+    /// ```
     ///
     /// **The opening cost is gone**: +0.05 against the claimed −0.27. What is
     /// left is a −1.24 on final cities at z −2.75, which is one column of seven
