@@ -49002,6 +49002,23 @@ fn culture_fortifies_before_a_visible_peacetime_siege_party_attacks() {
     assert!(ai
         .culture_border_siege_walls_item(&unknown, 0, city, &plan)
         .is_none());
+    let mut unseen = game.clone();
+    let visible = unseen.player_vision_frame(0);
+    let hidden = unseen
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| unseen.wdist(home, *pos) <= 4 && !unseen.sees(&visible, *pos))
+        .expect("the fixture has nearby fog outside the capital's view");
+    for unit in unseen.units.values_mut().filter(|unit| unit.owner == 1) {
+        unit.pos = hidden;
+    }
+    assert!(
+        ai.culture_border_siege_walls_item(&unseen, 0, city, &plan)
+            .is_none(),
+        "nearby siege units in the fog cannot influence production"
+    );
     let mut recovery = plan.clone();
     recovery.strategy = GrandStrategy::Recovery;
     assert!(ai
