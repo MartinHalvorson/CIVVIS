@@ -160,6 +160,25 @@ libm = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
+# mimalloc replaces the platform allocator in every native binary. This is not a
+# micro-optimization aimed at a leaf share, and the distinction matters, because
+# `docs/SIMULATOR_PERFORMANCE.md` retires that whole class of change: of six
+# paired attempts, the two that paid were the ones whose loop could be named
+# exactly, and the profile's own conclusion is that "attribution is where this
+# tool runs out" — 33.32% of samples sit behind linker-folded frames, so a
+# change aimed at a named leaf is "a guess dressed as a measurement."
+#
+# The allocator is the one entry on that list exempt from the objection. It is
+# 16.84% of work as a roll-up, its largest single leaf is macOS's own
+# `_xzm_free` at 3.66% self, and replacing it changes no caller — so there is
+# nothing to attribute. The number below is paired `speed_ab.py`, not a guess.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# ⚠ Target-gated on purpose. `mimalloc` vendors a C library and cannot build for
+# wasm32; CI runs `cargo check --lib --locked --target wasm32-unknown-unknown`
+# (`.github/workflows/tests.yml`), and an unconditional dependency turns that
+# job red no matter how the `#[global_allocator]` in `src/lib.rs` is gated.
+mimalloc = "0.1"
+
 [profile.release]
 lto = "thin"
 # One codegen unit is worth about four percent of simulation throughput.
