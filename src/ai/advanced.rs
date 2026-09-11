@@ -24043,6 +24043,71 @@ impl AdvancedAi {
     /// the local defender first unless the host says Ancient Walls finish no
     /// later. Both require production time; imminence does not make a unit
     /// immediate, and a completed first wall also unlocks city bombardment.
+    fn culture_border_siege_walls_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        plan: &StrategicPlan,
+    ) -> Option<Item> {
+        if !self.peacetime_deterrence
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            || matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
+            || g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            })
+        {
+            return None;
+        }
+        let wall = Item::Building {
+            building: crate::name!("walls"),
+        };
+        if !g.can_produce(pid, city, &wall) {
+            return None;
+        }
+        let visible = g.player_vision_frame(pid);
+        let center = g.cities[&city].pos;
+        for other in &g.players {
+            if other.id == pid
+                || !other.alive
+                || other.is_minor
+                || other.is_barbarian
+                || !g.has_met(pid, other.id)
+                || g.same_team(pid, other.id)
+                || g.are_friends(pid, other.id)
+                || g.alliance_with(pid, other.id).is_some()
+            {
+                continue;
+            }
+            let mut troops = 0;
+            let mut siege = false;
+            for unit in g.units.values().filter(|unit| unit.owner == other.id) {
+                let spec = &g.rules.units[unit.kind];
+                if spec.class != "military"
+                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    || g.wdist(center, unit.pos) > 4
+                    || !g.sees(&visible, unit.pos)
+                    || !g.unit_visible_to(unit.id, pid)
+                {
+                    continue;
+                }
+                troops += 1;
+                siege |= spec.siege;
+            }
+            if troops >= 3 && siege {
+                return Some(wall);
+            }
+        }
+        None
+    }
+
     fn preemptive_major_war_defense_item(
         &self,
         g: &Game,
@@ -25181,6 +25246,29 @@ impl AdvancedAi {
             // Frozen historical controllers retain their original census.
             if self.victory_planning || self.active_victory_target(g).is_some() {
                 counts = self.counts_without_city_queue(g, pid, cid);
+            }
+            // Pharsalos started a twelve-turn Campus beside a visible Roman
+            // siege party; five-turn walls were requested only after war began.
+            if let Some(wall) = self.culture_border_siege_walls_item(g, pid, cid, plan) {
+                if g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|item| Self::active_queue_is_defensive(g, item))
+                {
+                    continue;
+                }
+                if g.apply(
+                    pid,
+                    &Action::Produce {
+                        city: cid,
+                        item: wall,
+                    },
+                )
+                .is_ok()
+                {
+                    self.clear_idle_production_streak(cid);
+                    continue;
+                }
             }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
