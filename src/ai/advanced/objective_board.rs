@@ -1925,6 +1925,45 @@ impl AdvancedAi {
 
     /// `force_groups` from the task forces: one group per force, the row's
     /// tile as objective, the posture from the row's doctrine.
+    /// 🔬 THE ARMY NEVER HOLDS THE FORTIFICATION IT IS TOLD TO TAKE.
+    ///
+    /// Measured over the recorded live runs of 2026-09-10/11 (the accounting is
+    /// on `later_moved_units` in `src/bin/civvis_orders.rs`). Of every FORTIFY
+    /// that read `not_fortified`, following the subject into the NEXT turn:
+    ///
+    ///     64.6%  the decider MOVED IT AGAIN next turn   (n = 2,507)
+    ///     29.2%  fortified on a later frame after all
+    ///      6.2%  neither
+    ///
+    /// and only ~1% was a host refusal, which `operation_refused` now names. So
+    /// the order lands; the decider takes it back one turn later. Civilization
+    /// VI pays fortification at +3 after one turn and +6 after two, and a unit
+    /// that moves loses it, so **the defence bonus is almost never collected**.
+    ///
+    /// ⭐ AND THE MOVES ARE A SHUFFLE, NOT A REDEPLOYMENT. Of the 2,008 churned
+    /// units with a position two turns later, **14.1% are back on the tile they
+    /// started from**, and of those that went elsewhere the net displacement is
+    /// 1 tile for 596, 2 for 603 and 3 for 320 — about seven in ten within two
+    /// tiles of the post they were told to dig into. It is spread across every
+    /// military kind (Archer 29.8%, Warrior 17.3%, Spearman 6.2%, a long tail),
+    /// so it is general behaviour rather than one role's bug.
+    ///
+    /// ⚠⚠ THIS IS `settler_target_hysteresis`' DEFECT ON MILITARY UNITS, AND NO
+    /// GENE ANSWERS IT. That note records "ONE SETTLER, TWO SITES, TWENTY-NINE
+    /// TURNS" — a settler alternating between two sites, walking a step toward
+    /// each in turn — and fixes it by retiring a dropped target for a few turns
+    /// so the next pick cannot flip straight back. The registry has
+    /// `settler-target-hysteresis`, `settler-guard-holds` and `escort-cap-holds`
+    /// for the civilian side and **nothing for a military post**;
+    /// `chokepoint-garrison` chooses where to stand, not whether to stay.
+    ///
+    /// The shape a gene would take, so the next reader starts from the
+    /// measurement rather than rediscovering it: a force whose objective the
+    /// board reassigns keeps the old one for a few turns unless the new row is
+    /// worth materially more, exactly as the settler path retires a dropped
+    /// site. ⚠ It is NOT a free win — `civvis-the-champion-churns-more-not-less`
+    /// records that motion and strength are not the same axis, so it wants a
+    /// screen and not a promotion on this note.
     fn project_forces(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
         self.force_groups.clear();
         let visible = self.battlefront_visibility(g, pid);
