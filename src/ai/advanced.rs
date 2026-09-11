@@ -5533,15 +5533,38 @@ pub struct AdvancedAi {
     /// | techs | 5.44 | 5.88 | +8% |
     /// | cities | 9.0 | 9.0 | flat |
     ///
-    /// Science per turn moved **+35.7 ± 18.8 (z +1.90)**, just under the
-    /// family-wise bar. The gene does exactly what it is for: more buildings
-    /// in the same number of districts, in the same number of cities, and more
-    /// science out of them. Four metrics move together in the predicted
-    /// direction, which is worth more than any one z at this size.
+    /// ## ⚠⚠ CONFIRMED AT 360 SEATS, AND THE ANSWER IS: MECHANISM YES, WINS NO
     ///
-    /// ⚠ **Wins did not move** (−0.1 pp, z −0.03) and could not: the run
-    /// resolves ±9.1 pp and an Emperor seat wins 3.3% of the time. This is a
-    /// mechanism result, not a win result, and it is one run.
+    /// The first run above was 120 seats and read optimistically. A second run
+    /// of 240 seats was taken at the same shape and the two pooled (360 seats,
+    /// resolving a win Δ of ±6.6 pp):
+    ///
+    /// | | Δ | z |
+    /// |---|---:|---:|
+    /// | techs at end | **+3.76 ± 1.27** | **+2.97** |
+    /// | science per turn | **+22.55 ± 10.51** | **+2.15** |
+    /// | techs at 150 | +0.69 ± 0.48 | +1.45 |
+    /// | **win** | **−2.7 pp** | **−1.13** |
+    /// | compute | +6.15 ± 3.55% | |
+    ///
+    /// ⭐ **The mechanism is real and now significant.** Techs at end and
+    /// science per turn both clear the family-wise bar, and buildings per city
+    /// rose +11% then +21% across the two runs. The gene does exactly what it
+    /// was built to do.
+    ///
+    /// 🔴 **And the wins do not follow.** −0.1 pp on the first run, −4.0 pp on
+    /// the second, −2.7 pp pooled at z −1.13 — not significant, but negative
+    /// in both runs and agreeing in sign with the ranking's Prince −14. More
+    /// science did not become more victories, and it cost +6% compute.
+    ///
+    /// ⚠ So this is NOT a case of a good gene mispriced at the wrong rung,
+    /// which is what the single optimistic run suggested. It is the pattern
+    /// this repository has recorded many times over: a defect's drama and its
+    /// Elo are unrelated. Do not ship it on this evidence.
+    ///
+    /// ⚠ What it does establish is that the empty Campus is REPAIRABLE — the
+    /// reserve fills it — so the science shortfall is not a hard constraint.
+    /// Whatever converts science into wins at Emperor is downstream of it.
     ///
     /// ⚠ It is also NOT in `deploy/live-force-on.txt` any more, though
     /// `docs/` records it being forced on live on 2026-08-30.
