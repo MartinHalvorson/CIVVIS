@@ -882,6 +882,57 @@ fn armed_siege_preempts_an_imminent_major_war_queue_with_a_defender() {
 }
 
 #[test]
+fn imminent_defense_uses_host_wall_completion_time() {
+    let (mut game, city, _) = empire_with_a_capital(71_148);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    let ai = AdvancedAi::new();
+    let defender = ai.base.best_military(&game, 0, city, Some(false)).unwrap();
+    let defender = Item::Unit {
+        unit: Name::new(&defender),
+    };
+    let wall = Item::Building {
+        building: crate::name!("walls"),
+    };
+    assert!(game.can_produce(0, city, &wall));
+    for (wall_turns, defender_turns, expect_wall) in [
+        (Some(2.0), Some(2.0), true),
+        (Some(1.0), Some(2.0), true),
+        (Some(3.0), Some(2.0), false),
+        (None, Some(2.0), false),
+        (Some(2.0), None, false),
+        (Some(-1.0), Some(2.0), false),
+        (Some(f64::NAN), Some(2.0), false),
+    ] {
+        std::sync::Arc::make_mut(&mut game.host_buildable).insert(
+            city,
+            [
+                (
+                    Game::production_block_key(&wall),
+                    crate::game::HostMenuEntry {
+                        cost: None,
+                        turns: wall_turns,
+                    },
+                ),
+                (
+                    Game::production_block_key(&defender),
+                    crate::game::HostMenuEntry {
+                        cost: None,
+                        turns: defender_turns,
+                    },
+                ),
+            ]
+            .into(),
+        );
+        let chosen = ai.preemptive_major_war_defense_item(&game, 0, city, Some(city), true, true);
+        assert_eq!(
+            chosen.as_ref(),
+            Some(if expect_wall { &wall } else { &defender }),
+            "wall {wall_turns:?}, defender {defender_turns:?}"
+        );
+    }
+}
+
+#[test]
 fn armed_siege_buys_an_immediate_defender_before_a_wall_can_finish() {
     // A production handoff cannot save a city when the battlefront can already
     // attack its City Center. The armed live treatment must spend an actually
