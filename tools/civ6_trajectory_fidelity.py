@@ -174,6 +174,24 @@ SUBSYSTEMS = [
         "cities_at_game_turn_60",
         "cities held at game turn 60",
     ),
+    # ⚠ Sim-side only for now: the live ladder records no district or building
+    # count on its row, so these read "unavailable (live side has no value)"
+    # until it does. They are declared anyway because the shortfall they are
+    # meant to explain is the largest one this ledger has found — cities 0.83
+    # of the leader's, science per city 0.32 — and a subsystem nobody declared
+    # is a comparison nobody will think to add.
+    Subsystem(
+        "specialty_districts",
+        "_specialty_districts",
+        "_specialty_per_city",
+        "specialty districts per city",
+    ),
+    Subsystem(
+        "buildings_per_city",
+        "_buildings_per_city",
+        "_buildings_per_city",
+        "buildings per city",
+    ),
     Subsystem(
         "cities_taken", "_cities_taken", "cities_taken", "cities conquered by the end"
     ),
@@ -442,6 +460,15 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
                 if seat.get("kind") != "game":
                     continue  # a fixed opponent is the field, not a reading
                 record = {"_cell": cell}
+                cities = seat.get("cities")
+                if isinstance(cities, (int, float)) and cities > 0:
+                    for key, source in (
+                        ("_specialty_per_city", "specialty_districts"),
+                        ("_buildings_per_city", "buildings"),
+                    ):
+                        value = seat.get(source)
+                        if isinstance(value, (int, float)):
+                            record[key] = float(value) / float(cities)
                 for key in ("cities_taken", "cities_lost"):
                     value = seat.get(key)
                     if isinstance(value, (int, float)):
