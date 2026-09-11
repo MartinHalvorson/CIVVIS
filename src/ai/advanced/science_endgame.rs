@@ -23,6 +23,7 @@ impl AdvancedAi {
                 || g.players[pid]
                     .science_projects
                     .contains("exoplanet_expedition")
+                || Self::science_project_is_queued(g, pid, "exoplanet_expedition")
                 || (self.raced_target().is_none()
                     && LAUNCHES
                         .iter()
