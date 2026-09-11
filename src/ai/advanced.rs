@@ -5846,6 +5846,35 @@ pub struct AdvancedAi {
     /// 248 with **238 Favor banked** and 2 Diplomatic Victory Points against
     /// the leader's 19. Favor expires with the game; a vote behind the
     /// seat's own `congress_choice` is never worse than banking it.
+    ///
+    /// ## ⚠⚠ 2026-09-11: ITS RANKING NUMBER IS DILUTED ABOUT EIGHTFOLD
+    ///
+    /// `congress_ballot_size` reads this flag as
+    /// `self.lane_votes_its_favor && self.victory_target ==
+    /// Some(VictoryTarget::Diplomacy)`, so the gene is **inert on any seat
+    /// whose assigned target is not Diplomacy** — it cannot change one ballot
+    /// there.
+    ///
+    /// `gene_screen` draws a target per seat from `--target-mix`, and the
+    /// default mix is all seven. Counted on a 240-seat batch: 29 seats
+    /// diplomatic against 211 that are not, so **about 12% of the batch can
+    /// respond to the flag at all** and the whole-batch win Δ the ranking
+    /// reads is that effect divided by roughly eight. Rank 205 at 34.3%
+    /// confidence is what a real effect looks like after that division, and it
+    /// is also what no effect looks like. **The ranking cannot tell them
+    /// apart for this gene.**
+    ///
+    /// ⚠ The same applies to the live seat from the other direction: the
+    /// ladder was retargeted from diplomatic to science (`#2824`, 2026-08-31),
+    /// so `victory_target` is `Science` there and this gene is inert on the
+    /// deployed seat however the ledger sets it.
+    ///
+    /// To price it honestly, pin the mix:
+    /// `gene_screen --target-mix diplomatic --genes lane-votes-its-favor`,
+    /// and read it on Diplomatic Victory Points rather than on wins.
+    ///
+    /// ⚠ This is a statement about the MEASUREMENT, not a claim that the gene
+    /// helps. A gene that cannot be measured is not thereby good.
     lane_votes_its_favor: bool,
     /// Stop paying for a victory lane that cannot be won, and let the empire
     /// score instead.
