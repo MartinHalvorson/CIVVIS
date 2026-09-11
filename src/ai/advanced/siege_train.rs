@@ -269,22 +269,6 @@ fn unit_power(g: &Game, uid: u32) -> f64 {
     effective_strength(g.unit_strength(unit, true), unit.hp)
 }
 
-/// The train: the group's land combat units and any of ours already within
-/// reach of the city, so two groups on one city read one bill.
-fn siege_force(g: &Game, pid: usize, city: &CityView, group_units: &[u32]) -> Vec<u32> {
-    let mut force: BTreeSet<u32> = group_units
-        .iter()
-        .copied()
-        .filter(|uid| arm_of(g, *uid) != Arm::Other)
-        .collect();
-    for uid in g.player_unit_ids(pid) {
-        if arm_of(g, uid) != Arm::Other && g.wdist(g.units[&uid].pos, city.pos) <= OBJECTIVE_REACH {
-            force.insert(uid);
-        }
-    }
-    force.into_iter().collect()
-}
-
 /// What the city asks of the force that takes it.
 fn siege_bill(g: &Game, pid: usize, city: &CityView) -> f64 {
     let defenders: f64 = g
@@ -839,9 +823,44 @@ impl AdvancedAi {
         })
     }
 
+    /// Only groups whose orders serve this city supply its siege roster.
+    /// Neighboring sieges must not reserve each other's takers or posts.
+    fn siege_force(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &CityView,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) -> Vec<u32> {
+        self.force_groups
+            .iter()
+            .chain(std::iter::once(group))
+            .filter(|group| {
+                group.domain == ForceDomain::Land
+                    && self.siege_city_of(g, pid, plan, group) == Some(city.id)
+            })
+            .flat_map(|group| group.units.iter().copied())
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| unit.owner == pid)
+                    && arm_of(g, *uid) != Arm::Other
+                    && !self.guard_is_reserved_for_civilian(*uid)
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     /// The state machine, once a turn per city: the bill, the strength, the
     /// ring, the stage, the taker, the census and the journal line.
-    fn assess_siege(&mut self, g: &Game, pid: usize, cid: u32, group: &ForceGroup) {
+    fn assess_siege(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) {
         let turn = g.turn;
         if self
             .sieges
@@ -858,7 +877,7 @@ impl AdvancedAi {
         self.reserved_units
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         let arena = g.is_arena();
-        let force = siege_force(g, pid, &city, &group.units);
+        let force = self.siege_force(g, pid, &city, plan, group);
         let strength: f64 = force.iter().map(|uid| unit_power(g, *uid)).sum();
         let staged: f64 = force
             .iter()
@@ -985,7 +1004,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<bool> {
-        self.assess_siege(g, pid, cid, group);
+        self.assess_siege(g, pid, cid, plan, group);
         let siege = self.sieges.get(&cid)?.clone();
         let city = CityView::of(g, cid)?;
         if city.owner == pid || siege.stage == SiegeStage::Hold {
@@ -1673,6 +1692,9 @@ impl AdvancedAi {
         Some(true)
     }
 }
+
+#[cfg(test)]
+mod ownership_tests;
 
 #[cfg(test)]
 mod capture_tests;
