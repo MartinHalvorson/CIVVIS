@@ -13131,6 +13131,15 @@ impl AdvancedAi {
         // replacement: the Science lane's 4.2 always wins, and with
         // `research_economy` off the floor is 0.0 and this line is a no-op.
         let science = science.max(self.research_weight);
+        // Peaceful Culture development needs income for Naturalists and Rock
+        // Bands as well as civic unlocks. Keep wartime and adaptive valuations.
+        let faith = if self.victory_target == Some(VictoryTarget::Culture)
+            && matches!(strategy, GrandStrategy::Expansion | GrandStrategy::Culture)
+        {
+            faith.max(2.5)
+        } else {
+            faith
+        };
         // See `tally_culture`: on the tally seat a point of culture buys at
         // least what a point of science buys.
         let culture = if self.tally_culture && strategy != GrandStrategy::Culture {
