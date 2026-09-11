@@ -188,6 +188,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
 | `domination-lane-hands-over` | off (unmeasured) | The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES` instead of waiting for a growing city target. | 1 \| 1 |
+| `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 
 ## Removed from the code
