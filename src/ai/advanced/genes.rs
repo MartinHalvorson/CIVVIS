@@ -2299,6 +2299,18 @@ pub const GENES: &[Gene] = &[
     // expansion axis, at the building arm's own constants and its own
     // shortfall scale.
     Gene { tag: "expansion-hall-district", field: "expansion_hall_district", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_hall_district, disable: AdvancedAi::disable_expansion_hall_district },
+    // Preserve the published order of these new rows; tail markers stay free
+    // so the next registration is also an append.
+    Gene { tag: "capture-hold-chain", field: "capture_hold_chain", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_hold_chain, disable: AdvancedAi::disable_capture_hold_chain },
+    Gene { tag: "capital-campaign-router", field: "capital_campaign_router", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_campaign_router, disable: AdvancedAi::disable_capital_campaign_router },
+    Gene { tag: "culture-faith-reservation", field: "culture_faith_reservation", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_reservation, disable: AdvancedAi::disable_culture_faith_reservation },
+    Gene { tag: "culture-tourism-payback", field: "culture_tourism_payback", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_tourism_payback, disable: AdvancedAi::disable_culture_tourism_payback },
+    Gene { tag: "great-work-completion-value", field: "great_work_completion_value", kind: Kind::OptIn, enable: AdvancedAi::enable_great_work_completion_value, disable: AdvancedAi::disable_great_work_completion_value },
+    Gene { tag: "reinforce-before-stall", field: "reinforce_before_stall", kind: Kind::OptIn, enable: AdvancedAi::enable_reinforce_before_stall, disable: AdvancedAi::disable_reinforce_before_stall },
+    Gene { tag: "siege-positive-damage-budget", field: "siege_positive_damage_budget", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_positive_damage_budget, disable: AdvancedAi::disable_siege_positive_damage_budget },
+    Gene { tag: "tourism-land-reservation", field: "tourism_land_reservation", kind: Kind::OptIn, enable: AdvancedAi::enable_tourism_land_reservation, disable: AdvancedAi::disable_tourism_land_reservation },
+    Gene { tag: "upgrade-window-campaign", field: "upgrade_window_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_upgrade_window_campaign, disable: AdvancedAi::disable_upgrade_window_campaign },
+    Gene { tag: "victory-deadline-budget", field: "victory_deadline_budget", kind: Kind::OptIn, enable: AdvancedAi::enable_victory_deadline_budget, disable: AdvancedAi::disable_victory_deadline_budget },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

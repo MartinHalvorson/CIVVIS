@@ -184,14 +184,24 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
+| `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
+| `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
+| `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
+| `culture-tourism-payback` | off (unmeasured) | Enable `culture-tourism-payback` for measurement. | 1 \| 1 |
 | `denial-outranks-expansion` | off (unmeasured) | A rival close to winning is answered before the lane's expansion rule. | 1 \| 1 |
 | `domination-capital-focus` | off (unmeasured) | Rank required capitals within the selected domination campaign front. | 1 \| 1 |
 | `domination-lane-hands-over` | off (unmeasured) | The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES` instead of waiting for a growing city target. | 1 \| 1 |
 | `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
+| `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
+| `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
+| `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |
+| `tourism-land-reservation` | off (unmeasured) | Enable `tourism-land-reservation` for measurement. | 1 \| 1 |
+| `upgrade-window-campaign` | off (unmeasured) | Enable `upgrade-window-campaign` for measurement. | 1 \| 1 |
+| `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 
 ## Removed from the code
 
