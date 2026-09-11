@@ -1575,6 +1575,29 @@ end
 -- you start this" rather than reasoning about terrain, charges and movement
 -- keeps the controller honest: a rule this code does not model refuses the
 -- order, and the next one down is tried instead.
+-- ★★★★ AND WHEN NOTHING STARTS, SAY SO. `operate` returns false when the host
+-- answers `CanStartOperation` with "no", and the caller then simply moves on.
+-- The bridge sees only the consequence — the unit is not fortified — and cannot
+-- tell a host refusal from an order the mod never issued.
+--
+-- That ambiguity is the whole of the largest unexplained failure on the ledger.
+-- Over the 42 recorded live runs of 2026-09-10/11, **82.5% of FORTIFY orders
+-- fail** (7,711 against 1,637 verified) and FORTIFY is 36% of every failed
+-- order, second only to MOVE_TO. Of the 5,442 that read `not_fortified`, 95%
+-- are a MOVE followed by a FORTIFY — the case `later_moved_units` flagged in
+-- August as "should have stuck; a real question" — and 72% are still not
+-- fortified three turns later, so they are not an early verdict.
+--
+-- Two explanations were ruled out from the recorded runs before adding this:
+-- the units are NOT on the `UNITOPERATION_ALERT` fallback (their activity mix
+-- matches every other unit's, with LESS sentry, not more), and the `moves`
+-- those records show is the turn's opening value rather than what remained
+-- after the move, so "it had no movement left" is unsupported either way.
+--
+-- MOVE_TO already has this: `move_noop` carries a `why` and the bridge reads it
+-- as `host_noop_<why>`. This is the same instrument for the operations that
+-- happen in place. It fires once per call rather than once per candidate, so a
+-- FORTIFY that fell through to ALERT and started is not reported at all.
 local function firstOperation(unit, names)
 	for _, name in ipairs(names) do
 		local hash = OP[name];
@@ -1582,6 +1605,12 @@ local function firstOperation(unit, names)
 			return name;
 		end
 	end
+	emit("operation_refused", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		unit = try(function() return unit:GetID(); end, -1),
+		unit_kind = unitTypeName(unit),
+		tried = names,
+	});
 	return nil;
 end
 

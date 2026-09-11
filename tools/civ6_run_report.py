@@ -59,6 +59,73 @@ VICTORY_NAMES = {
 #: The band every recorded Settler win has sat in at turn 60.
 WIN_BAND = (4, 6)
 
+#: ⚠⚠ AND THE MAP SIZE IT WAS MEASURED ON. `WIN_BAND` is not a fact about
+#: Civilization VI; it is a fact about 218 completed live runs that were all
+#: `MAPSIZE_SMALL`, because the lobby ignored the configured size until the
+#: fixes of 2026-09-10 (`civvis-the-lobby-was-never-a-policy-20260910`). Land
+#: per civilization is not the same on another size, so neither is the number
+#: of cities an opening can reach, and a band carried across that line is a
+#: claim nobody measured.
+#:
+#: This mattered immediately. The first 17 runs after the size began to be
+#: applied were `MAPSIZE_TINY` and **0 of 17** sat inside the band, against
+#: 59% of the 389 `MAPSIZE_SMALL` attempts that recorded the column — a shift
+#: from a mean of 3.83 cities to 2.53. Pooling the two sizes in one aggregate
+#: hides that, which is why `aggregate` now splits on it.
+#:
+#: ## ⭐⭐⭐ 2026-09-11: IT IS THE RIVALS, NOT THE MAP, AND NOT THE BRIDGE
+#:
+#: The paragraph above reads as "the size change cost us the band". Three
+#: simulator arms at the Tiny shape (44×26, 4 players, 4 city-states, 80 turns,
+#: one variable moved at a time) say otherwise:
+#:
+#:     arm                                              seats  mean  in band
+#:     Tiny shape · online   · prince  · CIVVIS rivals    120  3.42     48%
+#:     Tiny shape · standard · emperor · CIVVIS rivals    120  3.68     57%
+#:     Tiny shape · standard · emperor · FIRAXIS rivals    90  2.23      3%
+#:     LIVE       · Tiny     · emperor · Firaxis            17  2.53      0%
+#:
+#: ⭐ **The live seat is not losing cities to the bridge.** Matched on shape,
+#: speed, difficulty and rivals, the simulator lands on 2.23 against live's
+#: 2.53 — the same answer. Whatever is happening happens in the game, not in
+#: the plumbing.
+#:
+#: ⭐⭐ **And the Tiny map alone is survivable.** Against CIVVIS rivals the same
+#: 44×26 board yields 3.68 cities and 57% in band, which is the Small-map live
+#: figure (3.83, 59%) to within noise. Swapping in Firaxis rivals — and nothing
+#: else — costs **1.45 cities at turn 60** and takes in-band from 57% to 3%.
+#:
+#: 🔴 So the finding is an INTERACTION, and neither half of it alone: a small
+#: board is fine until the neighbours actually contest it, and Firaxis AI at
+#: Emperor contests it. On `MAPSIZE_SMALL` against the same rivals the live seat
+#: reached the band 59% of the time; on `MAPSIZE_TINY` it reaches it never.
+#:
+#: ⚠ Two cautions on these numbers. The simulator's 44×26 approximates
+#: `MAPSIZE_TINY` rather than reproducing its map script, and the live arm is 17
+#: runs. What carries the weight is the 90-seat Firaxis arm reproducing the live
+#: mean, and the 120-seat CIVVIS arm differing from it by more than a city on an
+#: identical board.
+BAND_MEASURED_ON = "MAPSIZE_SMALL"
+
+#: How a run reports a size it never recorded. Older runs predate the field.
+UNKNOWN_MAP_SIZE = "unrecorded"
+
+#: What `AdvancedAi::opening_settler_waits` claims its own opening does, in its
+#: doc comment on `src/ai/advanced.rs`: "the `SCOUT,BUILDER,SETTLER…` half of
+#: the recorded openings orders its first Settler at t9-13 and founds city 2 at
+#: t19-24". Recorded here so the claim can be CHECKED against runs rather than
+#: trusted -- `AGENTS.md` opens on exactly this defect class, a sentence stating
+#: a fact that nothing verifies.
+#:
+#: ⚠ It is stated unconditionally in that comment but was measured before the
+#: lobby applied a map size, so like `WIN_BAND` it belongs to `BAND_MEASURED_ON`.
+DOCUMENTED_CITY_TWO = (19, 24)
+
+#: A city arrives at population one when it is FOUNDED. A captured city arrives
+#: with the population it had, so this is how the report tells settling from
+#: conquest without an event for either.
+FOUNDED_POP = 1
+
 #: The four launch projects in the order the engine requires them, under the
 #: host's own identifiers. `src/mirror.rs` maps these to the engine's names;
 #: the Gathering Storm ruleset the ladder plays calls the third MARS_BASE, not
@@ -402,9 +469,16 @@ def report(run: Path, every: int) -> dict:
     reached_60 = rows[-1]["turn"] >= 60
     cities_at_60 = (len(at60[-1].get("cities") or [])
                     if at60 and reached_60 else None)
+    size = map_size(run)
+    founded = founding_turns(rows)
     return {
         "run": run.name,
         "turns": rows[-1]["turn"],
+        "map_size": size,
+        "founding_turns": founded,
+        "city_two_turn": founded[1] if len(founded) > 1 else None,
+        "fourth_city_turn": founded[3] if len(founded) > 3 else None,
+        "band_applies": size == BAND_MEASURED_ON,
         "cities_at_60": cities_at_60,
         "in_win_band": (cities_at_60 is not None
                         and WIN_BAND[0] <= cities_at_60 <= WIN_BAND[1]),
@@ -538,6 +612,47 @@ def render(data: dict) -> str:
     return "\n".join(lines)
 
 
+def founding_turns(rows: list[dict]) -> list[int]:
+    """The turn each of our cities first appears at population one.
+
+    There is no founding event in the record, so this reads the state frames:
+    a city seen for the first time at `FOUNDED_POP` was settled, and one that
+    arrives larger was captured. Conquest is excluded deliberately -- this
+    measures the settler pipeline, and a captured city says nothing about it.
+    """
+    first: dict[object, tuple[int, object]] = {}
+    for row in rows:
+        turn = row.get("turn")
+        if turn is None:
+            continue
+        for city in row.get("cities") or []:
+            if not isinstance(city, dict):
+                continue
+            key = city.get("id")
+            if key is None:
+                key = city.get("name")
+            if key is None or key in first:
+                continue
+            first[key] = (turn, city.get("pop"))
+    return sorted(turn for turn, pop in first.values()
+                  if pop is None or pop == FOUNDED_POP)
+
+
+def map_size(run: Path) -> str:
+    """The size this run actually played, from its own summary.
+
+    Read rather than assumed: the lobby ignored the configured size until
+    2026-09-10, so a run's size is a property of the run and not of the policy
+    that launched it.
+    """
+    try:
+        doc = json.loads((run / "summary.json").read_text())
+    except (OSError, ValueError):
+        return UNKNOWN_MAP_SIZE
+    size = doc.get("map_size") if isinstance(doc, dict) else None
+    return size if isinstance(size, str) and size else UNKNOWN_MAP_SIZE
+
+
 def aggregate(root: Path, every: int) -> dict:
     """The same questions, asked of every recorded run instead of one.
 
@@ -557,6 +672,9 @@ def aggregate(root: Path, every: int) -> dict:
     if not runs:
         raise ReportError(f"no run directories under {root}")
     by_cities: dict[int, list[bool]] = {}
+    by_size: dict[str, dict] = {}
+    cadence: dict[int, list[int]] = {}
+    fourth_by_sixty = fourth_seen = 0
     crossovers: list[int] = []
     never_led = wins = completed = skipped_unfinished = skipped_short = 0
     ballots_multi = ballot_count_matches = 0
@@ -598,11 +716,24 @@ def aggregate(root: Path, every: int) -> dict:
         completed += 1
         won = bool(data["ending"].get("won"))
         wins += won
+        for index, turn in enumerate(data.get("founding_turns") or []):
+            cadence.setdefault(index + 1, []).append(turn)
+        fourth = data.get("fourth_city_turn")
+        if fourth is not None:
+            fourth_seen += 1
+            fourth_by_sixty += fourth <= 60
         cities = data["cities_at_60"]
+        size = data.get("map_size", UNKNOWN_MAP_SIZE)
         if cities is None:
             skipped_short += 1
         else:
             by_cities.setdefault(cities, []).append(won)
+            seat = by_size.setdefault(size, {"games": 0, "wins": 0, "in_band": 0,
+                                             "cities": []})
+            seat["games"] += 1
+            seat["wins"] += won
+            seat["in_band"] += WIN_BAND[0] <= cities <= WIN_BAND[1]
+            seat["cities"].append(cities)
         if won:
             continue
         cross = data["crossover"]
@@ -624,6 +755,22 @@ def aggregate(root: Path, every: int) -> dict:
         "skipped_before_turn_60": skipped_short,
         "by_cities_at_60": {c: {"games": len(v), "wins": sum(v)}
                             for c, v in sorted(by_cities.items())},
+        "band_measured_on": BAND_MEASURED_ON,
+        "founding_cadence": {
+            n: {"runs": len(v), "median_turn": sorted(v)[len(v) // 2]}
+            for n, v in sorted(cadence.items()) if v
+        },
+        "documented_city_two": list(DOCUMENTED_CITY_TWO),
+        "fourth_city_by_turn_60": {"runs": fourth_seen, "in_time": fourth_by_sixty},
+        "by_map_size": {
+            size: {
+                "games": v["games"], "wins": v["wins"], "in_band": v["in_band"],
+                "mean_cities_at_60": round(sum(v["cities"]) / v["games"], 2),
+                "band_applies": size == BAND_MEASURED_ON,
+            }
+            for size, v in sorted(by_size.items(),
+                                  key=lambda kv: -kv[1]["games"])
+        },
         "never_led": never_led,
         "crossovers": crossovers,
         "crossover_median": crossovers[len(crossovers) // 2] if crossovers else None,
@@ -663,6 +810,40 @@ def render_aggregate(data: dict) -> str:
         lines.append(f"    launches: {spread}")
         lines.append(f"    the race was refused at least once in "
                      f"{race['refused']}; the drive engaged in {race['drove']}")
+    cadence = data.get("founding_cadence") or {}
+    if cadence:
+        lines.append("")
+        lines.append("  when each city was FOUNDED (captured cities excluded):")
+        lines.append(f"  {'city':>6} {'runs':>5} {'median turn':>12}")
+        for n, cell in sorted(cadence.items(), key=lambda kv: int(kv[0])):
+            note = ""
+            if int(n) == 2:
+                lo, hi = data.get("documented_city_two", DOCUMENTED_CITY_TWO)
+                if not lo <= cell["median_turn"] <= hi:
+                    note = (f"   ⚠ the opening book's own doc says t{lo}-{hi}")
+            lines.append(f"  {n:>6} {cell['runs']:>5} {cell['median_turn']:>12}{note}")
+        fourth = data.get("fourth_city_by_turn_60") or {}
+        if fourth.get("runs"):
+            lines.append(f"  a fourth city by turn 60 -- the bottom of the "
+                         f"{band} band -- in {fourth['in_time']} of "
+                         f"{fourth['runs']} runs")
+    sizes = data.get("by_map_size") or {}
+    if sizes:
+        lines.append("")
+        measured = data.get("band_measured_on", BAND_MEASURED_ON)
+        lines.append(f"  the {band} band was measured on {measured} ONLY. Land per")
+        lines.append("  civilization differs by size, so the opening it can reach does too:")
+        lines.append(f"  {'map size':>22} {'games':>6} {'mean c@60':>10} "
+                     f"{'in band':>8} {'wins':>5}")
+        for size, cell in sizes.items():
+            mark = "" if cell["band_applies"] else "   ⚠ band not measured here"
+            share = cell["in_band"] / cell["games"]
+            lines.append(f"  {size:>22} {cell['games']:>6} "
+                         f"{cell['mean_cities_at_60']:>10.2f} "
+                         f"{cell['in_band']:>3} ({share:>3.0%}) {cell['wins']:>5}{mark}")
+        if len(sizes) > 1:
+            lines.append("  ⚠⚠ MORE THAN ONE SIZE IS POOLED IN THE TABLE BELOW.")
+            lines.append("  Read the split above before reading the pooled rate.")
     lines.append("")
     lines.append(f"  {'cities@60':>9} {'games':>6} {'wins':>5} {'rate':>6}")
     inside = outside = inside_won = outside_won = 0

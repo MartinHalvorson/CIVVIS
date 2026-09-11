@@ -287,6 +287,13 @@ const EXPANSION_BEFORE_PROPHET_CITIES: usize = 3;
 
 const HOSTED_AMENITY_DISCOUNT: f64 = 0.75;
 
+/// The same discount for the expansion path: a Government Plaza is worth the
+/// Ancestral Hall it will host, less the turns between standing the district
+/// and finishing the building. Set equal to `HOSTED_AMENITY_DISCOUNT` on
+/// purpose — the two terms answer the same question about the same kind of
+/// empty plot, and a second number here would only be a second thing to tune.
+const HOSTED_EXPANSION_DISCOUNT: f64 = HOSTED_AMENITY_DISCOUNT;
+
 /// What each further city a regional amenity building reaches is worth, as a
 /// share of the local city's own weight. See `AdvancedAi::amenity_district_path`.
 const REGIONAL_AMENITY_REACH_DISCOUNT: f64 = 0.8;
@@ -5308,6 +5315,57 @@ pub struct AdvancedAi {
     chokepoint_gates: chokepoints::GatePlan,
 
     // ---- append: e-f ------------------------------------------------
+    /// A district is worth the land-grab building it will host.
+    ///
+    /// ★★★★ THE PLAZA IS BUILT AT TURN 112 AND THE OPENING NEEDED IT AT 40.
+    /// Over the 38 recorded live runs of 2026-09-10/11 a `DISTRICT_GOVERNMENT`
+    /// stands in 25, at a **median turn 112**; the Ancestral Hall
+    /// (`BUILDING_GOV_WIDE`) in **8**, at a median turn **119**. The fourth
+    /// city, which the opening band needs by turn 60, arrives at a median turn
+    /// 77 — so the Hall's +50% Settlers and its free Builder in every new city
+    /// land 59 turns after the window they serve, and 17 of the 25 plazas
+    /// never host it at all.
+    ///
+    /// `expansion_hall` prices the Hall correctly and cannot reach this: it
+    /// prices a BUILDING, and says so in its own note — "nothing else moves:
+    /// the plaza's own placement ... keep their prices". The district arm reads
+    /// `spec.yields`, chain debt and `district_amenity`; a Government Plaza
+    /// carries no yield and is not a `specialty` district, so it scores like an
+    /// empty plot and the building that would redeem it cannot be chosen until
+    /// the plot is already paid for.
+    ///
+    /// This is `amenity_district_path`'s repair on the expansion axis, in the
+    /// same shape and with the same scale: `hosted_expansion_path` values the
+    /// best hosted building the player can build now at the building arm's own
+    /// `EXPANSION_HALL_*` constants, and the caller multiplies by the identical
+    /// shortfall, so the district's credit fades to nothing on exactly the turn
+    /// the Hall's does. Opt-in gene `expansion-hall-district`.
+    ///
+    /// ## 🔬 FIRST PROBE (2026-09-11): every column points the right way, none resolves
+    ///
+    /// 60 games, 360 seats, `--turns 80 --p-on 0.5` — a PROBE shape, not a
+    /// ledger source: eighty turns completes no game, so the win and share
+    /// columns of that run mean nothing and are not quoted. What eighty turns
+    /// does cover is the only window this gene acts in.
+    ///
+    ///     column                     on       off      diff      z
+    ///     cities_at_game_turn_60   4.224    4.096    +0.128   +0.84
+    ///     cities_60                3.098    2.972    +0.127   +1.30
+    ///     cities                   5.350    5.096    +0.254   +1.43
+    ///     districts                5.667    5.407    +0.260   +0.89
+    ///     specialty_districts      5.142    4.994    +0.148   +0.56
+    ///     buildings               11.251   11.023    +0.229   +0.41
+    ///
+    /// ⭐ Six columns, six positive signs, nothing past z = 1.43. The signs are
+    /// encouraging and are NOT six independent confirmations — those columns
+    /// move together — so this is one weak positive reading, not six.
+    ///
+    /// ⚠ It is underpowered by roughly 5.6x. Resolving the +0.128 on cities at
+    /// turn 60 at z = 2 needs the standard error down from 0.152 to 0.064,
+    /// which is about **2,000 seats** — some 340 games at this shape. That is
+    /// the number to bring, and the reason this row still reads `unmeasured`
+    /// rather than anything better.
+    expansion_hall_district: bool,
     /// Take a small neighbour's city in the opening: a met rival's known
     /// city within twelve tiles of the capital, the capital's production
     /// reserved for three shooters and two melee bodies ahead of the second
@@ -8039,6 +8097,7 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            expansion_hall_district: false,
             early_conquest_opening: false,
             expansion_scales_with_difficulty: false,
             expansion_best_idle_city: false,
@@ -12753,6 +12812,81 @@ impl AdvancedAi {
             .map(|(_, spec)| spec.amenity)
             .fold(0.0, f64::max);
         hosted * HOSTED_AMENITY_DISCOUNT
+    }
+
+    /// The expansion weight a district earns from the land-grab building it
+    /// would host, in the same units as the building arm's `expansion_hall`
+    /// term. Zero for a family that hosts nothing the player can build yet.
+    ///
+    /// ★★★★ THE PLAZA IS BUILT AT TURN 112 AND THE OPENING NEEDED IT AT 40.
+    /// Measured over the 38 recorded live runs of 2026-09-10/11: a
+    /// `DISTRICT_GOVERNMENT` stands in 25 of them at a **median turn 112**, the
+    /// Ancestral Hall (`BUILDING_GOV_WIDE`) in **8**, at a median turn **119**
+    /// — and the fourth city, which the opening band needs by turn 60, arrives
+    /// at a median turn 77. So the Hall's +50% Settlers and its free Builder in
+    /// every new city land 59 turns after the window they exist to serve, and
+    /// 17 of the 25 plazas never host it at all.
+    ///
+    /// `expansion_hall` already prices the Hall correctly. It cannot help,
+    /// because it prices a BUILDING and says so — "nothing else moves: the
+    /// plaza's own placement ... keep their prices" — while the district arm
+    /// reads only `spec.yields`, chain debt and `district_amenity`, and a
+    /// Government Plaza carries no yield and is not a `specialty` district. It
+    /// scores like an empty plot, exactly as the Entertainment Complex did
+    /// before `amenity_district_path`, and the building that would redeem it
+    /// cannot be chosen until the plot is already paid for.
+    ///
+    /// This is that same repair on the other axis, and it is deliberately the
+    /// same shape: the best hosted building the player can actually build now,
+    /// its `free_builder_new_city` and `settler_production_pct` valued at the
+    /// building arm's own `EXPANSION_HALL_*` constants, discounted once for the
+    /// turns between district and building. The caller applies the identical
+    /// shortfall `scale`, so the district's credit fades to nothing on exactly
+    /// the turn the Hall's does.
+    fn hosted_expansion_path(g: &Game, pid: usize, family: &Name) -> f64 {
+        let player = &g.players[pid];
+        g.rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| {
+                !spec.wonder
+                    && spec.requires.is_empty()
+                    && spec.requires_any.is_empty()
+                    && spec
+                        .district
+                        .is_some_and(|district| g.district_family(district) == *family)
+                    && spec
+                        .unique_to
+                        .as_deref()
+                        .is_none_or(|civ| civ == player.civ.as_str())
+                    && spec
+                        .tech
+                        .as_ref()
+                        .is_none_or(|tech| player.techs.contains(tech))
+                    && spec
+                        .civic
+                        .as_ref()
+                        .is_none_or(|civic| player.civics.contains(civic))
+            })
+            .map(|(_, spec)| {
+                let free_builder = spec
+                    .effects
+                    .get("free_builder_new_city")
+                    .copied()
+                    .unwrap_or(0.0)
+                    .clamp(0.0, 1.0);
+                let settler_pct = spec
+                    .effects
+                    .get("settler_production_pct")
+                    .copied()
+                    .unwrap_or(0.0)
+                    .clamp(0.0, 50.0)
+                    / 50.0;
+                free_builder * EXPANSION_HALL_BUILDER_VALUE
+                    + settler_pct * EXPANSION_HALL_SETTLER_VALUE
+            })
+            .fold(0.0, f64::max)
+            * HOSTED_EXPANSION_DISCOUNT
     }
 
     /// The extra weight a regional amenity building earns from the other own
@@ -24043,6 +24177,71 @@ impl AdvancedAi {
     /// the local defender first unless the host says Ancient Walls finish no
     /// later. Both require production time; imminence does not make a unit
     /// immediate, and a completed first wall also unlocks city bombardment.
+    fn culture_border_siege_walls_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+        plan: &StrategicPlan,
+    ) -> Option<Item> {
+        if !self.peacetime_deterrence
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            || matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
+            || g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            })
+        {
+            return None;
+        }
+        let wall = Item::Building {
+            building: crate::name!("walls"),
+        };
+        if !g.can_produce(pid, city, &wall) {
+            return None;
+        }
+        let visible = g.player_vision_frame(pid);
+        let center = g.cities[&city].pos;
+        for other in &g.players {
+            if other.id == pid
+                || !other.alive
+                || other.is_minor
+                || other.is_barbarian
+                || !g.has_met(pid, other.id)
+                || g.same_team(pid, other.id)
+                || g.are_friends(pid, other.id)
+                || g.alliance_with(pid, other.id).is_some()
+            {
+                continue;
+            }
+            let mut troops = 0;
+            let mut siege = false;
+            for unit in g.units.values().filter(|unit| unit.owner == other.id) {
+                let spec = &g.rules.units[unit.kind];
+                if spec.class != "military"
+                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    || g.wdist(center, unit.pos) > 4
+                    || !g.sees(&visible, unit.pos)
+                    || !g.unit_visible_to(unit.id, pid)
+                {
+                    continue;
+                }
+                troops += 1;
+                siege |= spec.siege;
+            }
+            if troops >= 3 && siege {
+                return Some(wall);
+            }
+        }
+        None
+    }
+
     fn preemptive_major_war_defense_item(
         &self,
         g: &Game,
@@ -25181,6 +25380,29 @@ impl AdvancedAi {
             // Frozen historical controllers retain their original census.
             if self.victory_planning || self.active_victory_target(g).is_some() {
                 counts = self.counts_without_city_queue(g, pid, cid);
+            }
+            // Pharsalos started a twelve-turn Campus beside a visible Roman
+            // siege party; five-turn walls were requested only after war began.
+            if let Some(wall) = self.culture_border_siege_walls_item(g, pid, cid, plan) {
+                if g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|item| Self::active_queue_is_defensive(g, item))
+                {
+                    continue;
+                }
+                if g.apply(
+                    pid,
+                    &Action::Produce {
+                        city: cid,
+                        item: wall,
+                    },
+                )
+                .is_ok()
+                {
+                    self.clear_idle_production_streak(cid);
+                    continue;
+                }
             }
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
@@ -28235,6 +28457,24 @@ impl AdvancedAi {
                         0.0
                     };
                 let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
+                // ★★★★ AND AN EXPANSION DISTRICT IS WORTH THE HALL IT WILL
+                // HOST. The same empty-plot defect on the other axis: a
+                // Government Plaza carries no yield and no chain debt, so it
+                // scores at nothing, while the building that redeems it is
+                // priced at 700 + 500 by `expansion_hall` one build later. The
+                // scale here is the building arm's own, so this credit and
+                // that one reach zero on the same turn. See
+                // `expansion_hall_district`.
+                let expansion_path = if self.expansion_hall_district {
+                    let seats_short = self
+                        .settlement_target(plan)
+                        .saturating_sub(city_count + counts.settlers)
+                        as f64;
+                    let scale = (seats_short / EXPANSION_HALL_FULL_SHORTFALL).clamp(0.0, 1.0);
+                    scale * Self::hosted_expansion_path(g, pid, &family)
+                } else {
+                    0.0
+                };
                 let great_people = spec.great_person_points.values().sum::<f64>();
                 let relevant_great_people = match plan.strategy {
                     GrandStrategy::Science => spec
@@ -28514,6 +28754,7 @@ impl AdvancedAi {
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
                     + housing_gain * (32.0 + housing_need * 18.0)
                     + amenity_gain * (55.0 + amenity_need * 35.0)
+                    + expansion_path
                     + spec.loyalty * if city.loyalty < 76.0 { 22.0 } else { 7.0 }
                     + spec.air_slots.max(0) as f64
                         * if plan.strategy == GrandStrategy::Conquest || counts.aircraft > 0 {

@@ -5672,6 +5672,84 @@ fn later_fortified_units(
 ///
 /// Named separately, it stays out of the applied count (it genuinely did not
 /// apply) while saying whose decision it was.
+///
+/// ## 🔴 2026-09-11: THIS SPLIT WORKED, AND WHAT IT LEFT BEHIND IS REAL
+///
+/// Re-measured over the 42 recorded live runs of 2026-09-10/11. The
+/// classification above now carries its own weight: `superseded_by_move` takes
+/// **2,050** verdicts, and of the **5,442** that remain `not_fortified`:
+///
+///     95.0%  MOVE then FORTIFY   (5,169 — the "real question" above)
+///      5.0%  no move that turn     (273)
+///      0.0%  FORTIFY then MOVE   — the split now catches every one
+///
+/// The mix moved from 39% to 95% because the decider's own overrides were named
+/// and removed. **What is left is the case the note flagged and nobody
+/// answered**, and it is now essentially all of it.
+///
+/// ⚠ And it is not a checking-window artefact for most of them. Following each
+/// failed subject into the next three turns' state frames (n = 1,770 with a
+/// later frame):
+///
+///     72.0%  still not fortified
+///     28.0%  fortified on a later turn
+///
+/// So roughly seven in ten genuinely never dig in, and the remaining three in
+/// ten are a verdict read too early — widening `checked_on` for FORTIFY would
+/// reclaim those without changing any behaviour.
+///
+/// ⚠⚠ The obvious mechanism — the unit spent its movement and the host refuses
+/// FORTIFY at zero moves — is NOT established, and the tempting reading of the
+/// data is wrong. The `moves` field in a turn's first state frame is the
+/// PREVIOUS turn's value (see the frame-0 caution on the tactics ledger), so
+/// the `moves = 3` those records show is the allowance before the move, not
+/// after it. Answering this needs the host's own refusal reason on the FORTIFY
+/// call, which the event does not carry today.
+///
+/// ⭐ For scale before anyone prices the work: **82.5% of all FORTIFY orders
+/// fail** (7,711 against 1,637 verified), and FORTIFY is 36% of every failed
+/// order on the bridge, second only to MOVE_TO at 51%.
+///
+/// ## ✅ ANSWERED, AND ALMOST NONE OF IT IS THE BRIDGE
+///
+/// `operation_refused` (the mod's `firstOperation`, added for this) shipped and
+/// ran. In the first run carrying it, **2 of 181** `not_fortified` verdicts had
+/// a host refusal recorded — **1%**. So `CanStartOperation` says yes and the
+/// order is issued; the mod declining is not the cause. (The 67 refusals it did
+/// record are civilians: 41 Traders, 9 Builders, 6 Settlers, asked to skip or
+/// dig in and legitimately unable to.)
+///
+/// Following every `not_fortified` subject into the NEXT turn (n = 2,507):
+///
+///     64.6%  the decider MOVED IT AGAIN next turn
+///     29.2%  fortified on a later frame after all
+///      6.2%  neither
+///
+/// ⭐⭐ So this note's own opening sentence holds one turn further out than it
+/// was written: **a FORTIFY the decider itself overrode is not a bridge
+/// failure**, and `superseded_by_move` catches only the same-turn override.
+/// Two thirds of what is left is the identical thing on the following turn.
+/// Roughly 1% is a host refusal, and about three in ten are a verdict read
+/// before the state settled. The genuinely unexplained residue is ~6%.
+///
+/// ### The two pieces of work this names, in order of size
+///
+/// 1. **Extend the supersession to the next turn.** It needs turn+1 frames,
+///    which are not in hand at verification time the way same-turn frames are,
+///    so it is a real change rather than a wider filter. Name it separately —
+///    `superseded_next_turn` — so the two stay countable apart.
+/// 2. **Widen `checked_on` for FORTIFY.** Reclaims the 29.2% that do fortify,
+///    with no behaviour change at all.
+///
+/// ### ⚠ And the strategic question underneath, which is the bigger one
+///
+/// Two thirds of the time CIVVIS asks a unit to dig in and then walks it away
+/// the next turn, so **the unit never collects the fortification it was told to
+/// take**. That is a decider question, not a bridge one, and it is worth asking
+/// against the standing puzzle that 234 of 304 unit deaths happen with no
+/// visible threat. Unproven as a link — but the accounting above means the
+/// defence bonus is almost never actually held, which is the first thing to
+/// check.
 fn later_moved_units(
     frames: &[PendingOrders],
     turn: u32,
