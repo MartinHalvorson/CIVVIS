@@ -281,6 +281,14 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<!-- The concert movie opens a separate performance-results card.
+		     RockBandPopup.lua:114-117 closes it through its stock OnClose. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseRockBandResults">
+			<Properties>
+				<LuaContext>RockBandPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 	</InGameActions>
 	<Files>
 		<!-- ⚠ EVERY FILE AN ACTION REFERENCES MUST BE LISTED HERE, or the game logs
