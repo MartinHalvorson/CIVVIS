@@ -84,21 +84,26 @@ WIN_BAND = (4, 6)
 #: simulator arms at the Tiny shape (44×26, 4 players, 4 city-states, 80 turns,
 #: one variable moved at a time) say otherwise:
 #:
-#:     arm                                                    seats  mean  in band
-#:     Tiny · standard · emperor · CIVVIS  rivals · handicap all   120  3.68     57%
-#:     Tiny · standard · emperor · FIRAXIS rivals · handicap all    90  3.73     53%
-#:     Tiny · standard · emperor · FIRAXIS rivals · handicap rivals 90  2.23      3%
-#:     LIVE · Tiny     · emperor · Firaxis        · handicap rivals 17  2.53      0%
+#: ⚠⚠ THE FIRST VERSION OF THIS TABLE USED THE WRONG BOARD. `MAPSIZE_TINY` is
+#: **60×38 = 2,280 tiles**, read straight off the `tiles` events of 58 live runs,
+#: not the 44×26 those arms played — half the area. The arms were re-run at the
+#: real size and the finding got LARGER, not smaller:
 #:
-#: ⭐ **Rival identity is worth nothing here: 3.68 against 3.73.** Put the
-#: Emperor handicap on everyone and a Firaxis neighbour costs us no cities at
-#: all. Move the handicap off our seat and onto the rival chairs — changing
-#: nothing else — and we lose **1.50 cities at turn 60**, from 53% in band to 3%.
+#:     arm (60×38, 4 players, standard, emperor)          seats  mean  in band
+#:     FIRAXIS rivals · handicap all                         90  4.33     80%
+#:     FIRAXIS rivals · handicap rivals   (the deployment)   90  2.59     10%
+#:     LIVE · MAPSIZE_TINY · Firaxis · handicap rivals       17  2.53      0%
 #:
-#: ⭐⭐ **The live seat is not losing cities to the bridge.** Matched on shape,
-#: speed, difficulty, rivals AND handicap, the simulator lands on 2.23 against
-#: live's 2.53 — the same answer. There is no live-versus-simulator divergence
-#: here to go looking for.
+#: ⭐ **Move the Emperor handicap off our seat and onto the rival chairs —
+#: changing nothing else — and we lose 1.74 cities at turn 60, from 80% in band
+#: to 10%.** On the undersized board the same contrast read 1.50; the correction
+#: strengthened it. (Rival identity, measured separately on the small board, was
+#: worth nothing: 3.68 with CIVVIS rivals against 3.73 with Firaxis.)
+#:
+#: ⭐⭐ **The live seat is not losing cities to the bridge.** Matched on the real
+#: board, speed, difficulty, rivals AND handicap, the simulator lands on 2.59
+#: against live's 2.53 — the same answer, and a closer one than the undersized
+#: arm gave. There is no live-versus-simulator divergence here to go looking for.
 #:
 #: 🔴 AND THIS IS NOT A DEFECT. `--handicap rivals` exempting the measured seat
 #: is what Emperor *means*: the rivals get the rung's yield and Settler bonus and
@@ -112,10 +117,27 @@ WIN_BAND = (4, 6)
 #: broken; it says the agent is playing a board where the rung's head start
 #: decides the opening.
 #:
-#: ⚠ Cautions. The simulator's 44×26 approximates `MAPSIZE_TINY` rather than
-#: reproducing its map script; the live arm is 17 runs; and the two flags are
-#: coupled, so the isolation above comes from moving `--handicap` while holding
-#: `--rivals` fixed, not the reverse.
+#: ## ⭐⭐⭐ AND THE BOARD SIZE IS WORTH ABOUT AS MUCH AGAIN
+#:
+#: The ladder's own attempts, split by rung, put the live seat on `MAPSIZE_SMALL`
+#: at Emperor at **mean 3.73, 54% in band over 71 attempts** — the same rung and
+#: the same handicap asymmetry, on a bigger board. On `MAPSIZE_TINY` it reaches
+#: 2.53 and the band never.
+#:
+#: So both terms are real and they compound: the rung's head start costs ~1.74
+#: cities, and shrinking the board from Small to Tiny costs ~1.2 more at the same
+#: rung. Together they put the seat on 2.5 where every recorded win came from 4-6.
+#:
+#: ⭐ **That makes the configuration question answerable rather than open.**
+#: Reverting the size to `MAPSIZE_SMALL` recovers roughly a city and takes
+#: in-band from 0% to the 54% those 71 attempts recorded. It does not make the
+#: rung's asymmetry go away — nothing in the agent's gift does — but it puts the
+#: opening back where the agent's decisions can matter.
+#:
+#: ⚠ Cautions. The live Tiny arm is 17 runs; the Small-at-Emperor figure is
+#: observational rather than a controlled arm; and `--handicap rivals` is refused
+#: without `--rivals firaxis-mix`, so the handicap isolation comes from moving
+#: `--handicap` while holding `--rivals` fixed, not the reverse.
 BAND_MEASURED_ON = "MAPSIZE_SMALL"
 
 #: How a run reports a size it never recorded. Older runs predate the field.
