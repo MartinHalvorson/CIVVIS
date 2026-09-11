@@ -4943,6 +4943,9 @@ pub struct AdvancedAi {
     /// `domination-siege-research`: unlock the first land siege capability
     /// for a Conquest objective with observed walls, before elective detours.
     domination_siege_research: bool,
+    /// `domination-capital-focus`: rank missing original capitals within
+    /// the selected campaign front, independently of other rivals.
+    domination_capital_focus: bool,
     /// `conquest-takes-the-soft-city`: the early conquest opening ranks its
     /// target by the visible garrison before the rival's capital, so it aims
     /// at a city the opening force can actually take.
@@ -7856,6 +7859,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             domination_siege_research: false,
+            domination_capital_focus: false,
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
             denial_outranks_expansion: false,
@@ -11843,7 +11847,13 @@ impl AdvancedAi {
             // hands. See `advanced/city_campaign.rs`.
             .or_else(|| self.campaign_objective_city(g, pid, target_player))
             .or_else(|| {
-                domination_capital
+                let capital = if self.domination_capital_focus {
+                    target_player
+                        .and_then(|target| self.domination_capital_target_for(g, pid, Some(target)))
+                } else {
+                    domination_capital
+                };
+                capital
                     .filter(|(target, _)| target_player == Some(*target))
                     .map(|(_, capital)| capital)
             })

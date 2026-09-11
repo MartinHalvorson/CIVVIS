@@ -238,12 +238,25 @@ impl AdvancedAi {
     /// An eligible known capital supplies both the next opponent and its city
     /// objective. The ordinary war policy still gates the declaration.
     pub(super) fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        self.domination_capital_target_for(g, pid, None)
+    }
+
+    /// Rank required capitals inside the selected front as well as globally.
+    /// A different rival owning the cheapest capital must not erase this
+    /// front's capital objective and send the army after an ordinary city.
+    pub(super) fn domination_capital_target_for(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: Option<usize>,
+    ) -> Option<(usize, u32)> {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return None;
         }
         g.cities
             .values()
             .filter(|city| city.is_capital && city.owner != pid && !g.same_team(pid, city.owner))
+            .filter(|city| target.is_none_or(|owner| city.owner == owner))
             .filter(|city| {
                 g.players
                     .get(city.original_owner)
@@ -407,8 +420,31 @@ mod tests {
     }
 
     #[test]
+    fn domination_capital_focus_is_an_independently_reversible_opt_in() {
+        assert!(!AdvancedAi::new().domination_capital_focus);
+        assert!(!AdvancedAi::legacy().domination_capital_focus);
+        let mut ai = AdvancedAi::new();
+        ai.enable_domination_capital_focus();
+        assert!(ai.domination_capital_focus);
+        ai.disable_domination_capital_focus();
+        assert!(!ai.domination_capital_focus);
+        assert!(super::super::GENES
+            .iter()
+            .any(|gene| gene.tag == "domination-capital-focus" && gene.opt_in()));
+    }
+
+    #[test]
     fn domination_target_aims_at_an_uncontrolled_original_capital_before_a_convenient_city() {
-        let mut game = Game::new_full(2, 48, 28, 91_002, 300, 0, false);
+        check_domination_front_capital(2);
+    }
+
+    #[test]
+    fn domination_target_keeps_the_active_fronts_capital_when_another_is_cheaper() {
+        check_domination_front_capital(3);
+    }
+
+    fn check_domination_front_capital(majors: usize) {
+        let mut game = Game::new_full(majors, 48, 28, 91_002, 300, 0, false);
         found_capitals(&mut game);
         game.turn = 200;
         game.record_contact(0, 1);
@@ -428,6 +464,16 @@ mod tests {
         game.cities.get_mut(&outpost).unwrap().hp = 25;
         game.cities.get_mut(&outpost).unwrap().wall_hp = 0;
         game.cities.get_mut(&outpost).unwrap().pop = 14;
+        if majors == 3 {
+            // A nearby friendly population base makes the capital holdable;
+            // the rich enemy outpost remains the generic scorer's bargain.
+            let support = game.found_city_for(0, open_land_near(&game, capital_pos, 2), None);
+            game.cities.get_mut(&support).unwrap().pop = 30;
+            let home = game.cities[&game.player_city_ids(0)[0]].pos;
+            for _ in 0..6 {
+                game.spawn_test_unit("giant_death_robot", 0, home);
+            }
+        }
         let _capital_observer = game.spawn_test_unit("scout", 0, capital_pos);
         let _outpost_observer = game.spawn_test_unit("scout", 0, game.cities[&outpost].pos);
 
@@ -447,10 +493,75 @@ mod tests {
             "the required capital must be an operationally valid target"
         );
 
+        if majors == 3 {
+            game.record_contact(0, 2);
+            game.at_war.insert((0, 1));
+            assert_eq!(
+                ai.domination_capital_target(&game, 0)
+                    .map(|(owner, _)| owner),
+                Some(2),
+                "the unengaged rival must own the cheaper global capital"
+            );
+        }
+        if majors == 3 {
+            assert_eq!(
+                ai.assess(&game, 0).target_city,
+                Some(outpost),
+                "the off arm keeps the existing generic-city fallback"
+            );
+            ai.enable_domination_capital_focus();
+        }
         let plan = ai.assess(&game, 0);
-        assert_eq!(plan.strategy, GrandStrategy::Conquest);
+        assert_eq!(
+            plan.strategy,
+            if majors == 3 {
+                // The forward support city is exposed to the garrison.
+                // Retain the defensive posture while naming this front.
+                GrandStrategy::Recovery
+            } else {
+                GrandStrategy::Conquest
+            }
+        );
         assert_eq!(plan.target_player, Some(1));
         assert_eq!(plan.target_city, Some(capital));
+    }
+
+    #[test]
+    fn domination_capital_routing_uses_current_ownership_and_includes_home_capital() {
+        let mut game = Game::new_full(3, 48, 28, 91_006, 300, 0, false);
+        found_capitals(&mut game);
+        game.turn = 200;
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
+        let taken = game.player_city_ids(1)[0];
+        let outpost =
+            game.found_city_for(1, open_land_near(&game, game.cities[&taken].pos, 4), None);
+        game.cities.get_mut(&taken).unwrap().owner = 0;
+        game.cities.get_mut(&outpost).unwrap().pop = 20;
+        let remaining = game.player_city_ids(2)[0];
+        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert_eq!(
+            ai.domination_capital_target_for(&game, 0, Some(2)),
+            Some((2, remaining))
+        );
+        assert_eq!(ai.domination_capital_target_for(&game, 0, Some(1)), None);
+
+        // Another conqueror can hold multiple original capitals. Route to
+        // their present owner, including when our own capital needs retaking.
+        let home = game
+            .cities
+            .values()
+            .find(|c| c.original_owner == 0)
+            .unwrap()
+            .id;
+        game.cities.get_mut(&home).unwrap().owner = 2;
+        game.cities.get_mut(&remaining).unwrap().owner = 0;
+        assert_eq!(
+            ai.domination_capital_target_for(&game, 0, Some(2)),
+            Some((2, home)),
+            "our own lost original capital is still required"
+        );
+        assert_eq!(ai.domination_capital_target_for(&game, 0, Some(1)), None);
     }
 
     #[test]
