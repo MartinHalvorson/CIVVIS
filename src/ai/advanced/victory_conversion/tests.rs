@@ -338,7 +338,8 @@ fn work_deal_preview_values_a_real_transfer_without_executing_it() {
     }
     g.players[0].gold = 1_000.0;
     g.players[1].gold = 1_000.0;
-    g.grant_great_work(1, "writing", 2, "test-writer");
+    g.grant_great_work(1, "writing", 1, "test-writer");
+    g.grant_great_work(1, "writing", 1, "second-writer");
     let deal = g
         .quick_deals(0)
         .into_iter()
