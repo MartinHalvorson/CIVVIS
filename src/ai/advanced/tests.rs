@@ -12950,6 +12950,7 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     }
 
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let adaptive = AdvancedAi::new();
     let plan = StrategicPlan {
         strategy: GrandStrategy::Science,
         target_player: None,
@@ -13055,6 +13056,11 @@ fn science_spaceport_queues_follow_the_project_milestones() {
         "launch_earth_satellite".to_string(),
         "launch_moon_landing".to_string(),
     ]);
+    assert_eq!(
+        adaptive.science_spaceport_target(&game, 0),
+        2,
+        "the adaptive Science lane follows the same Moon milestone"
+    );
     let counts = ai.counts(&game, 0);
     let phase_two: Vec<(u32, Item, f64)> = cities
         .iter()
@@ -13074,6 +13080,24 @@ fn science_spaceport_queues_follow_the_project_milestones() {
         admitted.len(),
         1,
         "Moon permits exactly one second launch site: {phase_two:?}"
+    );
+    let adaptive_counts = adaptive.counts(&game, 0);
+    let adaptive_phase_two: Vec<f64> = cities
+        .iter()
+        .copied()
+        .filter(|city| *city != opening)
+        .map(|city| {
+            let item = spaceport_item(&game, city);
+            adaptive.production_value(&game, 0, city, &item, &plan, &adaptive_counts)
+        })
+        .collect();
+    assert_eq!(
+        adaptive_phase_two
+            .iter()
+            .filter(|value| **value > -10_000.0)
+            .count(),
+        1,
+        "the adaptive lane must reserve only one second launch site: {adaptive_phase_two:?}"
     );
     let second = admitted[0].0;
     let second_item = admitted[0].1.clone();
@@ -13102,6 +13126,11 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     game.players[0]
         .science_projects
         .insert("launch_mars_colony".to_string());
+    assert_eq!(
+        adaptive.science_spaceport_target(&game, 0),
+        3,
+        "the adaptive Science lane follows the Mars milestone"
+    );
     let counts = ai.counts(&game, 0);
     let phase_three = cities
         .iter()
@@ -13115,6 +13144,20 @@ fn science_spaceport_queues_follow_the_project_milestones() {
     assert_eq!(
         phase_three, 1,
         "Mars unlocks one final laser-flight Spaceport, not every remaining city"
+    );
+    let adaptive_counts = adaptive.counts(&game, 0);
+    let adaptive_phase_three = cities
+        .iter()
+        .copied()
+        .filter(|city| *city != opening && *city != second)
+        .filter(|city| {
+            let item = spaceport_item(&game, *city);
+            adaptive.production_value(&game, 0, *city, &item, &plan, &adaptive_counts) > -10_000.0
+        })
+        .count();
+    assert_eq!(
+        adaptive_phase_three, 1,
+        "the adaptive lane must reserve one final launch site"
     );
 }
 
