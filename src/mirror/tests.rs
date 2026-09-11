@@ -13826,3 +13826,75 @@ fn concert_plots_survive_rebuild_and_refresh_on_sync_without_defaulting_missing_
         None
     );
 }
+
+#[test]
+fn native_open_work_slots_do_not_relocate_palace_writing() {
+    let rules = crate::rules::Rules::embedded();
+    let mut state = StateSnapshot {
+        cities: vec![
+            StateCity {
+                id: 1,
+                x: 3,
+                y: 3,
+                pop: 4,
+                buildings: vec!["BUILDING_PALACE".into()],
+                great_works: Some(vec![StateGreatWork {
+                    kind: "GREATWORK_QU_YUAN_1".into(),
+                    object: "GREATWORKOBJECT_WRITING".into(),
+                    building: "BUILDING_PALACE".into(),
+                    slot: 0,
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            },
+            StateCity {
+                id: 2,
+                x: 5,
+                y: 5,
+                pop: 4,
+                buildings: vec!["BUILDING_AMPHITHEATER".into()],
+                great_works: Some(vec![]),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 0,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(5, 5, "TERRAIN_GRASS")],
+    }]);
+    let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let open = live_open_great_work_slots(&rules, &state).unwrap();
+    assert_eq!(
+        mirror.game.players[0].live_open_great_work_slots.as_ref(),
+        Some(&open)
+    );
+    assert!(open.contains("writing"));
+    assert!(!open.contains("music") && !open.contains("any"));
+    state.cities[1]
+        .buildings
+        .push("BUILDING_BROADCAST_CENTER".into());
+    assert!(live_open_great_work_slots(&rules, &state)
+        .unwrap()
+        .contains("music"));
+    state.turn += 1;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(mirror.game.players[0]
+        .live_open_great_work_slots
+        .as_ref()
+        .unwrap()
+        .contains("music"));
+    state.cities[1].great_works = None;
+    state.turn += 1;
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.players[0].live_open_great_work_slots, None);
+    assert_eq!(live_open_great_work_slots(&rules, &state), None);
+    state.cities[1].great_works = Some(vec![]);
+    state.cities[0].great_works.as_mut().unwrap().clear();
+    assert!(live_open_great_work_slots(&rules, &state)
+        .unwrap()
+        .contains("any"));
+}
