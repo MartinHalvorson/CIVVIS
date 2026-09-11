@@ -87,3 +87,7 @@ Original probe configurations and binary fingerprints are preserved in
 used the same binary; later headers honestly report `unstamped-tree-moved`
 after the worktree merged main during the batch. These artifacts are not
 submitted to the deployment ledger.
+
+Repository tooling ran 2,910 tests: 2,907 passed and two skipped. The sole
+failure was the stale `civvis_orders.rs` hotspot in `docs/ROADMAP.md`; its
+obsolete target row was removed and the full hotspot test suite then passed.
