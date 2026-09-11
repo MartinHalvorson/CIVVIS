@@ -117,6 +117,31 @@ WIN_BAND = (4, 6)
 #: broken; it says the agent is playing a board where the rung's head start
 #: decides the opening.
 #:
+#: ## ⭐⭐⭐⭐ ON AN EQUAL FOOTING THE AGENT OUT-EXPANDS THE FIRAXIS AI
+#:
+#: The same two arms carry the rival's own opening, which settles what the
+#: deficit is and is not:
+#:
+#:     arm (60×38, 4p, emperor)      our c@60   Firaxis rival   gap
+#:     handicap all                      4.33            3.07  +1.27 to us
+#:     handicap rivals (deployment)      2.59            3.20  -0.61 to them
+#:
+#: ⭐ **Our expansion policy is better than the shipped AI's by 1.27 cities at
+#: turn 60** when both sides play the same rules. There is no expansion defect
+#: here to find, which is also why both genes aimed at it read flat.
+#:
+#: ⭐⭐ And note whose number moves. The rival is handicapped in BOTH arms and
+#: scores 3.07 against 3.20 — the same, within noise. Ours goes 4.33 → 2.59.
+#: **The 1.74 cities are the loss of our own bonus, not anything the rival does
+#: with theirs.** At Emperor the AI takes the rung's yields and free Settlers and
+#: we do not; that head start is worth 1.74 cities by turn 60 to whoever holds it.
+#:
+#: ⭐⭐⭐ Which turns "play better" into a number. To match a handicapped rival at
+#: turn 60 the agent has to play **1.74 cities better than even**, and it
+#: currently plays **1.27** better. **The gap to parity is 0.47 cities at turn
+#: 60** — that is the target, and it is a far smaller thing than the raw 2.59
+#: against a 4-6 band suggests.
+#:
 #: ## ⭐⭐⭐ AND THE BOARD SIZE IS WORTH ABOUT AS MUCH AGAIN
 #:
 #: The ladder's own attempts, split by rung, put the live seat on `MAPSIZE_SMALL`
