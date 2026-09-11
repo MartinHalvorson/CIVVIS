@@ -49,7 +49,7 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
     ) -> Option<&'static str> {
-        if !self.science_endgame_committed(g, pid)
+        if !self.science_endgame_research_committed(g, pid)
             || !(g.players[pid]
                 .science_projects
                 .contains("launch_moon_landing")
@@ -60,6 +60,20 @@ impl AdvancedAi {
         ["nanotechnology", "smart_materials", "offworld_mission"]
             .into_iter()
             .find(|tech| !g.players[pid].techs.contains(&Name::new(tech)))
+    }
+
+    /// Research remains a commitment once the final expedition is queued or
+    /// complete, even if the broader victory planner has gone dormant. The
+    /// project is already consuming a Spaceport and cannot be recovered by
+    /// an unrelated military technology; its research prerequisites therefore
+    /// keep the laser path alive until the flight can be accelerated.
+    fn science_endgame_research_committed(&self, g: &Game, pid: usize) -> bool {
+        g.victory_conditions.science
+            && (self.science_endgame_committed(g, pid)
+                || g.players[pid]
+                    .science_projects
+                    .contains("exoplanet_expedition")
+                || Self::science_project_is_queued(g, pid, "exoplanet_expedition"))
     }
 
     /// Once the serial launch chain has reached its late research rungs, the
@@ -83,7 +97,7 @@ impl AdvancedAi {
             .science_projects
             .contains("launch_moon_landing")
             || Self::science_project_is_queued(g, pid, "launch_moon_landing"))
-            && self.science_endgame_committed(g, pid)
+            && self.science_endgame_research_committed(g, pid)
     }
 
     /// Use remaining production, local modifiers and whole turn boundaries.

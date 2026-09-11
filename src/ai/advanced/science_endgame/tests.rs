@@ -355,6 +355,21 @@ fn queued_expedition_keeps_late_research_after_a_lane_switch() {
 }
 
 #[test]
+fn completed_expedition_keeps_late_research_without_victory_planning() {
+    let (mut g, _, _) = board();
+    g.players[0].techs.remove(&Name::new("offworld_mission"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.victory_planning = false;
+
+    assert!(!ai.science_endgame_committed(&g, 0));
+    assert_eq!(
+        ai.science_endgame_research_goal(&g, 0),
+        Some("offworld_mission")
+    );
+    assert!(ai.science_endgame_research_preempts_wartime(&g, 0, Some("offworld_mission")));
+}
+
+#[test]
 fn completed_launch_hands_every_pad_to_lasers_on_the_next_decision() {
     let (mut g, a, b) = board();
     g.players[0].science_projects.remove("exoplanet_expedition");
