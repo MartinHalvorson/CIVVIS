@@ -161,6 +161,65 @@ class TheGuardsFire(unittest.TestCase):
             self.assertEqual([r["tag"] for r in rows], ["ok"])
 
 
+class DetectionIsADifferentQuestion(unittest.TestCase):
+    """The crossover prices an effect's SIZE. Asking whether a gene does
+    anything compares one z against another and never meets the floor."""
+
+    def _corpus(self, slope, structural, share_se, win_se, genes=160, screens=10):
+        d = tempfile.TemporaryDirectory()
+        root = Path(d.name)
+        write_screens(root, genes=genes, screens=screens, slope=slope,
+                      structural=structural, share_se=share_se, win_se=win_se)
+        rows, _, _ = spw.load_screens(str(root / "*.json"))
+        by = {}
+        for r in rows:
+            by.setdefault(r["tag"], []).append(r)
+        return d, by
+
+    def test_the_z_ratio_is_not_the_standard_error_ratio(self):
+        """The trap this function exists to close. With a win SE 6x the share SE
+        AND a win effect 3x the share effect, the detection advantage is about
+        2x, not 6x -- most of the SE ratio cancels against the effect ratio."""
+        d, by = self._corpus(slope=3.0, structural=0.0, share_se=0.12, win_se=0.72)
+        with d:
+            det = spw.detection_comparison(by)
+            self.assertLess(det["median_z_ratio"], 3.0,
+                            "a 6x SE ratio must not read as a 6x detection edge")
+            self.assertGreater(det["median_z_ratio"], 1.2,
+                               "share should still be the stronger detector")
+
+    def test_share_detects_more_genes_than_wins_do(self):
+        d, by = self._corpus(slope=3.0, structural=0.3, share_se=0.12, win_se=0.72)
+        with d:
+            det = spw.detection_comparison(by)
+            self.assertGreater(det["share_only"], det["win_only"])
+
+    def test_signs_agree_when_the_link_is_real(self):
+        d, by = self._corpus(slope=3.0, structural=0.05, share_se=0.10, win_se=0.60)
+        with d:
+            det = spw.detection_comparison(by)
+            self.assertGreater(det["both"], 10, "need genes on both axes")
+            self.assertGreater(det["agree"], 8 * det["disagree"] + 1)
+
+    def test_an_unrelated_axis_produces_no_sign_agreement(self):
+        """If share carried no information about wins, the sign agreement that
+        licenses the whole method would collapse to a coin flip."""
+        d, by = self._corpus(slope=0.0, structural=1.2, share_se=0.10, win_se=0.60)
+        with d:
+            det = spw.detection_comparison(by)
+            if det["both"] >= 10:
+                self.assertLess(det["agree"], det["both"] * 0.85)
+
+    def test_every_gene_lands_in_exactly_one_bucket(self):
+        d, by = self._corpus(slope=3.0, structural=0.3, share_se=0.12, win_se=0.72)
+        with d:
+            det = spw.detection_comparison(by)
+            self.assertEqual(
+                det["both"] + det["share_only"] + det["win_only"] + det["neither"],
+                det["genes"])
+            self.assertEqual(det["agree"] + det["disagree"], det["both"])
+
+
 class TheCrossoverIsTheRealAnswer(unittest.TestCase):
     def test_the_advantage_falls_as_seats_rise_and_ends(self):
         """A surrogate with a structural floor cannot win forever: a direct

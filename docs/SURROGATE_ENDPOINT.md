@@ -12,14 +12,29 @@ measured whether it does. `tools/share_predicts_win.py` measures it against the
 committed screen corpus. **It runs no games.** Every number below comes from
 screens already on disk: 9,099 gene-by-screen records, 373 genes, 82 screens.
 
+## ⭐ First: which question are you asking?
+
+The two obvious questions have **different answers**, and conflating them is the
+easiest way to misuse everything below.
+
+| the question | the answer |
+| --- | --- |
+| **Does this gene do anything at all?** | Read **share**, at any seat count. No crossover. Worth about **1.7×** the seats. |
+| **How many win points is this gene worth?** | The crossover applies: share below ~26,000 seats, wins above. Up to **4×** the seats on a small screen. |
+
+Detection never meets the structural floor, because it compares a *z* against a
+*z* rather than pricing an effect. Estimation does meet it, and eventually loses
+to it.
+
 ## The answer in one line
 
 **Share predicts wins with a slope near 3, and the prediction carries an
-irreducible floor of about 0.47 win pp. So reading share is worth roughly 4× the
-seats on a small screen, 1× at about 26,000 seats, and less than nothing above
-that.**
+irreducible floor of about 0.47 win pp. So for pricing a win effect, reading
+share is worth roughly 4× the seats on a small screen, 1× at about 26,000 seats,
+and less than nothing above that. For merely detecting one, share is better
+everywhere, by about 1.7× the seats.**
 
-## The decision rule
+## Pricing a win effect: the decision rule
 
 | share SE | ≈ seats | predicted win SE | direct win SE | advantage |
 | ---: | ---: | ---: | ---: | ---: |
@@ -54,6 +69,32 @@ the same amount do not move wins by the same amount, and that scatter is not
 sampling noise. Seats shrink the direct reading's error without bound; they
 cannot shrink the floor. So the two curves cross, and where they cross is an
 arithmetic fact about this corpus rather than a matter of taste.
+
+## Detecting an effect: share wins everywhere, but not by 37×
+
+Pooled over every screen each gene appears in, across 373 genes:
+
+| | genes |
+| --- | ---: |
+| detected on **both** axes (\|z\| ≥ 2) | 78 — signs agree on **74**, disagree on 4 |
+| detected on **share only** | **53** |
+| detected on **win only** | 22 |
+| detected on neither | 220 |
+
+Median **\|z on share\| ÷ \|z on win\| = 1.28×**, so share is worth about
+**1.7×** the seats for detection.
+
+⚠⚠ **The reading to avoid: share's standard error is 6.09× smaller, so share is
+not 37× the detector.** The effect being resolved is about 3× smaller on the
+share axis too, so most of that ratio cancels before any of it reaches power;
+the structural residual eats much of the rest. `src/bin/gene_screen.rs` says
+share "resolves an edge at a fraction of the seats a win/loss count needs," which
+is true of the *standard error* — but the fraction that matters is 1.7, not 37,
+and the difference is the whole reason this file exists.
+
+⭐ **74 of the 78 genes detected on both axes agree in sign.** That is the
+strongest single piece of evidence that share and wins are measuring the same
+underlying direction, and it is what licenses using one for the other at all.
 
 ## ⚠⚠ The trap the tool is built around
 
