@@ -722,6 +722,7 @@ fn siege_posts(
                     && !ring_taken.contains(pos)
                     && open_land(*pos)
                     && g.unit_can_traverse(uid, *pos)
+                    && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                     && g.unit_ids_at(*pos).is_empty()
             })
             .min_by_key(|pos| {
@@ -1701,6 +1702,9 @@ mod capture_tests;
 
 #[cfg(test)]
 mod landing_tests;
+
+#[cfg(test)]
+mod firing_tests;
 
 #[cfg(test)]
 mod tests {
