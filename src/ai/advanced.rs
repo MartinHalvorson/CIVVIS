@@ -5367,6 +5367,30 @@ pub struct AdvancedAi {
     /// which is about **2,000 seats** — some 340 games at this shape. That is
     /// the number to bring, and the reason this row still reads `unmeasured`
     /// rather than anything better.
+    ///
+    /// ## 🔴 SECOND PROBE, AT THE DEPLOYMENT SHAPE: flat
+    ///
+    /// The probe above is the STANDARD shape, where the seat already opens
+    /// inside the 4-6 band. The shape the live seat actually plays is Tiny at
+    /// Emperor with the rung on the rival chairs, and there it opens on 2.3
+    /// cities. Screened there — 60 games, 180 seats, `--turns 80 --p-on 0.5`,
+    /// 44×26 4p, `--rivals firaxis-mix --handicap rivals`:
+    ///
+    ///     gene                              on     off    diff       z
+    ///     expansion-hall-district         2.31    2.33   -0.03   -0.22
+    ///     expansion-scales-with-difficulty 2.34    2.27   +0.07   +0.44
+    ///
+    /// ⚠ **This gene does nothing where it is needed**, and the reason is
+    /// legible: it prices a Government Plaza for the land grab, and a seat
+    /// holding 2.3 cities at turn 60 is not choosing plazas yet. The lever acts
+    /// after the opening it was meant to help has already been lost.
+    ///
+    /// ⭐ And the null beside it is the more useful one.
+    /// `expansion-scales-with-difficulty` exists precisely because the 4-6 band
+    /// was read off a King-level field and the rung's rivals take +16..+32% of
+    /// every yield plus free Settlers. It **ships on**, and at the shape it was
+    /// written for it moves the opening by +0.07 cities. Whatever is costing
+    /// 1.50 cities at this shape, neither of these reaches it.
     expansion_hall_district: bool,
     /// Take a small neighbour's city in the opening: a met rival's known
     /// city within twelve tiles of the capital, the capital's production
