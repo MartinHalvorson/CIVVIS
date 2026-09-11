@@ -4269,3 +4269,92 @@ inside its 1% noise floor and comfortably inside the +8% regression budget:
 the honest conclusion is no measurable change in the runner, not a speed
 claim. The gate will run again after this branch's current-main integration;
 that final result is the merge guard.
+
+## 2026-09-10 — the allocator is the one entry on the profile that needs no attribution
+
+The 2026-09-03 pass above closes by naming the frontier and not acting on it:
+"allocator/libc primitives about 16.8% of running samples." The 2026-09-09
+profile puts the same roll-up at **16.84%**, and its largest single named leaf
+is macOS's own `_xzm_free` at 3.66% self. Nothing in this tree had ever set a
+`#[global_allocator]`; every binary allocated through the platform.
+
+### Why this is not the class of change the profile retires
+
+"Where this profile stops being actionable" is the strongest argument in this
+document and it is correct: **33.32% of samples sit behind linker-folded
+frames**, re-running with `--parents` over the whole set of libc leaves
+attributes only **1.34%**, and the day's record is that of six paired changes
+the two that paid were the ones whose loop could be named exactly. A change
+aimed at a leaf share is "a guess dressed as a measurement."
+
+⭐ **The allocator is exempt from that objection, and it is the only entry that
+is.** The objection is about attribution — you cannot fix `_xzm_free` because
+you cannot see who calls it. Replacing the allocator does not need to see who
+calls it, because it changes no caller. The 33.32% of folded frames allocate
+through the new implementation exactly as the named 66.68% do.
+
+This is also why the entry could sit at the top of every profile for months
+without being acted on: it reads as a leaf, and this document had correctly
+taught its readers to distrust leaves.
+
+### The change
+
+One line in `src/lib.rs`, not twelve in the binaries. `#[global_allocator]` is
+chosen by the final artifact, so declaring it per binary means twelve chances
+for the next `[[bin]]` to be added without it and quietly measure the platform
+allocator while this section says otherwise — the "discover, never list" failure
+in `AGENTS.md`, in its compiled form. Setting a global allocator in a library
+overrides the choice of whoever links it; nobody links this one, which the crate
+docs state in their first sentence.
+
+⚠ **Both halves are gated to native, and both are needed.** `mimalloc` vendors
+a C library with no wasm32 target, while `.github/workflows/tests.yml` runs
+`cargo check --lib --locked --target wasm32-unknown-unknown`. A `cfg`-ed out
+`static` alone still leaves an unbuildable crate in that target's dependency
+graph, so the dependency itself is declared under
+`[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`. Verified locally:
+the check passes and `mimalloc` does not appear in its compile list.
+
+### Evidence — two disjoint blocks, 42 pairs, every one the same game
+
+`tools/speed_ab.py` at the gate shape (6p, 74×46, 9 city-states, 120 turns,
+Online Continents, `--jobs 1`), three interleaves per seed:
+
+| block | seeds | pairs | median per turn | pooled | resolves | range |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| first | 900001–900006 | 18 | **−3.91%** | −5.11% | ±2.81% | −15.40% … +8.22% |
+| confirm | 910001–910008 | 24 | **−6.89%** | −7.65% | ±1.48% | −14.86% … −0.13% |
+
+Pooled over both: 542.52s → 506.70s of user CPU across 5,040 completed turns
+per arm, **−6.60% per completed turn**.
+
+⭐ **All 42 pairs reported "same game on every seed."** `speed_ab.py` strips the
+timing line and hashes each report, so this is the claim that matters twice
+over: the swap is *overhead* and not a behaviour change wearing a timing
+costume, and the per-seed determinism the crate docs promise survives an
+allocator with an entirely different address layout.
+
+⚠ **The two blocks differ by 3 points and the honest range is −4% to −7%, not a
+point estimate.** They are not equally good measurements. The first block ran on
+a rising host (load 4.95 → 10.30 peak, because the benchmark is itself the load)
+and its IQR is 8.04pp with readings on both sides of zero; the second ran on a
+falling host (10.07 → 6.35), resolves twice as tightly, and has no positive
+reading in 24 pairs. Quote the range, or quote the confirm block and say which
+it is.
+
+### What this buys, and why it was worth a task
+
+Nothing about the agent is stronger. The screen is what gets stronger: seats per
+hour is the binding constraint on every gene question this project currently
+cannot answer — resolving a realistic effect at Emperor needs tens of thousands
+of seats per arm against the ~300 a 200-game screen buys — and this is 5–7% more
+of them per hour, permanently, on every machine, for one line that no future
+change has to remember.
+
+### Not attempted here: profile-guided optimization
+
+The other untried compute-side lever. It is deliberately a separate question:
+PGO needs a training corpus and a two-stage build, which is an operational
+commitment to the release path rather than a dependency line, and `lto = "thin"`
+with `codegen-units = 1` has already taken some of what it would find. This task
+stays single-purpose.
