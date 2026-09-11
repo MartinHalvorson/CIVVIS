@@ -5696,6 +5696,7 @@ const UNIT_KEYS: &[&str] = &[
     "xp",
     "level",
     "promotions",
+    "offered_promotions",
     "build_charges",
     "spread_charges",
     "religion",
