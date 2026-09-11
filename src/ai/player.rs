@@ -181,7 +181,7 @@ fn execute_frame<'a>(
     changed
 }
 
-/// None stops a refused/terminal batch immediately. Some(true) requests a
+/// None stops a tactical refusal or terminal batch immediately. Some(true) requests a
 /// fresh observation AFTER the batch, preserving the live adapter's bounded
 /// batch cadence instead of silently limiting an army to three attacks.
 fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Option<bool> {
@@ -195,7 +195,24 @@ fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Opti
             .counters
             .entry("player:refused".into())
             .or_default() += 1;
-        return None;
+        // A rejected queue or financial trade leaves independent military
+        // orders executable. Refresh after the batch: stopping here can
+        // repeat the same economic refusal in every frame and never reach
+        // the army. Orders still pay their authoritative costs when applied.
+        // District foundations clear terrain; city transfers and access
+        // treaties change tactical facts too. Their refusals still invalidate
+        // the remaining plan.
+        let economic = match action {
+            Action::Produce { item, .. } => !matches!(item, crate::game::Item::District { .. }),
+            Action::Trade { offer, request, .. } => {
+                offer.cities.is_empty()
+                    && request.cities.is_empty()
+                    && !offer.open_borders
+                    && !request.open_borders
+            }
+            _ => false,
+        };
+        return economic.then_some(true);
     }
     Some(
         game.current != pid
@@ -216,3 +233,6 @@ fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Opti
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod execution_tests;
