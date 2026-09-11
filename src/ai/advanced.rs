@@ -13065,6 +13065,22 @@ impl AdvancedAi {
         };
     }
 
+    /// Native occupancy does not imply that existing works will be relocated.
+    /// Share the same immediate slot test for paid Culture patronage and races.
+    fn available_great_work_slot(g: &Game, pid: usize, work: &str) -> bool {
+        g.players[pid]
+            .live_open_great_work_slots
+            .as_ref()
+            .map_or_else(
+                || g.can_house_additional_great_work(pid, work),
+                |slots| {
+                    slots.contains(work)
+                        || slots.contains("any")
+                        || (work == "art" && slots.contains("religious_art"))
+                },
+            )
+    }
+
     fn yield_value(&self, yields: Yields, strategy: GrandStrategy) -> f64 {
         let (food, prod, gold, science, culture, faith): (f64, f64, f64, f64, f64, f64) =
             match strategy {
@@ -13478,7 +13494,14 @@ impl AdvancedAi {
                 "musician" => Some("music"),
                 _ => None,
             };
-            if work.is_some_and(|work| !g.can_house_additional_great_work(pid, work)) {
+            if work.is_some_and(|work| {
+                let available = if self.active_victory_target(g) == Some(VictoryTarget::Culture) {
+                    Self::available_great_work_slot(g, pid, work)
+                } else {
+                    g.can_house_additional_great_work(pid, work)
+                };
+                !available
+            }) {
                 affinity *= 0.20;
             }
 
@@ -19348,19 +19371,7 @@ impl AdvancedAi {
                 _ => None,
             };
             if self.active_victory_target(g) == Some(VictoryTarget::Culture)
-                && work.is_some_and(|work| {
-                    !g.players[pid]
-                        .live_open_great_work_slots
-                        .as_ref()
-                        .map_or_else(
-                            || g.can_house_additional_great_work(pid, work),
-                            |slots| {
-                                slots.contains(work)
-                                    || slots.contains("any")
-                                    || (work == "art" && slots.contains("religious_art"))
-                            },
-                        )
-                })
+                && work.is_some_and(|work| !Self::available_great_work_slot(g, pid, work))
             {
                 continue;
             }

@@ -18745,6 +18745,62 @@ fn project_search_maintains_aged_reactors_and_marginal_conversion_avoids_churn()
 }
 
 #[test]
+fn culture_projects_discount_creators_without_observed_slots() {
+    let mut game = Game::new(1, 20, 14, 7_119, 200, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|id| game.units[id].kind == "settler")
+        .unwrap();
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, city, "theater_square");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    game.players[0].civics.insert(crate::name!("drama_poetry"));
+    game.players[0]
+        .counters
+        .insert("great_work:writing".into(), 1);
+    game.turn = 120;
+    assert!(
+        game.can_house_additional_great_work(0, "music"),
+        "the model can move Palace writing into the Amphitheater"
+    );
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let project = "theater_square_festival";
+    let hypothetical = ai.district_project_value(&game, 0, city, project, &plan);
+    let adaptive = AdvancedAi::new();
+    let adaptive_before = adaptive.district_project_value(&game, 0, city, project, &plan);
+    game.players[0].live_open_great_work_slots = Some(["writing".to_string()].into());
+    let observed = ai.district_project_value(&game, 0, city, project, &plan);
+    assert!(
+        observed < hypothetical,
+        "unusable art/music must not keep full race value: {observed} >= {hypothetical}"
+    );
+    assert_eq!(
+        adaptive.district_project_value(&game, 0, city, project, &plan),
+        adaptive_before
+    );
+    game.players[0].live_open_great_work_slots = Some(["any".to_string()].into());
+    assert_eq!(
+        ai.district_project_value(&game, 0, city, project, &plan),
+        hypothetical
+    );
+}
+
+#[test]
 fn district_project_search_extends_only_concrete_great_person_races() {
     let mut game = Game::new(2, 24, 16, 7_103, 200, 0);
     let settler = game
