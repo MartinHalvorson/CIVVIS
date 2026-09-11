@@ -1964,6 +1964,38 @@ impl AdvancedAi {
     /// site. ⚠ It is NOT a free win — `civvis-the-champion-churns-more-not-less`
     /// records that motion and strength are not the same axis, so it wants a
     /// screen and not a promotion on this note.
+    ///
+    /// ## 🛑 AND THE BOARD'S OWN CENSUS SAYS IT IS SCARCITY, NOT STICKINESS
+    ///
+    /// The paragraph above prescribes hysteresis. **This census argues against
+    /// it**, and it is the board's own number rather than a bridge inference.
+    /// `board_reassignments` is printed on every evaluation as "rows N, F
+    /// force(s), R reassigned, short: S". Over 6,165 of those lines in the live
+    /// runs of 2026-09-10/11:
+    ///
+    ///     rows        median 8    mean 8.1
+    ///     forces      median 2    mean 2.1
+    ///     reassigned  median 1    mean 1.71   (56% of evaluations move someone)
+    ///     rows short  median 1    mean 1.9
+    ///
+    /// ⭐ With a median of **two forces**, a mean of 1.71 reassignments means
+    /// most of the army changes objective on most evaluations — and ~2 rows are
+    /// left short every time regardless. The units are not flapping between two
+    /// equally good homes; they are being pulled around by rows that cannot all
+    /// be filled.
+    ///
+    /// ⚠⚠ So `HYSTERESIS_GAIN` is not missing here — it already asks 25% more
+    /// contribution before a unit leaves a served force. Raising it, or adding
+    /// a cooldown on top, would mostly **freeze whichever row grabbed a unit
+    /// first and keep the short rows short**. That is a plausible way to make
+    /// the seat worse while making the churn metric better, which is exactly
+    /// the trap `civvis-a-defects-drama-and-its-elo-are-unrelated` names.
+    ///
+    /// The honest reading is that this is the same shortage the rest of the
+    /// record keeps finding: an Emperor seat at 0.45 kills per loss whose
+    /// military ratio never clears the campaign bar. **Price a hysteresis gene
+    /// against `rows short`, not against the reassignment count** — and expect
+    /// the answer to be that the board needs more army, not stickier orders.
     fn project_forces(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
         self.force_groups.clear();
         let visible = self.battlefront_visibility(g, pid);
