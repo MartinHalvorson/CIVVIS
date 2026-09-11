@@ -1,0 +1,931 @@
+{
+  "schema_version": 1,
+  "source_commit": "7b2fa2d5c60ee106ead272724c4c07b8a52ac8c9",
+  "role": "Exploratory campaign diagnosis, not a gene promotion batch",
+  "configuration": {
+    "games": 8,
+    "start_seed": 109106000,
+    "major_players": 3,
+    "width": 36,
+    "height": 22,
+    "speed": "online",
+    "turn_limit": 250,
+    "barbarians": false,
+    "city_states": 0,
+    "target": "domination",
+    "enabled": [
+      "domination-lane-hands-over"
+    ],
+    "disabled": [
+      "domination-siege-research"
+    ],
+    "other_genes": "AdvancedAi::fleet_targeting defaults at source_commit",
+    "difficulty": "prince"
+  },
+  "observation": "After each seat turn, inspect current Conquest plan and its still-owned foreign objective. Walled means actual wall_hp > 0; these are diagnostic world observations, not additional information supplied to the AI. Near means hex distance <= 6, not a path-feasibility or firing-range claim. Totals count observations, not unique cities or independent samples.",
+  "totals": {
+    "walled_conquest": 871,
+    "before_engineering": 0,
+    "no_land_siege": 230,
+    "siege_not_near": 245,
+    "war_walled": 300,
+    "war_no_siege_or_queue": 81,
+    "war_siege_not_near": 98
+  },
+  "major_seat_rows": [
+    {
+      "seed": 109106000,
+      "player": 0,
+      "first_conquest": 26,
+      "engineering": 56,
+      "walled_conquest": 23,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 0,
+      "war_walled": 11,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106000,
+      "player": 1,
+      "first_conquest": 36,
+      "engineering": 52,
+      "walled_conquest": 27,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 10,
+      "war_walled": 20,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 7
+    },
+    {
+      "seed": 109106000,
+      "player": 2,
+      "first_conquest": 51,
+      "engineering": 97,
+      "walled_conquest": 5,
+      "before_engineering": 0,
+      "no_land_siege": 5,
+      "siege_not_near": 0,
+      "war_walled": 5,
+      "war_no_siege_or_queue": 5,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106001,
+      "player": 0,
+      "first_conquest": 41,
+      "engineering": 72,
+      "walled_conquest": 48,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 48,
+      "war_walled": 12,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 12
+    },
+    {
+      "seed": 109106001,
+      "player": 1,
+      "first_conquest": 41,
+      "engineering": 61,
+      "walled_conquest": 76,
+      "before_engineering": 0,
+      "no_land_siege": 49,
+      "siege_not_near": 13,
+      "war_walled": 17,
+      "war_no_siege_or_queue": 14,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106001,
+      "player": 2,
+      "first_conquest": 46,
+      "engineering": 88,
+      "walled_conquest": 0,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 0,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106002,
+      "player": 0,
+      "first_conquest": 31,
+      "engineering": 79,
+      "walled_conquest": 30,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 0,
+      "war_walled": 2,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106002,
+      "player": 1,
+      "first_conquest": 36,
+      "engineering": 73,
+      "walled_conquest": 34,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 34,
+      "war_walled": 20,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 20
+    },
+    {
+      "seed": 109106002,
+      "player": 2,
+      "first_conquest": 45,
+      "engineering": 101,
+      "walled_conquest": 0,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 0,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106003,
+      "player": 0,
+      "first_conquest": 36,
+      "engineering": 63,
+      "walled_conquest": 11,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 0,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106003,
+      "player": 1,
+      "first_conquest": 37,
+      "engineering": 65,
+      "walled_conquest": 52,
+      "before_engineering": 0,
+      "no_land_siege": 1,
+      "siege_not_near": 22,
+      "war_walled": 35,
+      "war_no_siege_or_queue": 1,
+      "war_siege_not_near": 11
+    },
+    {
+      "seed": 109106003,
+      "player": 2,
+      "first_conquest": 36,
+      "engineering": 56,
+      "walled_conquest": 5,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 4,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106004,
+      "player": 0,
+      "first_conquest": 31,
+      "engineering": 61,
+      "walled_conquest": 48,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 29,
+      "war_walled": 1,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106004,
+      "player": 1,
+      "first_conquest": 41,
+      "engineering": 58,
+      "walled_conquest": 11,
+      "before_engineering": 0,
+      "no_land_siege": 11,
+      "siege_not_near": 0,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106004,
+      "player": 2,
+      "first_conquest": 31,
+      "engineering": 68,
+      "walled_conquest": 85,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 5,
+      "war_walled": 22,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 4
+    },
+    {
+      "seed": 109106005,
+      "player": 0,
+      "first_conquest": 36,
+      "engineering": 61,
+      "walled_conquest": 12,
+      "before_engineering": 0,
+      "no_land_siege": 12,
+      "siege_not_near": 0,
+      "war_walled": 7,
+      "war_no_siege_or_queue": 7,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106005,
+      "player": 1,
+      "first_conquest": 31,
+      "engineering": 64,
+      "walled_conquest": 5,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 2,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106005,
+      "player": 2,
+      "first_conquest": 31,
+      "engineering": 64,
+      "walled_conquest": 82,
+      "before_engineering": 0,
+      "no_land_siege": 82,
+      "siege_not_near": 0,
+      "war_walled": 25,
+      "war_no_siege_or_queue": 25,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106006,
+      "player": 0,
+      "first_conquest": 36,
+      "engineering": 65,
+      "walled_conquest": 101,
+      "before_engineering": 0,
+      "no_land_siege": 3,
+      "siege_not_near": 24,
+      "war_walled": 30,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 17
+    },
+    {
+      "seed": 109106006,
+      "player": 1,
+      "first_conquest": 26,
+      "engineering": 55,
+      "walled_conquest": 144,
+      "before_engineering": 0,
+      "no_land_siege": 67,
+      "siege_not_near": 11,
+      "war_walled": 61,
+      "war_no_siege_or_queue": 29,
+      "war_siege_not_near": 4
+    },
+    {
+      "seed": 109106006,
+      "player": 2,
+      "first_conquest": 36,
+      "engineering": 56,
+      "walled_conquest": 38,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 18,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106007,
+      "player": 0,
+      "first_conquest": 41,
+      "engineering": 69,
+      "walled_conquest": 18,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 15,
+      "war_walled": 17,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 14
+    },
+    {
+      "seed": 109106007,
+      "player": 1,
+      "first_conquest": 26,
+      "engineering": 55,
+      "walled_conquest": 0,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 0,
+      "war_walled": 0,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 0
+    },
+    {
+      "seed": 109106007,
+      "player": 2,
+      "first_conquest": 36,
+      "engineering": 65,
+      "walled_conquest": 16,
+      "before_engineering": 0,
+      "no_land_siege": 0,
+      "siege_not_near": 10,
+      "war_walled": 15,
+      "war_no_siege_or_queue": 0,
+      "war_siege_not_near": 9
+    }
+  ],
+  "terminal_records": [
+    "END 109106000 Some(\"domination\") Some(1) 229",
+    "END 109106001 Some(\"score\") Some(0) 251",
+    "END 109106002 Some(\"score\") Some(1) 251",
+    "END 109106003 Some(\"score\") Some(2) 251",
+    "END 109106004 Some(\"score\") Some(2) 251",
+    "END 109106005 Some(\"score\") Some(0) 251",
+    "END 109106006 Some(\"score\") Some(2) 251",
+    "END 109106007 Some(\"score\") Some(2) 251"
+  ],
+  "terminal_records_match_control": true,
+  "paired_research_trace": {
+    "snapshots": 5937,
+    "all_equal": true,
+    "definition": "Selected research plus known technology set, every major at every observed turn start; treatment enables domination-siege-research, control disables it."
+  },
+  "observer_source_sha256": "9c37a5cf962160acf10f1dfd1be5520919b2cbfe907e2cfc11c13a201a3ef233",
+  "observer_rust_source": "use civvis::ai::{run_game, AdvancedAi, Ai, VictoryTarget, GrandStrategy, GENES};\nuse civvis::game::{Game, GameOptions};\nstruct Seat {\n    ai: AdvancedAi,\n    first_conquest: Option<u32>,\n    first_engineering: Option<u32>,\n    walled_conquest: u32,\n    walled_before_engineering: u32,\n    no_land_siege: u32,\n    siege_not_near: u32,\n    war_walled: u32,\n    war_no_siege_or_queue: u32,\n    war_siege_not_near: u32,\n}\nimpl Ai for Seat {\n    fn uses_player_observation(&self) -> bool { self.ai.uses_player_observation() }\n    fn take_turn(&mut self, g: &mut Game, pid: usize) {\n        let turn = g.turn;\n        if g.players[pid].techs.contains(&civvis::name!(\"engineering\")) { self.first_engineering.get_or_insert(turn); }\n        self.ai.take_turn(g, pid);\n        if let Some(plan) = self.ai.current_plan() {\n            if plan.strategy == GrandStrategy::Conquest {\n                self.first_conquest.get_or_insert(turn);\n                if plan.target_city.and_then(|cid| g.cities.get(&cid)).is_some_and(|city| city.owner != pid && city.wall_hp > 0) {\n                    self.walled_conquest += 1;\n                    let city = &g.cities[&plan.target_city.unwrap()];\n                    let siege: Vec<_> = g.units.values().filter(|unit| {\n                        let spec = &g.rules.units[unit.kind];\n                        unit.owner == pid && spec.class == \"military\" && spec.siege\n                            && !matches!(spec.domain.as_deref(), Some(\"sea\" | \"air\"))\n                    }).collect();\n                    if g.is_at_war(pid, city.owner) {\n                        self.war_walled += 1;\n                        let queued = g.cities.values().filter(|c| c.owner == pid).any(|c| c.queue.iter().any(|item| {\n                            if let civvis::game::Item::Unit { unit } = item {\n                                let spec = &g.rules.units[*unit];\n                                spec.class == \"military\" && spec.siege && !matches!(spec.domain.as_deref(), Some(\"sea\" | \"air\"))\n                            } else { false }\n                        }));\n                        if siege.is_empty() && !queued { self.war_no_siege_or_queue += 1; }\n                        if !siege.is_empty() && !siege.iter().any(|unit| g.wdist(unit.pos, city.pos) <= 6) { self.war_siege_not_near += 1; }\n                    }\n                    if siege.is_empty() { self.no_land_siege += 1; }\n                    else if !siege.iter().any(|unit| g.wdist(unit.pos, city.pos) <= 6) { self.siege_not_near += 1; }\n                    if !g.players[pid].techs.contains(&civvis::name!(\"engineering\")) { self.walled_before_engineering += 1; }\n                }\n            }\n        }\n    }\n}\nfn main() {\n    for seed in 109106000..109106008 {\n        let mut g=Game::new_with(GameOptions{barbarians:false,speed:\"online\".into(),..GameOptions::new(3,36,22,seed,250,0)});\n        let mut ais:Vec<_>=AdvancedAi::fleet_targeting(&g,VictoryTarget::Domination).into_iter().map(|mut ai| {\n            (GENES.iter().find(|gene|gene.tag==\"domination-lane-hands-over\").unwrap().enable)(&mut ai);\n            (GENES.iter().find(|gene|gene.tag==\"domination-siege-research\").unwrap().disable)(&mut ai);\n            Seat{ai,first_conquest:None,first_engineering:None,walled_conquest:0,walled_before_engineering:0,no_land_siege:0,siege_not_near:0,war_walled:0,war_no_siege_or_queue:0,war_siege_not_near:0}\n        }).collect();\n        run_game(&mut g,&mut ais);\n        for (pid,seat) in ais.iter().enumerate() {\n            println!(\"{seed} p{pid} first_conquest={:?} engineering={:?} walled_conquest={} before_engineering={} no_land_siege={} siege_not_near={} war_walled={} war_no_siege_or_queue={} war_siege_not_near={}\",seat.first_conquest,seat.first_engineering,seat.walled_conquest,seat.walled_before_engineering,seat.no_land_siege,seat.siege_not_near,seat.war_walled,seat.war_no_siege_or_queue,seat.war_siege_not_near);\n        }\n        println!(\"END {seed} {:?} {:?} {}\",g.victory_type,g.winner,g.turn);\n    }\n}\n",
+  "reproduction": "Check out source_commit; build the developer-tools library with cargo build --profile ci --locked --features developer-tools --lib. Extract observer_rust_source to a temporary .rs file and compile with rustc --edition=2021 -O --extern civvis=<that build rlib> -L dependency=target/ci/deps. Run from the checked-out repository. END records contain raw engine turn, not reported_turn().",
+  "rustc_version": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "commitment_holdout": {
+    "protocol": {
+      "games_per_arm": 40,
+      "start_seed": 109107000,
+      "end_seed": 109107039,
+      "source_commit": "7b2fa2d5c",
+      "shape": "3p36x22Online250, no city-states/barbs, all majors targeting Domination",
+      "shared": "domination-lane-hands-over ON; domination-siege-research OFF",
+      "treatment": "siege-commitment ON",
+      "control": "siege-commitment OFF",
+      "primary": "fraction of worlds ending in Domination; paired terminal outcomes",
+      "secondary": "post-turn walled Conquest observations, fielded/queued land siege gap, distance <=6 proximity",
+      "limitations": "Symmetric-lane completion, not observed-player competitive win rate; no default promotion from this batch; follow-up selected after eight-seed exploratory delivery census; seeds disjoint from exploration.",
+      "difficulty": "prince"
+    },
+    "domination_completions": {
+      "control": 10,
+      "commitment": 5,
+      "games_per_arm": 40
+    },
+    "paired_discordance": {
+      "gained_completions": 0,
+      "lost_completions": 5,
+      "two_sided_exact_binomial_p": 0.0625
+    },
+    "observation_totals": {
+      "control": {
+        "war_walled": 1127,
+        "war_no_siege_or_queue": 80,
+        "war_siege_not_near": 402
+      },
+      "commitment": {
+        "war_walled": 1349,
+        "war_no_siege_or_queue": 216,
+        "war_siege_not_near": 486
+      }
+    },
+    "terminal_pairs": [
+      {
+        "seed": 109107000,
+        "control": {
+          "victory": "domination",
+          "winner": 0,
+          "raw_turn": 229
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107001,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107002,
+        "control": {
+          "victory": "domination",
+          "winner": 0,
+          "raw_turn": 171
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107003,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107004,
+        "control": {
+          "victory": "domination",
+          "winner": 2,
+          "raw_turn": 221
+        },
+        "commitment": {
+          "victory": "domination",
+          "winner": 2,
+          "raw_turn": 221
+        }
+      },
+      {
+        "seed": 109107005,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107006,
+        "control": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107007,
+        "control": {
+          "victory": "domination",
+          "winner": 0,
+          "raw_turn": 236
+        },
+        "commitment": {
+          "victory": "domination",
+          "winner": 0,
+          "raw_turn": 236
+        }
+      },
+      {
+        "seed": 109107008,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107009,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107010,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107011,
+        "control": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107012,
+        "control": {
+          "victory": "domination",
+          "winner": 2,
+          "raw_turn": 213
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107013,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107014,
+        "control": {
+          "victory": "domination",
+          "winner": 1,
+          "raw_turn": 234
+        },
+        "commitment": {
+          "victory": "domination",
+          "winner": 1,
+          "raw_turn": 197
+        }
+      },
+      {
+        "seed": 109107015,
+        "control": {
+          "victory": "domination",
+          "winner": 1,
+          "raw_turn": 190
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107016,
+        "control": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107017,
+        "control": {
+          "victory": "domination",
+          "winner": 1,
+          "raw_turn": 162
+        },
+        "commitment": {
+          "victory": "domination",
+          "winner": 1,
+          "raw_turn": 221
+        }
+      },
+      {
+        "seed": 109107018,
+        "control": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107019,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107020,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107021,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107022,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107023,
+        "control": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107024,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107025,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107026,
+        "control": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107027,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107028,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107029,
+        "control": {
+          "victory": "domination",
+          "winner": 1,
+          "raw_turn": 239
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107030,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107031,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 0,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107032,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107033,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107034,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107035,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107036,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107037,
+        "control": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 2,
+          "raw_turn": 251
+        }
+      },
+      {
+        "seed": 109107038,
+        "control": {
+          "victory": "domination",
+          "winner": 0,
+          "raw_turn": 230
+        },
+        "commitment": {
+          "victory": "domination",
+          "winner": 0,
+          "raw_turn": 229
+        }
+      },
+      {
+        "seed": 109107039,
+        "control": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        },
+        "commitment": {
+          "victory": "score",
+          "winner": 1,
+          "raw_turn": 251
+        }
+      }
+    ],
+    "observer_rust_source": "use civvis::ai::{run_game, AdvancedAi, Ai, VictoryTarget, GrandStrategy, GENES};\nuse civvis::game::{Game, GameOptions};\nstruct Seat {\n    ai: AdvancedAi,\n    first_conquest: Option<u32>,\n    first_engineering: Option<u32>,\n    walled_conquest: u32,\n    walled_before_engineering: u32,\n    no_land_siege: u32,\n    siege_not_near: u32,\n    war_walled: u32,\n    war_no_siege_or_queue: u32,\n    war_siege_not_near: u32,\n}\nimpl Ai for Seat {\n    fn uses_player_observation(&self) -> bool { self.ai.uses_player_observation() }\n    fn take_turn(&mut self, g: &mut Game, pid: usize) {\n        let turn = g.turn;\n        if g.players[pid].techs.contains(&civvis::name!(\"engineering\")) { self.first_engineering.get_or_insert(turn); }\n        self.ai.take_turn(g, pid);\n        if let Some(plan) = self.ai.current_plan() {\n            if plan.strategy == GrandStrategy::Conquest {\n                self.first_conquest.get_or_insert(turn);\n                if plan.target_city.and_then(|cid| g.cities.get(&cid)).is_some_and(|city| city.owner != pid && city.wall_hp > 0) {\n                    self.walled_conquest += 1;\n                    let city = &g.cities[&plan.target_city.unwrap()];\n                    let siege: Vec<_> = g.units.values().filter(|unit| {\n                        let spec = &g.rules.units[unit.kind];\n                        unit.owner == pid && spec.class == \"military\" && spec.siege\n                            && !matches!(spec.domain.as_deref(), Some(\"sea\" | \"air\"))\n                    }).collect();\n                    if g.is_at_war(pid, city.owner) {\n                        self.war_walled += 1;\n                        let queued = g.cities.values().filter(|c| c.owner == pid).any(|c| c.queue.iter().any(|item| {\n                            if let civvis::game::Item::Unit { unit } = item {\n                                let spec = &g.rules.units[*unit];\n                                spec.class == \"military\" && spec.siege && !matches!(spec.domain.as_deref(), Some(\"sea\" | \"air\"))\n                            } else { false }\n                        }));\n                        if siege.is_empty() && !queued { self.war_no_siege_or_queue += 1; }\n                        if !siege.is_empty() && !siege.iter().any(|unit| g.wdist(unit.pos, city.pos) <= 6) { self.war_siege_not_near += 1; }\n                    }\n                    if siege.is_empty() { self.no_land_siege += 1; }\n                    else if !siege.iter().any(|unit| g.wdist(unit.pos, city.pos) <= 6) { self.siege_not_near += 1; }\n                    if !g.players[pid].techs.contains(&civvis::name!(\"engineering\")) { self.walled_before_engineering += 1; }\n                }\n            }\n        }\n    }\n}\nfn main() {\n    let on=std::env::args().nth(1).as_deref()==Some(\"on\");\n    for seed in 109107000..109107040 {\n        let mut g=Game::new_with(GameOptions{barbarians:false,speed:\"online\".into(),..GameOptions::new(3,36,22,seed,250,0)});\n        let mut ais:Vec<_>=AdvancedAi::fleet_targeting(&g,VictoryTarget::Domination).into_iter().map(|mut ai| {\n            (GENES.iter().find(|gene|gene.tag==\"domination-lane-hands-over\").unwrap().enable)(&mut ai);\n            (GENES.iter().find(|gene|gene.tag==\"domination-siege-research\").unwrap().disable)(&mut ai);\n            let commitment=GENES.iter().find(|gene|gene.tag==\"siege-commitment\").unwrap();\n            if on { (commitment.enable)(&mut ai); } else { (commitment.disable)(&mut ai); }\n            Seat{ai,first_conquest:None,first_engineering:None,walled_conquest:0,walled_before_engineering:0,no_land_siege:0,siege_not_near:0,war_walled:0,war_no_siege_or_queue:0,war_siege_not_near:0}\n        }).collect();\n        run_game(&mut g,&mut ais);\n        for (pid,seat) in ais.iter().enumerate() {\n            println!(\"{seed} p{pid} first_conquest={:?} engineering={:?} walled_conquest={} before_engineering={} no_land_siege={} siege_not_near={} war_walled={} war_no_siege_or_queue={} war_siege_not_near={}\",seat.first_conquest,seat.first_engineering,seat.walled_conquest,seat.walled_before_engineering,seat.no_land_siege,seat.siege_not_near,seat.war_walled,seat.war_no_siege_or_queue,seat.war_siege_not_near);\n        }\n        println!(\"END {seed} {:?} {:?} {}\",g.victory_type,g.winner,g.turn);\n    }\n}\n",
+    "interpretation": "The disjoint holdout does not support enabling siege commitment for this configuration. Counts are symmetric world completion, not one treated player winning; observation totals are not independent samples. No deployment/default changes."
+  }
+}
