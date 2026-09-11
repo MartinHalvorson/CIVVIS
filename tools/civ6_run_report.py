@@ -149,11 +149,29 @@ WIN_BAND = (4, 6)
 #: with theirs.** At Emperor the AI takes the rung's yields and free Settlers and
 #: we do not; that head start is worth 1.74 cities by turn 60 to whoever holds it.
 #:
-#: ⭐⭐⭐ Which turns "play better" into a number. To match a handicapped rival at
-#: turn 60 the agent has to play **1.74 cities better than even**, and it
-#: currently plays **1.27** better. **The gap to parity is 0.47 cities at turn
-#: 60** — that is the target, and it is a far smaller thing than the raw 2.59
-#: against a 4-6 band suggests.
+#: ⭐⭐⭐ Which turns "play better" into a number.
+#:
+#: ⭐ VERIFIED AT FULL LENGTH, and it is the only `--turns 80` reading on this
+#: page that survived #3534's rule. Re-run at `--turns 250`:
+#:
+#:     arm                                    ours  rival    gap    seats
+#:     250t · handicap all  (equal footing)   4.46   3.20  +1.26  105/35
+#:     250t · handicap rivals (deployment)    2.59   3.33  -0.74   90/30
+#:     250t · handicap rivals (second arm)    2.89   3.50  -0.61  180/60
+#:
+#: against the 80-turn arms' +1.27 and −0.61. The equal-footing edge is real and
+#: it holds: **the agent out-expands the shipped AI by 1.26 cities when both
+#: play the same rules.**
+#:
+#: ⚠ AND THE PARITY GAP IS BIGGER THAN I FIRST SAID. An earlier version of this
+#: paragraph derived it indirectly — 1.74 of handicap minus 1.27 of edge — and
+#: got 0.47. The direct reading is ours-minus-rival at the deployment shape, and
+#: over the two full-length arms that is **0.65 cities** (−0.74 on 90 seats,
+#: −0.61 on 180, seat-weighted). Prefer the direct number: the indirect one
+#: subtracts effect sizes measured on different arms and inherits both errors.
+#:
+#: **So the target is about two thirds of a city at turn 60**, and #3535 prices
+#: what it buys: the seats that reach four cities win 19.6% against 6.7%.
 #:
 #: ## ⭐⭐⭐⭐ THE BAND HOLDS AT THE DEPLOYMENT SHAPE, DERIVED THERE
 #:
