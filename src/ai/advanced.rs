@@ -22868,7 +22868,7 @@ impl AdvancedAi {
         {
             return false;
         }
-        let committed_launch = [
+        [
             "launch_earth_satellite",
             "launch_moon_landing",
             "launch_mars_colony",
@@ -22878,8 +22878,7 @@ impl AdvancedAi {
         .any(|project| {
             g.players[pid].science_projects.contains(project)
                 || Self::science_project_is_queued(g, pid, project)
-        });
-        committed_launch
+        })
     }
 
     fn science_spaceport_target(&self, g: &Game, pid: usize) -> usize {
