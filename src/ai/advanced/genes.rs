@@ -2311,6 +2311,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "tourism-land-reservation", field: "tourism_land_reservation", kind: Kind::OptIn, enable: AdvancedAi::enable_tourism_land_reservation, disable: AdvancedAi::disable_tourism_land_reservation },
     Gene { tag: "upgrade-window-campaign", field: "upgrade_window_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_upgrade_window_campaign, disable: AdvancedAi::disable_upgrade_window_campaign },
     Gene { tag: "victory-deadline-budget", field: "victory_deadline_budget", kind: Kind::OptIn, enable: AdvancedAi::enable_victory_deadline_budget, disable: AdvancedAi::disable_victory_deadline_budget },
+    // A one-turn boosted technology interrupts a peaceful lane beeline that is
+    // not about to land its target; see `boosted_bargain_tech_3`.
+    Gene { tag: "boosted-bargain-first-3", field: "boosted_bargain_first_3", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first_3, disable: AdvancedAi::disable_boosted_bargain_first_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

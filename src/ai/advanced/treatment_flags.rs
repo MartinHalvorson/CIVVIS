@@ -3482,6 +3482,7 @@ impl AdvancedAi {
     pub fn enable_boosted_bargain_first(&mut self) {
         self.boosted_bargain_first = true;
         self.boosted_bargain_first_2 = false;
+        self.boosted_bargain_first_3 = false;
     }
 
     /// The twin of `enable_boosted_bargain_first`.
@@ -3495,11 +3496,27 @@ impl AdvancedAi {
     pub fn enable_boosted_bargain_first_2(&mut self) {
         self.boosted_bargain_first_2 = true;
         self.boosted_bargain_first = false;
+        self.boosted_bargain_first_3 = false;
     }
 
     /// The twin of `enable_boosted_bargain_first_2`.
     pub fn disable_boosted_bargain_first_2(&mut self) {
         self.boosted_bargain_first_2 = false;
+    }
+
+    /// `boosted-bargain-first-3`: a one-turn boosted technology may
+    /// interrupt a peaceful lane beeline that is not about to land its
+    /// target; the other versions stand down. See
+    /// `AdvancedAi::boosted_bargain_tech_3`.
+    pub fn enable_boosted_bargain_first_3(&mut self) {
+        self.boosted_bargain_first_3 = true;
+        self.boosted_bargain_first = false;
+        self.boosted_bargain_first_2 = false;
+    }
+
+    /// The twin of `enable_boosted_bargain_first_3`.
+    pub fn disable_boosted_bargain_first_3(&mut self) {
+        self.boosted_bargain_first_3 = false;
     }
 
     /// A wonder within twelve turns of done in one of the empire's strongest
