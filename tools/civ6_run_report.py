@@ -117,6 +117,19 @@ WIN_BAND = (4, 6)
 #: broken; it says the agent is playing a board where the rung's head start
 #: decides the opening.
 #:
+#: ⚠⚠ ON THE `--turns 80` THOSE ARMS USED. It is a real hazard and it was
+#: checked rather than assumed: `--turns N` does not truncate a game, it
+#: RESCALES the agent, because 46 call sites of `Game::turn_limit()` and 54 of
+#: `standard_duration` express deadlines, bands and cadences as a share of the
+#: game's length. It cost a retraction elsewhere the same day (see
+#: `rapid_city_expansion_2` in `src/ai.rs`).
+#:
+#: ⭐ These arms survive it. The deployment shape re-run at `--turns 250` gives
+#: **mean 2.59, 9% in band** against the 80-turn arm's 2.59 and 10% — the same
+#: answer, because what binds here is land and production rather than any
+#: schedule. The comparison to live, whose games run 250 turns, is therefore
+#: sound. **A gene-level question would not have survived it.**
+#:
 #: ## ⭐⭐⭐⭐ ON AN EQUAL FOOTING THE AGENT OUT-EXPANDS THE FIRAXIS AI
 #:
 #: The same two arms carry the rival's own opening, which settles what the

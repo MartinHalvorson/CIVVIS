@@ -3181,7 +3181,8 @@ pub struct BasicAi {
     /// pantheon, or site ranking. It reserves the capital's next empty production choice,
     /// uses the measured opening-band pipeline, and keeps the legal
     /// population and payback gates in step with the strategic controller.
-    /// 🔴 2026-09-11: AT THE DEPLOYMENT SHAPE THIS COSTS 0.27 CITIES BY TURN 60.
+    /// 🛑 2026-09-11, RETRACTED THE SAME DAY: the reading below is an artefact
+    /// of the probe's own length. Keep reading; the retraction is the point.
     ///
     /// Priced by withholding at the shape the live seat plays — 60×38, 4
     /// players, standard speed, Emperor, `--rivals firaxis-mix --handicap
@@ -3206,13 +3207,45 @@ pub struct BasicAi {
     /// narrowly. And an expansion gene may well pay after turn 80 — this says
     /// what it costs in the opening, not what it is worth in a game.
     ///
-    /// ⭐ It is recorded because the opening is where this gene acts: the note
-    /// below says it "uses the measured opening-band pipeline", and the seat it
-    /// ships to opens on 2.6 cities where every recorded win came from 4–6.
-    /// #3528 puts the gap to parity with a handicapped rival at 0.47 cities at
-    /// turn 60, and this gene and the one under it account for most of that
-    /// between them. **A native screen at this shape is the next step**, not a
-    /// default flip on this reading.
+    /// ## 🛑🛑 RETRACTED — `--turns 80` MOVED THIS GENE'S OWN BAND TO TURN 19
+    ///
+    /// `rapid_city_expansion::band_turn` is `turn_limit() *
+    /// EXPANSION_BAND_SHARE`, and that share is **0.24**. At the screen's normal
+    /// 250 turns the band lands on turn 60, which is the measured opening band.
+    /// At the `--turns 80` the probe used it lands on **turn 19** — so
+    /// `pipeline_width` returned `None` for turns 19 to 80 and the caller's
+    /// `unwrap_or(1)` held the pipeline at a single walker for the whole window
+    /// the probe then measured. The probe shortened the game and the gene
+    /// dutifully shortened its opening to match.
+    ///
+    /// Re-run at `--turns 250`, same shape, 60 games, 180 seats:
+    ///
+    ///     column                    on      off     diff       z
+    ///     cities_at_game_turn_60  2.918   2.867   +0.050   +0.42
+    ///     cities (final)          7.649   8.892   -1.242   -2.75
+    ///     score_share             0.204   0.212   -0.008   -0.70
+    ///     win                     0.082   0.108   -0.026   -0.59
+    ///
+    /// **The opening cost is gone**: +0.05 against the claimed −0.27. What is
+    /// left is a −1.24 on final cities at z −2.75, which is one column of seven
+    /// at a bar that seven comparisons put near 2.7, and which **neither share
+    /// nor win follows** (z −0.70 and −0.59). That is the shape of a mechanism
+    /// moving without an outcome, and `docs/SURROGATE_ENDPOINT.md` is the
+    /// standing reason not to bank it. The gene keeps shipping on.
+    ///
+    /// ## ⚠⚠ AND THE METHOD LESSON IS BIGGER THAN THE GENE
+    ///
+    /// `--turns N` does not truncate a game, it **rescales the agent**. There
+    /// are 46 call sites of `Game::turn_limit()` and 54 of `standard_duration`
+    /// across the AI: deadlines, bands, cadences and lane windows are all
+    /// expressed as a share of the game's length. Shorten the game and every one
+    /// of them moves.
+    ///
+    /// ⭐ It is not always fatal — the deployment-shape opening reads 2.59 at
+    /// both 80 and 250 turns, because there the binding constraint is land and
+    /// production rather than any schedule. But **no gene-level question may be
+    /// answered on a shortened game**, and a probe that was cheap because it was
+    /// short is not cheap if it answers a different question.
     pub(crate) rapid_city_expansion_2: bool,
     /// `capital-settler-after-completion`: once the capital is population two
     /// and has no queued work, start a legal Settler instead of letting the
