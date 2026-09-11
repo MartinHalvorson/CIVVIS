@@ -124,3 +124,87 @@ fn public_rivals_do_not_disclose_private_accumulators_or_camp_timers() {
     assert_eq!(view.domestic_tourists(1), game.domestic_tourists(1));
     assert_eq!(view.barb_camps.get(&visible), Some(&0));
 }
+
+fn city_with_hidden_loyalty_pressure() -> (Game, u32, u32) {
+    let mut g = Game::new_full(2, 40, 26, 91_170, 200, 0, false);
+    let home = g.units[&g.player_unit_ids(0)[0]].pos;
+    g.found_city_for(0, home, None);
+    let frontier = g
+        .map
+        .tiles
+        .values()
+        .find(|tile| {
+            (8..=10).contains(&g.wdist(home, tile.pos))
+                && !g.rules.is_water(tile)
+                && g.rules.is_passable(tile)
+                && g.city_at(tile.pos).is_none()
+        })
+        .unwrap()
+        .pos;
+    g.found_city_for(0, frontier, None);
+    let own = g.city_at(frontier).unwrap();
+    let hidden = g
+        .map
+        .tiles
+        .values()
+        .find(|tile| {
+            (5..=7).contains(&g.wdist(frontier, tile.pos))
+                && !g.rules.is_water(tile)
+                && g.rules.is_passable(tile)
+                && !g.player_can_see(0, tile.pos)
+                && g.city_at(tile.pos).is_none()
+        })
+        .unwrap()
+        .pos;
+    g.found_city_for(1, hidden, None);
+    let rival = g.city_at(hidden).unwrap();
+    g.cities.get_mut(&rival).unwrap().pop = 40;
+    assert!(!g.player_can_see(0, hidden));
+    (g, own, rival)
+}
+
+#[test]
+fn owned_city_loyalty_rate_survives_hidden_population_redaction() {
+    let (g, own, rival) = city_with_hidden_loyalty_pressure();
+    let actual = g.city_loyalty_per_turn(&g.cities[&own]);
+    assert!(
+        actual < 0.0,
+        "the city must actually be losing loyalty: {actual}"
+    );
+    let view = g.player_decision_view(0);
+    assert!(
+        !view.cities.contains_key(&rival),
+        "the pressure source stays hidden"
+    );
+    assert_eq!(view.city_loyalty_per_turn(&view.cities[&own]), actual);
+    assert!(view
+        .observed_city_loyalty_per_turn
+        .keys()
+        .all(|id| view.cities[id].owner == 0));
+    assert!(
+        g.observed_city_loyalty_per_turn.is_empty(),
+        "building a view does not mutate the world"
+    );
+}
+
+#[test]
+fn loyalty_readback_preserves_own_reports_without_exposing_foreign_reports() {
+    let (mut g, own, rival) = city_with_hidden_loyalty_pressure();
+    Arc::make_mut(&mut g.observed_city_loyalty_per_turn).extend([(own, -7.5), (rival, -99.0)]);
+    let view = g.player_decision_view(0);
+    assert_eq!(view.city_loyalty_per_turn(&view.cities[&own]), -7.5);
+    assert!(!view.observed_city_loyalty_per_turn.contains_key(&rival));
+    assert!(!view.cities.contains_key(&rival));
+}
+
+#[test]
+fn each_observation_refreshes_the_current_owned_loyalty_rate() {
+    let (mut g, own, rival) = city_with_hidden_loyalty_pressure();
+    let before = g.player_decision_view(0);
+    g.cities.get_mut(&rival).unwrap().pop = 1;
+    let actual = g.city_loyalty_per_turn(&g.cities[&own]);
+    let after = g.player_decision_view(0);
+    assert_eq!(after.city_loyalty_per_turn(&after.cities[&own]), actual);
+    assert_ne!(before.city_loyalty_per_turn(&before.cities[&own]), actual);
+    assert!(!after.cities.contains_key(&rival));
+}

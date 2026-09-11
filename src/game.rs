@@ -6420,10 +6420,11 @@ pub struct Game {
     pub observed_city_worked_tiles: Arc<BTreeMap<u32, Vec<Pos>>>,
     #[serde(default)]
     pub observed_city_specialists: Arc<BTreeMap<u32, Vec<String>>>,
-    /// Host loyalty rates and banner defense strengths for reconstructed cities.
-    /// Keys are CIVVIS city ids, populated only by the live mirror.
+    /// Observed loyalty rates for owned cities, keyed by CIVVIS city id.
+    /// Populated by the live mirror and native player decision views.
     #[serde(default)]
     pub observed_city_loyalty_per_turn: Arc<BTreeMap<u32, f64>>,
+    /// Observed banner defense strengths for reconstructed cities.
     #[serde(default)]
     pub observed_city_strength: Arc<BTreeMap<u32, f64>>,
     /// Host-reported outer-defense capacity for mirrored cities. Native games
