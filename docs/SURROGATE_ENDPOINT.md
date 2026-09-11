@@ -140,6 +140,54 @@ The bands that *can* be quoted agree with each other:
 Dropping the 1, 3, 5, 10 or 20 largest-effect genes moves the pooled slope only
 between 3.1 and 3.6, so no handful of outliers is carrying it.
 
+## ⚠⚠ The slope is a property of the corpus. Quote them together.
+
+This file reads **every screen on disk**. The gene ledger does not: it curates
+**10 sources** out of 82 and the promotion rule reads only those. Run the tool
+three ways and the slope moves by more than a factor of two.
+
+| corpus | screens | records | genes | slope | floor | detection edge |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| every screen on disk | 81 | 9,099 | 373 | **2.94** | 0.466 | 1.28× |
+| `--shape standard` | 58 | 8,634 | 353 | **3.13** | 0.425 | 1.36× |
+| `--sources` (the ledger's) | 10 | 419 | 136 | **1.28** | 0.330 | 1.29× |
+
+The two large corpora agree at about 3. The ledger's own sources, which are
+older, fewer and include `legacy`-shape screens, read less than half that. The
+detection edge is stable at 1.3× throughout, which is reassuring — the thing that
+moves is the *conversion rate* between the axes, not whether share carries signal.
+
+⭐ **So the headline 2.94 belongs to the standard-shape corpus and nowhere else.**
+Before applying a slope, run the tool on the corpus you are about to reason
+about. The tool now prints which corpus produced its numbers on every run,
+because a slope quoted without its corpus is the mistake this table exists to
+prevent.
+
+## ⚠⚠ A pooled per-gene reading from this corpus is NOT ledger-grade
+
+The temptation this file creates is to pool a single gene over every screen that
+ever priced it and treat the result as a verdict. **That is not the promotion
+rule and it does not agree with it.** Worked example, `native-emergency-purchase`:
+
+| source | reading |
+| --- | --- |
+| pooled over 30 screens on disk | −0.33 win pp, z = −2.46 |
+| `GENE_HEURISTIC_RANKING.md`, the ledger's `Diff` | **+0.01%**, ships **on** |
+
+Three different estimators of the pooled delta — inverse-variance, unweighted
+and seat-weighted — all land near −0.3, so the gap is not an estimator artefact.
+It is the **corpus**: the ranking's `Diff` is computed over the ledger's curated
+sources, and the pooled reading above includes 72 screens that were never
+entered as evidence. Those screens are excluded for reasons — wrong shape,
+superseded build, a batch that was never meant to price — and this file does not
+know which.
+
+🛑 **So do not open a pull request moving a gene's default on the strength of a
+pooled number from this tool.** The operator's standing rule is that a negative
+`Diff` vetoes a gene, and `Diff` means the ledger's `Diff`. Use `--sources` if
+you want to reason about the same evidence the rule does, and expect a much
+thinner corpus when you do.
+
 ## ⚠⚠ This is a PRINCE calibration, and that is exactly the wrong place for it
 
 Every screen in the corpus reports `overall_win` as exactly 1/6. That is not a
@@ -174,6 +222,8 @@ though a gene that lifts share has been shown to lift wins *through* share.
 tools/share_predicts_win.py                 # the table above
 tools/share_predicts_win.py --bands         # plus the magnitude bands
 tools/share_predicts_win.py --json          # machine-readable
+tools/share_predicts_win.py --shape standard   # one shape only
+tools/share_predicts_win.py --sources          # only what the ledger reads
 tools/share_predicts_win.py --screens 'docs/gene_screens/2026-09-*.json'
 ```
 
