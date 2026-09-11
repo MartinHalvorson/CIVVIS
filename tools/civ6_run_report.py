@@ -246,6 +246,38 @@ WIN_BAND = (4, 6)
 #: rung's asymmetry go away — nothing in the agent's gift does — but it puts the
 #: opening back where the agent's decisions can matter.
 #:
+#: ## 🛑🛑 RETRACTED BY A CONTROLLED ARM: A BIGGER BOARD DOES NOT HELP
+#:
+#: The recommendation above rests on the ladder's 71 `MAPSIZE_SMALL`-at-Emperor
+#: attempts. A controlled arm at the deployment rung on a Small-sized board
+#: does not reproduce them. 40 games, 200 seats, 74×46, 6 players, standard,
+#: Emperor, `--rivals firaxis-mix --handicap rivals`, `--turns 250`:
+#:
+#:     arm                       players  c@60  in band  our win  fair  ratio
+#:     Tiny  60×38  (deployment)       4  2.59       9%     7.8%  25.0%  0.31
+#:     Tiny  60×38  (second arm)       4  2.89      21%     9.4%  25.0%  0.38
+#:     Small 74×46  (deployment)       6  2.79      18%     6.0%  16.7%  0.36
+#:
+#: `fair` is 100/players, the share a seat takes by chance; `ratio` normalises
+#: the win rate by it, which is the only way to compare across player counts.
+#:
+#: ⭐ **The bigger board gives the same opening (2.79 against 2.59 and 2.89) and
+#: the same share of fair (0.36 against 0.31 and 0.38).** It buys nothing.
+#:
+#: ⚠⚠ So do not act on the size recommendation above. Two readings disagree and
+#: the controlled one is the better evidence for a causal claim — but the
+#: disagreement is unexplained, and there is a specific reason to distrust my
+#: own arm: **`MAPSIZE_SMALL`'s real dimensions were never read.** 74×46 is a
+#: guess from the standard screen shape, exactly the guess that cost three ticks
+#: on `MAPSIZE_TINY` before 58 live runs turned out to be recording 60×38 in
+#: their own `tiles` events. There are no live Small runs on this disk to read.
+#:
+#: **What to do before touching the size: get one live `MAPSIZE_SMALL` run,
+#: read its `tiles` width and height, and re-run the arm at those numbers.**
+#: Until then the honest position is that the board is not a demonstrated lever,
+#: and #3544's conclusion stands on its own — the separation from the AI is
+#: conversion, not ground.
+#:
 #: ⚠ Cautions. The live Tiny arm is 17 runs; the Small-at-Emperor figure is
 #: observational rather than a controlled arm; and `--handicap rivals` is refused
 #: without `--rivals firaxis-mix`, so the handicap isolation comes from moving
