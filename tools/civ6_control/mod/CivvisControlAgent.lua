@@ -991,6 +991,37 @@ CivvisMilitaryFormation = function(unit)
 	end, -1);
 end;
 
+-- UnitPanel.lua:2806-2814 names a unit with NAME_UNIT/PARAM_NAME.
+-- TOURISM_BOMB requires a band name (Expansion2_InGameText.xml:940).
+-- Do this before planning: an unnamed band's empty activation highlights must
+-- not strand it before it can ever receive a concert order. Requests are async;
+-- a later snapshot supplies the name and refreshed destinations.
+do
+    local rockBandNameRequests = {};
+    function CivvisNameRockBands(player, pid, turn)
+        for _, unit in player:GetUnits():Members() do
+            pcall(function()
+                local row = GameInfo.Units[unit:GetUnitType()];
+                if row == nil or row.UnitType ~= "UNIT_ROCK_BAND" then return; end
+                local current = unit:GetName();
+                if current == nil or current ~= row.Name then return; end
+                local command = UnitCommandTypes.NAME_UNIT;
+                local parameter = UnitCommandTypes.PARAM_NAME;
+                if command == nil or parameter == nil then return; end
+                local key = tostring(pid) .. ":" .. tostring(unit:GetID());
+                if rockBandNameRequests[key] == turn then return; end
+                local params = {};
+                params[parameter] = "Civvis Band " .. tostring(unit:GetID());
+                if not UnitManager.CanStartCommand(unit, command, false) then return; end
+                rockBandNameRequests[key] = turn;
+                UnitManager.RequestCommand(unit, command, params);
+                emit("rock_band_name_requested", { turn = turn, unit = unit:GetID(), name = params[parameter] });
+            end);
+        end
+    end
+
+end
+
 -- SelectedUnit_Expansion2.lua:65-70 asks this unit's RockBand component for
 -- activation highlights. Do not replace an unreadable API with "no venues".
 function CivvisRockBandConcertPlots(unit, name)
@@ -7177,6 +7208,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			spy_missions_available = spyMissions,
 			great_person = greatPerson,
 			concert_plots = CivvisRockBandConcertPlots(unit, name),
+			rock_band_name = name == "UNIT_ROCK_BAND" and try(function() return unit:GetName(); end, nil) or nil,
 		};
 	end);
 
@@ -17946,6 +17978,7 @@ local function beginTurn(player, pid, turn)
 	warTarget = findWarTarget(player, pid);
 	CivvisBoard.reset();
 	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
+	CivvisNameRockBands(player, pid, turn);
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
