@@ -24016,8 +24016,9 @@ impl AdvancedAi {
     /// same wall-first/local-land-defender order as the damage path so the
     /// threatened city can reclaim a Settler before the first hit lands. If a
     /// visible hostile can already execute an attack on the City Center, put
-    /// the local defender first: a forty-production wall cannot answer the
-    /// attack that arrives before the wall completes.
+    /// the local defender first unless the host says Ancient Walls finish no
+    /// later. Both require production time; imminence does not make a unit
+    /// immediate, and a completed first wall also unlocks city bombardment.
     fn preemptive_major_war_defense_item(
         &self,
         g: &Game,
@@ -24036,9 +24037,27 @@ impl AdvancedAi {
                 .best_military(g, pid, city, Some(false))
                 .or_else(|| self.base.best_military(g, pid, city, None))
             {
-                return Some(Item::Unit {
+                let defender = Item::Unit {
                     unit: Name::new(&unit),
-                });
+                };
+                let wall = Item::Building {
+                    building: crate::name!("walls"),
+                };
+                // Native Ephesus t71 offered both in two turns. Imminence
+                // alone does not make a unit arrive before fortification.
+                // Unknown timings retain the existing defender fallback.
+                let valid_turns = |item: &Item| {
+                    g.host_production_turns(city, item)
+                        .filter(|turns| turns.is_finite() && *turns > 0.0)
+                };
+                if g.can_produce(pid, city, &wall)
+                    && valid_turns(&wall)
+                        .zip(valid_turns(&defender))
+                        .is_some_and(|(wall, defender)| wall <= defender)
+                {
+                    return Some(wall);
+                }
+                return Some(defender);
             }
         }
         for building in ["walls", "medieval_walls", "renaissance_walls"] {
