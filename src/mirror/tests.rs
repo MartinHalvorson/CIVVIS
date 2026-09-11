@@ -13898,3 +13898,112 @@ fn native_open_work_slots_do_not_relocate_palace_writing() {
         .unwrap()
         .contains("any"));
 }
+
+#[test]
+fn native_band_choices_override_refusals_and_refresh_without_stale_offers() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 186,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots: (0..12)
+            .flat_map(|x| (0..12).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let mut state = StateSnapshot {
+        turn: 186,
+        cities: vec![StateCity {
+            id: 1,
+            name: "Athens".into(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        }],
+        units: vec![StateUnit {
+            id: 6815767,
+            kind: "UNIT_ROCK_BAND".into(),
+            x: 5,
+            y: 5,
+            xp: Some(15),
+            level: Some(1),
+            promotions: Some(vec![]),
+            offered_promotions: Some(vec![
+                "PROMOTION_GOES_TO".into(),
+                "PROMOTION_POP".into(),
+                "PROMOTION_INDIE".into(),
+            ]),
+            ..StateUnit::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    state.refused_promotions.insert(
+        6815767,
+        [
+            "PROMOTION_MUSIC_FESTIVAL".into(),
+            "PROMOTION_ALBUM_COVER_ART".into(),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let uid = *mirror
+        .civ6_of
+        .iter()
+        .find(|(_, native)| **native == 6815767)
+        .unwrap()
+        .0;
+    let expected: BTreeSet<Name> = ["goes_to_11", "pop_star", "indie"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    assert_eq!(
+        mirror
+            .game
+            .available_promotions(uid)
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        expected,
+        "a current native menu overrides both prior refusals and simulated random choices"
+    );
+    // Native menus also govern readiness when the simulator's XP disagrees.
+    state.units[0].xp = Some(0);
+    state.units[0].offered_promotions =
+        Some(vec!["PROMOTION_SURF_ROCK".into(), "PROMOTION_POP".into()]);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror.game.available_promotions(uid),
+        vec![crate::name!("pop_star"), crate::name!("surf_band")]
+    );
+    assert!(mirror.game.promotion_pending(uid));
+    assert!(
+        mirror
+            .game
+            .apply(
+                0,
+                &crate::game::Action::Promote {
+                    unit: uid,
+                    promotion: crate::name!("surf_band")
+                }
+            )
+            .is_ok(),
+        "the host choice must be executable, not just displayed"
+    );
+    assert!(
+        !mirror.game.promotion_pending(uid),
+        "consuming a promotion invalidates the entire old menu"
+    );
+    state.units[0].offered_promotions = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(mirror.game.available_promotions(uid).is_empty());
+    state.units[0].offered_promotions = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        !mirror.game.host_band_promotions.contains_key(&uid),
+        "unreadable or legacy menus must clear stale offers"
+    );
+    assert!(
+        mirror.game.available_promotions(uid).is_empty(),
+        "legacy refusal behavior remains the fallback"
+    );
+}

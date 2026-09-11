@@ -6099,6 +6099,13 @@ pub struct HostStrikePreview {
     pub defender_wall_damage: i32,
 }
 
+/// A native menu is valid only until the unit consumes a promotion.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HostBandPromotions {
+    pub held: BTreeSet<Name>,
+    pub offered: BTreeSet<Name>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
@@ -6505,6 +6512,9 @@ pub struct Game {
     /// cannot.
     #[serde(default)]
     pub blocked_promotions: Arc<BTreeMap<u32, BTreeSet<Name>>>,
+    /// Current native Rock Band promotion offers; absent means unobserved.
+    #[serde(default)]
+    pub host_band_promotions: Arc<BTreeMap<u32, HostBandPromotions>>,
     /// ★★★ STRIKES THE HOST REFUSED THIS TURN, so a later frame of the same
     /// turn does not propose the identical shot again.
     ///
@@ -7365,6 +7375,7 @@ impl From<GameSer> for Game {
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
+            host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
@@ -8064,6 +8075,7 @@ impl Game {
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
+            host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
@@ -17582,6 +17594,16 @@ impl Game {
         self.units.get(&uid).is_some_and(|unit| {
             let spec = &self.rules.units[unit.kind];
             let class = &spec.promotion_class;
+            if class == "rock_band" {
+                if let Some(menu) = self.host_band_promotions.get(&uid) {
+                    if menu.held == unit.promotions {
+                        return menu
+                            .offered
+                            .iter()
+                            .any(|name| !unit.promotions.contains(name));
+                    }
+                }
+            }
             let level_cap = if class == "rock_band" { 4 } else { 8 };
             spec.earns_xp
                 && !class.is_empty()
@@ -17649,6 +17671,16 @@ impl Game {
             })
             .map(|(name, _)| *name)
             .collect();
+        // Native bands draw their own three choices. A current offer is stronger
+        // evidence than simulated randomness or earlier rejected choices.
+        if class == "rock_band" {
+            if let Some(menu) = self.host_band_promotions.get(&uid) {
+                if menu.held == unit.promotions {
+                    available.retain(|name| menu.offered.contains(name));
+                    return available;
+                }
+            }
+        }
         // ★★★★★ DROP PROMOTIONS THE HOST HAS ALREADY REFUSED FOR THIS UNIT.
         //
         // Filtered here rather than at the three appliers because every chooser and
