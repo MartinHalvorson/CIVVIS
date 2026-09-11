@@ -4940,6 +4940,9 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// `domination-siege-research`: unlock the first land siege capability
+    /// for a Conquest objective with observed walls, before elective detours.
+    domination_siege_research: bool,
     /// `domination-capital-focus`: rank missing original capitals within
     /// the selected campaign front, independently of other rivals.
     domination_capital_focus: bool,
@@ -7024,6 +7027,7 @@ mod science_victory_drive;
 mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
+mod domination_research;
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
 /// Keeping that routing out of the controller avoids growing another shared
@@ -7854,6 +7858,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            domination_siege_research: false,
             domination_capital_focus: false,
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
@@ -14086,6 +14091,7 @@ impl AdvancedAi {
             let opening_archery_goal = self.opening_archery_goal(g, pid);
             let defensive_walls_goal = self.culture_defensive_walls_goal(g, pid, plan);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
+            let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
@@ -14143,6 +14149,7 @@ impl AdvancedAi {
                 // field; `goal_pick` below walks its prerequisites.
                 _ if barbarian_military_goal.is_some() => barbarian_military_goal.as_deref(),
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
+                _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
                 // research before optional economic and bargain detours.
                 _ if endgame_goal.is_some() => endgame_goal,
@@ -14292,6 +14299,8 @@ impl AdvancedAi {
                                     "the cheapest step toward {}, needed to catch a nearby barbarian army",
                                     plain(goal)
                                 )
+                            } else if domination_siege_goal.as_deref() == Some(goal) {
+                                format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the cheapest step toward {}, needed to modernize the standing army at war",

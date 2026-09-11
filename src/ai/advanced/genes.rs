@@ -2285,6 +2285,7 @@ pub const GENES: &[Gene] = &[
     // Domination lane with `DOMINATION_HANDOVER_CITIES` (4, the opening band's
     // floor) in hand follows its lane. Off; screen it; forced on the live seat.
     Gene { tag: "domination-lane-hands-over", field: "domination_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_lane_hands_over, disable: AdvancedAi::disable_domination_lane_hands_over },
+    Gene { tag: "domination-siege-research", field: "domination_siege_research", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research, disable: AdvancedAi::disable_domination_siege_research },
     Gene { tag: "domination-capital-focus", field: "domination_capital_focus", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_capital_focus, disable: AdvancedAi::disable_domination_capital_focus },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

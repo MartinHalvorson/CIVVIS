@@ -156,3 +156,9 @@ regression. A new matched eight-seed Prince native probe used seeds
 in **1/8** worlds versus **2/8** with the option off. Both arms used source
 `584c2d573`; current main's opponent-selection and terminal-capture rules were
 held equal. This also provides no basis for a default promotion.
+
+After siege research landed independently, the final merge preserves both
+default-off genes, with the landed siege row preceding the appended capital
+row. The combined full suite passes **3,604 tests** (52 ignored); Clippy emits
+no diagnostics, all 14 append-order tests pass, and both gene-fire artifacts
+pass the reach ratchet. The original screen source stamps remain unchanged.

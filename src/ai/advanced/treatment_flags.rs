@@ -4244,6 +4244,14 @@ impl AdvancedAi {
         self.research_alliance_first = false;
     }
 
+    /// Unlock the first land siege capability for a walled Conquest objective.
+    pub fn enable_domination_siege_research(&mut self) {
+        self.domination_siege_research = true;
+    }
+    pub fn disable_domination_siege_research(&mut self) {
+        self.domination_siege_research = false;
+    }
+
     /// Rank required capitals within the selected domination campaign front.
     pub fn enable_domination_capital_focus(&mut self) {
         self.domination_capital_focus = true;
