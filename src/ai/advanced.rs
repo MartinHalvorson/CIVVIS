@@ -22858,6 +22858,30 @@ impl AdvancedAi {
     /// building. The milestones deliberately stage the investment; the hard
     /// cap is a guard for the generic production governor as well as the
     /// dedicated space-race pass.
+    ///
+    /// An adaptive controller has no explicit `victory_target`, so its
+    /// ordinary Science commitment is the launch chain itself. Before that
+    /// chain starts, the generic Spaceport valuation retains its historical
+    /// behavior.
+    fn adaptive_science_spaceport_lane(&self, g: &Game, pid: usize) -> bool {
+        if !self.victory_planning || self.victory_target.is_some() || !g.victory_conditions.science
+        {
+            return false;
+        }
+        let committed_launch = [
+            "launch_earth_satellite",
+            "launch_moon_landing",
+            "launch_mars_colony",
+            "exoplanet_expedition",
+        ]
+        .into_iter()
+        .any(|project| {
+            g.players[pid].science_projects.contains(project)
+                || Self::science_project_is_queued(g, pid, project)
+        });
+        committed_launch
+    }
+
     fn science_spaceport_target(&self, g: &Game, pid: usize) -> usize {
         let city_count = g.player_city_ids(pid).len();
         if city_count == 0 {
@@ -22866,10 +22890,12 @@ impl AdvancedAi {
         let completed = &g.players[pid].science_projects;
         let earth_satellite_started = !completed.contains("launch_earth_satellite")
             && Self::science_project_is_queued(g, pid, "launch_earth_satellite");
+        let adaptive_science = self.adaptive_science_spaceport_lane(g, pid);
         let desired = if self.science_drive_active()
             || (self.victory_planning
                 && (self.space_race_lane(g, pid)
                     || self.raced_target() == Some(VictoryTarget::Science)))
+            || adaptive_science
         {
             // The drive starts its second pad as soon as the Earth Satellite
             // is underway, so it is ready for the later parallel laser phase.
@@ -28416,7 +28442,8 @@ impl AdvancedAi {
                 if family == "spaceport" {
                     let races_science = self.science_drive_active()
                         || self.space_race_lane(g, pid)
-                        || self.raced_target() == Some(VictoryTarget::Science);
+                        || self.raced_target() == Some(VictoryTarget::Science)
+                        || self.adaptive_science_spaceport_lane(g, pid);
                     let current_queued_spaceport = city.queue.first().is_some_and(|queued| {
                         queued == item
                             && matches!(queued, Item::District { district, .. }
