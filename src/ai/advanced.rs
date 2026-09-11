@@ -19288,6 +19288,20 @@ impl AdvancedAi {
             if !g.great_person_class_offered_now(pid, kind) {
                 continue;
             }
+            // Native recruitment can hold a creator for future slots. Paid
+            // Culture patronage should buy usable works, not strand the
+            // Naturalist/Rock Band budget in an idle Great Person.
+            let work = match kind {
+                "writer" => Some("writing"),
+                "artist" => Some("art"),
+                "musician" => Some("music"),
+                _ => None,
+            };
+            if self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                && work.is_some_and(|work| !g.can_house_additional_great_work(pid, work))
+            {
+                continue;
+            }
             if !g.can_activate_current_great_person(pid, kind) {
                 continue;
             }

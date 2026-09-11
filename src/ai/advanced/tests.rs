@@ -19777,6 +19777,26 @@ fn culture_patronage_waits_for_compatible_great_work_slots() {
     game.players[0].gpp.insert("writer".to_string(), cost - 5.0);
     game.players[0].gold = 500.0;
     let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let mut live = game.clone();
+    live.players[0].live_great_person_offers = Some(["writer".to_string()].into_iter().collect());
+    let individual = live.current_great_person("writer").unwrap().0.to_string();
+    live.players[0]
+        .live_great_person_offer_individuals
+        .insert("writer".to_string(), individual);
+    assert!(
+        live.can_activate_current_great_person(0, "writer"),
+        "native recruitment may legally hold a person for future slots"
+    );
+    ai.advanced_great_people(&mut live, 0, GrandStrategy::Culture);
+    assert_eq!(
+        live.players[0]
+            .gp_claimed
+            .get("writer")
+            .copied()
+            .unwrap_or(0),
+        0,
+        "paid Culture patronage must still wait for space on a named live offer"
+    );
 
     ai.advanced_great_people(&mut game, 0, GrandStrategy::Culture);
     assert_eq!(
@@ -19797,6 +19817,23 @@ fn culture_patronage_waits_for_compatible_great_work_slots() {
     install_ai_test_district(&mut game, city, "theater_square");
     ai.advanced_great_people(&mut game, 0, GrandStrategy::Culture);
     assert_eq!(game.players[0].gp_claimed["writer"], 1);
+    let mut adaptive = live.clone();
+    AdvancedAi::new().advanced_great_people(&mut adaptive, 0, GrandStrategy::Culture);
+    assert_eq!(
+        adaptive.players[0].gp_claimed["writer"], 1,
+        "the assigned-Culture guard does not change adaptive patronage"
+    );
+    live.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    install_ai_test_district(&mut live, city, "theater_square");
+    ai.advanced_great_people(&mut live, 0, GrandStrategy::Culture);
+    assert_eq!(
+        live.players[0].gp_claimed["writer"], 1,
+        "a named live offer can be patronized once compatible space opens"
+    );
 }
 
 #[test]
