@@ -757,7 +757,7 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<bool> {
-        if !self.siege_train && !self.anvil {
+        if !self.siege_train && !self.siege_positive_damage_budget && !self.anvil {
             return None;
         }
         if self.guard_is_reserved_for_civilian(uid) {
@@ -791,7 +791,7 @@ impl AdvancedAi {
                 return Some(acted);
             }
         }
-        if self.siege_train {
+        if self.siege_train || self.siege_positive_damage_budget {
             if let Some(cid) = self.siege_city_of(g, pid, plan, &group) {
                 return self.siege_train_step(g, pid, uid, cid, plan, &group);
             }
@@ -895,6 +895,7 @@ impl AdvancedAi {
                 && g.wdist(g.units[uid].pos, city.pos) <= g.unit_attack_range(*uid).max(1)
         });
 
+        let damage_ready = self.conversion_siege_ready(g, pid, cid, &force);
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
@@ -913,7 +914,7 @@ impl AdvancedAi {
             }
             match stage {
                 SiegeStage::Stage => {
-                    if (arena && gathered) || staged >= bill {
+                    if ((arena && gathered) || staged >= bill) && damage_ready {
                         stage = SiegeStage::Invest;
                     }
                 }
