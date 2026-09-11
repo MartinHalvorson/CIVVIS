@@ -35342,6 +35342,22 @@ fn a_faster_second_airfield_can_deliver_the_launch_wing_sooner() {
         "the fast city should complete a second airfield and launch wing before the slow base; queued {:?}",
         game.cities[&fast].queue
     );
+    let anchor = game.cities[&fast].pos;
+    let third = found_nearby_test_city(&mut game, 0, anchor);
+    game.cities.get_mut(&third).unwrap().pop = 12;
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        third,
+        Yields {
+            production: 300.0,
+            ..Yields::default()
+        },
+    );
+    assert!(
+        game.producible_items(0, third).iter().any(|item| {
+            matches!(item, Item::District { district, .. } if district == "aerodrome")
+        }),
+        "the cap must hold even with an eligible faster third city"
+    );
     ai.air_surge_production(&mut game, 0);
     assert_eq!(
         ai.air_surge_status.aerodromes_committed, 2,
