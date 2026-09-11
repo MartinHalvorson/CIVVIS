@@ -2094,3 +2094,26 @@ independent probe copied the existing profiles and hashing function to obtain
 both values. This re-pin records the deliberate engine correction. Native
 outcome comparisons across this boundary must account for the changed rules;
 these fingerprints do not demonstrate stronger tactics or a Domination win.
+
+
+## v39 (2026-09-11) — district sites use discovered resources
+
+#3519 makes both the resource-class veto and the removal-technology check in
+`district_sites` use resources visible to the city owner. An undiscovered
+strategic deposit no longer rejects a district that the observed board allows.
+Revealed strategic deposits still block new placement; visible bonus resources
+still require the existing removal technology. The deposit survives foundation
+placement and completion, including when it is discovered during construction.
+
+The final #3503 observed trace recorded 55 refused district orders on turns
+70–130. Capturing the actual failures proves the mismatch for a Campus over
+hidden coal, a Campus and Aqueduct over hidden niter, and an Encampment over
+hidden aluminum. These repeated refusals cut off later military orders. This
+is a shared engine legality correction, not a change to the legacy AI's genes.
+
+The unchanged five-profile probe reproduces the v38 baseline exactly:
+**18,809 decisions / `0x4158_db2a_5305_81b0`**. The corrected engine measures
+**18,845 decisions / `0x4a8a_d4ca_1dd9_8783`**. The re-pin records that deliberate
+rules change; native outcome comparisons must account for this boundary.
+Neither the fingerprint nor the focused legality tests establish a Domination
+victory improvement; matched full games measure that separately.
