@@ -171,7 +171,13 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # The allocator is the one entry on that list exempt from the objection. It is
 # 16.84% of work as a roll-up, its largest single leaf is macOS's own
 # `_xzm_free` at 3.66% self, and replacing it changes no caller — so there is
-# nothing to attribute. The number below is paired `speed_ab.py`, not a guess.
+# nothing to attribute.
+#
+# Measured, not assumed: paired `tools/speed_ab.py` over two disjoint seed
+# blocks, 42 pairs, **-4% to -7% of user CPU per completed turn** (-6.60%
+# pooled), with all 42 pairs reporting "same game on every seed" -- so it is
+# overhead and the per-seed determinism survives. Full working in
+# `docs/SIMULATOR_PERFORMANCE.md`, 2026-09-10.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # ⚠ Target-gated on purpose. `mimalloc` vendors a C library and cannot build for
 # wasm32; CI runs `cargo check --lib --locked --target wasm32-unknown-unknown`
