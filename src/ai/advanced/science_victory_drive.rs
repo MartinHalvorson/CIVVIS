@@ -43,6 +43,9 @@
 //!    adaptive seat that leads the field in either is **driving**, and stays
 //!    driving while it holds [`SCIENCE_DRIVE_HOLD`] of the leader's science
 //!    or is within [`SCIENCE_DRIVE_TECH_SLACK`] techs of the leader's count.
+//!    An adaptive seat whose own public victory focus is Science at or above
+//!    [`SCIENCE_DRIVE_PLAN_FLOOR`] also drives, so it can build the chain that
+//!    produces a lead; below that floor the field test remains unchanged.
 //!    A seat assigned Science (`--victory science`, which the live seat
 //!    always is) or committed to it by `lane-commit` drives from turn one; a
 //!    seat assigned any other lane never drives.
@@ -125,6 +128,9 @@ pub const SCIENCE_DRIVE_TECH_SLACK: usize = 3;
 /// Version 2 requires one completed technology beyond the rival, rather than
 /// treating parity as an adaptive lead.
 pub const SCIENCE_DRIVE_TECH_LEAD: usize = 1;
+/// An adaptive seat may commit from its own public Science lane once that
+/// lane has cleared the opening floor.
+pub const SCIENCE_DRIVE_PLAN_FLOOR: i32 = 40;
 /// The world era from which the launch city's production chain is priced
 /// (Industrial: the Factory's era).
 pub const SCIENCE_DRIVE_PRODUCTION_ERA: usize = 4;
@@ -272,6 +278,18 @@ impl AdvancedAi {
         self.science_victory_drive || self.science_victory_drive_2
     }
 
+    /// Whether an adaptive seat has a credible Science commitment of its own.
+    /// The public lane table already combines technology progress, Rocketry
+    /// readiness and completed projects; use that signal to start the race
+    /// before a lead exists, while keeping a weak opening tie from turning
+    /// every adaptive seat into a Spaceport builder.
+    fn adaptive_science_plan(&self, g: &Game, pid: usize) -> bool {
+        self.victory_planning && self.victory_target.is_none() && g.victory_conditions.science && {
+            let focus = self.victory_focus(g, pid);
+            focus.strategy == GrandStrategy::Science && focus.progress >= SCIENCE_DRIVE_PLAN_FLOOR
+        }
+    }
+
     /// The empire's science a turn: every city's, the player-level extras,
     /// and on the live bridge the mirror's correction to the observed figure
     /// (`observed_yield_adjustments`), which is how the mirror itself derives
@@ -343,7 +361,9 @@ impl AdvancedAi {
             return;
         }
         let standing = Self::science_standing(g, pid);
+        let adaptive_science_plan = self.adaptive_science_plan(g, pid);
         let driving = assigned
+            || adaptive_science_plan
             || match self.science_drive {
                 Some(_) if self.science_victory_drive_2 => standing.holds_v2(),
                 Some(_) => standing.holds(),
@@ -371,7 +391,13 @@ impl AdvancedAi {
                    "Driving for a science victory";
                    "{}: {:.0} science a turn against the field's {:.0}, {} techs against {}; \
                     launch city {}",
-                   if assigned { "the assigned lane" } else { "leading the field" },
+                   if assigned {
+                       "the assigned lane"
+                   } else if adaptive_science_plan {
+                       "the public Science focus"
+                   } else {
+                       "leading the field"
+                   },
                    standing.own_science, standing.best_rival_science,
                    standing.own_techs, standing.best_rival_techs,
                    launch_city.map_or("none".to_string(), |cid| g.cities[&cid].name.clone()));
@@ -1117,6 +1143,8 @@ mod tests {
         let (mut g, _, _) = board();
         give_techs(&mut g, 0, 20);
         give_techs(&mut g, 1, 30);
+        g.players[0].tourism_lifetime = 100_000.0;
+        g.players[1].culture_lifetime = 100.0;
         g.turn = AdvancedAi::science_drive_start(&g);
         let mut ai = AdvancedAi::new();
         ai.enable_science_victory_drive();
@@ -1145,6 +1173,32 @@ mod tests {
             other.science_drive().is_none(),
             "a seat assigned another lane never drives"
         );
+    }
+
+    #[test]
+    fn a_credible_adaptive_science_plan_drives_before_it_leads() {
+        let (mut g, ours, _) = board();
+        give_techs(&mut g, 0, 20);
+        give_techs(&mut g, 1, 30);
+        g.players[0].science_projects.extend([
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+            "launch_mars_colony".to_string(),
+        ]);
+        g.turn = AdvancedAi::science_drive_start(&g);
+        let mut ai = AdvancedAi::new();
+        ai.enable_science_victory_drive();
+        let focus = ai.victory_focus(&g, 0);
+        assert_eq!(focus.strategy, GrandStrategy::Science);
+        assert!(focus.progress >= SCIENCE_DRIVE_PLAN_FLOOR);
+        let standing = AdvancedAi::science_standing(&g, 0);
+        assert!(standing.own_techs < standing.best_rival_techs);
+        ai.maintain_science_drive(&g, 0);
+        assert_eq!(
+            ai.science_drive().and_then(|drive| drive.launch_city),
+            Some(ours)
+        );
+        assert_eq!(ai.raced_target(), Some(VictoryTarget::Science));
     }
 
     #[test]

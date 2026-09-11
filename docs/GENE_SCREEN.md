@@ -611,6 +611,59 @@ from noise*, and no pairwise coupling among the repairs has been visible at any
 size run so far. Interactions are far noisier than main effects from the same
 run; read the multiplicity bar.
 
+## ⚠⚠ THE WIN COLUMN CANNOT BE READ AT EMPEROR (2026-09-11)
+
+An Emperor seat wins **5.6%** of the time (360 seats, deployment shape). A
+Prince seat wins **16.7%**. That difference decides what a run can measure,
+and it is the reason a day of Emperor experiments can produce six "wins did
+not move" lines that are not findings at all.
+
+Seats **per arm** needed to detect a *relative* win-rate gain at 80% power:
+
+| base win rate | +10% | +25% | +50% |
+|---|---:|---:|---:|
+| Emperor, 5.6% | 26,400 | **4,230** | 1,060 |
+| Prince, 16.7% | 7,800 | **1,250** | 310 |
+
+The ledger's standard screens run **10,000–19,000 seats per arm**, which is why
+they work — and they run at **Prince**.
+
+A 40-game Emperor probe gives 57–187 seats per arm. To detect a 25% relative
+improvement it is **23–74× short**. `--analyze` says so itself, in the
+`resolution:` line:
+
+    120 seats -> resolves a win Δ of ±15.4 pp
+    360 seats -> resolves a win Δ of ±6.6 pp
+
+⭐ **Read that against a base rate of 5.6% with a floor of 0%.** The
+resolution is wider than the entire range the statistic can occupy. A run like
+that is not measuring a small effect badly; it is not measuring at all.
+
+### What to read instead
+
+1. **The mechanism the gene is about.** It is the same seats and far better
+   resolved. Worked examples from 2026-09-11: `first-research-building-reserve`
+   moved buildings per city +11% then +21% and techs-at-end +3.76 (z +2.97)
+   over 360 seats whose win column said nothing; `army-target-weighs-enemy`
+   left the military ratio *lower* than baseline; `lane-votes-its-favor` moved
+   own Diplomatic Victory Points 12.0 → 11.0. Each of those is a real answer
+   from a run whose win Δ was noise.
+2. **Score share.** `--analyze` resolves it to ±1.85–3.93 pp on the same runs —
+   three to four times tighter than the win Δ, because every seat contributes a
+   continuous number instead of a rare event.
+3. **The endings census** (`what a denial gene has to reduce`) for which lane
+   is ending the games.
+
+### What NOT to conclude
+
+⚠ **"Wins did not move at Emperor" is not evidence that a gene is useless.** It
+is usually evidence that nothing was measured. Say which of the two you have.
+
+⚠ And the converse: a well-powered **Prince** win number is real evidence about
+**Prince**. It is not evidence about the rung the ladder plays, where the field
+is handicapped and the seat is not — see `handicap` above and
+`tools/civ6_trajectory_fidelity.py`.
+
 ## Instrumentation: how a game was lost, not only that it was
 
 Every row also carries `founded_religion`, `foreign_faith_cities` (our own
