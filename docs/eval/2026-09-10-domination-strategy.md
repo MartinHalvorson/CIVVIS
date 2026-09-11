@@ -136,9 +136,17 @@ on the within-front policy. These are completed non-Domination outcomes, not
 engine crashes. They do not establish a benefit.
 
 A predeclared 24-game standard fieldless screen (six players, 74×46 Continents,
-Online 250, Emperor, nine city-states; seeds starting at 109103000) is running
-to measure gene reach. Its result is pending. Reach evidence does not establish
-a win-rate effect or justify deployment promotion.
+Online 250, Emperor, nine city-states; seeds 109103000–109103023) completed
+all 24 games / 144 seats. The committed
+[screen artifact](../gene_screens/fires/domination-capital-focus.json)
+preserves its original clean source `1c28388674e5` and binary provenance;
+it predates the integration described below. Its 35 on / 109 off seats
+show a win contrast of +15.73 percentage points (SE 8.40) and share contrast
++2.54 points (SE 1.74). This small mixed-target, independent-seat screen
+passes the repository reach ratchet; it does not establish a Domination
+win-rate benefit for the integrated code or justify deployment promotion.
+After final main integration, `cargo check --profile ci --locked`,
+generated-metadata checks, and the gene-fires ratchet and unit suite pass.
 
 After integrating current main and fixing that interaction, the full suite
 passed **3,593 tests** (52 ignored), including the capital-owner preservation
