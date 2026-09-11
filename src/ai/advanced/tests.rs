@@ -35309,6 +35309,86 @@ fn the_airfield_is_claimed_before_the_wing() {
     );
 }
 
+#[test]
+fn a_faster_second_airfield_can_deliver_the_launch_wing_sooner() {
+    let (mut game, fast, _) = air_surge_fixture(941_125);
+    air_surge_arm(&mut game);
+    let slow = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != fast)
+        .unwrap();
+    install_ai_test_district(&mut game, slow, "aerodrome");
+    for cid in game.player_city_ids(0) {
+        game.cities.get_mut(&cid).unwrap().queue.clear();
+    }
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        fast,
+        Yields {
+            production: 100.0,
+            ..Yields::default()
+        },
+    );
+    assert!(game.producible_items(0, fast).iter().any(|item| {
+        matches!(item, Item::District { district, .. } if district == "aerodrome")
+    }));
+    let original = game.clone();
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    assert_eq!(ai.air_surge_status.aerodromes_committed, 1);
+    assert!(ai.air_surge_production(&mut game, 0));
+    assert!(
+        matches!(game.cities[&fast].queue.first(), Some(Item::District { district, .. }) if district == "aerodrome"),
+        "the fast city should complete a second airfield and launch wing before the slow base; queued {:?}",
+        game.cities[&fast].queue
+    );
+    let anchor = game.cities[&fast].pos;
+    let third = found_nearby_test_city(&mut game, 0, anchor);
+    game.cities.get_mut(&third).unwrap().pop = 12;
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        third,
+        Yields {
+            production: 300.0,
+            ..Yields::default()
+        },
+    );
+    assert!(
+        game.producible_items(0, third).iter().any(|item| {
+            matches!(item, Item::District { district, .. } if district == "aerodrome")
+        }),
+        "the cap must hold even with an eligible faster third city"
+    );
+    ai.air_surge_production(&mut game, 0);
+    assert_eq!(
+        ai.air_surge_status.aerodromes_committed, 2,
+        "never open a third base"
+    );
+
+    for wing_committed in [false, true] {
+        let mut held = original.clone();
+        if wing_committed {
+            for _ in 0..air_surge::AIR_SURGE_LAUNCH_BOMBERS {
+                held.spawn_test_unit("bomber", 0, held.cities[&slow].pos);
+            }
+        } else {
+            std::sync::Arc::make_mut(&mut held.observed_city_yield_adjustments).insert(
+                slow,
+                Yields {
+                    production: 200.0,
+                    ..Yields::default()
+                },
+            );
+        }
+        let mut held_ai = air_surge_ai();
+        held_ai.maintain_air_surge(&held, 0);
+        held_ai.air_surge_production(&mut held, 0);
+        assert!(
+            !matches!(held.cities[&fast].queue.first(), Some(Item::District { district, .. }) if district == "aerodrome"),
+            "no extra base when the existing base is faster or the launch wing is committed ({wing_committed})"
+        );
+    }
+}
+
 /// With the airfield standing the wing is the next claim, and the package is
 /// priced above every ordinary candidate wherever the strategic scorer runs.
 #[test]
