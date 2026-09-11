@@ -41104,16 +41104,19 @@ impl AdvancedAi {
             }
             // See `lane_space_race`: the last disjunct opens the pass for an
             // empire racing Science that has not finished settling.
-            if self.victory_planning
-                && (g.players[pid]
-                    .science_projects
-                    .contains("exoplanet_expedition")
-                    || self.science_endgame_production_committed(g, pid)
-                    || self.science_drive_opens(plan.strategy)
-                    || (specialization_active
-                        && (plan.strategy == GrandStrategy::Science
-                            || self.diplomatic_science_backup(g, pid, &plan)
-                            || self.space_race_lane_opens(g, pid, &plan))))
+            let expedition_committed = g.players[pid]
+                .science_projects
+                .contains("exoplanet_expedition")
+                || Self::science_project_is_queued(g, pid, "exoplanet_expedition");
+            if (self.science_endgame_lane_committed(g, pid) && expedition_committed)
+                || (self.victory_planning
+                    && (expedition_committed
+                        || self.science_endgame_production_committed(g, pid)
+                        || self.science_drive_opens(plan.strategy)
+                        || (specialization_active
+                            && (plan.strategy == GrandStrategy::Science
+                                || self.diplomatic_science_backup(g, pid, &plan)
+                                || self.space_race_lane_opens(g, pid, &plan)))))
             {
                 self.space_race_production(g, pid, &plan);
             }

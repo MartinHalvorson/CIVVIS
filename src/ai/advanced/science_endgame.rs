@@ -36,7 +36,7 @@ impl AdvancedAi {
     /// still replace an illegal or threatened queue, but it must not turn a
     /// completed Earth Satellite into an abandoned Moon Landing.
     pub(super) fn science_endgame_production_committed(&self, g: &Game, pid: usize) -> bool {
-        self.science_endgame_committed(g, pid)
+        self.science_endgame_lane_committed(g, pid)
             && self.raced_target() == Some(VictoryTarget::Science)
             && LAUNCHES.iter().any(|project| {
                 g.players[pid].science_projects.contains(*project)
@@ -49,7 +49,7 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
     ) -> Option<&'static str> {
-        if !self.science_endgame_research_committed(g, pid)
+        if !self.science_endgame_lane_committed(g, pid)
             || !(g.players[pid]
                 .science_projects
                 .contains("launch_moon_landing")
@@ -62,18 +62,20 @@ impl AdvancedAi {
             .find(|tech| !g.players[pid].techs.contains(&Name::new(tech)))
     }
 
-    /// Research remains a commitment once the final expedition is queued or
+    /// Science remains a commitment once the final expedition is queued or
     /// complete, even if the broader victory planner has gone dormant. The
     /// project is already consuming a Spaceport and cannot be recovered by
-    /// an unrelated military technology; its research prerequisites therefore
-    /// keep the laser path alive until the flight can be accelerated.
-    fn science_endgame_research_committed(&self, g: &Game, pid: usize) -> bool {
+    /// an unrelated military queue or research goal, so keep both halves of
+    /// the endgame lane alive until the flight can be accelerated.
+    pub(super) fn science_endgame_lane_committed(&self, g: &Game, pid: usize) -> bool {
+        let live_controller = self.victory_planning || self.victory_target.is_some();
         g.victory_conditions.science
             && (self.science_endgame_committed(g, pid)
-                || g.players[pid]
-                    .science_projects
-                    .contains("exoplanet_expedition")
-                || Self::science_project_is_queued(g, pid, "exoplanet_expedition"))
+                || (live_controller
+                    && (g.players[pid]
+                        .science_projects
+                        .contains("exoplanet_expedition")
+                        || Self::science_project_is_queued(g, pid, "exoplanet_expedition"))))
     }
 
     /// Once the serial launch chain has reached its late research rungs, the
@@ -97,7 +99,7 @@ impl AdvancedAi {
             .science_projects
             .contains("launch_moon_landing")
             || Self::science_project_is_queued(g, pid, "launch_moon_landing"))
-            && self.science_endgame_research_committed(g, pid)
+            && self.science_endgame_lane_committed(g, pid)
     }
 
     /// Use remaining production, local modifiers and whole turn boundaries.
@@ -162,7 +164,7 @@ impl AdvancedAi {
     /// Returns false for the frozen controller and uncommitted opportunists,
     /// which retain their existing idle-queue production policy.
     pub(super) fn schedule_science_endgame(&self, g: &mut Game, pid: usize) -> bool {
-        if !self.science_endgame_committed(g, pid) {
+        if !self.science_endgame_lane_committed(g, pid) {
             return false;
         }
         let cities = g.player_city_ids(pid);

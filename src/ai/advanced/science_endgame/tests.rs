@@ -370,6 +370,33 @@ fn completed_expedition_keeps_late_research_without_victory_planning() {
 }
 
 #[test]
+fn completed_expedition_keeps_laser_sprint_without_victory_planning() {
+    let (mut g, a, b) = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.victory_planning = false;
+
+    assert!(!ai.science_endgame_committed(&g, 0));
+    assert!(ai.science_endgame_lane_committed(&g, 0));
+    let assessed_turn = g.turn;
+    ai.space_race_production(
+        &mut g,
+        0,
+        &StrategicPlan {
+            strategy: GrandStrategy::Culture,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn,
+            rush: false,
+        },
+    );
+    for city in [a, b] {
+        assert_eq!(g.cities[&city].queue.first(), Some(&project(LASERS[0])));
+    }
+}
+
+#[test]
 fn completed_launch_hands_every_pad_to_lasers_on_the_next_decision() {
     let (mut g, a, b) = board();
     g.players[0].science_projects.remove("exoplanet_expedition");
@@ -402,9 +429,12 @@ fn repeated_parallel_lasers_finish_the_flight_before_the_old_one_queue_dispatch(
         production(&mut g, cid, 180.0);
     }
     let finish = |mut game: Game, modern: bool| {
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        let ai = if modern {
+            AdvancedAi::targeting(VictoryTarget::Science)
+        } else {
+            AdvancedAi::legacy()
+        };
         // Retain the original science_production path as the local control.
-        ai.victory_planning = modern;
         for _ in 1..=60 {
             if game.current == 0 {
                 ai.science_production(&mut game, 0);
