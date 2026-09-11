@@ -5340,6 +5340,31 @@ pub struct AdvancedAi {
     /// `EXPANSION_HALL_*` constants, and the caller multiplies by the identical
     /// shortfall, so the district's credit fades to nothing on exactly the turn
     /// the Hall's does. Opt-in gene `expansion-hall-district`.
+    ///
+    /// ## 🔬 FIRST PROBE (2026-09-11): every column points the right way, none resolves
+    ///
+    /// 60 games, 360 seats, `--turns 80 --p-on 0.5` — a PROBE shape, not a
+    /// ledger source: eighty turns completes no game, so the win and share
+    /// columns of that run mean nothing and are not quoted. What eighty turns
+    /// does cover is the only window this gene acts in.
+    ///
+    ///     column                     on       off      diff      z
+    ///     cities_at_game_turn_60   4.224    4.096    +0.128   +0.84
+    ///     cities_60                3.098    2.972    +0.127   +1.30
+    ///     cities                   5.350    5.096    +0.254   +1.43
+    ///     districts                5.667    5.407    +0.260   +0.89
+    ///     specialty_districts      5.142    4.994    +0.148   +0.56
+    ///     buildings               11.251   11.023    +0.229   +0.41
+    ///
+    /// ⭐ Six columns, six positive signs, nothing past z = 1.43. The signs are
+    /// encouraging and are NOT six independent confirmations — those columns
+    /// move together — so this is one weak positive reading, not six.
+    ///
+    /// ⚠ It is underpowered by roughly 5.6x. Resolving the +0.128 on cities at
+    /// turn 60 at z = 2 needs the standard error down from 0.152 to 0.064,
+    /// which is about **2,000 seats** — some 340 games at this shape. That is
+    /// the number to bring, and the reason this row still reads `unmeasured`
+    /// rather than anything better.
     expansion_hall_district: bool,
     /// Take a small neighbour's city in the opening: a met rival's known
     /// city within twelve tiles of the capital, the capital's production
