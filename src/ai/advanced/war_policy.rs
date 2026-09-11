@@ -750,3 +750,6 @@ mod tests {
         assert!(reason.contains("unserved"), "{reason}");
     }
 }
+
+#[cfg(test)]
+mod launch_readiness_tests;
