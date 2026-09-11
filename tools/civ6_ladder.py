@@ -1601,6 +1601,14 @@ def entry_from(summary: dict) -> dict:
         # without reconstructing it from events.jsonl.
         "city_two_turn": summary.get("city_two_turn"),
         "cities_at_60": summary.get("cities_at_60"),
+        # ⭐ CITY DEVELOPMENT: raw totals over our cities from the last state
+        # frame, plus the city count that frame saw. `gene_screen` records the
+        # same pair per seat, and both sides count the city centre as a
+        # district, so the ledger can divide each by cities and compare.
+        # None on a run whose mod predates the export.
+        "districts": summary.get("districts"),
+        "buildings": summary.get("buildings"),
+        "developed_cities": summary.get("developed_cities"),
         "rival_best": summary.get("rival_best"),
         # ⚠ HOW MANY RIVALS THE ROW'S OTHER NUMBERS COULD SEE. The control mod
         # seats `rivals` only from majors this seat has MET

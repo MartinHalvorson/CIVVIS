@@ -174,17 +174,22 @@ SUBSYSTEMS = [
         "cities_at_game_turn_60",
         "cities held at game turn 60",
     ),
-    # ⚠ Sim-side only for now: the live ladder records no district or building
-    # count on its row, so these read "unavailable (live side has no value)"
-    # until it does. They are declared anyway because the shortfall they are
-    # meant to explain is the largest one this ledger has found — cities 0.83
-    # of the leader's, science per city 0.32 — and a subsystem nobody declared
-    # is a comparison nobody will think to add.
+    # ⚠ `specialty_districts` stays sim-side only. Telling which Firaxis type
+    # is a specialty needs a name map (`DISTRICT_THEATER` is `theater_square`)
+    # and a wrong map would publish a confident wrong number. The raw pair
+    # below needs no translation: both sides count every district a city holds,
+    # the city centre included, and every building it holds.
     Subsystem(
         "specialty_districts",
         "_specialty_districts",
         "_specialty_per_city",
         "specialty districts per city",
+    ),
+    Subsystem(
+        "districts_per_city",
+        "_districts_per_city",
+        "_districts_per_city_sim",
+        "districts per city, city centre included",
     ),
     Subsystem(
         "buildings_per_city",
@@ -384,6 +389,17 @@ def live_records(path: Path) -> list[dict]:
                 value = combat.get(source)
                 if isinstance(value, (int, float)):
                     record[key] = float(value)
+        # Development, divided by the city count the frame itself saw so a run
+        # that lost a city is not divided by the number it ended with.
+        seen = row.get("developed_cities")
+        if isinstance(seen, (int, float)) and seen > 0:
+            for key, source in (
+                ("_districts_per_city", "districts"),
+                ("_buildings_per_city", "buildings"),
+            ):
+                value = row.get(source)
+                if isinstance(value, (int, float)):
+                    record[key] = float(value) / float(seen)
         boosts = row.get("boosts")
         if isinstance(boosts, dict):
             share = boosts.get("techs_boosted_share")
@@ -464,6 +480,7 @@ def sim_records(path: Path, sizes: dict[tuple[int, int], str]) -> list[dict]:
                 if isinstance(cities, (int, float)) and cities > 0:
                     for key, source in (
                         ("_specialty_per_city", "specialty_districts"),
+                        ("_districts_per_city_sim", "districts"),
                         ("_buildings_per_city", "buildings"),
                     ):
                         value = seat.get(source)
