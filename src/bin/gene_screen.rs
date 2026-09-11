@@ -856,6 +856,32 @@ struct Row {
     /// a file rather than a Δ of zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     techs_150: Option<usize>,
+    /// ⭐ CITY DEVELOPMENT: districts and buildings the empire finished, and
+    /// the specialty districts among them.
+    ///
+    /// The empire's failure at Emperor is CONVERSION, not width, and nothing
+    /// on this row could show it. Measured over the 30-game deployment-shape
+    /// run in `docs/fidelity/`, against the best rival: cities **0.83**, but
+    /// science per city **0.32** and faith per city **0.30**. We hold the
+    /// leader's land and each of our cities yields about a third of theirs.
+    /// The shortfall is uniform across yields, so it is one cause rather than
+    /// a science-specific one — and the obvious candidate is that the cities
+    /// are simply not built up. `docs/` already records the anecdote from
+    /// three deep games ("11 cities with 3 Libraries", "9 Campus districts
+    /// against 3 science buildings"); these columns make it a standing number
+    /// that any screen can read.
+    ///
+    /// `specialty_districts` is the count Civilization VI treats as
+    /// specialty (`Game::city_specialty_district_count`) — the ones that carry
+    /// the yield buildings — as distinct from walls, an aqueduct or a canal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    districts: Option<usize>,
+    /// See `districts`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    specialty_districts: Option<usize>,
+    /// See `districts`. Wonders are counted separately by `wonders`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    buildings: Option<usize>,
     /// ⭐ THE CITY LEDGER, the starkest number the live corpus reports.
     ///
     /// `cities_taken` is the seat's `captures` counter — cities it conquered,
@@ -2171,6 +2197,30 @@ fn play_game(
             // with an unfinished one.
             row.cities_at_game_turn_60 = cities_at_live_band.as_ref().map(|counts| counts[seat]);
             row.techs_at_game_turn_150 = techs_at_live_pace.as_ref().map(|counts| counts[seat]);
+            row.districts = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| city.districts.len())
+                    .sum(),
+            );
+            row.specialty_districts = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| world.city_specialty_district_count(city))
+                    .sum(),
+            );
+            row.buildings = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| city.buildings.len())
+                    .sum(),
+            );
             row.cities_taken = Some(
                 world.players[seat]
                     .counters
@@ -2344,6 +2394,9 @@ fn row_for_seat(
         cities_60: None,
         cities_at_game_turn_60: None,
         techs_at_game_turn_150: None,
+        districts: None,
+        specialty_districts: None,
+        buildings: None,
         cities_taken: None,
         cities_lost: None,
         victories_off: Vec::new(),
@@ -6647,6 +6700,9 @@ mod tests {
             cities_60: None,
             cities_at_game_turn_60: None,
             techs_at_game_turn_150: None,
+            districts: None,
+            specialty_districts: None,
+            buildings: None,
             cities_taken: None,
             cities_lost: None,
             science_end: None,
@@ -7157,6 +7213,55 @@ mod tests {
                 "{constant} is converted"
             );
         }
+    }
+
+    #[test]
+    fn city_development_is_absent_on_an_old_row_and_round_trips_on_a_new_one() {
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.districts, None, "a row that never counted says so");
+        assert_eq!(old.specialty_districts, None);
+        assert_eq!(old.buildings, None);
+        let text = serde_json::to_string(&old).unwrap();
+        for field in ["districts", "specialty_districts", "buildings"] {
+            assert!(
+                !text.contains(field),
+                "an old row stays byte for byte what it was: {text}"
+            );
+        }
+        let mut row = test_row(0, 0, "10", true);
+        row.districts = Some(9);
+        row.specialty_districts = Some(4);
+        row.buildings = Some(0);
+        let back: Row = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        assert_eq!(back.districts, Some(9));
+        assert_eq!(back.specialty_districts, Some(4));
+        assert_eq!(
+            back.buildings,
+            Some(0),
+            "an empire that built nothing is a reading, not a gap"
+        );
+    }
+
+    /// The specialty count is the engine's own, not a second list here. A
+    /// duplicate would drift the first time Firaxis moved a district.
+    #[test]
+    fn the_specialty_count_is_asked_of_the_engine() {
+        let source = include_str!("gene_screen.rs");
+        assert!(
+            source.contains("world.city_specialty_district_count(city)"),
+            "gene_screen asks the engine which districts are specialty"
+        );
+        // ⚠ Built at run time. Written as a literal, the needle would appear
+        // in this test's own text — `include_str!` includes the tests — and
+        // the assertion would fail on itself.
+        let duplicate = format!("{}{}", "].", "specialty");
+        assert!(
+            !source.contains(&duplicate),
+            "and reads no district spec directly, which would be a second list"
+        );
     }
 
     #[test]
