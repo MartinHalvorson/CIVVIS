@@ -3181,6 +3181,38 @@ pub struct BasicAi {
     /// pantheon, or site ranking. It reserves the capital's next empty production choice,
     /// uses the measured opening-band pipeline, and keeps the legal
     /// population and payback gates in step with the strategic controller.
+    /// 🔴 2026-09-11: AT THE DEPLOYMENT SHAPE THIS COSTS 0.27 CITIES BY TURN 60.
+    ///
+    /// Priced by withholding at the shape the live seat plays — 60×38, 4
+    /// players, standard speed, Emperor, `--rivals firaxis-mix --handicap
+    /// rivals` — 90 games, 270 seats, `--turns 80 --p-default-on 0.5`:
+    ///
+    ///     gene                              on     off    diff       z
+    ///     rapid-city-expansion-2          2.66    2.93   -0.27   -2.69
+    ///     expansion-scales-with-difficulty 2.70    2.89   -0.19   -1.88
+    ///     expansion-schedule               2.83    2.78   +0.05   +0.48
+    ///     settler-walk-deadline            2.80    2.81   -0.01   -0.13
+    ///
+    /// It persists rather than washing out: cities at turn 80 read −0.28
+    /// (z −2.60) on the same split, and both city columns agree. The arms are
+    /// balanced on the other three genes (largest imbalance 0.11), so it is not
+    /// the draw.
+    ///
+    /// ⚠⚠ THIS IS NOT A PROMOTION ARGUMENT AND MUST NOT BE READ AS ONE. An
+    /// 80-turn probe completes no game, so it carries no win column and is not
+    /// a ledger source; the default rule reads the two win columns of native
+    /// screens and nothing here touches them. Four genes were tested, so the
+    /// family-wise bar is nearer z 2.50 than 2.00 and −2.69 clears it only
+    /// narrowly. And an expansion gene may well pay after turn 80 — this says
+    /// what it costs in the opening, not what it is worth in a game.
+    ///
+    /// ⭐ It is recorded because the opening is where this gene acts: the note
+    /// below says it "uses the measured opening-band pipeline", and the seat it
+    /// ships to opens on 2.6 cities where every recorded win came from 4–6.
+    /// #3528 puts the gap to parity with a handicapped rival at 0.47 cities at
+    /// turn 60, and this gene and the one under it account for most of that
+    /// between them. **A native screen at this shape is the next step**, not a
+    /// default flip on this reading.
     pub(crate) rapid_city_expansion_2: bool,
     /// `capital-settler-after-completion`: once the capital is population two
     /// and has no queued work, start a legal Settler instead of letting the
