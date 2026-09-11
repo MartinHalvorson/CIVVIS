@@ -46,9 +46,16 @@ rule selects it; a mechanism test alone is not promotion evidence.
   This probe establishes no outcome improvement; it cannot establish that
   every intermediate decision was identical.
 - A separate fixed-size 24-game standard screen, Emperor, two workers, seeds
-  109104000–109104023, is running. Its build header records the same clean
-  source and the standard 6p 74×46 Continents/Online/250t/9CS contract.
-  Results pending; neither this probe nor the mechanism tests promote it.
+  109104000–109104023, completed all 24 games / 144 seats. Its build header
+  records the same clean source and standard 6p 74×46
+  Continents/Online/250t/9CS contract. The committed
+  [screen artifact](../gene_screens/fires/domination-siege-research.json)
+  records 42 on and 102 off seats, a win contrast of −3.36 percentage points
+  (SE 6.34), and share contrast +1.38 points (SE 1.31). This mixed-target,
+  independent-seat screen passes the repository reach ratchet but is too
+  small to establish a benefit. Neither it nor the mechanism tests promote
+  the gene. After final main integration, `cargo check --profile ci --locked`,
+  generated-metadata checks, and the gene-fires ratchet and unit suite pass.
 
 
 A second matched eight-seed probe held `domination-lane-hands-over` on in both
