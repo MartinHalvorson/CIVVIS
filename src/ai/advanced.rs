@@ -5402,6 +5402,37 @@ pub struct AdvancedAi {
     /// every yield plus free Settlers. It **ships on**, and at the shape it was
     /// written for it moves the opening by +0.07 cities. Whatever is costing
     /// 1.50 cities at this shape, neither of these reaches it.
+    ///
+    /// ## 🔴 THIRD READING, AT FULL LENGTH: THIS GENE TRENDS NEGATIVE
+    ///
+    /// ⚠ Both readings above are `--turns 80`, and #3534 establishes that
+    /// shortening a game rescales the agent rather than truncating it — 46 call
+    /// sites of `turn_limit()` and 54 of `standard_duration` put deadlines and
+    /// bands at a share of length. So both are superseded by this one. Same
+    /// deployment shape, `--turns 250`, 75 games, 225 seats:
+    ///
+    ///     gene                              c@60      z    share      z     win      z
+    ///     expansion-hall-district         -0.032  -0.32  -0.0179  -1.84  -0.075  -2.16
+    ///     expansion-scales-with-difficulty -0.152 -1.51  +0.0051  +0.51  +0.011  +0.32
+    ///     expansion-schedule              +0.123  +1.22  -0.0110  -1.12  -0.009  -0.26
+    ///     settler-walk-deadline           -0.028  -0.27  -0.0030  -0.30  -0.004  -0.12
+    ///
+    /// **This gene reads negative on both outcome columns** — win −0.075 at
+    /// z −2.16 and share −0.018 at z −1.84 — where the 80-turn probes had it at
+    /// −0.03 and the standard-shape probe at +0.128 on the opening.
+    ///
+    /// ⚠ It does not resolve. Four genes across three columns is twelve
+    /// comparisons, which puts the family-wise bar near z 2.87, and neither
+    /// column clears it. What can be said is that **three readings now exist and
+    /// the only full-length one points down**, which is the reverse of the
+    /// hopeful standard-shape probe this row started from.
+    ///
+    /// 🛑 The gene ships OFF and must stay off. It was written to price a
+    /// Government Plaza for the land grab; at the shape it ships to, the seat is
+    /// not choosing plazas by turn 60, and buying the Hall's discount appears to
+    /// cost something elsewhere. **If a future screen confirms the sign, this is
+    /// a cull candidate rather than a promotion one** — and it is my own gene,
+    /// which is exactly why the reading is recorded here rather than left out.
     expansion_hall_district: bool,
     /// Take a small neighbour's city in the opening: a met rival's known
     /// city within twelve tiles of the capital, the capital's production
