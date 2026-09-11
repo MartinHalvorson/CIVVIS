@@ -470,3 +470,92 @@ class RefusalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def write_sized_run(root: Path, name: str, size, cities_at_60: int,
+                    won: bool = False, last_turn: int = 120):
+    """A run that reached a terminal event, with a recorded map size."""
+    run = root / name
+    run.mkdir()
+    rows = [state(t, 100 + t, rival=90, cities=(cities_at_60 if t >= 60 else 1))
+            for t in (20, 40, 60, last_turn)]
+    lines = [json.dumps({"kind": "state", **s}) for s in rows]
+    lines.append(json.dumps({"kind": "victory", "turn": last_turn,
+                             "won": won, "victory": 5, "local_player": 0,
+                             "team": 0 if won else 3, "local_team": 0}))
+    (run / "events.jsonl").write_text("\n".join(lines) + "\n")
+    doc = {"tag": name, "last_turn": last_turn}
+    if size is not None:
+        doc["map_size"] = size
+    (run / "summary.json").write_text(json.dumps(doc))
+    return run
+
+
+class TheBandBelongsToAMapSize(unittest.TestCase):
+    """`WIN_BAND` is a fact about 218 MAPSIZE_SMALL runs, not about Civ VI.
+
+    The lobby ignored the configured size until 2026-09-10, so every run behind
+    that band was Small. The first 17 runs after the size began to be applied
+    were Tiny and none sat inside it. Pooling the two hides that.
+    """
+
+    def test_map_size_is_read_from_the_runs_own_summary(self) -> None:
+        with TemporaryDirectory() as d:
+            run = write_sized_run(Path(d), "civvis-20260101T000000Z",
+                                  "MAPSIZE_TINY", 3)
+            self.assertEqual(rr.map_size(run), "MAPSIZE_TINY")
+
+    def test_a_run_with_no_recorded_size_says_so_rather_than_guessing(self) -> None:
+        with TemporaryDirectory() as d:
+            run = write_sized_run(Path(d), "civvis-20260101T000000Z", None, 3)
+            self.assertEqual(rr.map_size(run), rr.UNKNOWN_MAP_SIZE)
+
+    def test_an_unreadable_summary_does_not_raise(self) -> None:
+        with TemporaryDirectory() as d:
+            run = write_sized_run(Path(d), "civvis-20260101T000000Z",
+                                  "MAPSIZE_TINY", 3)
+            (run / "summary.json").write_text("{ not json")
+            self.assertEqual(rr.map_size(run), rr.UNKNOWN_MAP_SIZE)
+
+    def test_the_aggregate_splits_the_band_by_size(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            write_sized_run(root, "civvis-20260101T000001Z", "MAPSIZE_SMALL", 5)
+            write_sized_run(root, "civvis-20260101T000002Z", "MAPSIZE_SMALL", 4)
+            write_sized_run(root, "civvis-20260101T000003Z", "MAPSIZE_TINY", 2)
+            write_sized_run(root, "civvis-20260101T000004Z", "MAPSIZE_TINY", 3)
+            data = rr.aggregate(root, every=20)
+            sizes = data["by_map_size"]
+            self.assertEqual(sizes["MAPSIZE_SMALL"]["in_band"], 2)
+            self.assertEqual(sizes["MAPSIZE_TINY"]["in_band"], 0)
+            self.assertEqual(sizes["MAPSIZE_TINY"]["mean_cities_at_60"], 2.5)
+            self.assertTrue(sizes["MAPSIZE_SMALL"]["band_applies"])
+            self.assertFalse(sizes["MAPSIZE_TINY"]["band_applies"])
+
+    def test_the_render_warns_when_two_sizes_are_pooled(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            write_sized_run(root, "civvis-20260101T000001Z", "MAPSIZE_SMALL", 5)
+            write_sized_run(root, "civvis-20260101T000002Z", "MAPSIZE_TINY", 2)
+            text = rr.render_aggregate(rr.aggregate(root, every=20))
+            self.assertIn("MORE THAN ONE SIZE IS POOLED", text)
+            self.assertIn("band not measured here", text)
+
+    def test_one_size_that_matches_raises_no_warning(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            write_sized_run(root, "civvis-20260101T000001Z", "MAPSIZE_SMALL", 5)
+            write_sized_run(root, "civvis-20260101T000002Z", "MAPSIZE_SMALL", 4)
+            text = rr.render_aggregate(rr.aggregate(root, every=20))
+            self.assertNotIn("MORE THAN ONE SIZE IS POOLED", text)
+            self.assertNotIn("band not measured here", text)
+
+    def test_a_single_run_says_whether_the_band_applies_to_it(self) -> None:
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            run = write_sized_run(root, "civvis-20260101T000001Z",
+                                  "MAPSIZE_TINY", 5)
+            data = rr.report(run, every=20)
+            self.assertTrue(data["in_win_band"], "5 cities is inside 4-6")
+            self.assertFalse(data["band_applies"],
+                             "but the band was never measured on Tiny")
