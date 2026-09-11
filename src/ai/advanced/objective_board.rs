@@ -1931,9 +1931,11 @@ impl AdvancedAi {
     /// on `later_moved_units` in `src/bin/civvis_orders.rs`). Of every FORTIFY
     /// that read `not_fortified`, following the subject into the NEXT turn:
     ///
+    /// ```text
     ///     64.6%  the decider MOVED IT AGAIN next turn   (n = 2,507)
     ///     29.2%  fortified on a later frame after all
     ///      6.2%  neither
+    /// ```
     ///
     /// and only ~1% was a host refusal, which `operation_refused` now names. So
     /// the order lands; the decider takes it back one turn later. Civilization
@@ -1973,10 +1975,12 @@ impl AdvancedAi {
     /// force(s), R reassigned, short: S". Over 6,165 of those lines in the live
     /// runs of 2026-09-10/11:
     ///
+    /// ```text
     ///     rows        median 8    mean 8.1
     ///     forces      median 2    mean 2.1
     ///     reassigned  median 1    mean 1.71   (56% of evaluations move someone)
     ///     rows short  median 1    mean 1.9
+    /// ```
     ///
     /// ⭐ Roughly **a fifth of the army changes objective on every evaluation**,
     /// and ~2 rows are left short every time regardless. The units are not

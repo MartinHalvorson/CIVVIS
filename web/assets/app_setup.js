@@ -525,16 +525,6 @@ function updateRestartSimulationButton() {
   setupStart.textContent = button.querySelector(".lbl").textContent;
   setupStart.title = button.title;
 }
-function openSinglePlayerSetup() {
-  if (newSimulationBusy) return;
-  document.getElementById("humanplayers").value = "single";
-  document.getElementById("gamemode").value = "civ";
-  syncSetupMode();
-  updateRestartSimulationButton();
-  openGameMenu();
-  document.getElementById("leader").focus({preventScroll: true});
-  refreshSaves();
-}
 function stageSelectedSimulationSettings() {
   updateRestartSimulationButton();
   if (worldSetupInputError()) return;
@@ -560,7 +550,7 @@ function setNewSimulationBusy(busy) {
     ...document.querySelectorAll("#newgame-options select, #newgame-options input, #newgame-options button"),
     document.getElementById("restart-sim"), document.getElementById("specpause"),
     document.getElementById("collapsepause"),
-    document.getElementById("single-player-entry"), document.getElementById("setup-start"),
+    document.getElementById("setup-start"),
   ].filter(Boolean);
   if (busy) {
     for (const control of controls) {
@@ -1395,7 +1385,6 @@ async function playOnPastVictory(mode, paused) {
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
 document.getElementById("setup-start").onclick = startNewSimulation;
-document.getElementById("single-player-entry").onclick = openSinglePlayerSetup;
 document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
 
 // ── deferred cross-file init ─────────────────────────────────────────────────

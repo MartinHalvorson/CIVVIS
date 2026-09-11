@@ -72,6 +72,234 @@ WIN_BAND = (4, 6)
 #: 59% of the 389 `MAPSIZE_SMALL` attempts that recorded the column — a shift
 #: from a mean of 3.83 cities to 2.53. Pooling the two sizes in one aggregate
 #: hides that, which is why `aggregate` now splits on it.
+#:
+#: ## ⭐⭐⭐ 2026-09-11: IT IS THE HANDICAP, NOT THE MAP, THE RIVALS, OR THE BRIDGE
+#:
+#: 🛑 An earlier version of this section blamed the Firaxis rivals. A fourth arm
+#: shows that was wrong: `--handicap rivals` and `--rivals firaxis-mix` are
+#: coupled by the tool — the first is refused without the second — and I moved
+#: both at once. Moving only the rivals costs nothing.
+#:
+#: The paragraph above reads as "the size change cost us the band". Three
+#: simulator arms at the Tiny shape (44×26, 4 players, 4 city-states, 80 turns,
+#: one variable moved at a time) say otherwise:
+#:
+#: ⚠⚠ THE FIRST VERSION OF THIS TABLE USED THE WRONG BOARD. `MAPSIZE_TINY` is
+#: **60×38 = 2,280 tiles**, read straight off the `tiles` events of 58 live runs,
+#: not the 44×26 those arms played — half the area. The arms were re-run at the
+#: real size and the finding got LARGER, not smaller:
+#:
+#:     arm (60×38, 4 players, standard, emperor)          seats  mean  in band
+#:     FIRAXIS rivals · handicap all                         90  4.33     80%
+#:     FIRAXIS rivals · handicap rivals   (the deployment)   90  2.59     10%
+#:     LIVE · MAPSIZE_TINY · Firaxis · handicap rivals       17  2.53      0%
+#:
+#: ⭐ **Move the Emperor handicap off our seat and onto the rival chairs —
+#: changing nothing else — and we lose 1.74 cities at turn 60, from 80% in band
+#: to 10%.** On the undersized board the same contrast read 1.50; the correction
+#: strengthened it. (Rival identity, measured separately on the small board, was
+#: worth nothing: 3.68 with CIVVIS rivals against 3.73 with Firaxis.)
+#:
+#: ⭐⭐ **The live seat is not losing cities to the bridge.** Matched on the real
+#: board, speed, difficulty, rivals AND handicap, the simulator lands on 2.59
+#: against live's 2.53 — the same answer, and a closer one than the undersized
+#: arm gave. There is no live-versus-simulator divergence here to go looking for.
+#:
+#: 🔴 AND THIS IS NOT A DEFECT. `--handicap rivals` exempting the measured seat
+#: is what Emperor *means*: the rivals get the rung's yield and Settler bonus and
+#: we do not. The finding is that on a `MAPSIZE_TINY` board that asymmetry is
+#: decisive by turn 60, while on `MAPSIZE_SMALL` against the same rivals at the
+#: same rung the live seat still reached the band 59% of the time. Small boards
+#: do not leave room to lose a land race you are handicapped in.
+#:
+#: ⚠ So the open question is a configuration one and it belongs to the operator:
+#: **is Tiny-at-Emperor a winnable shape?** Nothing here says the agent is
+#: broken; it says the agent is playing a board where the rung's head start
+#: decides the opening.
+#:
+#: ⚠⚠ ON THE `--turns 80` THOSE ARMS USED. It is a real hazard and it was
+#: checked rather than assumed: `--turns N` does not truncate a game, it
+#: RESCALES the agent, because 46 call sites of `Game::turn_limit()` and 54 of
+#: `standard_duration` express deadlines, bands and cadences as a share of the
+#: game's length. It cost a retraction elsewhere the same day (see
+#: `rapid_city_expansion_2` in `src/ai.rs`).
+#:
+#: ⭐ These arms survive it. The deployment shape re-run at `--turns 250` gives
+#: **mean 2.59, 9% in band** against the 80-turn arm's 2.59 and 10% — the same
+#: answer, because what binds here is land and production rather than any
+#: schedule. The comparison to live, whose games run 250 turns, is therefore
+#: sound. **A gene-level question would not have survived it.**
+#:
+#: ## ⭐⭐⭐⭐ ON AN EQUAL FOOTING THE AGENT OUT-EXPANDS THE FIRAXIS AI
+#:
+#: The same two arms carry the rival's own opening, which settles what the
+#: deficit is and is not:
+#:
+#:     arm (60×38, 4p, emperor)      our c@60   Firaxis rival   gap
+#:     handicap all                      4.33            3.07  +1.27 to us
+#:     handicap rivals (deployment)      2.59            3.20  -0.61 to them
+#:
+#: ⭐ **Our expansion policy is better than the shipped AI's by 1.27 cities at
+#: turn 60** when both sides play the same rules. There is no expansion defect
+#: here to find, which is also why both genes aimed at it read flat.
+#:
+#: ⭐⭐ And note whose number moves. The rival is handicapped in BOTH arms and
+#: scores 3.07 against 3.20 — the same, within noise. Ours goes 4.33 → 2.59.
+#: **The 1.74 cities are the loss of our own bonus, not anything the rival does
+#: with theirs.** At Emperor the AI takes the rung's yields and free Settlers and
+#: we do not; that head start is worth 1.74 cities by turn 60 to whoever holds it.
+#:
+#: ⭐⭐⭐ Which turns "play better" into a number.
+#:
+#: ⭐ VERIFIED AT FULL LENGTH, and it is the only `--turns 80` reading on this
+#: page that survived #3534's rule. Re-run at `--turns 250`:
+#:
+#:     arm                                    ours  rival    gap    seats
+#:     250t · handicap all  (equal footing)   4.46   3.20  +1.26  105/35
+#:     250t · handicap rivals (deployment)    2.59   3.33  -0.74   90/30
+#:     250t · handicap rivals (second arm)    2.89   3.50  -0.61  180/60
+#:
+#: against the 80-turn arms' +1.27 and −0.61. The equal-footing edge is real and
+#: it holds: **the agent out-expands the shipped AI by 1.26 cities when both
+#: play the same rules.**
+#:
+#: ⚠ AND THE PARITY GAP IS BIGGER THAN I FIRST SAID. An earlier version of this
+#: paragraph derived it indirectly — 1.74 of handicap minus 1.27 of edge — and
+#: got 0.47. The direct reading is ours-minus-rival at the deployment shape, and
+#: over the two full-length arms that is **0.65 cities** (−0.74 on 90 seats,
+#: −0.61 on 180, seat-weighted). Prefer the direct number: the indirect one
+#: subtracts effect sizes measured on different arms and inherits both errors.
+#:
+#: **So the target is about two thirds of a city at turn 60**, and #3535 prices
+#: what it buys: the seats that reach four cities win 19.6% against 6.7%.
+#:
+#: ## ⭐⭐⭐⭐ THE BAND HOLDS AT THE DEPLOYMENT SHAPE, DERIVED THERE
+#:
+#: `WIN_BAND` and `BAND_MEASURED_ON` above record that the 4-6 band is a
+#: `MAPSIZE_SMALL` fact, and the ladder's own split puts most of its evidence at
+#: King or below. It had never been derived at the shape the live seat plays.
+#: Pooling 270 FULL-LENGTH seats from that shape — 60×38, 4 players, standard,
+#: Emperor, firaxis-mix rivals, handicap rivals, `--turns 250` — gives 24 wins
+#: and this:
+#:
+#:     cities@60   seats   wins   win rate
+#:             1      20      0       0.0%
+#:             2      59      5       8.5%
+#:             3     144     10       6.9%
+#:             4      46      9      19.6%
+#:
+#:     in the 4-6 band :  46 seats,  9 wins  19.6%
+#:     outside         : 224 seats, 15 wins   6.7%
+#:
+#: ⭐ **Reaching four cities by turn 60 nearly triples the win rate** — 19.6%
+#: against 6.7%, a difference of 12.9 points at z = 2.80. So the band is not an
+#: artefact of the rung or the board it was first measured on; it survives being
+#: re-derived at Emperor on the deployment shape with full-length games.
+#:
+#: ⚠ Note the ceiling. **No seat in 270 reached five**, so at this shape "4-6"
+#: is really "4 or more", and four is the top of what the board and the rung
+#: allow.
+#:
+#: ⚠⚠ AND IT IS A CORRELATION, NOT A LEVER. `cities@60` is not randomised here:
+#: a seat that reached four may simply have started on better ground, and the
+#: same objection applies to the live band this confirms. What the number
+#: licenses is "seats that open wide win more", NOT "make the opening wider and
+#: the win rate follows". Only an intervention arm can say the second thing, and
+#: #3534 is the standing reminder of what happens when a cheap probe is asked a
+#: question it cannot answer.
+#:
+#: ⭐ With that said, it sizes the prize. The seat averages 2.59 cities and
+#: reaches four in 46 of 270 seats; #3528 puts the gap to parity with a
+#: handicapped rival at 0.47 cities. Closing that gap moves seats from the 6.9%
+#: bucket to the 19.6% one, which is the largest single prize this record
+#: currently names.
+#:
+#: ## 🛑🛑 BUT CITY COUNT IS NOT WHAT SEPARATES US FROM THE AI
+#:
+#: The same full-length arms carry the win column for BOTH sides, and it retires
+#: the city-gap target above:
+#:
+#:     arm                    our seats  our win%   Firaxis  its win%
+#:     equal footing (all)          120     22.5%        40     32.5%
+#:     deployment (rivals)           90      7.8%        30     76.7%
+#:     deployment, 2nd arm          180      9.4%        60     71.7%
+#:
+#: ⭐⭐⭐ **At equal footing we out-expand the AI by 1.23 cities (4.41 to 3.17,
+#: z +6.40) and still lose to it, 22.5% against 32.5%.** More cities, fewer
+#: wins. Whatever separates a CIVVIS seat from the shipped AI, it is not how
+#: much land we take.
+#:
+#: ⚠ So a city-count parity target reads the situation too optimistically.
+#: Closing a city gap against an opponent that already wins with fewer cities
+#: than us does not buy the win rate. The band above is a WITHIN-AGENT
+#: correlation — among our own seats, the ones that open wide do better — and it
+#: does not cross the species line.
+#:
+#: ⭐ What the rung is worth is the other half of the table. One handicapped
+#: Firaxis AI wins **72-77% of games** against three CIVVIS seats; level the
+#: handicap and it falls to 32.5% while ours rises from ~8.9% to 22.5%. That is
+#: 13.6 points of win rate, and it is the difficulty rather than the agent.
+#:
+#: 🔴 **The honest target is conversion, not expansion.** We take more ground
+#: than the AI and turn less of it into a win — the same conclusion the
+#: production record keeps reaching from the other end: districts standing
+#: without their buildings, a third of output sustaining eight units, science
+#: per city at a third of the leader's. Expansion work on this seat looks
+#: finished; what is left is what the empire does with what it already holds.
+#:
+#: ## ⭐⭐⭐ AND THE BOARD SIZE IS WORTH ABOUT AS MUCH AGAIN
+#:
+#: The ladder's own attempts, split by rung, put the live seat on `MAPSIZE_SMALL`
+#: at Emperor at **mean 3.73, 54% in band over 71 attempts** — the same rung and
+#: the same handicap asymmetry, on a bigger board. On `MAPSIZE_TINY` it reaches
+#: 2.53 and the band never.
+#:
+#: So both terms are real and they compound: the rung's head start costs ~1.74
+#: cities, and shrinking the board from Small to Tiny costs ~1.2 more at the same
+#: rung. Together they put the seat on 2.5 where every recorded win came from 4-6.
+#:
+#: ⭐ **That makes the configuration question answerable rather than open.**
+#: Reverting the size to `MAPSIZE_SMALL` recovers roughly a city and takes
+#: in-band from 0% to the 54% those 71 attempts recorded. It does not make the
+#: rung's asymmetry go away — nothing in the agent's gift does — but it puts the
+#: opening back where the agent's decisions can matter.
+#:
+#: ## 🛑🛑 RETRACTED BY A CONTROLLED ARM: A BIGGER BOARD DOES NOT HELP
+#:
+#: The recommendation above rests on the ladder's 71 `MAPSIZE_SMALL`-at-Emperor
+#: attempts. A controlled arm at the deployment rung on a Small-sized board
+#: does not reproduce them. 40 games, 200 seats, 74×46, 6 players, standard,
+#: Emperor, `--rivals firaxis-mix --handicap rivals`, `--turns 250`:
+#:
+#:     arm                       players  c@60  in band  our win  fair  ratio
+#:     Tiny  60×38  (deployment)       4  2.59       9%     7.8%  25.0%  0.31
+#:     Tiny  60×38  (second arm)       4  2.89      21%     9.4%  25.0%  0.38
+#:     Small 74×46  (deployment)       6  2.79      18%     6.0%  16.7%  0.36
+#:
+#: `fair` is 100/players, the share a seat takes by chance; `ratio` normalises
+#: the win rate by it, which is the only way to compare across player counts.
+#:
+#: ⭐ **The bigger board gives the same opening (2.79 against 2.59 and 2.89) and
+#: the same share of fair (0.36 against 0.31 and 0.38).** It buys nothing.
+#:
+#: ⚠⚠ So do not act on the size recommendation above. Two readings disagree and
+#: the controlled one is the better evidence for a causal claim — but the
+#: disagreement is unexplained, and there is a specific reason to distrust my
+#: own arm: **`MAPSIZE_SMALL`'s real dimensions were never read.** 74×46 is a
+#: guess from the standard screen shape, exactly the guess that cost three ticks
+#: on `MAPSIZE_TINY` before 58 live runs turned out to be recording 60×38 in
+#: their own `tiles` events. There are no live Small runs on this disk to read.
+#:
+#: **What to do before touching the size: get one live `MAPSIZE_SMALL` run,
+#: read its `tiles` width and height, and re-run the arm at those numbers.**
+#: Until then the honest position is that the board is not a demonstrated lever,
+#: and #3544's conclusion stands on its own — the separation from the AI is
+#: conversion, not ground.
+#:
+#: ⚠ Cautions. The live Tiny arm is 17 runs; the Small-at-Emperor figure is
+#: observational rather than a controlled arm; and `--handicap rivals` is refused
+#: without `--rivals firaxis-mix`, so the handicap isolation comes from moving
+#: `--handicap` while holding `--rivals` fixed, not the reverse.
 BAND_MEASURED_ON = "MAPSIZE_SMALL"
 
 #: How a run reports a size it never recorded. Older runs predate the field.

@@ -105,7 +105,10 @@ Everything the old roadmap called planned has shipped and then some:
    |---|---:|---|
    | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
    | `src/ai/advanced/tests.rs` | 24% | size — 31.7k lines, cut out of `advanced.rs` by #1918 and now longer than it |
-   | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` treatments |
+
+   On 2026-09-11, the same check removes `src/bin/civvis_orders.rs`
+   from this target table: its current 200-merge touch rate is 4%, below the
+   5% floor. The historical 10% reading no longer justifies a split target.
 
    ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked
    `(rs|js|py|sh)` only, so the fifth-most-contended file in the repository

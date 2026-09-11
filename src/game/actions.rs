@@ -8383,6 +8383,13 @@ impl Game {
     }
 
     pub(super) fn player_tech_era(&self, pid: usize) -> usize {
+        if let Some(era) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.tech_era)
+        {
+            return era;
+        }
         self.players[pid]
             .techs
             .iter()

@@ -45,7 +45,8 @@
 //!    or is within [`SCIENCE_DRIVE_TECH_SLACK`] techs of the leader's count.
 //!    An adaptive seat whose own public victory focus is Science at or above
 //!    [`SCIENCE_DRIVE_PLAN_FLOOR`] also drives, so it can build the chain that
-//!    produces a lead; below that floor the field test remains unchanged.
+//!    produces a lead; a queued or completed launch starts the drive
+//!    immediately, even before the ordinary turn-87 field review.
 //!    A seat assigned Science (`--victory science`, which the live seat
 //!    always is) or committed to it by `lane-commit` drives from turn one; a
 //!    seat assigned any other lane never drives.
@@ -168,6 +169,16 @@ pub const SCIENCE_DRIVE_RESEARCH_BUILDING_BONUS: [(&str, f64); 3] = [
 /// the city's research and launch-production buildings are caught up.
 pub const SCIENCE_DRIVE_CAMPUS_PROJECT_BONUS: f64 = 900.0;
 
+/// A queued or completed project is a durable Science commitment for an
+/// adaptive seat, even while the public focus score is still below its
+/// opening floor.
+const SCIENCE_LAUNCH_PROJECTS: [&str; 4] = [
+    "launch_earth_satellite",
+    "launch_moon_landing",
+    "launch_mars_colony",
+    "exoplanet_expedition",
+];
+
 /// The local buildings that a science city should finish before converting
 /// its Campus into a repeatable project. The ordinary project cap also uses
 /// this debt; keeping the gate here prevents the science-drive bonus from
@@ -278,16 +289,31 @@ impl AdvancedAi {
         self.science_victory_drive || self.science_victory_drive_2
     }
 
-    /// Whether an adaptive seat has a credible Science commitment of its own.
-    /// The public lane table already combines technology progress, Rocketry
-    /// readiness and completed projects; use that signal to start the race
-    /// before a lead exists, while keeping a weak opening tie from turning
-    /// every adaptive seat into a Spaceport builder.
-    fn adaptive_science_plan(&self, g: &Game, pid: usize) -> bool {
+    /// Whether an adaptive seat has a queued or completed launch of its own.
+    /// That project is already consuming the finite race chain, so it can
+    /// start the drive before the public focus score clears its opening floor.
+    fn adaptive_science_launch_committed(&self, g: &Game, pid: usize) -> bool {
         self.victory_planning && self.victory_target.is_none() && g.victory_conditions.science && {
-            let focus = self.victory_focus(g, pid);
-            focus.strategy == GrandStrategy::Science && focus.progress >= SCIENCE_DRIVE_PLAN_FLOOR
+            SCIENCE_LAUNCH_PROJECTS.iter().any(|project| {
+                g.players[pid].science_projects.contains(*project)
+                    || Self::science_project_is_queued(g, pid, project)
+            })
         }
+    }
+
+    /// Whether an adaptive seat has a credible Science commitment of its own.
+    /// A public Science focus can start the chain before a lead exists, while
+    /// a weak opening tie remains below the drive's normal floor.
+    fn adaptive_science_plan(&self, g: &Game, pid: usize) -> bool {
+        self.adaptive_science_launch_committed(g, pid)
+            || (self.victory_planning
+                && self.victory_target.is_none()
+                && g.victory_conditions.science
+                && {
+                    let focus = self.victory_focus(g, pid);
+                    focus.strategy == GrandStrategy::Science
+                        && focus.progress >= SCIENCE_DRIVE_PLAN_FLOOR
+                })
     }
 
     /// The empire's science a turn: every city's, the player-level extras,
@@ -353,9 +379,14 @@ impl AdvancedAi {
         };
         let review = g.standard_duration(SCIENCE_DRIVE_REVIEW).max(1);
         let start = Self::science_drive_start(g);
+        let launch_committed = self.adaptive_science_launch_committed(g, pid);
         let due = match self.science_drive {
             Some(drive) => g.turn.saturating_sub(drive.reviewed) >= review,
-            None => assigned || (g.turn >= start && (g.turn - start).is_multiple_of(review)),
+            None => {
+                assigned
+                    || launch_committed
+                    || (g.turn >= start && (g.turn - start).is_multiple_of(review))
+            }
         };
         if !due {
             return;
@@ -1199,6 +1230,43 @@ mod tests {
             Some(ours)
         );
         assert_eq!(ai.raced_target(), Some(VictoryTarget::Science));
+    }
+
+    #[test]
+    fn a_committed_adaptive_launch_drives_before_the_normal_review() {
+        for queued in [false, true] {
+            let (mut g, ours, _) = board();
+            give_techs(&mut g, 0, 20);
+            give_techs(&mut g, 1, 30);
+            if queued {
+                g.cities.get_mut(&ours).unwrap().queue.push(Item::Project {
+                    project: crate::name!("launch_earth_satellite"),
+                });
+            } else {
+                g.players[0]
+                    .science_projects
+                    .insert("launch_earth_satellite".to_string());
+            }
+            g.turn = AdvancedAi::science_drive_start(&g) - 1;
+            let mut ai = AdvancedAi::new();
+            ai.enable_science_victory_drive();
+            let focus = ai.victory_focus(&g, 0);
+            assert_eq!(focus.strategy, GrandStrategy::Science);
+            assert!(focus.progress < SCIENCE_DRIVE_PLAN_FLOOR);
+            let standing = AdvancedAi::science_standing(&g, 0);
+            assert!(standing.own_techs < standing.best_rival_techs);
+            ai.maintain_science_drive(&g, 0);
+            assert_eq!(
+                ai.science_drive().and_then(|drive| drive.launch_city),
+                Some(ours)
+            );
+            assert_eq!(
+                ai.science_drive().map(|drive| drive.since),
+                Some(g.turn),
+                "a launch commitment should bypass the normal turn review"
+            );
+            assert_eq!(ai.raced_target(), Some(VictoryTarget::Science));
+        }
     }
 
     #[test]
