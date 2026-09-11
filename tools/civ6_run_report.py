@@ -196,6 +196,39 @@ WIN_BAND = (4, 6)
 #: bucket to the 19.6% one, which is the largest single prize this record
 #: currently names.
 #:
+#: ## 🛑🛑 BUT CITY COUNT IS NOT WHAT SEPARATES US FROM THE AI
+#:
+#: The same full-length arms carry the win column for BOTH sides, and it retires
+#: the city-gap target above:
+#:
+#:     arm                    our seats  our win%   Firaxis  its win%
+#:     equal footing (all)          120     22.5%        40     32.5%
+#:     deployment (rivals)           90      7.8%        30     76.7%
+#:     deployment, 2nd arm          180      9.4%        60     71.7%
+#:
+#: ⭐⭐⭐ **At equal footing we out-expand the AI by 1.23 cities (4.41 to 3.17,
+#: z +6.40) and still lose to it, 22.5% against 32.5%.** More cities, fewer
+#: wins. Whatever separates a CIVVIS seat from the shipped AI, it is not how
+#: much land we take.
+#:
+#: ⚠ So a city-count parity target reads the situation too optimistically.
+#: Closing a city gap against an opponent that already wins with fewer cities
+#: than us does not buy the win rate. The band above is a WITHIN-AGENT
+#: correlation — among our own seats, the ones that open wide do better — and it
+#: does not cross the species line.
+#:
+#: ⭐ What the rung is worth is the other half of the table. One handicapped
+#: Firaxis AI wins **72-77% of games** against three CIVVIS seats; level the
+#: handicap and it falls to 32.5% while ours rises from ~8.9% to 22.5%. That is
+#: 13.6 points of win rate, and it is the difficulty rather than the agent.
+#:
+#: 🔴 **The honest target is conversion, not expansion.** We take more ground
+#: than the AI and turn less of it into a win — the same conclusion the
+#: production record keeps reaching from the other end: districts standing
+#: without their buildings, a third of output sustaining eight units, science
+#: per city at a third of the leader's. Expansion work on this seat looks
+#: finished; what is left is what the empire does with what it already holds.
+#:
 #: ## ⭐⭐⭐ AND THE BOARD SIZE IS WORTH ABOUT AS MUCH AGAIN
 #:
 #: The ladder's own attempts, split by rung, put the live seat on `MAPSIZE_SMALL`
