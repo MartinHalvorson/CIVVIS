@@ -4969,6 +4969,27 @@ pub struct AdvancedAi {
     /// lost to a religious victory at turns 278 and 163 while the board read
     /// "the first half is reserved for expansion".
     denial_outranks_expansion: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub victory_deadline_budget: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub culture_tourism_payback: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub siege_positive_damage_budget: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub culture_faith_reservation: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub capital_campaign_router: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub great_work_completion_value: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub upgrade_window_campaign: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub tourism_land_reservation: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub reinforce_before_stall: bool,
+    /// Independently screenable victory conversion heuristic; see `victory_conversion`.
+    pub capture_hold_chain: bool,
+    conversion: victory_conversion::ConversionState,
     /// `domination-lane-hands-over`: with the Domination lane assigned, stop
     /// deferring to "keep expanding" once the empire holds
     /// `DOMINATION_HANDOVER_CITIES`, whatever `desired_cities` has grown to.
@@ -5348,6 +5369,7 @@ pub struct AdvancedAi {
     /// columns of that run mean nothing and are not quoted. What eighty turns
     /// does cover is the only window this gene acts in.
     ///
+    /// ```text
     ///     column                     on       off      diff      z
     ///     cities_at_game_turn_60   4.224    4.096    +0.128   +0.84
     ///     cities_60                3.098    2.972    +0.127   +1.30
@@ -5355,6 +5377,7 @@ pub struct AdvancedAi {
     ///     districts                5.667    5.407    +0.260   +0.89
     ///     specialty_districts      5.142    4.994    +0.148   +0.56
     ///     buildings               11.251   11.023    +0.229   +0.41
+    /// ```
     ///
     /// ⭐ Six columns, six positive signs, nothing past z = 1.43. The signs are
     /// encouraging and are NOT six independent confirmations — those columns
@@ -7119,6 +7142,7 @@ mod chokepoints;
 mod scout_distance;
 
 mod culture_strategy;
+mod victory_conversion;
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
@@ -8038,6 +8062,17 @@ impl AdvancedAi {
             conquest_takes_the_soft_city: false,
             counter_culture_by_conquest: false,
             denial_outranks_expansion: false,
+            victory_deadline_budget: false,
+            culture_tourism_payback: false,
+            siege_positive_damage_budget: false,
+            culture_faith_reservation: false,
+            capital_campaign_router: false,
+            great_work_completion_value: false,
+            upgrade_window_campaign: false,
+            tourism_land_reservation: false,
+            reinforce_before_stall: false,
+            capture_hold_chain: false,
+            conversion: victory_conversion::ConversionState::default(),
             domination_lane_hands_over: false,
             chop_for_expansion: false,
             conquest_opening: None,
@@ -9767,10 +9802,18 @@ impl AdvancedAi {
             .as_ref()
             .map(|plan| ordinary + self.war_upgrade_bill(g, pid, plan))
             .unwrap_or(0.0)
+            .max(
+                if self.upgrade_window_campaign && self.conversion.upgrade_reserve > 0.0 {
+                    ordinary + self.conversion.upgrade_reserve
+                } else {
+                    0.0
+                },
+            )
     }
 
     /// `modernize-before-spending`: see the field. Returns the upgrades taken.
     pub(crate) fn modernize_before_the_purchase_pass(&mut self, g: &mut Game, pid: usize) -> usize {
+        self.conversion_upgrade_first(g, pid);
         if !self.modernize_before_spending || self.war_plan.is_some() || g.players[pid].is_barbarian
         {
             return 0;
@@ -12021,6 +12064,7 @@ impl AdvancedAi {
                     .map(|(_, capital)| capital)
             })
             .or(suppression_target_city)
+            .or_else(|| self.conversion_campaign_target(g, pid, target_player))
             // `city_campaign`: the plan's first city still in the rival's
             // hands. See `advanced/city_campaign.rs`.
             .or_else(|| self.campaign_objective_city(g, pid, target_player))
@@ -14348,9 +14392,13 @@ impl AdvancedAi {
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let endgame_research_preempts_wartime =
                 self.science_endgame_research_preempts_wartime(g, pid, endgame_goal);
+            let conversion_upgrade_goal = self
+                .conversion_upgrade_research()
+                .filter(|goal| !g.players[pid].techs.contains(&Name::new(goal)));
             let forced_goal = match objective {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
+                _ if conversion_upgrade_goal.is_some() => conversion_upgrade_goal,
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
                 }) =>
@@ -16803,9 +16851,11 @@ impl AdvancedAi {
                         && deal.partner_value >= 2.0
                 })
                 .max_by(|left, right| {
-                    self.base
-                        .deal_objective(left)
-                        .partial_cmp(&self.base.deal_objective(right))
+                    (self.base.deal_objective(left) + self.completion_deal_bonus(g, pid, left))
+                        .partial_cmp(
+                            &(self.base.deal_objective(right)
+                                + self.completion_deal_bonus(g, pid, right)),
+                        )
                         .unwrap()
                         .then_with(|| right.partner.cmp(&left.partner))
                         .then_with(|| right.item.cmp(&left.item))
@@ -17628,6 +17678,9 @@ impl AdvancedAi {
     /// on the brink of victory, where five setup turns can lose the game.
     /// City-states cannot be denounced and therefore remain direct targets.
     fn preferred_war_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
+        if !self.conversion_upgrade_launch_ready(g, pid) {
+            return None;
+        }
         let legal = g.legal_actions_within(pid, ActionFamilies::DIPLOMACY);
         let casus_belli = legal
             .iter()
@@ -19546,6 +19599,7 @@ impl AdvancedAi {
             }
             _ => 100.0,
         };
+        let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve);
         let mut candidates = Vec::new();
         // ⚠ THIS WAS A LIST OF THE NINE CLASS NAMES THAT HAPPENED TO EXIST.
         // `beliefs.json` shipped exactly that shape once: an AI chooser that
@@ -20450,7 +20504,12 @@ impl AdvancedAi {
                     // goes. 0.0 with the gene off. See
                     // `advanced/chokepoints.rs`.
                     let gate = self.chokepoint_plot_bonus(g, pid, *pos);
-                    let base_score = yields + resource + wonder + gate - cost * 0.70;
+                    let base_score = yields
+                        + resource
+                        + wonder
+                        + gate
+                        + self.conversion_plot_bonus(g, pid, *city, *pos, *cost)
+                        - cost * 0.70;
                     // Use adjacency as a cheap shortlist signal. Exact site
                     // legality and full production value are evaluated below
                     // for only the strongest four plots, avoiding a full game
@@ -21463,6 +21522,9 @@ impl AdvancedAi {
     }
 
     fn culture_spending(&self, g: &mut Game, pid: usize) {
+        if self.conversion_culture_purchase(g, pid) {
+            return;
+        }
         let active_naturalists = g
             .units
             .values()
@@ -21557,6 +21619,7 @@ impl AdvancedAi {
             }
             _ => 80.0,
         };
+        let reserve = self.conversion_faith_reserve(g, pid, reserve);
         // Every candidate below must clear `cost + reserve`, and a purchase
         // cost is never negative — so a bank under the reserve cannot buy
         // anything no matter what the menu holds. Skip building the menu at
@@ -21773,40 +21836,42 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
-                base + match governor {
-                    "pingala" => {
-                        city.pop as f64 * 14.0
-                            + yields.science * 9.0
-                            + yields.culture * 9.0
-                            + self.science_drive_governor_bonus(g, governor, city_id)
+                base + self.conversion_hold_governor_bonus(g, pid, city_id, governor)
+                    + match governor {
+                        "pingala" => {
+                            city.pop as f64 * 14.0
+                                + yields.science * 9.0
+                                + yields.culture * 9.0
+                                + self.science_drive_governor_bonus(g, governor, city_id)
+                        }
+                        "magnus" => {
+                            city.pop as f64 * 5.0
+                                + yields.food * 5.0
+                                + yields.production * 11.0
+                                + matches!(
+                                    city.queue.first(),
+                                    Some(Item::Unit { unit }) if unit == "settler"
+                                ) as i32 as f64
+                                    * 180.0
+                        }
+                        "liang" => yields.production * 10.0 + city.owned_tiles.len() as f64 * 2.0,
+                        "reyna" => city.pop as f64 * 8.0 + yields.gold * 13.0 + commercial * 150.0,
+                        "victor" => {
+                            plan.threatened_city.is_some_and(|target| target == city_id) as i32
+                                as f64
+                                * 600.0
+                                + city.wall_hp.max(0) as f64
+                                + city.pop as f64 * 5.0
+                        }
+                        "moksha" => {
+                            yields.faith * 14.0
+                                + holy * 180.0
+                                + (g.players[pid].holy_city == Some(city_id)) as i32 as f64 * 220.0
+                        }
+                        "amani" if !own => 600.0 + g.envoys_at(pid, city.owner) as f64 * 55.0,
+                        "amani" => (100.0 - city.loyalty).max(0.0) * 5.0,
+                        _ => 0.0,
                     }
-                    "magnus" => {
-                        city.pop as f64 * 5.0
-                            + yields.food * 5.0
-                            + yields.production * 11.0
-                            + matches!(
-                                city.queue.first(),
-                                Some(Item::Unit { unit }) if unit == "settler"
-                            ) as i32 as f64
-                                * 180.0
-                    }
-                    "liang" => yields.production * 10.0 + city.owned_tiles.len() as f64 * 2.0,
-                    "reyna" => city.pop as f64 * 8.0 + yields.gold * 13.0 + commercial * 150.0,
-                    "victor" => {
-                        plan.threatened_city.is_some_and(|target| target == city_id) as i32 as f64
-                            * 600.0
-                            + city.wall_hp.max(0) as f64
-                            + city.pop as f64 * 5.0
-                    }
-                    "moksha" => {
-                        yields.faith * 14.0
-                            + holy * 180.0
-                            + (g.players[pid].holy_city == Some(city_id)) as i32 as f64 * 220.0
-                    }
-                    "amani" if !own => 600.0 + g.envoys_at(pid, city.owner) as f64 * 55.0,
-                    "amani" => (100.0 - city.loyalty).max(0.0) * 5.0,
-                    _ => 0.0,
-                }
             };
             value(*left)
                 .partial_cmp(&value(*right))
@@ -29236,6 +29301,7 @@ impl AdvancedAi {
         // the city wants and never argue with what it may not build; and only
         // on a positive score, so scaling can never turn a penalty into an
         // attraction by shrinking it.
+        let raw = raw + self.conversion_production_adjustment(g, pid, cid, item, plan, turns, raw);
         let raw = if raw > 0.0 {
             raw * self.production_category_gene(item)
         } else {
@@ -30741,6 +30807,7 @@ impl AdvancedAi {
             + approach_cost
             + occupation_risk
             + unsupported_capture
+            + self.conversion_hold_cost(g, pid, city.id)
             - development
             - capital_value
             - science_denial
@@ -33567,6 +33634,7 @@ impl AdvancedAi {
         // line above prices, and independent of it. See
         // `advanced/city_state_quests.rs`.
         value
+            + self.conversion_land_penalty(g, pos, improvement)
             + self.builder_boost_premium(g, pos, improvement, value)
             // `boost-planner`: the deadlined side objective this Builder job
             // satisfies, as a share of the job's own value. Zero with the
@@ -34142,6 +34210,9 @@ impl AdvancedAi {
         // project errand, which is an empire decision already taken, and ahead
         // of repair and improvement, which have no deadline. `None` with the
         // gene off, before anything is read.
+        if let Some(acted) = self.conversion_land_builder(g, pid, uid) {
+            return acted;
+        }
         if let Some(acted) = self.chop_for_expansion_step(g, pid, uid, strategy) {
             return acted;
         }
@@ -34987,8 +35058,8 @@ impl AdvancedAi {
             })
             .collect();
         cities.sort_by(|left, right| {
-            left.loyalty
-                .total_cmp(&right.loyalty)
+            self.conversion_garrison_priority(g, left)
+                .total_cmp(&self.conversion_garrison_priority(g, right))
                 .then_with(|| left.id.cmp(&right.id))
         });
         let mut available: BTreeSet<u32> = g
@@ -40838,6 +40909,7 @@ impl AdvancedAi {
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
+        self.observe_victory_conversion(g, pid);
         // `early-conquest-opening`: name or keep the opening's target, count
         // the war's losses, and pin the campaign it has handed over — before
         // the shipped campaign maintenance reads the plan, and before

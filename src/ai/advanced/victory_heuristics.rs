@@ -271,7 +271,11 @@ impl AdvancedAi {
                 (
                     city.owner,
                     city.id,
-                    self.campaign_city_value(g, pid, city, GrandStrategy::Conquest),
+                    self.conversion_campaign_cost(g, pid, city)
+                        .map(|cost| cost * 15.0)
+                        .unwrap_or_else(|| {
+                            self.campaign_city_value(g, pid, city, GrandStrategy::Conquest)
+                        }),
                 )
             })
             .min_by(|left, right| {

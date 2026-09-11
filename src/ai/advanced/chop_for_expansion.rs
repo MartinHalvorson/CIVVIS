@@ -193,7 +193,7 @@ impl AdvancedAi {
             };
             for pos in &g.cities[&cid].owned_tiles {
                 let distance = g.wdist(from, *pos);
-                if distance > CHOP_ERRAND_RADIUS {
+                if distance > CHOP_ERRAND_RADIUS || self.conversion_preserves_woods(g, *pos) {
                     continue;
                 }
                 let payout = g
