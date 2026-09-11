@@ -78,6 +78,24 @@ impl AdvancedAi {
                         || Self::science_project_is_queued(g, pid, "exoplanet_expedition"))))
     }
 
+    /// The dedicated Science pass runs before generic production. A fresh
+    /// launch or laser has no invested production yet, so the generic scorer
+    /// can otherwise treat a lane that has already committed to the flight as
+    /// worthless after the public plan changes.
+    pub(super) fn science_endgame_queue_authoritative(
+        &self,
+        g: &Game,
+        pid: usize,
+        item: &Item,
+    ) -> bool {
+        self.science_endgame_lane_committed(g, pid)
+            && matches!(
+                item,
+                Item::Project { project }
+                    if LAUNCHES.contains(&project.as_str()) || LASERS.contains(&project.as_str())
+            )
+    }
+
     /// Once the serial launch chain has reached its late research rungs, the
     /// next Science technology is the remaining victory clock. It outranks an
     /// optional wartime upgrade so a completed expedition can unlock its laser
