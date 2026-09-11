@@ -1992,8 +1992,10 @@ impl AdvancedAi {
     /// Counted directly from the state frames of the same runs, our military
     /// unit total is:
     ///
+    /// ```text
     ///     turns     0-39   40-79   80-119  120-159  160-199  200-239  240-279
     ///     median       2       5        8        8        8        8        6
+    /// ```
     ///
     /// So ~8 units in ~2 forces, and 1.71 reassignments is about 21% of them
     /// per evaluation. Still high, and not "most".
@@ -2009,8 +2011,8 @@ impl AdvancedAi {
     ///
     /// ⚠ And it is not that the army loses its fights. Filtered the way
     /// `docs/LIVE_TACTICS.md`'s junk-row rule prescribes — both sides real
-    /// units, and only combats we are actually in — the exchange is **1.06
-    /// kills per loss** (188 against 199). We trade evenly and still cannot
+    /// units, and only combats we are actually in — the exchange is **roughly one
+    /// kill per loss** (188 against 199). We trade evenly and still cannot
     /// accumulate, which points at what a unit COSTS us rather than at how it
     /// fights, and lands back on the conversion gap the rest of the record
     /// keeps finding.
