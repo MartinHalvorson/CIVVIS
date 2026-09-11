@@ -220,6 +220,63 @@ class DetectionIsADifferentQuestion(unittest.TestCase):
             self.assertEqual(det["agree"] + det["disagree"], det["both"])
 
 
+class TheCorpusIsPartOfTheAnswer(unittest.TestCase):
+    """A slope quoted without its corpus is the mistake these filters exist to
+    prevent: the ledger curates 10 of 82 screens and reads a different slope."""
+
+    def test_shape_filter_selects_only_that_shape(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            write_screens(root, genes=6, screens=3, slope=3.0, structural=0.3,
+                          share_se=0.2, win_se=0.9)
+            # relabel one screen's shape
+            odd = sorted(root.glob("*.json"))[0]
+            doc = json.loads(odd.read_text())
+            doc["shape"] = "legacy"
+            odd.write_text(json.dumps(doc))
+            everything, _, _ = spw.load_screens(str(root / "*.json"))
+            standard, _, _ = spw.load_screens(str(root / "*.json"), shape="standard")
+            legacy, _, _ = spw.load_screens(str(root / "*.json"), shape="legacy")
+            self.assertEqual(len(everything), len(standard) + len(legacy))
+            self.assertEqual(len(legacy), 6)
+
+    def test_an_empty_filter_result_names_the_filter(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            write_screens(root, genes=4, screens=2, slope=3.0, structural=0.3,
+                          share_se=0.2, win_se=0.9)
+            with self.assertRaises(SystemExit) as caught:
+                spw.load_screens(str(root / "*.json"), shape="no-such-shape")
+            self.assertIn("no-such-shape", str(caught.exception))
+
+    def test_ledger_sources_are_read_from_the_ledger_not_guessed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ledger = root / "ledger.json"
+            ledger.write_text(json.dumps(
+                dict(sources=[{"path": "a.json"}, {"path": "b.json"}])))
+            self.assertEqual(spw.ledger_sources(str(ledger)), {"a.json", "b.json"})
+
+    def test_a_ledger_with_no_sources_is_an_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            ledger = Path(d) / "ledger.json"
+            ledger.write_text(json.dumps(dict(sources=[])))
+            with self.assertRaises(SystemExit):
+                spw.ledger_sources(str(ledger))
+
+    def test_the_real_ledger_curates_a_subset(self):
+        """The premise the whole warning rests on. If the ledger ever read every
+        screen on disk, the warning would be wrong and should come out."""
+        repo = Path(__file__).resolve().parent.parent
+        ledger = repo / "docs" / "gene_ledger.json"
+        screens = sorted((repo / "docs" / "gene_screens").glob("*.json"))
+        if not ledger.exists() or not screens:
+            self.skipTest("no committed ledger or screens here")
+        sources = spw.ledger_sources(str(ledger))
+        self.assertLess(len(sources), len(screens),
+                        "ledger reads every screen -- the doc's warning is stale")
+
+
 class TheCrossoverIsTheRealAnswer(unittest.TestCase):
     def test_the_advantage_falls_as_seats_rise_and_ends(self):
         """A surrogate with a structural floor cannot win forever: a direct
