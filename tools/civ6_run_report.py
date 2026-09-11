@@ -72,6 +72,39 @@ WIN_BAND = (4, 6)
 #: 59% of the 389 `MAPSIZE_SMALL` attempts that recorded the column — a shift
 #: from a mean of 3.83 cities to 2.53. Pooling the two sizes in one aggregate
 #: hides that, which is why `aggregate` now splits on it.
+#:
+#: ## ⭐⭐⭐ 2026-09-11: IT IS THE RIVALS, NOT THE MAP, AND NOT THE BRIDGE
+#:
+#: The paragraph above reads as "the size change cost us the band". Three
+#: simulator arms at the Tiny shape (44×26, 4 players, 4 city-states, 80 turns,
+#: one variable moved at a time) say otherwise:
+#:
+#:     arm                                              seats  mean  in band
+#:     Tiny shape · online   · prince  · CIVVIS rivals    120  3.42     48%
+#:     Tiny shape · standard · emperor · CIVVIS rivals    120  3.68     57%
+#:     Tiny shape · standard · emperor · FIRAXIS rivals    90  2.23      3%
+#:     LIVE       · Tiny     · emperor · Firaxis            17  2.53      0%
+#:
+#: ⭐ **The live seat is not losing cities to the bridge.** Matched on shape,
+#: speed, difficulty and rivals, the simulator lands on 2.23 against live's
+#: 2.53 — the same answer. Whatever is happening happens in the game, not in
+#: the plumbing.
+#:
+#: ⭐⭐ **And the Tiny map alone is survivable.** Against CIVVIS rivals the same
+#: 44×26 board yields 3.68 cities and 57% in band, which is the Small-map live
+#: figure (3.83, 59%) to within noise. Swapping in Firaxis rivals — and nothing
+#: else — costs **1.45 cities at turn 60** and takes in-band from 57% to 3%.
+#:
+#: 🔴 So the finding is an INTERACTION, and neither half of it alone: a small
+#: board is fine until the neighbours actually contest it, and Firaxis AI at
+#: Emperor contests it. On `MAPSIZE_SMALL` against the same rivals the live seat
+#: reached the band 59% of the time; on `MAPSIZE_TINY` it reaches it never.
+#:
+#: ⚠ Two cautions on these numbers. The simulator's 44×26 approximates
+#: `MAPSIZE_TINY` rather than reproducing its map script, and the live arm is 17
+#: runs. What carries the weight is the 90-seat Firaxis arm reproducing the live
+#: mean, and the 120-seat CIVVIS arm differing from it by more than a city on an
+#: identical board.
 BAND_MEASURED_ON = "MAPSIZE_SMALL"
 
 #: How a run reports a size it never recorded. Older runs predate the field.
