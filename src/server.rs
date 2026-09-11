@@ -2030,9 +2030,10 @@ impl Session {
                     let mut ai = AdvancedAi::new();
                     // The native spectator constructs its controller directly;
                     // keep the measured science drive that the live bridge's
-                    // deployment ledger already seats. A science-leading
-                    // empire must be allowed to build and run the launch
-                    // chain instead of spending the endgame on filler work.
+                    // deployment ledger already seats. A science-leading or
+                    // credible science-focused empire must be allowed to
+                    // build and run the launch chain instead of spending the
+                    // endgame on filler work.
                     ai.enable_science_victory_drive();
                     // The deployed native controller holds exploration goals
                     // across turns. Let the same proven loop guard used by the
