@@ -2147,7 +2147,8 @@
         "ships": "builder-workforce-recovery-2",
         "versions": {
           "builder-workforce-recovery": null,
-          "builder-workforce-recovery-2": null
+          "builder-workforce-recovery-2": null,
+          "builder-workforce-recovery-3": null
         }
       },
       "campus-adjacency-threshold": {
