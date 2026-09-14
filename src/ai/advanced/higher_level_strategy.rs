@@ -29,6 +29,7 @@ impl Debt {
             Self::Culture => "culture-building-catchup",
             Self::Research if ai.research_building_catchup_2 => "research-building-catchup-2",
             Self::Research => "research-building-catchup",
+            Self::Builder if ai.builder_workforce_recovery_3 => "builder-workforce-recovery-3",
             Self::Builder if ai.builder_workforce_recovery_2 => "builder-workforce-recovery-2",
             Self::Builder => "builder-workforce-recovery",
         }
@@ -104,15 +105,28 @@ impl AdvancedAi {
     pub fn enable_builder_workforce_recovery_2(&mut self) {
         self.builder_workforce_recovery_2 = true;
         self.builder_workforce_recovery = false;
+        self.builder_workforce_recovery_3 = false;
     }
     /// Withhold the disciplined variant.
     pub fn disable_builder_workforce_recovery_2(&mut self) {
         self.builder_workforce_recovery_2 = false;
     }
+
+    /// Replace a lost Builder for three local new-improvement or repair jobs.
+    pub fn enable_builder_workforce_recovery_3(&mut self) {
+        self.builder_workforce_recovery = false;
+        self.builder_workforce_recovery_2 = false;
+        self.builder_workforce_recovery_3 = true;
+    }
+
+    pub fn disable_builder_workforce_recovery_3(&mut self) {
+        self.builder_workforce_recovery_3 = false;
+    }
     /// Enable `builder-workforce-recovery` for screening.
     pub fn enable_builder_workforce_recovery(&mut self) {
         self.builder_workforce_recovery = true;
         self.builder_workforce_recovery_2 = false;
+        self.builder_workforce_recovery_3 = false;
     }
     /// Withhold `builder-workforce-recovery`.
     pub fn disable_builder_workforce_recovery(&mut self) {
@@ -166,7 +180,9 @@ impl AdvancedAi {
         // walker rule; all three are exactly the shipped ones while it is
         // off. See `advanced/expansion_scales_with_difficulty.rs`.
         let wide_cadence = self.expansion_wide_level(g).is_some();
-        if !((self.builder_workforce_recovery || self.builder_workforce_recovery_2)
+        if !((self.builder_workforce_recovery
+            || self.builder_workforce_recovery_2
+            || self.builder_workforce_recovery_3)
             || (self.culture_building_catchup || self.culture_building_catchup_2)
             || (self.expansion_best_idle_city || self.expansion_best_idle_city_2 || wide_cadence)
             || (self.research_building_catchup || self.research_building_catchup_2)
@@ -249,11 +265,14 @@ impl AdvancedAi {
             ),
             (
                 Debt::Builder,
-                (self.builder_workforce_recovery || self.builder_workforce_recovery_2)
+                (self.builder_workforce_recovery
+                    || self.builder_workforce_recovery_2
+                    || self.builder_workforce_recovery_3)
                     && cities.len() >= 2
                     && counts.builders == 0
                     && (counts.settlers > 0 || cities.len() >= self.expansion_pace_now(g))
-                    && super::BasicAi::has_builder_work(g, pid),
+                    && (self.builder_workforce_recovery_3
+                        || super::BasicAi::has_builder_work(g, pid)),
             ),
         ];
         // A queued answer anywhere already services this debt. Do not start
@@ -337,6 +356,7 @@ impl AdvancedAi {
                 // Builders need usable work near their own launch city, not
                 // merely an improvement opportunity on a distant island.
                 if debt == Debt::Builder
+                    && !self.builder_workforce_recovery_3
                     && !city.owned_tiles.iter().any(|pos| {
                         g.map.get(*pos).is_some_and(|tile| {
                             tile.improvement.is_none()
@@ -433,6 +453,28 @@ impl AdvancedAi {
                     .keys()
                     .any(|d| g.district_family(*d) == "spaceport")
             }
+            Debt::Builder if self.builder_workforce_recovery_3 => {
+                // Count distinct local jobs, including repairs which do not
+                // consume a charge. A stale tile claim earns no credit.
+                let _memo = g.query_memo();
+                city.owned_tiles
+                    .iter()
+                    .filter(|pos| {
+                        g.map.get(**pos).is_some_and(|tile| {
+                            tile.owner_city == Some(cid)
+                                && ((tile.pillaged && tile.improvement.is_some())
+                                    || (tile.improvement.is_none()
+                                        && !tile.pillaged
+                                        && tile.district.is_none()
+                                        && g.valid_improvements(pid, **pos).iter().any(|imp| {
+                                            g.rules.improvements[imp].builder_buildable
+                                        })))
+                        })
+                    })
+                    .take(3)
+                    .count()
+                    >= 3
+            }
             Debt::Builder if self.builder_workforce_recovery_2 => {
                 city.owned_tiles
                     .iter()
@@ -482,3 +524,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod repair_recovery_tests;
