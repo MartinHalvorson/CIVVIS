@@ -70,9 +70,35 @@ and are not pooled with a replay.
 
 PR #3578 supplies the independent engine repair: missing owning cities
 produce no Builder improvement options, and the attempted action spends no
-charge. Both focused regression tests passed. The dependency is imported
-for validation and a full replay of all twelve original seeds, followed by
-the originally planned sixty whole-registry games. The seed windows, game
-counts and target shape are unchanged. The repaired source and fingerprint
-will be recorded with that run. No strength conclusion or default change
-has been made.
+charge. Both focused regression tests passed. The dependency was imported
+unchanged before a full replay of all twelve original seeds. The repaired
+source `6614d5a3e6ef4bfbd8eee60ef2f750f589c05469` passed 3,709 Rust tests,
+with 53 ignored including documentation examples, then built the evaluator.
+Its binary SHA-256 is
+`df02f3d4a38b5e59b3400b23a3b05d47b6dd52ae123dfdf73824cb8ba5a6d5ee`.
+The complete replay finished all 12 games and 72 seats. An independent audit
+verified every seed, six coherent seats per game, fixed non-screened baseline
+bits, mutually exclusive family versions, and the planned difficulty, map,
+clock, native competitions, observed-player contract and seven-target mix.
+
+| Family level | Wins / seats | Win rate |
+| --- | ---: | ---: |
+| Off | 0 / 11 | 0.00% |
+| Version one | 6 / 21 | 28.57% |
+| Version two | 4 / 32 | 12.50% |
+| Version three | 2 / 8 | 25.00% |
+
+V3 minus off was **+25.00 ±15.83 percentage points**; v3 minus v2 was
+**+12.50 ±18.51 points**. Score share against v2 was +2.64 ±2.30 points.
+Each ± value is one standard error clustered by game, not a confidence
+interval. Eight v3 seats are too few to establish an improvement. The point
+estimates favor v3 over v2 and off, but strength remains unresolved and v2
+remains deployed. The complete replay artifact is
+`docs/gene_screens/fires/government-ladder-3.json`; the failed attempt remains
+separate and contributes no seats to this comparison.
+
+The originally planned sixty whole-registry games started on seeds
+914358000–914358059 with the same binary. Their header confirms the same
+clean source before this branch advances for integration. They are still
+running; no incomplete result has been published as a completed comparison.
+The seed windows, game counts and target shape are unchanged.
