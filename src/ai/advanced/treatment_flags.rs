@@ -3329,11 +3329,21 @@ impl AdvancedAi {
     /// `threatened_city_reserve`.
     pub fn enable_threatened_city_reserve(&mut self) {
         self.threatened_city_reserve = true;
+        self.threatened_city_reserve_2 = false;
     }
 
     /// The twin of `enable_threatened_city_reserve`.
     pub fn disable_threatened_city_reserve(&mut self) {
         self.threatened_city_reserve = false;
+    }
+
+    pub fn enable_threatened_city_reserve_2(&mut self) {
+        self.threatened_city_reserve = false;
+        self.threatened_city_reserve_2 = true;
+    }
+
+    pub fn disable_threatened_city_reserve_2(&mut self) {
+        self.threatened_city_reserve_2 = false;
     }
 
     /// A Settler always has somewhere to go: exhaustion asks wider questions

@@ -2537,6 +2537,15 @@
           "swap-rotation-2": null
         }
       },
+      "threatened-city-reserve": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "threatened-city-reserve": null,
+          "threatened-city-reserve-2": null
+        }
+      },
       "trade-building-before-bankruptcy": {
         "rule_on": [],
         "head": null,

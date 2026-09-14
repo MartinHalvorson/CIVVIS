@@ -1,10 +1,9 @@
 {
   "coverage": {
-    "named": 36,
-    "never_named": 2,
+    "named": 37,
+    "never_named": 1,
     "never_named_treatments": [
-      "relief-column-marches",
-      "threatened-city-reserve"
+      "relief-column-marches"
     ],
     "withholdable": 38
   },
@@ -15,9 +14,9 @@
     "withholdable_live_count": 38
   },
   "genome_coverage": {
-    "capability_toggles": 334,
+    "capability_toggles": 335,
     "measured_by_a_screen": 72,
-    "reachable_as_a_gene": 309,
+    "reachable_as_a_gene": 310,
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 41,
     "unreachable_toggles": [

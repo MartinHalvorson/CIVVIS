@@ -344,6 +344,9 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> f64 {
+        if self.threatened_city_reserve_2 {
+            return self.local_defender_gold_floor(g, pid, plan);
+        }
         if !self.threatened_city_reserve {
             return 0.0;
         }

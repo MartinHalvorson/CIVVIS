@@ -2308,6 +2308,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     Gene { tag: "culture-lane-forecast-2", field: "culture_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast_2, disable: AdvancedAi::disable_culture_lane_forecast_2 },
     Gene { tag: "trade-production-to-launch", field: "trade_production_to_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_production_to_launch, disable: AdvancedAi::disable_trade_production_to_launch },
+    // Price one locally purchasable defender, with the engine's discounts
+    // and refusals, rather than the empire's dearest buildable ranged unit.
+    Gene { tag: "threatened-city-reserve-2", field: "threatened_city_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_reserve_2, disable: AdvancedAi::disable_threatened_city_reserve_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
