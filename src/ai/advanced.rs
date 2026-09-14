@@ -5836,6 +5836,9 @@ pub struct AdvancedAi {
     /// `government-ladder-2`: keep climbing, and keep climbing longer while
     /// the field out-slots us. See `government_ladder_rung`.
     government_ladder_2: bool,
+    /// Choose a government by its remaining civic cost per extra policy slot,
+    /// reserving time to use the upgrade. See `government_ladder`.
+    government_ladder_3: bool,
     /// Take the policy slots the lane's list forgot to name.
     ///
     /// `strategic_government` picks from a hand-written priority list per
@@ -7274,6 +7277,7 @@ mod expansion_scales_with_difficulty;
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
 mod governor_dividends;
+mod government_ladder;
 mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -8290,6 +8294,7 @@ impl AdvancedAi {
             hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
             government_ladder_2: false,
+            government_ladder_3: false,
             government_capacity_fallback: false,
             growth_to_settle: false,
             guru_heals_the_corps_2: false,
@@ -15093,7 +15098,7 @@ impl AdvancedAi {
         pid: usize,
         objective: GrandStrategy,
     ) -> Option<&'static str> {
-        if !self.government_ladder && !self.government_ladder_2 {
+        if !self.government_ladder && !self.government_ladder_2 && !self.government_ladder_3 {
             return None;
         }
         if !g.players[pid]
@@ -15101,6 +15106,9 @@ impl AdvancedAi {
             .contains(&crate::name!("political_philosophy"))
         {
             return None;
+        }
+        if self.government_ladder_3 {
+            return self.government_ladder_route(g, pid, objective);
         }
         if self.government_ladder_2 {
             return self.government_ladder_rung(g, pid, objective);
