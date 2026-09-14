@@ -64,8 +64,38 @@ before an owed Library. The existing original Granary test must still pass.
 
 ## Results
 
-The independently randomized family sample is still running. This is an
-unpromoted candidate.
+### Completed reach sample
+
+All twelve fixed games completed at 13:42:24 UTC with exit code zero, all
+72 unique seats and no restarts or omitted games. The complete analyzer is
+`docs/gene_screens/fires/2026-09-14-granary-growth-payback.json`; raw JSONL
+SHA-256 is `934595aa5c0506eb7a6a1e559912a415803eb1deca68112cb17e908fd9a81943`.
+
+12 games; 72 seats; seeds [914371000, 914371011].
+Source c931228e3e87c7fdc484b67166253431e3896e09; clean=True; binary SHA-256 5f9d53d8ca793835e7bb40f5e7a3db52ea380c324dfc07514b3f05a6ef5d377e.
+
+| Family level | Seats | Wins | Win rate | Score share |
+|---|---:|---:|---:|---:|
+| off | 60 | 8 | 13.33% | 16.08% |
+| first-granary-reserve | 9 | 4 | 44.44% | 20.46% |
+| first-granary-reserve-2 | 3 | 0 | 0.00% | 16.99% |
+
+| Contrast | Win Δ, pp [approx. 95% interval] | Share Δ, pp [approx. 95% interval] |
+|---|---:|---:|
+| first-granary-reserve minus off | +31.11 [-1.69, +63.91] | +4.38 [+0.64, +8.11] |
+| first-granary-reserve-2 minus off | -13.33 [-18.17, -8.50] | +0.90 [-1.34, +3.14] |
+| first-granary-reserve-2 minus first-granary-reserve | -44.44 [-74.16, -14.72] | -3.47 [-7.82, +0.87] |
+
+Intervals use the analyzer’s standard errors clustered by game. They are exploratory, without correction for multiple comparisons; small-sample intervals can be unreliable.
+
+Only three seats drew V2, and none won. This adverse win reading does not
+support a strength improvement. The intervals based on a normal approximation
+are particularly unreliable with three treated seats and zero observed wins;
+their apparent precision must not be treated as settled evidence. V2's score
+share was slightly above off and below V1. The candidate stays opt-in and
+unpromoted, with the complete fixed sample retained. The artifact satisfies
+the firing check and is not added as a deployment-ledger source.
+
 
 ### Shared growth exactness
 
