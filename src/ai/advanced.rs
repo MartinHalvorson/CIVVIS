@@ -4968,6 +4968,14 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// Version 2 of the Culture clock forecast: project secular and religious
+    /// Tourism through each rival's current international modifiers. The
+    /// original forecast treats every rival as a full-strength market, even
+    /// under religious or government penalties. This version also excludes
+    /// teammates from the market and the rival bar. Rates stay constant in
+    /// the projection; future policy changes and targeted concerts are not
+    /// predicted. Off until independently screened against version one.
+    culture_lane_forecast_2: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     capture_hold_chain: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -8127,6 +8135,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            culture_lane_forecast_2: false,
             capture_hold_chain: false,
             capital_campaign_router: false,
             culture_faith_reservation: false,
@@ -10503,7 +10512,11 @@ impl AdvancedAi {
     /// Reported as `100 * ours at the clock / the largest bar at the clock`,
     /// clamped. A seat that already leads reads 100 without the projection.
     fn culture_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
-        self.culture_lane_forecast_score_with(g, pid, self.culture_lane_forecast)
+        self.culture_lane_forecast_score_with(
+            g,
+            pid,
+            self.culture_lane_forecast || self.culture_lane_forecast_2,
+        )
     }
 
     /// The same public race projection used by the forecast gene, when a
@@ -10516,12 +10529,15 @@ impl AdvancedAi {
         if !enabled || !g.victory_conditions.culture {
             return 0;
         }
-        let majors: Vec<usize> = g
+        let mut majors: Vec<usize> = g
             .players
             .iter()
             .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
             .map(|player| player.id)
             .collect();
+        if self.culture_lane_forecast_2 {
+            majors.retain(|other| *other == pid || !g.same_team(pid, *other));
+        }
         let rivals = majors.iter().filter(|other| **other != pid).count();
         if rivals == 0 {
             return 0;
@@ -10566,8 +10582,22 @@ impl AdvancedAi {
             .count();
         let per_visitor = starting as f64 * crate::game::TOURISM_PER_VISITOR;
         let ours = if per_visitor > 0.0 {
-            g.foreign_tourists(pid) as f64
-                + rivals as f64 * g.tourism_per_turn(pid) * left / per_visitor
+            let tourism = g.tourism_per_turn(pid);
+            let pressure = if self.culture_lane_forecast_2 && tourism > 0.0 {
+                let religious = g.religious_tourism_per_turn(pid).clamp(0.0, tourism);
+                let secular = tourism - religious;
+                majors
+                    .iter()
+                    .filter(|other| **other != pid)
+                    .map(|other| {
+                        secular * g.international_tourism_multiplier(pid, *other, false)
+                            + religious * g.international_tourism_multiplier(pid, *other, true)
+                    })
+                    .sum::<f64>()
+            } else {
+                rivals as f64 * tourism
+            };
+            g.foreign_tourists(pid) as f64 + pressure * left / per_visitor
         } else {
             g.foreign_tourists(pid) as f64
         };
