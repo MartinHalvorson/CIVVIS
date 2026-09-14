@@ -2577,6 +2577,17 @@
           "trade-building-before-bankruptcy-2": null
         }
       },
+      "treasury-at-work-2": {
+        "rule_on": [
+          "treasury-at-work-2"
+        ],
+        "head": null,
+        "ships": "treasury-at-work-2",
+        "versions": {
+          "treasury-at-work-2": null,
+          "treasury-at-work-2-2": null
+        }
+      },
       "wonder-ring-recon": {
         "rule_on": [],
         "head": null,
