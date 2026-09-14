@@ -5806,6 +5806,9 @@ pub struct AdvancedAi {
     hostile_memory: bool,
     /// Version two also protects land escorts from embarking into known naval reach.
     hostile_memory_2: bool,
+    /// Version three retires old sightings contradicted by a fully visible
+    /// forecast area and never refreshes a hidden unit from the native roster.
+    hostile_memory_3: bool,
     /// Where each in-scope military unit was last seen, and the facts needed
     /// to project its capture reach after the visible-only host export drops
     /// it. The key is the stable Civ 6 id when the live mirror provides one;
@@ -6576,6 +6579,8 @@ pub struct AdvancedAi {
     // ---- append: t-z ------------------------------------------------
     /// Price route food by the next population-gated district slot.
     trade_growth_to_district: bool,
+    /// Price route production by time saved on an active space project.
+    trade_production_to_launch: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     tourism_land_reservation: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -7301,6 +7306,7 @@ mod wonder_sites;
 
 mod science_endgame;
 mod science_threat_denial;
+mod science_trade;
 mod science_victory_drive;
 mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
@@ -8247,6 +8253,7 @@ impl AdvancedAi {
             guard_breaks_the_pin: false,
             hostile_memory: false,
             hostile_memory_2: false,
+            hostile_memory_3: false,
             hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
             government_ladder_2: false,
@@ -8345,6 +8352,7 @@ impl AdvancedAi {
 
             // ---- append: t-z ----------------------------------------
             trade_growth_to_district: false,
+            trade_production_to_launch: false,
             tourism_land_reservation: false,
             upgrade_window_campaign: false,
             victory_deadline_budget: false,
@@ -8403,7 +8411,11 @@ impl AdvancedAi {
         // use the same bounded memory for barbarian sightings, while the
         // opt-in `hostile-memory` gene additionally widens the owner scope on
         // native/evaluator boards.
-        if self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons {
+        if self.hostile_memory
+            || self.hostile_memory_2
+            || self.hostile_memory_3
+            || self.live_settler_capture_lessons
+        {
             self.remember_visible_hostiles(g, pid);
         }
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
@@ -8484,6 +8496,9 @@ impl AdvancedAi {
                     kind: unit.kind,
                 },
             );
+        }
+        if self.hostile_memory_3 {
+            self.forget_cleared_hostile_sightings(g, &visible);
         }
     }
 
@@ -31236,9 +31251,11 @@ impl AdvancedAi {
                     || g.tile_is_natural_wonder(tile)
                     || city_exclusion.contains(&pos)
                     || city_state_exclusion.contains(&pos)
-                    || tile
-                        .owner_city
-                        .is_some_and(|cid| g.cities[&cid].owner != pid)
+                    || tile.owner_city.is_some_and(|cid| {
+                        // A tile can name a city absent from the current table.
+                        // Keep that unresolved claim out of settlement candidates.
+                        g.cities.get(&cid).is_none_or(|city| city.owner != pid)
+                    })
                 {
                     return None;
                 }
@@ -34926,11 +34943,12 @@ impl AdvancedAi {
         city: &crate::game::City,
         strategy: GrandStrategy,
     ) -> f64 {
-        let yields = origin
-            .and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied())
-            .unwrap_or_else(|| g.trade_route_yields(pid, city.id));
+        let observed =
+            origin.and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied());
+        let yields = observed.unwrap_or_else(|| g.trade_route_yields(pid, city.id));
         let mut value = self.yield_value(yields, strategy);
         value += self.trade_growth_to_district_premium(g, pid, origin, yields);
+        value += self.trade_production_to_launch_premium(g, pid, origin, yields);
         // `quest_trade_route`: the Envoy a city-state asking us for a route
         // pays for one. See `advanced/city_state_quests.rs`.
         value += self.quest_trade_route_premium(g, pid, city.owner, strategy);
@@ -34943,7 +34961,11 @@ impl AdvancedAi {
                 "religious" => yields.faith = 2.0,
                 _ => {}
             }
-            value += self.yield_value(yields, strategy);
+            // The host's CalculateOriginYieldFromPotentialRoute already
+            // includes alliance yields. Only the native fallback needs them.
+            if observed.is_none() {
+                value += self.yield_value(yields, strategy);
+            }
             let already_connected = g.routes.iter().any(|route| {
                 route.owner == pid
                     && route.ends > g.turn
@@ -41569,7 +41591,13 @@ impl AdvancedAi {
 pub(crate) mod test_support;
 
 #[cfg(test)]
+mod settlement_ownership_tests;
+
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod hostile_memory_tests;
 
 mod amphibious_staging;
 
