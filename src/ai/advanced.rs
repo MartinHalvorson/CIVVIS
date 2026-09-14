@@ -1127,11 +1127,14 @@ impl ExpansionCensus {
 /// A concrete game-ending objective. Unlike `GrandStrategy`, which may
 /// temporarily become Expansion or Recovery, this remains fixed for the
 /// lifetime of a deliberately targeted AI.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum VictoryTarget {
     Science,
     Culture,
+    #[serde(rename = "religious")]
     Religion,
+    #[serde(rename = "diplomatic")]
     Diplomacy,
     Domination,
     Score,
@@ -1793,6 +1796,9 @@ pub struct AdvancedAi {
     observed_player: bool,
     base: BasicAi,
     plan: Option<StrategicPlan>,
+    /// Preserve victory objectives across temporary expansion and war postures.
+    victory_portfolio: bool,
+    portfolio: victory_portfolio::PortfolioState,
     /// The single authority for an elective power-spike attack. Every
     /// subsystem consumes this state; none independently retargets, changes
     /// the package, spends its budget, or relaxes its launch gate.
@@ -6671,6 +6677,9 @@ pub struct AdvancedAi {
     /// a city has none — is bought ahead of the purchase argmax. Opt-in gene
     /// `treasury-at-work-2`; see `advanced/gold_and_cards.rs`.
     treasury_at_work_2: bool,
+    /// Buy the first Builder where local work remains and the city is not
+    /// under a recent attack or barbarian alarm; retain the working reserve.
+    treasury_at_work_2_2: bool,
     /// Do not start a war the treasury cannot pay for.
     ///
     /// ★★★★ THE SEAT DECLARED AT ZERO GOLD. Live King seat
@@ -7241,6 +7250,7 @@ mod victory_conversion;
 /// in, reaching the deciders that read the expansion posture instead. See
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
 mod victory_lane;
+pub mod victory_portfolio;
 
 /// `expansion-scales-with-difficulty`: the measured 4-6 city opening band
 /// was read off a King-level field, and every rung above King hands the
@@ -7915,6 +7925,8 @@ impl AdvancedAi {
         AdvancedAi {
             base,
             plan: None,
+            victory_portfolio: false,
+            portfolio: victory_portfolio::PortfolioState::default(),
             war_plan: None,
             war_census: WarCensus::default(),
             war_status: WarPackageStatus::default(),
@@ -8379,6 +8391,7 @@ impl AdvancedAi {
             threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
             treasury_at_work_2: false,
+            treasury_at_work_2_2: false,
             war_needs_a_treasury: false,
             upgrade_the_garrison: false,
             wonder_adjacent_sites_2: false,
@@ -10977,6 +10990,19 @@ impl AdvancedAi {
             return VictoryFocus {
                 strategy: target.strategy(),
                 progress: 100,
+            };
+        }
+        if let Some(target) = self.portfolio_target() {
+            let readiness = self
+                .portfolio
+                .report
+                .forecasts
+                .iter()
+                .find(|forecast| forecast.target == target)
+                .map_or(0.0, |forecast| forecast.readiness);
+            return VictoryFocus {
+                strategy: target.strategy(),
+                progress: (25.0 + 65.0 * readiness) as i32,
             };
         }
         if !self.victory_planning {
@@ -14464,10 +14490,12 @@ impl AdvancedAi {
         // same prerequisite search.  Previously only `victory_target` enabled
         // milestone routing, so a normal spectator AI could correctly assess
         // Science or Culture yet wander through generic unlocks indefinitely.
-        let objective = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(plan.strategy);
+        let objective = self.decision_objective(plan.strategy);
+        let civic_objective = if self.victory_portfolio {
+            objective
+        } else {
+            plan.strategy
+        };
         if g.players[pid].research.is_none() {
             let mut available = BasicAi::era_window_techs(g, pid);
             let science_commitment = objective == GrandStrategy::Science
@@ -14500,6 +14528,8 @@ impl AdvancedAi {
                 .filter(|_| {
                     great_person_goal.is_none()
                         && (self.victory_target == Some(VictoryTarget::Science)
+                            || (self.portfolio_target() == Some(VictoryTarget::Science)
+                                && self.portfolio_specializing() == Some(true))
                             || self.science_drive_active())
                 })
                 .and_then(|goal| {
@@ -14925,8 +14955,8 @@ impl AdvancedAi {
                 available
                     .iter()
                     .max_by(|a, b| {
-                        self.civic_value(g, pid, a, plan.strategy)
-                            .partial_cmp(&self.civic_value(g, pid, b, plan.strategy))
+                        self.civic_value(g, pid, a, civic_objective)
+                            .partial_cmp(&self.civic_value(g, pid, b, civic_objective))
                             .unwrap()
                             .then_with(|| b.cmp(a))
                     })
@@ -14958,8 +14988,8 @@ impl AdvancedAi {
                                 .iter()
                                 .filter(|other| **other != civic)
                                 .max_by(|a, b| {
-                                    self.civic_value(g, pid, a, plan.strategy)
-                                        .partial_cmp(&self.civic_value(g, pid, b, plan.strategy))
+                                    self.civic_value(g, pid, a, civic_objective)
+                                        .partial_cmp(&self.civic_value(g, pid, b, civic_objective))
                                         .unwrap()
                                         .then_with(|| b.cmp(a))
                                 })
@@ -15016,10 +15046,7 @@ impl AdvancedAi {
         {
             return;
         }
-        let long_term = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let long_term = self.decision_objective(strategy);
         let society = match long_term {
             GrandStrategy::Science => "hermetic_order",
             GrandStrategy::Culture | GrandStrategy::Religion => "voidsingers",
@@ -15773,10 +15800,7 @@ impl AdvancedAi {
     }
 
     fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.decision_objective(strategy);
         let unlocked = |government: &str| {
             g.rules.governments.get(government).is_some_and(|spec| {
                 spec.civic
@@ -15952,10 +15976,7 @@ impl AdvancedAi {
     /// Typed cards preferentially replace cards of their own type so wildcard
     /// capacity remains useful.
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.decision_objective(strategy);
 
         // A successor card removes its predecessor from the policy menu.  An
         // already slotted predecessor used to survive forever, which is how
@@ -16783,6 +16804,7 @@ impl AdvancedAi {
             }
         }
         value += self.science_drive_tech_bonus(g, pid, tech);
+        value += self.portfolio_tech_bonus(g, pid, tech);
         // A device is only a victory beeline when somebody we can actually
         // reach has infrastructure worth breaking.  The old path fired for
         // every Industrial-era Conquest plan, even across a quiet border or
@@ -20641,8 +20663,8 @@ impl AdvancedAi {
         // is bought ahead of the argmax below, out of the same reserve, and
         // like the outpost buy it does not end the turn's spending. Exact
         // no-op while the version is off.
-        let bought_a_first_asset =
-            self.treasury_at_work_2 && self.young_empire_purchase(g, pid, reserve);
+        let bought_a_first_asset = (self.treasury_at_work_2 || self.treasury_at_work_2_2)
+            && self.young_empire_purchase(g, pid, reserve);
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
@@ -21756,6 +21778,10 @@ impl AdvancedAi {
     }
 
     fn culture_spending(&self, g: &mut Game, pid: usize) {
+        let portfolio_budget = self.portfolio_culture_budget(g.players[pid].faith);
+        if self.victory_portfolio && portfolio_budget <= 0.0 {
+            return;
+        }
         if self.conversion_culture_purchase(g, pid) {
             return;
         }
@@ -21766,7 +21792,7 @@ impl AdvancedAi {
             .count();
         if active_naturalists == 0
             && !g.national_park_sites(pid).is_empty()
-            && g.players[pid].faith + f64::EPSILON >= g.naturalist_purchase_cost(pid)
+            && portfolio_budget + f64::EPSILON >= g.naturalist_purchase_cost(pid)
         {
             for city in g.player_city_ids(pid) {
                 if g.apply(
@@ -21823,7 +21849,7 @@ impl AdvancedAi {
             } else {
                 g.rules.units["rock_band"].cost
             };
-            if g.players[pid].faith + f64::EPSILON < price {
+            if portfolio_budget + f64::EPSILON < price {
                 continue;
             }
             if g.apply(
@@ -22653,6 +22679,9 @@ impl AdvancedAi {
     /// so it retains its historical always-specialized behavior and therefore
     /// keeps its pinned decision stream.
     fn phase_specialization_active(&self, g: &Game) -> bool {
+        if let Some(active) = self.portfolio_specializing() {
+            return active;
+        }
         // An assigned Culture lane needs time to fill museums and accumulate
         // tourism before its finishing purchases. Start that buildup after
         // the first third; other lanes retain the shared halfway clock.
@@ -29550,6 +29579,14 @@ impl AdvancedAi {
                 plan,
                 victory_conversion::ProductionQuote { turns, raw },
             );
+        let raw = raw
+            + self.portfolio_production_adjustment(
+                g,
+                pid,
+                item,
+                plan,
+                victory_conversion::ProductionQuote { raw, turns },
+            );
         let raw = if raw > 0.0 {
             raw * self.production_category_gene(item)
         } else {
@@ -35008,10 +35045,7 @@ impl AdvancedAi {
         // of the level that shares science, priced by what that level is
         // worth. Zero off. See `advanced/research_alliance.rs`.
         value += self.research_alliance_route_premium(g, pid, city.owner);
-        let objective = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.decision_objective(strategy);
         value += self.culture_route_bonus(g, pid, city.owner, objective);
 
         value
@@ -35159,9 +35193,7 @@ impl AdvancedAi {
             let objective = if g.has_ability(pid, "taxis") {
                 GrandStrategy::Conquest
             } else {
-                self.victory_target
-                    .map(VictoryTarget::strategy)
-                    .unwrap_or(GrandStrategy::Religion)
+                self.decision_objective(GrandStrategy::Religion)
             };
             let evangelize = legal
                 .iter()
@@ -41084,6 +41116,7 @@ impl AdvancedAi {
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
+        self.maintain_victory_portfolio(g, pid);
         let active_victory_target = self.active_victory_target(g);
         let specialization_active = self.phase_specialization_active(g);
         // See `skip_the_prophet_race_2`: an adaptive seat pursues a religion
@@ -41198,6 +41231,7 @@ impl AdvancedAi {
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();
+        self.record_portfolio_trace(g, pid, &plan);
         // `coalition_before_war`: open, keep or close the coalition window
         // for this turn's target, before envoys and diplomacy read it. Exact
         // no-op with the gene off. See `advanced/coalition.rs`.
@@ -41614,6 +41648,9 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod settlement_ownership_tests;
+
+#[cfg(test)]
+mod treasury_local_builder_tests;
 
 #[cfg(test)]
 mod tests;

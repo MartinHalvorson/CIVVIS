@@ -332,6 +332,9 @@ mod movement_risk;
 mod scout_first;
 mod scout_inference;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
+pub use advanced::victory_portfolio::{
+    DevelopmentPhase, PortfolioReport, PortfolioTrace, VictoryEstimate,
+};
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
     ledger_verdict, live_tags, repair_tags, repair_tags_on, screenable_genes, AdvancedAi, Axis,

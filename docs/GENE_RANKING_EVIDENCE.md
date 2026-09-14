@@ -176,6 +176,7 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `lane-culture-spending` | **on** | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
 | `lane-space-race` | **on** | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
 | `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
+| `victory-portfolio` | off | – | – | – | awaiting its first screen |
 
 ## Awaiting measurement
 
@@ -210,8 +211,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `tourism-land-reservation` | off (unmeasured) | Enable `tourism-land-reservation` for measurement. | 1 \| 1 |
 | `trade-growth-to-district` | off (unmeasured) | Price route food by the next population-gated district slot. | 1 \| 1 |
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
+| `treasury-at-work-2-2` | off (unmeasured) | Keep the working reserve and buy the first Builder near local work. | 1 \| 2 |
 | `upgrade-window-campaign` | off (unmeasured) | Enable `upgrade-window-campaign` for measurement. | 1 \| 1 |
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
+| `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
 
 ## Removed from the code
 
