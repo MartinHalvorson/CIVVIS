@@ -1319,6 +1319,14 @@ struct MonopolyContext {
 /// what guarantees the cache cannot go stale. Nothing can reach a `&mut Game`
 /// while one of those entries is live.
 type GreatWorksByCity = BTreeMap<u32, BTreeMap<String, usize>>;
+const GREAT_WORK_COUNTERS: [(&str, &str); 6] = [
+    ("writing", "great_work:writing"),
+    ("art", "great_work:art"),
+    ("religious_art", "great_work:religious_art"),
+    ("artifact", "great_work:artifact"),
+    ("music", "great_work:music"),
+    ("relic", "great_work:relic"),
+];
 type HousedWorksByPlayer = BTreeMap<usize, Arc<GreatWorksByCity>>;
 type GreatWorkPiecesByCity = BTreeMap<u32, Vec<GreatWorkPiece>>;
 type HousedPiecesByPlayer = BTreeMap<usize, Arc<GreatWorkPiecesByCity>>;
@@ -31135,17 +31143,10 @@ impl Game {
         let slots = self.great_work_slots(pid);
         let mut housed = BTreeMap::<u32, BTreeMap<String, usize>>::new();
         let mut available = BTreeMap::<String, usize>::new();
-        for kind in [
-            "writing",
-            "art",
-            "religious_art",
-            "artifact",
-            "music",
-            "relic",
-        ] {
+        for (kind, counter) in GREAT_WORK_COUNTERS {
             let count = self.players[pid]
                 .counters
-                .get(&format!("great_work:{kind}"))
+                .get(counter)
                 .copied()
                 .unwrap_or(0)
                 .max(0) as usize;
@@ -31314,7 +31315,13 @@ impl Game {
                 return Arc::clone(value);
             }
         }
-        let value = Arc::new(self.housed_great_works_uncached(pid));
+        let allocation = self.housed_great_works_uncached(pid);
+        let value = if allocation.is_empty() {
+            static EMPTY: std::sync::OnceLock<Arc<GreatWorksByCity>> = std::sync::OnceLock::new();
+            Arc::clone(EMPTY.get_or_init(|| Arc::new(BTreeMap::new())))
+        } else {
+            Arc::new(allocation)
+        };
         if let Some(memo) = self.query_memo.housed_works.borrow_mut().as_mut() {
             memo.insert(pid, Arc::clone(&value));
         }
@@ -31332,6 +31339,15 @@ impl Game {
                     .map(|(city, kinds)| (*city, kinds.clone()))
                     .collect();
             }
+        }
+        let player = &self.players[pid];
+        if player.gp_claimed.get("artist").copied().unwrap_or(0) <= 0
+            && GREAT_WORK_COUNTERS
+                .iter()
+                .all(|(_, counter)| player.counters.get(*counter).copied().unwrap_or(0) <= 0)
+        {
+            // With no named or legacy works, slots cannot change the answer.
+            return BTreeMap::new();
         }
         self.housed_great_works_with_extra(pid, None)
     }
@@ -32554,7 +32570,14 @@ impl Game {
                 return Arc::clone(value);
             }
         }
-        let value = Arc::new(self.housed_great_work_pieces_uncached(pid));
+        let allocation = self.housed_great_work_pieces_uncached(pid);
+        let value = if allocation.is_empty() {
+            static EMPTY: std::sync::OnceLock<Arc<GreatWorkPiecesByCity>> =
+                std::sync::OnceLock::new();
+            Arc::clone(EMPTY.get_or_init(|| Arc::new(BTreeMap::new())))
+        } else {
+            Arc::new(allocation)
+        };
         if let Some(memo) = self.query_memo.housed_pieces.borrow_mut().as_mut() {
             memo.insert(pid, Arc::clone(&value));
         }
@@ -32563,6 +32586,9 @@ impl Game {
 
     fn housed_great_work_pieces_uncached(&self, pid: usize) -> GreatWorkPiecesByCity {
         let housed = self.housed_great_works(pid);
+        if housed.is_empty() {
+            return BTreeMap::new();
+        }
         let mut by_kind: BTreeMap<&str, Vec<&GreatWorkPiece>> = BTreeMap::new();
         for piece in &self.players[pid].great_work_pieces {
             by_kind.entry(piece.kind.as_str()).or_default().push(piece);

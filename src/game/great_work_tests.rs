@@ -26,6 +26,23 @@ fn game_with_work_collection(seed: u64) -> (Game, u32) {
 }
 
 #[test]
+fn empty_great_work_snapshots_do_not_hide_the_first_work() {
+    let (mut game, city) = game_with_capital(4_126);
+    let (empty_counts, empty_pieces) = {
+        let _memo = game.query_memo();
+        (game.housed_great_works(0), game.housed_great_work_pieces(0))
+    };
+    assert!(empty_counts.is_empty());
+    assert!(empty_pieces.is_empty());
+    game.grant_great_work(0, "relic", 0, "first work");
+    let _memo = game.query_memo();
+    assert_eq!(game.housed_great_works(0)[&city].get("relic"), Some(&1));
+    assert_eq!(game.housed_great_work_pieces(0)[&city].len(), 1);
+    assert!(empty_counts.is_empty());
+    assert!(empty_pieces.is_empty());
+}
+
+#[test]
 fn great_work_queries_share_ordered_allocations_within_one_scope() {
     let (game, city) = game_with_work_collection(4_124);
     let _memo = game.query_memo();
