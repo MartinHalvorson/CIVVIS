@@ -80,16 +80,25 @@ charge-effect handling needs a fidelity audit before claiming equivalence.
 Both genes are registered opt-ins, default off, with independent toggles.
 Neither is promoted on the strength of these sources or a small probe.
 
-## Validation and remaining work
+## Validation (2026-09-14)
 
-Focused tests exercise the real route valuation and policy selection paths,
-including a Builder completing through normal turns and receiving extra
-charges. Validation results and single-gene reach artifacts are pending.
-Single-gene random-genome probes will establish observable operation and
-exploratory outcomes, not strong causal or deployment evidence.
+The five focused tests pass through actual route valuation and policy selection,
+including a Builder completing through normal turns with two extra charges and
+Serfdom releasing its slot after the completion window. The full locked CI-profile
+suite passes: 3,472 library tests, 49 ignored, plus binary, integration, protocol,
+and documentation targets. The 206 Python gene/manifest tests and the gene,
+manifest, genome-cost, and firing-evidence checks also pass.
 
-The full user objective remains open: obtain fuller high-level player material,
-audit district discount/cost-lock timing, the prebuild part of the Builder
-wave, and coordinated victory arrival times against existing genes. Implement
-missing behavior in separately reviewable changes, test actual decisions,
-screen on/off effects, and integrate through the repository's required checks.
+Each gene completed a separate six-game, 36-seat Emperor-major probe at the
+standard 6-player, 74x46 Continents, Online/250-turn shape. Seeds are
+913344700–705 for `builder-charge-window` and 913344800–805 for
+`trade-growth-to-district`. The committed artifacts are
+`docs/gene_screens/fires/2026-09-10-competitive-economy-*.json`; raw rows are
+retained in the session's local run directory. These are smoke probes, not ledger
+sources. Their win-difference resolution is approximately ±45.8 and ±44.2
+percentage points respectively, so they do not support a strength claim or a
+default change. Both hypotheses remain independent, default-off opt-ins.
+
+Further strategy work includes district discount/cost-lock timing, prebuilding
+Builders before the policy window, and coordinated victory arrival times. Those
+require their own implementation and evaluation.
