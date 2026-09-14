@@ -64,7 +64,15 @@ passes the repository's gene-firing evidence gate; the six targeted tests
 separately establish the changed behavior and its fog/camouflage exclusions.
 This result does not establish that v3 wins more than off or either old version.
 
-The preregistered 192-game comparison is a separate ongoing evaluation of this
-frozen candidate, using `--genes hostile-memory,hostile-memory-2,hostile-memory-3
---games 192 --start-seed 914366600 --jobs 8 --difficulty emperor`. Its results
-will be recorded after completion. No deployment default changes with this PR.
+The first attempt at the preregistered 192-game comparison hit an existing
+missing-city lookup panic in settlement candidate filtering on its old frozen
+source. Only two games reached its ordered output writer. That incomplete
+attempt is excluded from strength analysis; it retains its original header
+and raw rows externally. Upstream `7be82dfeec458b89be3a825ba610ecacb658aab1`
+fixes that exact unchecked lookup and has been merged into this candidate.
+
+The complete 192-game seed range will be replayed on the clean corrected
+build, with `--genes hostile-memory,hostile-memory-2,hostile-memory-3 --games
+192 --start-seed 914366600 --jobs 8 --difficulty emperor`. No seed is dropped
+or substituted. The completed activation probe above remains a separately
+identified result on its original build. No deployment default changes.
