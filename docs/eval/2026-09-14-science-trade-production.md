@@ -100,3 +100,10 @@ The firing-evidence gate passes with the committed probe. That gate's
 nonzero on/off statistics are a repository requirement, not an independent
 causal proof; the controlled route-choice and normal-turn tests establish
 that the implemented behavior can actually change a launch.
+
+After merging `origin/main`, `cargo test --profile ci --locked` passed
+3,694 tests (53 ignored). The 237 relevant Python tests passed: 185 gene,
+21 manifest, 17 firing-evidence and 14 append-point tests. Formatting,
+diff whitespace, gene generation, evaluation manifest, firing-evidence and
+deployment-cost checks passed. No game rules were changed; the six completed
+screen games provide the controller smoke run.
