@@ -785,6 +785,8 @@ const LIVE_PACE_GAME_TURN: u32 = 150;
 struct Row {
     #[serde(default)]
     player_target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    victory_portfolio: Option<civvis::ai::PortfolioReport>,
     /// All measured seats contribute trajectories, not just winners. Empty
     /// in older batches means unmeasured, never a zero-valued trajectory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2177,6 +2179,7 @@ fn play_game(
             );
             row.victories_off = closed.clone();
             row.trajectory = trajectories[seat].clone();
+            row.victory_portfolio = Some(ais[seat].victory_portfolio_report());
             row.player_target = civvis::ai::player::target_for(seed, index, &profile.target_mix)
                 .map_or("civvis", |target| target.as_str())
                 .to_string();
@@ -2302,6 +2305,7 @@ fn row_for_seat(
     };
     Row {
         player_target: String::new(),
+        victory_portfolio: None,
         trajectory: Vec::new(),
         kind: "game".to_string(),
         game: index,
@@ -6673,6 +6677,7 @@ mod tests {
     fn test_row(game: usize, seat: usize, genome: &str, win: bool) -> Row {
         Row {
             player_target: String::new(),
+            victory_portfolio: None,
             trajectory: Vec::new(),
             kind: "game".into(),
             game,
