@@ -21342,16 +21342,18 @@ impl Game {
         }
         for b in &city.buildings {
             let spec = &self.rules.buildings[b];
-            if !city.pillaged_buildings.contains(b)
+            if spec.regional_range <= 0
+                && !city.pillaged_buildings.contains(b)
                 && self.building_district_is_active(city, b)
-                && spec.regional_range <= 0
             {
                 supply += spec.amenity;
                 if b == "stadium" {
                     supply += self.policy_effect(city.owner, "stadium_amenity");
                 }
-                if self.city_is_powered(city) {
-                    supply += spec.effects.get("powered_amenity").copied().unwrap_or(0.0);
+                if let Some(&powered_amenity) = spec.effects.get("powered_amenity") {
+                    if self.city_is_powered(city) {
+                        supply += powered_amenity;
+                    }
                 }
             }
         }

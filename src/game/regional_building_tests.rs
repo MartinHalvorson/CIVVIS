@@ -180,3 +180,44 @@ fn regional_prefilter_preserves_scope_expiry_after_pillage_and_repair() {
         assert!(game.query_memo.regional.borrow().is_none());
     }
 }
+
+#[test]
+fn local_mall_amenities_follow_power_pillage_and_repair() {
+    let (mut game, source, district, _) = board();
+    let city = game.cities.get_mut(&source).unwrap();
+    city.buildings.clear();
+    city.districts
+        .insert(crate::name!("neighborhood"), district);
+    let without_mall = game.city_local_amenities(&game.cities[&source]);
+    game.cities
+        .get_mut(&source)
+        .unwrap()
+        .buildings
+        .push(crate::name!("shopping_mall"));
+
+    // The mall provides one local Amenity, and another with its one Power.
+    // Each state follows a completed query, including repair after pillage.
+    for (power, building_pillaged, district_pillaged, bonus) in [
+        (0.0, false, false, 1),
+        (1.0, false, false, 2),
+        (1.0, true, false, 0),
+        (1.0, false, false, 2),
+        (1.0, false, true, 0),
+        (1.0, false, false, 2),
+        (0.0, false, false, 1),
+    ] {
+        game.players[0].city_power.insert(source, power);
+        game.cities.get_mut(&source).unwrap().pillaged_buildings = if building_pillaged {
+            [crate::name!("shopping_mall")].into_iter().collect()
+        } else {
+            BTreeSet::new()
+        };
+        game.map.tiles.get_mut(&district).unwrap().pillaged = district_pillaged;
+        let city = &game.cities[&source];
+        assert_eq!(game.city_local_amenities(city), without_mall + bonus);
+        let _memo = game.query_memo();
+        for _ in 0..2 {
+            assert_eq!(game.city_local_amenities(city), without_mall + bonus);
+        }
+    }
+}
