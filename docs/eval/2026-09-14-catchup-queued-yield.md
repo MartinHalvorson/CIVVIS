@@ -43,5 +43,45 @@ separately. These samples expose activation and broad regressions, and do not
 justify changing a deployment default or declaring a win-rate improvement
 from a positive point estimate alone.
 
-Exact commands and results will be added after building the clean source
-checkpoint and completing the experiments.
+## Activation results
+
+Both probes completed all six games and all 36 intended seats on clean
+source `2dca52cd201f861b12a98c608f5d142aff0e5aef`, binary SHA-256
+`4db89b85cd5a0f7d9f916827b84a53bdcdd827fcfa474a93138a4208177554f5`.
+Their gene fingerprint is
+`1a768338d2fc47b1cab53d81ba3cdcb8cab8fcf8a72202d5beb5cc6ddc31eaff`.
+
+```sh
+cargo build --profile ci --locked --features developer-tools --bin gene_screen
+target/ci/gene_screen --genes culture-building-catchup-3 --games 6 \
+  --start-seed 914357000 --jobs 4 --difficulty emperor --out culture.jsonl
+target/ci/gene_screen --genes research-building-catchup,research-building-catchup-2,research-building-catchup-3 \
+  --games 6 --start-seed 914357100 --jobs 4 --difficulty emperor --out research.jsonl
+target/ci/gene_screen --analyze culture.jsonl \
+  --json docs/gene_screens/fires/2026-09-14-catchup-queued-yield-culture.json
+target/ci/gene_screen --analyze research.jsonl \
+  --json docs/gene_screens/fires/2026-09-14-catchup-queued-yield-research.json
+```
+
+Culture v3 appeared on 10 seats and won twice; the 26 other seats won four
+times. Its win difference is +4.62 pp (SE 7.79), and score-share difference is
+−0.51 pp (SE 1.00). Three games ended in science, two in culture and one by
+score. Both measurements are unresolved.
+
+Research v3 appeared on seven seats and won once; the 29 other seats won five
+times. Its win difference is −2.96 pp (SE 12.21), and score-share difference
+is −1.79 pp (SE 0.84). That adverse share signal deserves follow-up; six games
+with only seven v3 seats do not establish a reliable win-rate change. All six
+games ended in science. Those other seats include older family versions, so
+the marginal row is not a comparison against the family-off level alone.
+
+Both artifacts pass the repository's gene-firing evidence gate. Seven focused
+regressions separately cover the queue decisions, protections and live
+identity: forcing a successor reports only the actually active family member.
+The identity correction came after the frozen probe and does not change its
+investment behavior.
+
+The two predeclared 192-game family comparisons will use the merged source,
+which includes upstream's correction for a missing city-owner lookup. The
+old probe build remains identified above; it is not reused for new long runs.
+The new versions remain default-off while those comparisons are evaluated.
