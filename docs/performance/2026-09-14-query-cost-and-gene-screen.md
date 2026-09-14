@@ -1,6 +1,6 @@
-# Query performance and gene evidence — 2026-09-14
+# Query performance and evaluation protocol — 2026-09-14
 
-Status: checkpoint. Performance measurements below are complete; fresh strength evidence is pending. This report does not change deployment defaults.
+The performance measurements and correctness fixes below are complete. Further strength evaluation remains incomplete as of 2026-09-14 13:01 UTC; its protocol is recorded for provenance. Deployment defaults are unchanged.
 
 ## Completed performance comparisons
 
@@ -54,7 +54,7 @@ Baseline source is `05a5a1d9964fa0144e79c12c32c8f0e0df11a642` (binary SHA-256 `8
 
 The reusable [tournament timing tool in #3562](https://github.com/MartinHalvorson/CIVVIS/pull/3562) is now merged. It measures the actual gene-screen controller, supports explicit concurrent blocks, preserves same-binary controls and refuses incomplete or mismatched evidence. Seven tests pass normally and under Python optimization, and its final reader revalidated this comparison's 64 saved games. The measured run used its original local predecessor; extracting the tool did not create another timing sample.
 
-## Fresh strength evidence
+## Further strength evaluation protocol
 
 A separately preregistered **600-game / 3,600-seat** full-genome screen failed. It used the combined binary, seeds **9143000–9143599**, and 16 workers. Its header verified the standard protocol, all 308 compiled genes and the expected source/hash. A worker panicked in `settle_sites_scanning` when a tile's `owner_city` was absent from `g.cities`. The stalled run was terminated after preserving **270 complete games / 1,620 seats**, seeds **9143000–9143269**. The panic log does not identify the crashing game's seed. The unchanged header still declares 600 games; the driver correctly reports failure. This partial output is diagnostic only, excluded from strength analysis and ledger decisions.
 
