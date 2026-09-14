@@ -152,6 +152,13 @@ impl<T> SpecMap<T> {
         self.position(key).map(|index| &self.values[index])
     }
 
+    /// Return the existing interned key alongside its value without interning again.
+    #[inline]
+    pub fn get_key_value(&self, key: &str) -> Option<(&Name, &T)> {
+        self.position(key)
+            .map(|index| (&self.keys[index], &self.values[index]))
+    }
+
     #[inline]
     pub fn get_mut(&mut self, key: &str) -> Option<&mut T> {
         self.position(key).map(|index| &mut self.values[index])
@@ -388,13 +395,20 @@ mod tests {
         }
         for name in ["a", "bb", "ccc", "dddddddd", "eeeeeeeee", "f"] {
             assert_eq!(map.get(name), Some(&name.len()));
+            assert_eq!(
+                map.get_key_value(name),
+                Some((&Name::new(name), &name.len()))
+            );
             assert!(map.contains_key(name));
         }
         assert_eq!(map.get("missing"), None);
+        assert_eq!(map.get_key_value("missing"), None);
         assert_eq!(map.insert("bb".to_string(), 99), Some(2));
         assert_eq!(map["bb"], 99);
+        assert_eq!(map.get_key_value("bb"), Some((&Name::new("bb"), &99)));
         assert_eq!(map.remove("bb"), Some(99));
         assert_eq!(map.get("bb"), None);
+        assert_eq!(map.get_key_value("bb"), None);
         assert_eq!(map.len(), 5);
     }
 }
