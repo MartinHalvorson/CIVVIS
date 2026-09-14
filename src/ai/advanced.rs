@@ -4750,6 +4750,9 @@ pub struct AdvancedAi {
     /// `engineering` at all and the rest reach it at a median turn 116. Off for
     /// the frozen native controllers.
     pub housing_research: bool,
+    /// Version two researches a housing unlock only where it can be built,
+    /// including buildings, and prices the complete missing technology path.
+    pub housing_research_2: bool,
 
     /// This turn's floor on the science weight, refreshed by
     /// [`AdvancedAi::refresh_research_weight`] once per decision.
@@ -5572,6 +5575,9 @@ pub struct AdvancedAi {
     /// `first-granary-reserve`: a city grown to its housing builds its
     /// Granary ahead of the argmax, once. See `advanced_production`.
     first_granary_reserve: bool,
+    /// Reserve a Granary only when its housing accelerates the next citizen
+    /// within the construction and growth budget. Independently screened V2.
+    first_granary_reserve_2: bool,
     /// `exhaustion-loyalty-guard`: a stranded Settler's wider search may not
     /// take a site the Loyalty forecast cannot price, and its nearest-legal
     /// tier runs the same concrete-revolt forecast the ranked tier does. See
@@ -7077,10 +7083,12 @@ pub use genes::{
 mod treatment_flags;
 
 mod age_closer;
+mod granary_payback;
 /// Great People never pile up: the `great-person-housing` gene's ladder of
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
+mod housing_research;
 /// The opportunistic war: a surprise war priced on what the board exposes —
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
@@ -8104,6 +8112,7 @@ impl AdvancedAi {
             volley_chain: true,
             research_economy: false,
             housing_research: false,
+            housing_research_2: false,
             research_weight: 0.0,
             campus_multiplier_half: 0.0,
             campus_chain_science: 0.0,
@@ -8232,6 +8241,7 @@ impl AdvancedAi {
             first_district_first: false,
             escort_cap_holds: false,
             first_granary_reserve: false,
+            first_granary_reserve_2: false,
             exhaustion_loyalty_guard: false,
             early_archers: false,
             early_project_restraint: false,
@@ -14303,6 +14313,9 @@ impl AdvancedAi {
     }
 
     fn unreachable_housing_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if self.housing_research_2 {
+            return self.usable_housing_tech(g, pid).map(Name::as_str);
+        }
         if !self.housing_research {
             return None;
         }
@@ -26020,9 +26033,11 @@ impl AdvancedAi {
             // city built Walls, Castles, wonders and units instead. The same
             // shape as `first_builder_reserve`: one compounding asset ahead of
             // the argmax, once per city.
-            if committed.is_none() && self.first_granary_reserve {
+            if committed.is_none() && (self.first_granary_reserve || self.first_granary_reserve_2) {
                 let granary = crate::name!("granary");
-                let housing_bound = {
+                let housing_bound = if self.first_granary_reserve_2 {
+                    self.granary_growth_pays(g, pid, cid, plan)
+                } else {
                     let city = &g.cities[&cid];
                     !city.buildings.contains(&granary)
                         && city.pop as f64 + 1.0 >= g.city_housing(city)
