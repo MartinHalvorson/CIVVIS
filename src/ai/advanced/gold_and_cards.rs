@@ -461,9 +461,14 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let name = city_name(g, *cid);
                     let left = g.players[pid].gold - reserve;
+                    let placement = if self.treasury_at_work_2_2 {
+                        "in the lowest-production eligible city with local Builder work"
+                    } else {
+                        "in the city producing the least"
+                    };
                     think!(self.journal(), Economy, Decision,
                         "Buying a builder for {name}, the empire having none";
-                        "{price:.0} Gold in the city producing the least; {left:.0} left \
+                        "{price:.0} Gold {placement}; {left:.0} left \
                          above a working reserve of {reserve:.0}");
                 }
                 return true;
