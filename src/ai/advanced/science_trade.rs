@@ -64,11 +64,27 @@ impl AdvancedAi {
         } else {
             f64::INFINITY
         });
-        let with_route = (remaining / ((production + yields.production) * multiplier)).ceil();
+        // A live project's quoted duration includes modifiers the native
+        // model may not reproduce. Anchor there when available, and estimate
+        // the new duration from the proportional change in origin production.
+        let (without_route, with_route) = if let Some(turns) = g
+            .host_production_turns(city.id, item)
+            .filter(|turns| turns.is_finite() && *turns > 0.0)
+        {
+            (
+                turns.ceil(),
+                (turns * production / (production + yields.production)).ceil(),
+            )
+        } else {
+            (
+                (remaining / (production * multiplier)).ceil(),
+                (remaining / ((production + yields.production) * multiplier)).ceil(),
+            )
+        };
         if with_route > horizon {
             return 0.0;
         }
-        let without_route = (remaining / (production * multiplier)).ceil().min(horizon);
+        let without_route = without_route.min(horizon);
         // The same completion turn earns nothing. The bounded bonus cannot
         // turn an arbitrarily stalled project into an infinite route score.
         ((without_route - with_route).max(0.0) / g.game_speed.scale(1.0) * 4.0).min(32.0)

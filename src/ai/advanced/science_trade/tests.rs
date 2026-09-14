@@ -254,6 +254,29 @@ fn existing_routes_reduce_the_marginal_launch_bonus() {
 }
 
 #[test]
+fn host_project_duration_overrides_the_native_timing_estimate() {
+    let (mut g, origin, _, _) = board();
+    assert!(premium(&g, origin, 4.0) > 0.0);
+    for turns in [1.0, 40.0] {
+        Arc::make_mut(&mut g.host_buildable).insert(
+            origin,
+            [(
+                "project:launch_earth_satellite".to_string(),
+                crate::game::HostMenuEntry {
+                    cost: None,
+                    turns: Some(turns),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+        // The host says either next turn (no acceleration possible), or so
+        // late that this route still cannot deliver it within the horizon.
+        assert_eq!(premium(&g, origin, 4.0), 0.0);
+    }
+}
+
+#[test]
 fn host_alliance_yields_are_counted_once_and_native_yields_still_get_the_bonus() {
     let (mut g, origin, dest, _) = board();
     let ai = AdvancedAi::new();
