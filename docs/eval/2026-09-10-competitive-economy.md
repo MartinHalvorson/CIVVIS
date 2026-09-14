@@ -82,22 +82,32 @@ Neither is promoted on the strength of these sources or a small probe.
 
 ## Validation (2026-09-14)
 
-The five focused tests pass through actual route valuation and policy selection,
+The six focused tests pass through actual route valuation and policy selection,
 including a Builder completing through normal turns with two extra charges and
-Serfdom releasing its slot after the completion window. The full locked CI-profile
-suite passes: 3,472 library tests, 49 ignored, plus binary, integration, protocol,
-and documentation targets. The 206 Python gene/manifest tests and the gene,
+Serfdom releasing its slot after the completion window. A regression test also
+reproduced and now prevents the Builder rule from evicting a protected amenity
+card absent from the ordinary Science portfolio. The full locked CI-profile
+suite passes, including library, binary, integration, protocol, and documentation
+targets. The 206 Python gene/manifest tests and the gene,
 manifest, genome-cost, and firing-evidence checks also pass.
 
 Each gene completed a separate six-game, 36-seat Emperor-major probe at the
 standard 6-player, 74x46 Continents, Online/250-turn shape. Seeds are
-913344700–705 for `builder-charge-window` and 913344800–805 for
+913344900–905 for `builder-charge-window` and 913344800–805 for
 `trade-growth-to-district`. The committed artifacts are
 `docs/gene_screens/fires/2026-09-10-competitive-economy-*.json`; raw rows are
 retained in the session's local run directory. These are smoke probes, not ledger
-sources. Their win-difference resolution is approximately ±45.8 and ±44.2
+sources. Their win-difference resolution is approximately ±54.9 and ±44.2
 percentage points respectively, so they do not support a strength claim or a
-default change. Both hypotheses remain independent, default-off opt-ins.
+default change. The point estimates are negative: −22.2 and −9.2 percentage
+points respectively. Both hypotheses remain independent, default-off opt-ins.
+
+The raw Builder header records clean commit `55ab5a456ecc` and binary SHA-256
+`3b2ed6a73b3244f61b0dd50761b80a88f036ed8141ebc235a4acdd527169f2a2`.
+The trade probe records clean commit `7b43645d9df8` and binary SHA-256
+`0dac9560674947eda6633edcb2550f2ac233cbd34626ffbc9f21139d3c91687b`.
+The Builder probe was rerun after the policy protection fix; the trade mechanism
+is unchanged by that fix and ran with the Builder gene held off.
 
 Further strategy work includes district discount/cost-lock timing, prebuilding
 Builders before the policy window, and coordinated victory arrival times. Those
