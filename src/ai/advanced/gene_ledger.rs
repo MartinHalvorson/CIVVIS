@@ -399,6 +399,7 @@ const MUTUALLY_EXCLUSIVE_TREATMENT_FAMILY_BASES: &[&str] = &[
     "battle-planner",
     "chase-every-boost",
     "treasury-at-work-2",
+    "builder-workforce-recovery",
 ];
 
 fn mutually_exclusive_family(tag: &str) -> Option<&'static str> {
