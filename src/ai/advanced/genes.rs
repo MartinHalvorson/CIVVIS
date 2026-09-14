@@ -2312,6 +2312,7 @@ pub const GENES: &[Gene] = &[
     // empty of that unit; hidden units retain only their last observed facts.
     // Append new genes so the existing positional genome stays intact.
     Gene { tag: "hostile-memory-3", field: "hostile_memory_3", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_3, disable: AdvancedAi::disable_hostile_memory_3 },
+    Gene { tag: "connect-the-luxury-2", field: "connect_the_luxury_2", kind: Kind::OptIn, enable: AdvancedAi::enable_connect_the_luxury_2, disable: AdvancedAi::disable_connect_the_luxury_2 },
     // A queued building services only the yield it can deliver soon enough;
     // a slow or undersized answer does not close the whole empire's deficit.
     Gene { tag: "culture-building-catchup-3", field: "culture_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_building_catchup_3, disable: AdvancedAi::disable_culture_building_catchup_3 },
