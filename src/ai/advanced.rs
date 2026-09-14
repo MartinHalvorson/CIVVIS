@@ -4907,6 +4907,8 @@ pub struct AdvancedAi {
     /// Normal Age lets any affordable Great Person be patronized for its
     /// moment. See `era_points_short` and `advanced_great_people`.
     age_closer: bool,
+    /// Verify a patronage purchase closes a Normal Age near its deadline.
+    age_closer_2: bool,
     /// `commitment-patience`: a Builder's retired tile and the turn the
     /// parking expires; the tile joins `reserved` in the job sweep until then.
     builder_avoid: BTreeMap<u32, (Pos, u32)>,
@@ -7098,6 +7100,7 @@ pub use genes::{
 /// guards that they stay out of this file.
 mod treatment_flags;
 
+mod age_closer;
 mod granary_payback;
 /// Great People never pile up: the `great-person-housing` gene's ladder of
 /// remedies for a class earned and blocked. See
@@ -8167,6 +8170,7 @@ impl AdvancedAi {
             boosted_bargain_first_3: false,
             border_parity: false,
             age_closer: false,
+            age_closer_2: false,
             builder_avoid: BTreeMap::new(),
             boost_first_research: false,
             boost_first_research_2: false,
@@ -19898,6 +19902,7 @@ impl AdvancedAi {
         // Person the bank can carry is worth its moment; the closeness limit
         // below is lifted for both currencies. The reserves stand.
         let age_closing = self.era_points_short(g, pid);
+        let age_deadline = self.age_closing_deadline(g, pid);
         if let Some(short) = age_closing {
             think!(self.journal(), Economy, Detail,
                    "Era score {} short of a Normal Age", short;
@@ -20039,15 +20044,15 @@ impl AdvancedAi {
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),
             ] {
-                // See `idle_faith_patronage`: Faith a religion-less seat
-                // cannot otherwise spend buys the person outright.
-                let currency_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
+                let ordinary_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
                 {
                     1.0
                 } else {
                     limit
                 };
-                if close_fraction > currency_limit {
+                // Preserve the cheap original rejection outside v2's short
+                // deadline window; those seats need no price or simulation.
+                if age_deadline.is_none() && close_fraction > ordinary_limit {
                     continue;
                 }
                 let Some(price) = g.great_person_patronage_price(pid, kind, currency) else {
@@ -20056,24 +20061,46 @@ impl AdvancedAi {
                 if bank + f64::EPSILON < price + reserve {
                     continue;
                 }
+                let action = Action::PatronizeGreatPerson {
+                    kind: kind.to_string(),
+                    currency: currency.to_string(),
+                };
+                let closes_age =
+                    age_deadline.is_some() && Self::purchase_reaches_normal_age(g, pid, &action);
+                // Version two relaxes the ordinary gate only for a purchase
+                // whose actual result covers the era shortfall in time.
+                // Idle Faith and version one's original arm keep their rules.
+                let currency_limit = if closes_age { 1.0 } else { ordinary_limit };
+                if close_fraction > currency_limit {
+                    continue;
+                }
                 let opportunity = price / (bank - reserve).max(1.0);
                 let score = (affinity + effect_value) * (1.0 - opportunity.min(0.95));
                 candidates.push((
+                    closes_age,
                     score,
                     std::cmp::Reverse((kind.to_string(), currency.to_string())),
-                    Action::PatronizeGreatPerson {
-                        kind: kind.to_string(),
-                        currency: currency.to_string(),
-                    },
+                    action,
                 ));
             }
         }
-        if let Some((score, _, action)) = candidates.into_iter().max_by(|left, right| {
-            left.0
-                .partial_cmp(&right.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| left.1.cmp(&right.1))
-        }) {
+        if let Some((closes_age, score, _, action)) =
+            candidates.into_iter().max_by(|left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then_with(|| {
+                        left.1
+                            .partial_cmp(&right.1)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .then_with(|| left.2.cmp(&right.2))
+            })
+        {
+            if closes_age {
+                think!(self.journal(), Economy, Detail, "Closing the era before its deadline";
+                       "this purchase reaches the Normal Age threshold before turn {}",
+                       age_deadline.unwrap_or(g.turn));
+            }
             if let Action::PatronizeGreatPerson { kind, currency } = &action {
                 let price = g
                     .great_person_patronage_price(pid, kind, currency)
