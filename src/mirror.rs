@@ -2295,6 +2295,9 @@ pub struct StateUnit {
     pub level: Option<i32>,
     #[serde(default)]
     pub promotions: Option<Vec<String>>,
+    /// Current native Rock Band menu; empty is an observed lack of choices.
+    #[serde(default)]
+    pub offered_promotions: Option<Vec<String>>,
     /// Civilization VI separates builder and religious charges. CIVVIS has one
     /// typed charge counter, so the mirror selects the applicable observed pool.
     #[serde(default)]
@@ -4603,6 +4606,7 @@ fn apply_great_person_points(
         ),
         (None, None) => None,
     };
+    game.players[0].live_open_great_work_slots = live_open_great_work_slots(&game.rules, state);
     apply_live_great_person_offer_blockers(game, state, unmapped);
 }
 
@@ -4768,6 +4772,71 @@ fn live_great_work_offer_has_capacity(game: &crate::game::Game, pid: usize, kind
         }
     }
     game.can_house_great_works(pid, kind, 1)
+}
+
+/// Native works remain in their reported building: the bridge does not issue
+/// relocation orders. Global modeled housing can free a Palace by moving its
+/// writing elsewhere, which is not an immediately usable slot in the host.
+fn live_open_great_work_slots(
+    rules: &crate::rules::Rules,
+    state: &StateSnapshot,
+) -> Option<BTreeSet<String>> {
+    let mut open = BTreeSet::new();
+    for city in &state.cities {
+        let works = city.great_works.as_ref()?;
+        if works.iter().any(|work| work.building.is_empty()) {
+            return None;
+        }
+        let buildings: BTreeSet<_> = city
+            .buildings
+            .iter()
+            .chain(city.wonders.iter().map(|wonder| &wonder.kind))
+            .collect();
+        for building in buildings {
+            let slots = civvis_node_name(&rules.buildings, building, "BUILDING_")
+                .map(|name| rules.buildings[&name].great_work_slots.clone())
+                .or_else(|| {
+                    civvis_node_name(&rules.wonders, building, "BUILDING_")
+                        .map(|name| rules.wonders[&name].great_work_slots.clone())
+                });
+            let Some(mut slots) = slots else {
+                continue;
+            };
+            let mut seen = BTreeSet::new();
+            for work in works.iter().filter(|work| &work.building == building) {
+                if !seen.insert(work.slot) {
+                    continue;
+                }
+                let Some(kind) = great_work_kind(&work.object) else {
+                    slots.clear();
+                    break;
+                };
+                let compatible = slots
+                    .keys()
+                    .find(|slot| {
+                        slot.as_str() == kind
+                            || (matches!(kind, "art" | "religious_art")
+                                && matches!(slot.as_str(), "art" | "religious_art"))
+                    })
+                    .cloned()
+                    .or_else(|| slots.contains_key("any").then(|| "any".to_string()));
+                if let Some(slot) = compatible {
+                    *slots.get_mut(&slot).unwrap() -= 1;
+                } else {
+                    // Unmapped native capacity cannot establish a free slot.
+                    slots.clear();
+                    break;
+                }
+            }
+            open.extend(
+                slots
+                    .into_iter()
+                    .filter(|(_, count)| *count > 0)
+                    .map(|(kind, _)| kind),
+            );
+        }
+    }
+    Some(open)
 }
 
 fn apply_live_great_person_offer_blockers(
@@ -5627,6 +5696,7 @@ const UNIT_KEYS: &[&str] = &[
     "xp",
     "level",
     "promotions",
+    "offered_promotions",
     "build_charges",
     "spread_charges",
     "religion",
@@ -7211,11 +7281,51 @@ fn host_unavailable_wonders_from(
         .collect()
 }
 
-/// Translate recent host production refusals onto CIVVIS city ids and typed keys.
-/// Translate host promotion refusals onto CIVVIS unit ids.
-///
-/// Keyed by unit AND promotion: a refusal is specific to both, and another unit of
-/// the same kind may legitimately take a promotion this one cannot.
+/// Translate current native Rock Band choices onto mirrored unit ids.
+fn host_band_promotions_from(
+    state: &StateSnapshot,
+    unit_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, crate::game::HostBandPromotions> {
+    unit_ids
+        .iter()
+        .filter_map(|(uid, native)| {
+            let unit = state.units.iter().find(|unit| unit.id == *native)?;
+            if unit.kind != "UNIT_ROCK_BAND" {
+                return None;
+            }
+            let offered = unit.offered_promotions.as_ref()?;
+            let names = offered
+                .iter()
+                .map(|name| civvis_unit_promotion_name(name))
+                .filter(|name| {
+                    rules
+                        .promotions
+                        .get(name)
+                        .is_some_and(|spec| spec.class == "rock_band")
+                })
+                .map(|name| Name::new(&name))
+                .collect();
+            let held = unit
+                .promotions
+                .as_ref()?
+                .iter()
+                .map(|name| civvis_unit_promotion_name(name))
+                .filter(|name| rules.promotions.contains_key(name))
+                .map(|name| Name::new(&name))
+                .collect();
+            Some((
+                *uid,
+                crate::game::HostBandPromotions {
+                    held,
+                    offered: names,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Translate refusals per unit: another band may have a different legal menu.
 fn blocked_promotions_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     unit_ids: &std::collections::BTreeMap<u32, i64>,
@@ -12418,6 +12528,7 @@ pub fn rebuild_from_state(
         &unit_ids,
         &game.rules,
     ));
+    game.host_band_promotions = Arc::new(host_band_promotions_from(state, &unit_ids, &game.rules));
     game.blocked_strikes = Arc::new(blocked_strikes_from(&state.refused_strikes, &unit_ids));
     game.host_previews = Arc::new(host_previews_from(&state.host_previews, &unit_ids));
 
@@ -13627,6 +13738,11 @@ impl LiveMirror {
         // the same reason the production blocks are.
         self.game.blocked_promotions = Arc::new(blocked_promotions_from(
             &state.refused_promotions,
+            &self.civ6_of,
+            &self.game.rules,
+        ));
+        self.game.host_band_promotions = Arc::new(host_band_promotions_from(
+            state,
             &self.civ6_of,
             &self.game.rules,
         ));

@@ -757,6 +757,28 @@ const SCIENCE_PACE_STANDARD_TURN: u32 = 150;
 /// That is the whole reason for the column.
 const OPENING_BAND_STANDARD_TURN: u32 = 60;
 
+/// ⭐ THE MARKS THE LIVE LADDER ACTUALLY READS, IN RAW GAME TURNS.
+///
+/// The two constants above are converted through `Game::standard_duration`,
+/// so an Online batch reads them at turns 39 and 99. That is right for
+/// comparing screens with each other: a Standard-speed probe and an Online
+/// screen then read the same *content*.
+///
+/// It is wrong for comparing with the live seat, and that mismatch published
+/// two false gaps before it was caught. `civ6_play::OPENING_TEMPO_TURN` is 60
+/// RAW game turns and `civ6_ladder::tech_marks` reads the first frame at or
+/// after RAW turn 150 — no speed conversion on either. So the live figures
+/// were being read 21 and 51 turns later than the simulated ones, and were
+/// larger for that reason alone: 46 techs against 22, a "2.09x research gap"
+/// that was entirely the clock.
+///
+/// Both corpora run Online, so a raw turn is the same moment on each side.
+/// These columns are read at the raw turn and exist only for that comparison;
+/// `civ6_trajectory_fidelity.py` uses them and nothing else does.
+const LIVE_BAND_GAME_TURN: u32 = 60;
+/// The live tech mark, in raw game turns. See `LIVE_BAND_GAME_TURN`.
+const LIVE_PACE_GAME_TURN: u32 = 150;
+
 /// One seat of one screened game, written to the JSONL file and read back by
 /// `--analyze`. A game yields one row per major seat.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -834,6 +856,32 @@ struct Row {
     /// a file rather than a Δ of zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     techs_150: Option<usize>,
+    /// ⭐ CITY DEVELOPMENT: districts and buildings the empire finished, and
+    /// the specialty districts among them.
+    ///
+    /// The empire's failure at Emperor is CONVERSION, not width, and nothing
+    /// on this row could show it. Measured over the 30-game deployment-shape
+    /// run in `docs/fidelity/`, against the best rival: cities **0.83**, but
+    /// science per city **0.32** and faith per city **0.30**. We hold the
+    /// leader's land and each of our cities yields about a third of theirs.
+    /// The shortfall is uniform across yields, so it is one cause rather than
+    /// a science-specific one — and the obvious candidate is that the cities
+    /// are simply not built up. `docs/` already records the anecdote from
+    /// three deep games ("11 cities with 3 Libraries", "9 Campus districts
+    /// against 3 science buildings"); these columns make it a standing number
+    /// that any screen can read.
+    ///
+    /// `specialty_districts` is the count Civilization VI treats as
+    /// specialty (`Game::city_specialty_district_count`) — the ones that carry
+    /// the yield buildings — as distinct from walls, an aqueduct or a canal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    districts: Option<usize>,
+    /// See `districts`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    specialty_districts: Option<usize>,
+    /// See `districts`. Wonders are counted separately by `wonders`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    buildings: Option<usize>,
     /// ⭐ THE CITY LEDGER, the starkest number the live corpus reports.
     ///
     /// `cities_taken` is the seat's `captures` counter — cities it conquered,
@@ -865,6 +913,14 @@ struct Row {
     /// "opened with none".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cities_60: Option<usize>,
+    /// Cities at RAW game turn `LIVE_BAND_GAME_TURN`, the mark the live
+    /// ladder reads. Only `civ6_trajectory_fidelity.py` consumes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cities_at_game_turn_60: Option<usize>,
+    /// Techs at RAW game turn `LIVE_PACE_GAME_TURN`, the mark the live ladder
+    /// reads. Only `civ6_trajectory_fidelity.py` consumes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    techs_at_game_turn_150: Option<usize>,
     /// Science per turn over this seat's cities at the end of the game
     /// (`Game::city_yields`, the read `victory_eval` prints). `None` as above.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1430,6 +1486,12 @@ struct Header {
     p_on: f64,
     #[serde(default)]
     p_default_on: f64,
+    /// ⭐ A FIDELITY RUN, NOT A SCREEN (`--deployment-genome`): every measured
+    /// seat played the genome the ledger ships, and no gene was screened, so
+    /// this file prices nothing and `tools/genes.py` refuses it as a source.
+    /// Absent and unwritten in every ordinary screen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    deployment_genome: bool,
     /// ⭐ The gene FAMILIES: every versioned gene with its versions, in
     /// version order, base first (`war-economy`, `war-economy-2`, …). A seat
     /// plays at most one version of a family, so the screen can say whether
@@ -2060,6 +2122,10 @@ fn play_game(
     // `OPENING_BAND_STANDARD_TURN`.
     let band_turn = world.standard_duration(OPENING_BAND_STANDARD_TURN);
     let mut cities_at_band: Option<Vec<usize>> = None;
+    // The same two readings at the RAW turns the live ladder uses, for the
+    // fidelity ledger. See `LIVE_BAND_GAME_TURN`.
+    let mut cities_at_live_band: Option<Vec<usize>> = None;
+    let mut techs_at_live_pace: Option<Vec<usize>> = None;
     let mut trajectories = vec![Vec::new(); world.players.len()];
     run_game_observed(&mut world, &mut ais, |g| {
         if g.turn.is_multiple_of(25) {
@@ -2077,6 +2143,17 @@ fn play_game(
                     .map(|p| g.player_city_ids(p.id).len())
                     .collect(),
             );
+        }
+        if cities_at_live_band.is_none() && g.turn >= LIVE_BAND_GAME_TURN {
+            cities_at_live_band = Some(
+                g.players
+                    .iter()
+                    .map(|p| g.player_city_ids(p.id).len())
+                    .collect(),
+            );
+        }
+        if techs_at_live_pace.is_none() && g.turn >= LIVE_PACE_GAME_TURN {
+            techs_at_live_pace = Some(g.players.iter().map(|p| p.techs.len()).collect());
         }
     });
     let secs = started.elapsed().as_secs_f64();
@@ -2113,6 +2190,36 @@ fn play_game(
                 cities_at_band
                     .as_ref()
                     .map_or_else(|| world.player_city_ids(seat).len(), |counts| counts[seat]),
+            );
+            // ⚠ `None` rather than the final count when the game ended before
+            // the mark: the live side records nothing for a run that never
+            // reached it, and a fallback here would compare a finished game
+            // with an unfinished one.
+            row.cities_at_game_turn_60 = cities_at_live_band.as_ref().map(|counts| counts[seat]);
+            row.techs_at_game_turn_150 = techs_at_live_pace.as_ref().map(|counts| counts[seat]);
+            row.districts = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| city.districts.len())
+                    .sum(),
+            );
+            row.specialty_districts = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| world.city_specialty_district_count(city))
+                    .sum(),
+            );
+            row.buildings = Some(
+                world
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == seat)
+                    .map(|city| city.buildings.len())
+                    .sum(),
             );
             row.cities_taken = Some(
                 world.players[seat]
@@ -2285,6 +2392,11 @@ fn row_for_seat(
         // took the mid-game science-pace and opening-band reads.
         techs_150: None,
         cities_60: None,
+        cities_at_game_turn_60: None,
+        techs_at_game_turn_150: None,
+        districts: None,
+        specialty_districts: None,
+        buildings: None,
         cities_taken: None,
         cities_lost: None,
         victories_off: Vec::new(),
@@ -5803,7 +5915,8 @@ fn usage() -> ! {
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
-         gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
+         the fidelity run, NOT a screen: [--deployment-genome] every measured seat plays the genome the ledger ships, no gene is screened, and the file prices nothing — the shape `civ6_trajectory_fidelity.py` compares against the live seat
+       gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
          gene_screen --list",
         civvis::game::default_difficulty(),
         SCREEN_BARBARIAN_DIFFICULTY,
@@ -6169,13 +6282,33 @@ fn main() {
     let drawn = players - field.len() - if rivals { rival_chairs } else { 0 };
     let p_on = real(&args, "--p-on", P_ON);
     let p_default_on = real(&args, "--p-default-on", P_DEFAULT_ON);
-    for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
-        if !(p > 0.0 && p < 1.0) {
-            eprintln!("{name} must be strictly between 0 and 1 (both arms need seats), got {p}");
-            std::process::exit(2);
+    // ⭐ THE FIDELITY RUN: every seat plays the genome the ladder ships.
+    //
+    // A screen draws each seat's genome — a default-on gene at
+    // `--p-default-on`, the rest at `--p-on` — because pricing a gene needs
+    // seats on both sides of it. That makes every measured seat a NEIGHBOUR of
+    // the deployment genome and none of them the deployment genome itself,
+    // which is fine for a screen and wrong for the one question
+    // `civ6_trajectory_fidelity.py` asks: does a simulated game go the way a
+    // live one does? The live seat plays exactly one genome.
+    //
+    // An unscreened gene is already pinned to its deployment state by
+    // `on_probabilities` (1.0 on, 0.0 off), so this needs no new genome
+    // machinery: it screens NOTHING, which the ordinary path refuses on
+    // purpose, and every seat falls through to the shipped genome.
+    let deployment_genome = present(&args, "--deployment-genome");
+    if !deployment_genome {
+        for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
+            if !(p > 0.0 && p < 1.0) {
+                eprintln!(
+                    "{name} must be strictly between 0 and 1 (both arms need seats), got {p}"
+                );
+                std::process::exit(2);
+            }
         }
     }
     let screened: Vec<bool> = match text(&args, "--genes") {
+        _ if deployment_genome => vec![false; genes.len()],
         None => vec![true; genes.len()],
         Some(list) => {
             let wanted: Vec<&str> = list
@@ -6203,8 +6336,12 @@ fn main() {
         }
     };
     let screened_count = screened.iter().filter(|&&s| s).count();
-    if screened_count == 0 {
+    if screened_count == 0 && !deployment_genome {
         eprintln!("nothing to screen");
+        std::process::exit(2);
+    }
+    if deployment_genome && text(&args, "--genes").is_some() {
+        eprintln!("--deployment-genome screens nothing, so --genes cannot be given with it");
         std::process::exit(2);
     }
     let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
@@ -6344,6 +6481,7 @@ fn main() {
             String::new()
         },
         rival_chairs: if rivals { rival_chairs } else { 0 },
+        deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
@@ -6525,6 +6663,7 @@ mod tests {
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
             p_default_on: 0.75,
+            deployment_genome: false,
             families: Vec::new(),
             build: Build::default(),
             batch: Batch::default(),
@@ -6559,6 +6698,11 @@ mod tests {
             techs: 0,
             techs_150: None,
             cities_60: None,
+            cities_at_game_turn_60: None,
+            techs_at_game_turn_150: None,
+            districts: None,
+            specialty_districts: None,
+            buildings: None,
             cities_taken: None,
             cities_lost: None,
             science_end: None,
@@ -7013,6 +7157,110 @@ mod tests {
         assert!(
             estimate_costs(&header, &rows).is_empty(),
             "secs are 0.0 in test rows"
+        );
+    }
+
+    /// ⚠ No fallback to the final count on these two, unlike `cities_60`.
+    /// The live side records NOTHING for a run that never reached the mark, so
+    /// a fallback here would set a finished game beside an unfinished one.
+    #[test]
+    fn a_live_mark_is_absent_rather_than_guessed_when_the_game_ended_first() {
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.cities_at_game_turn_60, None);
+        assert_eq!(old.techs_at_game_turn_150, None);
+        let text = serde_json::to_string(&old).unwrap();
+        assert!(
+            !text.contains("cities_at_game_turn_60") && !text.contains("techs_at_game_turn_150"),
+            "an old row stays byte for byte what it was: {text}"
+        );
+        let mut row = test_row(0, 0, "10", true);
+        row.cities_at_game_turn_60 = Some(4);
+        row.techs_at_game_turn_150 = Some(31);
+        let back: Row = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        assert_eq!(back.cities_at_game_turn_60, Some(4));
+        assert_eq!(back.techs_at_game_turn_150, Some(31));
+    }
+
+    /// The whole point: a live mark is read at the RAW turn, with no speed
+    /// conversion, because the live ladder records it that way. A
+    /// `standard_duration` creeping onto either read would silently restore
+    /// the mismatch that published two false gaps.
+    #[test]
+    fn a_live_mark_is_read_without_a_speed_conversion() {
+        assert_eq!(LIVE_BAND_GAME_TURN, 60, "civ6_play::OPENING_TEMPO_TURN");
+        assert_eq!(LIVE_PACE_GAME_TURN, 150, "civ6_ladder::tech_marks");
+        let source = include_str!("gene_screen.rs");
+        for constant in ["LIVE_BAND_GAME_TURN", "LIVE_PACE_GAME_TURN"] {
+            let reads: Vec<&str> = source
+                .lines()
+                .filter(|line| line.contains(constant) && line.contains("g.turn >="))
+                .collect();
+            assert_eq!(reads.len(), 1, "{constant} is read once: {reads:?}");
+            assert!(
+                !reads[0].contains("standard_duration"),
+                "{constant} must be a raw turn: {}",
+                reads[0]
+            );
+        }
+        // And the Standard-scaled marks ARE converted, which is why they are
+        // a different reading and stay on the row for the science-pace table.
+        for constant in ["OPENING_BAND_STANDARD_TURN", "SCIENCE_PACE_STANDARD_TURN"] {
+            assert!(
+                source.contains(&format!("standard_duration({constant})")),
+                "{constant} is converted"
+            );
+        }
+    }
+
+    #[test]
+    fn city_development_is_absent_on_an_old_row_and_round_trips_on_a_new_one() {
+        let legacy = r#"{"kind":"game","game":0,"seed":7,"seat":1,"genome":"10","win":false,
+            "winner":0,"victory":"score","turn":250,"score":900,"score_share":0.3,"rank":2,
+            "cities":8,"alive":true,"secs":50.0,"techs":41}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.districts, None, "a row that never counted says so");
+        assert_eq!(old.specialty_districts, None);
+        assert_eq!(old.buildings, None);
+        let text = serde_json::to_string(&old).unwrap();
+        for field in ["districts", "specialty_districts", "buildings"] {
+            assert!(
+                !text.contains(field),
+                "an old row stays byte for byte what it was: {text}"
+            );
+        }
+        let mut row = test_row(0, 0, "10", true);
+        row.districts = Some(9);
+        row.specialty_districts = Some(4);
+        row.buildings = Some(0);
+        let back: Row = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        assert_eq!(back.districts, Some(9));
+        assert_eq!(back.specialty_districts, Some(4));
+        assert_eq!(
+            back.buildings,
+            Some(0),
+            "an empire that built nothing is a reading, not a gap"
+        );
+    }
+
+    /// The specialty count is the engine's own, not a second list here. A
+    /// duplicate would drift the first time Firaxis moved a district.
+    #[test]
+    fn the_specialty_count_is_asked_of_the_engine() {
+        let source = include_str!("gene_screen.rs");
+        assert!(
+            source.contains("world.city_specialty_district_count(city)"),
+            "gene_screen asks the engine which districts are specialty"
+        );
+        // ⚠ Built at run time. Written as a literal, the needle would appear
+        // in this test's own text — `include_str!` includes the tests — and
+        // the assertion would fail on itself.
+        let duplicate = format!("{}{}", "].", "specialty");
+        assert!(
+            !source.contains(&duplicate),
+            "and reads no district spec directly, which would be a second list"
         );
     }
 
@@ -7668,7 +7916,7 @@ mod tests {
     #[test]
     fn tournaments_use_deity_barbarians_without_changing_normal_games() {
         let options = GameOptions::new(2, 12, 10, 42, 5, 0);
-        assert_eq!(options.barbarian_difficulty, "immortal");
+        assert_eq!(options.barbarian_difficulty, "emperor");
         let normal_rung = options.difficulty.clone();
         let game = Game::new_with(tournament_options(options));
         assert_eq!(game.barbarian_difficulty, "deity");

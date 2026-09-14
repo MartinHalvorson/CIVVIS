@@ -60,7 +60,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use super::AdvancedAi;
+use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::{DiplomaticDeal, Game};
 use crate::Pos;
 
@@ -134,6 +134,8 @@ impl OneWarFront {
 pub(crate) enum OneWarPeace {
     /// Not the campaign front: one war at a time.
     SecondFront,
+    /// The required capital is secure and another capital remains to pursue.
+    CapitalSecured,
     /// The campaign front, and the tide has run against us for long enough
     /// with nothing left in reach worth the next turn.
     TideTurned,
@@ -145,6 +147,9 @@ impl OneWarPeace {
     pub(crate) fn reason(self) -> &'static str {
         match self {
             OneWarPeace::SecondFront => "one war at a time, and this is not the one",
+            OneWarPeace::CapitalSecured => {
+                "the required capital is secure and another capital remains to pursue"
+            }
             OneWarPeace::TideTurned => {
                 "the tide has run against us for long enough and nothing in reach is worth the next turn"
             }
@@ -154,6 +159,67 @@ impl OneWarPeace {
 }
 
 impl AdvancedAi {
+    /// A stable captured capital completes this front's Domination purpose.
+    /// Prefer another known capital owner over the defeated rival's remaining
+    /// towns. The ordinary city chooser still enforces occupation safety and
+    /// can prepare through that next rival's frontier before taking its capital.
+    pub(super) fn domination_followup_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        completed_rival: Option<usize>,
+    ) -> Option<usize> {
+        if !self.one_war_at_a_time
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || self.forced_target_player.is_some()
+        {
+            return None;
+        }
+        if completed_rival.is_some_and(|other| {
+            g.emergency_war_pair(pid, other)
+                || self.urgent_victory_threat(g, other)
+                || g.cities.values().any(|city| {
+                    city.owner == other
+                        && city.is_capital
+                        && !g.players[city.original_owner].is_minor
+                        && !g.players[city.original_owner].is_barbarian
+                })
+        }) {
+            return None;
+        }
+        let secured = g.cities.values().any(|city| {
+            city.owner == pid
+                && city.is_capital
+                && city.original_owner != pid
+                && completed_rival.is_none_or(|other| city.original_owner == other)
+                && !g.players[city.original_owner].is_minor
+                && !g.players[city.original_owner].is_barbarian
+                && city.loyalty >= 75.0
+                && g.city_loyalty_per_turn(city) >= 0.0
+        });
+        if !secured {
+            return None;
+        }
+        g.cities
+            .values()
+            .filter(|city| {
+                city.is_capital
+                    && city.owner != pid
+                    && Some(city.owner) != completed_rival
+                    && !g.same_team(pid, city.owner)
+                    && !g.players[city.original_owner].is_minor
+                    && !g.players[city.original_owner].is_barbarian
+                    && (!g.same_team(pid, city.original_owner) || city.owner != city.original_owner)
+                    && self.campaign_target_legal(g, pid, city.owner)
+            })
+            .min_by(|left, right| {
+                self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
+                    .total_cmp(&self.campaign_city_value(g, pid, right, GrandStrategy::Conquest))
+                    .then(left.id.cmp(&right.id))
+            })
+            .map(|city| city.owner)
+    }
+
     /// The living majors we are at war with.
     pub(crate) fn one_war_enemies(&self, g: &Game, pid: usize) -> Vec<usize> {
         g.players
@@ -411,6 +477,12 @@ impl AdvancedAi {
         if front.target != other {
             return Some(OneWarPeace::SecondFront);
         }
+        if self
+            .domination_followup_target(g, pid, Some(other))
+            .is_some()
+        {
+            return Some(OneWarPeace::CapitalSecured);
+        }
         if front.window_net() <= ONE_WAR_ROUT_NET {
             return Some(OneWarPeace::Rout);
         }
@@ -434,6 +506,9 @@ impl AdvancedAi {
         };
         front.target == other
             && g.is_at_war(pid, other)
+            && self
+                .domination_followup_target(g, pid, Some(other))
+                .is_none()
             && front.tide_against_since.is_none()
             && self.one_war_prizes_in_reach(g, pid)
     }
@@ -499,3 +574,6 @@ impl AdvancedAi {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod capital_handoff_tests;

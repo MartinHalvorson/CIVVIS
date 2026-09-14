@@ -4292,11 +4292,10 @@ impl Game {
             // is an Archaeologist action, not a persistent tile improvement.
             if excavates_artifact {
                 t.resource = None;
-                t.improvement = None;
             } else {
                 t.improvement = Some(Name::new(imp));
+                t.pillaged = false;
             }
-            t.pillaged = false;
             if removes {
                 t.feature = None;
             }
@@ -8384,6 +8383,13 @@ impl Game {
     }
 
     pub(super) fn player_tech_era(&self, pid: usize) -> usize {
+        if let Some(era) = self
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.tech_era)
+        {
+            return era;
+        }
         self.players[pid]
             .techs
             .iter()

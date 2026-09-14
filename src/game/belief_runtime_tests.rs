@@ -350,10 +350,10 @@ fn difficulty_scales_one_reported_barbarian_raid_party() {
     assert_eq!(high, 5, "Deity raises three melee and two ranged raiders");
 
     // And the majors' rung is not what decides it any more: a Settler seat
-    // with the default barbarian rung (Immortal) still meets the top band.
+    // with the default barbarian rung (Emperor) stays in the standard band.
     let mut settler_seat = Game::new_full(2, 40, 26, 4_171, 200, 0, true);
     settler_seat.difficulty = "settler".to_string();
-    assert_eq!(settler_seat.barbarian_raid_force_size(), 5);
+    assert_eq!(settler_seat.barbarian_raid_force_size(), 3);
 }
 
 #[test]

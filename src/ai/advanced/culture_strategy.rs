@@ -24,6 +24,21 @@ pub(super) const CULTURE_THREAT_PRESSURE: i32 = 50;
 pub(super) const CULTURE_THREAT_PRESSURE_EARLY: i32 = 30;
 
 impl AdvancedAi {
+    pub(super) fn culture_museum_unlock_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if g.players[pid]
+            .civics
+            .contains(&crate::name!("natural_history"))
+        {
+            return None;
+        }
+        (g.player_city_ids(pid).into_iter().any(|cid| {
+            g.cities[&cid]
+                .buildings
+                .contains(&crate::name!("archaeological_museum"))
+        }) && g.can_house_additional_great_work(pid, "artifact"))
+        .then_some("natural_history")
+    }
+
     /// `culture-cold-war-window` changes only the order of the Culture civic
     /// milestones. Cold War is otherwise reached through the later Space Race
     /// goal. It does not bypass government, survival, or Great Person goals in

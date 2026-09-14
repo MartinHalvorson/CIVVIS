@@ -1156,7 +1156,7 @@ impl AdvancedAi {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
-            self.plan_positions(g, pid, &mut field, &armed);
+            self.plan_positions(g, pid, plan, &mut field, &armed);
         }
         struck || withdrew
     }
@@ -2785,6 +2785,7 @@ impl AdvancedAi {
         &mut self,
         g: &mut Game,
         pid: usize,
+        strategy: &StrategicPlan,
         field: &mut DangerField,
         armed: &BTreeSet<u32>,
     ) {
@@ -2793,6 +2794,16 @@ impl AdvancedAi {
         }
         let groups = self.force_groups.clone();
         for group in &groups {
+            // The siege doctrine owns this formation's approach and firing
+            // posts. A generic slot can hold a gun outside range and claim
+            // its turn before the siege ladder gets to move it. Kill shots
+            // and wounded-unit rotations have already run above.
+            if self.siege_train
+                && group.domain == super::ForceDomain::Land
+                && self.siege_city_of(g, pid, strategy, group).is_some()
+            {
+                continue;
+            }
             let Some(plan) = self.position_plan(g, pid, group, field, armed) else {
                 continue;
             };
@@ -4511,3 +4522,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod siege_position_tests;

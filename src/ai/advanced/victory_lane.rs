@@ -279,12 +279,36 @@ impl AdvancedAi {
             && (culture_focus || self.adaptive_culture_spending_signal(g, pid))
     }
 
+    fn recovery_faith_has_only_culture_units(g: &Game, pid: usize) -> bool {
+        let cities = g.player_city_ids(pid);
+        let mut culture_offer = false;
+        for city in cities {
+            let Some(menu) = g.host_purchasable.get(&city) else {
+                return false;
+            };
+            for (item, quote) in menu {
+                if quote.faith.is_none() {
+                    continue;
+                }
+                if let Some(unit) = item.strip_prefix("unit:") {
+                    match unit {
+                        "naturalist" | "rock_band" => culture_offer = true,
+                        _ => return false,
+                    }
+                }
+            }
+        }
+        culture_offer
+    }
+
     pub(super) fn culture_lane_spends(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
         let culture_focus = self.victory_focus(g, pid).strategy == GrandStrategy::Culture;
-        // A named Culture contract owns this Faith even during an expansion
-        // or counter-campaign posture. Recovery retains its defensive hold.
-        plan.strategy != GrandStrategy::Recovery
-            && (self.active_victory_target(g) == Some(VictoryTarget::Culture)
+        // Recovery keeps its reserve unless complete host menus confirm that
+        // the named Culture seat cannot spend Faith on any other unit.
+        let named_culture = self.active_victory_target(g) == Some(VictoryTarget::Culture);
+        (plan.strategy != GrandStrategy::Recovery
+            || named_culture && Self::recovery_faith_has_only_culture_units(g, pid))
+            && (named_culture
                 || culture_focus && self.lane_culture_spending
                 || self.adaptive_culture_lane_spends(g, pid, plan, culture_focus))
     }
@@ -776,6 +800,82 @@ mod tests {
         assert_eq!(
             ai.competition_victory_point_value(&g, 0, &plan, "EMERGENCY_SEND_AID", 200.0),
             0.0
+        );
+    }
+    #[test]
+    fn recovery_culture_faith_spends_only_with_complete_nonmilitary_host_menus() {
+        let mut g = game();
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        g.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .unwrap();
+        let city = g.player_city_ids(0)[0];
+        let mut plan = expansion_plan();
+        plan.strategy = GrandStrategy::Recovery;
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+        ai.enable_live_bridge();
+        g.players[0].faith = 500.0;
+        g.players[0].civics.insert(crate::name!("cold_war"));
+        assert!(
+            !ai.culture_lane_spends(&g, 0, &plan),
+            "missing menus retain the hold"
+        );
+        Arc::make_mut(&mut g.host_purchasable).insert(
+            city,
+            BTreeMap::from([(
+                "unit:rock_band".to_string(),
+                crate::game::HostPurchaseEntry {
+                    gold: None,
+                    faith: Some(300.0),
+                },
+            )]),
+        );
+        assert!(ai.culture_lane_spends(&g, 0, &plan));
+        let mut buying = g.clone();
+        ai.culture_spending(&mut buying, 0);
+        assert!(buying
+            .units
+            .values()
+            .any(|unit| unit.owner == 0 && unit.kind == "rock_band"));
+        assert_eq!(buying.players[0].faith, 200.0);
+        Arc::make_mut(&mut g.host_purchasable)
+            .get_mut(&city)
+            .unwrap()
+            .insert(
+                "unit:warrior".to_string(),
+                crate::game::HostPurchaseEntry {
+                    gold: None,
+                    faith: Some(1_000.0),
+                },
+            );
+        assert!(
+            !ai.culture_lane_spends(&g, 0, &plan),
+            "reserve even for an unaffordable military option"
+        );
+        Arc::make_mut(&mut g.host_purchasable)
+            .get_mut(&city)
+            .unwrap()
+            .remove("unit:warrior");
+        assert!(!AdvancedAi::new().culture_lane_spends(&g, 0, &plan));
+        assert!(!AdvancedAi::targeting(VictoryTarget::Science).culture_lane_spends(&g, 0, &plan));
+        let second = g
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                !g.rules.is_water(tile)
+                    && g.wdist(**pos, g.cities[&city].pos) > 4
+                    && g.city_at(**pos).is_none()
+            })
+            .map(|(pos, _)| *pos)
+            .unwrap();
+        g.found_city_for(0, second, None);
+        assert!(
+            !ai.culture_lane_spends(&g, 0, &plan),
+            "one missing city menu retains the hold"
         );
     }
 }

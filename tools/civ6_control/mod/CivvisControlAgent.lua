@@ -991,6 +991,37 @@ CivvisMilitaryFormation = function(unit)
 	end, -1);
 end;
 
+-- UnitPanel.lua:2806-2814 names a unit with NAME_UNIT/PARAM_NAME.
+-- TOURISM_BOMB requires a band name (Expansion2_InGameText.xml:940).
+-- Do this before planning: an unnamed band's empty activation highlights must
+-- not strand it before it can ever receive a concert order. Requests are async;
+-- a later snapshot supplies the name and refreshed destinations.
+do
+    local rockBandNameRequests = {};
+    function CivvisNameRockBands(player, pid, turn)
+        for _, unit in player:GetUnits():Members() do
+            pcall(function()
+                local row = GameInfo.Units[unit:GetUnitType()];
+                if row == nil or row.UnitType ~= "UNIT_ROCK_BAND" then return; end
+                local current = unit:GetName();
+                if current == nil or current ~= row.Name then return; end
+                local command = UnitCommandTypes.NAME_UNIT;
+                local parameter = UnitCommandTypes.PARAM_NAME;
+                if command == nil or parameter == nil then return; end
+                local key = tostring(pid) .. ":" .. tostring(unit:GetID());
+                if rockBandNameRequests[key] == turn then return; end
+                local params = {};
+                params[parameter] = "Civvis Band " .. tostring(unit:GetID());
+                if not UnitManager.CanStartCommand(unit, command, false) then return; end
+                rockBandNameRequests[key] = turn;
+                UnitManager.RequestCommand(unit, command, params);
+                emit("rock_band_name_requested", { turn = turn, unit = unit:GetID(), name = params[parameter] });
+            end);
+        end
+    end
+
+end
+
 -- SelectedUnit_Expansion2.lua:65-70 asks this unit's RockBand component for
 -- activation highlights. Do not replace an unreadable API with "no venues".
 function CivvisRockBandConcertPlots(unit, name)
@@ -1005,6 +1036,27 @@ function CivvisRockBandConcertPlots(unit, name)
             plots[#plots + 1] = { x = plot:GetX(), y = plot:GetY() };
         end
         return plots;
+    end, nil);
+end
+
+-- Base/Assets/UI/Popups/UnitPromotionPopup.lua:81-82 reads this exact menu.
+function CivvisRockBandPromotionChoices(unit, name)
+    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    return try(function()
+        local command = GameInfo.UnitCommands["UNITCOMMAND_PROMOTE"];
+        if command == nil then return nil; end
+        local can, results = UnitManager.CanStartCommand(unit, command.Hash, true, true);
+        if can == false then return {}; end
+        local offered = results ~= nil and results[UnitCommandResults.PROMOTIONS] or nil;
+        if can ~= true or type(offered) ~= "table" then return nil; end
+        local names = {};
+        for _, index in ipairs(offered) do
+            local row = GameInfo.UnitPromotions[index];
+            if row == nil or row.UnitPromotionType == nil then return nil; end
+            names[#names + 1] = row.UnitPromotionType;
+        end
+        table.sort(names);
+        return names;
     end, nil);
 end
 
@@ -1523,6 +1575,29 @@ end
 -- you start this" rather than reasoning about terrain, charges and movement
 -- keeps the controller honest: a rule this code does not model refuses the
 -- order, and the next one down is tried instead.
+-- ★★★★ AND WHEN NOTHING STARTS, SAY SO. `operate` returns false when the host
+-- answers `CanStartOperation` with "no", and the caller then simply moves on.
+-- The bridge sees only the consequence — the unit is not fortified — and cannot
+-- tell a host refusal from an order the mod never issued.
+--
+-- That ambiguity is the whole of the largest unexplained failure on the ledger.
+-- Over the 42 recorded live runs of 2026-09-10/11, **82.5% of FORTIFY orders
+-- fail** (7,711 against 1,637 verified) and FORTIFY is 36% of every failed
+-- order, second only to MOVE_TO. Of the 5,442 that read `not_fortified`, 95%
+-- are a MOVE followed by a FORTIFY — the case `later_moved_units` flagged in
+-- August as "should have stuck; a real question" — and 72% are still not
+-- fortified three turns later, so they are not an early verdict.
+--
+-- Two explanations were ruled out from the recorded runs before adding this:
+-- the units are NOT on the `UNITOPERATION_ALERT` fallback (their activity mix
+-- matches every other unit's, with LESS sentry, not more), and the `moves`
+-- those records show is the turn's opening value rather than what remained
+-- after the move, so "it had no movement left" is unsupported either way.
+--
+-- MOVE_TO already has this: `move_noop` carries a `why` and the bridge reads it
+-- as `host_noop_<why>`. This is the same instrument for the operations that
+-- happen in place. It fires once per call rather than once per candidate, so a
+-- FORTIFY that fell through to ALERT and started is not reported at all.
 local function firstOperation(unit, names)
 	for _, name in ipairs(names) do
 		local hash = OP[name];
@@ -1530,6 +1605,12 @@ local function firstOperation(unit, names)
 			return name;
 		end
 	end
+	emit("operation_refused", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		unit = try(function() return unit:GetID(); end, -1),
+		unit_kind = unitTypeName(unit),
+		tried = names,
+	});
 	return nil;
 end
 
@@ -7177,6 +7258,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			spy_missions_available = spyMissions,
 			great_person = greatPerson,
 			concert_plots = CivvisRockBandConcertPlots(unit, name),
+			offered_promotions = CivvisRockBandPromotionChoices(unit, name),
+			rock_band_name = name == "UNIT_ROCK_BAND" and try(function() return unit:GetName(); end, nil) or nil,
 		};
 	end);
 
@@ -17946,6 +18029,7 @@ local function beginTurn(player, pid, turn)
 	warTarget = findWarTarget(player, pid);
 	CivvisBoard.reset();
 	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
+	CivvisNameRockBands(player, pid, turn);
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.

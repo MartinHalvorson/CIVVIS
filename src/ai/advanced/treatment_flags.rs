@@ -39,6 +39,87 @@
 use super::AdvancedAi;
 
 impl AdvancedAi {
+    /// Enable `victory-deadline-budget` for measurement.
+    pub fn enable_victory_deadline_budget(&mut self) {
+        self.victory_deadline_budget = true;
+    }
+    /// Withhold `victory-deadline-budget`.
+    pub fn disable_victory_deadline_budget(&mut self) {
+        self.victory_deadline_budget = false;
+    }
+    /// Enable `culture-tourism-payback` for measurement.
+    pub fn enable_culture_tourism_payback(&mut self) {
+        self.culture_tourism_payback = true;
+    }
+    /// Withhold `culture-tourism-payback`.
+    pub fn disable_culture_tourism_payback(&mut self) {
+        self.culture_tourism_payback = false;
+    }
+    /// Enable `siege-positive-damage-budget` for measurement.
+    pub fn enable_siege_positive_damage_budget(&mut self) {
+        self.siege_positive_damage_budget = true;
+    }
+    /// Withhold `siege-positive-damage-budget`.
+    pub fn disable_siege_positive_damage_budget(&mut self) {
+        self.siege_positive_damage_budget = false;
+    }
+    /// Enable `culture-faith-reservation` for measurement.
+    pub fn enable_culture_faith_reservation(&mut self) {
+        self.culture_faith_reservation = true;
+    }
+    /// Withhold `culture-faith-reservation`.
+    pub fn disable_culture_faith_reservation(&mut self) {
+        self.culture_faith_reservation = false;
+    }
+    /// Enable `capital-campaign-router` for measurement.
+    pub fn enable_capital_campaign_router(&mut self) {
+        self.capital_campaign_router = true;
+    }
+    /// Withhold `capital-campaign-router`.
+    pub fn disable_capital_campaign_router(&mut self) {
+        self.capital_campaign_router = false;
+    }
+    /// Enable `great-work-completion-value` for measurement.
+    pub fn enable_great_work_completion_value(&mut self) {
+        self.great_work_completion_value = true;
+    }
+    /// Withhold `great-work-completion-value`.
+    pub fn disable_great_work_completion_value(&mut self) {
+        self.great_work_completion_value = false;
+    }
+    /// Enable `upgrade-window-campaign` for measurement.
+    pub fn enable_upgrade_window_campaign(&mut self) {
+        self.upgrade_window_campaign = true;
+    }
+    /// Withhold `upgrade-window-campaign`.
+    pub fn disable_upgrade_window_campaign(&mut self) {
+        self.upgrade_window_campaign = false;
+    }
+    /// Enable `tourism-land-reservation` for measurement.
+    pub fn enable_tourism_land_reservation(&mut self) {
+        self.tourism_land_reservation = true;
+    }
+    /// Withhold `tourism-land-reservation`.
+    pub fn disable_tourism_land_reservation(&mut self) {
+        self.tourism_land_reservation = false;
+    }
+    /// Enable `reinforce-before-stall` for measurement.
+    pub fn enable_reinforce_before_stall(&mut self) {
+        self.reinforce_before_stall = true;
+    }
+    /// Withhold `reinforce-before-stall`.
+    pub fn disable_reinforce_before_stall(&mut self) {
+        self.reinforce_before_stall = false;
+    }
+    /// Enable `capture-hold-chain` for measurement.
+    pub fn enable_capture_hold_chain(&mut self) {
+        self.capture_hold_chain = true;
+    }
+    /// Withhold `capture-hold-chain`.
+    pub fn disable_capture_hold_chain(&mut self) {
+        self.capture_hold_chain = false;
+    }
+
     /// Size the defensive Missionary corps by cities actually under conversion
     /// pressure, up to four, instead of two. Off in production; opted into by
     /// name. See [`AdvancedAi::religious_defence_scales`].
@@ -3401,6 +3482,7 @@ impl AdvancedAi {
     pub fn enable_boosted_bargain_first(&mut self) {
         self.boosted_bargain_first = true;
         self.boosted_bargain_first_2 = false;
+        self.boosted_bargain_first_3 = false;
     }
 
     /// The twin of `enable_boosted_bargain_first`.
@@ -3414,11 +3496,27 @@ impl AdvancedAi {
     pub fn enable_boosted_bargain_first_2(&mut self) {
         self.boosted_bargain_first_2 = true;
         self.boosted_bargain_first = false;
+        self.boosted_bargain_first_3 = false;
     }
 
     /// The twin of `enable_boosted_bargain_first_2`.
     pub fn disable_boosted_bargain_first_2(&mut self) {
         self.boosted_bargain_first_2 = false;
+    }
+
+    /// `boosted-bargain-first-3`: a one-turn boosted technology may
+    /// interrupt a peaceful lane beeline that is not about to land its
+    /// target; the other versions stand down. See
+    /// `AdvancedAi::boosted_bargain_tech_3`.
+    pub fn enable_boosted_bargain_first_3(&mut self) {
+        self.boosted_bargain_first_3 = true;
+        self.boosted_bargain_first = false;
+        self.boosted_bargain_first_2 = false;
+    }
+
+    /// The twin of `enable_boosted_bargain_first_3`.
+    pub fn disable_boosted_bargain_first_3(&mut self) {
+        self.boosted_bargain_first_3 = false;
     }
 
     /// A wonder within twelve turns of done in one of the empire's strongest
@@ -3953,6 +4051,16 @@ impl AdvancedAi {
     pub fn disable_denial_outranks_expansion(&mut self) {
         self.denial_outranks_expansion = false;
     }
+    /// The Domination lane hands over to Conquest at `DOMINATION_HANDOVER_CITIES`
+    /// instead of waiting for a growing city target. Opt-in gene
+    /// `domination-lane-hands-over`.
+    pub fn enable_domination_lane_hands_over(&mut self) {
+        self.domination_lane_hands_over = true;
+    }
+    /// The twin of `enable_domination_lane_hands_over`.
+    pub fn disable_domination_lane_hands_over(&mut self) {
+        self.domination_lane_hands_over = false;
+    }
 
     /// `boost-planner-builds`: the boost planner serves `building:` triggers.
     /// See `advanced/boost_planner.rs`.
@@ -4234,12 +4342,44 @@ impl AdvancedAi {
         self.research_alliance_first = false;
     }
 
+    /// Unlock the first land siege capability for a walled Conquest objective.
+    pub fn enable_domination_siege_research(&mut self) {
+        self.domination_siege_research = true;
+    }
+    pub fn disable_domination_siege_research(&mut self) {
+        self.domination_siege_research = false;
+    }
+
+    /// Rank required capitals within the selected domination campaign front.
+    pub fn enable_domination_capital_focus(&mut self) {
+        self.domination_capital_focus = true;
+    }
+    pub fn disable_domination_capital_focus(&mut self) {
+        self.domination_capital_focus = false;
+    }
+
+    /// See `AdvancedAi::expansion_hall_district`.
+    pub fn enable_expansion_hall_district(&mut self) {
+        self.expansion_hall_district = true;
+    }
+    pub fn disable_expansion_hall_district(&mut self) {
+        self.expansion_hall_district = false;
+    }
+
     pub fn enable_builder_charge_window(&mut self) {
         self.builder_charge_window = true;
     }
 
     pub fn disable_builder_charge_window(&mut self) {
         self.builder_charge_window = false;
+    }
+
+    pub fn enable_trade_growth_to_district(&mut self) {
+        self.trade_growth_to_district = true;
+    }
+
+    pub fn disable_trade_growth_to_district(&mut self) {
+        self.trade_growth_to_district = false;
     }
 
     // ---- append: a-b ------------------------------------------------
@@ -4253,14 +4393,6 @@ impl AdvancedAi {
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
-    pub fn enable_trade_growth_to_district(&mut self) {
-        self.trade_growth_to_district = true;
-    }
-
-    pub fn disable_trade_growth_to_district(&mut self) {
-        self.trade_growth_to_district = false;
-    }
-
     // ---- append: t-z ------------------------------------------------
 }
 

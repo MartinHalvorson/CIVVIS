@@ -2721,6 +2721,20 @@ def sources_from_args(args, notes: dict[str, str] | None = None) -> list[Path]:
     escape = getattr(args, "unverified_build", None)
     for path in paths:
         data = load_source(path)
+        # ⭐ A FIDELITY RUN IS NOT A SCREEN, AND `--legacy-shape` MUST NOT
+        # LET ONE IN. `gene_screen --deployment-genome` gives every measured
+        # seat the genome the ledger ships and screens NOTHING, so the file
+        # holds no seat with a gene off to price it against. There is no
+        # escape for this one because there is nothing to excuse: the batch
+        # does not disagree with the screen about the board, it simply
+        # contains no measurement of any gene.
+        if data.get("deployment_genome"):
+            raise SystemExit(
+                f"{path.name} is a fidelity run (`--deployment-genome`): every "
+                "seat played the shipped genome and no gene was screened, so it "
+                "prices nothing.\nIt belongs to `civ6_trajectory_fidelity.py`, "
+                "not to the ledger."
+            )
         profile = profile_of(data)
         if not args.legacy_shape and shape_of(profile) != "standard":
             raise SystemExit(

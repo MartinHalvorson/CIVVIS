@@ -51,6 +51,66 @@ def args(**changes):
     return SimpleNamespace(**values)
 
 
+class CityDevelopmentTests(unittest.TestCase):
+    """`record_development` is the live half of the conversion comparison.
+
+    The empire holds 0.83 of the Emperor leader's cities and turns each into
+    0.30 of their science; `gene_screen` has recorded districts and buildings
+    per seat since 2026-09-10 and the live row carried nothing to set beside
+    it. Both sides count every district a city holds, the city centre
+    included, so the pair compares without translating a Firaxis type name.
+    """
+
+    @staticmethod
+    def frame(cities):
+        return {"kind": "state", "cities": cities}
+
+    def test_it_totals_districts_and_buildings_over_our_cities(self):
+        state = {}
+        civ6_play.record_development(
+            state,
+            self.frame(
+                [
+                    {"districts": [{"type": "DISTRICT_CITY_CENTER"}, {"type": "X"}],
+                     "buildings": ["BUILDING_MONUMENT", "BUILDING_WALLS"]},
+                    {"districts": [{"type": "DISTRICT_CITY_CENTER"}], "buildings": []},
+                ]
+            ),
+        )
+        self.assertEqual(state["districts"], 3)
+        self.assertEqual(state["buildings"], 2)
+        self.assertEqual(state["developed_cities"], 2)
+
+    def test_a_later_frame_replaces_an_earlier_one(self):
+        state = {}
+        civ6_play.record_development(state, self.frame([{"districts": [1], "buildings": []}]))
+        civ6_play.record_development(
+            state, self.frame([{"districts": [1, 2], "buildings": ["b"]}])
+        )
+        self.assertEqual(state["districts"], 2)
+        self.assertEqual(state["buildings"], 1)
+
+    def test_an_empty_or_malformed_frame_never_clobbers_a_reading(self):
+        """A frame without cities is not a reading of zero development."""
+        state = {}
+        civ6_play.record_development(
+            state, self.frame([{"districts": [1, 2, 3], "buildings": ["a"]}])
+        )
+        for bad in ([], None, "not a list", [None], ["not a dict"]):
+            with self.subTest(bad=bad):
+                civ6_play.record_development(state, {"kind": "state", "cities": bad})
+                self.assertEqual(state["districts"], 3)
+                self.assertEqual(state["buildings"], 1)
+                self.assertEqual(state["developed_cities"], 1)
+
+    def test_a_city_with_neither_key_counts_as_a_city_with_none(self):
+        state = {}
+        civ6_play.record_development(state, self.frame([{}, {"buildings": ["a"]}]))
+        self.assertEqual(state["districts"], 0)
+        self.assertEqual(state["buildings"], 1)
+        self.assertEqual(state["developed_cities"], 2)
+
+
 class SharedDesktopRescueTests(unittest.TestCase):
     def test_marker_and_foreground_control_optional_recovery(self):
         with tempfile.TemporaryDirectory() as tmp, \

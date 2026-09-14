@@ -1925,6 +1925,110 @@ impl AdvancedAi {
 
     /// `force_groups` from the task forces: one group per force, the row's
     /// tile as objective, the posture from the row's doctrine.
+    /// 🔬 THE ARMY NEVER HOLDS THE FORTIFICATION IT IS TOLD TO TAKE.
+    ///
+    /// Measured over the recorded live runs of 2026-09-10/11 (the accounting is
+    /// on `later_moved_units` in `src/bin/civvis_orders.rs`). Of every FORTIFY
+    /// that read `not_fortified`, following the subject into the NEXT turn:
+    ///
+    /// ```text
+    ///     64.6%  the decider MOVED IT AGAIN next turn   (n = 2,507)
+    ///     29.2%  fortified on a later frame after all
+    ///      6.2%  neither
+    /// ```
+    ///
+    /// and only ~1% was a host refusal, which `operation_refused` now names. So
+    /// the order lands; the decider takes it back one turn later. Civilization
+    /// VI pays fortification at +3 after one turn and +6 after two, and a unit
+    /// that moves loses it, so **the defence bonus is almost never collected**.
+    ///
+    /// ⭐ AND THE MOVES ARE A SHUFFLE, NOT A REDEPLOYMENT. Of the 2,008 churned
+    /// units with a position two turns later, **14.1% are back on the tile they
+    /// started from**, and of those that went elsewhere the net displacement is
+    /// 1 tile for 596, 2 for 603 and 3 for 320 — about seven in ten within two
+    /// tiles of the post they were told to dig into. It is spread across every
+    /// military kind (Archer 29.8%, Warrior 17.3%, Spearman 6.2%, a long tail),
+    /// so it is general behaviour rather than one role's bug.
+    ///
+    /// ⚠⚠ THIS IS `settler_target_hysteresis`' DEFECT ON MILITARY UNITS, AND NO
+    /// GENE ANSWERS IT. That note records "ONE SETTLER, TWO SITES, TWENTY-NINE
+    /// TURNS" — a settler alternating between two sites, walking a step toward
+    /// each in turn — and fixes it by retiring a dropped target for a few turns
+    /// so the next pick cannot flip straight back. The registry has
+    /// `settler-target-hysteresis`, `settler-guard-holds` and `escort-cap-holds`
+    /// for the civilian side and **nothing for a military post**;
+    /// `chokepoint-garrison` chooses where to stand, not whether to stay.
+    ///
+    /// The shape a gene would take, so the next reader starts from the
+    /// measurement rather than rediscovering it: a force whose objective the
+    /// board reassigns keeps the old one for a few turns unless the new row is
+    /// worth materially more, exactly as the settler path retires a dropped
+    /// site. ⚠ It is NOT a free win — `civvis-the-champion-churns-more-not-less`
+    /// records that motion and strength are not the same axis, so it wants a
+    /// screen and not a promotion on this note.
+    ///
+    /// ## 🛑 AND THE BOARD'S OWN CENSUS SAYS IT IS SCARCITY, NOT STICKINESS
+    ///
+    /// The paragraph above prescribes hysteresis. **This census argues against
+    /// it**, and it is the board's own number rather than a bridge inference.
+    /// `board_reassignments` is printed on every evaluation as "rows N, F
+    /// force(s), R reassigned, short: S". Over 6,165 of those lines in the live
+    /// runs of 2026-09-10/11:
+    ///
+    /// ```text
+    ///     rows        median 8    mean 8.1
+    ///     forces      median 2    mean 2.1
+    ///     reassigned  median 1    mean 1.71   (56% of evaluations move someone)
+    ///     rows short  median 1    mean 1.9
+    /// ```
+    ///
+    /// ⭐ Roughly **a fifth of the army changes objective on every evaluation**,
+    /// and ~2 rows are left short every time regardless. The units are not
+    /// flapping between two equally good homes; they are being pulled around by
+    /// rows that cannot all be filled.
+    ///
+    /// ⚠ An earlier draft of this paragraph read "most of the army" off the
+    /// two-force median. That was wrong — a force holds several units, not one.
+    /// Counted directly from the state frames of the same runs, our military
+    /// unit total is:
+    ///
+    /// ```text
+    ///     turns     0-39   40-79   80-119  120-159  160-199  200-239  240-279
+    ///     median       2       5        8        8        8        8        6
+    /// ```
+    ///
+    /// So ~8 units in ~2 forces, and 1.71 reassignments is about 21% of them
+    /// per evaluation. Still high, and not "most".
+    ///
+    /// ## ⭐⭐ AND THE ARMY NEVER GROWS
+    ///
+    /// It reaches eight by turn 80 and is still eight at turn 240, while
+    /// **about a third of everything the empire produces is military units**
+    /// (49% of city-turns carry a unit, of which Builders are 10.8% and
+    /// Settlers 7.1%). Over the same runs the combat ledger records 601 of our
+    /// units lost. An empire that spends a third of its output on an army and
+    /// holds eight units is on a treadmill, not building a force.
+    ///
+    /// ⚠ And it is not that the army loses its fights. Filtered the way
+    /// `docs/LIVE_TACTICS.md`'s junk-row rule prescribes — both sides real
+    /// units, and only combats we are actually in — the exchange is **roughly one
+    /// kill per loss** (188 against 199). We trade evenly and still cannot
+    /// accumulate, which points at what a unit COSTS us rather than at how it
+    /// fights, and lands back on the conversion gap the rest of the record
+    /// keeps finding.
+    ///
+    /// ⚠⚠ So `HYSTERESIS_GAIN` is not missing here — it already asks 25% more
+    /// contribution before a unit leaves a served force. Raising it, or adding
+    /// a cooldown on top, would mostly **freeze whichever row grabbed a unit
+    /// first and keep the short rows short**. That is a plausible way to make
+    /// the seat worse while making the churn metric better, which is exactly
+    /// the trap `civvis-a-defects-drama-and-its-elo-are-unrelated` names.
+    ///
+    /// The honest reading is that this is the same shortage the rest of the
+    /// record keeps finding: an Emperor seat at 0.45 kills per loss whose
+    /// military ratio never clears the campaign bar. **Price a hysteresis gene
+    /// against `rows short`, not against the reassignment count** — and expect
+    /// the answer to be that the board needs more army, not stickier orders.
     fn project_forces(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
         self.force_groups.clear();
         let visible = self.battlefront_visibility(g, pid);

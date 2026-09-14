@@ -276,10 +276,13 @@ impl Game {
     }
 
     /// The districts Civilization VI counts as *specialty* — the ones the
-    /// Insulae and Medina Quarter housing cards key off. `pub(crate)` so the
-    /// policy chooser asks this instead of keeping a second list of district
-    /// families that would drift the first time Firaxis moved one.
-    pub(crate) fn city_specialty_district_count(&self, city: &City) -> usize {
+    /// Insulae and Medina Quarter housing cards key off, and the ones that
+    /// carry the yield buildings. Public for the same reason it was
+    /// `pub(crate)`: every caller asks this instead of keeping a second list
+    /// of district families that would drift the first time Firaxis moved
+    /// one. `gene_screen` is the caller outside the crate, recording
+    /// development per seat.
+    pub fn city_specialty_district_count(&self, city: &City) -> usize {
         city.districts
             .keys()
             .filter(|district| self.rules.districts[district].specialty)
@@ -5116,7 +5119,9 @@ impl Game {
                     }
                 }
                 None if spec.resource_only => continue,
-                None if t.resource.is_some() => continue, // unrevealed resource
+                // An undiscovered deposit cannot veto an otherwise legal
+                // improvement: the player's observed board has no resource
+                // here and must agree with execution until it is revealed.
                 None => {}
             }
             // Unique replacements suppress their base improvement for that civ.
@@ -5149,7 +5154,7 @@ impl Game {
         let tile = self.map.get(pos)?;
         if tile.flooded
             || tile.submerged
-            || tile.improvement.is_some()
+            || tile.improvement.as_deref() == Some("national_park")
             || tile.district.is_some()
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
@@ -5411,11 +5416,17 @@ impl Game {
             }) {
                 continue;
             }
+            // Undiscovered deposits cannot veto a site the owner observes as
+            // resource-free, including through the removal-technology check.
+            let visible_resource = t
+                .resource
+                .as_deref()
+                .filter(|resource| self.resource_visible_to(city.owner, resource));
             // Antiquity Sites and Shipwrecks are buried, not deposits: they
             // are invisible until Natural History or Cultural Heritage and
             // never reserve a tile. Building over one destroys it, exactly as
             // a Bonus resource is destroyed.
-            if t.resource.as_ref().is_some_and(|resource| {
+            if visible_resource.is_some_and(|resource| {
                 !matches!(
                     self.rules.resources[resource].class.as_str(),
                     "bonus" | "artifact"
@@ -5441,7 +5452,7 @@ impl Game {
             {
                 continue;
             }
-            if let Some(resource) = &t.resource {
+            if let Some(resource) = visible_resource {
                 let improvement = &self.rules.resources[resource].improvement;
                 if self.rules.improvements[improvement]
                     .tech
@@ -7743,3 +7754,9 @@ impl Game {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod hidden_resource_improvement_tests;
+
+#[cfg(test)]
+mod hidden_resource_district_tests;

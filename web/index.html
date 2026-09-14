@@ -1769,8 +1769,6 @@
   .save-entry button { margin: 0 0 0 auto; padding: 4px 8px; font-size: var(--type-small); }
   /* Leader and difficulty only mean anything with somebody at the keyboard. */
   body.spectating .human-setting { display: none; }
-  #single-player-entry { width: 100%; margin-bottom: 8px; }
-  body:not(.watching-sim) #single-player-entry { display: none; }
   #setup-start { width: 100%; margin-top: 12px; }
   #setup-start[hidden] { display: none; }
   body.watching-sim #saves-group .save-row { display: none; }
@@ -4922,8 +4920,6 @@
   </div>
   <div class="side-scroll">
     <div class="side-actions" aria-label="Simulation controls">
-      <button class="primary" id="single-player-entry" type="button"
-        title="Choose your leader, difficulty and world">Play single player</button>
       <div id="specbar" style="display:none">
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>

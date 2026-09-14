@@ -2785,8 +2785,9 @@ pub struct BasicAi {
     /// native constructors and the frozen anchor keep the plain goal.
     pub(crate) explore_dead_targets: bool,
     /// Per unit: the exploration goal it was last sent at, where it stood, and
-    /// how many consecutive turns it has stood there aiming at that goal.
-    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32)>>,
+    /// how many consecutive turns it has stood there aiming at that goal,
+    /// and the last game turn observed. Replanning does not advance the clock.
+    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32, u32)>>,
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
@@ -3180,6 +3181,75 @@ pub struct BasicAi {
     /// pantheon, or site ranking. It reserves the capital's next empty production choice,
     /// uses the measured opening-band pipeline, and keeps the legal
     /// population and payback gates in step with the strategic controller.
+    /// 🛑 2026-09-11, RETRACTED THE SAME DAY: the reading below is an artefact
+    /// of the probe's own length. Keep reading; the retraction is the point.
+    ///
+    /// Priced by withholding at the shape the live seat plays — 60×38, 4
+    /// players, standard speed, Emperor, `--rivals firaxis-mix --handicap
+    /// rivals` — 90 games, 270 seats, `--turns 80 --p-default-on 0.5`:
+    ///
+    /// ```text
+    ///     gene                              on     off    diff       z
+    ///     rapid-city-expansion-2          2.66    2.93   -0.27   -2.69
+    ///     expansion-scales-with-difficulty 2.70    2.89   -0.19   -1.88
+    ///     expansion-schedule               2.83    2.78   +0.05   +0.48
+    ///     settler-walk-deadline            2.80    2.81   -0.01   -0.13
+    /// ```
+    ///
+    /// It persists rather than washing out: cities at turn 80 read −0.28
+    /// (z −2.60) on the same split, and both city columns agree. The arms are
+    /// balanced on the other three genes (largest imbalance 0.11), so it is not
+    /// the draw.
+    ///
+    /// ⚠⚠ THIS IS NOT A PROMOTION ARGUMENT AND MUST NOT BE READ AS ONE. An
+    /// 80-turn probe completes no game, so it carries no win column and is not
+    /// a ledger source; the default rule reads the two win columns of native
+    /// screens and nothing here touches them. Four genes were tested, so the
+    /// family-wise bar is nearer z 2.50 than 2.00 and −2.69 clears it only
+    /// narrowly. And an expansion gene may well pay after turn 80 — this says
+    /// what it costs in the opening, not what it is worth in a game.
+    ///
+    /// ## 🛑🛑 RETRACTED — `--turns 80` MOVED THIS GENE'S OWN BAND TO TURN 19
+    ///
+    /// `rapid_city_expansion::band_turn` is `turn_limit() *
+    /// EXPANSION_BAND_SHARE`, and that share is **0.24**. At the screen's normal
+    /// 250 turns the band lands on turn 60, which is the measured opening band.
+    /// At the `--turns 80` the probe used it lands on **turn 19** — so
+    /// `pipeline_width` returned `None` for turns 19 to 80 and the caller's
+    /// `unwrap_or(1)` held the pipeline at a single walker for the whole window
+    /// the probe then measured. The probe shortened the game and the gene
+    /// dutifully shortened its opening to match.
+    ///
+    /// Re-run at `--turns 250`, same shape, 60 games, 180 seats:
+    ///
+    /// ```text
+    ///     column                    on      off     diff       z
+    ///     cities_at_game_turn_60  2.918   2.867   +0.050   +0.42
+    ///     cities (final)          7.649   8.892   -1.242   -2.75
+    ///     score_share             0.204   0.212   -0.008   -0.70
+    ///     win                     0.082   0.108   -0.026   -0.59
+    /// ```
+    ///
+    /// **The opening cost is gone**: +0.05 against the claimed −0.27. What is
+    /// left is a −1.24 on final cities at z −2.75, which is one column of seven
+    /// at a bar that seven comparisons put near 2.7, and which **neither share
+    /// nor win follows** (z −0.70 and −0.59). That is the shape of a mechanism
+    /// moving without an outcome, and `docs/SURROGATE_ENDPOINT.md` is the
+    /// standing reason not to bank it. The gene keeps shipping on.
+    ///
+    /// ## ⚠⚠ AND THE METHOD LESSON IS BIGGER THAN THE GENE
+    ///
+    /// `--turns N` does not truncate a game, it **rescales the agent**. There
+    /// are 46 call sites of `Game::turn_limit()` and 54 of `standard_duration`
+    /// across the AI: deadlines, bands, cadences and lane windows are all
+    /// expressed as a share of the game's length. Shorten the game and every one
+    /// of them moves.
+    ///
+    /// ⭐ It is not always fatal — the deployment-shape opening reads 2.59 at
+    /// both 80 and 250 turns, because there the binding constraint is land and
+    /// production rather than any schedule. But **no gene-level question may be
+    /// answered on a shortened game**, and a probe that was cheap because it was
+    /// short is not cheap if it answers a different question.
     pub(crate) rapid_city_expansion_2: bool,
     /// `capital-settler-after-completion`: once the capital is population two
     /// and has no queued work, start a legal Settler instead of letting the
@@ -7365,14 +7435,13 @@ impl BasicAi {
     /// one-hex dead end can consume the whole war.  The coordinated mover may
     /// make one exception for an A* route after this becomes true, because the
     /// route can need to cross an already-visited square before it exits the
-    /// pocket.  Keeping that exception behind `recorded_tactical_step` leaves
-    /// every native controller on its historical movement path.
+    /// pocket.  The exception is independent of the live movement recorder:
+    /// the motion ledger is also populated by the ordinary turn-based path,
+    /// and the route escape still applies its own legality and danger checks.
     pub(crate) fn live_livelock_route_escape(&self, uid: u32) -> bool {
-        self.recorded_tactical_step
-            && self
-                .unit_motion
-                .get(&uid)
-                .is_some_and(|motion| motion.looping)
+        self.unit_motion
+            .get(&uid)
+            .is_some_and(|motion| motion.looping)
     }
 
     /// Whether a plain pathing step should be refused because it walks back
@@ -15658,12 +15727,15 @@ impl BasicAi {
                         // Same goal from the same tile as last turn: one more
                         // turn of proof the order went nowhere.
                         Some(entry) if entry.0 == target && entry.1 == upos => {
-                            entry.2 += 1;
+                            if g.turn > entry.3 {
+                                entry.2 += 1;
+                                entry.3 = g.turn;
+                            }
                             entry.2
                         }
                         // A new goal, or the unit did move: start counting.
                         _ => {
-                            last.insert(uid, (target, upos, 0));
+                            last.insert(uid, (target, upos, 0, g.turn));
                             0
                         }
                     }
@@ -18141,6 +18213,19 @@ mod tests {
         );
         assert!(ai.retreads_a_loop(scout, ground[1]));
         assert!(!ai.retreads_a_loop(scout, ground[7]));
+    }
+
+    #[test]
+    fn a_proven_loop_can_use_the_coordinated_route_escape() {
+        let shuttle: Vec<usize> = (0..LIVELOCK_WINDOW + 2).map(|turn| turn % 2).collect();
+        let (ai, _g, _ground, scout) = observe_walk(&shuttle, None);
+
+        assert!(
+            !ai.recorded_tactical_step,
+            "the coordinated production path does not enable live movement recording"
+        );
+        assert!(ai.unit_motion[&scout].looping);
+        assert!(ai.live_livelock_route_escape(scout));
     }
 
     /// The host can move a Scout around an obstacle without ever taking the
@@ -28595,3 +28680,6 @@ mod recovery_project_tests;
 
 #[cfg(test)]
 mod opening_defense_tests;
+
+#[cfg(test)]
+mod exploration_replan_tests;
