@@ -2244,6 +2244,17 @@
           "culture-building-catchup-2": null
         }
       },
+      "culture-lane-forecast": {
+        "rule_on": [
+          "culture-lane-forecast"
+        ],
+        "head": null,
+        "ships": "culture-lane-forecast",
+        "versions": {
+          "culture-lane-forecast": null,
+          "culture-lane-forecast-2": null
+        }
+      },
       "diplomatic-lane-forecast": {
         "rule_on": [
           "diplomatic-lane-forecast"
