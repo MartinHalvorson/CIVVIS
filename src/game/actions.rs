@@ -914,7 +914,7 @@ impl Game {
                     {
                         acts.push(Action::BuyBuilding {
                             city: cid,
-                            building: Name::new(building),
+                            building: *building,
                             currency: "gold".to_string(),
                         });
                     }
@@ -946,7 +946,7 @@ impl Game {
                         {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
-                                district: Name::new(district),
+                                district: *district,
                                 pos: *pos,
                                 currency: "faith".to_string(),
                             });
@@ -956,7 +956,7 @@ impl Game {
                         {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
-                                district: Name::new(district),
+                                district: *district,
                                 pos: *pos,
                                 currency: "gold".to_string(),
                             });
@@ -984,7 +984,7 @@ impl Game {
                         {
                             acts.push(Action::Buy {
                                 city: cid,
-                                unit: Name::new(unit),
+                                unit: *unit,
                                 formation,
                                 currency: currency.to_string(),
                             });
@@ -1430,7 +1430,7 @@ impl Game {
                     {
                         acts.push(Action::BuyBuilding {
                             city: cid,
-                            building: Name::new(building),
+                            building: *building,
                             currency: "faith".to_string(),
                         });
                     }
