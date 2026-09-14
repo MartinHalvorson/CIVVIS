@@ -2308,6 +2308,7 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    Gene { tag: "culture-lane-forecast-2", field: "culture_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast_2, disable: AdvancedAi::disable_culture_lane_forecast_2 },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
