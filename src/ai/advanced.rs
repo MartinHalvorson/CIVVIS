@@ -4815,6 +4815,9 @@ pub struct AdvancedAi {
     builder_workforce_recovery: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
     builder_workforce_recovery_2: bool,
+    /// Count local repair jobs as well as new improvements when replacing
+    /// a lost Builder, retaining v2's three-job threshold.
+    builder_workforce_recovery_3: bool,
     /// `anvil`: the land group nearest a threatened city of ours holds it
     /// as a formation — a shooter on the centre, melee on the front tiles,
     /// the rest within two — instead of the relief hold point. Opt-in gene;
@@ -8110,6 +8113,7 @@ impl AdvancedAi {
             amani_follows_suzerainty: false,
             builder_workforce_recovery: false,
             builder_workforce_recovery_2: false,
+            builder_workforce_recovery_3: false,
             anvil: false,
             anvil_orders: BTreeMap::new(),
             anvil_orders_turn: None,
