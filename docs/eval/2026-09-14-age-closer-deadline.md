@@ -81,4 +81,34 @@ planned map, clock, Emperor difficulty, observed-player contract, native
 competitions and all seven target lanes. The running screen does not use the
 later source integration with main; completed evidence will be recorded here.
 
-The strength comparison is pending; deployment defaults remain unchanged.
+The family probe finished all twelve reserved games and 72 seats. The audit
+verified the complete seed window, six coherent seats per game, fixed
+non-screened baseline bits and mutually exclusive versions. The actual
+exposure was small because both versions start off by default:
+
+| Family level | Wins / seats | Win rate |
+| --- | ---: | ---: |
+| Off | 10 / 57 | 17.54% |
+| Version one | 2 / 10 | 20.00% |
+| Version two | 0 / 5 | 0.00% |
+
+V2 minus v1 was **−20.00 ±13.00 percentage points** on wins and
+**−0.38 ±2.32 points** on score share. Each ± value is one standard error
+clustered by game, not a confidence interval. V2 minus off was −17.54 points;
+the analyzer reports a 2.03-point standard error for that family contrast.
+That narrow value is fragile with only five v2 seats and zero v2 wins, and
+must not be read as a precise strength estimate. The artifact is retained
+unchanged, including its raw counts and reported uncertainty. Both win point
+estimates are unfavorable; no strength improvement has been established.
+The challenger remains off, and the original remains unchanged.
+
+The completed artifact is `docs/gene_screens/fires/age-closer-2.json`. The
+reserved thirty-six-game whole-registry comparison started on seeds
+914359000–914359035 from the same immutable, explicitly stamped binary. It is
+still running and has not been presented as a completed comparison or used
+to change defaults.
+
+After main integration at `2d6c21acc`, the complete local Rust suite passed
+3,729 tests, with 53 ignored including documentation examples. CI formatting
+and the paired native runtime-cost check also passed; the remaining CI hold
+was this now-completed screen artifact.
