@@ -21295,7 +21295,7 @@ impl Game {
         (city.pop.max(1) as i64 + 1) / 2
     }
 
-    /// `luxury_amenity_allocations` values every city in the empire, so asking
+    /// `luxury_amenity_allocations_uncached` values every city in the empire, so asking
     /// each of N cities for its Amenities cost N * N of these. Under a memo
     /// scope each city is valued once.
     pub fn city_local_amenities(&self, city: &City) -> i64 {
@@ -21574,17 +21574,19 @@ impl Game {
     /// Allocating luxuries is an empire-wide decision, but every caller wants
     /// one city's share of it. Deriving it per city was the single largest
     /// redundancy in the city layer.
-    fn luxury_amenity_allocations(&self, pid: usize) -> BTreeMap<u32, i64> {
+    fn city_luxury_amenities(&self, city: &City) -> i64 {
+        let pid = city.owner;
         if let Some(memo) = self.query_memo.lux_alloc.borrow().as_ref() {
             if let Some(value) = memo.get(&pid) {
-                return value.clone();
+                return value.get(&city.id).copied().unwrap_or(0);
             }
         }
         let value = self.luxury_amenity_allocations_uncached(pid);
+        let amenities = value.get(&city.id).copied().unwrap_or(0);
         if let Some(memo) = self.query_memo.lux_alloc.borrow_mut().as_mut() {
-            memo.insert(pid, value.clone());
+            memo.insert(pid, value);
         }
-        value
+        amenities
     }
 
     fn luxury_amenity_allocations_uncached(&self, pid: usize) -> BTreeMap<u32, i64> {
@@ -21593,17 +21595,7 @@ impl Game {
             .values()
             .filter(|city| city.owner == pid)
             .collect();
-        let mut allocations: BTreeMap<u32, i64> = cities.iter().map(|city| (city.id, 0)).collect();
-        let mut surplus: BTreeMap<u32, i64> = cities
-            .iter()
-            .map(|city| {
-                (
-                    city.id,
-                    self.city_local_amenities(city) - Self::city_amenities_required(city),
-                )
-            })
-            .collect();
-        let mut supplied_luxuries = Vec::new();
+        let mut reaches = Vec::new();
         for luxury in self.empire_luxury_names(pid) {
             if self.congress_effect_active("luxury_policy", "B", &luxury) {
                 continue;
@@ -21613,9 +21605,6 @@ impl Game {
             } else {
                 1_usize
             };
-            supplied_luxuries.extend(std::iter::repeat_n(luxury, copies));
-        }
-        for luxury in supplied_luxuries {
             // Cinnamon and Cloves each provide six Amenities. The Aztec
             // ability independently raises every ordinary Luxury to the same
             // six-city reach.
@@ -21626,9 +21615,31 @@ impl Game {
             } else {
                 4
             };
-            let mut neediest: Vec<u32> = cities.iter().map(|city| city.id).collect();
+            reaches.extend(std::iter::repeat_n(reach, copies));
+        }
+        // If every luxury reaches every city (including no luxuries at all),
+        // need cannot affect the answer. Avoid valuing the whole empire just
+        // to discover that every city receives the same supply.
+        if reaches.iter().all(|reach| *reach >= cities.len()) {
+            return cities
+                .iter()
+                .map(|city| (city.id, reaches.len() as i64))
+                .collect();
+        }
+        let mut allocations: BTreeMap<u32, i64> = cities.iter().map(|city| (city.id, 0)).collect();
+        let mut surplus: BTreeMap<u32, i64> = cities
+            .iter()
+            .map(|city| {
+                (
+                    city.id,
+                    self.city_local_amenities(city) - Self::city_amenities_required(city),
+                )
+            })
+            .collect();
+        let mut neediest: Vec<u32> = cities.iter().map(|city| city.id).collect();
+        for reach in reaches {
             neediest.sort_by_key(|cid| (surplus[cid], *cid));
-            for cid in neediest.into_iter().take(reach) {
+            for cid in neediest.iter().copied().take(reach) {
                 *allocations.get_mut(&cid).unwrap() += 1;
                 *surplus.get_mut(&cid).unwrap() += 1;
             }
@@ -21648,11 +21659,7 @@ impl Game {
     /// The surplus below reads through here, so the correction is applied
     /// exactly once.
     pub fn city_amenities(&self, city: &City) -> i64 {
-        let luxury = self
-            .luxury_amenity_allocations(city.owner)
-            .get(&city.id)
-            .copied()
-            .unwrap_or(0);
+        let luxury = self.city_luxury_amenities(city);
         self.city_local_amenities(city)
             + luxury
             + self
@@ -35923,3 +35930,6 @@ mod building_activity_cache_tests;
 
 #[cfg(test)]
 mod attack_reach_flood_tests;
+
+#[cfg(test)]
+mod luxury_allocation_tests;

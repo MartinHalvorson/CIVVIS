@@ -817,10 +817,10 @@ fn zanzibar_luxuries_each_supply_six_cities() {
             .expect("map has room for the Zanzibar allocation test");
         game.found_city_for(0, position, None);
     }
-    let before: i64 = game.luxury_amenity_allocations(0).values().sum();
+    let before: i64 = game.luxury_amenity_allocations_uncached(0).values().sum();
     let zanzibar = add_city_state(&mut game, "Zanzibar");
     make_suzerain(&mut game, 0, zanzibar);
-    let after: i64 = game.luxury_amenity_allocations(0).values().sum();
+    let after: i64 = game.luxury_amenity_allocations_uncached(0).values().sum();
     assert_eq!(
         after - before,
         12,
