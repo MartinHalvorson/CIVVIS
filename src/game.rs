@@ -475,6 +475,9 @@ mod growth;
 mod route_avoidance;
 
 #[cfg(test)]
+mod city_transfer_unit_removal_tests;
+
+#[cfg(test)]
 mod housing_source_tests;
 
 #[cfg(test)]
@@ -34800,8 +34803,13 @@ impl Game {
         }
         for position in evacuation_positions {
             for oid in self.units_at(position) {
-                if self.units[&oid].owner == old {
-                    if matches!(self.units[&oid].kind.as_str(), "builder" | "settler") {
+                // Removing a carrier also removes aircraft whose IDs can still
+                // be in this evacuation snapshot.
+                let Some(unit) = self.units.get(&oid) else {
+                    continue;
+                };
+                if unit.owner == old {
+                    if matches!(unit.kind.as_str(), "builder" | "settler") {
                         self.transfer_unit_owner(oid, new_owner);
                     } else {
                         self.remove_unit(oid);
