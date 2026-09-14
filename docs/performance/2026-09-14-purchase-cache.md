@@ -33,8 +33,8 @@ action order and compare memoized quotes against fresh derivations for every
 unit, formation, currency, and fixture city. They also check query-scope expiry,
 direct occupancy changes, queue reservations, and host purchase refusals.
 
-The full locked CI-profile Rust suite passes on the measured prototype: 3,462
-library tests, 49 ignored, plus binary, integration, protocol, and documentation
-targets. Final validation after integration is recorded in the PR. Raw logs are
+After integrating main `1873ae903`, the full locked CI-profile Rust suite passes:
+3,470 library tests, 49 ignored, plus binary, integration, protocol, and
+documentation targets. Raw logs are
 retained as `0913-purchase-cache-ab-120.log` and `0913-purchase-cache-ab-250.log`
 in the local run directory.
