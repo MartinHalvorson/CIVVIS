@@ -10,8 +10,9 @@ existing order and behavior after that gate.
 
 ## Validation
 
-The full locked CI-profile Rust suite passes: 3,464 library tests, 49 ignored,
-plus binary, integration, protocol, and documentation targets. The new movement
+After merging main `210c7973c`, the full locked CI-profile Rust suite passes:
+3,470 library tests, 49 ignored, plus binary, integration, protocol, and
+documentation targets. The new movement
 matrix checks all 16 traversal classes against every stock improvement, pillaged
 and intact, on plains, mountains, coast, ocean, ice, and the mirror's unknown
 terrain with both frontier priors. A second test checks that ordinary improved
