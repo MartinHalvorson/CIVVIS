@@ -139,11 +139,20 @@ consistency check and the evaluation-manifest check. The broad local tooling
 run was stopped after unrelated macOS launcher tests invoked GUI scripts and
 timed out; the isolated GitHub tooling job supplies the full tooling gate.
 
-Final revision validation passed 3,720 tests with zero failures (53 ignored),
+Implementation revision `b8a832f6f9cd` passed 3,720 tests with zero failures (53 ignored),
 including all 25 portfolio tests. The game-screen tool passed all 71 tests
 and built successfully for the clean smoke run above. Exact commands:
 
 ```sh
 cargo test --profile ci --locked -- --test-threads=4
 cargo test --profile ci --locked --features developer-tools --bin gene_screen
+```
+
+The later merge of `71d411257` resolved an appended-registry conflict and
+regenerated evaluation documentation. The combined source passed the command
+below, plus all 14 append-point and seven documentation-command tests. CI
+checks the full combined tree independently.
+
+```sh
+cargo check --profile ci --locked --features developer-tools --lib --bins
 ```
