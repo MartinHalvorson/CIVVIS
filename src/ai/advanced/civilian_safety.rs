@@ -196,6 +196,33 @@ impl BarbarianReach {
 }
 
 impl AdvancedAi {
+    /// V3 revises the family's bounded forecast when its entire area is in
+    /// current sight and the unit has not been re-observed there. This is a
+    /// risk estimate, not an exhaustive path search: the family retains its
+    /// existing one-hex uncertainty growth per elapsed turn. Do not interpret
+    /// a simulated mid-turn kill as a fresh observation, or a visible tile as
+    /// proof that a unit capable of camouflage is absent.
+    pub(super) fn forget_cleared_hostile_sightings(
+        &mut self,
+        g: &Game,
+        visible: &crate::world::TileBits,
+    ) {
+        self.hostile_last_seen.retain(|_, record| {
+            let elapsed = g.turn.saturating_sub(record.when);
+            if elapsed == 0 {
+                return true;
+            }
+            let spec = &g.rules.units[record.kind];
+            if matches!(spec.promotion_class.as_str(), "recon" | "naval_raider") {
+                return true;
+            }
+            let radius = (spec.moves.ceil() as i32 + elapsed as i32).max(1);
+            g.wdisk(record.pos, radius)
+                .into_iter()
+                .any(|pos| !g.sees(visible, pos))
+        });
+    }
+
     /// Keep a safe land escort out of a known fleet's reach while chasing its
     /// settler. The ordinary follow step is tried on isolated state so this
     /// covers its actual choice, including risk-aware routing and fallback.
@@ -208,7 +235,7 @@ impl AdvancedAi {
     ) -> Option<bool> {
         let unit = g.units.get(&uid)?;
         let current = unit.pos;
-        if !self.hostile_memory_2
+        if !(self.hostile_memory_2 || self.hostile_memory_3)
             || matches!(
                 g.rules.units[unit.kind].domain.as_deref(),
                 Some("sea" | "air")
@@ -347,8 +374,10 @@ impl AdvancedAi {
         // answer. The live host has proved that the same capture rule applies
         // to any visible owner at war with the seat, even when no Barbarian
         // player is present in the mirrored unit table.
-        let current_frame_includes_all_hostiles =
-            self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons;
+        let current_frame_includes_all_hostiles = self.hostile_memory
+            || self.hostile_memory_2
+            || self.hostile_memory_3
+            || self.live_settler_capture_lessons;
         let uses_memory = current_frame_includes_all_hostiles;
         let visible = self.battlefront_visibility(g, pid);
         let in_scope = |owner: usize| {
@@ -451,6 +480,22 @@ impl AdvancedAi {
 
         let mut current_keys = BTreeSet::new();
         for unit in g.units.values() {
+            if !self.hostile_memory_3 && !in_scope(unit.owner) {
+                continue;
+            }
+            let seen_now = g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid);
+            // V3 gives the native hidden roster the same treatment as the
+            // live visible-only export: unseen units are represented solely
+            // by their records in the second pass. Their current owner,
+            // kind and movement bonuses are not observations.
+            if self.hostile_memory_3 && !seen_now {
+                continue;
+            }
+            if self.hostile_memory_3 {
+                // A visible identity supersedes its old record even when
+                // its current owner is no longer hostile.
+                current_keys.insert(super::hostile_memory_key(g, unit));
+            }
             if !in_scope(unit.owner) {
                 continue;
             }
@@ -458,7 +503,6 @@ impl AdvancedAi {
             if uses_memory {
                 current_keys.insert(key);
             }
-            let seen_now = g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid);
             // Off, only a unit in sight this turn counts and the memory is
             // never written, so `seen_now` is the whole gate and `from` is the
             // unit's own tile — byte for byte what shipped.
