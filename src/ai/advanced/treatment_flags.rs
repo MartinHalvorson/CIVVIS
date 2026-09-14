@@ -1728,10 +1728,21 @@ impl AdvancedAi {
     /// housing is throttling growth.
     pub fn enable_housing_research(&mut self) {
         self.housing_research = true;
+        self.housing_research_2 = false;
     }
 
     pub fn disable_housing_research(&mut self) {
         self.housing_research = false;
+    }
+
+    /// Research housing that the capped cities can actually build.
+    pub fn enable_housing_research_2(&mut self) {
+        self.housing_research = false;
+        self.housing_research_2 = true;
+    }
+
+    pub fn disable_housing_research_2(&mut self) {
+        self.housing_research_2 = false;
     }
 
     /// Rank loyalty emergencies by turns until the city flips rather than by
@@ -3440,6 +3451,7 @@ impl AdvancedAi {
     /// one ahead of the argmax. See `AdvancedAi::first_granary_reserve`.
     pub fn enable_first_granary_reserve(&mut self) {
         self.first_granary_reserve = true;
+        self.first_granary_reserve_2 = false;
     }
 
     /// The twin of `enable_first_granary_reserve`.
@@ -3447,11 +3459,21 @@ impl AdvancedAi {
         self.first_granary_reserve = false;
     }
 
+    pub fn enable_first_granary_reserve_2(&mut self) {
+        self.first_granary_reserve = false;
+        self.first_granary_reserve_2 = true;
+    }
+
+    pub fn disable_first_granary_reserve_2(&mut self) {
+        self.first_granary_reserve_2 = false;
+    }
+
     /// Research the cheapest technology that connects an owned, unimproved
     /// luxury (Irrigation, Sailing) ahead of the lane's beeline, once the
     /// opening techs are in. See `AdvancedAi::unconnected_luxury_tech`.
     pub fn enable_connect_the_luxury(&mut self) {
         self.connect_the_luxury = true;
+        self.connect_the_luxury_2 = false;
     }
 
     /// The twin of `enable_connect_the_luxury`.

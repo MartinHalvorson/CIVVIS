@@ -471,6 +471,7 @@ pub mod quests;
 
 mod actions;
 mod city;
+mod growth;
 mod route_avoidance;
 
 #[cfg(test)]
@@ -33304,38 +33305,11 @@ impl Game {
                     &self.rules.projects[project]
                 )
         );
-        let mut growth_bonus = self.empire_building_sum(pid, |b| b.growth_pct);
-        growth_bonus += self.empire_wonder_effect(pid, "empire_growth_pct");
-        growth_bonus += self.governor_effect(pid, cid, "growth_pct");
-        if self.on_foreign_continent(pid, self.cities[&cid].pos) {
-            growth_bonus += self.policy_effect(pid, "foreign_continent_growth_pct");
-        }
-        growth_bonus += self.pantheon_effect(pid, "growth_pct");
-        if self.grants_city_state_unique_bonus(pid, "Mitla")
-            && self.city_has_active_district_family(&self.cities[&cid], crate::name!("campus"))
-        {
-            growth_bonus += 15.0;
-        }
-        growth_bonus += self
-            .city_resource_industry_effects(&self.cities[&cid])
-            .growth_pct;
-        if self.congress_effect_active("migration_treaty", "A", &pid.to_string()) {
-            growth_bonus += 20.0;
-        } else if self.congress_effect_active("migration_treaty", "B", &pid.to_string()) {
-            growth_bonus -= 20.0;
-        }
+        let surplus = self.city_growth_surplus(pid, cid, ys.food, housing, am);
         let mut grew = false;
         let mut grew_to: Option<i64> = None;
         {
             let city = self.cities.get_mut(&cid).unwrap();
-            let mut surplus = ys.food - 2.0 * city.pop as f64;
-            if surplus > 0.0 {
-                let headroom = housing - city.pop as f64;
-                let hf = Self::housing_growth_mult(headroom);
-                let af = Self::amenity_growth_mult(am);
-                let lf = Self::loyalty_growth_mult(city.loyalty);
-                surplus *= hf * af * lf * (1.0 + growth_bonus / 100.0);
-            }
             city.food += surplus;
             let need = self.game_speed.scale(growth_threshold(city.pop));
             if city.food >= need {
