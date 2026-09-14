@@ -82,8 +82,10 @@ explicit `score_only_with_weights` factory remains an economic control.
 
 The screen seat row includes `victory_portfolio`: current objectives, phase,
 forecasts, switch counts and a bounded trace. The trace records observed
-cities, yields, military, banks and victory milestones, not claimed successful
-expenditure. A disabled seat records the legacy focus rather than reporting
+cities, yields, military, banks and victory milestones. Queue production rates
+are classified by primary, secondary, other and idle allocation, with Settler
+and Builder production identified separately. These are observed allocations
+before orders, not claimed successful expenditure. A disabled seat records the legacy focus rather than reporting
 counterfactual decisions as its actual decisions.
 
 Live order replies expose the same snapshot in

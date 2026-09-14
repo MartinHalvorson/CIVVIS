@@ -47,8 +47,11 @@ def _contrast(rows):
     if len(influence) > 1:
         variance = sum(value * value for value in influence.values())
         se = math.sqrt(variance * len(influence) / (len(influence) - 1)) * 100
-        result["cluster_se_pp"] = se
-        result["interval_95_pp"] = [delta * 100 - 1.96 * se, delta * 100 + 1.96 * se]
+        # With constant outcomes the plug-in variance is zero even in a
+        # tiny sample. Absence of observed variation is not exact certainty.
+        if se > 0:
+            result["cluster_se_pp"] = se
+            result["interval_95_pp"] = [delta * 100 - 1.96 * se, delta * 100 + 1.96 * se]
     return result
 
 
@@ -57,6 +60,8 @@ def _diagnostics(rows):
     commitment, switches, completed_errors = [], [], []
     late_cities, trace_points, dropped = [], 0, 0
     bottlenecks = defaultdict(int)
+    late_allocation_shares = defaultdict(list)
+    last_observed = defaultdict(list)
     for row in measured:
         portfolio = row["victory_portfolio"]
         if portfolio.get("first_commitment_turn") is not None:
@@ -67,6 +72,20 @@ def _diagnostics(rows):
         trace_points += len(trace)
         dropped += portfolio.get("dropped_trace_points", 0)
         if trace:
+            for key in ("science", "culture", "military", "gold", "faith",
+                        "science_projects", "visitors", "diplomatic_points", "capitals"):
+                if trace[-1].get(key) is not None:
+                    last_observed[key].append(trace[-1][key])
+            # One equally weighted final developed snapshot per seat; frequent
+            # posture switches must not give a seat more statistical weight.
+            developed = [point for point in trace if point.get("phase") in ("buildup", "finish")
+                         and isinstance(point.get("production_allocation"), dict)]
+            if developed:
+                allocation = developed[-1]["production_allocation"]
+                total = sum(allocation.get(key, 0) for key in ("primary", "secondary", "other", "idle"))
+                if total > 0:
+                    for key in ("primary", "secondary", "other", "idle", "settlers_and_builders"):
+                        late_allocation_shares[key].append(allocation.get(key, 0) / total)
             if trace[-1].get("cities") is not None:
                 late_cities.append(trace[-1]["cities"])
             if trace[-1].get("bottleneck"):
@@ -89,6 +108,9 @@ def _diagnostics(rows):
         "trace_points": trace_points,
         "dropped_trace_points": dropped,
         "last_bottlenecks": dict(sorted(bottlenecks.items())),
+        "last_observed_means": {key: _mean(values) for key, values in sorted(last_observed.items())},
+        "last_developed_allocation_shares": {key: _mean(values) for key, values in sorted(late_allocation_shares.items())},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
         "realized_same_lane_forecasts": len(completed_errors),
         "realized_finish_error_turns_mean": _mean(completed_errors),
         "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error",

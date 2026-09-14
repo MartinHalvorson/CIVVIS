@@ -34988,10 +34988,7 @@ impl AdvancedAi {
         // of the level that shares science, priced by what that level is
         // worth. Zero off. See `advanced/research_alliance.rs`.
         value += self.research_alliance_route_premium(g, pid, city.owner);
-        let objective = self
-            .victory_target
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.decision_objective(strategy);
         value += self.culture_route_bonus(g, pid, city.owner, objective);
 
         value
@@ -35139,9 +35136,7 @@ impl AdvancedAi {
             let objective = if g.has_ability(pid, "taxis") {
                 GrandStrategy::Conquest
             } else {
-                self.victory_target
-                    .map(VictoryTarget::strategy)
-                    .unwrap_or(GrandStrategy::Religion)
+                self.decision_objective(GrandStrategy::Religion)
             };
             let evangelize = legal
                 .iter()

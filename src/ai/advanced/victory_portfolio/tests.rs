@@ -1,6 +1,5 @@
 use super::*;
-use crate::ai::Ai;
-use crate::game::{Action, GameOptions};
+use crate::game::GameOptions;
 use std::sync::Arc;
 
 fn world() -> Game {
@@ -280,7 +279,7 @@ fn disabled_victories_are_removed_on_the_next_review() {
     ai.enable_victory_portfolio();
     ai.maintain_victory_portfolio(&g, 0);
     g.victory_conditions.science = false;
-    g.turn += g.standard_duration(REVIEW_STANDARD_TURNS);
+    // Configuration changes invalidate even a same-turn review.
     ai.maintain_victory_portfolio(&g, 0);
     assert_ne!(ai.portfolio.report.primary, Some(VictoryTarget::Science));
     assert!(ai
@@ -471,17 +470,86 @@ fn treatment_changes_a_real_legal_research_choice() {
     let mut g = world();
     g.turn = 150;
     g.world_era = 4;
-    let mut ai = driving(VictoryTarget::Culture, None);
-    ai.plan = Some(plan(GrandStrategy::Expansion));
+    // Two legal frontier technologies; the existing Science posture picks
+    // Rocketry, while a durable Culture primary must pick Printing.
+    g.players[0].techs = g
+        .rules
+        .techs
+        .keys()
+        .copied()
+        .filter(|tech| !matches!(tech.as_str(), "printing" | "rocketry"))
+        .collect();
     g.players[0].research = None;
-    ai.advanced_research(&mut g, 0, &plan(GrandStrategy::Expansion));
-    let choice = g.players[0].research.clone().unwrap();
-    assert!(g.rules.techs.contains_key(choice.as_str()));
-    assert!(
-        ai.tech_leads_to(&g, &choice, "printing")
-            || ai.tech_leads_to(&g, &choice, "computers")
-            || g.rules.techs[choice.as_str()].era <= 1,
-        "survival and finite opening opportunities may precede tourism"
+    let posture = plan(GrandStrategy::Science);
+    let mut control_game = g.clone();
+    let mut control = AdvancedAi::new();
+    control.plan = Some(posture.clone());
+    control.advanced_research(&mut control_game, 0, &posture);
+    assert_eq!(
+        control_game.players[0].research.as_deref(),
+        Some("rocketry")
     );
-    let _ = (Action::EndTurn, ai.plan_report());
+
+    let mut treatment = driving(VictoryTarget::Culture, None);
+    treatment.plan = Some(posture.clone());
+    treatment.advanced_research(&mut g, 0, &posture);
+    assert_eq!(g.players[0].research.as_deref(), Some("printing"));
+}
+
+#[test]
+fn an_installed_compatible_finish_can_be_kept_as_a_secondary() {
+    let mut g = world();
+    g.turn = 170;
+    expedition(&mut g, 0, 30.0);
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(0)
+        .or_default()
+        .foreign_tourists = Some(90);
+    for pid in 1..3 {
+        Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(pid)
+            .or_default()
+            .domestic_tourists = Some(100);
+    }
+    Arc::make_mut(&mut g.observed_tourism_per_turn).insert(0, 3000.0);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_victory_portfolio();
+    ai.maintain_victory_portfolio(&g, 0);
+    assert_eq!(ai.portfolio.report.primary, Some(VictoryTarget::Science));
+    assert_eq!(ai.portfolio.report.secondary, Some(VictoryTarget::Culture));
+}
+
+#[test]
+fn telemetry_observes_queue_allocation_and_marks_late_growth() {
+    let mut g = world();
+    g.turn = 150;
+    let cid = g.player_city_ids(0)[0];
+    let mut ai = driving(VictoryTarget::Science, Some(VictoryTarget::Culture));
+    g.cities.get_mut(&cid).unwrap().queue = vec![Item::Building {
+        building: crate::name!("library"),
+    }];
+    ai.record_portfolio_trace(&g, 0, &plan(GrandStrategy::Science));
+    let allocation = ai.portfolio.report.trace[0]
+        .production_allocation
+        .as_ref()
+        .unwrap();
+    assert!(allocation.primary > 0.0);
+    assert_eq!(allocation.other, 0.0);
+    g.turn += g.standard_duration(25);
+    g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("settler"),
+    }];
+    ai.record_portfolio_trace(&g, 0, &plan(GrandStrategy::Science));
+    let allocation = ai
+        .portfolio
+        .report
+        .trace
+        .last()
+        .unwrap()
+        .production_allocation
+        .as_ref()
+        .unwrap();
+    assert!(allocation.settlers_and_builders > 0.0);
+    assert_eq!(allocation.settlers_and_builders, allocation.other);
+    assert_eq!(allocation.primary, 0.0);
 }

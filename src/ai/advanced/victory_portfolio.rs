@@ -113,6 +113,20 @@ pub struct PortfolioTrace {
     pub visitors: i64,
     pub diplomatic_points: i64,
     pub capitals: usize,
+    /// Observed queue allocation at this snapshot, before issuing orders.
+    /// Rates are unmodified city production, not realized expenditure.
+    #[serde(default)]
+    pub production_allocation: Option<ProductionAllocation>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ProductionAllocation {
+    pub primary: f64,
+    pub secondary: f64,
+    pub other: f64,
+    pub idle: f64,
+    /// A subset of `other`, kept separately to expose late expansion spending.
+    pub settlers_and_builders: f64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -1132,6 +1146,30 @@ impl AdvancedAi {
             .iter()
             .find(|forecast| Some(forecast.target) == report.primary);
         let yields = empire_yields(g, pid);
+        let mut allocation = ProductionAllocation::default();
+        for cid in g.player_city_ids(pid) {
+            let production = g.city_yields(cid).production.max(0.0);
+            let Some(item) = g.cities[&cid].queue.first() else {
+                allocation.idle += production;
+                continue;
+            };
+            if report
+                .primary
+                .is_some_and(|target| Self::item_lane_affinity(g, item, target) > 0.0)
+            {
+                allocation.primary += production;
+            } else if report
+                .secondary
+                .is_some_and(|target| Self::item_lane_affinity(g, item, target) > 0.0)
+            {
+                allocation.secondary += production;
+            } else {
+                allocation.other += production;
+                if matches!(item, Item::Unit { unit } if unit == "settler" || unit == "builder") {
+                    allocation.settlers_and_builders += production;
+                }
+            }
+        }
         let point = PortfolioTrace {
             turn: g.turn,
             posture: plan.strategy.as_str().into(),
@@ -1151,6 +1189,7 @@ impl AdvancedAi {
             science_projects: g.players[pid].science_projects.len(),
             visitors: g.foreign_tourists(pid),
             diplomatic_points: g.players[pid].dvp,
+            production_allocation: Some(allocation),
             capitals: g
                 .cities
                 .values()

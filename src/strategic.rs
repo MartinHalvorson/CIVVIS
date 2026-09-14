@@ -6,7 +6,9 @@
 //! by a real margin — macro search applied to victory routing. Positions blend
 //! a compatible value net when `evolved/valuenet.json` exists and otherwise use
 //! score share. No value net ships with CIVVIS, so the latter is the normal
-//! checkout. Public victory threats interrupt the periodic search before they
+//! checkout. Credible near-term finish forecasts then blend that economic
+//! value toward the projected race outcome. Public victory threats interrupt
+//! the periodic search before they
 //! can end the game, while irreversible Prophet investment and duel victory
 //! geometry supply
 //! priors that a short economic rollout cannot discover in time. The learned
