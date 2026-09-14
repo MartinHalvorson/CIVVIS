@@ -207,6 +207,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |
+| `threatened-city-reserve-2` | off (unmeasured) | V2 reserves the engine's local quote for an available defender in the threatened city. | 1 \| 2 |
 | `tourism-land-reservation` | off (unmeasured) | Enable `tourism-land-reservation` for measurement. | 1 \| 1 |
 | `trade-growth-to-district` | off (unmeasured) | Price route food by the next population-gated district slot. | 1 \| 1 |
 | `trade-production-to-launch` | off (unmeasured) | Price route production by time saved on an active space project. | 1 \| 1 |
