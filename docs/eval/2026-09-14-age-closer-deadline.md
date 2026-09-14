@@ -63,14 +63,22 @@ rules, deadline and speed boundaries, reserves, host refusal, source-state
 preservation and choice between an ordinary purchase and a verified closer.
 They include the actual player observation contract. The generated gene
 metadata and fourteen append-point tests also passed. CI identified formatting
-in the modified purchase hook; that formatting is corrected before replay.
+in the modified purchase hook; that formatting is corrected before the first screen.
 
 Before any age-closer games start, this branch imports the engine ownership
 repair from PR #3578. An earlier government probe exposed a missing owning
 city panic in the shared Builder improvement query. The repair rejects that
 stale handle and has two passing regression tests. No age-closer games have
-been discarded or replaced. The first age-closer screen will use a clean
-build containing the repair, with the original seed windows and sample sizes.
-The source fingerprint and completed evidence will be recorded here.
+been discarded or replaced. The first age-closer screen started from clean, pushed source
+`9d35d6c6271878ca2937294574a15bfd1898a796`, with the original seed windows
+and sample sizes. All twelve age-closer cases and both Builder ownership
+cases passed on that combined source, and the changed-line formatting and
+Clippy gate passed. The completed binary was copied to an immutable path
+and its SHA-256 verified before launch:
+`25decfc8d2e0c04a491adde335b77eb3e003c61ed008e7868e226c22b58dd128`.
+Each phase explicitly stamps that verified revision. The header confirms the
+planned map, clock, Emperor difficulty, observed-player contract, native
+competitions and all seven target lanes. The running screen does not use the
+later source integration with main; completed evidence will be recorded here.
 
 The strength comparison is pending; deployment defaults remain unchanged.

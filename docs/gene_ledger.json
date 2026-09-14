@@ -2235,6 +2235,17 @@
           "coastal-city-sites-2": null
         }
       },
+      "connect-the-luxury": {
+        "rule_on": [
+          "connect-the-luxury"
+        ],
+        "head": null,
+        "ships": "connect-the-luxury",
+        "versions": {
+          "connect-the-luxury": null,
+          "connect-the-luxury-2": null
+        }
+      },
       "conversion-majority-alarm": {
         "rule_on": [],
         "head": null,
@@ -2389,7 +2400,8 @@
         "ships": null,
         "versions": {
           "hostile-memory": null,
-          "hostile-memory-2": null
+          "hostile-memory-2": null,
+          "hostile-memory-3": null
         }
       },
       "missionary-last-charge-explores": {
