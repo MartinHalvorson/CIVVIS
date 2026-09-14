@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `boost-planner-builds` | off (unmeasured) | `boost-planner-builds`: the boost planner serves `building:` triggers. | 1 \| 1 |
 | `boosted-bargain-first-3` | off (unmeasured) | `boosted-bargain-first-3`: a one-turn boosted technology may interrupt a peaceful lane beeline that is not about to land its target; the other versions stand down. | 2 \| 3 |
 | `builder-charge-window` | off (unmeasured) | Slot Serfdom while a queued Builder is close to completion. | 1 \| 1 |
+| `builder-workforce-recovery-3` | off (unmeasured) | Count local repair jobs as well as new improvements when replacing a lost Builder, retaining v2's three-job threshold. | 2 \| 3 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
 | `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
