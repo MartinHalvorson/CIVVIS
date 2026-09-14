@@ -42,9 +42,13 @@ rate. Retain and report all three family levels, including adverse results.
 cargo test --profile ci --locked
 cargo build --profile ci --locked --features developer-tools --bin gene_screen
 target/ci/gene_screen --genes first-granary-reserve,first-granary-reserve-2 \
-  --games 12 --target-games 12 --start-seed 914371000 --jobs 2 \
+  --games 12 --target-games 12 --start-seed 914371000 --jobs 4 \
   --difficulty emperor --out <run-dir>/granary-reach.jsonl
 ```
+
+The initial recipe specified two workers. Before any game started, scheduling
+changed to four workers on this busy host; the twelve games, seed window and
+controller stayed fixed. The frozen sample started at 13:04:15 UTC.
 
 Separately compare frozen original and candidate ordinary simulator binaries
 on four matched seeds, 914372000–914372003, 120 turns, at the standard map
@@ -60,4 +64,37 @@ before an owed Library. The existing original Granary test must still pass.
 
 ## Results
 
-Pending execution. This is an unpromoted candidate.
+The independently randomized family sample is still running. This is an
+unpromoted candidate.
+
+### Shared growth exactness
+
+The four fixed pairs completed at 13:16:27 UTC with exit code zero and the
+same game report on every seed. Both arms completed all 480 turns. The
+baseline was clean source `2e972f414cf48c25bff8b290091ba986653de0d9`, whose
+Housing candidate is disabled in the ordinary controller; the candidate was
+clean source `c931228e3e87c7fdc484b67166253431e3896e09`, before its later merge
+from main. The binaries were frozen before either run:
+
+- Baseline SHA-256:
+  `2c7d0719112fe63b0956957e8d72a218d5b950d2d9d7a1144c515dcea4152f5d`.
+- Candidate SHA-256:
+  `7386778b6eb06fd19ec18dcdf465cb732feacb5443ef93fb4c04d098c6286d33`.
+
+The median CPU difference was -0.29% per turn, pooled -0.01%, with an IQR of
+2.96 percentage points and an estimated resolution of ±2.20%. Host load
+ranged from 137.37 at the start to a peak of 198.10. These timings do not
+establish a performance improvement. Report equality supports unchanged
+engine play on these four games, not a strength claim for the new gene.
+
+### Local checks
+
+All six focused Granary tests and both shared-growth tests passed. The
+library suite passed 3,491 tests with 49 ignored. That executable predates
+only module ordering and closure formatting, with no semantic difference.
+A redundant full local Cargo run was interrupted under host contention after
+the library pass; it is not recorded as a full-suite pass. CI on merged
+source `69ce6a4a3` passed the Rust suite, documentation examples, tournament
+and provenance regressions, lint/formatting and paired cost checks. Its
+remaining failure was the then-missing V2 firing artifact; later CI steps
+still need to pass after the completed artifact is committed.
