@@ -138,3 +138,9 @@ tests, 17 gene-reach tests, the zero-unproven-genes ratchet, the gene-ledger
 consistency check and the evaluation-manifest check. The broad local tooling
 run was stopped after unrelated macOS launcher tests invoked GUI scripts and
 timed out; the isolated GitHub tooling job supplies the full tooling gate.
+
+Final revision validation: `cargo test --profile ci --locked --
+--test-threads=4` passed 3,720 tests with zero failures (53 ignored), including
+all 25 portfolio tests. `cargo test --profile ci --locked --features
+developer-tools --bin gene_screen` passed all 71 tests. The latter binary also
+built successfully for the clean smoke run above.
