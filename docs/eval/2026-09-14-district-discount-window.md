@@ -59,7 +59,50 @@ completes and compares its locked price with a clone that waits to place it.
 A preregistered six-game smoke probe uses seeds 914358000–914358005 and
 `--genes lock-expiring-district-discount --difficulty emperor`: six majors,
 74x46 Continents, nine city-states, Online speed, all victory conditions,
-250-turn clock. The probe is an execution check and is excluded from the
+250-turn clock. Majors use Emperor; barbarians retain the harness's independent
+Deity setting. The probe is an execution check and is excluded from the
 promotion ledger. It is not sized to establish a win-rate improvement.
 
-Results will be recorded after execution.
+The clean source revision is `b6b63343e6023764969439432245da38cfb60c40`.
+The binary's SHA-256 is
+`eb1c2a34cc73472285b61c0d9a55ac47232f475caa67a80f77b9c819d7a19d5b`;
+both are recorded in the raw header. The binary was built using
+`cargo build --profile ci --locked --features developer-tools --bin gene_screen`.
+
+```sh
+CIVVIS_COMMIT=b6b63343e6023764969439432245da38cfb60c40 \
+  target/ci/gene_screen --genes lock-expiring-district-discount \
+  --games 6 --start-seed 914358000 --jobs 3 --difficulty emperor \
+  --out /Users/martbot/civvis-runs/2026-09-14-district-discount-window/rows.jsonl
+target/ci/gene_screen \
+  --analyze /Users/martbot/civvis-runs/2026-09-14-district-discount-window/rows.jsonl \
+  --json docs/gene_screens/fires/2026-09-14-district-discount-window.json
+```
+
+## Completed result
+
+All six preregistered games and 36 seats completed without a simulation error.
+Nine seats had the gene on and 27 had it off; there were four Science endings,
+one Culture ending and one Score ending. The analyzer artifact is
+[`2026-09-14-district-discount-window.json`](../gene_screens/fires/2026-09-14-district-discount-window.json).
+
+| Outcome | On minus off | Approximate 95% interval |
+| --- | ---: | ---: |
+| Win rate | -7.41 percentage points | -34.56 to +19.75 |
+| Score share | -1.09 percentage points | -4.66 to +2.48 |
+
+These intervals use the analyzer's standard errors and span zero. The sample
+provides no basis to claim stronger play, promote the gene, or tune its
+thresholds. No compute-cost estimate is available from this small run.
+
+The firing-evidence gate accepts the committed artifact. Its nonzero independent
+seat contrast is not direct instrumentation of the heuristic firing. The
+controlled production-menu and normal-turn price-lock tests establish the
+specific causal behavior; the six games establish execution compatibility.
+
+Final local validation: `cargo test --profile ci --locked` passed 3,741 tests
+(with 53 existing ignored tests), including all seven new tests. The Python
+registry, append-point, manifest and firing suites ran 237 tests with one existing
+skip. Registry generation, evaluation manifest, deployment-cost, firing-evidence,
+Rust formatting and diff-whitespace checks passed. No game rules or deployment
+defaults changed.
