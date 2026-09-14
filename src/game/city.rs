@@ -3397,6 +3397,7 @@ impl Game {
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.housed_works.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.housed_pieces.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
