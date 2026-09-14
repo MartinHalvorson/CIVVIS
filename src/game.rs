@@ -1319,7 +1319,9 @@ struct MonopolyContext {
 /// what guarantees the cache cannot go stale. Nothing can reach a `&mut Game`
 /// while one of those entries is live.
 type GreatWorksByCity = BTreeMap<u32, BTreeMap<String, usize>>;
-type HousedWorksByPlayer = BTreeMap<usize, GreatWorksByCity>;
+type HousedWorksByPlayer = BTreeMap<usize, Arc<GreatWorksByCity>>;
+type GreatWorkPiecesByCity = BTreeMap<u32, Vec<GreatWorkPiece>>;
+type HousedPiecesByPlayer = BTreeMap<usize, Arc<GreatWorkPiecesByCity>>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
@@ -1396,12 +1398,13 @@ pub struct QueryCache {
     // cached planning steps.
     unit_territory_access: std::cell::RefCell<Option<BTreeMap<u32, Arc<Vec<bool>>>>>,
     city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
-    // Three empire-wide derivations that callers reach for one city at a
+    // Four empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
     // computed over, not the scope it is read at.
     lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
     lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<Name>>>>,
     housed_works: std::cell::RefCell<Option<HousedWorksByPlayer>>,
+    housed_pieces: std::cell::RefCell<Option<HousedPiecesByPlayer>>,
     // A city-state's patron, which is a poll of every major's effective envoy
     // count. Deciding whether a step crosses a hostile border asks it, so a
     // route search asks it of the same city-state at every tile it considers.
@@ -1633,6 +1636,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
             *self.game.query_memo.housed_works.borrow_mut() = None;
+            *self.game.query_memo.housed_pieces.borrow_mut() = None;
             *self.game.query_memo.suzerain.borrow_mut() = None;
             *self.game.query_memo.gw_slots.borrow_mut() = None;
             *self.game.query_memo.gw_housing.borrow_mut() = None;
@@ -13122,7 +13126,8 @@ impl Game {
     fn steal_great_work(&mut self, attacker: usize, defender: usize, cid: u32) {
         let works = self
             .housed_great_works(defender)
-            .remove(&cid)
+            .get(&cid)
+            .cloned()
             .unwrap_or_default();
         let kind = ["writing", "art", "religious_art", "artifact", "music"]
             .into_iter()
@@ -31301,15 +31306,17 @@ impl Game {
 
     /// Housing Great Works assigns them across every city the player owns, and
     /// `city_yields` runs the whole assignment to read one city's entry.
-    pub(crate) fn housed_great_works(&self, pid: usize) -> BTreeMap<u32, BTreeMap<String, usize>> {
+    /// Share the ordered allocation within a query instead of copying it for
+    /// each city. An escaped snapshot stays immutable after the query ends.
+    pub(crate) fn housed_great_works(&self, pid: usize) -> Arc<GreatWorksByCity> {
         if let Some(memo) = self.query_memo.housed_works.borrow().as_ref() {
             if let Some(value) = memo.get(&pid) {
-                return value.clone();
+                return Arc::clone(value);
             }
         }
-        let value = self.housed_great_works_uncached(pid);
+        let value = Arc::new(self.housed_great_works_uncached(pid));
         if let Some(memo) = self.query_memo.housed_works.borrow_mut().as_mut() {
-            memo.insert(pid, value.clone());
+            memo.insert(pid, Arc::clone(&value));
         }
         value
     }
@@ -31382,8 +31389,8 @@ impl Game {
         }
 
         let mut relic_tourism = 0.0;
-        for (city_id, works) in self.housed_great_works(pid) {
-            let city = &self.cities[&city_id];
+        for (city_id, works) in self.housed_great_works(pid).iter() {
+            let city = &self.cities[city_id];
             let mut value = works.get("relic").copied().unwrap_or(0) as f64
                 * self.great_work_tourism(pid, "relic");
             if city
@@ -32541,7 +32548,20 @@ impl Game {
     /// The pieces each city houses: the counted distribution decides how
     /// many works of each kind a city holds, and the player's pieces fill
     /// those holdings in creation order.
-    fn housed_great_work_pieces(&self, pid: usize) -> BTreeMap<u32, Vec<GreatWorkPiece>> {
+    fn housed_great_work_pieces(&self, pid: usize) -> Arc<GreatWorkPiecesByCity> {
+        if let Some(memo) = self.query_memo.housed_pieces.borrow().as_ref() {
+            if let Some(value) = memo.get(&pid) {
+                return Arc::clone(value);
+            }
+        }
+        let value = Arc::new(self.housed_great_work_pieces_uncached(pid));
+        if let Some(memo) = self.query_memo.housed_pieces.borrow_mut().as_mut() {
+            memo.insert(pid, Arc::clone(&value));
+        }
+        value
+    }
+
+    fn housed_great_work_pieces_uncached(&self, pid: usize) -> GreatWorkPiecesByCity {
         let housed = self.housed_great_works(pid);
         let mut by_kind: BTreeMap<&str, Vec<&GreatWorkPiece>> = BTreeMap::new();
         for piece in &self.players[pid].great_work_pieces {
@@ -32549,7 +32569,7 @@ impl Game {
         }
         let mut cursors: BTreeMap<String, usize> = BTreeMap::new();
         let mut out: BTreeMap<u32, Vec<GreatWorkPiece>> = BTreeMap::new();
-        for (city, kinds) in &housed {
+        for (city, kinds) in housed.iter() {
             let entry = out.entry(*city).or_default();
             for (kind, count) in kinds {
                 let cursor = cursors.entry(kind.clone()).or_insert(0);
@@ -34553,7 +34573,8 @@ impl Game {
         }
         let captured_works = self
             .housed_great_works(old)
-            .remove(&cid)
+            .get(&cid)
+            .cloned()
             .unwrap_or_default();
         let evacuation_positions: BTreeSet<Pos> = std::iter::once(self.cities[&cid].pos)
             .chain(

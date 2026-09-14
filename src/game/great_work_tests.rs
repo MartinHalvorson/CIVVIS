@@ -12,6 +12,80 @@ fn game_with_capital(seed: u64) -> (Game, u32) {
     (game, city)
 }
 
+fn game_with_work_collection(seed: u64) -> (Game, u32) {
+    let (mut game, city) = game_with_capital(seed);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("archaeological_museum"));
+    game.grant_great_work(0, "artifact", 1, "first dig");
+    game.grant_great_work(0, "relic", 0, "shrine");
+    game.grant_great_work(0, "artifact", 2, "second dig");
+    (game, city)
+}
+
+#[test]
+fn great_work_queries_share_ordered_allocations_within_one_scope() {
+    let (game, city) = game_with_work_collection(4_124);
+    let _memo = game.query_memo();
+    let counts = game.housed_great_works(0);
+    let pieces = game.housed_great_work_pieces(0);
+    assert_eq!(counts[&city].get("artifact"), Some(&2));
+    assert_eq!(*counts, game.housed_great_works_uncached(0));
+    assert_eq!(*pieces, game.housed_great_work_pieces_uncached(0));
+    assert_eq!(
+        pieces[&city]
+            .iter()
+            .map(|piece| (piece.creator.as_str(), piece.era))
+            .collect::<Vec<_>>(),
+        vec![("first dig", 1), ("second dig", 2), ("shrine", 0)],
+        "city and kind ordering must preserve creation order within each kind"
+    );
+    {
+        let _nested = game.query_memo();
+        assert!(Arc::ptr_eq(&counts, &game.housed_great_works(0)));
+        assert!(Arc::ptr_eq(&pieces, &game.housed_great_work_pieces(0)));
+    }
+    assert!(Arc::ptr_eq(&counts, &game.housed_great_works(0)));
+    assert!(Arc::ptr_eq(&pieces, &game.housed_great_work_pieces(0)));
+}
+
+#[test]
+fn retained_great_work_snapshots_do_not_hide_pillage_or_repair() {
+    let (mut game, city) = game_with_work_collection(4_125);
+    let (old_counts, old_pieces) = {
+        let _memo = game.query_memo();
+        (game.housed_great_works(0), game.housed_great_work_pieces(0))
+    };
+    assert!(game.query_memo.housed_works.borrow().is_none());
+    assert!(game.query_memo.housed_pieces.borrow().is_none());
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .pillaged_buildings
+        .insert(crate::name!("archaeological_museum"));
+    assert_eq!(game.housed_great_works(0)[&city].get("artifact"), None);
+    assert_eq!(game.housed_great_work_pieces(0)[&city].len(), 1);
+    assert!(game.query_memo.housed_works.borrow().is_none());
+    assert!(game.query_memo.housed_pieces.borrow().is_none());
+    assert_eq!(old_counts[&city].get("artifact"), Some(&2));
+    assert_eq!(old_pieces[&city].len(), 3);
+
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .pillaged_buildings
+        .remove(&crate::name!("archaeological_museum"));
+    let _memo = game.query_memo();
+    let repaired_counts = game.housed_great_works(0);
+    let repaired_pieces = game.housed_great_work_pieces(0);
+    assert_eq!(repaired_counts, old_counts);
+    assert_eq!(repaired_pieces, old_pieces);
+    assert!(!Arc::ptr_eq(&repaired_counts, &old_counts));
+    assert!(!Arc::ptr_eq(&repaired_pieces, &old_pieces));
+}
+
 #[test]
 fn great_works_obey_typed_and_universal_slots() {
     let (mut game, city) = game_with_capital(4_121);
