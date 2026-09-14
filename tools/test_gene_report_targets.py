@@ -64,6 +64,18 @@ class TargetReportTests(unittest.TestCase):
         self.assertEqual(diagnostics["realized_same_lane_forecasts"], 1)
         self.assertEqual(diagnostics["realized_finish_error_turns_mean"], 20)
 
+    def test_first_and_latest_forecast_errors_remain_distinct(self):
+        telemetry = {"trace": [
+            {"turn": 100, "primary": "science", "expected_finish": 180},
+            {"turn": 190, "primary": "science", "expected_finish": 205},
+            {"turn": 200, "primary": "science", "expected_finish": 200},
+        ]}
+        rows = [self.row(1, 0, True, True, victory_portfolio=telemetry)]
+        diagnostics = self.report(rows)["targets"]["civvis"]["diagnostics"]
+        self.assertEqual(diagnostics["realized_finish_error_turns_mean"], 20)
+        self.assertEqual(diagnostics["realized_latest_finish_error_turns_mean"], -5)
+        self.assertEqual(diagnostics["realized_latest_finish_error_turns_mae"], 5)
+
     def test_allocation_uses_one_developed_snapshot_per_seat(self):
         def point(primary, growth):
             return dict(phase="finish", production_allocation=dict(

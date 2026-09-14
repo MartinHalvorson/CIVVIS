@@ -95,6 +95,8 @@
         "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
         "realized_same_lane_forecasts": 2,
         "realized_finish_error_turns_mean": 0.0,
+        "realized_latest_finish_error_turns_mean": 0.0,
+        "realized_latest_finish_error_turns_mae": 0.0,
         "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
       },
       "gene_contrast": {
@@ -143,6 +145,8 @@
           "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
           "realized_same_lane_forecasts": 2,
           "realized_finish_error_turns_mean": 0.0,
+          "realized_latest_finish_error_turns_mean": 0.0,
+          "realized_latest_finish_error_turns_mae": 0.0,
           "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
         },
         "off": {
@@ -175,6 +179,8 @@
           "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
           "realized_same_lane_forecasts": 0,
           "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
           "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
         }
       }

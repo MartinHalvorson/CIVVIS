@@ -112,16 +112,65 @@ Missing targets remain unknown; missing telemetry remains missing. Finish
 error is reported only for realized same-lane wins, with losing games treated
 as censored rather than assigned the opponent's finish turn.
 
-Validation and game results are recorded here after the commands complete.
+## Completed comparisons
 
-Predeclared reach and behavior comparisons: twelve games with the ordinary
-mixed target distribution, seeds 914356900–914356911, and twelve games with
-all measured seats adaptive, seeds 914357900–914357911. Both use the standard
-six-major 74×46 Continents, nine-city-state, Online 250-turn Emperor profile,
-the deployment-genome background, and `--genes victory-portfolio --p-on 0.5`.
-The second batch changes target coverage and is reported separately. These
-small independent-seat batches establish reach and expose regressions; neither
-alone authorizes a deployment promotion.
+Both predeclared batches completed all twelve games and all 72 intended seats:
+the ordinary mixed targets, seeds 914356900–914356911, and all-adaptive targets,
+seeds 914357900–914357911. Both used six majors, 74×46 Continents, nine
+city-states, Online 250 turns, Emperor, the deployment-genome background and
+`--genes victory-portfolio --p-on 0.5`. They are independent-seat experiments;
+uncertainty is clustered by game. These small batches do not justify changing
+the deployment selection.
+
+| Target distribution | On wins/seats | Off wins/seats | Win difference | Approximate 95% interval |
+| --- | ---: | ---: | ---: | ---: |
+| Ordinary mix | 7/41 | 5/31 | +0.9 pp | −17.3 to +19.2 pp |
+| All adaptive | 7/37 | 5/35 | +4.6 pp | −10.9 to +20.2 pp |
+
+The target report preserves every preassigned cohort separately. In particular,
+the mixed batch's eight adaptive seats had a **−26.7 pp** contrast (three on,
+five off; interval −83.7 to +30.4 pp), illustrating why neither this tiny
+subgroup nor the all-adaptive field establishes an improvement. The mixed
+batch ended eight times by Science, twice by Culture, once by Religion and
+once by Score; the all-adaptive batch ended by Science in all twelve games.
+It therefore supplies no adaptive win evidence for the other five endings.
+
+In the all-adaptive batch, the recorded commitment median was turn **88 on
+versus 125 off**, and mean primary changes were **1.30 versus 7.69**. These are
+descriptive diagnostics: commitment medians omit seats without a recorded
+commitment, and primary-change counts include provisional Foundation choices.
+They show the intended timing and persistence behavior without establishing a
+causal relationship between those diagnostics and wins.
+
+Calibration remains a limitation. Across the seven treated Science winners,
+the first recorded same-lane forecast overshot the realized finish by 292.1
+turns on average; the latest recorded forecast before the win overshot by
+24.2 turns (also its mean absolute error). The report now preserves both
+horizons rather than treating a long-range capacity estimate as a last-minute
+prediction. The continuation model omits future economic growth and unbuilt
+accelerators; its clocks and confidence values must not be sold as calibrated
+finish predictions or win probabilities. Larger preregistered comparisons and
+forecast calibration are needed before promoting this policy.
+
+Reports:
+
+- [Mixed screen](gene_screens/fires/2026-09-14-victory-portfolio-mixed.json)
+  and [preassigned-target breakdown](gene_screens/fires/2026-09-14-victory-portfolio-mixed-targets.json).
+- [Adaptive screen](gene_screens/fires/2026-09-14-victory-portfolio-adaptive.json)
+  and [target diagnostics](gene_screens/fires/2026-09-14-victory-portfolio-adaptive-targets.json).
+
+Both batches used the archived binary built from checkpoint
+`95095e0e7a6369e0127b86450eafd9a4d6f59577`, SHA-256
+`2f87933f501ebf31586812788a41f31bbee8c8c72f88a3998edb0aefad547467`.
+Their headers conservatively mark the source tree dirty at launch: the
+registry marker/comment ordering had been corrected after that clean binary
+build. The original stamps are preserved. These are prototype reach and
+behavior checks, not ledger-eligible sources or strength estimates for the
+later integration fixes. They predate queue-allocation telemetry, which stays
+missing in their reports; the clean smoke below exercises that addition.
+Source paths, SHA-256 hashes, intended sample sizes and build metadata are
+retained in the target reports. The games evaluated AdvancedAi's portfolio;
+StrategicAi's endpoint change is covered by Rust tests, not this comparison.
 
 A subsequent two-game smoke check used source `b8a832f6f9cd`, seeds
 914358900–914358901, three majors on 40×28, no city-states, Online 100-turn
@@ -133,7 +182,7 @@ and the adjacent `-targets.json`. This shortened, nonstandard profile proves
 execution and serialization; its five-on/one-off outcome contrast is not a
 strength estimate or a deployment-selection source.
 
-Focused tooling checks passed: 11 target-report tests, 14 registry append-point
+Focused tooling checks passed: 12 target-report tests, 14 registry append-point
 tests, 17 gene-reach tests, the zero-unproven-genes ratchet, the gene-ledger
 consistency check and the evaluation-manifest check. The broad local tooling
 run was stopped after unrelated macOS launcher tests invoked GUI scripts and

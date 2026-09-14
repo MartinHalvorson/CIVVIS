@@ -57,7 +57,7 @@ def _contrast(rows):
 
 def _diagnostics(rows):
     measured = [r for r in rows if isinstance(r.get("victory_portfolio"), dict)]
-    commitment, switches, completed_errors = [], [], []
+    commitment, switches, completed_errors, latest_errors = [], [], [], []
     late_cities, trace_points, dropped = [], 0, 0
     bottlenecks = defaultdict(int)
     late_allocation_shares = defaultdict(list)
@@ -99,6 +99,7 @@ def _diagnostics(rows):
                            and point["turn"] < row["turn"]]
             if predictions:
                 completed_errors.append(row["turn"] - predictions[0]["expected_finish"])
+                latest_errors.append(row["turn"] - predictions[-1]["expected_finish"])
     return {
         "measured_seats": len(measured),
         "missing_seats": len(rows) - len(measured),
@@ -113,6 +114,8 @@ def _diagnostics(rows):
         "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
         "realized_same_lane_forecasts": len(completed_errors),
         "realized_finish_error_turns_mean": _mean(completed_errors),
+        "realized_latest_finish_error_turns_mean": _mean(latest_errors),
+        "realized_latest_finish_error_turns_mae": _mean([abs(error) for error in latest_errors]),
         "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error",
     }
 
