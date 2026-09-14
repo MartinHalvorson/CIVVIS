@@ -2319,6 +2319,11 @@ pub const GENES: &[Gene] = &[
     // V2 reserves housing only when construction plus growth brings the next
     // citizen materially earlier within a bounded investment window.
     Gene { tag: "first-granary-reserve-2", field: "first_granary_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_2, disable: AdvancedAi::disable_first_granary_reserve_2 },
+    // Persistent primary/secondary objectives, feasibility clocks and phased
+    // investment. Independently measured; no deployment promotion is assumed.
+    Gene { tag: "victory-portfolio", field: "victory_portfolio", kind: Kind::OptIn, enable: AdvancedAi::enable_victory_portfolio, disable: AdvancedAi::disable_victory_portfolio },
+    // The treasury successor retains the reserve and puts the first Builder by local work.
+    Gene { tag: "treasury-at-work-2-2", field: "treasury_at_work_2_2", kind: Kind::OptIn, enable: AdvancedAi::enable_treasury_at_work_2_2, disable: AdvancedAi::disable_treasury_at_work_2_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

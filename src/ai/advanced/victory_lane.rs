@@ -209,6 +209,9 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> GrandStrategy {
+        if self.victory_portfolio {
+            return self.portfolio_objective(plan.strategy);
+        }
         if !self.lane_great_people || plan.strategy == GrandStrategy::Recovery {
             return plan.strategy;
         }
@@ -228,6 +231,9 @@ impl AdvancedAi {
 
     /// `lane-policy-deck`: the lane the policy cards are chosen for.
     pub(super) fn policy_lane(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> GrandStrategy {
+        if self.victory_portfolio {
+            return self.portfolio_objective(plan.strategy);
+        }
         self.lane_or_plan(self.lane_policy_deck, g, pid, plan)
     }
 
@@ -302,6 +308,10 @@ impl AdvancedAi {
     }
 
     pub(super) fn culture_lane_spends(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        if self.victory_portfolio {
+            return plan.strategy != GrandStrategy::Recovery
+                && self.portfolio_supports(VictoryTarget::Culture);
+        }
         let culture_focus = self.victory_focus(g, pid).strategy == GrandStrategy::Culture;
         // Recovery keeps its reserve unless complete host menus confirm that
         // the named Culture seat cannot spend Faith on any other unit.
@@ -340,13 +350,22 @@ impl AdvancedAi {
     /// `victory_focus` is Science is treated as a Science seat by all three,
     /// and the pass itself opens for it — `Recovery` still refuses outright.
     pub(super) fn space_race_lane(&self, g: &Game, pid: usize) -> bool {
+        if self.victory_portfolio {
+            return self.portfolio_specializing() == Some(true)
+                && self.portfolio_target() == Some(VictoryTarget::Science);
+        }
         self.lane_space_race && self.victory_focus(g, pid).strategy == GrandStrategy::Science
     }
 
     /// The dispatcher's half of `lane-space-race`: run the pass for a Science
     /// racer whose plan has not named the lane, short of a Recovery posture.
     pub(super) fn space_race_lane_opens(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
-        plan.strategy != GrandStrategy::Recovery && self.space_race_lane(g, pid)
+        plan.strategy != GrandStrategy::Recovery
+            && (self.space_race_lane(g, pid)
+                || (self.portfolio_supports(VictoryTarget::Science)
+                    && g.player_city_ids(pid)
+                        .iter()
+                        .any(|cid| Self::city_has_spaceport(g, *cid))))
     }
 
     /// `competition-victory-points`: what the Diplomatic Victory Points a

@@ -267,6 +267,9 @@ impl AdvancedAi {
     /// Spaceports); every other read of an assigned lane, the objective
     /// resolutions included, keeps reading `victory_target`.
     pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
+        if self.victory_portfolio && self.portfolio_specializing() == Some(true) {
+            return self.portfolio_target();
+        }
         self.victory_target.or_else(|| {
             self.science_drive_active()
                 .then_some(VictoryTarget::Science)
@@ -365,6 +368,12 @@ impl AdvancedAi {
     /// no-op while the gene is off (the state is cleared). Called once a
     /// turn from `take_turn_inner`, before the plan is assessed.
     pub(super) fn maintain_science_drive(&mut self, g: &Game, pid: usize) {
+        if self.portfolio_specializing().is_some()
+            && self.portfolio_target() != Some(VictoryTarget::Science)
+        {
+            self.science_drive = None;
+            return;
+        }
         if !self.science_drive_enabled() || !g.victory_conditions.science {
             self.science_drive = None;
             return;
@@ -380,10 +389,13 @@ impl AdvancedAi {
         let review = g.standard_duration(SCIENCE_DRIVE_REVIEW).max(1);
         let start = Self::science_drive_start(g);
         let launch_committed = self.adaptive_science_launch_committed(g, pid);
+        let portfolio_science = self.portfolio_specializing() == Some(true)
+            && self.portfolio_target() == Some(VictoryTarget::Science);
         let due = match self.science_drive {
             Some(drive) => g.turn.saturating_sub(drive.reviewed) >= review,
             None => {
                 assigned
+                    || portfolio_science
                     || launch_committed
                     || (g.turn >= start && (g.turn - start).is_multiple_of(review))
             }
@@ -394,6 +406,7 @@ impl AdvancedAi {
         let standing = Self::science_standing(g, pid);
         let adaptive_science_plan = self.adaptive_science_plan(g, pid);
         let driving = assigned
+            || portfolio_science
             || adaptive_science_plan
             || match self.science_drive {
                 Some(_) if self.science_victory_drive_2 => standing.holds_v2(),
