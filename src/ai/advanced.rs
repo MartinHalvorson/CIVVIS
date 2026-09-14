@@ -5805,6 +5805,9 @@ pub struct AdvancedAi {
     hostile_memory: bool,
     /// Version two also protects land escorts from embarking into known naval reach.
     hostile_memory_2: bool,
+    /// Version three retires old sightings contradicted by a fully visible
+    /// forecast area and never refreshes a hidden unit from the native roster.
+    hostile_memory_3: bool,
     /// Where each in-scope military unit was last seen, and the facts needed
     /// to project its capture reach after the visible-only host export drops
     /// it. The key is the stable Civ 6 id when the live mirror provides one;
@@ -8250,6 +8253,7 @@ impl AdvancedAi {
             guard_breaks_the_pin: false,
             hostile_memory: false,
             hostile_memory_2: false,
+            hostile_memory_3: false,
             hostile_last_seen: BTreeMap::new(),
             gold_income_floor: false,
             government_ladder_2: false,
@@ -8408,7 +8412,11 @@ impl AdvancedAi {
         // use the same bounded memory for barbarian sightings, while the
         // opt-in `hostile-memory` gene additionally widens the owner scope on
         // native/evaluator boards.
-        if self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons {
+        if self.hostile_memory
+            || self.hostile_memory_2
+            || self.hostile_memory_3
+            || self.live_settler_capture_lessons
+        {
             self.remember_visible_hostiles(g, pid);
         }
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
@@ -8489,6 +8497,9 @@ impl AdvancedAi {
                     kind: unit.kind,
                 },
             );
+        }
+        if self.hostile_memory_3 {
+            self.forget_cleared_hostile_sightings(g, &visible);
         }
     }
 
@@ -41583,6 +41594,9 @@ mod settlement_ownership_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod hostile_memory_tests;
 
 mod amphibious_staging;
 

@@ -200,6 +200,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-siege-research` | off (unmeasured) | Unlock the first land siege capability for a walled Conquest objective. | 1 \| 1 |
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
+| `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `research-building-catchup-3` | off (unmeasured) | Credit the yield and completion time of queued catch-up investments. | 1 \| 3 |
