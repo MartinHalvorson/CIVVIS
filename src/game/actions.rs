@@ -244,7 +244,7 @@ impl Game {
             {
                 purchases.push(Action::BuyBuilding {
                     city: cid,
-                    building: Name::new(building),
+                    building: *building,
                     currency: "gold".to_string(),
                 });
             }
@@ -275,7 +275,7 @@ impl Game {
                 {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
-                        district: Name::new(district),
+                        district: *district,
                         pos: *pos,
                         currency: "faith".to_string(),
                     });
@@ -285,7 +285,7 @@ impl Game {
                 {
                     purchases.push(Action::BuyDistrict {
                         city: cid,
-                        district: Name::new(district),
+                        district: *district,
                         pos: *pos,
                         currency: "gold".to_string(),
                     });
@@ -306,7 +306,7 @@ impl Game {
                     if cost.is_some_and(|cost| bank + f64::EPSILON >= cost) {
                         purchases.push(Action::Buy {
                             city: cid,
-                            unit: Name::new(unit),
+                            unit: *unit,
                             formation,
                             currency: currency.to_string(),
                         });
@@ -339,7 +339,7 @@ impl Game {
                 {
                     empire.push(Action::BuyBuilding {
                         city: cid,
-                        building: Name::new(building),
+                        building: *building,
                         currency: "faith".to_string(),
                     });
                 }
@@ -914,7 +914,7 @@ impl Game {
                     {
                         acts.push(Action::BuyBuilding {
                             city: cid,
-                            building: Name::new(building),
+                            building: *building,
                             currency: "gold".to_string(),
                         });
                     }
@@ -946,7 +946,7 @@ impl Game {
                         {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
-                                district: Name::new(district),
+                                district: *district,
                                 pos: *pos,
                                 currency: "faith".to_string(),
                             });
@@ -956,7 +956,7 @@ impl Game {
                         {
                             acts.push(Action::BuyDistrict {
                                 city: cid,
-                                district: Name::new(district),
+                                district: *district,
                                 pos: *pos,
                                 currency: "gold".to_string(),
                             });
@@ -984,7 +984,7 @@ impl Game {
                         {
                             acts.push(Action::Buy {
                                 city: cid,
-                                unit: Name::new(unit),
+                                unit: *unit,
                                 formation,
                                 currency: currency.to_string(),
                             });
@@ -1430,7 +1430,7 @@ impl Game {
                     {
                         acts.push(Action::BuyBuilding {
                             city: cid,
-                            building: Name::new(building),
+                            building: *building,
                             currency: "faith".to_string(),
                         });
                     }
@@ -6062,7 +6062,14 @@ impl Game {
             // caller asks for.
             _ => return None,
         };
-        let key = (pid, cid, Name::new(unit), formation, currency_is_gold);
+        // Rules already own the canonical name. Avoid the global interner lock
+        // on every quote, retaining the existing key behavior for unknown units.
+        let unit_name = self
+            .rules
+            .units
+            .get_key_value(unit)
+            .map_or_else(|| Name::new(unit), |(name, _)| *name);
+        let key = (pid, cid, unit_name, formation, currency_is_gold);
         if let Some(memo) = self.query_memo.purchase_price.borrow().as_ref() {
             if let Some(cached) = memo.get(&key) {
                 return *cached;
@@ -6086,7 +6093,7 @@ impl Game {
     ) -> Option<f64> {
         let player = self.players.get(pid)?;
         let city = self.cities.get(&cid).filter(|city| city.owner == pid)?;
-        let spec = self.rules.units.get(unit)?;
+        let (unit_name, spec) = self.rules.units.get_key_value(unit)?;
         if unit == "spy" || formation > 2 || !matches!(currency, "gold" | "faith") {
             return None;
         }
@@ -6094,9 +6101,7 @@ impl Game {
         // prices (`StateCity::purchasable`). Corps and Army purchases are not
         // exported and keep the model's arithmetic below.
         if formation == 0 {
-            let plain = Item::Unit {
-                unit: Name::new(unit),
-            };
+            let plain = Item::Unit { unit: *unit_name };
             if let Some(host) = self.host_purchase_price(cid, &plain, currency) {
                 return host.filter(|_| !self.purchase_is_blocked(cid, &plain));
             }
@@ -6152,12 +6157,10 @@ impl Game {
             }
         } else {
             let item = if formation == 0 {
-                Item::Unit {
-                    unit: Name::new(unit),
-                }
+                Item::Unit { unit: *unit_name }
             } else {
                 Item::Formation {
-                    unit: Name::new(unit),
+                    unit: *unit_name,
                     formation,
                 }
             };
@@ -6246,9 +6249,7 @@ impl Game {
         } else if naturalist {
             (self.naturalist_purchase_cost(pid), 1.0)
         } else {
-            let item = Item::Unit {
-                unit: Name::new(unit),
-            };
+            let item = Item::Unit { unit: *unit_name };
             (
                 self.item_cost_for(pid, &item),
                 if currency == "gold" { 4.0 } else { 2.0 },
@@ -6614,7 +6615,11 @@ impl Game {
         currency: &str,
     ) -> Result<(Item, Name), Option<f64>> {
         let item = Item::Building {
-            building: Name::new(building),
+            building: self
+                .rules
+                .buildings
+                .get_key_value(building)
+                .map_or_else(|| Name::new(building), |(name, _)| *name),
         };
         // ★ The host's own answer first. When the export carried this city's
         // purchase menu (`StateCity::purchasable`) the price is the engine's

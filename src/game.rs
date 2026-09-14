@@ -12430,19 +12430,14 @@ impl Game {
     /// Sum global abilities from every researched technology and civic.
     pub fn tree_effect(&self, pid: usize, effect: &str) -> f64 {
         let player = &self.players[pid];
-        let researched = self
-            .rules
-            .tech_effects
-            .get(effect)
+        let sources = self.rules.tree_effects.get(effect);
+        let researched = sources
             .into_iter()
-            .flatten()
+            .flat_map(|sources| sources.techs.iter())
             .filter(|(node, _)| player.techs.contains(node));
-        let adopted = self
-            .rules
-            .civic_effects
-            .get(effect)
+        let adopted = sources
             .into_iter()
-            .flatten()
+            .flat_map(|sources| sources.civics.iter())
             .filter(|(node, _)| player.civics.contains(node));
         // Node lists are in tree order, so this adds the same values in the
         // same sequence as walking the player's own trees did.
