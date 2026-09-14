@@ -9,7 +9,11 @@ victories remain fixed contracts; `--victory civvis` chooses adaptively.
 The behavior is independently screenable through the ordinary gene registry.
 The existing ledger continues to select deployment defaults. Implementation
 tests establish capability; a small reach probe cannot establish a win-rate
-improvement. Native and live adapters execute the same policy.
+improvement. Native and live adapters execute the same policy. The existing
+live experiment interface can seat it with `civvis_orders --victory civvis
+--with victory-portfolio` (or add `--civvis-victory civvis --civvis-with
+victory-portfolio` to a `civ6_play.py` launch). Supplying a named victory
+instead preserves that assignment while testing its investment policy.
 
 ## Forecasts and selection
 
@@ -118,3 +122,19 @@ the deployment-genome background, and `--genes victory-portfolio --p-on 0.5`.
 The second batch changes target coverage and is reported separately. These
 small independent-seat batches establish reach and expose regressions; neither
 alone authorizes a deployment promotion.
+
+A subsequent two-game smoke check used source `b8a832f6f9cd`, seeds
+914358900–914358901, three majors on 40×28, no city-states, Online 100-turn
+Emperor, all-adaptive targets and `--p-on 0.75`. Both games completed; all six
+seats recorded queue allocation, and five enabled seats exercised the new
+policy. Its clean build stamp and reports are in
+[`2026-09-14-victory-portfolio-smoke.json`](gene_screens/fires/2026-09-14-victory-portfolio-smoke.json)
+and the adjacent `-targets.json`. This shortened, nonstandard profile proves
+execution and serialization; its five-on/one-off outcome contrast is not a
+strength estimate or a deployment-selection source.
+
+Focused tooling checks passed: 11 target-report tests, 14 registry append-point
+tests, 17 gene-reach tests, the zero-unproven-genes ratchet, the gene-ledger
+consistency check and the evaluation-manifest check. The broad local tooling
+run was stopped after unrelated macOS launcher tests invoked GUI scripts and
+timed out; the isolated GitHub tooling job supplies the full tooling gate.

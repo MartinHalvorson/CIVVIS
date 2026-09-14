@@ -122,7 +122,8 @@ def analyze(paths, gene=None):
     for raw_path in paths:
         path = Path(raw_path)
         digest = hashlib.sha256()
-        genes, header, headers = [], {}, []
+        genes, headers = [], []
+        source_seats = 0
         with path.open("rb") as source:
             for line_number, raw in enumerate(source, 1):
                 digest.update(raw)
@@ -133,9 +134,11 @@ def analyze(paths, gene=None):
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise ValueError(f"{path}:{line_number}: invalid JSON") from exc
                 if row.get("kind") == "header":
-                    header = row
                     genes = row.get("genes", [])
-                    headers.append({key: row[key] for key in ("build", "profile", "target_mix", "player_contract") if key in row})
+                    # Retain the full design, intended sample and build stamp;
+                    # only omit bulky per-gene vectors from this summary.
+                    headers.append({key: value for key, value in row.items()
+                                    if key not in {"genes", "screened", "prior", "families"}})
                     continue
                 if row.get("kind") != "game":
                     continue
@@ -160,7 +163,9 @@ def analyze(paths, gene=None):
                         raise ValueError(f"{path}:{line_number}: missing gene assignment")
                     row["treatment"] = genome[index] == "1"
                 rows.append(row)
-        sources.append({"path": str(path), "sha256": digest.hexdigest(), "headers": headers})
+                source_seats += 1
+        sources.append({"path": str(path), "sha256": digest.hexdigest(),
+                        "measured_seats": source_seats, "headers": headers})
     if not rows:
         raise ValueError("no measured game seats")
     groups = defaultdict(list)
