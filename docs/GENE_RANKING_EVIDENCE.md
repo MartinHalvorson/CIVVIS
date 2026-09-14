@@ -202,6 +202,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
+| `lock-expiring-district-discount` | off (unmeasured) | Preserve a useful district discount before a near-complete unlock removes it. | 1 \| 1 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |

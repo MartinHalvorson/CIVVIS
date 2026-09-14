@@ -5895,6 +5895,8 @@ pub struct AdvancedAi {
     government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// Preserve a useful district discount before a near-complete unlock removes it.
+    lock_expiring_district_discount: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
     magnus_follows_settlers: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
@@ -7136,6 +7138,7 @@ use district_planning::DistrictPlanCache;
 /// its city-states and joint-war invitations before the declaration. Opt-in
 /// gene `coalition-before-war`; see `advanced/coalition.rs`.
 mod coalition;
+mod district_discount_window;
 use coalition::Coalition;
 
 /// Opt-in gene `enemy-of-my-enemy`: the neighbours' barbarian camps stand,
@@ -8269,6 +8272,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            lock_expiring_district_discount: false,
             magnus_follows_settlers: false,
             liang_follows_builders: false,
             modernize_before_spending: false,
@@ -26770,7 +26774,7 @@ impl AdvancedAi {
         counts: EmpireCounts,
     ) -> Vec<f64> {
         let _memo = g.query_memo();
-        items
+        let mut scores = items
             .iter()
             .map(|item| {
                 let value = self.production_value(g, pid, cid, item, plan, &counts);
@@ -26778,7 +26782,9 @@ impl AdvancedAi {
                 // the slotted deck makes cheap. Unchanged with the gene off.
                 self.card_boosted_value(g, pid, cid, item, value)
             })
-            .collect()
+            .collect::<Vec<_>>();
+        self.adjust_expiring_district_discounts(g, pid, cid, items, plan, &mut scores);
+        scores
     }
 
     /// Basil II's timing attack: bank Hippodrome production just short of

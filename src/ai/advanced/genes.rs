@@ -2316,6 +2316,7 @@ pub const GENES: &[Gene] = &[
     // Version two checks usable building and district unlocks in the capped
     // cities and counts the whole missing research path, including its boosts.
     Gene { tag: "housing-research-2", field: "housing_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_research_2, disable: AdvancedAi::disable_housing_research_2 },
+    Gene { tag: "lock-expiring-district-discount", field: "lock_expiring_district_discount", kind: Kind::OptIn, enable: AdvancedAi::enable_lock_expiring_district_discount, disable: AdvancedAi::disable_lock_expiring_district_discount },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

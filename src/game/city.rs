@@ -5991,7 +5991,7 @@ impl Game {
     /// Gathering Storm's district discount compares the number of completed
     /// specialty districts (B) with the number of unlocked district families
     /// (A), then discounts an underbuilt family T when C(T) < B / A.
-    pub(super) fn district_underbuilt_discount(
+    pub(crate) fn district_underbuilt_discount(
         &self,
         pid: usize,
         district: &str,
