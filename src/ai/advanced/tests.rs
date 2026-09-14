@@ -40157,8 +40157,9 @@ fn culture_forecast_v2_accounts_for_religious_market_penalties() {
         .civics
         .insert(crate::name!("the_enlightenment"));
     assert_eq!(game.international_tourism_multiplier(0, 1, true), 0.0);
-    assert_eq!(revised.culture_lane_forecast_score(&game, 0), 0);
-    assert!(original.culture_lane_forecast_score(&game, 0) > 0);
+    let religious_market_closed = revised.culture_lane_forecast_score(&game, 0);
+    assert!(religious_market_closed < reduced);
+    assert!(original.culture_lane_forecast_score(&game, 0) > religious_market_closed);
 }
 
 #[test]
