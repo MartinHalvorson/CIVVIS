@@ -130,6 +130,78 @@ fn neighbor_fast_path_matches_the_generic_entry_gate_on_both_world_shapes() {
 
 // ---------------------------------------------------------------- T1, T2, T3
 
+#[test]
+fn passage_overrides_terrain_but_preserves_domains_and_frontier_priors() {
+    let (mut g, pos, _) = plain_board(6_107);
+    Arc::make_mut(&mut g.rules).enable_unknown_terrain();
+    let _memo = g.query_memo();
+    let mut tile = g.map.tiles[&pos].clone();
+    for flags in 0..16 {
+        let class = TraversalClass {
+            sea: flags & 1 != 0,
+            embark: flags & 2 != 0,
+            ocean: flags & 4 != 0,
+            mountain: flags & 8 != 0,
+        };
+        for (name, spec) in &g.rules.improvements {
+            tile.improvement = Some(*name);
+            for pillaged in [false, true] {
+                tile.pillaged = pillaged;
+                let passage =
+                    !pillaged && spec.effects.get("passage").copied().unwrap_or(0.0) > 0.0;
+                for (terrain, feature, expected) in [
+                    ("plains", None, !class.sea),
+                    ("mountain", None, !class.sea && (class.mountain || passage)),
+                    ("coast", None, class.sea || class.embark),
+                    ("ocean", None, class.ocean && (class.sea || class.embark)),
+                    ("coast", Some("ice"), passage && (class.sea || class.embark)),
+                ] {
+                    tile.terrain = Name::new(terrain);
+                    tile.feature = feature.map(Name::new);
+                    assert_eq!(g.class_can_traverse(class, &tile), expected,
+                        "class={class:?}, terrain={terrain}, feature={feature:?}, improvement={name}, pillaged={pillaged}");
+                }
+                tile.terrain = crate::name!("unknown");
+                for land_prior in [false, true] {
+                    for sea_prior in [false, true] {
+                        tile.assumed_traversable = land_prior;
+                        tile.assumed_navigable = sea_prior;
+                        assert_eq!(g.class_can_traverse(class, &tile),
+                            land_prior || (class.sea && sea_prior),
+                            "unknown terrain follows the observed frontier, regardless of its improvement");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn ordinary_improved_tiles_do_not_build_the_passage_table() {
+    let (g, pos, _) = plain_board(6_108);
+    let mut tile = g.map.tiles[&pos].clone();
+    let class = TraversalClass {
+        sea: false,
+        embark: false,
+        ocean: false,
+        mountain: false,
+    };
+    tile.improvement = Some(crate::name!("farm"));
+    {
+        let _memo = g.query_memo();
+        assert!(g.class_can_traverse(class, &tile));
+        assert!(g.query_memo.passage_improvements.borrow().is_none());
+        tile.terrain = crate::name!("mountain");
+        assert!(!g.class_can_traverse(class, &tile));
+        assert!(g.query_memo.passage_improvements.borrow().is_some());
+        tile.improvement = Some(crate::name!("mountain_tunnel"));
+        assert!(g.class_can_traverse(class, &tile));
+        tile.pillaged = true;
+        assert!(!g.class_can_traverse(class, &tile));
+    }
+    assert!(g.query_memo.passage_improvements.borrow().is_none());
+}
+
 /// **The rule.** A unit walks through a tile held by its own unit of the same
 /// stacking layer and finishes beyond it; it may not finish on it.
 #[test]

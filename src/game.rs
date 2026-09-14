@@ -1325,8 +1325,10 @@ type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
 /// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
-/// guard: keyed on (player, city, unit kind, formation, faith?) → price.
-type PurchasePriceMemo = BTreeMap<(usize, u32, Name, u8, bool), Option<f64>>;
+/// guard: keyed on (player, city, unit kind, formation, gold?) → price.
+/// Only keyed lookups read this cache; action order comes from the ruleset
+/// sweep. Hashing the interned name avoids ordering it by ruleset text.
+type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
 
 #[derive(Default)]
 pub struct QueryCache {
@@ -18621,14 +18623,6 @@ impl Game {
     /// static half of [`Game::unit_can_traverse`], and the predicate the
     /// cached connectivity regions are flooded from.
     fn class_can_traverse(&self, class: TraversalClass, tile: &Tile) -> bool {
-        let mountain_worker = tile.terrain == "mountain" && class.mountain;
-        let improvement_passage = !tile.pillaged
-            && tile.improvement.is_some_and(|improvement| {
-                self.passage_improvements()
-                    .get(improvement.id() as usize)
-                    .copied()
-                    .unwrap_or(false)
-            });
         // A mirror frontier is an invitation to discover the tile, not a claim
         // that it is land or water. Until the host reveals it, either movement
         // domain may plan toward it; the next authoritative sync replaces the
@@ -18646,8 +18640,19 @@ impl Game {
         if self.rules.is_unknown(tile) {
             return tile.assumed_traversable || (class.sea && tile.assumed_navigable);
         }
-        if !self.rules.is_passable(tile) && !mountain_worker && !improvement_passage {
-            return false;
+        if !self.rules.is_passable(tile) && !(tile.terrain == "mountain" && class.mountain) {
+            // Passage matters only when terrain would otherwise block the
+            // mover. Ordinary improved tiles need no table lookup or Arc clone.
+            let improvement_passage = !tile.pillaged
+                && tile.improvement.is_some_and(|improvement| {
+                    self.passage_improvements()
+                        .get(improvement.id() as usize)
+                        .copied()
+                        .unwrap_or(false)
+                });
+            if !improvement_passage {
+                return false;
+            }
         }
         let water = self.rules.is_water(tile);
         if water && tile.terrain == "ocean" && !class.ocean {
