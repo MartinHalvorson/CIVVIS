@@ -3479,6 +3479,7 @@ impl AdvancedAi {
     /// `AdvancedAi::era_points_short`.
     pub fn enable_age_closer(&mut self) {
         self.age_closer = true;
+        self.age_closer_2 = false;
     }
 
     /// The twin of `enable_age_closer`.
