@@ -31229,9 +31229,11 @@ impl AdvancedAi {
                     || g.tile_is_natural_wonder(tile)
                     || city_exclusion.contains(&pos)
                     || city_state_exclusion.contains(&pos)
-                    || tile
-                        .owner_city
-                        .is_some_and(|cid| g.cities[&cid].owner != pid)
+                    || tile.owner_city.is_some_and(|cid| {
+                        // A tile can name a city absent from the current table.
+                        // Keep that unresolved claim out of settlement candidates.
+                        g.cities.get(&cid).is_none_or(|city| city.owner != pid)
+                    })
                 {
                     return None;
                 }
@@ -41560,6 +41562,9 @@ impl AdvancedAi {
 /// `advanced/test_support.rs`.
 #[cfg(test)]
 pub(crate) mod test_support;
+
+#[cfg(test)]
+mod settlement_ownership_tests;
 
 #[cfg(test)]
 mod tests;
