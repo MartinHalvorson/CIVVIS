@@ -4355,6 +4355,22 @@ impl AdvancedAi {
         self.expansion_hall_district = false;
     }
 
+    pub fn enable_builder_charge_window(&mut self) {
+        self.builder_charge_window = true;
+    }
+
+    pub fn disable_builder_charge_window(&mut self) {
+        self.builder_charge_window = false;
+    }
+
+    pub fn enable_trade_growth_to_district(&mut self) {
+        self.trade_growth_to_district = true;
+    }
+
+    pub fn disable_trade_growth_to_district(&mut self) {
+        self.trade_growth_to_district = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

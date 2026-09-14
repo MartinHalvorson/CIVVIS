@@ -4794,6 +4794,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Slot Serfdom while a queued Builder is close to completion.
+    builder_charge_window: bool,
     /// `boost-planner-builds`: the boost planner may make a side objective of a
     /// `building:` trigger, the largest family in the two trees, which it
     /// otherwise reads as strategic spending and never plans.
@@ -6561,6 +6563,8 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Price route food by the next population-gated district slot.
+    trade_growth_to_district: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     tourism_land_reservation: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -7357,6 +7361,7 @@ mod first_luxury;
 /// to its ending, with what became of it counted. Infrastructure, not a
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
+mod competitive_economy;
 /// The alliance an Emperor handicap cannot deny us: the stock alliance desk
 /// asks for a Research Alliance, ranked by science, and feeds its level with
 /// routes. Opt-in gene `research-alliance-first`.
@@ -8087,6 +8092,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_charge_window: false,
             boost_planner_builds: false,
             boost_planner: false,
             boost_planner_frame: RefCell::new(boost_planner::BoostPlannerFrame::default()),
@@ -8324,6 +8330,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            trade_growth_to_district: false,
             tourism_land_reservation: false,
             upgrade_window_campaign: false,
             victory_deadline_budget: false,
@@ -16395,6 +16402,12 @@ impl AdvancedAi {
             desired.splice(0..0, nobel_peace_direct_favor_cards.iter().copied());
         }
 
+        let builder_window_card = self.builder_charge_window_card(g, pid);
+        if let Some(card) = builder_window_card {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+        }
+
         // Tourism defense must enter the protected set before ordinary cards
         // are considered, including when the empire targets another victory.
         let culture_defense_cards = self.culture_defense_cards(g, pid);
@@ -16468,6 +16481,13 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .filter(|current| {
+                    if builder_window_card == Some(card) {
+                        // Protection applies even when the current card is
+                        // absent from this strategy's ordinary portfolio.
+                        return !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && self.builder_window_can_replace(g, pid, current);
+                    }
                     !desired_set.contains(current.as_str())
                         // Defensive cards must be able to take an occupied
                         // slot, but never evict each other or a different
@@ -16510,11 +16530,17 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
-                    think!(self.journal(), Policies, Decision,
-                           "Slotted {} over {}", plain(card), plain(&current);
-                           "priority {} of {wanted} for the {} plan; {} was the oldest \
-                            card the plan does not want",
-                           rank + 1, objective.as_str(), plain(&current));
+                    if builder_window_card == Some(card) {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted {} over {}", plain(card), plain(&current);
+                               "a Builder is almost finished; Serfdom adds two build charges");
+                    } else {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted {} over {}", plain(card), plain(&current);
+                               "priority {} of {wanted} for the {} plan; {} was the oldest \
+                                card the plan does not want",
+                               rank + 1, objective.as_str(), plain(&current));
+                    }
                     break;
                 }
                 // A type mismatch can make one particular swap invalid. Put
@@ -34857,6 +34883,7 @@ impl AdvancedAi {
             .and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied())
             .unwrap_or_else(|| g.trade_route_yields(pid, city.id));
         let mut value = self.yield_value(yields, strategy);
+        value += self.trade_growth_to_district_premium(g, pid, origin, yields);
         // `quest_trade_route`: the Envoy a city-state asking us for a route
         // pays for one. See `advanced/city_state_quests.rs`.
         value += self.quest_trade_route_premium(g, pid, city.owner, strategy);
