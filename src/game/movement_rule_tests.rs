@@ -132,7 +132,8 @@ fn neighbor_fast_path_matches_the_generic_entry_gate_on_both_world_shapes() {
 
 #[test]
 fn passage_overrides_terrain_but_preserves_domains_and_frontier_priors() {
-    let (g, pos, _) = plain_board(6_107);
+    let (mut g, pos, _) = plain_board(6_107);
+    Arc::make_mut(&mut g.rules).enable_unknown_terrain();
     let _memo = g.query_memo();
     let mut tile = g.map.tiles[&pos].clone();
     for flags in 0..16 {
