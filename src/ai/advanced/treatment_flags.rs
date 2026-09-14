@@ -3095,11 +3095,22 @@ impl AdvancedAi {
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {
         self.treasury_at_work_2 = true;
+        self.treasury_at_work_2_2 = false;
     }
 
     /// The twin of `enable_treasury_at_work_2`.
     pub fn disable_treasury_at_work_2(&mut self) {
         self.treasury_at_work_2 = false;
+    }
+
+    /// Keep the working reserve and buy the first Builder near local work.
+    pub fn enable_treasury_at_work_2_2(&mut self) {
+        self.treasury_at_work_2 = false;
+        self.treasury_at_work_2_2 = true;
+    }
+
+    pub fn disable_treasury_at_work_2_2(&mut self) {
+        self.treasury_at_work_2_2 = false;
     }
 
     // Filed here rather than under a marker: `test_treatment_append_points`

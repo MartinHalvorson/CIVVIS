@@ -398,9 +398,19 @@ const MUTUALLY_EXCLUSIVE_TREATMENT_FAMILY_BASES: &[&str] = &[
     "early-project-restraint",
     "battle-planner",
     "chase-every-boost",
+    "treasury-at-work-2",
 ];
 
 fn mutually_exclusive_family(tag: &str) -> Option<&'static str> {
+    // A published base can itself end in a number (`treasury-at-work-2`).
+    // Recognize that exact base before looking for a numbered successor.
+    if let Some(base) = MUTUALLY_EXCLUSIVE_TREATMENT_FAMILY_BASES
+        .iter()
+        .copied()
+        .find(|base| *base == tag)
+    {
+        return Some(base);
+    }
     let candidate = match tag.rsplit_once('-') {
         Some((base, version)) if version.parse::<u32>().is_ok_and(|n| n >= 2) => base,
         _ => tag,
