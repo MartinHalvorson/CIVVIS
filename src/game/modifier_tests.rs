@@ -29,7 +29,7 @@ fn tree_effect_index_matches_direct_researched_node_scans() {
             let selected = |index: usize| match mask {
                 0 => false,
                 1 => true,
-                _ => (index + pid) % mask == 0,
+                _ => (index + pid).is_multiple_of(mask),
             };
             let techs = game
                 .rules
