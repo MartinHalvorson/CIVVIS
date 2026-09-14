@@ -4750,6 +4750,9 @@ pub struct AdvancedAi {
     /// `engineering` at all and the rest reach it at a median turn 116. Off for
     /// the frozen native controllers.
     pub housing_research: bool,
+    /// Version two researches a housing unlock only where it can be built,
+    /// including buildings, and prices the complete missing technology path.
+    pub housing_research_2: bool,
 
     /// This turn's floor on the science weight, refreshed by
     /// [`AdvancedAi::refresh_research_weight`] once per decision.
@@ -7082,6 +7085,7 @@ mod treatment_flags;
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
+mod housing_research;
 /// The opportunistic war: a surprise war priced on what the board exposes —
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
@@ -8105,6 +8109,7 @@ impl AdvancedAi {
             volley_chain: true,
             research_economy: false,
             housing_research: false,
+            housing_research_2: false,
             research_weight: 0.0,
             campus_multiplier_half: 0.0,
             campus_chain_science: 0.0,
@@ -14305,6 +14310,9 @@ impl AdvancedAi {
     }
 
     fn unreachable_housing_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if self.housing_research_2 {
+            return self.usable_housing_tech(g, pid).map(Name::as_str);
+        }
         if !self.housing_research {
             return None;
         }

@@ -2396,6 +2396,15 @@
           "hostile-memory-3": null
         }
       },
+      "housing-research": {
+        "rule_on": [],
+        "head": "housing-research",
+        "ships": null,
+        "versions": {
+          "housing-research": -0.009393,
+          "housing-research-2": null
+        }
+      },
       "missionary-last-charge-explores": {
         "rule_on": [
           "missionary-last-charge-explores-2"

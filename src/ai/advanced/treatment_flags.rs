@@ -1728,10 +1728,21 @@ impl AdvancedAi {
     /// housing is throttling growth.
     pub fn enable_housing_research(&mut self) {
         self.housing_research = true;
+        self.housing_research_2 = false;
     }
 
     pub fn disable_housing_research(&mut self) {
         self.housing_research = false;
+    }
+
+    /// Research housing that the capped cities can actually build.
+    pub fn enable_housing_research_2(&mut self) {
+        self.housing_research = false;
+        self.housing_research_2 = true;
+    }
+
+    pub fn disable_housing_research_2(&mut self) {
+        self.housing_research_2 = false;
     }
 
     /// Rank loyalty emergencies by turns until the city flips rather than by
