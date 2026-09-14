@@ -449,7 +449,11 @@ impl AdvancedAi {
         pid: usize,
         excluded: &BTreeSet<i64>,
     ) -> RememberedRangedReach {
-        if !(self.hostile_memory || self.hostile_memory_2 || self.live_settler_capture_lessons) {
+        if !(self.hostile_memory
+            || self.hostile_memory_2
+            || self.hostile_memory_3
+            || self.live_settler_capture_lessons)
+        {
             return RememberedRangedReach(Vec::new());
         }
         let visible = self.battlefront_visibility(g, pid);
