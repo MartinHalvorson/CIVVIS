@@ -1325,7 +1325,7 @@ type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
 /// Memoized `unit_purchase_cost_for_formation` answers for one `QueryMemo`
-/// guard: keyed on (player, city, unit kind, formation, faith?) → price.
+/// guard: keyed on (player, city, unit kind, formation, gold?) → price.
 /// Only keyed lookups read this cache; action order comes from the ruleset
 /// sweep. Hashing the interned name avoids ordering it by ruleset text.
 type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
