@@ -25,8 +25,10 @@ impl Debt {
             Self::Trade => "trade-building-before-bankruptcy",
             Self::Expansion if ai.expansion_best_idle_city_2 => "expansion-best-idle-city-2",
             Self::Expansion => "expansion-best-idle-city",
+            Self::Culture if ai.culture_building_catchup_3 => "culture-building-catchup-3",
             Self::Culture if ai.culture_building_catchup_2 => "culture-building-catchup-2",
             Self::Culture => "culture-building-catchup",
+            Self::Research if ai.research_building_catchup_3 => "research-building-catchup-3",
             Self::Research if ai.research_building_catchup_2 => "research-building-catchup-2",
             Self::Research => "research-building-catchup",
             Self::Builder if ai.builder_workforce_recovery_2 => "builder-workforce-recovery-2",
@@ -61,6 +63,26 @@ impl Debt {
             _ => false,
         }
     }
+
+    fn prices_queued_yield(self, ai: &AdvancedAi) -> bool {
+        match self {
+            Self::Culture => ai.culture_building_catchup_3,
+            Self::Research => ai.research_building_catchup_3,
+            _ => false,
+        }
+    }
+
+    fn building_gain(self, g: &Game, item: &Item) -> f64 {
+        match (self, item) {
+            (Self::Culture, Item::Building { building }) => {
+                g.rules.buildings[building].yields.culture
+            }
+            (Self::Research, Item::Building { building }) => {
+                g.rules.buildings[building].yields.science
+            }
+            _ => 1.0,
+        }
+    }
 }
 
 impl AdvancedAi {
@@ -77,10 +99,23 @@ impl AdvancedAi {
     pub fn enable_research_building_catchup_2(&mut self) {
         self.research_building_catchup_2 = true;
         self.research_building_catchup = false;
+        self.research_building_catchup_3 = false;
     }
     /// Withhold the disciplined variant.
     pub fn disable_research_building_catchup_2(&mut self) {
         self.research_building_catchup_2 = false;
+    }
+
+    /// Credit only the science queued to arrive within the next investment's
+    /// useful window, and reserve enough additional yield to close the gap.
+    pub fn enable_research_building_catchup_3(&mut self) {
+        self.research_building_catchup = false;
+        self.research_building_catchup_2 = false;
+        self.research_building_catchup_3 = true;
+    }
+
+    pub fn disable_research_building_catchup_3(&mut self) {
+        self.research_building_catchup_3 = false;
     }
     /// Enable the independently screenable disciplined variant.
     pub fn enable_expansion_best_idle_city_2(&mut self) {
@@ -95,10 +130,23 @@ impl AdvancedAi {
     pub fn enable_culture_building_catchup_2(&mut self) {
         self.culture_building_catchup_2 = true;
         self.culture_building_catchup = false;
+        self.culture_building_catchup_3 = false;
     }
     /// Withhold the disciplined variant.
     pub fn disable_culture_building_catchup_2(&mut self) {
         self.culture_building_catchup_2 = false;
+    }
+
+    /// Fill the culture gap left by buildings already due to finish soon,
+    /// retaining v2's median-rival target instead of chasing one specialist.
+    pub fn enable_culture_building_catchup_3(&mut self) {
+        self.culture_building_catchup = false;
+        self.culture_building_catchup_2 = false;
+        self.culture_building_catchup_3 = true;
+    }
+
+    pub fn disable_culture_building_catchup_3(&mut self) {
+        self.culture_building_catchup_3 = false;
     }
     /// Enable the independently screenable disciplined variant.
     pub fn enable_builder_workforce_recovery_2(&mut self) {
@@ -122,6 +170,7 @@ impl AdvancedAi {
     pub fn enable_culture_building_catchup(&mut self) {
         self.culture_building_catchup = true;
         self.culture_building_catchup_2 = false;
+        self.culture_building_catchup_3 = false;
     }
     /// Withhold `culture-building-catchup`.
     pub fn disable_culture_building_catchup(&mut self) {
@@ -140,6 +189,7 @@ impl AdvancedAi {
     pub fn enable_research_building_catchup(&mut self) {
         self.research_building_catchup = true;
         self.research_building_catchup_2 = false;
+        self.research_building_catchup_3 = false;
     }
     /// Withhold `research-building-catchup`.
     pub fn disable_research_building_catchup(&mut self) {
@@ -167,9 +217,13 @@ impl AdvancedAi {
         // off. See `advanced/expansion_scales_with_difficulty.rs`.
         let wide_cadence = self.expansion_wide_level(g).is_some();
         if !((self.builder_workforce_recovery || self.builder_workforce_recovery_2)
-            || (self.culture_building_catchup || self.culture_building_catchup_2)
+            || (self.culture_building_catchup
+                || self.culture_building_catchup_2
+                || self.culture_building_catchup_3)
             || (self.expansion_best_idle_city || self.expansion_best_idle_city_2 || wide_cadence)
-            || (self.research_building_catchup || self.research_building_catchup_2)
+            || (self.research_building_catchup
+                || self.research_building_catchup_2
+                || self.research_building_catchup_3)
             || (self.trade_building_before_bankruptcy || self.trade_building_before_bankruptcy_2))
             || self.base.minor
             || self.base.barb
@@ -202,8 +256,12 @@ impl AdvancedAi {
         let mut best_culture = 0.0_f64;
         let mut rival_cultures = Vec::new();
         let mut best_science = 0.0_f64;
-        if (self.culture_building_catchup || self.culture_building_catchup_2)
-            || (self.research_building_catchup || self.research_building_catchup_2)
+        if (self.culture_building_catchup
+            || self.culture_building_catchup_2
+            || self.culture_building_catchup_3)
+            || (self.research_building_catchup
+                || self.research_building_catchup_2
+                || self.research_building_catchup_3)
         {
             for p in &g.players {
                 if p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.has_met(pid, p.id)
@@ -215,7 +273,9 @@ impl AdvancedAi {
                 }
             }
         }
-        if self.culture_building_catchup_2 && !rival_cultures.is_empty() {
+        if (self.culture_building_catchup_2 || self.culture_building_catchup_3)
+            && !rival_cultures.is_empty()
+        {
             rival_cultures.sort_by(f64::total_cmp);
             let n = rival_cultures.len();
             best_culture = (rival_cultures[(n - 1) / 2] + rival_cultures[n / 2]) / 2.0;
@@ -239,12 +299,16 @@ impl AdvancedAi {
             ),
             (
                 Debt::Culture,
-                (self.culture_building_catchup || self.culture_building_catchup_2)
+                (self.culture_building_catchup
+                    || self.culture_building_catchup_2
+                    || self.culture_building_catchup_3)
                     && ours.culture < 0.7 * best_culture,
             ),
             (
                 Debt::Research,
-                (self.research_building_catchup || self.research_building_catchup_2)
+                (self.research_building_catchup
+                    || self.research_building_catchup_2
+                    || self.research_building_catchup_3)
                     && ours.science < 0.7 * best_science,
             ),
             (
@@ -256,30 +320,56 @@ impl AdvancedAi {
                     && super::BasicAi::has_builder_work(g, pid),
             ),
         ];
-        // A queued answer anywhere already services this debt. Do not start
-        // an empire-wide wave before the first answer has had time to finish.
+        // Earlier versions let any queued answer service the whole debt. V3
+        // accounts for its size and completion time below, without changing
+        // the one-at-a-time rule for expansion, builders or trade capacity.
         let debts: Vec<Debt> = debts
             .into_iter()
             .filter(|(debt, enabled)| {
                 *enabled
-                    && !cities.iter().any(|cid| {
-                        // `expansion-scales-with-difficulty`: a Settler queued
-                        // in the CAPITAL is the stall this gene exists to
-                        // clear, not proof the debt is serviced. Every other
-                        // city, and every other debt, still closes it, and
-                        // `expansion_wide_cadence_admits` above has already
-                        // capped how many walkers may be in flight at once.
-                        if wide_cadence && *debt == Debt::Expansion && g.cities[cid].is_capital {
-                            return false;
-                        }
-                        g.cities[cid].queue.iter().any(|item| debt.matches(g, item))
-                    })
+                    && (debt.prices_queued_yield(self)
+                        || !cities.iter().any(|cid| {
+                            // `expansion-scales-with-difficulty`: a Settler queued
+                            // in the CAPITAL is the stall this gene exists to
+                            // clear, not proof the debt is serviced. Every other
+                            // city, and every other debt, still closes it, and
+                            // `expansion_wide_cadence_admits` above has already
+                            // capped how many walkers may be in flight at once.
+                            if wide_cadence && *debt == Debt::Expansion && g.cities[cid].is_capital
+                            {
+                                return false;
+                            }
+                            g.cities[cid].queue.iter().any(|item| debt.matches(g, item))
+                        }))
             })
             .map(|(debt, _)| debt)
             .collect();
         if debts.is_empty() {
             return None;
         }
+        // Only work actually at the front of a queue has this completion
+        // estimate. A promised Library behind a long wonder is not an
+        // imminent answer. Compute these once for all candidate cities.
+        let queued_yields: Vec<(Debt, f64, f64)> = cities
+            .iter()
+            .filter_map(|cid| {
+                let item = g.cities[cid].queue.first()?;
+                let debt = debts
+                    .iter()
+                    .copied()
+                    .find(|debt| debt.prices_queued_yield(self) && debt.matches(g, item))?;
+                if g.city_yields(*cid).production <= 0.0 {
+                    return None;
+                }
+                Some((
+                    debt,
+                    self.production_build_turns(g, pid, *cid, item)
+                        .ceil()
+                        .max(1.0),
+                    debt.building_gain(g, item),
+                ))
+            })
+            .collect();
         let mut best: Option<(Debt, f64, u32, String, Item)> = None;
         for cid in cities {
             let city = &g.cities[&cid];
@@ -353,16 +443,31 @@ impl AdvancedAi {
                 if !self.disciplined_investment_admitted(g, pid, cid, &item, debt, turns) {
                     continue;
                 }
-                let gain = match (&item, debt) {
-                    (Item::Building { building }, Debt::Culture) => {
-                        g.rules.buildings[building].yields.culture
+                let mut gain = debt.building_gain(g, &item);
+                let cost_per_gain = if debt.prices_queued_yield(self) {
+                    let shortfall = match debt {
+                        Debt::Culture => 0.7 * best_culture - ours.culture,
+                        Debt::Research => 0.7 * best_science - ours.science,
+                        _ => unreachable!("only culture and research price queued yield"),
+                    };
+                    // Wait for enough queued yield that arrives within the
+                    // same twenty-standard-turn payoff window required of
+                    // this new investment. Otherwise credit only its unmet
+                    // share, so a tiny deficit cannot justify a huge build.
+                    let due = turns + g.standard_duration(20) as f64;
+                    let incoming: f64 = queued_yields
+                        .iter()
+                        .filter(|(queued_debt, eta, _)| *queued_debt == debt && *eta <= due)
+                        .map(|(_, _, yield_gain)| yield_gain)
+                        .sum();
+                    gain = gain.min((shortfall - incoming).max(0.0));
+                    if gain <= f64::EPSILON {
+                        continue;
                     }
-                    (Item::Building { building }, Debt::Research) => {
-                        g.rules.buildings[building].yields.science
-                    }
-                    _ => 1.0,
+                    turns / gain
+                } else {
+                    turns / gain.max(1.0)
                 };
-                let cost_per_gain = turns / gain.max(1.0);
                 let key = format!("{item:?}");
                 let replace =
                     best.as_ref()
@@ -425,7 +530,9 @@ impl AdvancedAi {
                             <= limit.saturating_sub(g.turn) as f64
                     })
             }
-            Debt::Research if self.research_building_catchup_2 => {
+            Debt::Research
+                if self.research_building_catchup_2 || self.research_building_catchup_3 =>
+            {
                 // Even between unlocked projects, a pad city should retain
                 // its production for the race and its production upgrades.
                 !city
@@ -482,3 +589,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod queued_yield_tests;
