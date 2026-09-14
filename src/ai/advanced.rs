@@ -11497,6 +11497,9 @@ impl AdvancedAi {
     }
 
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
+        // The outlook reads one immutable snapshot. Reuse city and empire
+        // derivations across its rival and settlement comparisons.
+        let _memo = g.query_memo();
         let cities = g.player_city_ids(pid);
         let my_power = g.military_power(pid);
         let major_rivals: Vec<usize> = g
@@ -25192,6 +25195,8 @@ impl AdvancedAi {
         if city_ids.len() < 4 {
             return None;
         }
+        // Luxury allocation is empire-wide, so retain it for the whole sweep.
+        let _memo = g.query_memo();
         let mut short_cities = 0;
         let mut total_shortfall = 0;
         for cid in &city_ids {
