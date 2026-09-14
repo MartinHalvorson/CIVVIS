@@ -12,6 +12,94 @@ fn game_with_city(seed: u64) -> (Game, u32) {
     (game, city)
 }
 
+#[test]
+fn tree_effect_index_matches_direct_researched_node_scans() {
+    let (mut game, _) = game_with_city(86_130);
+    // Discover effects from the source nodes, independently of the index.
+    let mut effects: BTreeSet<String> = game
+        .rules
+        .techs
+        .values()
+        .chain(game.rules.civics.values())
+        .flat_map(|node| node.effects.keys().cloned())
+        .collect();
+    effects.insert("__absent_tree_effect__".to_string());
+    for mask in 0usize..6 {
+        for pid in 0..2 {
+            let selected = |index: usize| match mask {
+                0 => false,
+                1 => true,
+                _ => (index + pid).is_multiple_of(mask),
+            };
+            let techs = game
+                .rules
+                .techs
+                .keys()
+                .enumerate()
+                .filter(|(index, _)| selected(*index))
+                .map(|(_, node)| *node)
+                .collect();
+            let civics = game
+                .rules
+                .civics
+                .keys()
+                .enumerate()
+                .filter(|(index, _)| selected(*index + 1))
+                .map(|(_, node)| *node)
+                .collect();
+            game.players[pid].techs = techs;
+            game.players[pid].civics = civics;
+            for effect in &effects {
+                let player = &game.players[pid];
+                let expected: f64 =
+                    player
+                        .techs
+                        .iter()
+                        .filter_map(|node| game.rules.techs[*node].effects.get(effect).copied())
+                        .chain(player.civics.iter().filter_map(|node| {
+                            game.rules.civics[*node].effects.get(effect).copied()
+                        }))
+                        .sum();
+                assert_eq!(
+                    game.tree_effect(pid, effect).to_bits(),
+                    expected.to_bits(),
+                    "effect={effect}, player={pid}, mask={mask}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn tree_effect_index_preserves_technology_then_civic_float_order() {
+    let mut files = Rules::shipped_values();
+    let effects = files.get_mut("tree_effects").unwrap();
+    for (tree, node, value) in [
+        ("techs", "animal_husbandry", 1e16),
+        ("techs", "mining", 1.0),
+        ("civics", "code_of_laws", -1e16),
+        ("civics", "craftsmanship", 1.0),
+    ] {
+        effects[tree][node]["naval_movement"] = json!(value);
+    }
+    let (mut game, _) = game_with_city(86_131);
+    game.rules = Arc::new(Rules::from_values(files).unwrap());
+    game.players[0].techs = ["animal_husbandry", "mining"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    game.players[0].civics = ["code_of_laws", "craftsmanship"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    // Summing the two trees separately gives zero; interleaving node names
+    // gives two. The original technology-then-civic traversal gives one.
+    assert_eq!(
+        game.tree_effect(0, "naval_movement").to_bits(),
+        1.0f64.to_bits()
+    );
+}
+
 fn install_selector_modifier(game: &mut Game) {
     // Merged into the imported catalog rather than replacing it: every other
     // ruleset file now attaches bundles by name, and a ruleset missing them

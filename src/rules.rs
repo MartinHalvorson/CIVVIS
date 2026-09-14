@@ -1749,16 +1749,10 @@ pub struct Rules {
     pub historic_moments: SpecMap<HistoricMomentSpec>,
     /// The city-state seats this ruleset can hand out, in seating order.
     pub city_states: CityStateRoster,
-    /// Which technologies grant each global effect, and which civics do.
-    ///
-    /// Asking what a player's trees add up to used to walk every node they
-    /// had researched and ask each one whether it granted the effect — over a
-    /// hundred lookups to answer a question whose answer usually comes from
-    /// one or two nodes. The tables are inverted once, when the ruleset is
-    /// built, and each list is in node order so the sum is added up in exactly
-    /// the order it always was.
-    pub tech_effects: SpecMap<Vec<(Name, f64)>>,
-    pub civic_effects: SpecMap<Vec<(Name, f64)>>,
+    /// Per-effect technology and civic sources, compiled when loading a ruleset.
+    /// One lookup retrieves both lists. Each keeps node order so technologies
+    /// are accumulated before civics without changing floating-point results.
+    pub tree_effects: SpecMap<TreeEffectSources>,
     /// Every node a given node depends on, however far back.
     ///
     /// Asking whether one technology leads to another used to walk the
@@ -2230,15 +2224,30 @@ fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
     SpecMap::from(ancestry)
 }
 
-/// Invert a tree's per-node effect tables into per-effect node lists.
-fn effect_sources(nodes: &SpecMap<TechSpec>) -> SpecMap<Vec<(Name, f64)>> {
-    let mut sources: BTreeMap<String, Vec<(Name, f64)>> = BTreeMap::new();
-    for (name, spec) in nodes.iter() {
-        for (effect, value) in &spec.effects {
-            sources
-                .entry(effect.clone())
-                .or_default()
-                .push((*name, *value));
+/// Ordered contributors to one global technology/civic effect.
+#[derive(Clone, Default)]
+pub struct TreeEffectSources {
+    pub techs: Vec<(Name, f64)>,
+    pub civics: Vec<(Name, f64)>,
+}
+
+/// Invert both trees while retaining their separate node orders.
+fn effect_sources(
+    techs: &SpecMap<TechSpec>,
+    civics: &SpecMap<TechSpec>,
+) -> SpecMap<TreeEffectSources> {
+    let mut sources: BTreeMap<String, TreeEffectSources> = BTreeMap::new();
+    for (nodes, technology) in [(techs, true), (civics, false)] {
+        for (name, spec) in nodes.iter() {
+            for (effect, value) in &spec.effects {
+                let entry = sources.entry(effect.clone()).or_default();
+                let list = if technology {
+                    &mut entry.techs
+                } else {
+                    &mut entry.civics
+                };
+                list.push((*name, *value));
+            }
         }
     }
     SpecMap::from(sources)
@@ -2908,8 +2917,7 @@ impl Rules {
             dedications: take(&mut files, "dedications")?,
             historic_moments: take(&mut files, "historic_moments")?,
             city_states: take(&mut files, "city_states")?,
-            tech_effects: SpecMap::default(),
-            civic_effects: SpecMap::default(),
+            tree_effects: SpecMap::default(),
             tech_ancestors: SpecMap::default(),
             civic_ancestors: SpecMap::default(),
             effect_index: EffectIndex::default(),
@@ -2965,8 +2973,7 @@ impl Rules {
             }
         }
         rules.index_tree_unlocks();
-        rules.tech_effects = effect_sources(&rules.techs);
-        rules.civic_effects = effect_sources(&rules.civics);
+        rules.tree_effects = effect_sources(&rules.techs, &rules.civics);
         rules.tech_ancestors = ancestry(&rules.techs);
         rules.civic_ancestors = ancestry(&rules.civics);
         rules.effect_index = rules.build_effect_index();
@@ -3070,7 +3077,7 @@ impl Rules {
                 any.insert(key.to_string(), ());
             }
         }
-        for key in self.tech_effects.keys().chain(self.civic_effects.keys()) {
+        for key in self.tree_effects.keys() {
             any.insert(key.to_string(), ());
         }
         // Split the three namespaced families back into the selectors they
@@ -5197,7 +5204,7 @@ panama_canal|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;rel
                 checked += 1;
             }
         }
-        for key in rules.tech_effects.keys().chain(rules.civic_effects.keys()) {
+        for key in rules.tree_effects.keys() {
             assert!(
                 index.any(key),
                 "tree effect {key} is missing from the union"
