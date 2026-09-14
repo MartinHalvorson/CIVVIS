@@ -51,9 +51,37 @@ target/ci/gene_screen --analyze SCREEN_ROWS --json SCREEN_SUMMARY
 
 ## Validation and results
 
-Pending execution. Focused tests cover the actual research entry point,
+The complete fixed family probe finished: 12 games and 72 seats, with every
+reserved seed present and no seat playing both versions. The executable was
+built from clean commit `186af78f11fc79fde4cb9680b38d1b5645650112`; its binary
+SHA-256 was `aa32d82219b7a56c161a264e2b993a94c57d282407372e02bad5e7c89f69dd90`.
+The header confirms the planned map, difficulty and clock,
+`observed-player-v1`, and the default mix of all seven targets.
+
+| Family level | Wins / seats | Win rate |
+| --- | ---: | ---: |
+| Off | 2 / 17 | 11.76% |
+| Original | 7 / 37 | 18.92% |
+| Version two | 3 / 18 | 16.67% |
+
+V2 minus off was **+4.90 ±12.20 percentage points**; v2 minus v1 was
+**−2.25 ±11.63 points**. Each ± value is one standard error clustered by
+game, not a confidence interval. Score share against v1 was −3.03 ±1.51
+points. The small probe supplies nonzero evidence for the gene-fires gate;
+it does **not** establish an improvement over v1. V2 remains off and the
+original remains deployed. The committed artifact is
+`docs/gene_screens/fires/connect-the-luxury-2.json`.
+
+The preregistered 120-game whole-registry screen started on its disjoint
+seed window using the same original executable. It is still running and
+has not been published as a completed comparison or used to change defaults.
+The observed probe result does not change its seeds or target sample size.
+
+`cargo test --profile ci --locked` passed before and after integrating main.
+The integrated tree passed 3,707 tests, with 53 ignored including documentation
+examples. This includes twelve new tests covering the actual research entry,
 first-copy and imported resources, Congress bans, tile/host legality,
 already-connectable resources, distinct-resource valuation, prerequisite and
-Eureka costs, and mutually exclusive version toggles. The existing v1 research
-test remains unchanged. Full Rust and repository gene gates will run before
-integration.
+Eureka costs, and mutually exclusive toggles. The original research test is
+retained. The 185 Python gene tests and fourteen append-point tests passed;
+the generated ledger and evaluation manifest checks passed after integration.
