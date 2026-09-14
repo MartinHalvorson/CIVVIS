@@ -188,6 +188,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `builder-charge-window` | off (unmeasured) | Slot Serfdom while a queued Builder is close to completion. | 1 \| 1 |
 | `capital-campaign-router` | off (unmeasured) | Enable `capital-campaign-router` for measurement. | 1 \| 1 |
 | `capture-hold-chain` | off (unmeasured) | Enable `capture-hold-chain` for measurement. | 1 \| 1 |
+| `connect-the-luxury-2` | off (unmeasured) | Research a first-copy luxury only when it can relieve an Amenity deficit after a legal, affordable unlock. | 1 \| 2 |
 | `conquest-takes-the-soft-city` | off (unmeasured) | `conquest-takes-the-soft-city`: rank the early conquest target by what can be taken before what is worth most. | 1 \| 1 |
 | `counter-culture-by-conquest` | off (unmeasured) | `counter-culture-by-conquest`: answer a culture leader with war aimed at its Great Works. | 1 \| 1 |
 | `culture-faith-reservation` | off (unmeasured) | Enable `culture-faith-reservation` for measurement. | 1 \| 1 |
@@ -200,6 +201,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `expansion-hall-district` | off (unmeasured) | A district is worth the land-grab building it will host. | 1 \| 1 |
 | `government-ladder-3` | off (unmeasured) | Choose a government by its remaining civic cost per extra policy slot, reserving time to use the upgrade. | 2 \| 3 |
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
+| `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
+| `housing-research-2` | off (unmeasured) | Research housing that the capped cities can actually build. | 1 \| 2 |
 | `ranged-hp-reserve` | off (unmeasured) | A ranged unit keeps `RANGED_HP_RESERVE` in hand against the lethal pool. | 1 \| 1 |
 | `reinforce-before-stall` | off (unmeasured) | Enable `reinforce-before-stall` for measurement. | 1 \| 1 |
 | `siege-positive-damage-budget` | off (unmeasured) | Enable `siege-positive-damage-budget` for measurement. | 1 \| 1 |

@@ -1728,10 +1728,21 @@ impl AdvancedAi {
     /// housing is throttling growth.
     pub fn enable_housing_research(&mut self) {
         self.housing_research = true;
+        self.housing_research_2 = false;
     }
 
     pub fn disable_housing_research(&mut self) {
         self.housing_research = false;
+    }
+
+    /// Research housing that the capped cities can actually build.
+    pub fn enable_housing_research_2(&mut self) {
+        self.housing_research = false;
+        self.housing_research_2 = true;
+    }
+
+    pub fn disable_housing_research_2(&mut self) {
+        self.housing_research_2 = false;
     }
 
     /// Rank loyalty emergencies by turns until the city flips rather than by
@@ -3454,6 +3465,7 @@ impl AdvancedAi {
     /// opening techs are in. See `AdvancedAi::unconnected_luxury_tech`.
     pub fn enable_connect_the_luxury(&mut self) {
         self.connect_the_luxury = true;
+        self.connect_the_luxury_2 = false;
     }
 
     /// The twin of `enable_connect_the_luxury`.
@@ -3595,12 +3607,26 @@ impl AdvancedAi {
     pub fn enable_hostile_memory(&mut self) {
         self.hostile_memory = true;
         self.hostile_memory_2 = false;
+        self.hostile_memory_3 = false;
     }
 
     /// Version two retains civilian memory and prices a land escort's embarkation.
     pub fn enable_hostile_memory_2(&mut self) {
         self.hostile_memory = false;
         self.hostile_memory_2 = true;
+        self.hostile_memory_3 = false;
+    }
+
+    /// Version three also revises stale sightings when their forecast area
+    /// is fully visible, using only the unit facts recorded at observation.
+    pub fn enable_hostile_memory_3(&mut self) {
+        self.hostile_memory = false;
+        self.hostile_memory_2 = false;
+        self.hostile_memory_3 = true;
+    }
+
+    pub fn disable_hostile_memory_3(&mut self) {
+        self.hostile_memory_3 = false;
     }
 
     pub fn disable_hostile_memory_2(&mut self) {
