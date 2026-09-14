@@ -1733,3 +1733,5 @@ units the ladder swings at Field Cannons and Men-at-Arms — that the arena's
 matched armies do not pose, and the live ledger is where the gene is read.
 It ships off and joins the arm beside `strike-reach` and `safest-stand`;
 the first live reading decides whether it stays.
+
+The optional `requisitions` production/purchase consumer was removed in PR #3258 after consistently negative screen results. Objective Board shortfalls remain available to the war policy desk. See `docs/gene_ranking_notes.md` (2026-09-13).

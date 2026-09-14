@@ -1272,11 +1272,6 @@
         41,
         13
       ],
-      "requisitions": [
-        -50,
-        -53,
-        -5
-      ],
       "research-alliance-first": [
         -8,
         21,
@@ -1856,7 +1851,6 @@
       "religious-defence-scales": "off",
       "religious-units-heal-first": "on",
       "religious-veto-defence": "on",
-      "requisitions": "off",
       "research-alliance-first": "off",
       "research-building-catchup": "off",
       "research-building-catchup-2": "off",
@@ -2843,7 +2837,8 @@
         "target_seats": 60000,
         "complete_seats": 6516,
         "partial": true
-      }
+      },
+      "unverified": "PR #3258 removes the disabled requisitions gene after the current three batches price it negatively (-50/-53/-5). This historical batch measured that now-removed implementation; its source commit and measured rows remain preserved. No other gene or deployment default is changed."
     },
     {
       "path": "docs/gene_screens/2026-09-10-standard-continuous-27288-total-seats-20260910T010156Z-0ac8.json",
@@ -2886,7 +2881,8 @@
         "target_seats": 60000,
         "complete_seats": 27288,
         "partial": true
-      }
+      },
+      "unverified": "PR #3258 removes the disabled requisitions gene after the current three batches price it negatively (-50/-53/-5). This historical batch measured that now-removed implementation; its source commit and measured rows remain preserved. No other gene or deployment default is changed."
     },
     {
       "path": "docs/gene_screens/2026-09-10-standard-continuous-16536-total-seats-20260909T162118Z-b978.json",
@@ -2929,7 +2925,8 @@
         "target_seats": 60000,
         "complete_seats": 16536,
         "partial": true
-      }
+      },
+      "unverified": "PR #3258 removes the disabled requisitions gene after the current three batches price it negatively (-50/-53/-5). This historical batch measured that now-removed implementation; its source commit and measured rows remain preserved. No other gene or deployment default is changed."
     }
   ],
   "counts": {
