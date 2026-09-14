@@ -6679,6 +6679,9 @@ pub struct AdvancedAi {
     /// a city has none — is bought ahead of the purchase argmax. Opt-in gene
     /// `treasury-at-work-2`; see `advanced/gold_and_cards.rs`.
     treasury_at_work_2: bool,
+    /// Buy the first Builder where local work remains and the city is not
+    /// under a recent attack or barbarian alarm; retain the working reserve.
+    treasury_at_work_2_2: bool,
     /// Do not start a war the treasury cannot pay for.
     ///
     /// ★★★★ THE SEAT DECLARED AT ZERO GOLD. Live King seat
@@ -8390,6 +8393,7 @@ impl AdvancedAi {
             threatened_city_reserve: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
             treasury_at_work_2: false,
+            treasury_at_work_2_2: false,
             war_needs_a_treasury: false,
             upgrade_the_garrison: false,
             wonder_adjacent_sites_2: false,
@@ -20661,8 +20665,8 @@ impl AdvancedAi {
         // is bought ahead of the argmax below, out of the same reserve, and
         // like the outpost buy it does not end the turn's spending. Exact
         // no-op while the version is off.
-        let bought_a_first_asset =
-            self.treasury_at_work_2 && self.young_empire_purchase(g, pid, reserve);
+        let bought_a_first_asset = (self.treasury_at_work_2 || self.treasury_at_work_2_2)
+            && self.young_empire_purchase(g, pid, reserve);
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
@@ -41644,6 +41648,9 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod settlement_ownership_tests;
+
+#[cfg(test)]
+mod treasury_local_builder_tests;
 
 #[cfg(test)]
 mod tests;
