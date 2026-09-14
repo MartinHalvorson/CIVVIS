@@ -197,8 +197,8 @@ cargo test --profile ci --locked -- --test-threads=4
 cargo test --profile ci --locked --features developer-tools --bin gene_screen
 ```
 
-Integration with `main` through `57696e76d` preserved the incoming housing,
-luxury and hostile-memory treatments, resolved appended-registry conflicts,
+Integration with `main` through `2ce4e5028` preserved the incoming housing,
+luxury, hostile-memory and Granary treatments, resolved appended-registry conflicts,
 and regenerated evaluation documentation. The combined source passed the command
 below, plus all 14 append-point and seven documentation-command tests. CI
 checks the full combined tree independently.
