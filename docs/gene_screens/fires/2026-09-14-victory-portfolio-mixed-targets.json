@@ -1,0 +1,827 @@
+{
+  "schema": "victory-target-report/v1",
+  "gene": "victory-portfolio",
+  "sources": [
+    {
+      "path": "/Users/martbot/civvis-runs/2026-09-14-victory-portfolio/mixed.jsonl",
+      "sha256": "ba67956db470d73483c8063cbf2ed2273c996450cdfb4c2d01a663b174ea87f9",
+      "measured_seats": 72,
+      "headers": [
+        {
+          "target_mix": "civvis,science,culture,religion,diplomatic,domination,score",
+          "player_contract": "observed-player-v1",
+          "kind": "header",
+          "players": 6,
+          "width": 74,
+          "height": 46,
+          "turns": 250,
+          "city_states": 9,
+          "speed": "online",
+          "map": "continents",
+          "baseline": "best",
+          "start_seed": 914356900,
+          "randomize_civs": true,
+          "victories": "science,culture,religious,diplomatic,domination,score",
+          "all_seats": true,
+          "design": "independent",
+          "p_on": 0.5,
+          "p_default_on": 0.75,
+          "contested_field": "",
+          "native_competitions": true,
+          "contested_field_genes": "",
+          "victory_mask": "",
+          "difficulty": "emperor",
+          "difficulty_rotate": "",
+          "barbarian_difficulty": "deity",
+          "rivals": "",
+          "build": {
+            "commit": "95095e0e7a6369e0127b86450eafd9a4d6f59577",
+            "commit_source": "build-tree",
+            "dirty": true,
+            "genes_sha256": "b0c97eb22f9e80ca30c509c78a055f51cf50cbd499ec99a52db3712a064acb09",
+            "binary_sha256": "2f87933f501ebf31586812788a41f31bbee8c8c72f88a3998edb0aefad547467"
+          },
+          "batch": {
+            "target_games": 12,
+            "target_seats": 72,
+            "seed_first": 914356900,
+            "seed_last": 914356911
+          }
+        }
+      ]
+    }
+  ],
+  "seats": 72,
+  "targets": {
+    "civvis": {
+      "seats": 8,
+      "games": 7,
+      "wins": 4,
+      "win_rate": 0.5,
+      "winning_conditions": {
+        "culture": 1,
+        "science": 3
+      },
+      "diagnostics": {
+        "measured_seats": 8,
+        "missing_seats": 0,
+        "commitment_turn_median": 125.0,
+        "primary_switches_mean": 7.375,
+        "last_observed_cities_mean": 10.5,
+        "trace_points": 188,
+        "dropped_trace_points": 0,
+        "last_bottlenecks": {
+          "capital_access": 1,
+          "expedition_speed": 2
+        },
+        "last_observed_means": {
+          "capitals": 1.0,
+          "culture": 360.86612499999995,
+          "diplomatic_points": 7.125,
+          "faith": 987.3198999999995,
+          "gold": 505.02964999999926,
+          "military": 1373.02625,
+          "science": 349.33,
+          "science_projects": 2.875,
+          "visitors": 34.25
+        },
+        "last_developed_allocation_shares": {},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+        "realized_same_lane_forecasts": 1,
+        "realized_finish_error_turns_mean": -120.82334721515178,
+        "realized_latest_finish_error_turns_mean": -27.0,
+        "realized_latest_finish_error_turns_mae": 27.0,
+        "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+      },
+      "gene_contrast": {
+        "on_seats": 3,
+        "off_seats": 5,
+        "win_difference_pp": -26.666666666666668,
+        "cluster_se_pp": 29.1215700747985,
+        "interval_95_pp": [
+          -83.74494401327172,
+          30.411610679938388
+        ],
+        "games": 7
+      },
+      "diagnostics_by_treatment": {
+        "on": {
+          "measured_seats": 3,
+          "missing_seats": 0,
+          "commitment_turn_median": 88,
+          "primary_switches_mean": 1.3333333333333333,
+          "last_observed_cities_mean": 10.333333333333334,
+          "trace_points": 67,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {
+            "capital_access": 1,
+            "expedition_speed": 2
+          },
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 397.2253333333333,
+            "diplomatic_points": 8.333333333333334,
+            "faith": 471.9523999999994,
+            "gold": 208.12886666666626,
+            "military": 1109.5600000000002,
+            "science": 344.93666666666667,
+            "science_projects": 3.6666666666666665,
+            "visitors": 29.333333333333332
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 1,
+          "realized_finish_error_turns_mean": -120.82334721515178,
+          "realized_latest_finish_error_turns_mean": -27.0,
+          "realized_latest_finish_error_turns_mae": 27.0,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        },
+        "off": {
+          "measured_seats": 5,
+          "missing_seats": 0,
+          "commitment_turn_median": 125,
+          "primary_switches_mean": 11.0,
+          "last_observed_cities_mean": 10.6,
+          "trace_points": 121,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {},
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 339.0506,
+            "diplomatic_points": 6.4,
+            "faith": 1296.5403999999994,
+            "gold": 683.1701199999991,
+            "military": 1531.106,
+            "science": 351.966,
+            "science_projects": 2.4,
+            "visitors": 37.2
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        }
+      }
+    },
+    "culture": {
+      "seats": 13,
+      "games": 8,
+      "wins": 2,
+      "win_rate": 0.15384615384615385,
+      "winning_conditions": {
+        "culture": 1,
+        "score": 1
+      },
+      "diagnostics": {
+        "measured_seats": 13,
+        "missing_seats": 0,
+        "commitment_turn_median": 88,
+        "primary_switches_mean": 0.0,
+        "last_observed_cities_mean": 9.461538461538462,
+        "trace_points": 201,
+        "dropped_trace_points": 0,
+        "last_bottlenecks": {
+          "tourism_growth": 6,
+          "tourism_multipliers": 1
+        },
+        "last_observed_means": {
+          "capitals": 0.9230769230769231,
+          "culture": 298.9411076923077,
+          "diplomatic_points": 1.0,
+          "faith": 449.82941538461546,
+          "gold": 288.88660769230677,
+          "military": 1084.8284615384616,
+          "science": 224.92530769230768,
+          "science_projects": 0.5384615384615384,
+          "visitors": 114.92307692307692
+        },
+        "last_developed_allocation_shares": {},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+        "realized_same_lane_forecasts": 0,
+        "realized_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mae": null,
+        "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+      },
+      "gene_contrast": {
+        "on_seats": 7,
+        "off_seats": 6,
+        "win_difference_pp": 28.57142857142857,
+        "cluster_se_pp": 16.615518190991263,
+        "interval_95_pp": [
+          -3.9949870829143066,
+          61.137844225771445
+        ],
+        "games": 8
+      },
+      "diagnostics_by_treatment": {
+        "on": {
+          "measured_seats": 7,
+          "missing_seats": 0,
+          "commitment_turn_median": 90,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 9.428571428571429,
+          "trace_points": 103,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {
+            "tourism_growth": 6,
+            "tourism_multipliers": 1
+          },
+          "last_observed_means": {
+            "capitals": 0.8571428571428571,
+            "culture": 281.05762857142855,
+            "diplomatic_points": 1.2857142857142858,
+            "faith": 383.1146285714285,
+            "gold": 315.65349999999887,
+            "military": 1140.6314285714286,
+            "science": 206.65342857142858,
+            "science_projects": 0.2857142857142857,
+            "visitors": 121.28571428571429
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        },
+        "off": {
+          "measured_seats": 6,
+          "missing_seats": 0,
+          "commitment_turn_median": 84.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 9.5,
+          "trace_points": 98,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {},
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 319.80516666666665,
+            "diplomatic_points": 0.6666666666666666,
+            "faith": 527.6633333333336,
+            "gold": 257.6585666666659,
+            "military": 1019.725,
+            "science": 246.24249999999998,
+            "science_projects": 0.8333333333333334,
+            "visitors": 107.5
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        }
+      }
+    },
+    "diplomatic": {
+      "seats": 8,
+      "games": 7,
+      "wins": 0,
+      "win_rate": 0.0,
+      "winning_conditions": {},
+      "diagnostics": {
+        "measured_seats": 8,
+        "missing_seats": 0,
+        "commitment_turn_median": 88.5,
+        "primary_switches_mean": 0.0,
+        "last_observed_cities_mean": 11.25,
+        "trace_points": 124,
+        "dropped_trace_points": 0,
+        "last_bottlenecks": {
+          "congress_and_competitions": 6
+        },
+        "last_observed_means": {
+          "capitals": 1.125,
+          "culture": 133.736375,
+          "diplomatic_points": 8.0,
+          "faith": 746.3512499999999,
+          "gold": 146.76326249999948,
+          "military": 1238.6375,
+          "science": 230.415675,
+          "science_projects": 0.5,
+          "visitors": 15.625
+        },
+        "last_developed_allocation_shares": {},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+        "realized_same_lane_forecasts": 0,
+        "realized_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mae": null,
+        "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+      },
+      "gene_contrast": {
+        "on_seats": 6,
+        "off_seats": 2,
+        "win_difference_pp": 0.0,
+        "cluster_se_pp": null,
+        "interval_95_pp": null,
+        "games": 7
+      },
+      "diagnostics_by_treatment": {
+        "on": {
+          "measured_seats": 6,
+          "missing_seats": 0,
+          "commitment_turn_median": 88.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 12.0,
+          "trace_points": 95,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {
+            "congress_and_competitions": 6
+          },
+          "last_observed_means": {
+            "capitals": 1.1666666666666667,
+            "culture": 123.10000000000001,
+            "diplomatic_points": 7.666666666666667,
+            "faith": 720.295,
+            "gold": 121.71768333333269,
+            "military": 1494.9750000000001,
+            "science": 247.53006666666667,
+            "science_projects": 0.5,
+            "visitors": 13.333333333333334
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        },
+        "off": {
+          "measured_seats": 2,
+          "missing_seats": 0,
+          "commitment_turn_median": 125.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 9.0,
+          "trace_points": 29,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {},
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 165.64550000000003,
+            "diplomatic_points": 9.0,
+            "faith": 824.52,
+            "gold": 221.89999999999986,
+            "military": 469.625,
+            "science": 179.0725,
+            "science_projects": 0.5,
+            "visitors": 22.5
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        }
+      }
+    },
+    "domination": {
+      "seats": 11,
+      "games": 8,
+      "wins": 0,
+      "win_rate": 0.0,
+      "winning_conditions": {},
+      "diagnostics": {
+        "measured_seats": 11,
+        "missing_seats": 0,
+        "commitment_turn_median": 90,
+        "primary_switches_mean": 0.0,
+        "last_observed_cities_mean": 10.0,
+        "trace_points": 192,
+        "dropped_trace_points": 0,
+        "last_bottlenecks": {
+          "capital_access": 7,
+          "military_advantage": 2
+        },
+        "last_observed_means": {
+          "capitals": 1.0,
+          "culture": 114.71669999999999,
+          "diplomatic_points": 0.7272727272727273,
+          "faith": 1693.5627272727268,
+          "gold": 173.1997159090906,
+          "military": 1167.4872727272727,
+          "science": 262.2360545454546,
+          "science_projects": 1.0,
+          "visitors": 13.727272727272727
+        },
+        "last_developed_allocation_shares": {},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+        "realized_same_lane_forecasts": 0,
+        "realized_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mae": null,
+        "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+      },
+      "gene_contrast": {
+        "on_seats": 9,
+        "off_seats": 2,
+        "win_difference_pp": 0.0,
+        "cluster_se_pp": null,
+        "interval_95_pp": null,
+        "games": 8
+      },
+      "diagnostics_by_treatment": {
+        "on": {
+          "measured_seats": 9,
+          "missing_seats": 0,
+          "commitment_turn_median": 89,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 9.222222222222221,
+          "trace_points": 145,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {
+            "capital_access": 7,
+            "military_advantage": 2
+          },
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 116.00541111111112,
+            "diplomatic_points": 0.6666666666666666,
+            "faith": 1211.9533333333331,
+            "gold": 156.05350833333293,
+            "military": 1200.3133333333333,
+            "science": 275.0329555555556,
+            "science_projects": 0.7777777777777778,
+            "visitors": 13.555555555555555
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        },
+        "off": {
+          "measured_seats": 2,
+          "missing_seats": 0,
+          "commitment_turn_median": 125.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 13.5,
+          "trace_points": 47,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {},
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 108.91749999999999,
+            "diplomatic_points": 1.0,
+            "faith": 3860.8049999999985,
+            "gold": 250.35765000000015,
+            "military": 1019.77,
+            "science": 204.65000000000003,
+            "science_projects": 2.0,
+            "visitors": 14.5
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        }
+      }
+    },
+    "religious": {
+      "seats": 12,
+      "games": 10,
+      "wins": 1,
+      "win_rate": 0.08333333333333333,
+      "winning_conditions": {
+        "religious": 1
+      },
+      "diagnostics": {
+        "measured_seats": 12,
+        "missing_seats": 0,
+        "commitment_turn_median": 125.0,
+        "primary_switches_mean": 0.0,
+        "last_observed_cities_mean": 9.833333333333334,
+        "trace_points": 162,
+        "dropped_trace_points": 0,
+        "last_bottlenecks": {
+          "conversion_holdouts": 3,
+          "unknown_conversion_targets": 1
+        },
+        "last_observed_means": {
+          "capitals": 0.9166666666666666,
+          "culture": 97.90098333333333,
+          "diplomatic_points": 1.6666666666666667,
+          "faith": 1353.6197016666667,
+          "gold": 238.09336666666627,
+          "military": 1463.6716666666669,
+          "science": 223.99739583333334,
+          "science_projects": 0.25,
+          "visitors": 14.0
+        },
+        "last_developed_allocation_shares": {},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+        "realized_same_lane_forecasts": 1,
+        "realized_finish_error_turns_mean": 0.5,
+        "realized_latest_finish_error_turns_mean": -17.5,
+        "realized_latest_finish_error_turns_mae": 17.5,
+        "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+      },
+      "gene_contrast": {
+        "on_seats": 4,
+        "off_seats": 8,
+        "win_difference_pp": 25.0,
+        "cluster_se_pp": 22.82177322938192,
+        "interval_95_pp": [
+          -19.730675529588567,
+          69.73067552958857
+        ],
+        "games": 10
+      },
+      "diagnostics_by_treatment": {
+        "on": {
+          "measured_seats": 4,
+          "missing_seats": 0,
+          "commitment_turn_median": 88.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 10.5,
+          "trace_points": 51,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {
+            "conversion_holdouts": 3,
+            "unknown_conversion_targets": 1
+          },
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 94.419,
+            "diplomatic_points": 1.75,
+            "faith": 2190.042105,
+            "gold": 356.72134999999986,
+            "military": 1835.2075,
+            "science": 197.6478375,
+            "science_projects": 0.0,
+            "visitors": 13.75
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 1,
+          "realized_finish_error_turns_mean": 0.5,
+          "realized_latest_finish_error_turns_mean": -17.5,
+          "realized_latest_finish_error_turns_mae": 17.5,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        },
+        "off": {
+          "measured_seats": 8,
+          "missing_seats": 0,
+          "commitment_turn_median": 125.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 9.5,
+          "trace_points": 111,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {},
+          "last_observed_means": {
+            "capitals": 0.875,
+            "culture": 99.641975,
+            "diplomatic_points": 1.625,
+            "faith": 935.4085000000002,
+            "gold": 178.77937499999945,
+            "military": 1277.90375,
+            "science": 237.17217499999998,
+            "science_projects": 0.375,
+            "visitors": 14.125
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        }
+      }
+    },
+    "science": {
+      "seats": 14,
+      "games": 7,
+      "wins": 5,
+      "win_rate": 0.35714285714285715,
+      "winning_conditions": {
+        "science": 5
+      },
+      "diagnostics": {
+        "measured_seats": 14,
+        "missing_seats": 0,
+        "commitment_turn_median": 54.5,
+        "primary_switches_mean": 0.0,
+        "last_observed_cities_mean": 9.714285714285714,
+        "trace_points": 179,
+        "dropped_trace_points": 0,
+        "last_bottlenecks": {
+          "expedition_speed": 4,
+          "launch_production": 1,
+          "research": 3
+        },
+        "last_observed_means": {
+          "capitals": 1.0,
+          "culture": 87.11778571428572,
+          "diplomatic_points": 0.2857142857142857,
+          "faith": 862.0192857142855,
+          "gold": 243.94272857142823,
+          "military": 848.0442857142856,
+          "science": 358.29622642857146,
+          "science_projects": 2.357142857142857,
+          "visitors": 2.2857142857142856
+        },
+        "last_developed_allocation_shares": {},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+        "realized_same_lane_forecasts": 3,
+        "realized_finish_error_turns_mean": -4988.436260986376,
+        "realized_latest_finish_error_turns_mean": -31.0,
+        "realized_latest_finish_error_turns_mae": 31.0,
+        "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+      },
+      "gene_contrast": {
+        "on_seats": 8,
+        "off_seats": 6,
+        "win_difference_pp": 4.166666666666669,
+        "cluster_se_pp": 18.735258694196812,
+        "interval_95_pp": [
+          -32.55444037395908,
+          40.887773707292425
+        ],
+        "games": 7
+      },
+      "diagnostics_by_treatment": {
+        "on": {
+          "measured_seats": 8,
+          "missing_seats": 0,
+          "commitment_turn_median": 27.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 10.375,
+          "trace_points": 101,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {
+            "expedition_speed": 4,
+            "launch_production": 1,
+            "research": 3
+          },
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 98.82112500000001,
+            "diplomatic_points": 0.375,
+            "faith": 812.2812499999998,
+            "gold": 226.89352499999958,
+            "military": 949.13625,
+            "science": 386.19874,
+            "science_projects": 2.5,
+            "visitors": 3.375
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 3,
+          "realized_finish_error_turns_mean": -4988.436260986376,
+          "realized_latest_finish_error_turns_mean": -31.0,
+          "realized_latest_finish_error_turns_mae": 31.0,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        },
+        "off": {
+          "measured_seats": 6,
+          "missing_seats": 0,
+          "commitment_turn_median": 125.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 8.833333333333334,
+          "trace_points": 78,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {},
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 71.51333333333334,
+            "diplomatic_points": 0.16666666666666666,
+            "faith": 928.3366666666665,
+            "gold": 266.6749999999998,
+            "military": 713.255,
+            "science": 321.092875,
+            "science_projects": 2.1666666666666665,
+            "visitors": 0.8333333333333334
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        }
+      }
+    },
+    "score": {
+      "seats": 6,
+      "games": 6,
+      "wins": 0,
+      "win_rate": 0.0,
+      "winning_conditions": {},
+      "diagnostics": {
+        "measured_seats": 6,
+        "missing_seats": 0,
+        "commitment_turn_median": 89.5,
+        "primary_switches_mean": 0.0,
+        "last_observed_cities_mean": 11.166666666666666,
+        "trace_points": 94,
+        "dropped_trace_points": 0,
+        "last_bottlenecks": {
+          "score_standing": 4
+        },
+        "last_observed_means": {
+          "capitals": 1.1666666666666667,
+          "culture": 98.63933333333334,
+          "diplomatic_points": 0.5,
+          "faith": 1050.720000000001,
+          "gold": 155.75483333333275,
+          "military": 1155.3233333333335,
+          "science": 286.6961333333333,
+          "science_projects": 0.6666666666666666,
+          "visitors": 5.333333333333333
+        },
+        "last_developed_allocation_shares": {},
+        "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+        "realized_same_lane_forecasts": 0,
+        "realized_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mean": null,
+        "realized_latest_finish_error_turns_mae": null,
+        "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+      },
+      "gene_contrast": {
+        "on_seats": 4,
+        "off_seats": 2,
+        "win_difference_pp": 0.0,
+        "cluster_se_pp": null,
+        "interval_95_pp": null,
+        "games": 6
+      },
+      "diagnostics_by_treatment": {
+        "on": {
+          "measured_seats": 4,
+          "missing_seats": 0,
+          "commitment_turn_median": 89.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 11.25,
+          "trace_points": 55,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {
+            "score_standing": 4
+          },
+          "last_observed_means": {
+            "capitals": 1.25,
+            "culture": 111.73675,
+            "diplomatic_points": 0.25,
+            "faith": 770.1950000000003,
+            "gold": 195.59474999999938,
+            "military": 1225.06,
+            "science": 273.40045,
+            "science_projects": 0.5,
+            "visitors": 5.5
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        },
+        "off": {
+          "measured_seats": 2,
+          "missing_seats": 0,
+          "commitment_turn_median": 125.0,
+          "primary_switches_mean": 0.0,
+          "last_observed_cities_mean": 11.0,
+          "trace_points": 39,
+          "dropped_trace_points": 0,
+          "last_bottlenecks": {},
+          "last_observed_means": {
+            "capitals": 1.0,
+            "culture": 72.4445,
+            "diplomatic_points": 1.0,
+            "faith": 1611.7700000000023,
+            "gold": 76.07499999999956,
+            "military": 1015.85,
+            "science": 313.2875,
+            "science_projects": 1.0,
+            "visitors": 5.0
+          },
+          "last_developed_allocation_shares": {},
+          "allocation_scope": "observed queue production rates at each seat's last developed snapshot; not realized expenditure",
+          "realized_same_lane_forecasts": 0,
+          "realized_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mean": null,
+          "realized_latest_finish_error_turns_mae": null,
+          "forecast_error_scope": "same-lane winners only; other outcomes are censored, not zero error"
+        }
+      }
+    }
+  },
+  "interpretation": "Targets are assigned before play. Choices and phases are descriptive post-treatment telemetry. SEs cluster shared winners by game; sparse cells do not establish a benefit."
+}
