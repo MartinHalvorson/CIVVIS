@@ -66,4 +66,64 @@ generated-artifact and gene-reach checks before integration.
 
 ## Results
 
-Pending execution. The rewrite is a hypothesis, not a promoted genome.
+### Completed reach sample
+
+The fixed twelve-game reach sample completed with all 72 unique seats and
+all reserved seeds, with no restarts or omitted games. The analyzer artifact
+is `docs/gene_screens/fires/2026-09-14-housing-research-2.json`. It records the
+original clean implementation, before the later merge from main. The raw
+JSONL SHA-256 is `6e5006a1b5bfb89b7f17e9bdc9353fa8e967023c4def9d25b020c950832481d0`.
+
+12 games; 72 seats; seeds [914368000, 914368011].
+Source 2e972f414cf48c25bff8b290091ba986653de0d9; clean=True; binary SHA-256 922ff29a1bed35c5b8ef893b2a27c278d9de126eee637255cfc847984ade9589.
+
+| Family level | Seats | Wins | Win rate | Score share |
+|---|---:|---:|---:|---:|
+| off | 55 | 9 | 16.36% | 16.55% |
+| housing-research | 8 | 1 | 12.50% | 18.81% |
+| housing-research-2 | 9 | 2 | 22.22% | 15.49% |
+
+| Contrast | Win Δ, pp [approx. 95% interval] | Share Δ, pp [approx. 95% interval] |
+|---|---:|---:|
+| housing-research minus off | -3.86 [-31.92, +24.19] | +2.26 [-4.14, +8.66] |
+| housing-research-2 minus off | +5.86 [-24.64, +36.36] | -1.06 [-4.44, +2.33] |
+| housing-research-2 minus housing-research | +9.72 [-31.57, +51.02] | -3.32 [-8.74, +2.11] |
+
+Intervals use the analyzer’s standard errors clustered by game. They are exploratory, without correction for multiple comparisons; small-sample intervals can be unreliable.
+
+Version two's win signs are positive against both alternatives, but its score
+share is lower than both. With only nine V2 seats, these readings do not
+establish stronger play or justify promotion. The artifact satisfies the
+execution-screen requirement; actual changed research choices are covered by
+the focused regression tests. It is not added as a deployment-ledger source.
+
+### Larger comparison failure and replacement
+
+The original 180-game comparison used the same clean source and binary as
+the reach sample, with the disjoint pre-registered seeds 914369000–914369179.
+It hit an existing settlement ownership panic at `advanced.rs:31242`: a tile
+named a city that was absent from the city table. The old parallel reporter
+could leave the remaining workers alive after that panic. At 13:05:58 UTC the
+failed process was stopped; its 17 reported games / 102 seats remain intact
+in `housing-comparison.jsonl`, SHA-256
+`2ef356c82d8f4dce886a78deb2b93beedff0c72d92d9dd5deb6086e97f0d64bb`.
+No strength estimate is taken from that failed prefix.
+
+Main PR #3564 already fixed that exact lookup, with a regression test, and
+merge `6ab320a58` includes the fix in this candidate. The corrected
+`6ab320a58` simulator build finished and was frozen, but the long replacement
+sample has not started. Upstream PR #3578 has also tested a separate missing
+Builder-owner lookup repair after another probe failed. The full replacement
+will use the integrated engine, the same 180 seeds and eight workers in
+`housing-comparison-fixed.jsonl`, with its own binary and header. Failed prefix
+rows are never combined with the replacement. Its result remains pending,
+and the candidate remains opt-in and unpromoted.
+
+### Validation
+
+All ten Housing-related focused tests passed. The full local Rust suite
+passed, including 3,492 library tests with 49 ignored, and the integration
+and binary suites. CI on the merged source also passed its Rust tests,
+documentation examples, lint/formatting and paired cost checks. The existing
+settlement failure came from the old comparison binary, not the merged
+candidate source. No engine rule is changed by this gene.
