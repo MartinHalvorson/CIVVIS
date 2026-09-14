@@ -10534,6 +10534,9 @@ impl AdvancedAi {
         }
         let left = f64::from(g.max_turns.saturating_sub(g.turn));
 
+        // Rival city yields and our tourism share empire-wide derivations.
+        // Keep their read-only answers for this forecast's entire sweep.
+        let _memo = g.query_memo();
         let culture_per_turn = |seat: usize| {
             g.player_city_ids(seat)
                 .into_iter()
