@@ -21129,16 +21129,10 @@ impl Game {
             .filter(|source| source.owner == city.owner)
         {
             for building in &source.buildings {
-                if source.pillaged_buildings.contains(building)
-                    || !self.building_district_is_active(source, building)
-                {
+                if source.pillaged_buildings.contains(building) {
                     continue;
                 }
                 let spec = &self.rules.buildings[building];
-                let origin = spec
-                    .district
-                    .and_then(|district| self.city_district_family_position(source, district))
-                    .unwrap_or(source.pos);
                 let regional_range = spec.regional_range
                     + if mexico_city_regional_range
                         && spec.district.is_some_and(|district| {
@@ -21154,7 +21148,17 @@ impl Game {
                     } else {
                         0
                     };
-                if regional_range <= 0 || self.wdist(origin, city.pos) > regional_range {
+                // Most buildings have no regional effect. Include Mexico
+                // City's range bonus before rejecting them, then resolve
+                // activity and the origin only for buildings that can reach.
+                if regional_range <= 0 || !self.building_district_is_active(source, building) {
+                    continue;
+                }
+                let origin = spec
+                    .district
+                    .and_then(|district| self.city_district_family_position(source, district))
+                    .unwrap_or(source.pos);
+                if self.wdist(origin, city.pos) > regional_range {
                     continue;
                 }
                 let group: &str = if !spec.regional_group.is_empty() {
@@ -35921,6 +35925,9 @@ mod purchase_price_memo_tests;
 
 #[cfg(test)]
 mod unit_upgrade_price_tests;
+
+#[cfg(test)]
+mod regional_building_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;
