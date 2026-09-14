@@ -299,7 +299,7 @@ impl AdvancedAi {
     /// given the plan's stock reserve. Returns `stock` untouched while the
     /// gene is off.
     pub(super) fn working_treasury_reserve(&self, g: &Game, pid: usize, stock: f64) -> f64 {
-        if !self.treasury_at_work_2 {
+        if !(self.treasury_at_work_2 || self.treasury_at_work_2_2) {
             return stock;
         }
         let defender = self
@@ -321,7 +321,7 @@ impl AdvancedAi {
         pid: usize,
         item: &Item,
     ) -> bool {
-        if !self.treasury_at_work_2 {
+        if !(self.treasury_at_work_2 || self.treasury_at_work_2_2) {
             return true;
         }
         let unit = match item {
@@ -412,12 +412,21 @@ impl AdvancedAi {
     pub(super) fn young_empire_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
         let counts = self.counts(g, pid);
         let mut cities = g.player_city_ids(pid);
-        cities.sort_by(|left, right| {
-            g.city_yields(*left)
-                .production
-                .total_cmp(&g.city_yields(*right).production)
-                .then(left.cmp(right))
-        });
+        if self.treasury_at_work_2_2 {
+            let mut production: Vec<_> = cities
+                .iter()
+                .map(|cid| (*cid, g.city_yields(*cid).production))
+                .collect();
+            production.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+            cities = production.into_iter().map(|(cid, _)| cid).collect();
+        } else {
+            cities.sort_by(|left, right| {
+                g.city_yields(*left)
+                    .production
+                    .total_cmp(&g.city_yields(*right).production)
+                    .then(left.cmp(right))
+            });
+        }
         let bank = g.players[pid].gold;
         let city_name = |g: &Game, cid: u32| {
             g.cities
@@ -425,11 +434,15 @@ impl AdvancedAi {
                 .map(|city| city.name.clone())
                 .unwrap_or_else(|| "the empire".to_string())
         };
-        if counts.builders == 0 && BasicAi::has_builder_work(g, pid) {
+        if counts.builders == 0 && (self.treasury_at_work_2_2 || BasicAi::has_builder_work(g, pid))
+        {
             let builder = Item::Unit {
                 unit: crate::name!("builder"),
             };
             for cid in &cities {
+                if self.treasury_at_work_2_2 && !self.treasury_builder_city_has_work(g, pid, *cid) {
+                    continue;
+                }
                 let Some(price) = g.unit_purchase_cost(pid, *cid, "builder", "gold") else {
                     continue;
                 };
@@ -494,6 +507,29 @@ impl AdvancedAi {
             return true;
         }
         false
+    }
+
+    /// Locality is the city's owned tiles, not a forecast of a future route.
+    /// Repairs count even when no new improvement can be built. A recent
+    /// attack or current barbarian alarm keeps this civilian purchase away.
+    fn treasury_builder_city_has_work(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        if (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            || self.base.barbarian_local_alarm_for_controller(g, pid, cid)
+        {
+            return false;
+        }
+        let _memo = g.query_memo();
+        city.owned_tiles.iter().any(|pos| {
+            let Some(tile) = g.map.get(*pos) else {
+                return false;
+            };
+            tile.owner_city == Some(cid)
+                && ((tile.pillaged && tile.improvement.is_some())
+                    || g.valid_improvements(pid, *pos)
+                        .iter()
+                        .any(|name| g.rules.improvements[name].builder_buildable))
+        })
     }
 }
 
