@@ -461,8 +461,9 @@ impl AdvancedAi {
             .units
             .values()
             .filter(|unit| {
-                unit.owner != pid
-                    && g.is_at_war(pid, unit.owner)
+                // V3's visible identity supersedes the old hostile record
+                // even after conversion or transfer to a peaceful owner.
+                (self.hostile_memory_3 || (unit.owner != pid && g.is_at_war(pid, unit.owner)))
                     && g.sees(&visible, unit.pos)
                     && g.unit_visible_to(unit.id, pid)
             })
@@ -501,3 +502,6 @@ impl AdvancedAi {
         RememberedRangedReach(projections)
     }
 }
+
+#[cfg(test)]
+mod visible_identity_tests;
