@@ -2069,3 +2069,67 @@ change rather than hiding an accidental gene leak. Native outcome comparisons
 across this boundary must account for the changed engine rules. Focused tests
 cover off-road entry at all five route levels, actual movement exhaustion,
 connected-road pricing, bridges, and Amphibious crossings.
+
+
+## v38 (2026-09-11) — ordinary improvements over undiscovered resources
+
+#3503 removes the authoritative improvement veto for an unrevealed resource.
+Resource-specific requirements still use the visible resource, and terrain,
+feature, technology, territory, and charge checks still apply. This changes
+shared engine legality for every controller, including `AdvancedAi::legacy()`;
+it is not a new AI policy leaking through a gene gate.
+
+In the native observed seed 26091100 trace, turn 160 Builder 348 stands on
+forested hills containing undiscovered coal. The decision view correctly hides
+the coal and permits a lumber mill, but the authoritative board returns no
+legal improvement. Repeated builder refusals interrupt later military orders.
+The regression now executes that observed improvement, preserves the coal,
+and spends a builder charge. Revealed coal still rejects a lumber mill, and
+a tile without forest still fails the feature requirement.
+
+The unchanged five-profile anchor probe now measures **18,809 decisions and
+`0x4158_db2a_5305_81b0`**, replacing the v37 pin of **19,620 decisions and
+`0x4657_4d87_b9c1_7640`**. The initial full suite exposed the count change; an
+independent probe copied the existing profiles and hashing function to obtain
+both values. This re-pin records the deliberate engine correction. Native
+outcome comparisons across this boundary must account for the changed rules;
+these fingerprints do not demonstrate stronger tactics or a Domination win.
+
+
+## v39 (2026-09-11) — district sites use discovered resources
+
+#3519 makes both the resource-class veto and the removal-technology check in
+`district_sites` use resources visible to the city owner. An undiscovered
+strategic deposit no longer rejects a district that the observed board allows.
+Revealed strategic deposits still block new placement; visible bonus resources
+still require the existing removal technology. The deposit survives foundation
+placement and completion, including when it is discovered during construction.
+
+The final #3503 observed trace recorded 55 refused district orders on turns
+70–130. Capturing the actual failures proves the mismatch for a Campus over
+hidden coal, a Campus and Aqueduct over hidden niter, and an Encampment over
+hidden aluminum. These repeated refusals cut off later military orders. This
+is a shared engine legality correction, not a change to the legacy AI's genes.
+
+The unchanged five-profile probe reproduces the v38 baseline exactly:
+**18,809 decisions / `0x4158_db2a_5305_81b0`**. The corrected engine measures
+**18,845 decisions / `0x4a8a_d4ca_1dd9_8783`**. The re-pin records that deliberate
+rules change; native outcome comparisons must account for this boundary.
+Neither the fingerprint nor the focused legality tests establish a Domination
+victory improvement; matched full games measure that separately.
+
+
+## v40 (2026-09-11) — new games use Emperor barbarians by default
+
+The default barbarian difficulty now uses `emperor`, the sixth named Civ VI
+rung and the last standard `BarbarianAttackForces` band. The serialized
+save-field fallback follows the same default, while explicit tournament setup
+continues to use Deity and saves with an explicit difficulty remain unchanged.
+This is an intentional public setup change so ordinary Civvis games provide a
+stronger barbarian challenge without changing the tournament treatment.
+
+The unchanged five-profile anchor reproduces the v39 baseline exactly:
+**18,845 decisions / `0x4a8a_d4ca_1dd9_8783`**. With the Emperor default it
+measures **18,911 decisions / `0xf49f_29f4_564a_dc6e`**. The re-pin records the
+deliberate setup change; native outcome comparisons across this boundary must
+account for the changed barbarian pressure.

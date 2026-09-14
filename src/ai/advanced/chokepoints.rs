@@ -743,6 +743,9 @@ impl AdvancedAi {
         let Some(unit) = g.units.get(&uid) else {
             return false;
         };
+        if self.distance_scout_available(g, pid, uid) {
+            return false;
+        }
         let spec = &g.rules.units[unit.kind];
         if unit.owner != pid || spec.class != "military" {
             return false;

@@ -63,9 +63,6 @@ CANNOT_RUN_IN_CI = {
     "civvis_push_guard.py":
         "A pre-push hook for development clones. CI has already received the "
         "push it exists to gate.",
-    "landing_battles.py":
-        "Regenerates a file by building and serving the crate; the committed "
-        "output is pinned by server.rs's string tests instead.",
     "profile_civvis.py":
         "Sampling needs /usr/bin/sample, which is macOS-only. Only the "
         "sampling half: the parser, the demangler and the screen-shape "

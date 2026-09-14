@@ -650,22 +650,17 @@ class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
             ["a loop that writes ladder rows cannot ask for an axis the ladder "
              "records, so no row can ever carry a different value:"] + missing))
 
-    def test_each_one_explicitly_plays_rome(self):
-        """A launcher default is not an invariant for a comparable ladder.
-
-        Rome's Trajan is the operator's standing seat.  The climb also defaults
-        to Trajan, but a production loop that relies on that default changes
-        civilization the moment the CLI default changes.  Read the actual
-        invocation rather than accepting a nearby comment or provenance line.
-        """
+    def test_each_loop_explicitly_selects_a_deterministic_leader(self):
+        """Loops must forward either their fixed seat or the operator's selection."""
         missing = []
         for script in self.ladder_loops():
-            command = self._invocation(script.read_text(encoding="utf-8"))
-            if "--leader LEADER_TRAJAN" not in command:
-                missing.append(f"{script.name}: does not explicitly select Rome / Trajan")
-        self.assertEqual(missing, [], "\n".join(
-            ["every production ladder loop must explicitly play Rome / Trajan:"]
-            + missing))
+            source = script.read_text(encoding="utf-8")
+            command = self._invocation(source)
+            configured = ('--leader "$LEADER"' in command
+                          and 'LEADER=${CIVVIS_LEADER:-LEADER_TRAJAN}' in source)
+            if "--leader LEADER_TRAJAN" not in command and not configured:
+                missing.append(f"{script.name}: does not explicitly select a leader")
+        self.assertEqual(missing, [], "\n".join(missing))
 
     def test_neither_axis_is_written_as_a_literal(self):
         """A pinned rung is the same defect as a pinned lane, one axis over."""

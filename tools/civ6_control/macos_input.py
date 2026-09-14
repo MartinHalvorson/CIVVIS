@@ -198,7 +198,21 @@ def probe() -> str:
     return backend
 
 
+def _note_event() -> None:
+    """Every synthetic event resets macOS's idle clock; say it was us.
+
+    See `operator_presence`: without this record the presence gate would read
+    the harness's own click as a person arriving and defer to itself forever.
+    """
+    try:
+        from civ6_control import operator_presence  # noqa: PLC0415
+    except ImportError:
+        return
+    operator_presence.note_synthetic_input()
+
+
 def _run_cliclick(arguments: list[str], *, check: bool):
+    _note_event()
     executable = _cliclick()
     if not executable:
         raise InputUnavailable("cliclick is not available")
@@ -212,6 +226,7 @@ def _run_cliclick(arguments: list[str], *, check: bool):
 
 
 def _run_native(arguments: list[str], *, check: bool):
+    _note_event()
     return subprocess.run(
         [str(_native_binary()), *arguments],
         capture_output=True,

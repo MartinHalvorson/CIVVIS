@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -249,26 +250,30 @@ class StaleInteractiveCaptureRecoveryTest(unittest.TestCase):
 
     def test_only_the_exact_aged_cmd_shift_5_helper_is_a_candidate(self) -> None:
         rows = self._rows()
-        self.assertEqual(
-            popup_clear.stale_interactive_capture_processes(rows),
-            [rows[1]],
-        )
+        with mock.patch.object(popup_clear, "writes_a_recording", return_value=False):
+            self.assertEqual(
+                popup_clear.stale_interactive_capture_processes(rows),
+                [rows[1]],
+            )
 
     def test_file_backed_recorder_and_fresh_picker_are_not_candidates(self) -> None:
         rows = self._rows(
             "/usr/sbin/screencapture -pdiU -z /private/tmp/civvis-cont1-current.png")
         rows[1]["elapsed"] = popup_clear.STALE_INTERACTIVE_CAPTURE_SECONDS - 1
-        self.assertEqual(popup_clear.stale_interactive_capture_processes(rows), [])
+        with mock.patch.object(popup_clear, "writes_a_recording", return_value=False):
+            self.assertEqual(popup_clear.stale_interactive_capture_processes(rows), [])
 
     def test_unrelated_old_capture_ui_is_not_a_matching_companion(self) -> None:
         rows = self._rows()
         rows[2]["elapsed"] += popup_clear.STALE_INTERACTIVE_COMPANION_SKEW_SECONDS + 1
-        self.assertEqual(popup_clear.stale_interactive_capture_processes(rows), [])
+        with mock.patch.object(popup_clear, "writes_a_recording", return_value=False):
+            self.assertEqual(popup_clear.stale_interactive_capture_processes(rows), [])
 
     def test_recovery_sends_term_then_escalates_only_after_rechecking_the_pid(self) -> None:
         rows = self._rows()
         with mock.patch.object(popup_clear, "_process_rows",
                                side_effect=[rows, rows, []]), \
+             mock.patch.object(popup_clear, "writes_a_recording", return_value=False), \
              mock.patch.object(popup_clear, "frontmost",
                                return_value="Civ6_Exe_Child"), \
              mock.patch.object(popup_clear.os, "kill") as kill, \
@@ -284,6 +289,7 @@ class StaleInteractiveCaptureRecoveryTest(unittest.TestCase):
         rows = self._rows()
         with mock.patch.object(popup_clear, "_process_rows",
                                side_effect=[rows, None]), \
+             mock.patch.object(popup_clear, "writes_a_recording", return_value=False), \
              mock.patch.object(popup_clear, "frontmost",
                                return_value="Civ6_Exe_Child"), \
              mock.patch.object(popup_clear.os, "kill") as kill, \
@@ -295,10 +301,82 @@ class StaleInteractiveCaptureRecoveryTest(unittest.TestCase):
     def test_recovery_leaves_a_foreign_frontmost_capture_alone(self) -> None:
         rows = self._rows()
         with mock.patch.object(popup_clear, "_process_rows", return_value=rows), \
+             mock.patch.object(popup_clear, "writes_a_recording", return_value=False), \
              mock.patch.object(popup_clear, "frontmost", return_value="Terminal"), \
              mock.patch.object(popup_clear.os, "kill") as kill:
             self.assertFalse(popup_clear.recover_stale_interactive_recording())
         kill.assert_not_called()
+
+    def test_a_recording_in_progress_is_never_a_stale_candidate(self) -> None:
+        """★★★★★ THE ONE THAT WAS MISSING, AND WHAT IT COST.
+
+        Every other condition here is satisfied by a Cmd-Shift-5 RECORDING that
+        has simply been running a while: same user, parent `SystemUIServer`, a
+        live `screencaptureui` companion, and argv exactly
+        `/usr/sbin/screencapture -pdiU -z keyboard.interactive` — a video
+        capture takes no output path on the command line, so the exact-argv rule
+        that excludes a file-backed still capture does not exclude it.
+
+        Past five minutes it was reclassified from "an active recording, stand
+        down" — `native_recording_ui_active` returns True for this very pair —
+        to "a stale stream", and killed. Both readings of one process table, at
+        the same moment, from the same module.
+        """
+        rows = self._rows()
+        # This pair is exactly what `native_recording_ui_active` calls an active
+        # recording: the interactive helper plus its live UI companion.
+        self.assertTrue(popup_clear.interactive_recording_command(rows[1]["command"]))
+        self.assertTrue(popup_clear.screen_capture_ui_command(rows[2]["command"]))
+        with mock.patch.object(popup_clear, "writes_a_recording", return_value=True):
+            self.assertEqual(popup_clear.stale_interactive_capture_processes(rows), [])
+
+    def test_a_recording_survives_even_with_civ_vi_frontmost(self) -> None:
+        """⚠⚠ Civ VI being frontmost was the guard that made this safe. During a
+        recorded verification game that is not a coincidence — it is the state
+        the harness deliberately maintains — so the guard selected for exactly
+        the recording it was meant to spare."""
+        rows = self._rows()
+        with mock.patch.object(popup_clear, "_process_rows", return_value=rows), \
+             mock.patch.object(popup_clear, "writes_a_recording", return_value=True), \
+             mock.patch.object(popup_clear, "frontmost",
+                               return_value="Civ6_Exe_Child"), \
+             mock.patch.object(popup_clear.os, "kill") as kill:
+            self.assertFalse(popup_clear.recover_stale_interactive_recording())
+        kill.assert_not_called()
+
+    def _lsof(self, names, returncode=0):
+        completed = subprocess.CompletedProcess(
+            ["lsof"], returncode,
+            stdout="".join(f"n{name}\n" for name in names), stderr="")
+        return mock.patch.object(popup_clear.subprocess, "run",
+                                 return_value=completed)
+
+    def test_an_open_movie_file_is_how_a_recording_is_recognised(self) -> None:
+        for name in ("/Users/x/Desktop/Screen Recording 2026-09-10.mov",
+                     "/private/var/folders/ab/T/capture.MOV",
+                     "/Users/x/Movies/clip.mp4"):
+            with self.subTest(name=name), self._lsof(["/dev/null", name]):
+                self.assertTrue(popup_clear.writes_a_recording(4242))
+
+    def test_a_helper_holding_no_movie_is_free_to_be_stale(self) -> None:
+        with self._lsof(["/dev/null", "/usr/lib/dyld",
+                         "/Users/x/Library/Caches/thing.plist"]):
+            self.assertFalse(popup_clear.writes_a_recording(4242))
+        # lsof answers 1 for "nothing matched", including a process already gone.
+        with self._lsof([], returncode=1):
+            self.assertFalse(popup_clear.writes_a_recording(4242))
+
+    def test_an_unreadable_answer_counts_as_recording(self) -> None:
+        """⚠ Fail CLOSED. A stale helper the ladder waits on is a delay it
+        already knows how to report; a killed recording cannot be got back."""
+        for failure in (OSError("no lsof"),
+                        subprocess.TimeoutExpired(["lsof"], 3.0)):
+            with self.subTest(failure=type(failure).__name__), \
+                 mock.patch.object(popup_clear.subprocess, "run",
+                                   side_effect=failure):
+                self.assertTrue(popup_clear.writes_a_recording(4242))
+        with self._lsof(["/dev/null"], returncode=127):
+            self.assertTrue(popup_clear.writes_a_recording(4242))
 
 
 # Unlike the module under test, these checks really do need Pillow: every one

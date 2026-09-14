@@ -71,17 +71,13 @@ def turn_clock(events_path: Path) -> list[dict]:
 
 
 def rescue_stalls(events_path: Path) -> dict:
-    """What the desktop rescue cost this run, in wall clock.
+    """Sum gaps from recovery requests to the next journal event.
 
-    ★ THE ONE NUMBER THIS TOOL WAS MISSING. The per-turn table above hides it:
-    an `autoclose` event carries no turn, so a stall lands inside whichever
-    turn spans it and reads as a slow turn. Measured directly it was 25.8 min
-    of run civvis-20260902T095330Z's 68.6 (37.6 %) and 9.5 of
-    civvis-20260902T162829Z's 31.3 (30.4 %) -- two doomed native captures per
-    ask, 23.5 s each, before #3089.
-
-    So: the gap from every `autoclose_desktop`/`autoclose_stuck` to whatever
-    the run said next. That is exactly the time the game waited for an answer.
+    This is an observation interval, not measured recovery execution time.
+    Requests can be deferred while another app is foreground, and native
+    event cadence also contributes to the next-event gap. Use these gaps to
+    locate traces for investigation, not to attribute CPU or wall time to
+    the desktop recovery implementation.
     """
     stamped = []
     with events_path.open("r", errors="replace") as handle:
@@ -95,7 +91,7 @@ def rescue_stalls(events_path: Path) -> dict:
                 stamped.append((at, event.get("kind"), event.get("screen")))
     stamped.sort(key=lambda row: row[0])
     if len(stamped) < 2:
-        return {"asks": 0, "seconds": 0.0, "span": 0.0, "worst": 0.0, "screens": {}}
+        return {"metric": "request_to_next_event_gap", "asks": 0, "seconds": 0.0, "span": 0.0, "worst": 0.0, "screens": {}}
     span = (stamped[-1][0] - stamped[0][0]).total_seconds()
     asks = 0
     seconds = 0.0
@@ -111,7 +107,7 @@ def rescue_stalls(events_path: Path) -> dict:
         seconds += gap
         worst = max(worst, gap)
         screens[str(screen)] = screens.get(str(screen), 0.0) + gap
-    return {"asks": asks, "seconds": seconds, "span": span, "worst": worst,
+    return {"metric": "request_to_next_event_gap", "asks": asks, "seconds": seconds, "span": span, "worst": worst,
             "screens": screens}
 
 
@@ -138,11 +134,12 @@ def main(argv: list[str] | None = None) -> int:
     if rescue["asks"]:
         share = 100 * rescue["seconds"] / rescue["span"] if rescue["span"] else 0.0
         busiest = max(rescue["screens"].items(), key=lambda item: item[1])
-        print(f"desktop rescue: {rescue['asks']} asks cost "
+        print(f"recovery requests: {rescue['asks']} next-event gaps total "
               f"{rescue['seconds'] / 60:.2f} min = {share:.1f}% of the run "
-              f"(worst {rescue['worst']:.1f}s, most on {busiest[0]})")
+              f"(longest {rescue['worst']:.1f}s, most on {busiest[0]}); "
+              "not measured recovery time")
     else:
-        print("desktop rescue: no asks")
+        print("recovery requests: no asks")
     print("turn  board     dur   wait polls frames popups stuck")
     for r in sorted(timed, key=lambda r: -r["dur"])[:args.slowest]:
         print(f"{r['turn']:>4}  {r['board_at']}  {r['dur']:>5}  {r.get('wait', '-'):>5} "

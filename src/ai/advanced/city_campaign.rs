@@ -113,6 +113,47 @@ pub(crate) const CAMPAIGN_REACH: i32 = 18;
 pub(crate) const CAMPAIGN_HOP: i32 = 8;
 /// Our military power over the neighbour's, both public, for the neighbour
 /// to count as weaker.
+///
+/// ## 🔴 MEASURED 2026-09-10: THIS BAR IS UNREACHABLE AT EMPEROR, AND THE
+/// ## WHOLE GENE IS THEREFORE INERT AT THE RUNG THE LADDER PLAYS.
+///
+/// `city-campaign-2` ships **on** and ranks **17th**. It draws **zero plans**
+/// in 270 recorded games — 30 at Emperor in the deployment shape
+/// (`--difficulty emperor --rivals firaxis-mix --handicap rivals
+/// --rival-chairs 5 --deployment-genome`, `docs/fidelity/`) and 240 at Prince.
+/// `campaign:planned` is 0 in every one of them, so `campaign:declared` and
+/// `campaign:taken` are 0 too.
+///
+/// The reason is this constant, and it is arithmetic rather than tuning.
+/// Our military against the best rival's, at the end of the game:
+///
+/// | rung | median ratio | seats clearing 1.25 | clearing 2.0 |
+/// |---|---:|---:|---:|
+/// | Prince | 0.56 | 21 of 240 (9%) | 3 |
+/// | **Emperor** | **0.36** | **0 of 30** | **0** |
+///
+/// At Emperor the best rival is roughly three times our size and the ratio
+/// never once reaches 1.15, let alone 1.25. `weak_enough` can never answer
+/// true, so `plan_city_campaign` never keeps a neighbour, so no plan is drawn
+/// and no city is ever taken by this path — 0 captures in those 30 games
+/// against 29 across the 240 Prince seats, which arrive by other routes.
+///
+/// ⚠⚠ **DO NOT LOWER THIS BAR.** The bar is not the defect; the army is. A
+/// seat that attacks at 0.36 power does not take a city, it loses its units —
+/// the live record already reads 0.45 kills per loss and 65 cities lost
+/// against 2 taken. Lowering the admission would convert an inert gene into a
+/// harmful one. What has to move is the size of the army, which is an economy
+/// question, not a campaign-gating one.
+///
+/// ⚠ It also explains a null that looked like a strategy result:
+/// `early-conquest-opening` screens negative and pairing it with
+/// `conquest-takes-the-soft-city` did not help (240 seats, interaction
+/// −8.33 pp at z −0.87, which `gene_screen` itself labels noise). Target
+/// SELECTION cannot matter while no target is ever selected.
+///
+/// ⚠ And the gene's own ranking is a Prince number. Every standard screen runs
+/// at `difficulty: "prince"`, so +9/+26/+21 wins per 10k were earned at the
+/// one rung where this bar is sometimes reachable. See #3427 and #3430.
 pub(crate) const CAMPAIGN_POWER_RATIO: f64 = 1.25;
 /// At this ratio the neighbour is weaker whatever its science says.
 pub(crate) const CAMPAIGN_OVERWHELMING_RATIO: f64 = 2.0;
@@ -242,8 +283,16 @@ impl AdvancedAi {
     /// Either version of the city-campaign family owns the shared plan.  The
     /// treatment toggles make the versions exclusive, but spelling the family
     /// predicate here keeps every consumer of the plan on the same contract.
-    fn city_campaign_active(&self) -> bool {
-        self.city_campaign || self.city_campaign_2
+    pub(super) fn city_campaign_active(&self) -> bool {
+        // `early-conquest-opening` hands its DECLARED campaign to this module
+        // by writing the plan directly, so the plan readers below — which are
+        // what `assess` consults — must accept it. The predicate widens only
+        // while that opening owns the plan, not whenever its flag is on: a
+        // bare flag here would send `maintain_city_campaign` below into
+        // `plan_city_campaign`, and the gene would ship city-campaign v1's
+        // planner with it. Exactly the shipped predicate with the gene off.
+        // See `advanced/early_conquest.rs`.
+        self.city_campaign || self.city_campaign_2 || self.conquest_owns_the_campaign()
     }
 
     /// Whether a plan stands to read: the gene is on, the rival is alive and
@@ -619,6 +668,13 @@ impl AdvancedAi {
     /// plan never launched (and hold off the next for the cooldown), and
     /// draw or refresh one while at peace.
     pub(crate) fn maintain_city_campaign(&mut self, g: &mut Game, pid: usize) {
+        // `early-conquest-opening`: while the opening's own war is under way
+        // it owns the plan outright — it has already written this turn's
+        // objective and does its own bookkeeping. Exactly `false` with that
+        // gene off. See `advanced/early_conquest.rs`.
+        if self.conquest_owns_the_campaign() {
+            return;
+        }
         if !self.city_campaign_active() {
             self.campaign = None;
             return;

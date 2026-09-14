@@ -87,6 +87,23 @@ class TheGuardIsSelective(unittest.TestCase):
         self.assertEqual(len(re.findall(r"perform act\b", script)), 1)
         self.assertEqual(script.count('perform action "AXPress"'), 1)
 
+    def test_it_stands_off_while_a_person_is_using_the_mac(self):
+        """It closes System Settings windows. Done under someone's hands that is
+        the interference the guard exists to spare the GAME, done to the person.
+        Same idle clock and threshold as tools/civ6_control/operator_presence.py."""
+        import re
+        source = GUARD.read_text(encoding="utf-8")
+        self.assertIn("HIDIdleTime", source)
+        self.assertIn("operator_active", source)
+        loop = source[source.index("while true; do"):]
+        self.assertLess(loop.index("if operator_active; then"), loop.index("OFF"),
+                        "presence is checked before the pass, not after it")
+        default = re.search(r"PRESENCE_IDLE_S=\$\{CIVVIS_PRESENCE_IDLE_S:-(\d+)\}", source)
+        self.assertIsNotNone(default)
+        sys.path.insert(0, str(GUARD.parent.parent / "civ6_control"))
+        from civ6_control import operator_presence
+        self.assertEqual(int(default.group(1)), int(operator_presence.DEFAULT_THRESHOLD_SECONDS))
+
     def test_it_derives_its_paths(self):
         executable = [line for line in GUARD.read_text().splitlines()
                       if not line.lstrip().startswith("#")]

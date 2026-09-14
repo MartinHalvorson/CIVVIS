@@ -283,6 +283,38 @@ return false'''
     return done.returncode == 0 and done.stdout.strip().lower() == "true"
 
 
+def confirm_exit_dialog() -> bool:
+    """Answer Civilization VI's EXIT TO DESKTOP confirmation. True when clicked.
+
+    ★★★★★ THE POLITE QUIT ASKS A QUESTION AND NOTHING WAS ANSWERING IT.
+
+    `request_macos_quit()` clicks *Quit Civilization VI* in the game's own menu.
+    From the main menu that exits. From inside a game -- or the Create Game
+    screen -- it raises an in-engine modal instead: **EXIT TO DESKTOP / "Are you
+    sure you want to exit the game?" / OK · Cancel**. The SIGTERM that follows
+    cannot get through a modal, and `quit_game` rightly refuses to escalate to
+    SIGKILL, so the process sits there and the supervisor reports
+    `LANE STALLED ... it needs an operator`. Measured 2026-09-10: it needed one
+    twice, and both times the entire fix was a single click.
+
+    The reading lives in `civ6_play`, with the other screen readers, and is
+    imported HERE at call time: `civ6_play` imports this module, so a top-level
+    import would be a cycle -- and this module is the dependency-free one that
+    merely locates an installation, which a host with no capture grant must
+    still be able to ask.
+    """
+    try:
+        import civ6_play  # noqa: PLC0415 - call-time, to avoid an import cycle
+    except ImportError:
+        return False
+    try:
+        return civ6_play.confirm_exit_dialog()
+    except Exception as error:  # a quit path must never raise
+        print(f"[env] could not answer the exit confirmation: {error}",
+              file=sys.stderr, flush=True)
+        return False
+
+
 def quit_game(timeout_s: float = 20.0) -> bool:
     """Stop the game if it is running. True when nothing is left running.
 
@@ -300,9 +332,20 @@ def quit_game(timeout_s: float = 20.0) -> bool:
     deadline = time.time() + timeout_s
     if request_macos_quit():
         native_deadline = min(deadline, time.time() + 5.0)
+        asked = False
         while time.time() < native_deadline:
             if not game_pids():
                 return True
+            # The menu quit raises a confirmation when it is used from inside a
+            # game or the Create Game screen. Answer it once, on the first pass
+            # that still finds the process alive, after a settle for the modal
+            # to render. Without this the loop waits out its whole window for a
+            # click nobody sends, the SIGTERM below cannot cross the modal, and
+            # the lane stalls for an operator.
+            if not asked:
+                time.sleep(1.0)
+                asked = confirm_exit_dialog()
+                continue
             time.sleep(0.5)
     for pid in game_pids():
         try:

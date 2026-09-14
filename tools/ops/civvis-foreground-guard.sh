@@ -189,7 +189,24 @@ trap 'rm -rf -- "$LOCK"; exit 0' HUP INT TERM EXIT
 
 say "up (pid $$, every ${INTERVAL}s, grace ${GRACE}s, off marker $OFF)"
 gone_for=0
+# Seconds a person must have left the keyboard and pointer alone before this
+# guard acts. Dismissing an alert or closing a Settings window under someone's
+# hands is exactly the interference the guard exists to spare the GAME, done to
+# the operator instead -- the pane it closes is one they may have opened. Same
+# rule and clock as tools/civ6_control/operator_presence.py; kept in step by
+# tools/test_ops_foreground_guard.py.
+PRESENCE_IDLE_S=${CIVVIS_PRESENCE_IDLE_S:-15}
+operator_active() {
+  local ns
+  ns=$(ioreg -c IOHIDSystem -d 4 2>/dev/null | awk -F= '/HIDIdleTime/ {gsub(/ /,"",$2); print $2; exit}')
+  [[ -n "$ns" ]] || return 1                       # unreadable: behave as before
+  (( ns / 1000000000 < PRESENCE_IDLE_S ))
+}
+
 while true; do
+  if operator_active; then
+    sleep "$INTERVAL"; continue
+  fi
   if [[ -e "$OFF" ]]; then
     say "off marker $OFF present; standing down"
     break

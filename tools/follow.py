@@ -665,9 +665,12 @@ def hold_the_frame():
 
 
 MIRROR_URL = f"http://127.0.0.1:{PORT}/"
-# Left half of the display, beside the Civilization VI window the controller
-# parks on the right (`civ6_play --window-side right`).
-MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
+# ⚠ `MIRROR_BOUNDS` was here and is gone. Nothing read it — this follower places
+# no window — and what it said was wrong twice over: it described the left half
+# of the display as being "beside the Civilization VI window the controller
+# parks on the right", while `civ6_civvis_climb` has parked the game on the LEFT
+# for every attempt it drives. The window that does exist is the dedicated
+# display, and `tools/ops/civvis-display-keeper.mjs` places it.
 MIRROR_ENUM_CACHE_SECONDS = 5.0
 _MIRROR_ENUM_CACHE_AT = 0.0
 _MIRROR_ENUM_CACHE_VALUE = None

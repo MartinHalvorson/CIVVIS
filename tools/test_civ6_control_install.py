@@ -136,7 +136,7 @@ class ProtectedInstallTest(unittest.TestCase):
         their_units = rivals.split("local theirUnits = {};", 1)[1].split(
             "rivals[#rivals + 1] = {", 1
         )[0]
-        gate = 'if name ~= "UNIT_SPY" and PlayersVisibility[pid]:IsVisible(ux, uy) then'
+        gate = 'if name ~= "UNIT_SPY" and CivvisUnitVisible(pid, unit) then'
 
         self.assertIn("local name = unitTypeName(unit);", their_units)
         self.assertIn(gate, their_units)

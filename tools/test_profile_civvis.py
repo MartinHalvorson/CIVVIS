@@ -163,6 +163,30 @@ class AProfileOfTheWrongProcessIsRefused(unittest.TestCase):
     def test_a_real_profile_passes_the_same_check(self):
         parsed().check_is_this_program()  # must not raise
 
+    def test_a_parked_coordinator_does_not_hide_a_real_game_worker(self):
+        parked = """    2000 Thread_coordinator
+      2000 __sigsuspend
+"""
+        profile = parsed(SAMPLE.replace("Call graph:\n", "Call graph:\n" + parked))
+        profile.check_is_this_program()
+        self.assertIn("Thread_1", profile.thread["name"])
+        self.assertEqual(profile.process_total, 3040)
+
+    def test_a_crate_bearing_parked_worker_loses_to_active_work(self):
+        parked = """    2000 Thread_parked_game
+      2000 civvis::worker
+        1900 _pthread_cond_wait
+          1900 __psynch_cvwait
+"""
+        profile = parsed(SAMPLE.replace("Call graph:\n", "Call graph:\n" + parked))
+        self.assertEqual(profile.thread_working_samples(profile.threads[0]), 100)
+        self.assertIn("Thread_1", profile.thread["name"])
+
+    def test_crate_frames_after_four_hundred_nodes_are_not_lost(self):
+        prefix = "".join("      1 unrelated_frame_%d\n" % i for i in range(401))
+        text = SAMPLE.replace("      1000 start", prefix + "      1000 start")
+        parsed(text).check_is_this_program()
+
     def test_a_report_with_no_call_graph_says_so(self):
         with self.assertRaises(SystemExit):
             profiler.Profile("Analysis of sampling time\n", rustfilt=None)

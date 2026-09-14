@@ -133,6 +133,84 @@ check("no empty slots is an honest zero", count, 0)
 check("no survey is nil", gw.matches(nil, writer), nil)
 check("no objects is nil", gw.matches(survey, nil), nil)
 
+-- Exercise the survey itself against the shipped column names, not a
+-- hand-built survey. Buildings.xml:113 names PrereqDistrict="DISTRICT_THEATER"
+-- for the Amphitheater. Reading PrerequisiteDistrict silently counted empty
+-- slots while locating none, so every highlighted Acropolis was called full.
+local function rows(values)
+	return function()
+		local i = 0
+		return function() i = i + 1; return values[i] end
+	end
+end
+local occupied = false
+local districtType = 1
+local blds = {
+	HasBuilding = function() return true end,
+	GetNumGreatWorkSlots = function(_, index) return index == 1 and 2 or 1 end,
+	GetGreatWorkInSlot = function(_, index)
+		return (occupied or index == 2) and 42 or -1
+	end,
+	GetGreatWorkSlotType = function() return 0 end,
+}
+local city = { GetBuildings = function() return blds end }
+local player = { GetCities = function()
+	return { Members = function() return ipairs({city}) end }
+end }
+rawset(_G, "GameInfo", {
+	GreatWork_ValidSubTypes = rows({{
+		GreatWorkSlotType = "GREATWORKSLOT_WRITING",
+		GreatWorkObjectType = "GREATWORKOBJECT_WRITING",
+	}}),
+	DistrictReplaces = rows({{
+		CivUniqueDistrictType = "DISTRICT_ACROPOLIS",
+		ReplacesDistrictType = "DISTRICT_THEATER",
+	}}),
+	Districts = {
+		[0] = {DistrictType = "DISTRICT_CITY_CENTER"},
+		[1] = {DistrictType = "DISTRICT_ACROPOLIS"},
+		[2] = {DistrictType = "DISTRICT_THEATER"},
+	},
+	Buildings = rows({
+		{Index = 1, BuildingType = "BUILDING_AMPHITHEATER", PrereqDistrict = "DISTRICT_THEATER"},
+		{Index = 2, BuildingType = "BUILDING_PALACE", PrereqDistrict = "DISTRICT_CITY_CENTER"},
+		-- A building with no district remains an unknown-location slot.
+		{Index = 3, BuildingType = "TEST_WONDER"},
+	}),
+	GreatWorkSlotTypes = {[0] = {GreatWorkSlotType = "GREATWORKSLOT_WRITING"}},
+})
+rawset(_G, "Map", {
+	GetCityPlots = function()
+		return {GetPurchasedPlots = function() return {101, 202} end}
+	end,
+	GetPlotByIndex = function(index)
+		return {
+			GetDistrictType = function() return index == 101 and 0 or districtType end,
+			GetOwner = function() return 0 end,
+			GetX = function() return index end,
+			GetY = function() return 0 end,
+		}
+	end,
+})
+for _, kind in ipairs({1, 2}) do
+	districtType = kind
+	local actual = gw.survey(player, 100 + kind)
+	count, plots = gw.matches(actual, writer)
+	check("survey counts real slots for district " .. kind, count, 3)
+	check("survey maps Amphitheater to district " .. kind, plots[202], true)
+	check("full Palace stays unavailable for district " .. kind, plots[101], nil)
+	check("unknown wonder location stays unknown", actual.slots[3].plot, nil)
+	local exported = rawget(_G, "CivvisGreatPersonActivationPlots")({}, {
+		GetActivationHighlightPlots = function() return {101, 202} end,
+	}, 0, actual, plots)
+	check("export marks full Palace closed", exported[1].slot_open, false)
+	check("export marks matching theater open", exported[2].slot_open, true)
+end
+occupied = true
+count, plots = gw.matches(gw.survey(player, 103), writer)
+check("survey of occupied buildings has no free slot", count, 0)
+check("occupied theater is not an activation destination", plots[202], nil)
+
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))
 	os.exit(1)

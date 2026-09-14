@@ -37,6 +37,9 @@ use civvis::mirror::{self, LiveMirror, Snapshot, StateSnapshot, TilesChunk};
 use civvis::rules::Yields;
 use std::collections::BTreeMap;
 
+#[path = "live_divergence/action_replay.rs"]
+mod action_replay;
+
 /// One measured (live, sim) reading. `key` names the city, unit or empire
 /// quantity so the report can print the worst turns with their subject.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -459,6 +462,13 @@ fn parse_turns(text: &str) -> Option<(u32, u32)> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--actions") {
+        if let Err(error) = action_replay::run(&args) {
+            eprintln!("action replay: {error}");
+            std::process::exit(2);
+        }
+        return;
+    }
     let Some(path) = args
         .iter()
         .find(|a| !a.starts_with("--") && a.ends_with(".jsonl"))

@@ -1117,6 +1117,9 @@ mod tests {
                 ai.disable_exhaustion_loyalty_guard();
             }
             ai.attach_journal(Journal::recording());
+            // Isolate this optional guard from the fixed production safety
+            // pass, which now also runs in native tournaments.
+            ai.disable_live_settler_capture_lessons();
             assert!(
                 ai.base.valid_settle_site(&g, 0, doomed),
                 "fixture: the doomed plot is a legal site"

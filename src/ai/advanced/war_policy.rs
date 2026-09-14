@@ -197,13 +197,22 @@ impl AdvancedAi {
     }
 
     /// Whether `rival` may be a target: its nearest city's Siege requirement
-    /// is within the whole roster's strength, or its clock is short. Always
-    /// true with the gene off.
+    /// is within the whole roster's strength, or its clock is short. A
+    /// committed domination player may also name a preparation target before
+    /// its army is ready. Always true with the gene off.
     pub(super) fn war_policy_target_feasible(&self, g: &Game, pid: usize, rival: usize) -> bool {
         if !self.war_policy_via_board || rival == pid {
             return true;
         }
         if g.is_at_war(pid, rival) || self.urgent_victory_threat(g, rival) {
+            return true;
+        }
+        // A committed domination player needs an objective to mobilize:
+        // assess names its city, production raises the army budget, and the
+        // staging pass assembles it. Requiring that army here prevented the
+        // preparation itself. The declaration still checks the full Siege
+        // requirement, staging and unmet defensive needs.
+        if self.active_victory_target(g) == Some(super::VictoryTarget::Domination) {
             return true;
         }
         let Some(cid) = self.nearest_city_of(g, pid, rival) else {
@@ -366,6 +375,9 @@ impl AdvancedAi {
 }
 
 #[cfg(test)]
+mod mobilization_tests;
+
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
@@ -377,7 +389,7 @@ mod tests {
 
     /// A flat board, the shape `objective_board::tests` uses: every starting
     /// unit cleared, everyone met, turn 60, nobody at war.
-    fn flat_board(seed: u64, capitals: &[Pos]) -> Game {
+    pub(super) fn flat_board(seed: u64, capitals: &[Pos]) -> Game {
         let mut game = Game::new_full(capitals.len(), 36, 22, seed, 1_000, 0, false);
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
@@ -410,7 +422,7 @@ mod tests {
         game
     }
 
-    fn at(col: i32, row: i32) -> Pos {
+    pub(super) fn at(col: i32, row: i32) -> Pos {
         crate::hex::offset_to_axial(col, row)
     }
 
@@ -439,7 +451,7 @@ mod tests {
         }
     }
 
-    fn on() -> AdvancedAi {
+    pub(super) fn on() -> AdvancedAi {
         let mut ai = AdvancedAi::new();
         ai.enable_objective_board();
         ai.enable_war_policy_via_board();

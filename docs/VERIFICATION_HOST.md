@@ -130,6 +130,29 @@ ambiguous harnesses, asks the installed control mod to invoke Civilization
 VI's native Retire action, waits for its `retired` acknowledgement, and leaves
 a durable request/status/result sidecar in that run.
 
+## Using the Mac while a game plays
+
+The harness drives Civilization VI through the GUI, so left to itself it raises
+the game window on a timer and clicks whatever needs clicking. Since #3426 it
+first asks whether a person is here. `tools/civ6_control/operator_presence.py`
+reads macOS's own idle clock (`HIDIdleTime`) and, for 15 s after your last
+keystroke or pointer move, the desktop counts as **shared**: no focus upkeep,
+no desktop-rescue clicks, and the foreground guard stands off too. Walk away and
+upkeep resumes on its own. Decisions still flow through the control mod the
+whole time, so the game keeps playing — only slower, because Civ VI throttles
+itself when it is not frontmost (`ThrottleWhileInactive`, the engine's own
+setting, which nothing here changes).
+
+⚠ The harness's own clicks reset that clock. `macos_input` records the time of
+every synthetic event in `~/.civvis-last-synthetic-input`, and an idle clock
+that reset at or after that moment is attributed to the harness, not to you.
+Without that the gate would defer to its own footsteps forever.
+
+`~/.civvis-shared-desktop` remains the standing manual override — with it
+present the game is never refocused, attended or not. `CIVVIS_PRESENCE_IDLE_S`
+changes the guard's threshold; the Python side's is `DEFAULT_THRESHOLD_SECONDS`,
+and `tools/test_ops_foreground_guard.py` keeps the two equal.
+
 ## The "App Background Activity" alert
 
 Every new LaunchAgent label a Mac registers makes Background Task Management

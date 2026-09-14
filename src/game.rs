@@ -1,5 +1,6 @@
 //! Core turn engine (mirrors civvis/game.py — same mechanics and action protocol).
 use serde::ser::SerializeMap;
+mod player_view;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
@@ -3129,6 +3130,11 @@ pub struct HostUnitFacts {
     /// this identity instead of by the transient CIVVIS id.
     #[serde(default)]
     pub civ6_id: Option<i64>,
+    /// Firaxis Rock Band activation highlights, in axial coordinates. An empty
+    /// set means no host-legal concert destination; None keeps model behavior
+    /// for headless games and older or unreadable exports.
+    #[serde(default)]
+    pub concert_plots: Option<BTreeSet<Pos>>,
     #[serde(default)]
     pub upgrade: Option<HostUnitUpgrade>,
     /// `UnitManager.GetUnitMaintenance` (or the Corps/Army accessor) for the
@@ -3964,15 +3970,18 @@ pub struct HostCompetition {
 /// Spaceport Districts", so both accrue every turn; a `FromProject` row pays
 /// once, when the project completes.
 ///
-/// ⚠ Four shipped rows stay unmodelled because the data does not say what they
+/// ⚠ Three shipped rows stay unmodelled because the data does not say what they
 /// measure. `CLIMATE_ACCORDS_SCORE_CO2` pays for "emissions much lower than the
-/// biggest CO2 polluter" and never says how much lower; `SEND_AID_SCORE_FROM_GOLD`
-/// counts gifts of Gold to the target, which is a diplomatic action CIVVIS has
-/// no equivalent of; and the two `FROM_AT_WAR` penalties do not say whether -30
+/// biggest CO2 polluter" and never says how much lower; and the two
+/// `FROM_AT_WAR` penalties do not say whether -30
 /// and -200 are charged once or every turn. Choosing a number for any of them
 /// would be inventing a rule, which is the #2049 mistake.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum CompetitionScoreSource {
+    /// Expansion2_Emergencies.xml:131,166: one point per Gold gifted to
+    /// the Aid Request's target. Only completed lump-sum gifts are modeled;
+    /// recurring deal payments have no verified scoring cadence here.
+    GoldGift,
     /// `FromProject`: a project completed in a city, worth the
     /// `competition_score` it declares.
     Project,
@@ -4469,6 +4478,10 @@ pub struct ObservedPublicEmpireStats {
     pub nuclear_devices: Option<i64>,
     pub thermonuclear_devices: Option<i64>,
     pub techs: Option<usize>,
+    /// Highest research era, independent of the private technology identities.
+    /// Colonial War must not read a redacted tree as an Ancient-era rival.
+    #[serde(default)]
+    pub tech_era: Option<usize>,
     pub civics: Option<usize>,
     pub tourism_per_turn: Option<f64>,
     /// The culture victory's two public counters as the host's World Rankings
@@ -4652,6 +4665,11 @@ pub struct Player {
     /// recruited this turn.
     #[serde(default)]
     pub live_great_person_offers: Option<BTreeSet<String>>,
+    /// Open native Great Work slot kinds after retaining each work in its
+    /// observed building. None means occupancy was not exported; this is a
+    /// spending input, not a restriction on recruiting a physical Great Person.
+    #[serde(default)]
+    pub live_open_great_work_slots: Option<BTreeSet<String>>,
     /// The exact named individual Firaxis is offering for each class. A
     /// mirrored controller uses this to distinguish a Space Race Engineer
     /// from an otherwise-valid Engineer whose effect belongs to another
@@ -4929,6 +4947,7 @@ impl Player {
             envoys_free: 0,
             gpp: BTreeMap::new(),
             live_great_person_offers: None,
+            live_open_great_work_slots: None,
             live_great_person_offer_individuals: BTreeMap::new(),
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
@@ -5533,7 +5552,7 @@ pub fn default_difficulty() -> String {
     "prince".to_string()
 }
 
-/// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — IMMORTAL, NOT THE SEAT'S.
+/// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — EMPEROR, NOT THE SEAT'S.
 ///
 /// Operator directive 2026-08-24: *"We need to make the barbarians in civvis
 /// more aggressive. Should still roughly match the Civ 6 behavior. But weak
@@ -5541,18 +5560,16 @@ pub fn default_difficulty() -> String {
 /// wrong genes … we are playing on level 5 and higher in Civ 6 verification
 /// games. Let's make the barbarians level 6 barbarians in civvis for now."*
 ///
-/// Level 6 on the ladder is Immortal, and Immortal is exactly where the
-/// game's own `BarbarianAttackForces` switches band: `HighDifficultyStandardRaid`
-/// assembles three melee and two ranged units (against two and one) at a
-/// `SpawnRate` of 1 (against 2), i.e. twice as often — the rows
-/// `data/difficulties.json` already transcribes as `barb_force_scale 1.5` and
-/// `barb_spawn_scale 0.5`. Until now the barbarian seat read those from the
-/// *seat's* difficulty, and every native screen runs at the Prince default,
-/// so every gene ever priced was priced against the Standard band. This key
-/// is what the barbarian seat plays by, whatever the majors' rung is; the
-/// seat difficulty still governs the human's camp Gold and the AI handicaps.
+/// The sixth named rung on the ladder is Emperor. Emperor is the last rung in
+/// the game's standard `BarbarianAttackForces` band: it assembles two melee
+/// and one ranged unit at a `SpawnRate` of 2, while Immortal and Deity switch
+/// to the high band. Until now the barbarian seat read its band from the
+/// *seat's* difficulty, and every native screen ran at the Prince default, so
+/// the setting was not stable for public games. This key is what the
+/// barbarian seat plays by, whatever the majors' rung is; the seat difficulty
+/// still governs the human's camp Gold and the AI handicaps.
 pub fn default_barbarian_difficulty() -> String {
-    "immortal".to_string()
+    "emperor".to_string()
 }
 
 pub fn default_speed() -> String {
@@ -6084,6 +6101,13 @@ pub struct HostStrikePreview {
     pub defender_wall_damage: i32,
 }
 
+/// A native menu is valid only until the unit consumes a promotion.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HostBandPromotions {
+    pub held: BTreeSet<Name>,
+    pub offered: BTreeSet<Name>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
@@ -6171,7 +6195,7 @@ pub struct Game {
     pub difficulty: String,
     /// Key into `rules.difficulties` for the barbarian seat's raid band and
     /// spawn cadence, independent of the seat's rung; a save without it
-    /// plays Immortal barbarians. See [`default_barbarian_difficulty`].
+    /// plays Emperor barbarians. See [`default_barbarian_difficulty`].
     #[serde(default = "default_barbarian_difficulty")]
     pub barbarian_difficulty: String,
     /// Key into `rules.speeds`. Scales everything bought with a yield.
@@ -6405,10 +6429,11 @@ pub struct Game {
     pub observed_city_worked_tiles: Arc<BTreeMap<u32, Vec<Pos>>>,
     #[serde(default)]
     pub observed_city_specialists: Arc<BTreeMap<u32, Vec<String>>>,
-    /// Host loyalty rates and banner defense strengths for reconstructed cities.
-    /// Keys are CIVVIS city ids, populated only by the live mirror.
+    /// Observed loyalty rates for owned cities, keyed by CIVVIS city id.
+    /// Populated by the live mirror and native player decision views.
     #[serde(default)]
     pub observed_city_loyalty_per_turn: Arc<BTreeMap<u32, f64>>,
+    /// Observed banner defense strengths for reconstructed cities.
     #[serde(default)]
     pub observed_city_strength: Arc<BTreeMap<u32, f64>>,
     /// Host-reported outer-defense capacity for mirrored cities. Native games
@@ -6489,6 +6514,9 @@ pub struct Game {
     /// cannot.
     #[serde(default)]
     pub blocked_promotions: Arc<BTreeMap<u32, BTreeSet<Name>>>,
+    /// Current native Rock Band promotion offers; absent means unobserved.
+    #[serde(default)]
+    pub host_band_promotions: Arc<BTreeMap<u32, HostBandPromotions>>,
     /// ★★★ STRIKES THE HOST REFUSED THIS TURN, so a later frame of the same
     /// turn does not propose the identical shot again.
     ///
@@ -7349,6 +7377,7 @@ impl From<GameSer> for Game {
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
+            host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
@@ -8048,6 +8077,7 @@ impl Game {
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
+            host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
@@ -17566,6 +17596,16 @@ impl Game {
         self.units.get(&uid).is_some_and(|unit| {
             let spec = &self.rules.units[unit.kind];
             let class = &spec.promotion_class;
+            if class == "rock_band" {
+                if let Some(menu) = self.host_band_promotions.get(&uid) {
+                    if menu.held == unit.promotions {
+                        return menu
+                            .offered
+                            .iter()
+                            .any(|name| !unit.promotions.contains(name));
+                    }
+                }
+            }
             let level_cap = if class == "rock_band" { 4 } else { 8 };
             spec.earns_xp
                 && !class.is_empty()
@@ -17633,6 +17673,16 @@ impl Game {
             })
             .map(|(name, _)| *name)
             .collect();
+        // Native bands draw their own three choices. A current offer is stronger
+        // evidence than simulated randomness or earlier rejected choices.
+        if class == "rock_band" {
+            if let Some(menu) = self.host_band_promotions.get(&uid) {
+                if menu.held == unit.promotions {
+                    available.retain(|name| menu.offered.contains(name));
+                    return available;
+                }
+            }
+        }
         // ★★★★★ DROP PROMOTIONS THE HOST HAS ALREADY REFUSED FOR THIS UNIT.
         //
         // Filtered here rather than at the three appliers because every chooser and
@@ -35867,6 +35917,9 @@ mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;
+
+#[cfg(test)]
+mod building_activity_cache_tests;
 
 #[cfg(test)]
 mod attack_reach_flood_tests;

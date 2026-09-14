@@ -15,6 +15,30 @@
 // cache's argument for a mechanism deleted in #2163 (#2556).
 #![allow(rustdoc::private_intra_doc_links)]
 
+// ⭐ EVERY NATIVE BINARY ALLOCATES THROUGH mimalloc, NOT THE PLATFORM.
+//
+// The simulator clones whole boards to search, so allocation is not incidental
+// work here — it is the inner loop's tax. `docs/SIMULATOR_PERFORMANCE.md` puts
+// allocator and libc memory primitives at a **16.84%** roll-up, with macOS's own
+// `_xzm_free` the largest single leaf in the profile at 3.66% self.
+//
+// One line in the library covers all twelve binaries, which is the point:
+// `#[global_allocator]` is chosen by the final artifact, so stating it per
+// binary means twelve chances for the next `[[bin]]` to be added without it and
+// measure the platform allocator while every document says otherwise. Setting
+// it in a library is normally rude because it overrides the choice of whoever
+// links you — nobody links this one. The crate docs above say so in their first
+// sentence: the Python implementation was removed, this is the only one, and
+// nothing here is published.
+//
+// ⚠ Gated to native. `mimalloc` vendors a C library with no wasm32 target, and
+// `Cargo.toml` gates the dependency itself to match; both halves are needed,
+// because a `cfg`-ed out `static` still leaves an unbuildable crate in the
+// dependency graph for `cargo check --target wasm32-unknown-unknown`.
+#[cfg(not(target_arch = "wasm32"))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 // The action encoder's consumers are all in `experiments/closed/`; the module
 // compiles only `kind_name` without the `closed-experiments` feature.
 pub mod action_space;
@@ -119,18 +143,17 @@ mod tests {
         }
     }
 
-    /// The barbarian seat plays by its own rung — Immortal by default, the
-    /// band where the game's `BarbarianAttackForces` doubles the spawn
-    /// cadence and raises the party to three melee and two ranged — whatever
-    /// rung the majors play at. A save that predates the field plays the
-    /// same, and the seat's rung still governs everything else.
+    /// The barbarian seat plays by its own rung — Emperor by default, the
+    /// sixth named rung and the last standard `BarbarianAttackForces` band —
+    /// whatever rung the majors play at. A save that predates the field plays
+    /// the same, and the seat's rung still governs everything else.
     #[test]
     fn barbarians_play_at_their_own_difficulty() {
         let prince = Game::new_with(options("prince", "standard", &[0]));
-        assert_eq!(prince.barbarian_difficulty, "immortal");
-        assert_eq!(prince.barbarian_spec().order, 6);
-        assert_eq!(prince.barbarian_spec().barb_force_scale, 1.5);
-        assert_eq!(prince.barbarian_spec().barb_spawn_scale, 0.5);
+        assert_eq!(prince.barbarian_difficulty, "emperor");
+        assert_eq!(prince.barbarian_spec().order, 5);
+        assert_eq!(prince.barbarian_spec().barb_force_scale, 1.0);
+        assert_eq!(prince.barbarian_spec().barb_spawn_scale, 1.0);
         assert_eq!(
             prince.difficulty_spec().order,
             3,
@@ -145,14 +168,14 @@ mod tests {
         assert_eq!(standard.barbarian_spec().barb_spawn_scale, 1.0);
         assert!(standard.set_barbarian_difficulty("olympian").is_err());
 
-        // A save without the field plays Immortal barbarians too.
+        // A save without the field plays Emperor barbarians too.
         let mut value = serde_json::to_value(&prince).unwrap();
         value
             .as_object_mut()
             .unwrap()
             .remove("barbarian_difficulty");
         let old: Game = serde_json::from_value(value).unwrap();
-        assert_eq!(old.barbarian_difficulty, "immortal");
+        assert_eq!(old.barbarian_difficulty, "emperor");
     }
 
     /// Above Prince the handicaps land on the AI seats: better yields, a

@@ -20,6 +20,10 @@ set -u
 # live lane kept paying it. tools/test_ops_background_priority.py holds the line.
 unsetopt BG_NICE
 
+# Recover from the same runtime that launched this keeper, not a development
+# checkout that can contain an older follower protocol. The head override is
+# the supervisor's existing runtime selection; an explicit pin still wins.
+MIRROR_RUNTIME_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 RUNS=${CIVVIS_RUNS:-$HOME/civvis-civ6-runs/control}
 PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 MIRROR_HOME=${CIVVIS_MIRROR_HOME:-$HOME/civvis-civ6-mirror}
@@ -75,7 +79,7 @@ expected_repo() {
   local pin="head"
   [[ -f "$PINFILE" ]] && pin=$(<"$PINFILE")
   if [[ -z "$pin" || "$pin" == "head" ]]; then
-    print -r -- $HOME/CIVVIS
+    print -r -- "$MIRROR_RUNTIME_REPO"
   else
     print -r -- "$pin"
   fi

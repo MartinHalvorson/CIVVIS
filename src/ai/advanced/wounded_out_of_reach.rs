@@ -144,7 +144,7 @@ impl AdvancedAi {
             self.counts(g, pid).settlers > 0 || !self.base.has_practical_settle_site(g, pid);
         for uid in g.player_unit_ids(pid) {
             let unit = &g.units[&uid];
-            if self.guard_is_bound_to_any_settler(uid)
+            if self.guard_is_reserved_for_civilian(uid)
                 || plan.threatened_city.is_some_and(|cid| {
                     g.cities
                         .get(&cid)

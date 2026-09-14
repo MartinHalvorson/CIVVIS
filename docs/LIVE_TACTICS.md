@@ -1300,8 +1300,6 @@ for the three sea rows and take the shipped sea mover unchanged. The
 
 ## 25. Requisitions: the board's shortfall reaches production and the treasury (2026-09-02, opt-in gene `requisitions`)
 
-> **Removed 2026-09-08 (PR #3258).** The gene priced **-29, -72, -17** in its three batch columns and left the code under the batch rule; `src/ai/advanced/requisitions.rs` and every gated branch below are gone. The board's `requisitions()` shortfall is still published and `war-policy-via-board` still reads it. This section is kept as the design record.
-
 §24 left the board's shortfall published and unread: `requisitions()` said
 what every row still lacked, and nothing built it. Meanwhile the army was
 sized by a headcount — `city_count`, doubled at war — every military unit
@@ -1735,3 +1733,5 @@ units the ladder swings at Field Cannons and Men-at-Arms — that the arena's
 matched armies do not pose, and the live ledger is where the gene is read.
 It ships off and joins the arm beside `strike-reach` and `safest-stand`;
 the first live reading decides whether it stays.
+
+The optional `requisitions` production/purchase consumer was removed in PR #3258 after consistently negative screen results. Objective Board shortfalls remain available to the war policy desk. See `docs/gene_ranking_notes.md` (2026-09-13).

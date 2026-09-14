@@ -574,15 +574,12 @@ impl AdvancedAi {
         {
             return true;
         }
-        // A Builder has no escort binding.  A military unit sharing its tile
-        // while the Builder acts can still take its own turn before the
-        // hostile phase, leaving the Builder exposed.  The live capture
-        // lessons must therefore choose a tile that is safe on its own (or a
-        // city), rather than donate the Builder behind a departing guard.
+        // A bystander is not protection. Only the shared plan can reserve
+        // a Builder's guard against later military movement.
         if self.live_settler_capture_lessons
             && g.units.get(&uid).is_some_and(|unit| unit.kind == "builder")
         {
-            return false;
+            return self.builder_support_protects(g, pid, uid, pos);
         }
         // The formationless live Settler repair deliberately binds the one
         // military unit whose turn is reserved to the Settler.  Under that
@@ -761,7 +758,7 @@ impl AdvancedAi {
         let visible = self
             .settler_guard_holds_on()
             .then(|| self.battlefront_visibility(g, pid));
-        let bound = self.all_bound_settler_guards();
+        let bound = self.all_reserved_civilian_guards();
         let water = g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile));
         let mut candidates: Vec<(i32, i32, u32)> = g
             .player_unit_ids(pid)
@@ -1199,7 +1196,7 @@ impl AdvancedAi {
     }
 
     fn bindable_guard_at(&self, g: &Game, pid: usize, settler: u32, pos: Pos) -> Option<u32> {
-        let bound = self.all_bound_settler_guards();
+        let bound = self.all_reserved_civilian_guards();
         let water = g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile));
         let visible = self
             .settler_guard_holds_on()
