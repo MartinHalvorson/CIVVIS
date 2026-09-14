@@ -4803,6 +4803,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Slot Serfdom while a queued Builder is close to completion.
+    builder_charge_window: bool,
     /// `boost-planner-builds`: the boost planner may make a side objective of a
     /// `building:` trigger, the largest family in the two trees, which it
     /// otherwise reads as strategic spending and never plans.
@@ -6209,10 +6211,6 @@ pub struct AdvancedAi {
     /// Opt-in gene `research-alliance-first`; see
     /// `advanced/research_alliance.rs`.
     research_alliance_first: bool,
-    /// Price route food by the next population-gated district slot.
-    trade_growth_to_district: bool,
-    /// Slot Serfdom while a queued Builder is close to completion.
-    builder_charge_window: bool,
     /// Partners the research desk has asked, by the turn last asked, so a
     /// refusal is not re-asked the next turn. Written only while
     /// `research_alliance_first` is on; see `advanced/research_alliance.rs`.
@@ -6586,6 +6584,8 @@ pub struct AdvancedAi {
     skip_the_prophet_race_2: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// Price route food by the next population-gated district slot.
+    trade_growth_to_district: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     tourism_land_reservation: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -8116,6 +8116,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_charge_window: false,
             boost_planner_builds: false,
             boost_planner: false,
             boost_planner_frame: RefCell::new(boost_planner::BoostPlannerFrame::default()),
@@ -8295,8 +8296,6 @@ impl AdvancedAi {
             // ---- append: p-r ----------------------------------------
             reinforce_before_stall: false,
             research_alliance_first: false,
-            trade_growth_to_district: false,
-            builder_charge_window: false,
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
@@ -8357,6 +8356,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             // ---- append: t-z ----------------------------------------
+            trade_growth_to_district: false,
             tourism_land_reservation: false,
             upgrade_window_campaign: false,
             victory_deadline_budget: false,
