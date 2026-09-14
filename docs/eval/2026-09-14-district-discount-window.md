@@ -107,14 +107,10 @@ skip. Registry generation, evaluation manifest, deployment-cost, firing-evidence
 Rust formatting and diff-whitespace checks passed. No game rules or deployment
 defaults changed.
 
-After the probe, main's victory-portfolio and treasury registrations were
-merged. The new gene moved to the end of the expanded registry; its scoring
+After the probe, later registrations on main were integrated, preserving their
+existing gene positions and placing this new gene last. The discount-scoring
 behavior, tests and exposed engine helper are unchanged from the probed revision.
-The full local suite was rerun after this integration.
-
-The later defender/threat registrations were also integrated, preserving their
-existing gene positions. The only subsequent edit to the discount-scoring
-module removes two redundant explicit dereferences requested by Clippy; it
-does not change behavior. This integration is checked by the Rust quality
-gate (including compilation), append/metadata/firing checks, and the final
-full PR CI run. The 3,774-test local run preceded this final registry update.
+The only subsequent edit to the scoring module removes two redundant explicit
+dereferences requested by Clippy. The 3,774-test local run preceded the final
+registry refresh. Each refresh is validated with the Rust quality gate (including
+compilation), append/metadata/firing checks, and the full PR CI gate.

@@ -2327,6 +2327,7 @@ pub const GENES: &[Gene] = &[
     // Price one locally purchasable defender, with the engine's discounts
     // and refusals, rather than the empire's dearest buildable ranged unit.
     Gene { tag: "threatened-city-reserve-2", field: "threatened_city_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_reserve_2, disable: AdvancedAi::disable_threatened_city_reserve_2 },
+    Gene { tag: "builder-workforce-recovery-3", field: "builder_workforce_recovery_3", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_workforce_recovery_3, disable: AdvancedAi::disable_builder_workforce_recovery_3 },
     Gene { tag: "lock-expiring-district-discount", field: "lock_expiring_district_discount", kind: Kind::OptIn, enable: AdvancedAi::enable_lock_expiring_district_discount, disable: AdvancedAi::disable_lock_expiring_district_discount },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
