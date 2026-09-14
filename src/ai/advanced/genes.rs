@@ -2316,6 +2316,9 @@ pub const GENES: &[Gene] = &[
     // Version two checks usable building and district unlocks in the capped
     // cities and counts the whole missing research path, including its boosts.
     Gene { tag: "housing-research-2", field: "housing_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_research_2, disable: AdvancedAi::disable_housing_research_2 },
+    // V2 reserves housing only when construction plus growth brings the next
+    // citizen materially earlier within a bounded investment window.
+    Gene { tag: "first-granary-reserve-2", field: "first_granary_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_2, disable: AdvancedAi::disable_first_granary_reserve_2 },
     // A queued building services only the yield it can deliver soon enough;
     // a slow or undersized answer does not close the whole empire's deficit.
     Gene { tag: "culture-building-catchup-3", field: "culture_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_building_catchup_3, disable: AdvancedAi::disable_culture_building_catchup_3 },

@@ -3451,11 +3451,21 @@ impl AdvancedAi {
     /// one ahead of the argmax. See `AdvancedAi::first_granary_reserve`.
     pub fn enable_first_granary_reserve(&mut self) {
         self.first_granary_reserve = true;
+        self.first_granary_reserve_2 = false;
     }
 
     /// The twin of `enable_first_granary_reserve`.
     pub fn disable_first_granary_reserve(&mut self) {
         self.first_granary_reserve = false;
+    }
+
+    pub fn enable_first_granary_reserve_2(&mut self) {
+        self.first_granary_reserve = false;
+        self.first_granary_reserve_2 = true;
+    }
+
+    pub fn disable_first_granary_reserve_2(&mut self) {
+        self.first_granary_reserve_2 = false;
     }
 
     /// Research the cheapest technology that connects an owned, unimproved
