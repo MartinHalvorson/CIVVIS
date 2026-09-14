@@ -470,8 +470,8 @@ fn treatment_changes_a_real_legal_research_choice() {
     let mut g = world();
     g.turn = 150;
     g.world_era = 4;
-    // Two legal frontier technologies; the existing Science posture picks
-    // Rocketry, while a durable Culture primary must pick Printing.
+    // Both technologies are legal, but Rocketry lies beyond the rolling era
+    // window. A committed Science primary must admit its launch milestone.
     g.players[0].techs = g
         .rules
         .techs
@@ -480,20 +480,20 @@ fn treatment_changes_a_real_legal_research_choice() {
         .filter(|tech| !matches!(tech.as_str(), "printing" | "rocketry"))
         .collect();
     g.players[0].research = None;
-    let posture = plan(GrandStrategy::Science);
+    let posture = plan(GrandStrategy::Expansion);
     let mut control_game = g.clone();
     let mut control = AdvancedAi::new();
     control.plan = Some(posture.clone());
     control.advanced_research(&mut control_game, 0, &posture);
     assert_eq!(
         control_game.players[0].research.as_deref(),
-        Some("rocketry")
+        Some("printing")
     );
 
-    let mut treatment = driving(VictoryTarget::Culture, None);
+    let mut treatment = driving(VictoryTarget::Science, None);
     treatment.plan = Some(posture.clone());
     treatment.advanced_research(&mut g, 0, &posture);
-    assert_eq!(g.players[0].research.as_deref(), Some("printing"));
+    assert_eq!(g.players[0].research.as_deref(), Some("rocketry"));
 }
 
 #[test]

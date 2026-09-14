@@ -14491,6 +14491,8 @@ impl AdvancedAi {
                 .filter(|_| {
                     great_person_goal.is_none()
                         && (self.victory_target == Some(VictoryTarget::Science)
+                            || (self.portfolio_target() == Some(VictoryTarget::Science)
+                                && self.portfolio_specializing() == Some(true))
                             || self.science_drive_active())
                 })
                 .and_then(|goal| {

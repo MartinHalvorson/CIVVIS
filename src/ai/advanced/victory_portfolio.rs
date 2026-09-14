@@ -1207,6 +1207,21 @@ impl AdvancedAi {
     }
 
     fn item_lane_affinity(g: &Game, item: &Item, target: VictoryTarget) -> f64 {
+        if let Item::Unit { unit } | Item::Formation { unit, .. } = item {
+            let spec = &g.rules.units[unit];
+            return match target {
+                VictoryTarget::Domination
+                    if spec.strength > 0.0 && spec.religious_spread == 0.0 =>
+                {
+                    1.0
+                }
+                VictoryTarget::Religion if spec.religious_spread > 0.0 => 1.0,
+                VictoryTarget::Culture if matches!(unit.as_str(), "naturalist" | "rock_band") => {
+                    1.0
+                }
+                _ => 0.0,
+            };
+        }
         let family = match item {
             Item::District { district, .. } => Some(g.district_family(*district)),
             Item::Building { building } => g.rules.buildings[building]
