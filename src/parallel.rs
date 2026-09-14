@@ -513,7 +513,24 @@ where
 
 /// Like [`map`], but reports each result as soon as every job before it has
 /// finished, so a long batch still prints in order as it goes.
-pub fn map_reporting<T, F, R>(count: usize, jobs: usize, job: F, mut report: R) -> Vec<T>
+/// A worker panic cancels unclaimed jobs. Active jobs finish before the panic
+/// reaches the caller.
+pub fn map_reporting<T, F, R>(count: usize, jobs: usize, job: F, report: R) -> Vec<T>
+where
+    T: Send + Clone,
+    F: Fn(usize) -> T + Sync,
+    R: FnMut(usize, &T) + Send,
+{
+    map_reporting_with_cancellation(count, jobs, job, report, &AtomicBool::new(false))
+}
+
+fn map_reporting_with_cancellation<T, F, R>(
+    count: usize,
+    jobs: usize,
+    job: F,
+    mut report: R,
+    cancelled: &AtomicBool,
+) -> Vec<T>
 where
     T: Send + Clone,
     F: Fn(usize) -> T + Sync,
@@ -536,21 +553,28 @@ where
     let (done, reported, report, next, job) = (&done, &reported, &report, &next, &job);
     std::thread::scope(|scope| {
         for _ in 0..threads {
-            spawn_worker(scope, move || loop {
-                let index = next.fetch_add(1, Ordering::Relaxed);
-                if index >= count {
-                    break;
-                }
-                *done[index].lock().expect("a job panicked mid-write") = Some(job(index));
-                // Flush whatever prefix is now complete. Holding the counter
-                // while reporting keeps the order, and only one thread can be
-                // inside this at a time.
-                let mut cursor = reported.lock().expect("a job panicked mid-report");
-                while *cursor < count {
-                    let ready = done[*cursor].lock().expect("a job panicked mid-write");
-                    let Some(value) = ready.as_ref() else { break };
-                    report.lock().expect("a job panicked mid-report")(*cursor, value);
-                    *cursor += 1;
+            spawn_worker(scope, move || {
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    while !cancelled.load(Ordering::Acquire) {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        if index >= count {
+                            break;
+                        }
+                        *done[index].lock().expect("a job panicked mid-write") = Some(job(index));
+                        // Flush whatever prefix is now complete. Holding the
+                        // counter keeps reports ordered and serial.
+                        let mut cursor = reported.lock().expect("a job panicked mid-report");
+                        while *cursor < count {
+                            let ready = done[*cursor].lock().expect("a job panicked mid-write");
+                            let Some(value) = ready.as_ref() else { break };
+                            report.lock().expect("a job panicked mid-report")(*cursor, value);
+                            *cursor += 1;
+                        }
+                    }
+                }));
+                if let Err(payload) = result {
+                    cancelled.store(true, Ordering::Release);
+                    resume_unwind(payload);
                 }
             });
         }
@@ -564,6 +588,10 @@ where
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "parallel/reporting_cancellation_tests.rs"]
+mod reporting_cancellation_tests;
 
 #[cfg(test)]
 mod tests {

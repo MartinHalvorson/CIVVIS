@@ -51,8 +51,28 @@ target/ci/gene_screen --analyze SCREEN_ROWS --json SCREEN_SUMMARY
 
 ## Validation and results
 
-Pending execution. The focused tests include real prerequisite paths that
-reverse v2's choice, the actual research-to-government-adoption flow,
-Inspiration and overflow accounting, cost per extra slot, affordability,
-existing time windows, and reversible version toggles. The complete Rust
-suite and repository gene gates run before integration.
+The implementation passed the complete Rust suite before and after its first
+integration with main. Commit `37069dc77` passed 3,705 tests, with 53 ignored
+including documentation examples. The focused cases include real prerequisite
+paths that reverse v2's choice, the actual research-to-government-adoption
+flow, Inspiration and overflow accounting, cost per extra slot,
+affordability, existing time windows, and reversible version toggles.
+The generated gene metadata and fourteen append-point tests also passed.
+
+The first family attempt used clean source `6d82bf5d5` and stopped after
+four complete games (24 of 72 intended seats). A worker panicked in
+`Game::valid_improvements` at `src/game/city.rs:4940`, where a tile's
+`owner_city` handle was indexed into a city map that lacked that city.
+The surviving workers were explicitly stopped after the error. The raw
+attempt and its analyzed summary remain outside the repository; the summary
+marks the run partial. Its outcomes are not a completed family comparison
+and are not pooled with a replay.
+
+PR #3578 supplies the independent engine repair: missing owning cities
+produce no Builder improvement options, and the attempted action spends no
+charge. Both focused regression tests passed. The dependency is imported
+for validation and a full replay of all twelve original seeds, followed by
+the originally planned sixty whole-registry games. The seed windows, game
+counts and target shape are unchanged. The repaired source and fingerprint
+will be recorded with that run. No strength conclusion or default change
+has been made.
