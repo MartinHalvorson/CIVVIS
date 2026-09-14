@@ -453,7 +453,7 @@ impl AdvancedAi {
                     // Wait for enough queued yield that arrives within the
                     // same twenty-standard-turn payoff window required of
                     // this new investment. Otherwise credit only its unmet
-                    // share, so a tiny deficit cannot justify a huge build.
+                    // share when ranking the remaining candidate builds.
                     let due = turns + g.standard_duration(20) as f64;
                     let incoming: f64 = queued_yields
                         .iter()

@@ -254,3 +254,30 @@ fn catchup_v3_versions_are_exclusive_and_default_off() {
         }
     }
 }
+
+#[test]
+fn catchup_v3_live_identity_matches_the_active_flags() {
+    for forced in ["culture-building-catchup-3", "research-building-catchup-3"] {
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge_universe();
+        ai.apply_gene_ledger_with_forced_live(&[forced]);
+        let tags = super::super::gene_ledger::deployment_treatments_with_forced_live(&[forced]);
+        assert!(tags.contains(&forced));
+        for (tag, enabled) in [
+            ("culture-building-catchup", ai.culture_building_catchup),
+            ("culture-building-catchup-2", ai.culture_building_catchup_2),
+            ("culture-building-catchup-3", ai.culture_building_catchup_3),
+            ("research-building-catchup", ai.research_building_catchup),
+            (
+                "research-building-catchup-2",
+                ai.research_building_catchup_2,
+            ),
+            (
+                "research-building-catchup-3",
+                ai.research_building_catchup_3,
+            ),
+        ] {
+            assert_eq!(tags.contains(&tag), enabled, "{forced}: {tag}");
+        }
+    }
+}
