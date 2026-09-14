@@ -2312,6 +2312,10 @@ pub const GENES: &[Gene] = &[
     // empty of that unit; hidden units retain only their last observed facts.
     // Append new genes so the existing positional genome stays intact.
     Gene { tag: "hostile-memory-3", field: "hostile_memory_3", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_3, disable: AdvancedAi::disable_hostile_memory_3 },
+    Gene { tag: "connect-the-luxury-2", field: "connect_the_luxury_2", kind: Kind::OptIn, enable: AdvancedAi::enable_connect_the_luxury_2, disable: AdvancedAi::disable_connect_the_luxury_2 },
+    // Version two checks usable building and district unlocks in the capped
+    // cities and counts the whole missing research path, including its boosts.
+    Gene { tag: "housing-research-2", field: "housing_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_research_2, disable: AdvancedAi::disable_housing_research_2 },
     // Persistent primary/secondary objectives, feasibility clocks and phased
     // investment. Independently measured; no deployment promotion is assumed.
     Gene { tag: "victory-portfolio", field: "victory_portfolio", kind: Kind::OptIn, enable: AdvancedAi::enable_victory_portfolio, disable: AdvancedAi::disable_victory_portfolio },
