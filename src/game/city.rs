@@ -4937,7 +4937,13 @@ impl Game {
             Some(oc) => oc,
             None => return vec![],
         };
-        let territory_owner = self.cities[&oc].owner;
+        // A remembered or disposable planning tile can outlive its city.
+        // Without the city, ownership is unknown and no Builder permission
+        // can be inferred from the stale handle.
+        let Some(owner_city) = self.cities.get(&oc) else {
+            return vec![];
+        };
+        let territory_owner = owner_city.owner;
         let visible_resource = t
             .resource
             .as_deref()
@@ -7761,3 +7767,6 @@ mod hidden_resource_improvement_tests;
 
 #[cfg(test)]
 mod hidden_resource_district_tests;
+
+#[cfg(test)]
+mod builder_ownership_tests;
