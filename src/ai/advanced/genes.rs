@@ -2319,6 +2319,9 @@ pub const GENES: &[Gene] = &[
     // V2 reserves housing only when construction plus growth brings the next
     // citizen materially earlier within a bounded investment window.
     Gene { tag: "first-granary-reserve-2", field: "first_granary_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_2, disable: AdvancedAi::disable_first_granary_reserve_2 },
+    // Persistent primary/secondary objectives, feasibility clocks and phased
+    // investment. Independently measured; no deployment promotion is assumed.
+    Gene { tag: "victory-portfolio", field: "victory_portfolio", kind: Kind::OptIn, enable: AdvancedAi::enable_victory_portfolio, disable: AdvancedAi::disable_victory_portfolio },
     Gene { tag: "government-ladder-3", field: "government_ladder_3", kind: Kind::OptIn, enable: AdvancedAi::enable_government_ladder_3, disable: AdvancedAi::disable_government_ladder_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

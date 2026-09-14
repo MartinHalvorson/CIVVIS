@@ -4427,6 +4427,7 @@ fn decide(
         "schema": 1,
         "player_contract": civvis::ai::player::CONTRACT,
         "turn": state.turn,
+        "victory_portfolio": ai.victory_portfolio_snapshot(),
         "frame": state.frame,
         "native_actions": planned_game.log.since(before)
             .filter(|(seat,_)| *seat == 0)
