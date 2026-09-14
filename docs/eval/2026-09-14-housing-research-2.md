@@ -35,7 +35,7 @@ Emperor majors. The family levels are off, `housing-research` and
 `housing-research-2`; all other genes follow the evaluator baseline.
 
 First use 12 games, seeds 914368000–914368011, as a reach and execution check.
-Then use 180 disjoint games, seeds 914369000–914369179, for a family comparison.
+Use 180 disjoint games, seeds 914369000–914369179, for a family comparison.
 These sizes are fixed before reading an outcome; neither sample changes a
 deployment default. A claim of improved strength requires version two's win
 contrast to be positive against both version one and off; uncertainty and
@@ -48,9 +48,14 @@ target/ci/gene_screen --genes housing-research,housing-research-2 \
   --games 12 --target-games 12 --start-seed 914368000 --jobs 2 \
   --difficulty emperor --out <run-dir>/reach.jsonl
 target/ci/gene_screen --genes housing-research,housing-research-2 \
-  --games 180 --target-games 180 --start-seed 914369000 --jobs 2 \
+  --games 180 --target-games 180 --start-seed 914369000 --jobs 8 \
   --difficulty emperor --out <run-dir>/comparison.jsonl
 ```
+
+The comparison started alongside the reach sample with eight workers after
+the first reach games established the busy host's throughput. This changed
+only scheduling: the fixed sample sizes, seeds, controller and binary stayed
+the same, and neither sample was selected or shortened based on its results.
 
 Unit tests must verify the original goal remains unchanged, the cheaper
 Granary is usable after its unlock, the Sewer is reachable when Aqueducts

@@ -2307,13 +2307,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "builder-charge-window", field: "builder_charge_window", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_charge_window, disable: AdvancedAi::disable_builder_charge_window },
     Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     Gene { tag: "culture-lane-forecast-2", field: "culture_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast_2, disable: AdvancedAi::disable_culture_lane_forecast_2 },
+    // Version two checks usable building and district unlocks in the capped
+    // cities and counts the whole missing research path, including its boosts.
+    Gene { tag: "housing-research-2", field: "housing_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_research_2, disable: AdvancedAi::disable_housing_research_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
-    // Version two checks usable building and district unlocks in the capped
-    // cities and counts the whole missing research path, including its boosts.
-    Gene { tag: "housing-research-2", field: "housing_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_research_2, disable: AdvancedAi::disable_housing_research_2 },
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
