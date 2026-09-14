@@ -2365,6 +2365,15 @@
           "first-builder-reserve-2": null
         }
       },
+      "first-granary-reserve": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "first-granary-reserve": null,
+          "first-granary-reserve-2": null
+        }
+      },
       "government-ladder": {
         "rule_on": [
           "government-ladder-2"
@@ -2393,6 +2402,15 @@
           "hostile-memory": null,
           "hostile-memory-2": null,
           "hostile-memory-3": null
+        }
+      },
+      "housing-research": {
+        "rule_on": [],
+        "head": "housing-research",
+        "ships": null,
+        "versions": {
+          "housing-research": -0.009393,
+          "housing-research-2": null
         }
       },
       "missionary-last-charge-explores": {
