@@ -2308,6 +2308,17 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     Gene { tag: "culture-lane-forecast-2", field: "culture_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast_2, disable: AdvancedAi::disable_culture_lane_forecast_2 },
     Gene { tag: "trade-production-to-launch", field: "trade_production_to_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_production_to_launch, disable: AdvancedAi::disable_trade_production_to_launch },
+    // Revise a stale sighting once its entire forecast area is visible and
+    // empty of that unit; hidden units retain only their last observed facts.
+    // Append new genes so the existing positional genome stays intact.
+    Gene { tag: "hostile-memory-3", field: "hostile_memory_3", kind: Kind::OptIn, enable: AdvancedAi::enable_hostile_memory_3, disable: AdvancedAi::disable_hostile_memory_3 },
+    Gene { tag: "connect-the-luxury-2", field: "connect_the_luxury_2", kind: Kind::OptIn, enable: AdvancedAi::enable_connect_the_luxury_2, disable: AdvancedAi::disable_connect_the_luxury_2 },
+    // Version two checks usable building and district unlocks in the capped
+    // cities and counts the whole missing research path, including its boosts.
+    Gene { tag: "housing-research-2", field: "housing_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_research_2, disable: AdvancedAi::disable_housing_research_2 },
+    // V2 reserves housing only when construction plus growth brings the next
+    // citizen materially earlier within a bounded investment window.
+    Gene { tag: "first-granary-reserve-2", field: "first_granary_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_2, disable: AdvancedAi::disable_first_granary_reserve_2 },
     // Price one locally purchasable defender, with the engine's discounts
     // and refusals, rather than the empire's dearest buildable ranged unit.
     Gene { tag: "threatened-city-reserve-2", field: "threatened_city_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_reserve_2, disable: AdvancedAi::disable_threatened_city_reserve_2 },
