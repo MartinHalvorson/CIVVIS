@@ -2328,6 +2328,7 @@ pub const GENES: &[Gene] = &[
     // and refusals, rather than the empire's dearest buildable ranged unit.
     Gene { tag: "threatened-city-reserve-2", field: "threatened_city_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_reserve_2, disable: AdvancedAi::disable_threatened_city_reserve_2 },
     Gene { tag: "builder-workforce-recovery-3", field: "builder_workforce_recovery_3", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_workforce_recovery_3, disable: AdvancedAi::disable_builder_workforce_recovery_3 },
+    Gene { tag: "government-ladder-3", field: "government_ladder_3", kind: Kind::OptIn, enable: AdvancedAi::enable_government_ladder_3, disable: AdvancedAi::disable_government_ladder_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
