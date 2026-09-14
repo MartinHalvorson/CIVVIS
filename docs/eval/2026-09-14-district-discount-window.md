@@ -100,9 +100,14 @@ seat contrast is not direct instrumentation of the heuristic firing. The
 controlled production-menu and normal-turn price-lock tests establish the
 specific causal behavior; the six games establish execution compatibility.
 
-Final local validation: `cargo test --profile ci --locked` passed 3,741 tests
+Final local validation: `cargo test --profile ci --locked` passed 3,774 tests
 (with 53 existing ignored tests), including all seven new tests. The Python
 registry, append-point, manifest and firing suites ran 237 tests with one existing
 skip. Registry generation, evaluation manifest, deployment-cost, firing-evidence,
 Rust formatting and diff-whitespace checks passed. No game rules or deployment
 defaults changed.
+
+After the probe, main's victory-portfolio and treasury registrations were
+merged. The new gene moved to the end of the expanded registry; its scoring
+module, tests and exposed engine helper are unchanged from the probed revision.
+The full local suite was rerun after this integration.
