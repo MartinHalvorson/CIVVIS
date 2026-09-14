@@ -6576,6 +6576,8 @@ pub struct AdvancedAi {
     // ---- append: t-z ------------------------------------------------
     /// Price route food by the next population-gated district slot.
     trade_growth_to_district: bool,
+    /// Price route production by time saved on an active space project.
+    trade_production_to_launch: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     tourism_land_reservation: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -7300,6 +7302,7 @@ mod wonder_sites;
 
 mod science_endgame;
 mod science_threat_denial;
+mod science_trade;
 mod science_victory_drive;
 mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
@@ -8344,6 +8347,7 @@ impl AdvancedAi {
 
             // ---- append: t-z ----------------------------------------
             trade_growth_to_district: false,
+            trade_production_to_launch: false,
             tourism_land_reservation: false,
             upgrade_window_campaign: false,
             victory_deadline_budget: false,
@@ -34932,11 +34936,12 @@ impl AdvancedAi {
         city: &crate::game::City,
         strategy: GrandStrategy,
     ) -> f64 {
-        let yields = origin
-            .and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied())
-            .unwrap_or_else(|| g.trade_route_yields(pid, city.id));
+        let observed =
+            origin.and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied());
+        let yields = observed.unwrap_or_else(|| g.trade_route_yields(pid, city.id));
         let mut value = self.yield_value(yields, strategy);
         value += self.trade_growth_to_district_premium(g, pid, origin, yields);
+        value += self.trade_production_to_launch_premium(g, pid, origin, yields);
         // `quest_trade_route`: the Envoy a city-state asking us for a route
         // pays for one. See `advanced/city_state_quests.rs`.
         value += self.quest_trade_route_premium(g, pid, city.owner, strategy);
@@ -34949,7 +34954,11 @@ impl AdvancedAi {
                 "religious" => yields.faith = 2.0,
                 _ => {}
             }
-            value += self.yield_value(yields, strategy);
+            // The host's CalculateOriginYieldFromPotentialRoute already
+            // includes alliance yields. Only the native fallback needs them.
+            if observed.is_none() {
+                value += self.yield_value(yields, strategy);
+            }
             let already_connected = g.routes.iter().any(|route| {
                 route.owner == pid
                     && route.ends > g.turn
