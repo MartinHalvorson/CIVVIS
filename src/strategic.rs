@@ -6,7 +6,9 @@
 //! by a real margin — macro search applied to victory routing. Positions blend
 //! a compatible value net when `evolved/valuenet.json` exists and otherwise use
 //! score share. No value net ships with CIVVIS, so the latter is the normal
-//! checkout. Public victory threats interrupt the periodic search before they
+//! checkout. Credible near-term finish forecasts then blend that economic
+//! value toward the projected race outcome. Public victory threats interrupt
+//! the periodic search before they
 //! can end the game, while irreversible Prophet investment and duel victory
 //! geometry supply
 //! priors that a short economic rollout cannot discover in time. The learned
@@ -317,6 +319,9 @@ pub struct StrategicAi {
     inner: AdvancedAi,
     weights: Weights,
     net: Option<ValueNet>,
+    /// Use credible near-term victory finishes at otherwise economic rollout
+    /// endpoints. The explicit score-only factory retains the old control.
+    pub victory_finish_value: bool,
     census: ReviewCensus,
     pub review_every: u32,
     /// Rounds each branch is projected before it is judged.
@@ -555,7 +560,9 @@ impl StrategicAi {
     /// keeps the same weights, rollout horizon, and lane policy as Strategic,
     /// while refusing any model found in `evolved/`.
     pub fn score_only_with_weights(weights: Weights) -> StrategicAi {
-        Self::configured(weights, None)
+        let mut ai = Self::configured(weights, None);
+        ai.victory_finish_value = false;
+        ai
     }
 
     fn configured(weights: Weights, net: Option<ValueNet>) -> StrategicAi {
@@ -563,6 +570,7 @@ impl StrategicAi {
             inner: AdvancedAi::with_weights(weights.clone()),
             weights,
             net,
+            victory_finish_value: true,
             census: ReviewCensus::default(),
             continue_from_plan: true,
             adaptive_horizon: false,
@@ -774,7 +782,7 @@ impl StrategicAi {
             }
         }
         let score_share = if total <= 0.0 { 0.5 } else { own / total };
-        if let Some(net) = &self.net {
+        let economic = if let Some(net) = &self.net {
             let learned = net.eval(&features(g, pid));
             if learned.is_finite() {
                 score_share + VALUE_NET_WEIGHT * (learned - score_share)
@@ -783,6 +791,11 @@ impl StrategicAi {
             }
         } else {
             score_share
+        };
+        if self.victory_finish_value {
+            AdvancedAi::victory_finish_value(g, pid, economic)
+        } else {
+            economic
         }
     }
 

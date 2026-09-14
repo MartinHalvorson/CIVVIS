@@ -2319,6 +2319,9 @@ pub const GENES: &[Gene] = &[
     // V2 reserves housing only when construction plus growth brings the next
     // citizen materially earlier within a bounded investment window.
     Gene { tag: "first-granary-reserve-2", field: "first_granary_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_2, disable: AdvancedAi::disable_first_granary_reserve_2 },
+    // Persistent primary/secondary objectives, feasibility clocks and phased
+    // investment. Independently measured; no deployment promotion is assumed.
+    Gene { tag: "victory-portfolio", field: "victory_portfolio", kind: Kind::OptIn, enable: AdvancedAi::enable_victory_portfolio, disable: AdvancedAi::disable_victory_portfolio },
     // Price one locally purchasable defender, with the engine's discounts
     // and refusals, rather than the empire's dearest buildable ranged unit.
     Gene { tag: "threatened-city-reserve-2", field: "threatened_city_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_reserve_2, disable: AdvancedAi::disable_threatened_city_reserve_2 },
