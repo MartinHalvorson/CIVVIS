@@ -30322,10 +30322,10 @@ impl AdvancedAi {
                 || ((!civilian_mover || !self.settler_guard_holds_on())
                     && g.units.values().any(|unit| {
                         unit.owner == pid
+                            && g.wdist(unit.pos, pos) <= escort_reach
                             && g.rules.units[unit.kind].class == "military"
                             && g.rules.units[unit.kind].domain.as_deref() != Some("air")
                             && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
-                            && g.wdist(unit.pos, pos) <= escort_reach
                             && (!civilian_mover || unit.hp >= STACKED_GUARD_MIN_HP)
                     })));
         // A civilian inside one of our own cities cannot be taken until the
@@ -30354,8 +30354,8 @@ impl AdvancedAi {
         let mut risk = 0.0;
         for unit in g.units.values() {
             if unit.owner == pid
-                || !g.is_at_war(pid, unit.owner)
                 || !g.sees(visible, unit.pos)
+                || !g.is_at_war(pid, unit.owner)
                 || !g.unit_visible_to(unit.id, pid)
             {
                 continue;
@@ -30377,14 +30377,10 @@ impl AdvancedAi {
                 continue;
             }
             let distance = g.wdist(unit.pos, pos);
-            let attack_range = if spec.has_ranged_attack() {
-                g.unit_attack_range(unit.id)
-            } else {
-                1
-            };
-            let approach_range = attack_range + spec.moves.ceil() as i32;
+            // Combat strength contributes only inside one of the threat ranges below.
+            // Compute it only after a range test succeeds.
             let strength =
-                crate::game::effective_strength(g.unit_strength(unit, false), unit.hp).max(1.0);
+                || crate::game::effective_strength(g.unit_strength(unit, false), unit.hp).max(1.0);
             // ★★★★ FOR A CIVILIAN, REACH IS CAPTURE. See
             // `settler_stack_discipline`: a hostile land unit that can enter
             // the tile next turn takes the civilian whatever its range, so it
@@ -30393,25 +30389,31 @@ impl AdvancedAi {
             if civilian_mover && domain != Some("sea") {
                 let capture_reach = spec.moves.ceil() as i32;
                 if distance <= capture_reach {
-                    risk += 34.0 + strength * 0.45;
+                    risk += 34.0 + strength() * 0.45;
                 } else if distance <= capture_reach + 1 {
-                    risk += 12.0 + strength * 0.15;
+                    risk += 12.0 + strength() * 0.15;
                 }
                 continue;
             }
+            let attack_range = if spec.has_ranged_attack() {
+                g.unit_attack_range(unit.id)
+            } else {
+                1
+            };
+            let approach_range = attack_range + spec.moves.ceil() as i32;
             if domain == Some("sea") {
                 // A ship moves and strikes in one turn and a civilian on the
                 // shore cannot answer it: anything the ship can reach this
                 // turn is as good as in range, not merely "approaching".
                 if distance <= approach_range {
-                    risk += 34.0 + strength * 0.45;
+                    risk += 34.0 + strength() * 0.45;
                 }
                 continue;
             }
             if distance <= attack_range {
-                risk += 34.0 + strength * 0.45;
+                risk += 34.0 + strength() * 0.45;
             } else if distance <= approach_range {
-                risk += 12.0 + strength * 0.15;
+                risk += 12.0 + strength() * 0.15;
             }
         }
         // ★★★★ A KILL THE BOARD PREDICTS IS NOT A KILL THE HOST MADE. See
