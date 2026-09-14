@@ -16481,11 +16481,14 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .filter(|current| {
-                    !desired_set.contains(current.as_str())
-                        || (builder_window_card == Some(card)
-                            && !culture_defense_cards.contains(&current.as_str())
+                    if builder_window_card == Some(card) {
+                        // Protection applies even when the current card is
+                        // absent from this strategy's ordinary portfolio.
+                        return !culture_defense_cards.contains(&current.as_str())
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())
-                            && self.builder_window_can_replace(g, pid, current))
+                            && self.builder_window_can_replace(g, pid, current);
+                    }
+                    !desired_set.contains(current.as_str())
                         // Defensive cards must be able to take an occupied
                         // slot, but never evict each other or a different
                         // typed lane card merely to borrow wildcard capacity.
@@ -16527,11 +16530,17 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
-                    think!(self.journal(), Policies, Decision,
-                           "Slotted {} over {}", plain(card), plain(&current);
-                           "priority {} of {wanted} for the {} plan; {} was the oldest \
-                            card the plan does not want",
-                           rank + 1, objective.as_str(), plain(&current));
+                    if builder_window_card == Some(card) {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted {} over {}", plain(card), plain(&current);
+                               "a Builder is almost finished; Serfdom adds two build charges");
+                    } else {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted {} over {}", plain(card), plain(&current);
+                               "priority {} of {wanted} for the {} plan; {} was the oldest \
+                                card the plan does not want",
+                               rank + 1, objective.as_str(), plain(&current));
+                    }
                     break;
                 }
                 // A type mismatch can make one particular swap invalid. Put

@@ -213,3 +213,29 @@ fn builder_window_respects_unlocks_host_vetoes_and_existing_settler_wave() {
     assert!(!ai.builder_window_can_replace(&g, 0, &crate::name!("liberalism")));
     assert!(!ai.builder_window_can_replace(&g, 0, &crate::name!("conscription")));
 }
+
+#[test]
+fn builder_window_cannot_take_an_unwanted_protected_policy_slot() {
+    let (mut g, _) = builder_board();
+    g.players[0].policies = [crate::name!("liberalism")].into_iter().collect();
+    // Model a host menu offering only Serfdom. Liberalism is outside the
+    // static Science portfolio, but the Builder window still protects it.
+    let blocked = g
+        .rules
+        .policies
+        .keys()
+        .copied()
+        .filter(|name| *name != crate::name!("serfdom"))
+        .collect();
+    *Arc::make_mut(&mut g.blocked_policies) = blocked;
+    let mut stock = g.clone();
+    AdvancedAi::new().strategic_policies(&mut stock, 0, GrandStrategy::Science);
+    assert!(stock.has_policy(0, "liberalism"));
+    assert!(!stock.has_policy(0, "serfdom"));
+    let mut ai = AdvancedAi::new();
+    ai.enable_builder_charge_window();
+    assert_eq!(ai.builder_charge_window_card(&g, 0), Some("serfdom"));
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Science);
+    assert!(g.has_policy(0, "liberalism"));
+    assert!(!g.has_policy(0, "serfdom"));
+}
