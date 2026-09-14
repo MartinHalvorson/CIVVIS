@@ -4234,6 +4234,14 @@ impl AdvancedAi {
         self.research_alliance_first = false;
     }
 
+    pub fn enable_builder_charge_window(&mut self) {
+        self.builder_charge_window = true;
+    }
+
+    pub fn disable_builder_charge_window(&mut self) {
+        self.builder_charge_window = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
@@ -4245,6 +4253,14 @@ impl AdvancedAi {
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
+    pub fn enable_trade_growth_to_district(&mut self) {
+        self.trade_growth_to_district = true;
+    }
+
+    pub fn disable_trade_growth_to_district(&mut self) {
+        self.trade_growth_to_district = false;
+    }
+
     // ---- append: t-z ------------------------------------------------
 }
 

@@ -5913,6 +5913,10 @@ pub struct AdvancedAi {
     /// Opt-in gene `research-alliance-first`; see
     /// `advanced/research_alliance.rs`.
     research_alliance_first: bool,
+    /// Price route food by the next population-gated district slot.
+    trade_growth_to_district: bool,
+    /// Slot Serfdom while a queued Builder is close to completion.
+    builder_charge_window: bool,
     /// Partners the research desk has asked, by the turn last asked, so a
     /// refusal is not re-asked the next turn. Written only while
     /// `research_alliance_first` is on; see `advanced/research_alliance.rs`.
@@ -7070,6 +7074,7 @@ mod first_luxury;
 /// to its ending, with what became of it counted. Infrastructure, not a
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
+mod competitive_economy;
 /// The alliance an Emperor handicap cannot deny us: the stock alliance desk
 /// asks for a Research Alliance, ranked by science, and feeds its level with
 /// routes. Opt-in gene `research-alliance-first`.
@@ -7967,6 +7972,8 @@ impl AdvancedAi {
 
             // ---- append: p-r ----------------------------------------
             research_alliance_first: false,
+            trade_growth_to_district: false,
+            builder_charge_window: false,
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
@@ -15827,6 +15834,12 @@ impl AdvancedAi {
             desired.splice(0..0, nobel_peace_direct_favor_cards.iter().copied());
         }
 
+        let builder_window_card = self.builder_charge_window_card(g, pid);
+        if let Some(card) = builder_window_card {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+        }
+
         // Tourism defense must enter the protected set before ordinary cards
         // are considered, including when the empire targets another victory.
         let culture_defense_cards = self.culture_defense_cards(g, pid);
@@ -15901,6 +15914,10 @@ impl AdvancedAi {
                 .iter()
                 .filter(|current| {
                     !desired_set.contains(current.as_str())
+                        || (builder_window_card == Some(card)
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && self.builder_window_can_replace(g, pid, current))
                         // Defensive cards must be able to take an occupied
                         // slot, but never evict each other or a different
                         // typed lane card merely to borrow wildcard capacity.
@@ -34140,6 +34157,7 @@ impl AdvancedAi {
             .and_then(|origin| g.observed_route_options.get(&(origin, city.id)).copied())
             .unwrap_or_else(|| g.trade_route_yields(pid, city.id));
         let mut value = self.yield_value(yields, strategy);
+        value += self.trade_growth_to_district_premium(g, pid, origin, yields);
         // `quest_trade_route`: the Envoy a city-state asking us for a route
         // pays for one. See `advanced/city_state_quests.rs`.
         value += self.quest_trade_route_premium(g, pid, city.owner, strategy);

@@ -2277,6 +2277,8 @@ pub const GENES: &[Gene] = &[
     // and `can_survive_by_attacking` still keeps a unit whose own shot ends the
     // threat. Off; screen it.
     Gene { tag: "ranged-hp-reserve", field: "ranged_hp_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_hp_reserve, disable: AdvancedAi::disable_ranged_hp_reserve },
+    // Competitive economy hypothesis; see competitive_economy.rs.
+    Gene { tag: "builder-charge-window", field: "builder_charge_window", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_charge_window, disable: AdvancedAi::disable_builder_charge_window },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
@@ -2284,6 +2286,8 @@ pub const GENES: &[Gene] = &[
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
+    // Competitive economy hypothesis; see competitive_economy.rs.
+    Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     // ---- append: t-z ------------------------------------------------
 ];
 
