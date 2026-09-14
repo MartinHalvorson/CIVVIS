@@ -3452,6 +3452,7 @@ impl AdvancedAi {
     /// opening techs are in. See `AdvancedAi::unconnected_luxury_tech`.
     pub fn enable_connect_the_luxury(&mut self) {
         self.connect_the_luxury = true;
+        self.connect_the_luxury_2 = false;
     }
 
     /// The twin of `enable_connect_the_luxury`.

@@ -5138,6 +5138,9 @@ pub struct AdvancedAi {
     /// unimproved luxury before the lane's beeline resumes. See
     /// `unconnected_luxury_tech`.
     connect_the_luxury: bool,
+    /// Research a first-copy luxury only when it can relieve an Amenity
+    /// deficit after a legal, affordable unlock. See `luxury_research`.
+    connect_the_luxury_2: bool,
     /// `commitment-patience`: a settle or improve target survives a passing
     /// threat — the two threat drop reasons and the Builder's reach filter no
     /// longer drop it — and the ledger retires it after
@@ -7363,6 +7366,7 @@ mod siege_response;
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
 mod first_luxury;
+mod luxury_research;
 
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
@@ -8167,6 +8171,7 @@ impl AdvancedAi {
             district_planning_3: false,
             cheapest_wonder_first: false,
             connect_the_luxury: false,
+            connect_the_luxury_2: false,
             commitment_patience: false,
             commitment_owner_acts: false,
             capture_go_or_stand_down: false,
@@ -15170,6 +15175,9 @@ impl AdvancedAi {
     /// already. The builder side already prices a luxury connection; this is
     /// the research side it was waiting on.
     fn unconnected_luxury_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if self.connect_the_luxury_2 {
+            return self.useful_luxury_tech(g, pid);
+        }
         if !self.connect_the_luxury {
             return None;
         }
