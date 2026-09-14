@@ -2354,6 +2354,15 @@
           "first-builder-reserve-2": null
         }
       },
+      "first-granary-reserve": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "first-granary-reserve": null,
+          "first-granary-reserve-2": null
+        }
+      },
       "government-ladder": {
         "rule_on": [
           "government-ladder-2"

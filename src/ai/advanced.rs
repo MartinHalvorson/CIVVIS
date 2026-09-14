@@ -5567,6 +5567,9 @@ pub struct AdvancedAi {
     /// `first-granary-reserve`: a city grown to its housing builds its
     /// Granary ahead of the argmax, once. See `advanced_production`.
     first_granary_reserve: bool,
+    /// Reserve a Granary only when its housing accelerates the next citizen
+    /// within the construction and growth budget. Independently screened V2.
+    first_granary_reserve_2: bool,
     /// `exhaustion-loyalty-guard`: a stranded Settler's wider search may not
     /// take a site the Loyalty forecast cannot price, and its nearest-legal
     /// tier runs the same concrete-revolt forecast the ranked tier does. See
@@ -7066,6 +7069,7 @@ pub use genes::{
 /// guards that they stay out of this file.
 mod treatment_flags;
 
+mod granary_payback;
 /// Great People never pile up: the `great-person-housing` gene's ladder of
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
@@ -8217,6 +8221,7 @@ impl AdvancedAi {
             first_district_first: false,
             escort_cap_holds: false,
             first_granary_reserve: false,
+            first_granary_reserve_2: false,
             exhaustion_loyalty_guard: false,
             early_archers: false,
             early_project_restraint: false,
@@ -25970,9 +25975,11 @@ impl AdvancedAi {
             // city built Walls, Castles, wonders and units instead. The same
             // shape as `first_builder_reserve`: one compounding asset ahead of
             // the argmax, once per city.
-            if committed.is_none() && self.first_granary_reserve {
+            if committed.is_none() && (self.first_granary_reserve || self.first_granary_reserve_2) {
                 let granary = crate::name!("granary");
-                let housing_bound = {
+                let housing_bound = if self.first_granary_reserve_2 {
+                    self.granary_growth_pays(g, pid, cid, plan)
+                } else {
                     let city = &g.cities[&cid];
                     !city.buildings.contains(&granary)
                         && city.pop as f64 + 1.0 >= g.city_housing(city)

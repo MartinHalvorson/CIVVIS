@@ -2307,6 +2307,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "builder-charge-window", field: "builder_charge_window", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_charge_window, disable: AdvancedAi::disable_builder_charge_window },
     Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     Gene { tag: "culture-lane-forecast-2", field: "culture_lane_forecast_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast_2, disable: AdvancedAi::disable_culture_lane_forecast_2 },
+    // V2 reserves housing only when construction plus growth brings the next
+    // citizen materially earlier within a bounded investment window.
+    Gene { tag: "first-granary-reserve-2", field: "first_granary_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_2, disable: AdvancedAi::disable_first_granary_reserve_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
