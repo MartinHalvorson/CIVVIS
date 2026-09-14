@@ -88,7 +88,13 @@ fn a_warm_purchase_price_memo_matches_a_cold_derivation_under_one_guard() {
     // Every memoized answer must equal an uncached re-derivation, for every
     // unit, formation and currency, in every city of the fixture.
     for cid in game.player_city_ids(0) {
-        for unit in game.rules.units.keys() {
+        for unit in game
+            .rules
+            .units
+            .keys()
+            .map(|name| name.as_str())
+            .chain(["unknown_purchase_unit"])
+        {
             for formation in 0..=2u8 {
                 for currency in ["gold", "faith"] {
                     let memoized =
