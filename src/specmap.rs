@@ -374,7 +374,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for SpecMap<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::SpecMap;
+    use super::{Name, SpecMap};
 
     #[test]
     fn keeps_entries_in_key_order() {
