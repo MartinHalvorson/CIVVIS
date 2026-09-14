@@ -129,17 +129,18 @@ fn timing_uses_invested_work_and_whole_completion_turns() {
     assert_eq!(g.city_yields(origin).production, 30.0);
     assert_eq!(
         g.item_prod_mult(0, origin, g.cities[&origin].queue.first()),
-        1.0
+        2.0
     );
-    g.cities.get_mut(&origin).unwrap().production = cost - 300.0;
+    // The native engine includes +100% for its modeled space-project stack.
+    g.cities.get_mut(&origin).unwrap().production = cost - 600.0;
     assert_eq!(premium(&g, origin, 4.0), 4.0); // 10 turns -> 9 turns.
-    g.cities.get_mut(&origin).unwrap().production = cost - 29.0;
+    g.cities.get_mut(&origin).unwrap().production = cost - 59.0;
     assert_eq!(premium(&g, origin, 4.0), 0.0); // Both finish next turn.
-    g.cities.get_mut(&origin).unwrap().production = cost - 64.0;
+    g.cities.get_mut(&origin).unwrap().production = cost - 128.0;
     assert_eq!(premium(&g, origin, 4.0), 4.0); // 3 turns -> 2 turns.
     g.game_speed = GameSpeed::Online;
     let cost = g.item_cost_for_city(0, origin, &g.cities[&origin].queue[0]);
-    g.cities.get_mut(&origin).unwrap().production = cost - 64.0;
+    g.cities.get_mut(&origin).unwrap().production = cost - 128.0;
     assert_eq!(premium(&g, origin, 4.0), 4.0 / g.game_speed.scale(1.0));
 }
 
