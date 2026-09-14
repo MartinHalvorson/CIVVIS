@@ -52,7 +52,7 @@ impl AdvancedAi {
         let player = &g.players[pid];
         let tech = player.research.as_deref().filter(|tech| {
             !player.techs.contains(&Name::new(tech))
-                && g.rules.techs.contains_key(*tech)
+                && g.rules.techs.contains_key(tech)
                 && player.research_progress >= 0.9 * g.tech_cost(tech)
                 && g.rules.districts.values().any(|spec| {
                     spec.specialty
@@ -64,7 +64,7 @@ impl AdvancedAi {
         });
         let civic = player.civic.as_deref().filter(|civic| {
             !player.civics.contains(&Name::new(civic))
-                && g.rules.civics.contains_key(*civic)
+                && g.rules.civics.contains_key(civic)
                 && player.civic_progress >= 0.9 * g.civic_cost(civic)
                 && g.rules.districts.values().any(|spec| {
                     spec.specialty

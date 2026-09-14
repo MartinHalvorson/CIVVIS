@@ -109,5 +109,12 @@ defaults changed.
 
 After the probe, main's victory-portfolio and treasury registrations were
 merged. The new gene moved to the end of the expanded registry; its scoring
-module, tests and exposed engine helper are unchanged from the probed revision.
+behavior, tests and exposed engine helper are unchanged from the probed revision.
 The full local suite was rerun after this integration.
+
+The later defender/threat registrations were also integrated, preserving their
+existing gene positions. The only subsequent edit to the discount-scoring
+module removes two redundant explicit dereferences requested by Clippy; it
+does not change behavior. This integration is checked by the Rust quality
+gate (including compilation), append/metadata/firing checks, and the final
+full PR CI run. The 3,774-test local run preceded this final registry update.
