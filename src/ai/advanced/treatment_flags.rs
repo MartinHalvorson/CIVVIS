@@ -996,10 +996,20 @@ impl AdvancedAi {
     /// clock stops. See [`Self::culture_lane_forecast`].
     pub fn enable_culture_lane_forecast(&mut self) {
         self.culture_lane_forecast = true;
+        self.culture_lane_forecast_2 = false;
     }
 
     pub fn disable_culture_lane_forecast(&mut self) {
         self.culture_lane_forecast = false;
+    }
+
+    pub fn enable_culture_lane_forecast_2(&mut self) {
+        self.culture_lane_forecast = false;
+        self.culture_lane_forecast_2 = true;
+    }
+
+    pub fn disable_culture_lane_forecast_2(&mut self) {
+        self.culture_lane_forecast_2 = false;
     }
 
     /// Test the Rock Band unlock before the Culture lane's stadium and

@@ -40103,6 +40103,102 @@ fn the_conversion_count_never_lowers_the_staircase() {
 
 // ═══ The Culture lane's other curve (`culture_lane_forecast`) ═══
 
+fn culture_forecast_market(kind: &str) -> Game {
+    let mut game = Game::new(2, 24, 16, 9_136_200, 250, 0);
+    game.turn = 150;
+    for pid in 0..2 {
+        game.players[pid].civ = "Rome".to_string();
+        game.players[pid].religion = Some("Home Faith".to_string());
+        game.players[pid].culture_lifetime = 1_000.0;
+        let position = game
+            .units
+            .values()
+            .find(|unit| unit.owner == pid && unit.kind == "settler")
+            .unwrap()
+            .pos;
+        game.found_city_for(pid, position, None);
+    }
+    game.grant_great_work(0, kind, 0, "forecast fixture");
+    game
+}
+
+#[test]
+fn culture_forecast_versions_are_exclusive_and_reversible() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.culture_lane_forecast_2);
+    assert!(!AdvancedAi::legacy().culture_lane_forecast_2);
+    ai.enable_culture_lane_forecast();
+    ai.enable_culture_lane_forecast_2();
+    assert!(ai.culture_lane_forecast_2 && !ai.culture_lane_forecast);
+    ai.enable_culture_lane_forecast();
+    assert!(ai.culture_lane_forecast && !ai.culture_lane_forecast_2);
+    ai.enable_culture_lane_forecast_2();
+    ai.disable_culture_lane_forecast_2();
+    assert!(!ai.culture_lane_forecast && !ai.culture_lane_forecast_2);
+}
+
+#[test]
+fn culture_forecast_v2_accounts_for_religious_market_penalties() {
+    let mut game = culture_forecast_market("relic");
+    let mut original = AdvancedAi::new();
+    original.enable_culture_lane_forecast();
+    let mut revised = AdvancedAi::new();
+    revised.enable_culture_lane_forecast_2();
+    let full_market = revised.culture_lane_forecast_score(&game, 0);
+    assert!(full_market > 0);
+    assert_eq!(full_market, original.culture_lane_forecast_score(&game, 0));
+
+    game.players[1].religion = Some("Other Faith".to_string());
+    let reduced = revised.culture_lane_forecast_score(&game, 0);
+    assert!(reduced > 0 && reduced < full_market);
+    assert_eq!(original.culture_lane_forecast_score(&game, 0), full_market);
+
+    game.players[1]
+        .civics
+        .insert(crate::name!("the_enlightenment"));
+    assert_eq!(game.international_tourism_multiplier(0, 1, true), 0.0);
+    let religious_market_closed = revised.culture_lane_forecast_score(&game, 0);
+    assert!(religious_market_closed < reduced);
+    assert!(original.culture_lane_forecast_score(&game, 0) > religious_market_closed);
+}
+
+#[test]
+fn culture_forecast_v2_keeps_secular_tourism_out_of_religious_penalties() {
+    let mut game = culture_forecast_market("writing");
+    let mut revised = AdvancedAi::new();
+    revised.enable_culture_lane_forecast_2();
+    let before = revised.culture_lane_forecast_score(&game, 0);
+    assert!(before > 0);
+    assert_eq!(game.religious_tourism_per_turn(0), 0.0);
+    game.players[1].religion = Some("Other Faith".to_string());
+    assert_eq!(revised.culture_lane_forecast_score(&game, 0), before);
+}
+
+#[test]
+fn culture_forecast_v2_prices_open_borders_until_they_expire() {
+    let mut game = culture_forecast_market("writing");
+    let mut revised = AdvancedAi::new();
+    revised.enable_culture_lane_forecast_2();
+    let closed = revised.culture_lane_forecast_score(&game, 0);
+    game.players[1]
+        .open_borders_until
+        .insert(0, game.turn + 100);
+    assert!(revised.culture_lane_forecast_score(&game, 0) > closed);
+    game.players[1].open_borders_until.insert(0, game.turn);
+    assert_eq!(revised.culture_lane_forecast_score(&game, 0), closed);
+}
+
+#[test]
+fn culture_forecast_v2_does_not_count_teammates_as_markets() {
+    let mut game = culture_forecast_market("relic");
+    let mut revised = AdvancedAi::new();
+    revised.enable_culture_lane_forecast_2();
+    assert!(revised.culture_lane_forecast_score(&game, 0) > 0);
+    game.players[0].team = Some(7);
+    game.players[1].team = Some(7);
+    assert_eq!(revised.culture_lane_forecast_score(&game, 0), 0);
+}
+
 #[test]
 fn culture_lane_forecast_is_a_registered_reversible_opt_in() {
     assert!(
