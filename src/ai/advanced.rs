@@ -6669,6 +6669,9 @@ pub struct AdvancedAi {
     /// turn the emergency purchase first became legal. See
     /// `advanced/gold_and_cards.rs`.
     threatened_city_reserve: bool,
+    /// V2 reserves the engine's local quote for an available defender in
+    /// the threatened city. See `advanced/threatened_reserve.rs`.
+    threatened_city_reserve_2: bool,
     /// The two yield-floor shortfalls, computed once a seat-turn. See
     /// `advanced/yield_floors.rs`.
     yield_floor_frame: RefCell<yield_floors::YieldFloorFrame>,
@@ -7291,6 +7294,7 @@ mod order_retry;
 /// operator's Gold-versus-production heuristic. Opt-in genes; see
 /// `advanced/gold_and_cards.rs`.
 mod gold_and_cards;
+mod threatened_reserve;
 
 /// `culture-floor` and `gold-income-floor`: the Amphitheatre out from under
 /// the Great Work veto and the Theatre Square priced while culture trails
@@ -8389,6 +8393,7 @@ impl AdvancedAi {
             trade_route_network: false,
             walls_after_districts: false,
             threatened_city_reserve: false,
+            threatened_city_reserve_2: false,
             yield_floor_frame: RefCell::new(yield_floors::YieldFloorFrame::default()),
             treasury_at_work_2: false,
             treasury_at_work_2_2: false,
