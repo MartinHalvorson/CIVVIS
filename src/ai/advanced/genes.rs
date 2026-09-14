@@ -2303,6 +2303,9 @@ pub const GENES: &[Gene] = &[
     // A one-turn boosted technology interrupts a peaceful lane beeline that is
     // not about to land its target; see `boosted_bargain_tech_3`.
     Gene { tag: "boosted-bargain-first-3", field: "boosted_bargain_first_3", kind: Kind::OptIn, enable: AdvancedAi::enable_boosted_bargain_first_3, disable: AdvancedAi::disable_boosted_bargain_first_3 },
+    // Competitive economy hypotheses; see competitive_economy.rs.
+    Gene { tag: "builder-charge-window", field: "builder_charge_window", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_charge_window, disable: AdvancedAi::disable_builder_charge_window },
+    Gene { tag: "trade-growth-to-district", field: "trade_growth_to_district", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_growth_to_district, disable: AdvancedAi::disable_trade_growth_to_district },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
