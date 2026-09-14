@@ -2324,6 +2324,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "victory-portfolio", field: "victory_portfolio", kind: Kind::OptIn, enable: AdvancedAi::enable_victory_portfolio, disable: AdvancedAi::disable_victory_portfolio },
     // The treasury successor retains the reserve and puts the first Builder by local work.
     Gene { tag: "treasury-at-work-2-2", field: "treasury_at_work_2_2", kind: Kind::OptIn, enable: AdvancedAi::enable_treasury_at_work_2_2, disable: AdvancedAi::disable_treasury_at_work_2_2 },
+    // Price one locally purchasable defender, with the engine's discounts
+    // and refusals, rather than the empire's dearest buildable ranged unit.
+    Gene { tag: "threatened-city-reserve-2", field: "threatened_city_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_reserve_2, disable: AdvancedAi::disable_threatened_city_reserve_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

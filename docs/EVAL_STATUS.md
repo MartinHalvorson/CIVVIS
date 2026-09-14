@@ -23,8 +23,8 @@ How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
 - Withholdable live treatments: **38**
-- Named somewhere in the evidence: **36**
-- **Never named in any round: 2**
+- Named somewhere in the evidence: **37**
+- **Never named in any round: 1**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -39,7 +39,7 @@ over ladder games. This list is the debt neither has touched.
 
 Never named:
 
-`relief-column-marches`, `threatened-city-reserve`
+`relief-column-marches`
 
 ## Genome coverage
 
@@ -47,8 +47,8 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **338**
-- Reachable as a gene `gene_screen` can vary: **315**
+- Capability toggles on the controller: **339**
+- Reachable as a gene `gene_screen` can vary: **316**
 - Measured by at least one screen: **72**
 - Resolved by the ledger (helps or hurts): **16**
 - **Unreachable by any screen: 41**
