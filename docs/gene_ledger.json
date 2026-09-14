@@ -2253,7 +2253,8 @@
         "ships": null,
         "versions": {
           "culture-building-catchup": null,
-          "culture-building-catchup-2": null
+          "culture-building-catchup-2": null,
+          "culture-building-catchup-3": null
         }
       },
       "culture-lane-forecast": {
@@ -2511,7 +2512,8 @@
         "ships": "research-building-catchup",
         "versions": {
           "research-building-catchup": null,
-          "research-building-catchup-2": null
+          "research-building-catchup-2": null,
+          "research-building-catchup-3": null
         }
       },
       "science-victory-drive": {
