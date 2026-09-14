@@ -40153,7 +40153,9 @@ fn culture_forecast_v2_accounts_for_religious_market_penalties() {
     assert!(reduced > 0 && reduced < full_market);
     assert_eq!(original.culture_lane_forecast_score(&game, 0), full_market);
 
-    game.players[1].civics.insert(crate::name!("enlightenment"));
+    game.players[1]
+        .civics
+        .insert(crate::name!("the_enlightenment"));
     assert_eq!(game.international_tourism_multiplier(0, 1, true), 0.0);
     assert_eq!(revised.culture_lane_forecast_score(&game, 0), 0);
     assert!(original.culture_lane_forecast_score(&game, 0) > 0);
