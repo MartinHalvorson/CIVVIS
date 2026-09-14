@@ -154,6 +154,17 @@ fn catchup_v3_waits_for_a_nearly_complete_sufficient_answer() {
 fn catchup_v3_does_not_wait_for_an_answer_due_after_the_useful_window() {
     for debt in [Debt::Culture, Debt::Research] {
         let (mut g, ai, plan, cities, item) = board(debt, 1.0);
+        // Founding and civilization bonuses can otherwise make the first
+        // city fast enough to service this small deficit. Fix its observed
+        // production at one and leave the two developed cities fast.
+        let production = g.city_yields(cities[0]).production;
+        Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+            cities[0],
+            Yields {
+                production: 1.0 - production,
+                ..Default::default()
+            },
+        );
         g.cities.get_mut(&cities[0]).unwrap().queue = vec![item.clone()];
         let slow = ai.production_build_turns(&g, 0, cities[0], &item).ceil();
         let fast = ai.production_build_turns(&g, 0, cities[1], &item).ceil();
