@@ -85,6 +85,9 @@ fn treasury_successor_counts_repairs_as_local_work() {
     let tile = g.map.tiles.get_mut(&work).unwrap();
     tile.improvement = Some(crate::name!("farm"));
     tile.pillaged = true;
+    // A pillaged Farm may also be rebuilt. Block new improvements here so
+    // only the independently legal repair can justify the purchase.
+    Arc::make_mut(&mut g.blocked_improvement_sites).insert(work);
     let mut ai = AdvancedAi::new();
     ai.enable_treasury_at_work_2_2();
     assert!(g.valid_improvements(0, work).is_empty());
