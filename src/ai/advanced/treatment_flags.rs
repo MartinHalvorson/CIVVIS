@@ -1003,6 +1003,15 @@ impl AdvancedAi {
         self.culture_lane_forecast = false;
     }
 
+    pub fn enable_culture_lane_forecast_2(&mut self) {
+        self.culture_lane_forecast = false;
+        self.culture_lane_forecast_2 = true;
+    }
+
+    pub fn disable_culture_lane_forecast_2(&mut self) {
+        self.culture_lane_forecast_2 = false;
+    }
+
     /// Test the Rock Band unlock before the Culture lane's stadium and
     /// museum-tourism civics, while retaining Humanism and Conservation first.
     pub fn enable_culture_cold_war_window(&mut self) {
@@ -4374,14 +4383,6 @@ impl AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
-    pub fn enable_culture_lane_forecast_2(&mut self) {
-        self.culture_lane_forecast = false;
-        self.culture_lane_forecast_2 = true;
-    }
-
-    pub fn disable_culture_lane_forecast_2(&mut self) {
-        self.culture_lane_forecast_2 = false;
-    }
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
