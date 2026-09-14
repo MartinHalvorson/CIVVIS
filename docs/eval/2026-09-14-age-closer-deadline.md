@@ -56,8 +56,21 @@ target/ci/gene_screen --analyze SCREEN_ROWS \
 
 ## Validation and results
 
-Pending. Tests exercise actual patronage, the half-price boundary, Taj Mahal,
-Dedication rules, deadline and speed boundaries, reserves, host refusal,
-source-state preservation and choice between an ordinary purchase and a
-verified closer. The full Rust suite and repository gene gates run before
-integration.
+The implementation at `4f8addc698` passed 3,707 Rust tests, with 53 ignored
+including documentation examples. Twelve focused cases exercise actual
+Gold and Faith patronage, the half-price boundary, Taj Mahal, Dedication
+rules, deadline and speed boundaries, reserves, host refusal, source-state
+preservation and choice between an ordinary purchase and a verified closer.
+They include the actual player observation contract. The generated gene
+metadata and fourteen append-point tests also passed. CI identified formatting
+in the modified purchase hook; that formatting is corrected before replay.
+
+Before any age-closer games start, this branch imports the engine ownership
+repair from PR #3578. An earlier government probe exposed a missing owning
+city panic in the shared Builder improvement query. The repair rejects that
+stale handle and has two passing regression tests. No age-closer games have
+been discarded or replaced. The first age-closer screen will use a clean
+build containing the repair, with the original seed windows and sample sizes.
+The source fingerprint and completed evidence will be recorded here.
+
+The strength comparison is pending; deployment defaults remain unchanged.

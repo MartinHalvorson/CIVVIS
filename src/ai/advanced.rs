@@ -7070,11 +7070,11 @@ pub use genes::{
 /// guards that they stay out of this file.
 mod treatment_flags;
 
+mod age_closer;
 /// Great People never pile up: the `great-person-housing` gene's ladder of
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
-mod age_closer;
 /// The opportunistic war: a surprise war priced on what the board exposes —
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
@@ -19973,8 +19973,7 @@ impl AdvancedAi {
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),
             ] {
-                let ordinary_limit = if age_closing.is_some()
-                    || (currency == "faith" && idle_faith)
+                let ordinary_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
                 {
                     1.0
                 } else {
@@ -19995,8 +19994,8 @@ impl AdvancedAi {
                     kind: kind.to_string(),
                     currency: currency.to_string(),
                 };
-                let closes_age = age_deadline.is_some()
-                    && Self::purchase_reaches_normal_age(g, pid, &action);
+                let closes_age =
+                    age_deadline.is_some() && Self::purchase_reaches_normal_age(g, pid, &action);
                 // Version two relaxes the ordinary gate only for a purchase
                 // whose actual result covers the era shortfall in time.
                 // Idle Faith and version one's original arm keep their rules.
@@ -20014,16 +20013,18 @@ impl AdvancedAi {
                 ));
             }
         }
-        if let Some((closes_age, score, _, action)) = candidates.into_iter().max_by(|left, right| {
-            left.0
-                .cmp(&right.0)
-                .then_with(|| {
-                    left.1
-                        .partial_cmp(&right.1)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .then_with(|| left.2.cmp(&right.2))
-        }) {
+        if let Some((closes_age, score, _, action)) =
+            candidates.into_iter().max_by(|left, right| {
+                left.0
+                    .cmp(&right.0)
+                    .then_with(|| {
+                        left.1
+                            .partial_cmp(&right.1)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .then_with(|| left.2.cmp(&right.2))
+            })
+        {
             if closes_age {
                 think!(self.journal(), Economy, Detail, "Closing the era before its deadline";
                        "this purchase reaches the Normal Age threshold before turn {}",
