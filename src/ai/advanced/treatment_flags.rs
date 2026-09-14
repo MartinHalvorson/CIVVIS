@@ -2894,6 +2894,7 @@ impl AdvancedAi {
     /// line's first identifier.
     pub fn enable_government_ladder(&mut self) {
         self.government_ladder = true;
+        self.government_ladder_3 = false;
     }
 
     /// The twin of `enable_government_ladder`.
@@ -2986,6 +2987,7 @@ impl AdvancedAi {
     /// See `government_ladder_rung`.
     pub fn enable_government_ladder_2(&mut self) {
         self.government_ladder_2 = true;
+        self.government_ladder_3 = false;
     }
 
     /// The twin of `enable_government_ladder_2`.
