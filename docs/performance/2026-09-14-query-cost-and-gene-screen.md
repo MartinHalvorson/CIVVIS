@@ -1,6 +1,6 @@
 # Query performance and evaluation protocol — 2026-09-14
 
-The performance measurements and correctness fixes below are complete. Further strength evaluation remains incomplete as of 2026-09-14 13:01 UTC; its protocol is recorded for provenance. Deployment defaults are unchanged.
+The performance measurements and correctness fixes below are complete. Further strength evaluation stopped at the original session time limit on 2026-09-14, with 73 of 96 replacement games complete. The partial output is diagnostic only; no strength analysis or deployment-default change was made from it.
 
 ## Completed performance comparisons
 
@@ -71,3 +71,9 @@ The settlement fix in [#3564](https://github.com/MartinHalvorson/CIVVIS/pull/356
 The replacement full screen has runtime limitations separate from its strength endpoints. While it was running, `ship` for #3572 automatically merged newer main and ran a 74-second local `cargo check`, contrary to the intended separation of local builds and games. A one-second stack sample was also taken after slow ordered output; it showed city-yield and citizen-planning calculations. Other work on the shared host was uncontrolled. These events are recorded as protocol deviations for runtime measurement: computational-cost columns from this batch are workload diagnostics, not isolated speed estimates. The declared game and seat targets remain unchanged, and no partial strength results are accepted.
 
 Merged [#3572](https://github.com/MartinHalvorson/CIVVIS/pull/3572) fixes the batch runner separately: `map_reporting` workers stop claiming jobs after observing a job or report panic; active jobs finish and the panic still reaches the caller. Both coordinated cancellation regressions passed, and removing the cancellation check from a temporary copy caused an unwanted third job and a test failure. Final CI on `6b9b05b99ad75993fb44f00dd0b90b4e64089266` passed 3,697 Rust tests (49 skipped), documentation checks, 71 gene-screen and 21 live-divergence tests. Its native paired check matched 600 turns: +1.09% median / +0.99% pooled CPU with ±1.34 percentage-point resolution, an inconclusive timing result. This change saves work in failed batches; no gain is claimed for successful batches. It is absent from the frozen replacement binary, whose external launcher supplies panic detection for these runs.
+
+## Final session outcome
+
+The original ten-hour window ended at **2026-09-14 14:07:34 UTC**. The replacement pipeline was stopped at **14:07:51 UTC**, and no session-owned evaluation processes remained. Its preserved output contains **73 complete games / 438 seats**, seeds **9145000–9145072**, with no trailing partial seat group. The original header and plan still declare **96 games / 576 seats**, seeds **9145000–9145095**; the run manifest records `stopped_at_original_time_limit`.
+
+The raw file `0913-replacement-full96.jsonl` has SHA-256 `791721f02c1e752f4a1da520e1c8d423ca377c1c7a98f6c258bed1b635552e37`. The stop receipt and completeness diagnostic are retained in `0913-replacement-time-limit-diagnostic.json`. The queued 128-game culture-family evaluation never started. No analysis was generated from the incomplete replacement screen, no partial batch entered the strength ledger, and no deployment defaults changed on its evidence. The seven-worker setting remained in use through termination; the runtime limitations above still apply.
