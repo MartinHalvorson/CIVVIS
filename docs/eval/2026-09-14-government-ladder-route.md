@@ -97,8 +97,10 @@ remains deployed. The complete replay artifact is
 `docs/gene_screens/fires/government-ladder-3.json`; the failed attempt remains
 separate and contributes no seats to this comparison.
 
-The originally planned sixty whole-registry games started on seeds
-914358000–914358059 with the same binary. Their header confirms the same
-clean source before this branch advances for integration. They are still
-running; no incomplete result has been published as a completed comparison.
-The seed windows, game counts and target shape are unchanged.
+The originally planned sixty whole-registry games used seeds
+914358000–914358059 and the same clean-source binary. The operator's wrap-up
+request stopped the run after 42 complete games (252 of 360 seats), before
+partial outcomes were inspected. The original target and seed window remain
+recorded. The exact analysis is explicitly partial; see the
+[closeout](2026-09-14-gene-rewrite-closeout.md) for counts, contrasts and
+provenance. It is not pooled with either family attempt and changes no default.
