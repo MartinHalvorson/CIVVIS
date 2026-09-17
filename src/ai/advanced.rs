@@ -5052,6 +5052,8 @@ pub struct AdvancedAi {
     culture_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
     culture_building_catchup_2: bool,
+    /// Credit the yield and completion time of queued catch-up investments.
+    culture_building_catchup_3: bool,
     /// A threat detour must keep most of the site's worth. See
     /// `SETTLER_DETOUR_VALUE_FLOOR` for the live measurement: the median
     /// detour improves on the site it leaves, but a quarter of them give up
@@ -6248,6 +6250,8 @@ pub struct AdvancedAi {
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
     research_building_catchup_2: bool,
+    /// Credit the yield and completion time of queued catch-up investments.
+    research_building_catchup_3: bool,
     /// A route step that is not legal THIS TURN is a wait, not a new
     /// decision. `commitment_owners_act` releases a settle or improve
     /// decision the moment `route_step` yields no enterable neighbour —
@@ -8201,6 +8205,7 @@ impl AdvancedAi {
             culture_threat_early: false,
             culture_building_catchup: false,
             culture_building_catchup_2: false,
+            culture_building_catchup_3: false,
             detour_keeps_the_site_worth: false,
             doomed_blow_veto: false,
             doomed_blow_veto_2: false,
@@ -8337,6 +8342,7 @@ impl AdvancedAi {
             pingala_follows_research: false,
             research_building_catchup: false,
             research_building_catchup_2: false,
+            research_building_catchup_3: false,
             route_block_is_a_wait: false,
             recovery_reads_the_war_2: false,
             reserved_units: BTreeSet::new(),

@@ -2329,6 +2329,10 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "threatened-city-reserve-2", field: "threatened_city_reserve_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_reserve_2, disable: AdvancedAi::disable_threatened_city_reserve_2 },
     Gene { tag: "builder-workforce-recovery-3", field: "builder_workforce_recovery_3", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_workforce_recovery_3, disable: AdvancedAi::disable_builder_workforce_recovery_3 },
     Gene { tag: "government-ladder-3", field: "government_ladder_3", kind: Kind::OptIn, enable: AdvancedAi::enable_government_ladder_3, disable: AdvancedAi::disable_government_ladder_3 },
+    // A queued building services only the yield it can deliver soon enough;
+    // a slow or undersized answer does not close the whole empire's deficit.
+    Gene { tag: "culture-building-catchup-3", field: "culture_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_building_catchup_3, disable: AdvancedAi::disable_culture_building_catchup_3 },
+    Gene { tag: "research-building-catchup-3", field: "research_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_research_building_catchup_3, disable: AdvancedAi::disable_research_building_catchup_3 },
     Gene { tag: "age-closer-2", field: "age_closer_2", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_2, disable: AdvancedAi::disable_age_closer_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
