@@ -282,6 +282,37 @@ fi
 # is always passed to civ6_civvis_climb rather than inherited from its default.
 RUNS_DIR=$HOME/civvis-civ6-runs/control
 EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
+# The operator's promotion watcher updates this file after a verified win.
+# Reading only the inherited environment kept the old rung for every later
+# game in this long-lived shell. Refresh only at a batch boundary; a healthy
+# game keeps the difficulty with which it was launched.
+read_difficulty_policy() {
+  local selected=$1 policy_file=${CIVVIS_VERIFICATION_POLICY:-$HOME/.civvis-verification-policy}
+  local line="" key="" value=""
+  if [[ ! -e "$policy_file" ]]; then
+    print -r -- "$selected"
+    return 0
+  fi
+  if [[ ! -f "$policy_file" || ! -r "$policy_file" ]]; then
+    print -ru2 -- "unreadable difficulty policy: $policy_file"
+    return 1
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Match the verified-head launcher's plain KEY=VALUE policy syntax.
+    # Never source the file: values are data, not shell commands.
+    line=${line%%'#'*}
+    line=${line//[[:space:]]/}
+    key=${line%%=*}
+    [[ "$key" == CIVVIS_DIFFICULTY ]] || continue
+    value=${line#*=}
+    if [[ "$line" != *=* || ! "$value" =~ '^DIFFICULTY_(SETTLER|CHIEFTAIN|WARLORD|PRINCE|KING|EMPEROR|IMMORTAL|DEITY)$' ]]; then
+      print -ru2 -- "invalid CIVVIS_DIFFICULTY in $policy_file"
+      return 1
+    fi
+    selected=$value
+  done < "$policy_file"
+  print -r -- "$selected"
+}
 # The victory objective. This service passed NOTHING here, and inheriting a
 # launcher default silently is how it spent 307 attempts aiming at Science —
 # the one lane `victory_eval` completes 0/16 at this exact profile, while the
@@ -798,6 +829,11 @@ while true; do
   fi
 
   DIFFICULTY=$EXPLICIT_DIFFICULTY
+  if ! DIFFICULTY=$(read_difficulty_policy "$DIFFICULTY"); then
+    say "invalid or unreadable difficulty policy; refusing a stale rung and retrying in 60s"
+    sleep 60
+    continue
+  fi
   if [[ -z "$DIFFICULTY" ]]; then
     if (( CAPTURE_FREE )); then
       # The non-visual owner is deliberately a fixed profile. Its direct

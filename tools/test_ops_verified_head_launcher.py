@@ -191,5 +191,80 @@ class CaptureFreePolicyTests(unittest.TestCase):
             self.assertEqual(done.returncode, 0, done.stderr)
 
 
+@unittest.skipUnless(shutil.which("zsh"), "zsh is not installed")
+class DifficultyRefreshTests(unittest.TestCase):
+    def selection_script(self):
+        source = SUPERVISOR.read_text(encoding="utf-8")
+        marker = "read_difficulty_policy() {"
+        helper = ""
+        if marker in source:
+            start = source.index(marker)
+            helper = source[start:source.index("\n}\n", start) + 3]
+        start = source.index("  DIFFICULTY=$EXPLICIT_DIFFICULTY")
+        selection = source[start:source.index('  if [[ -z "$DIFFICULTY" ]]', start)]
+        return "\n".join([
+            helper,
+            'say() { print -ru2 -- "$*"; }',
+            'sleep() { :; }',
+            'EXPLICIT_DIFFICULTY=DIFFICULTY_KING',
+            'choose() { for attempt in 1; do', selection,
+            'print -r -- "$DIFFICULTY"', 'done; }',
+        ])
+
+    def run_selection(self, policy_text):
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / "policy"
+            if policy_text is not None:
+                policy.write_text(policy_text)
+            return subprocess.run(
+                ["zsh", "-c", self.selection_script() + "\nchoose"],
+                env={**os.environ, "CIVVIS_VERIFICATION_POLICY": str(policy)},
+                capture_output=True, text=True,
+            )
+
+    def test_saved_promotion_overrides_the_inherited_king_setting(self):
+        done = self.run_selection("# promoted after a verified win\n"
+                                  " CIVVIS_DIFFICULTY = DIFFICULTY_EMPEROR # next game\n")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), "DIFFICULTY_EMPEROR")
+
+    def test_missing_policy_or_difficulty_retains_the_explicit_setting(self):
+        for policy in (None, "CIVVIS_VICTORY=domination\n"):
+            with self.subTest(policy=policy):
+                done = self.run_selection(policy)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(done.stdout.strip(), "DIFFICULTY_KING")
+
+    def test_invalid_difficulty_does_not_launch_with_the_stale_setting(self):
+        for value in ("", "Emperor", "DIFFICULTY_EMPEROR;echo injected"):
+            with self.subTest(value=value):
+                done = self.run_selection("CIVVIS_DIFFICULTY=" + value + "\n")
+                self.assertEqual(done.stdout, "")
+                self.assertIn("invalid", done.stderr)
+
+    def test_one_supervisor_process_reads_an_atomic_policy_change_next_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / "policy"
+            policy.write_text("CIVVIS_DIFFICULTY=DIFFICULTY_KING\n")
+            script = self.selection_script() + '\nchoose\nread -r signal\nchoose\n'
+            proc = subprocess.Popen(
+                ["zsh", "-c", script], stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                env={**os.environ, "CIVVIS_VERIFICATION_POLICY": str(policy)},
+            )
+            try:
+                self.assertEqual(proc.stdout.readline().strip(), "DIFFICULTY_KING")
+                replacement = policy.with_suffix(".new")
+                replacement.write_text("CIVVIS_DIFFICULTY=DIFFICULTY_EMPEROR\n")
+                replacement.replace(policy)
+                stdout, stderr = proc.communicate("next\n", timeout=10)
+                self.assertEqual(proc.returncode, 0, stderr)
+                self.assertEqual(stdout.strip(), "DIFFICULTY_EMPEROR")
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.communicate()
+
+
 if __name__ == "__main__":
     unittest.main()
