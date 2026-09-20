@@ -739,6 +739,37 @@ fn siege_posts(
 }
 
 impl AdvancedAi {
+    /// Carry siege progress and assignments through a native board rebuild.
+    /// City positions and host-unit mappings identify the same participants;
+    /// mirror-local IDs can now name an unrelated city or soldier. Preserve
+    /// the stage clock so rebuilding cannot restart the investment patience.
+    pub fn remap_siege_memory(&mut self, previous: &Game, next: &Game, units: &BTreeMap<u32, u32>) {
+        let remap_unit = |old: u32| {
+            let new = *units.get(&old)?;
+            (previous.units.get(&old)?.owner == next.units.get(&new)?.owner).then_some(new)
+        };
+        self.sieges = std::mem::take(&mut self.sieges)
+            .into_iter()
+            .filter_map(|(old, mut siege)| {
+                let city = next.city_at(previous.cities.get(&old)?.pos)?;
+                siege.taker = siege.taker.and_then(remap_unit);
+                siege.posts = siege
+                    .posts
+                    .into_iter()
+                    .filter_map(|(unit, pos)| remap_unit(unit).map(|unit| (unit, pos)))
+                    .collect();
+                Some((city, siege))
+            })
+            .collect();
+        // Only surviving siege takers own these reservations. In particular,
+        // losing an objective must not leave its old taker ID reserved.
+        self.reserved_units = self
+            .sieges
+            .values()
+            .filter_map(|siege| siege.taker)
+            .collect();
+    }
+
     /// Whether the siege has reserved this unit as its taker — the hook a
     /// joint planner (`battle_planner`) reads so it does not spend the unit
     /// that walks in. Published here; the planner's read is its own change.
@@ -2201,3 +2232,6 @@ mod tests {
         assert_eq!(ai.census.anvil_rotations, 1);
     }
 }
+
+#[cfg(test)]
+mod rebuild_tests;
