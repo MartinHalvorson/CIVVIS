@@ -1917,6 +1917,9 @@ impl AdvancedAi {
     /// The far side of `objective` from the enemy near it: a passable land
     /// tile two or three out, farthest from the hostile centroid, nearest
     /// the force. The force's own medoid when nothing hostile is in sight.
+    /// Siege forces prefer land on their approach side before pricing safety:
+    /// a refuge beyond the enemy city is not a place to muster for taking it.
+    /// If terrain leaves no approach-side land, retain the available ring.
     fn far_side(
         &self,
         g: &Game,
@@ -1924,6 +1927,7 @@ impl AdvancedAi {
         objective: Pos,
         force_medoid: Pos,
         visible: &crate::world::TileBits,
+        approach_only: bool,
     ) -> Pos {
         let hostile: Vec<Pos> = g
             .units
@@ -1937,7 +1941,8 @@ impl AdvancedAi {
         let Some(enemy) = medoid(g, &hostile) else {
             return force_medoid;
         };
-        g.wdisk(objective, 3)
+        let candidates: Vec<Pos> = g
+            .wdisk(objective, 3)
             .into_iter()
             .filter(|pos| g.wdist(*pos, objective) >= 2)
             .filter(|pos| {
@@ -1945,6 +1950,15 @@ impl AdvancedAi {
                     .get(*pos)
                     .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             })
+            .collect();
+        let approach_distance = g.wdist(force_medoid, objective);
+        let approach_available = approach_only
+            && candidates
+                .iter()
+                .any(|pos| g.wdist(*pos, force_medoid) < approach_distance);
+        candidates
+            .into_iter()
+            .filter(|pos| !approach_available || g.wdist(*pos, force_medoid) < approach_distance)
             .max_by_key(|pos| (g.wdist(*pos, enemy), -g.wdist(*pos, force_medoid), *pos))
             .unwrap_or(force_medoid)
     }
@@ -2150,9 +2164,15 @@ impl AdvancedAi {
                 })
                 .sum();
             let rally = match kind {
-                Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
-                    self.far_side(g, pid, objective, force_medoid, &visible)
-                }
+                Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => self
+                    .far_side(
+                        g,
+                        pid,
+                        objective,
+                        force_medoid,
+                        &visible,
+                        kind == Some(ObjectiveKind::Siege),
+                    ),
                 _ => force_medoid,
             };
             force.rally = rally;
@@ -2442,6 +2462,76 @@ mod tests {
         assert!(ai.objective_board().rows.is_empty());
         assert!(ai.objective_board().forces.is_empty());
         assert_eq!(ai.force_groups.len(), 1, "the shipped proximity group");
+    }
+
+    #[test]
+    fn siege_rally_stays_on_the_armys_approach_side() {
+        let objective = at(24, 10);
+        let approach = at(12, 10);
+        let mut g = flat_board(91_620, &[at(6, 10), objective], false);
+        war(&mut g, 0, 1);
+        let target = city_of(&g, 1, objective);
+        g.cities.get_mut(&target).unwrap().pop = 20;
+        // A defender on the near side used to send the whole force around the
+        // city: distance from this enemy outranked the army's approach.
+        spawn(&mut g, "warrior", 1, at(22, 10));
+        for _ in 0..12 {
+            spawn(&mut g, "warrior", 0, approach);
+        }
+        let mut ai = on();
+        ai.battlefront_observation = false;
+        ai.rebuild_force_groups(&g, 0, &conquest(&g, Some(target)));
+        let force = force_for(&ai, ObjectiveKey::Siege(target)).expect("siege force");
+        assert_ne!(force.rally, approach, "the defender must affect the rally");
+        assert!(
+            g.wdist(approach, force.rally) < g.wdist(approach, objective),
+            "rally {:?} must be on the army's side of {:?}",
+            force.rally,
+            objective
+        );
+        let group = ai
+            .force_groups
+            .iter()
+            .find(|group| group.objective == objective)
+            .expect("projected siege group");
+        assert_eq!(group.posture, ForcePosture::Muster);
+        assert_eq!(group.anchor, force.rally);
+    }
+
+    #[test]
+    fn defensive_rally_can_still_shelter_beyond_the_objective() {
+        let objective = at(24, 10);
+        let approach = at(12, 10);
+        let mut g = flat_board(91_621, &[objective, at(6, 10)], false);
+        war(&mut g, 0, 1);
+        spawn(&mut g, "warrior", 1, at(22, 10));
+        let mut ai = on();
+        ai.battlefront_observation = false;
+        let visible = ai.battlefront_visibility(&g, 0);
+        let rally = ai.far_side(&g, 0, objective, approach, &visible, false);
+        assert!(g.wdist(approach, rally) > g.wdist(approach, objective));
+    }
+
+    #[test]
+    fn siege_rally_keeps_the_only_land_when_no_approach_ring_exists() {
+        let objective = at(24, 10);
+        let approach = at(12, 10);
+        let landing = at(27, 10);
+        let mut g = flat_board(91_622, &[at(6, 10), objective], false);
+        war(&mut g, 0, 1);
+        spawn(&mut g, "warrior", 1, objective);
+        for pos in g.wdisk(objective, 3) {
+            if g.wdist(pos, objective) >= 2 && pos != landing {
+                g.map.tiles.get_mut(&pos).unwrap().terrain = name!("coast");
+            }
+        }
+        let mut ai = on();
+        ai.battlefront_observation = false;
+        let visible = ai.battlefront_visibility(&g, 0);
+        assert_eq!(
+            ai.far_side(&g, 0, objective, approach, &visible, true),
+            landing
+        );
     }
 
     /// Two cities under pressure at once produce two Defend rows, and both
