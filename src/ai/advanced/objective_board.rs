@@ -1949,6 +1949,59 @@ impl AdvancedAi {
             .unwrap_or(force_medoid)
     }
 
+    /// Assemble a distant land siege on the army's approach side. Maximizing
+    /// distance from the enemy first can put the rally behind the city, asking
+    /// an unassembled force to cross the position it is preparing to attack.
+    /// Once the army is in staging range, keep its existing assembly point.
+    fn siege_approach_rally(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: Pos,
+        force_medoid: Pos,
+        visible: &crate::world::TileBits,
+    ) -> Pos {
+        let approach_distance = g.wdist(force_medoid, objective);
+        if approach_distance <= 3 {
+            return force_medoid;
+        }
+        let hostile: Vec<Pos> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| self.observed(g, pid, visible, unit))
+            .map(|unit| unit.pos)
+            .collect();
+        g.wdisk(objective, 3)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, objective) >= 2)
+            .filter(|pos| g.wdist(*pos, force_medoid) < approach_distance)
+            .filter(|pos| {
+                g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .filter(|pos| !hostile.contains(pos))
+            .filter(|pos| {
+                !g.sees(visible, *pos)
+                    || g.city_at(*pos)
+                        .is_none_or(|cid| g.cities[&cid].owner == pid)
+            })
+            .max_by_key(|pos| {
+                (
+                    -g.wdist(*pos, force_medoid),
+                    hostile
+                        .iter()
+                        .map(|enemy| g.wdist(*pos, *enemy))
+                        .min()
+                        .unwrap_or(0),
+                    *pos,
+                )
+            })
+            .unwrap_or(force_medoid)
+    }
+
     /// `force_groups` from the task forces: one group per force, the row's
     /// tile as objective, the posture from the row's doctrine.
     /// 🔬 THE ARMY NEVER HOLDS THE FORTIFICATION IT IS TOLD TO TAKE.
@@ -2150,6 +2203,9 @@ impl AdvancedAi {
                 })
                 .sum();
             let rally = match kind {
+                Some(ObjectiveKind::Siege) if force.domain == ForceDomain::Land => {
+                    self.siege_approach_rally(g, pid, objective, force_medoid, &visible)
+                }
                 Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
                     self.far_side(g, pid, objective, force_medoid, &visible)
                 }
@@ -2770,3 +2826,6 @@ mod tests {
 
 #[cfg(test)]
 mod rebuild_tests;
+
+#[cfg(test)]
+mod approach_rally_tests;
