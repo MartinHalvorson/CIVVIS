@@ -729,6 +729,7 @@ impl AdvancedAi {
             return;
         }
 
+        let fronts = Self::air_surge_fronts(g, pid);
         if let Some(mut plan) = self.air_surge_plan.take() {
             let target_alive = g
                 .players
@@ -741,7 +742,7 @@ impl AdvancedAi {
             // missing id as a capture; otherwise a sound bomber campaign dies
             // the turn after it was appointed.
             let objective_city = g.city_at(plan.objective_pos);
-            let objective_owner = objective_city
+            let mut objective_owner = objective_city
                 .and_then(|city| g.cities.get(&city))
                 .map(|city| city.owner);
             if objective_owner == Some(plan.target_player) {
@@ -750,10 +751,40 @@ impl AdvancedAi {
                 // rest of this board's tactical and diplomacy passes.
                 plan.objective_city = objective_city.unwrap_or(plan.objective_city);
             }
-            let at_war = target_alive && g.is_at_war(pid, plan.target_player);
+            let mut at_war = target_alive && g.is_at_war(pid, plan.target_player);
+            // The investment belongs to the active front, even when a new
+            // war supersedes an elective target or its city changes hands.
+            // Use a known reachable replacement without an abort cooldown or
+            // restarting the research and Aluminum clocks.
+            if target_alive
+                && fronts.len() == 1
+                && (!at_war || objective_owner != Some(plan.target_player))
+            {
+                if let Some(mut counter) = self.choose_air_surge(g, pid) {
+                    if (plan.declared_turn.is_some() || plan.opened_at_war)
+                        && objective_owner == Some(pid)
+                    {
+                        self.air_surge_census.objectives_captured += 1;
+                    }
+                    counter.appointed_turn = plan.appointed_turn;
+                    counter.tech_turn = plan.tech_turn;
+                    counter.last_reviewed_turn = plan.last_reviewed_turn;
+                    counter.recovery_assessments = plan.recovery_assessments;
+                    think!(self.journal(), Military, Strategy,
+                           "Redirecting the air surge to {}", g.cities[&counter.objective_city].name;
+                           "target {} replaces {}; research and the existing wing stay committed",
+                           counter.target_player, plan.target_player);
+                    plan = counter;
+                    objective_owner = Some(plan.target_player);
+                    at_war = true;
+                }
+            }
+
             let mut ended = false;
             if objective_owner != Some(plan.target_player) {
-                if plan.declared_turn.is_some() && objective_owner == Some(pid) {
+                if (plan.declared_turn.is_some() || plan.opened_at_war)
+                    && objective_owner == Some(pid)
+                {
                     self.air_surge_census.objectives_captured += 1;
                     think!(self.journal(), Military, Strategy,
                            "The air surge has taken its city";
@@ -826,7 +857,11 @@ impl AdvancedAi {
                         plan.phase = AirSurgePhase::Exploit;
                     } else if !tech_owned {
                         plan.phase = AirSurgePhase::Beeline;
-                    } else if !(status.wing_ready() && status.escort_ready()) {
+                    } else if !(status.wing_ready() && status.escort_ready()) || !fronts.is_empty()
+                    {
+                        // If no reachable counter was available (or several
+                        // wars are running), retain the package but do not let
+                        // its peacetime target override the active campaign.
                         plan.phase = AirSurgePhase::Arm;
                     } else {
                         plan.phase = AirSurgePhase::Strike;
@@ -1225,3 +1260,6 @@ mod tests;
 
 #[cfg(test)]
 mod research_milestone_tests;
+
+#[cfg(test)]
+mod war_retarget_tests;
