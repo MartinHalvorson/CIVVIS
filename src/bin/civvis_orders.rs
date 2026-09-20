@@ -6596,7 +6596,10 @@ fn great_person_arrived(
     observed: &civvis::mirror::StateSnapshot,
 ) -> bool {
     observed.units.iter().any(|unit| {
-        unit.great_person.as_ref().and_then(|gp| gp.class.as_deref()) == Some(class)
+        unit.great_person
+            .as_ref()
+            .and_then(|gp| gp.class.as_deref())
+            == Some(class)
             && own_unit(before, unit.id).is_none()
     })
 }
