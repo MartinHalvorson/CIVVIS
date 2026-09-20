@@ -50,6 +50,15 @@
 #                                     _STANDARD, _EPIC, _MARATHON. A slower speed
 #                                     buys fewer eras inside the same 250-turn
 #                                     clock, so raise CIVVIS_PLAY_TIMEOUT with it.
+#   CIVVIS_BUILD_MODE                 release (default) or fast. Fast keeps the
+#                                     release binary paths but uses 16 codegen
+#                                     units, no LTO, and incremental compilation
+#                                     for this native verification process tree.
+#                                     The measured cold build was 77% shorter,
+#                                     with a 10% median decision-replay penalty;
+#                                     see docs/eval/2026-09-20-verification-build-benchmark.md.
+#                                     Production release settings are unchanged.
+#                                     Changes apply when this launcher starts.
 #   CIVVIS_PLAY_ATTEMPTS              games per cycle. Default 1, so EVERY game
 #                                     fetches and builds origin/main afresh
 #                                     (operator, 2026-08-21: "use the latest
@@ -196,6 +205,7 @@ fi
 typeset -A policy
 policy=(
   CIVVIS_CAPTURE_FREE         0
+  CIVVIS_BUILD_MODE           release
   CIVVIS_PLAY_ATTEMPTS        1
   CIVVIS_PLAY_TIMEOUT         10800
   CIVVIS_PLAY_TIMEOUT_CEILING 14400
@@ -237,6 +247,9 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_SPEED)
         [[ "$value" =~ '^GAMESPEED_[A-Z]+$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SPEED='$value' is not a Civ VI game speed" ;;
+      CIVVIS_BUILD_MODE)
+        [[ "$value" == release || "$value" == fast ]] \
+          || refuse "$POLICY:$lineno CIVVIS_BUILD_MODE='$value' must be release or fast" ;;
       CIVVIS_PLAY_ATTEMPTS|CIVVIS_PLAY_TIMEOUT|CIVVIS_PLAY_TIMEOUT_CEILING)
         [[ "$value" =~ '^[1-9][0-9]*$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a positive integer" ;;
@@ -253,7 +266,7 @@ if [[ -f "$POLICY" ]]; then
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE)"
         continue ;;
     esac
     policy[$key]=$value
@@ -322,11 +335,27 @@ fi
 # Never inherit a labelled experiment, a retired strategy, an alternate host,
 # or a former restart policy from the window that opened this.
 unset CIVVIS_WITH CIVVIS_WITHOUT CIVVIS_WITH_FILE CIVVIS_SCREEN_GENE CIVVIS_STRATEGY CIVVIS_VICTORY \
-      CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED \
+      CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_BUILD_MODE \
       CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
       CIVVIS_ABANDON_BELOW_WIN_RATE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING \
       CIVVIS_HEAD_REPO CIVVIS_LADDER_HOST CIVVIS_LADDER_SUPERVISOR CIVVIS_SUPERVISOR \
       CIVVIS_INTERACTIVE_HOST_LOG CIVVIS_INTERACTIVE_HOST_LOCK
+
+# Export once for both the supervisor's build and the climb's worker refresh.
+# Command-local overrides would let that refresh rebuild the standard binary
+# immediately after a fast build. Clear stale fast settings when returning to
+# release; do not edit Cargo.toml or the separate production spectator service.
+configure_native_build() {
+  unset CARGO_PROFILE_RELEASE_CODEGEN_UNITS CARGO_PROFILE_RELEASE_LTO CARGO_INCREMENTAL
+  case "$1" in
+    release) ;;
+    fast)
+      export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+      export CARGO_PROFILE_RELEASE_LTO=false
+      export CARGO_INCREMENTAL=1 ;;
+    *) return 64 ;;
+  esac
+}
 
 export CIVVIS_HEAD_REPO="$HEAD_REPO"
 export CIVVIS_PINFILE="$PIN"
@@ -335,12 +364,15 @@ for key in ${(ok)policy}; do
   export "$key=${policy[$key]}"
   summary+="$key=${policy[$key]} "
 done
+configure_native_build "${policy[CIVVIS_BUILD_MODE]:-release}" \
+  || refuse "invalid native verification build mode"
 if [[ -f "$POLICY" ]]; then
   policy_note="policy $POLICY"
 else
   policy_note="no $POLICY — defaults; the rung comes from the ladder policy"
 fi
 say "launching from $HEAD_REPO (origin/main, pin=head) with ${summary}(${policy_note})"
+say "native release build: codegen_units=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-Cargo.toml}, lto=${CARGO_PROFILE_RELEASE_LTO:-Cargo.toml}, incremental=${CARGO_INCREMENTAL:-Cargo default}"
 
 # The terminal-window guard catches only named one-shot helper documents that
 # older/manual recovery callers started through Terminal `do script`. It shares
