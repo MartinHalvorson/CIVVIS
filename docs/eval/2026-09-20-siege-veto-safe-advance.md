@@ -53,4 +53,9 @@ Artifacts on the verification host:
 - `/tmp/civvis-veto-frame-replay.py`
 - `/tmp/civvis-3608-{red,green,baseline-replay,patched-replay,full}.log`
 
+All six focused tests pass. `cargo test --profile ci --locked` passes: 3,654
+library tests and 204 binary tests; 49 library tests and four doc tests remain
+ignored. `git diff --check origin/main...` passes after fetching and merging
+current main (already up to date).
+
 No engine or game rules changed, so an engine crash soak is not applicable.
