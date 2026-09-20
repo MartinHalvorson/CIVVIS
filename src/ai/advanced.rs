@@ -14751,6 +14751,24 @@ impl AdvancedAi {
                     && science_victory_goal.is_some()
                     && forced_goal == science_victory_goal
             });
+            // An appointed wing must be allowed to finish its already legal
+            // breakthrough. The rolling era window otherwise strands Advanced
+            // Flight behind unrelated Renaissance backlog after Radio lands.
+            // Only admit the exact milestone when it owns the forced goal;
+            // prerequisites and higher-priority military goals keep their rules.
+            if let Some(goal) = self.air_surge_research_goal(g, pid) {
+                if forced_goal == Some(goal) {
+                    if let Some(milestone) = g
+                        .available_techs(pid)
+                        .into_iter()
+                        .find(|tech| tech.as_str() == goal)
+                    {
+                        if !available.contains(&milestone) {
+                            available.push(milestone);
+                        }
+                    }
+                }
+            }
             let goal_pick = science_milestone_pick.or_else(|| {
                 forced_goal.and_then(|goal| {
                     available
