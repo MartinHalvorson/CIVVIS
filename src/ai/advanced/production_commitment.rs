@@ -29,6 +29,28 @@ impl AdvancedAi {
         }
     }
 
+    pub(super) fn production_commitment_is_legal(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        current: &Item,
+    ) -> bool {
+        // A live queue may have paid its strategic resource at construction
+        // start. The local new-start gate cannot invalidate the host's positive
+        // continuation answer just because the remaining stockpile is lower.
+        // Explicit refusals still win over a menu from the same snapshot.
+        let key = Game::production_block_key(current);
+        let host_confirms = g.cities[&cid].queue.first() == Some(current)
+            && g.host_buildable
+                .get(&cid)
+                .is_some_and(|menu| menu.contains_key(&key))
+            && !g
+                .blocked_production
+                .get(&cid)
+                .is_some_and(|blocked| blocked.contains(&key));
+        host_confirms || g.can_produce(pid, cid, current)
+    }
+
     fn replace_unbuildable_city_production(
         &self,
         g: &mut Game,
@@ -39,20 +61,7 @@ impl AdvancedAi {
         let Some(current) = g.cities[&cid].queue.first().cloned() else {
             return false;
         };
-        // A live queue may have paid its strategic resource at construction
-        // start. The local new-start gate cannot invalidate the host's positive
-        // continuation answer just because the remaining stockpile is lower.
-        // Explicit refusals still win over a menu from the same snapshot.
-        let key = Game::production_block_key(&current);
-        let host_confirms = g
-            .host_buildable
-            .get(&cid)
-            .is_some_and(|menu| menu.contains_key(&key))
-            && !g
-                .blocked_production
-                .get(&cid)
-                .is_some_and(|blocked| blocked.contains(&key));
-        if host_confirms || g.can_produce(pid, cid, &current) {
+        if Self::production_commitment_is_legal(g, pid, cid, &current) {
             return false;
         }
         let counts = self.counts_without_city_queue(g, pid, cid);

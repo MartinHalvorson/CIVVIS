@@ -7280,8 +7280,8 @@ mod expansion_scales_with_difficulty;
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
-mod governor_dividends;
 mod government_ladder;
+mod governor_dividends;
 mod higher_level_strategy;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -25832,7 +25832,9 @@ impl AdvancedAi {
             // so `production_value` is only ever consulted on an idle city.
             let committed: Option<(f64, Item)> =
                 g.cities[&cid].queue.first().cloned().map(|item| {
-                    let value = if !self.victory_planning || g.can_produce(pid, cid, &item) {
+                    let value = if !self.victory_planning
+                        || Self::production_commitment_is_legal(g, pid, cid, &item)
+                    {
                         self.production_value(g, pid, cid, &item, plan, &counts)
                     } else {
                         -10_000.0
@@ -25922,12 +25924,12 @@ impl AdvancedAi {
             // and insolvency responses retain their explicit priority.
             let finish_investment = committed.as_ref().is_some_and(|(value, item)| {
                 *value > -1_000.0
-                    && g.can_produce(pid, cid, item)
+                    && Self::production_commitment_is_legal(g, pid, cid, item)
                     && (matches!(item, Item::Wonder { .. })
                         || g.item_invested_production(cid, item) > 0.0)
             });
             let science_endgame_commitment = committed.as_ref().is_some_and(|(_, item)| {
-                g.can_produce(pid, cid, item)
+                Self::production_commitment_is_legal(g, pid, cid, item)
                     && self.science_endgame_queue_authoritative(g, pid, item)
             });
             if committed.as_ref().is_some_and(|(value, _)| {

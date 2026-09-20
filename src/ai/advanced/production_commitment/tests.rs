@@ -363,3 +363,13 @@ fn absent_host_menu_keeps_local_queue_legality() {
     assert!(ai.replace_unbuildable_city_production(&mut g, 0, city, &plan));
     assert_ne!(g.cities[&city].queue.first(), Some(&bombard));
 }
+
+#[test]
+fn governor_does_not_devalue_host_confirmed_bombard_after_resource_payment() {
+    let (mut g, mut ai, city, bombard, mut plan) = host_bombard_queue();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    plan.strategy = GrandStrategy::Conquest;
+    g.cities.get_mut(&city).unwrap().production = 20.0;
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&city].queue.first(), Some(&bombard));
+}
