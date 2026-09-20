@@ -24568,6 +24568,24 @@ impl AdvancedAi {
         }
     }
 
+    /// Confirmed sieges need fortifications or a local defender. The broader
+    /// pre-war exemption above also protects economic repairs, but repairing
+    /// a Library or Commercial Hub must not cancel an emergency wall order.
+    /// Keep repairs to fortified districts, including unique replacements.
+    fn active_queue_answers_siege(g: &Game, item: &Item) -> bool {
+        match item {
+            Item::Repair { repair, pos } => {
+                repair == "district"
+                    && g.map
+                        .get(*pos)
+                        .and_then(|tile| tile.district)
+                        .and_then(|district| g.rules.districts.get(&district))
+                        .is_some_and(|district| district.defense > 0.0)
+            }
+            _ => Self::active_queue_is_defensive(g, item),
+        }
+    }
+
     /// A damaged outer wall is a better emergency queue than recruiting a
     /// defender when Firaxis's three-turn post-attack cooldown has expired.
     /// Keep the host's legality test authoritative: during an active attack
@@ -24740,8 +24758,8 @@ impl AdvancedAi {
     /// it cannot. Reuse the selected family's exact signal here instead of
     /// turning a low treasury into a second threat heuristic.
     ///
-    /// Both paths preserve repairs, walls, and military production, and claim
-    /// at most one unsafe queue each turn.
+    /// Both paths preserve fortification repairs, walls, and local defenders,
+    /// and claim at most one unsafe queue each turn.
     fn redirect_unsafe_city_queue_for_defense(
         &self,
         g: &mut Game,
@@ -24818,7 +24836,7 @@ impl AdvancedAi {
             // evidence holds, before diplomacy can remove the active war.
             // Unsafe queues retain priority over this no-op reservation.
             if let Some(item) = committed.as_ref().filter(|item| {
-                Self::active_queue_is_defensive(g, item) && g.can_produce(pid, city, item)
+                Self::active_queue_answers_siege(g, item) && g.can_produce(pid, city, item)
             }) {
                 if retained.as_ref().is_none_or(|(old_damage, old_city, _)| {
                     total_damage > *old_damage || (total_damage == *old_damage && city < *old_city)
@@ -24881,7 +24899,7 @@ impl AdvancedAi {
         };
         let current = g.cities.get(city).and_then(|city| city.queue.first());
         if current.is_some_and(|current| {
-            current == defence || Self::active_queue_is_defensive(g, current)
+            current == defence || Self::active_queue_answers_siege(g, current)
         }) {
             return;
         }
@@ -41823,3 +41841,6 @@ mod opening_walk_tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod defensive_repair_queue_tests;
