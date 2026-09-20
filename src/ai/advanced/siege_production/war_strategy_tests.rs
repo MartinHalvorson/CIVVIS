@@ -89,6 +89,7 @@ fn an_expansion_plan_does_not_duplicate_an_existing_siege_order() {
     assert!(!ai.missing_domination_siege(
         &g,
         0,
+        home,
         &plan,
         &ai.counts(&g, 0),
         &g.rules.units["catapult"]
@@ -127,6 +128,87 @@ fn the_first_wall_breaker_outweighs_routine_growth_infrastructure() {
             g.cities[&home].queue.first(),
             Some(&catapult),
             "the retained weapon must not close its own demand on a replan"
+        );
+    }
+}
+
+fn assert_queued_siege_survives_a_targetless_replan(strategy: GrandStrategy) {
+    let (mut g, mut ai, mut plan, home, _) = siege_gap_case();
+    let catapult = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&home].queue.first(), Some(&catapult));
+    assert_eq!(g.item_invested_production(home, &catapult), 0.0);
+    plan.strategy = strategy;
+    plan.target_city = None;
+    g.turn += 1;
+    plan.assessed_turn = g.turn;
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&catapult),
+        "losing the current city target does not remove the hostile walls or the first weapon requirement"
+    );
+}
+
+#[test]
+fn recovery_keeps_the_queued_first_weapon_when_its_city_target_disappears() {
+    assert_queued_siege_survives_a_targetless_replan(GrandStrategy::Recovery);
+}
+
+#[test]
+fn expansion_keeps_the_queued_first_weapon_when_its_city_target_disappears() {
+    assert_queued_siege_survives_a_targetless_replan(GrandStrategy::Expansion);
+}
+
+#[test]
+fn a_targetless_plan_does_not_start_a_new_siege_reservation() {
+    let (g, ai, mut plan, home, _) = siege_gap_case();
+    plan.target_city = None;
+    plan.strategy = GrandStrategy::Recovery;
+    assert_eq!(
+        ai.production_value(
+            &g,
+            0,
+            home,
+            &Item::Unit {
+                unit: crate::name!("catapult")
+            },
+            &plan,
+            &ai.counts(&g, 0),
+        ),
+        -2_000.0,
+    );
+}
+
+#[test]
+fn a_targetless_queued_weapon_loses_priority_when_the_requirement_ends() {
+    for case in 0..4 {
+        let (mut g, ai, mut plan, home, target) = siege_gap_case();
+        let catapult = Item::Unit {
+            unit: crate::name!("catapult"),
+        };
+        g.cities
+            .get_mut(&home)
+            .unwrap()
+            .queue
+            .push(catapult.clone());
+        plan.target_city = None;
+        plan.strategy = GrandStrategy::Recovery;
+        match case {
+            0 => g.at_war.clear(),
+            1 => g.cities.get_mut(&target).unwrap().wall_hp = 0,
+            2 => {
+                g.spawn_unit("catapult", 0, g.cities[&home].pos);
+            }
+            _ => g.victory_conditions.domination = false,
+        }
+        let counts = ai.counts_without_city_queue(&g, 0, home);
+        assert_eq!(
+            ai.production_value(&g, 0, home, &catapult, &plan, &counts),
+            -2_000.0,
+            "ended reservation case {case}",
         );
     }
 }
