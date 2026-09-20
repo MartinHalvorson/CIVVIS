@@ -1938,9 +1938,14 @@ impl AdvancedAi {
             .filter(|unit| self.observed(g, pid, visible, unit))
             .map(|unit| unit.pos)
             .collect();
-        let Some(enemy) = medoid(g, &hostile) else {
+        let enemy = medoid(g, &hostile);
+        // A siege still needs to reach its city when no defending units are
+        // visible. Mustering at the remote force center can otherwise keep
+        // SiegeStage::Stage from ever gathering units near the objective.
+        // Defensive rallies retain their existing no-contact fallback.
+        if enemy.is_none() && !approach_only {
             return force_medoid;
-        };
+        }
         let candidates: Vec<Pos> = g
             .wdisk(objective, 3)
             .into_iter()
@@ -1959,7 +1964,13 @@ impl AdvancedAi {
         candidates
             .into_iter()
             .filter(|pos| !approach_available || g.wdist(*pos, force_medoid) < approach_distance)
-            .max_by_key(|pos| (g.wdist(*pos, enemy), -g.wdist(*pos, force_medoid), *pos))
+            .max_by_key(|pos| {
+                (
+                    enemy.map_or(0, |enemy| g.wdist(*pos, enemy)),
+                    -g.wdist(*pos, force_medoid),
+                    *pos,
+                )
+            })
             .unwrap_or(force_medoid)
     }
 
@@ -2346,7 +2357,7 @@ mod tests {
     /// A flat board of `majors` empires, every starting unit cleared, the
     /// map explored and everyone met; each capital founded at the position
     /// given, nobody at war, turn 60.
-    fn flat_board(seed: u64, capitals: &[Pos], barbarians: bool) -> Game {
+    pub(super) fn flat_board(seed: u64, capitals: &[Pos], barbarians: bool) -> Game {
         let mut game = Game::new_full(capitals.len(), 36, 22, seed, 1_000, 0, barbarians);
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
@@ -2379,11 +2390,11 @@ mod tests {
         game
     }
 
-    fn at(col: i32, row: i32) -> Pos {
+    pub(super) fn at(col: i32, row: i32) -> Pos {
         crate::hex::offset_to_axial(col, row)
     }
 
-    fn war(g: &mut Game, a: usize, b: usize) {
+    pub(super) fn war(g: &mut Game, a: usize, b: usize) {
         g.at_war.insert((a.min(b), a.max(b)));
     }
 
@@ -2396,7 +2407,7 @@ mod tests {
         uid
     }
 
-    fn conquest(g: &Game, target: Option<u32>) -> StrategicPlan {
+    pub(super) fn conquest(g: &Game, target: Option<u32>) -> StrategicPlan {
         StrategicPlan {
             strategy: GrandStrategy::Conquest,
             target_player: target.map(|cid| g.cities[&cid].owner),
@@ -2408,7 +2419,7 @@ mod tests {
         }
     }
 
-    fn on() -> AdvancedAi {
+    pub(super) fn on() -> AdvancedAi {
         let mut ai = AdvancedAi::new();
         ai.enable_objective_board();
         ai
@@ -2860,3 +2871,7 @@ mod tests {
 
 #[cfg(test)]
 mod rebuild_tests;
+
+#[cfg(test)]
+#[path = "objective_board/staging_tests.rs"]
+mod staging_tests;
