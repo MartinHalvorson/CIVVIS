@@ -1208,3 +1208,130 @@ fn live_rebuild_drops_a_missing_city_instead_of_following_its_reused_id() {
         "the pinned plan must not retain the stale city ID"
     );
 }
+
+#[test]
+fn a_live_opening_reserves_the_capital_before_the_scripted_settler() {
+    use super::super::VictoryTarget;
+    use crate::ai::Ai;
+    use crate::game::Item;
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    game.found_city_for(0, at(6, 17), None);
+    let capital = AdvancedAi::conquest_capital(&game, 0).unwrap();
+    game.cities.get_mut(&capital).unwrap().pop = 3;
+    game.players[0].techs.insert(name!("archery"));
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = 10.0;
+    let mut ai = opened(&mut game);
+    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.base.book_pos = 1;
+    ai.enable_rapid_city_expansion_2();
+    let mut control = ai.clone();
+    control.disable_early_conquest_opening();
+    let mut untreated = game.clone();
+    control.take_turn(&mut untreated, 0);
+    assert_eq!(
+        untreated.cities[&capital].queue.first(),
+        Some(&Item::Unit {
+            unit: name!("settler")
+        }),
+        "the competing opening policy must actually choose a Settler"
+    );
+    ai.take_turn(&mut game, 0);
+    let Some(Item::Unit { unit }) = game.cities[&capital].queue.first() else {
+        panic!("the capital should supply its committed strike force");
+    };
+    let spec = &game.rules.units[unit];
+    assert!(
+        AdvancedAi::conquest_ranged_body(spec) || AdvancedAi::conquest_melee_body(spec),
+        "the conquest reservation must reach the real production dispatcher; got {unit}"
+    );
+}
+
+#[test]
+fn opening_reservation_preserves_expansion_defense_and_existing_commitments() {
+    use super::super::GrandStrategy;
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let ai = opened(&mut game);
+    let capital = AdvancedAi::conquest_capital(&game, 0).unwrap();
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(game.player_city_ids(1)[0]),
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(
+        !ai.conquest_opening_production(&mut game, 0, &plan),
+        "the first expansion keeps its slot"
+    );
+    game.found_city_for(0, at(6, 17), None);
+    let mut off = ai.clone();
+    off.disable_early_conquest_opening();
+    assert!(!off.conquest_opening_production(&mut game, 0, &plan));
+    plan.threatened_city = Some(capital);
+    assert!(
+        !ai.conquest_opening_production(&mut game, 0, &plan),
+        "named defense takes priority"
+    );
+    plan.threatened_city = None;
+    game.cities.get_mut(&capital).unwrap().last_attacked = game.turn - 1;
+    assert!(
+        !ai.conquest_opening_production(&mut game, 0, &plan),
+        "recent damage takes priority"
+    );
+    game.cities.get_mut(&capital).unwrap().last_attacked = 0;
+    let builder = Item::Unit {
+        unit: name!("builder"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city: capital,
+            item: builder.clone(),
+        },
+    )
+    .unwrap();
+    assert!(!ai.conquest_opening_production(&mut game, 0, &plan));
+    assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+}
+
+#[test]
+fn opening_reservation_counts_queued_bodies_and_stops_at_its_deadline() {
+    use super::super::GrandStrategy;
+    let mut game = board(&[at(6, 12), at(14, 12)]);
+    let second = game.found_city_for(0, at(6, 17), None);
+    let ai = opened(&mut game);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(game.player_city_ids(1)[0]),
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    bodies(&mut game, 0, "slinger", at(6, 12), 1, CONQUEST_RANGED);
+    bodies(&mut game, 0, "warrior", at(6, 12), 2, CONQUEST_MELEE - 1);
+    game.apply(
+        0,
+        &Action::Produce {
+            city: second,
+            item: Item::Unit {
+                unit: name!("warrior"),
+            },
+        },
+    )
+    .unwrap();
+    assert!(
+        !ai.conquest_opening_production(&mut game, 0, &plan),
+        "the last melee is already queued elsewhere"
+    );
+    game.cities.get_mut(&second).unwrap().queue.clear();
+    game.turn = game.standard_duration(CONQUEST_COMMIT_DEADLINE);
+    assert!(
+        !ai.conquest_opening_production(&mut game, 0, &plan),
+        "an expired opening stops reserving production"
+    );
+}
