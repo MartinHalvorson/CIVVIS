@@ -1,0 +1,17 @@
+# Host-confirmed active production after resource payment
+
+Native run `civvis-20260920T065948Z`, King, Gran Colombia, four-player Tiny Pangaea, domination target, revision `28471afa6121621e6722f37d381834cb8cbfba00`.
+
+Guayaquil (host city 131073) starts a bombard at turn 118 frame 0 with 21 niter. Frame 1 reports the bombard as active with 11 niter; frame 2 reports it active with 1 niter. At turn 119 frame 0 it remains active with 3 niter and is explicitly present in the host buildable menu. Nevertheless the AI journals “replaces unavailable bombard with cuirassier” and transmits the cuirassier order. Frame 1 confirms the replacement.
+
+The production-commitment repair calls `Game::can_produce`, which also checks local start costs. The host menu is a negative gate there, so a positive menu entry does not override the local resource check. Native reconstruction does not populate the local strategic-resource commitment for this already started unit.
+
+The correction should preserve a current queue item explicitly allowed by the host menu, unless the host has explicitly refused it. It must not change new-start legality, ordinary simulation boards, or the same-turn production guard. A separate turn-102 trebuchet proposal was suppressed by that guard after an industrial-zone order; that is distinct from this turn-119 replacement.
+
+Evidence: `events.jsonl`, `decisions.jsonl`, and `why.log` in the run directory; extracted trace in `army-approach-review.json`. This observation establishes a production cancellation, not proof that preserving this bombard wins the siege or game.
+
+Focused validation: the paid-resource regression fails on the original implementation once the fixture includes a legal alternative build. All 14 production-commitment tests pass after the fix, including explicit-refusal precedence and absence of a host menu. Full-suite and frozen native replay validation are pending.
+
+The first narrow correction passed its helper tests and the full local suite (3,648 library and 204 binary tests), but a 304-frame frozen replay still cancelled the bombard at turn 119. A later production-scoring pass independently assigned the active bombard a value of -10,000 using the local start gate. Both queue repair and the governor’s current-build valuation/commitment guards must use the same host-aware predicate. A full-governor regression reproduces the remaining failure by replacing the bombard with a builder before this extension.
+
+The first replay compares native revision `28471afa6` with `6c68d2a76`, whose base also includes aircraft-domain PR #3604; it is not an exact-parent A/B. Both arms nevertheless reproduce the targeted cancellation, proving that the initial fix is insufficient. Artifacts: `/tmp/civvis-host-queue-replay/`. Expanded validation passes all 15 focused tests and the full suite (3,649 library plus 204 binary tests, 49 library and four doc tests ignored). The expanded 304-frame replay exits zero and changes actionable orders on 64 frames, starting at turn 66. It selects a cuirassier instead of a bombard on turn 118; on turn 119 the recorded host bombard is therefore not its owned queue and `release_foreign_production` clears it before planning. This replay does not establish that the bombard survives, finishes, or wins a siege. The full-governor regression isolates the owned active queue and proves the false -10,000 valuation is removed.

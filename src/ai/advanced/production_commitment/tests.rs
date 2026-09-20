@@ -288,3 +288,88 @@ fn a_rival_starting_the_same_wonder_does_not_cancel_our_investment() {
     assert!(ai.resume_city_production(&mut g, 0, city, &plan, &counts));
     assert_eq!(g.cities[&city].queue.first(), Some(&wonder));
 }
+
+fn host_bombard_queue() -> (Game, AdvancedAi, u32, Item, StrategicPlan) {
+    let (mut g, ai, city, _, plan) = paused_wonder();
+    let bombard = Item::Unit {
+        unit: crate::name!("bombard"),
+    };
+    g.players[0].techs.insert(crate::name!("metal_casting"));
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("niter"), 3.0);
+    g.cities.get_mut(&city).unwrap().queue = vec![bombard.clone()];
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .strategic_resource_commitments
+        .clear();
+    g.replace_host_menus(
+        [(
+            city,
+            [
+                (
+                    Game::production_block_key(&bombard),
+                    crate::game::HostMenuEntry::default(),
+                ),
+                (
+                    Game::production_block_key(&Item::Unit {
+                        unit: crate::name!("builder"),
+                    }),
+                    crate::game::HostMenuEntry::default(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        )]
+        .into_iter()
+        .collect(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+    );
+    assert!(
+        !g.can_produce(0, city, &bombard),
+        "local start gate requires niter already spent by host"
+    );
+    (g, ai, city, bombard, plan)
+}
+
+#[test]
+fn host_confirmed_active_bombard_survives_spent_niter() {
+    let (mut g, ai, city, bombard, plan) = host_bombard_queue();
+    assert!(!ai.replace_unbuildable_city_production(&mut g, 0, city, &plan));
+    assert_eq!(g.cities[&city].queue.first(), Some(&bombard));
+}
+
+#[test]
+fn explicit_refusal_overrides_host_positive_queue_menu() {
+    let (mut g, ai, city, bombard, plan) = host_bombard_queue();
+    g.replace_blocked_production(
+        [(
+            city,
+            [Game::production_block_key(&bombard)].into_iter().collect(),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    assert!(ai.replace_unbuildable_city_production(&mut g, 0, city, &plan));
+    assert_ne!(g.cities[&city].queue.first(), Some(&bombard));
+}
+
+#[test]
+fn absent_host_menu_keeps_local_queue_legality() {
+    let (mut g, ai, city, bombard, plan) = host_bombard_queue();
+    g.replace_host_menus(BTreeMap::new(), BTreeMap::new(), BTreeMap::new());
+    assert!(ai.replace_unbuildable_city_production(&mut g, 0, city, &plan));
+    assert_ne!(g.cities[&city].queue.first(), Some(&bombard));
+}
+
+#[test]
+fn governor_does_not_devalue_host_confirmed_bombard_after_resource_payment() {
+    let (mut g, mut ai, city, bombard, mut plan) = host_bombard_queue();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    plan.strategy = GrandStrategy::Conquest;
+    g.cities.get_mut(&city).unwrap().production = 20.0;
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&city].queue.first(), Some(&bombard));
+}
