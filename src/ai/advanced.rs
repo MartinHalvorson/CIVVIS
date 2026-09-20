@@ -16298,11 +16298,22 @@ impl AdvancedAi {
                     })
                 })
             });
-        let maintenance_emergency = self.war_economy
+        // Explicit domination already shares the production recovery guard.
+        // Its army needs the same maintenance relief even when the optional
+        // war-economy flag is off (native 085522, available Conscription).
+        let domination_target = self.active_victory_target(g) == Some(VictoryTarget::Domination);
+        // Positive income may be the discount's own effect. Keep it while
+        // rebuilding the reserve instead of immediately restoring the bill.
+        let retained_domination_relief = domination_target
+            && g.players[pid]
+                .policies
+                .iter()
+                .any(|card| matches!(card.as_str(), "conscription" | "levee_en_masse"));
+        let maintenance_emergency = (self.war_economy || domination_target)
             && (at_major_war || staged_conquest)
             && military > 0
             && g.players[pid].gold < recovery_reserve
-            && g.players[pid].gold_per_turn < -0.5;
+            && (g.players[pid].gold_per_turn < -0.5 || retained_domination_relief);
         if maintenance_emergency {
             desired.retain(|card| !matches!(*card, "conscription" | "levee_en_masse"));
             desired.splice(0..0, ["levee_en_masse", "conscription"]);
@@ -41855,3 +41866,6 @@ mod opening_walk_tests {
 
 #[cfg(test)]
 mod defensive_repair_queue_tests;
+
+#[cfg(test)]
+mod domination_maintenance_tests;
