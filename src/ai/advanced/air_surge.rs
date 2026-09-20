@@ -905,9 +905,9 @@ impl AdvancedAi {
         }
     }
 
-    /// What one candidate item is worth to the appointed surge, or `None` when
-    /// the item is not part of the package. Read by `production_value`, so the
-    /// package outbids the ordinary ranking wherever the strategic scorer runs.
+    /// Candidate-only scoring for the existing package tests. The live
+    /// governor additionally accounts for the candidate city's current queue.
+    #[cfg(test)]
     pub(crate) fn air_surge_production_value(
         &self,
         g: &Game,
@@ -915,8 +915,65 @@ impl AdvancedAi {
         item: &Item,
         turns: f64,
     ) -> Option<f64> {
+        self.air_surge_package_value(g, pid, item, turns, self.air_surge_status)
+    }
+
+    /// A queue is still a requirement until it finishes. Exclude this city's
+    /// committed item from its own quota, while other cities continue to count
+    /// it as supplied. Recount from the board because the governor may already
+    /// have changed another city's queue during this production pass.
+    pub(crate) fn air_surge_city_production_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+        turns: f64,
+    ) -> Option<f64> {
         let plan = self.air_surge_plan.as_ref()?;
-        let status = self.air_surge_status;
+        let mut status = self.air_surge_status(g, pid, plan);
+        if g.cities
+            .get(&cid)
+            .is_some_and(|city| city.owner == pid && city.queue.first() == Some(item))
+        {
+            match item {
+                Item::District { district, .. }
+                    if Self::air_surge_field(g, pid)
+                        .is_some_and(|field| g.district_family(*district) == field) =>
+                {
+                    // The reservation can also appoint one faster alternative
+                    // to a slow base. Keep that second field through review
+                    // until the launch wing is committed; never subsidize a
+                    // third field or a fresh candidate in another city.
+                    let launch_base = status.aerodromes_committed <= 2
+                        && status.metal_ready
+                        && status.bombers_committed < AIR_SURGE_LAUNCH_BOMBERS;
+                    if status.aerodromes_committed == 1 || launch_base {
+                        return Some(AIR_SURGE_AERODROME_VALUE - turns * 8.0);
+                    }
+                }
+                Item::Unit { unit } | Item::Formation { unit, .. } => {
+                    if Self::air_surge_bomber(g, pid) == Some(*unit) {
+                        status.bombers_committed = status.bombers_committed.saturating_sub(1);
+                    } else if Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) {
+                        status.bodies_committed = status.bodies_committed.saturating_sub(1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.air_surge_package_value(g, pid, item, turns, status)
+    }
+
+    fn air_surge_package_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        item: &Item,
+        turns: f64,
+        status: AirSurgeStatus,
+    ) -> Option<f64> {
+        let plan = self.air_surge_plan.as_ref()?;
         let bomber_goal = Self::air_surge_bomber_goal(g, pid);
         match item {
             Item::District { district, .. }
@@ -1158,3 +1215,6 @@ impl AdvancedAi {
         true
     }
 }
+
+#[cfg(test)]
+mod production_queue_tests;
