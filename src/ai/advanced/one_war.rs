@@ -21,9 +21,10 @@
 //! What the gene does, all of it inert while the flag is off:
 //!
 //! 1. **One front.** Each turn, among the majors we are at war with, one is
-//!    the *campaign front*: the front already chosen while it is still at
-//!    war with us, else the appointed war's target, else the plan's, else the
-//!    enemy whose cities are nearest our soldiers. Every other major at war
+//!    the *campaign front*: an urgent actionable military denial first (unless
+//!    the operator ordered a target), then the front already chosen while it
+//!    is still at war with us, else the appointed war's target, else the plan's,
+//!    else the enemy whose cities are nearest our soldiers. Every other major at war
 //!    with us is a *second front*: offered peace every turn, its white peace
 //!    accepted (`incoming_deal_value` +320). A Joint War offer while any war
 //!    burns is refused outright.
@@ -247,8 +248,20 @@ impl AdvancedAi {
     /// Choose the front among the enemies: the appointed war's target, then
     /// the plan's, then the one whose nearest city is nearest to our army,
     /// then the lowest id. The choice sticks while its target stays at war
-    /// with us, so a reinforcement that arrives does not move the front.
+    /// with us, unless an urgent military denial needs a different active
+    /// front. An explicit operator target keeps its existing precedence.
     fn one_war_choose_front(&self, g: &Game, pid: usize, enemies: &[usize]) -> Option<usize> {
+        // The declaration gate already admits urgent victory denial. Once
+        // that war exists, concentrate on it instead of immediately offering
+        // the winning rival peace as a second front. Keep the ordinary rout
+        // and sustained losing-tide safeguards on whichever front is chosen.
+        if self.forced_target_player.is_none() {
+            if let Some((rival, GrandStrategy::Conquest)) = self.actionable_victory_denial(g, pid) {
+                if enemies.contains(&rival) && self.urgent_victory_threat(g, rival) {
+                    return Some(rival);
+                }
+            }
+        }
         if let Some(current) = self
             .one_war
             .as_ref()
@@ -577,3 +590,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod capital_handoff_tests;
+
+#[cfg(test)]
+mod urgent_denial_tests;
