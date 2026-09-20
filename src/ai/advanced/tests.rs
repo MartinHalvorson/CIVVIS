@@ -804,6 +804,80 @@ fn major_war_threat_preempts_an_undamaged_settler_queue() {
 }
 
 #[test]
+fn threatened_defender_keeps_its_claim_after_a_peace_replan() {
+    let (mut game, city, _) = empire_with_a_capital(71_145);
+    game.players[0].techs.insert(crate::name!("masonry"));
+    game.cities.get_mut(&city).unwrap().pop = 2;
+    let defender = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: defender.clone(),
+        },
+    )
+    .unwrap();
+    assert!(game.is_at_war(0, 1));
+
+    let mut live = AdvancedAi::new();
+    live.enable_garrison_under_fire();
+    // A later frame starts with the previously ordered defender already
+    // queued. The threat must renew its claim without restarting that unit.
+    let claim = live.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+    assert_eq!(game.cities[&city].queue.first(), Some(&defender));
+    // Diplomacy changes the planning clone before ordinary production runs.
+    game.at_war.clear();
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: settler,
+        },
+    )
+    .unwrap();
+    assert!(live
+        .redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city))
+        .is_none());
+    live.reapply_confirmed_defense_queue(&mut game, 0, claim.as_ref());
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&defender),
+        "an already-running defender needs the same final authority as a newly selected one"
+    );
+}
+
+#[test]
+fn routine_defender_does_not_claim_an_unthreatened_queue() {
+    let (mut game, city, _) = empire_with_a_capital(71_145);
+    let defender = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: defender,
+        },
+    )
+    .unwrap();
+    let mut live = AdvancedAi::new();
+    live.enable_garrison_under_fire();
+    game.at_war.clear();
+    assert!(live
+        .redirect_unsafe_city_queue_for_defense(&mut game, 0, None)
+        .is_none());
+    game.at_war.insert((0, 1));
+    assert!(AdvancedAi::new()
+        .redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city))
+        .is_none());
+}
+
+#[test]
 fn armed_siege_preempts_an_imminent_major_war_queue_with_a_defender() {
     // A named city can be full-health and still be one legal attack away from
     // falling. The live arm already carries `siege-preempts-the-queue`; that

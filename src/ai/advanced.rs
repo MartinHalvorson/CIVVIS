@@ -24760,14 +24760,9 @@ impl AdvancedAi {
         }
         let visible = armed_major_war_threat.then(|| self.battlefront_visibility(g, pid));
         let mut best: Option<(i32, u32, Option<Item>, Item)> = None;
+        let mut retained: Option<(i32, u32, Item)> = None;
         for city in g.player_city_ids(pid) {
             let committed = g.cities[&city].queue.first().cloned();
-            if committed
-                .as_ref()
-                .is_some_and(|item| Self::active_queue_is_defensive(g, item))
-            {
-                continue;
-            }
             let siege_defence = self.base.besieged_city_item(g, pid, city);
             let native_defence = self.native_emergency_item(g, pid, city);
             let preemptive_defence = self.preemptive_major_war_defense_item(
@@ -24804,6 +24799,21 @@ impl AdvancedAi {
                 continue;
             }
             let total_damage = damage.saturating_add(wall_damage);
+            // A fresh live frame can already contain the defender selected on
+            // the preceding frame. Renew its authority while the same threat
+            // evidence holds, before diplomacy can remove the active war.
+            // Unsafe queues retain priority over this no-op reservation.
+            if let Some(item) = committed.as_ref().filter(|item| {
+                Self::active_queue_is_defensive(g, item) && g.can_produce(pid, city, item)
+            }) {
+                if retained.as_ref().is_none_or(|(old_damage, old_city, _)| {
+                    total_damage > *old_damage || (total_damage == *old_damage && city < *old_city)
+                }) {
+                    retained = Some((total_damage, city, item.clone()));
+                }
+                continue;
+            }
+
             if best.as_ref().is_none_or(|(best_damage, best_city, _, _)| {
                 total_damage > *best_damage || (total_damage == *best_damage && city < *best_city)
             }) {
@@ -24811,7 +24821,9 @@ impl AdvancedAi {
             }
         }
 
-        let (damage, city, committed, defence) = best?;
+        let Some((damage, city, committed, defence)) = best else {
+            return retained.map(|(_, city, item)| (city, item));
+        };
         let city_name = g.cities[&city].name.clone();
         if g.apply(
             pid,
