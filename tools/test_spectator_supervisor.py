@@ -2203,6 +2203,7 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "wait_for_server", return_value=successor),
                 patch.object(supervisor, "stop_server", side_effect=stop),
                 patch.object(supervisor.time, "sleep"),
+                patch.object(supervisor, "BOUNDARY_PREBUILD_GRACE_SECONDS", 0),
             ):
                 self.assertEqual(supervisor.main(), 0)
 
@@ -2214,6 +2215,154 @@ class RecoveryTests(unittest.TestCase):
         stop_build.assert_any_call(worker)
         prepare_boundary.assert_called_once_with(args.build_retry)
         self.assertLess(events.index("fresh-build"), events.index("stop"))
+
+    def exercise_boundary_prebuild_wait(self, mode):
+        args = SimpleNamespace(
+            port=8766,
+            players=4,
+            width=60,
+            height=38,
+            city_states=6,
+            turns=500,
+            map="pangaea",
+            speed="standard",
+            cooldown=0.0,
+            poll=0.01,
+            build_retry=0.01,
+            source_check_interval=30.0,
+            unresponsive_timeout=20.0,
+            busy_timeout=0.0,
+            stall_timeout=30.0,
+            checkpoint_interval=5.0,
+            max_resume_attempts=2,
+            live_refresh_grace=1800.0,
+            no_open=True,
+            adopt_pid=321,
+        )
+        active = {"seed": 9, "turn": 42, "current": 2, "winner": None}
+        finished = {
+            **active,
+            "turn": 70,
+            "winner": 1,
+            "victory_type": "science",
+            "players": [],
+        }
+        successor = {"seed": 10, "turn": 1, "current": 0, "winner": None}
+        clock = [100.0]
+        finished_build = [False]
+        worker = SimpleNamespace(
+            pid=777,
+            poll=lambda: (1 if mode == "failed" else 0) if finished_build[0] else None,
+        )
+        replacement = SimpleNamespace(pid=654)
+        events = []
+
+        def prepare_boundary(_retry):
+            if mode == "expired":
+                self.assertGreaterEqual(clock[0], 160.0)
+            else:
+                self.assertTrue(finished_build[0], "do not discard the active compile")
+            events.append("fresh-build")
+            return True
+
+        def stop(*_args):
+            events.append("stop")
+
+        def observed(_port):
+            n = len(observations)
+            observations.append(n)
+            if n < 2:
+                return active
+            if mode == "takeover" and n >= 4:
+                if n > 4:
+                    raise KeyboardInterrupt
+                return {**successor, "spectate": False}
+            if n == 4:
+                if mode == "expired":
+                    clock[0] += 60.0
+                else:
+                    finished_build[0] = True
+            if n >= 6:
+                raise KeyboardInterrupt
+            return finished
+
+        observations = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(
+                    supervisor.gamelock, "operator_halt_description",
+                    side_effect=lambda: (
+                        "test halt" if mode == "halt" and len(observations) >= 4 else None
+                    ),
+                ),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "process_alive", return_value=True),
+                patch.object(supervisor, "source_snapshot", return_value="changed"),
+                patch.object(
+                    supervisor, "runtime_matches", side_effect=[True, True]
+                ),
+                patch.object(
+                    supervisor,
+                    "read_status",
+                    side_effect=observed,
+                ) as read,
+                # The single full observation the finished boundary takes.
+                patch.object(
+                    supervisor, "read_state", return_value=finished
+                ) as full,
+                patch.object(supervisor, "capture_checkpoint", return_value=False),
+                patch.object(supervisor, "refresh_runtime_metadata") as refresh_metadata,
+                patch.object(supervisor, "archive_result"),
+                patch.object(
+                    supervisor, "start_background_prebuild", return_value=worker
+                ),
+                patch.object(supervisor, "stop_background_prebuild") as stop_build,
+                patch.object(
+                    supervisor, "prepare_boundary_runtime", side_effect=prepare_boundary
+                ) as prepare_boundary,
+                patch.object(supervisor, "start_server", return_value=replacement) as start,
+                patch.object(supervisor, "wait_for_server", return_value=successor),
+                patch.object(supervisor, "stop_server", side_effect=stop),
+                patch.multiple(
+                    supervisor.time,
+                    sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+                    monotonic=lambda: clock[0],
+                ),
+                patch.object(supervisor, "BOUNDARY_PREBUILD_GRACE_SECONDS", 60),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        stop_build.assert_any_call(worker)
+        if mode in {"halt", "takeover"}:
+            start.assert_not_called()
+            prepare_boundary.assert_not_called()
+            self.assertEqual(read.call_count, 4 if mode == "halt" else 6)
+            refresh_metadata.assert_not_called()
+        else:
+            start.assert_called_once()
+            self.assertEqual(read.call_count, 7)
+            self.assertEqual(full.call_count, 1)
+            refresh_metadata.assert_called_once()
+            prepare_boundary.assert_called_once_with(args.build_retry)
+            self.assertLess(events.index("fresh-build"), events.index("stop"))
+
+    def test_finished_boundary_waits_for_prebuild_without_skipping_fresh_head_check(self):
+        self.exercise_boundary_prebuild_wait("completed")
+
+    def test_finished_boundary_recovers_when_prebuild_grace_expires(self):
+        self.exercise_boundary_prebuild_wait("expired")
+
+    def test_finished_boundary_rechecks_head_after_failed_prebuild(self):
+        self.exercise_boundary_prebuild_wait("failed")
+
+    def test_player_takeover_interrupts_the_boundary_prebuild_wait(self):
+        self.exercise_boundary_prebuild_wait("takeover")
+
+    def test_operator_halt_interrupts_the_boundary_prebuild_wait(self):
+        self.exercise_boundary_prebuild_wait("halt")
 
     def test_finished_boundary_preserves_verified_runtime_build_time(self):
         args = SimpleNamespace(
