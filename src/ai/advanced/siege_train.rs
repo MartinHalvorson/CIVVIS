@@ -1102,6 +1102,15 @@ impl AdvancedAi {
             {
                 return self.base.tactical_apply_move(g, pid, uid, next);
             }
+            // A staging column can fill every legal adjacent stopping tile.
+            // Walk through a friendly screen to an open tile beyond it, using
+            // the same whole-path legality and movement bookkeeping as the
+            // general mover. The destination remains outside the strike ring.
+            if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
+                if self.base.path_walk_to(g, pid, uid, dest) {
+                    return true;
+                }
+            }
         }
         self.base.fortify_or_stop(g, pid, uid)
     }
@@ -1737,6 +1746,9 @@ mod landing_tests;
 
 #[cfg(test)]
 mod firing_tests;
+
+#[cfg(test)]
+mod staging_tests;
 
 #[cfg(test)]
 mod tests {
