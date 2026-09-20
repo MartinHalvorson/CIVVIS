@@ -1,9 +1,15 @@
 use super::*;
 
+/// The first wall breaker equips an otherwise incomplete campaign. Use the
+/// opening conquest reservation scale; ordinary production-time pricing still
+/// prefers a faster city and existing/queued weapons close this reservation.
+pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
+
 impl AdvancedAi {
     /// A roster full of field units can still lack the ability to break walls.
     /// Counts include queued units, so only the first siege order gets this
-    /// composition exception to the ordinary army ceiling.
+    /// composition exception to the ordinary army ceiling. An active siege
+    /// keeps this requirement when the empire replans for expansion or recovery.
     pub(super) fn missing_domination_siege(
         &self,
         g: &Game,
@@ -13,7 +19,6 @@ impl AdvancedAi {
         spec: &crate::rules::UnitSpec,
     ) -> bool {
         self.active_victory_target(g) == Some(VictoryTarget::Domination)
-            && plan.strategy == GrandStrategy::Conquest
             && counts.siege == 0
             && spec.siege
             && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
@@ -30,3 +35,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod war_strategy_tests;

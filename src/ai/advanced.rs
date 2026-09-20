@@ -28345,6 +28345,11 @@ impl AdvancedAi {
                         + early_contact
                         + early_archer
                         + conquest_body
+                        + if missing_siege {
+                            siege_production::FIRST_WEAPON_RESERVATION
+                        } else {
+                            0.0
+                        }
                 } else if spec.class == "support" {
                     self.support_unit_value(g, pid, cid, unit, plan, counts)
                 } else {
