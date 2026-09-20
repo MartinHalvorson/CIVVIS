@@ -237,6 +237,67 @@ version_report() {
 
 set_intent() { print -r -- "$1" > "$INTENTFILE" }
 
+victory_report() {
+  # These are saved inputs, not a claim about an already-running supervisor.
+  # The standing file wins over its --victory argument at each game boundary.
+  python3 - "$(play_tree)/tools/civ6_play.py" \
+    "${CIVVIS_VERIFICATION_POLICY:-$HOME/.civvis-verification-policy}" \
+    "${CIVVIS_VICTORY_LANE_FILE:-$HOME/.civvis-victory-lane}" <<'PYTHON'
+import ast
+from pathlib import Path
+import sys
+
+source, policy_path, lane_path = map(Path, sys.argv[1:])
+print("saved victory settings (policy at host launch; override at each game):")
+try:
+    # Read the same source constants as the climber without importing the GUI
+    # controller, which is unnecessary and may not be available to status.
+    constants = {}
+    for node in ast.parse(source.read_text()).body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in (
+                    "DEFAULT_CIVVIS_VICTORY", "VICTORY_LANES"
+                ):
+                    constants[target.id] = ast.literal_eval(node.value)
+    requested = constants["DEFAULT_CIVVIS_VICTORY"]
+    lanes = constants["VICTORY_LANES"]
+except (OSError, SyntaxError, ValueError, KeyError) as error:
+    print(f"  cannot read victory definitions from {source}: {error}")
+    sys.exit(0)
+origin = "tree default"
+try:
+    policy_text = policy_path.read_text()
+except FileNotFoundError:
+    policy_text = ""
+except OSError as error:
+    print(f"  cannot read policy {policy_path}: {error}")
+    sys.exit(0)
+for line in policy_text.splitlines():
+    # Match the launcher's whitespace/comment handling; never source shell.
+    line = "".join(line.split("#", 1)[0].split())
+    if line.startswith("CIVVIS_VICTORY="):
+        requested = line.split("=", 1)[1]
+        origin = str(policy_path)
+print(f"  requested  {requested} ({origin})")
+try:
+    lane = lane_path.read_text(encoding="utf-8", errors="replace").strip()
+except FileNotFoundError:
+    lane = ""
+except OSError as error:
+    print(f"  override   unreadable; climber ignores it: {lane_path}: {error}")
+    sys.exit(0)
+if not lane:
+    print(f"  override   none ({lane_path})")
+elif lane not in lanes:
+    print(f"  override   {lane!r} is invalid; climber ignores it ({lane_path})")
+elif lane != requested:
+    print(f"  OVERRIDE   {lane} replaces {requested} ({lane_path})")
+else:
+    print(f"  override   {lane}, same as requested ({lane_path})")
+PYTHON
+}
+
 intent_is_running() {
   [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
 }
@@ -265,6 +326,7 @@ case ${1:-status} in
 on)
   reason=${2:-"operator: run both lanes indefinitely"}
   say "== turning the game lanes ON =="
+  victory_report
   # Pin the version before granting authorization. A watchdog tick that lands
   # between these steps can therefore only start the exact head the operator
   # just requested, never an old tree-pinned batch.
@@ -397,6 +459,8 @@ status)
   say ""
   say "version (what the next batch will build):"
   version_report
+  say ""
+  victory_report
   say ""
   say "ladder lane (Firaxis Civ VI):"
   for label pattern in \
