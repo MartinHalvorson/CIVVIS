@@ -55,7 +55,8 @@ exited successfully. The baseline recorded three Aerodrome displacements; the
 patch recorded none. At turn 204, Bogotá's final production order changed from
 Pike and Shot to Aerodrome at native coordinates (28,11). At turns 193 and 211,
 the patch removed the orders replacing Cali's and Quito's queued Aerodromes.
-Actionable orders changed on 11 turns.
+Actionable orders changed on 10 turns; one additional turn changed only
+order-verification telemetry.
 
 Local replay artifacts: `/tmp/civvis-air-queue-replay/`, including `args.json`,
 `events.jsonl`, and baseline/patched orders and reasoning logs. The frozen
