@@ -7347,6 +7347,7 @@ mod settler_departure;
 pub use science_victory_drive::ScienceDrive;
 
 mod domination_research;
+mod standing_army_supply;
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
 /// Keeping that routing out of the controller avoids growing another shared
@@ -14587,6 +14588,7 @@ impl AdvancedAi {
             };
             let opening_archery_goal = self.opening_archery_goal(g, pid);
             let defensive_walls_goal = self.culture_defensive_walls_goal(g, pid, plan);
+            let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
@@ -14657,6 +14659,7 @@ impl AdvancedAi {
                 // optional standing-army upgrade, so a Recovery turn cannot
                 // strand the expedition without its next launch or laser tech.
                 _ if endgame_research_preempts_wartime => endgame_goal,
+                _ if standing_army_fuel_goal.is_some() => standing_army_fuel_goal.as_deref(),
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
@@ -14769,6 +14772,19 @@ impl AdvancedAi {
                     }
                 }
             }
+            // An army already consuming an unrevealed fuel cannot be supplied
+            // by unrelated era backfill. Admit only legal steps on its selected
+            // supply path, and only when no earlier commitment owns research.
+            if let Some(goal) = standing_army_fuel_goal {
+                if forced_goal == Some(goal.as_str()) {
+                    for tech in g.available_techs(pid) {
+                        if self.tech_leads_to(g, &tech, goal.as_str()) && !available.contains(&tech)
+                        {
+                            available.push(tech);
+                        }
+                    }
+                }
+            }
             let goal_pick = science_milestone_pick.or_else(|| {
                 forced_goal.and_then(|goal| {
                     available
@@ -14846,6 +14862,8 @@ impl AdvancedAi {
                                 )
                             } else if domination_siege_goal.as_deref() == Some(goal) {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
+                            } else if standing_army_fuel_goal.as_deref() == Some(goal) {
+                                format!("the cheapest step toward {}, needed to reveal fuel for the standing army with no reserve", plain(goal))
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the cheapest step toward {}, needed to modernize the standing army at war",
