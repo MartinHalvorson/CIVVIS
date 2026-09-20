@@ -31,7 +31,9 @@ That fixture failure is not counted as production regression evidence.
 
 The full suite passed before integration: 3,639 library and 204 binary tests,
 49 library and four doc tests ignored. All six new identity regressions passed.
-Integration validation is in progress.
+After merging `496d52c67` (#3601), the full suite passed again: 3,642 library
+and 204 binary tests, with the same ignored-test counts. `git diff --check`
+passed. No engine mechanics changed, so an engine soak was not applicable.
 
 A controlled replay compared `f04bd6633` with only this identity change, using
 turns 1–160 of the frozen native export and the same 19 verification genes,
