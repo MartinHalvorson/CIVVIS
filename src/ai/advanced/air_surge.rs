@@ -1159,15 +1159,16 @@ impl AdvancedAi {
         else {
             return false;
         };
+        if g.is_at_war(pid, target) {
+            // There is no declaration left to accelerate. Keep the wing's
+            // research and production while ordinary wartime layers act,
+            // whether the surge joined this war or declared it itself.
+            return false;
+        }
         if self.urgent_victory_threat(g, target) {
             self.record_air_surge_abort(g, "victory denial superseded the surge");
             self.air_surge_plan = None;
             self.air_surge_status = AirSurgeStatus::default();
-            return false;
-        }
-        if plan.opened_at_war {
-            // Nothing to open. The wing arms and fights under the ordinary
-            // wartime layers; the surge only supplies the objective.
             return false;
         }
         if plan.phase != AirSurgePhase::Strike {
@@ -1218,3 +1219,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod production_queue_tests;
+
+#[cfg(test)]
+mod tests;
