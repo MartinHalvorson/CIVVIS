@@ -219,3 +219,19 @@ fn economic_recovery_does_not_gain_a_new_research_override() {
     control_ai.advanced_production(&mut control_g, 0, &plan, false);
     assert_eq!(g.cities[&cid].queue, control_g.cities[&cid].queue);
 }
+
+#[test]
+fn a_threatened_city_does_not_gain_the_fresh_research_commitment() {
+    let (mut g, cid, mut ai, mut plan, item) = fixture();
+    plan.threatened_city = Some(cid);
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cid,
+            item: item.clone(),
+        },
+    )
+    .unwrap();
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_ne!(g.cities[&cid].queue.first(), Some(&item));
+}

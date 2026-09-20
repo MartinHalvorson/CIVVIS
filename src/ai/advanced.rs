@@ -26021,6 +26021,7 @@ impl AdvancedAi {
             // including its first frame with no invested production. Defense
             // above and economic recovery still take precedence.
             let domination_research_commitment = domination_research_catchup
+                && plan.threatened_city != Some(cid)
                 && committed.as_ref().is_some_and(|(_, item)| {
                     Self::production_commitment_is_legal(g, pid, cid, item)
                         && Self::campus_research_building(g, item)
