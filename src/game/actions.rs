@@ -1818,7 +1818,8 @@ impl Game {
             return false;
         };
         let spec = &self.rules.units[unit.kind];
-        spec.has_ranged_attack()
+        spec.domain.as_deref() != Some("air")
+            && spec.has_ranged_attack()
             && !self.is_embarked(unit)
             && (!spec.siege
                 || !unit.moved
@@ -3587,6 +3588,13 @@ impl Game {
     pub(super) fn do_ranged(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
         let u = self.own_unit(pid, uid)?;
         let spec = self.rules.units[u.kind].clone();
+        // Civ6Common.lua:139-148 routes DOMAIN_AIR through AIR_ATTACK;
+        // RANGE_ATTACK belongs to the land/naval branch. Exact planning must
+        // not accept a ground shot that bypasses the air-strike rules and
+        // translates into an operation the native aircraft cannot perform.
+        if spec.domain.as_deref() == Some("air") {
+            return Err("aircraft must use an air strike".into());
+        }
         if !spec.has_ranged_attack() {
             return Err("unit has no ranged attack".into());
         }
@@ -11512,3 +11520,6 @@ impl Game {
         self.sync_war_log();
     }
 }
+
+#[cfg(test)]
+mod air_domain_tests;
