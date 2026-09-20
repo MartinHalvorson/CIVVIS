@@ -8669,6 +8669,13 @@ fn main() {
                                     board.uid_of.get(civ6).map(|new| (*old_uid, *new))
                                 })
                                 .collect();
+                            if let Some(previous_board) = live.as_ref() {
+                                ai.remap_conquest_memory(
+                                    &previous_board.game,
+                                    &board.game,
+                                    &carried,
+                                );
+                            }
                             ai.remap_unit_memory(&carried);
                         }
                         None => ai.forget_unit_memory(),

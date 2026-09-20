@@ -1116,3 +1116,95 @@ fn the_two_orderings_differ_only_in_which_question_leads() {
     assert!(near.key(false) < far.key(false));
     assert!(near.key(true) < far.key(true));
 }
+
+#[test]
+fn live_rebuild_preserves_the_opening_when_city_ids_are_reused() {
+    let mut previous = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut previous);
+    let original = ai.conquest_opening.clone().unwrap();
+    // Same cities and owners, rebuilt in the opposite insertion order.
+    let mut next = board(&[at(14, 12), at(6, 12)]);
+    for city in next.cities.values_mut() {
+        city.owner = 1 - city.owner;
+    }
+    meet_and_explore(&mut next, 1);
+    next.turn += 1;
+    assert_eq!(
+        next.cities[&original.city].owner, 0,
+        "the stale target ID now describes our own city"
+    );
+    ai.remap_conquest_memory(&previous, &next, &Default::default());
+    ai.maintain_conquest_opening(&mut next, 0);
+    let opening = ai
+        .conquest_opening
+        .as_ref()
+        .expect("the target did not change hands");
+    assert_eq!(opening.city, next.city_at(at(14, 12)).unwrap());
+    assert_eq!(opening.opened, original.opened);
+    assert_eq!(opening.rally, original.rally);
+    assert_eq!(opening.taken, 0);
+    assert!(!ai.conquest_closed);
+}
+
+#[test]
+fn live_rebuild_remaps_survivors_and_counts_missing_bodies_once() {
+    let mut previous = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut previous);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    let force = bodies(&mut previous, 0, "warrior", rally, 1, 3);
+    {
+        let opening = ai.conquest_opening.as_mut().unwrap();
+        opening.force = force.iter().copied().collect();
+        opening.declared = Some(previous.turn);
+        opening.assembled = Some(previous.turn);
+        opening.losses = 2;
+    }
+    let mut next = previous.clone();
+    for unit in &force {
+        next.remove_unit(*unit);
+    }
+    let survivors = bodies(&mut next, 0, "warrior", rally, 1, 2);
+    let map = force
+        .iter()
+        .take(2)
+        .copied()
+        .zip(survivors.iter().copied())
+        .collect();
+    ai.remap_conquest_memory(&previous, &next, &map);
+    ai.conquest_count_losses(&next);
+    let opening = ai.conquest_opening.as_ref().unwrap();
+    assert_eq!(opening.force, survivors.iter().copied().collect());
+    assert_eq!(opening.losses, 3, "only the missing body is a new loss");
+    assert_eq!(ai.campaign.as_ref().unwrap().cities, vec![opening.city]);
+    let identity = survivors.iter().map(|uid| (*uid, *uid)).collect();
+    ai.remap_conquest_memory(&next, &next, &identity);
+    ai.conquest_count_losses(&next);
+    assert_eq!(ai.conquest_opening.as_ref().unwrap().losses, 3);
+}
+
+#[test]
+fn live_rebuild_still_releases_a_target_that_really_changed_owner() {
+    let mut previous = board(&[at(6, 12), at(14, 12), at(30, 12)]);
+    let mut ai = opened(&mut previous);
+    let city = ai.conquest_opening.as_ref().unwrap().city;
+    let mut next = previous.clone();
+    next.cities.get_mut(&city).unwrap().owner = 2;
+    ai.remap_conquest_memory(&previous, &next, &Default::default());
+    ai.maintain_conquest_opening(&mut next, 0);
+    assert!(ai.conquest_opening.is_none());
+}
+
+#[test]
+fn live_rebuild_drops_a_missing_city_instead_of_following_its_reused_id() {
+    let mut previous = board(&[at(6, 12), at(14, 12)]);
+    let mut ai = opened(&mut previous);
+    ai.conquest_pin_the_campaign(&previous);
+    let next = board(&[at(6, 12), at(18, 12)]);
+    assert!(next.city_at(at(14, 12)).is_none());
+    ai.remap_conquest_memory(&previous, &next, &Default::default());
+    assert!(ai.conquest_opening.is_none());
+    assert!(
+        ai.campaign.is_none(),
+        "the pinned plan must not retain the stale city ID"
+    );
+}
