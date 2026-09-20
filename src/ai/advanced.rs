@@ -7105,6 +7105,7 @@ pub use genes::{
 mod treatment_flags;
 
 mod age_closer;
+mod domination_research_commitment;
 mod granary_payback;
 /// Great People never pile up: the `great-person-housing` gene's ladder of
 /// remedies for a class earned and blocked. See
@@ -25851,6 +25852,8 @@ impl AdvancedAi {
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
+        let domination_research_catchup =
+            !economic_recovery && self.domination_research_catchup_needed(g, pid, plan);
         if self.first_builder_reserve_2 && counts.builders > 0 {
             self.first_builder_reserve_2_paid = true;
         }
@@ -26013,15 +26016,26 @@ impl AdvancedAi {
                 Self::production_commitment_is_legal(g, pid, cid, item)
                     && Self::live_gp_district_commitment(g, pid, item)
             });
+            // The catch-up pass has already chosen one idle queue. Preserve
+            // a legal Campus building while Domination trails public research,
+            // including its first frame with no invested production. Defense
+            // above and economic recovery still take precedence.
+            let domination_research_commitment = domination_research_catchup
+                && committed.as_ref().is_some_and(|(_, item)| {
+                    Self::production_commitment_is_legal(g, pid, cid, item)
+                        && Self::campus_research_building(g, item)
+                });
             if committed.as_ref().is_some_and(|(value, _)| {
                 !self.victory_planning
                     || (value.is_finite() && *value > -1_000.0)
                     || science_endgame_commitment
                     || live_gp_commitment
+                    || domination_research_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
                     || live_gp_commitment
+                    || domination_research_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
