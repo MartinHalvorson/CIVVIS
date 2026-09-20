@@ -6228,6 +6228,9 @@ pub struct AdvancedAi {
     /// The gene's chosen front and its tide clock; `None` at peace or with
     /// the gene off.
     one_war: Option<one_war::OneWarFront>,
+    /// Confirmed native unit losses by (victim, opponent). None in simulated
+    /// games; Some(empty) means the host has confirmed no casualties.
+    host_war_unit_losses: Option<BTreeMap<(usize, usize), u32>>,
 
     // ---- append: p-r ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -7110,6 +7113,7 @@ mod granary_payback;
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
+mod host_war_losses;
 mod housing_research;
 mod live_gp_commitment;
 /// The opportunistic war: a surprise war priced on what the board exposes —
@@ -8335,6 +8339,7 @@ impl AdvancedAi {
             missionary_evades_raiders: false,
             one_war_at_a_time: false,
             one_war: None,
+            host_war_unit_losses: None,
 
             // ---- append: p-r ----------------------------------------
             reinforce_before_stall: false,

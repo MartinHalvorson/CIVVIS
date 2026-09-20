@@ -106,7 +106,7 @@ impl AdvancedAi {
         let mut tides = std::mem::take(&mut self.war_policy.tides);
         tides.retain(|rival, _| enemies.contains(rival));
         for rival in enemies {
-            let ledger = Self::one_war_ledger(g, pid, rival);
+            let ledger = self.one_war_ledger(g, pid, rival);
             let tide = tides.entry(rival).or_insert_with(|| Tide {
                 ledger,
                 window: VecDeque::new(),

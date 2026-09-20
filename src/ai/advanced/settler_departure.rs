@@ -9,6 +9,7 @@ impl AdvancedAi {
         g: &Game,
         state: &crate::mirror::StateSnapshot,
     ) {
+        self.observe_host_war_losses(g, state);
         if state.confirmed_unit_deaths.is_empty() {
             return;
         }

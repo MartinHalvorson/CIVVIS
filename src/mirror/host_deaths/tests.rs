@@ -25,7 +25,8 @@ fn only_confirmed_unit_deaths_are_recorded() {
         vec![HostUnitDeath {
             player: 63,
             unit: 851980,
-            turn: 9
+            turn: 9,
+            opponent: None,
         }]
     );
     assert!(deaths.through(8).is_empty());
@@ -38,7 +39,16 @@ fn attacker_and_defender_ids_are_scoped_to_their_owners() {
     event["attacker_killed"] = json!(true);
     event["attacker"] = json!({"type":"unit", "player":0, "id":851980});
     deaths.observe(&event.to_string());
-    assert_eq!(deaths.through(9).len(), 2);
+    let observed = deaths.through(9);
+    assert_eq!(observed.len(), 2);
+    assert_eq!(observed[0].opponent, Some(63));
+    assert_eq!(observed[1].opponent, Some(0));
+    deaths.observe(&event.to_string());
+    assert_eq!(
+        deaths.through(9),
+        observed,
+        "repeated combat reports are idempotent"
+    );
 }
 
 #[test]
