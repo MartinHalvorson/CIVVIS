@@ -108,14 +108,14 @@
 //!
 //! ## What it deliberately does not do
 //!
-//! It does not move a unit itself (step 4 is a score term, not an order); it
-//! does not choose the tactics of the assault (that is `city_campaign`,
+//! It supplies a staging objective to the existing peacetime mover for its
+//! reserved force; it does not choose the tactics of the assault (that is `city_campaign`,
 //! `siege_train` and the battle planner); it does not raise the empire's
 //! military target or change any other city's production; and it never
 //! declares on a rival the shipped `campaign_target_legal` mask refuses.
 
 use super::city_campaign::{CampaignPlan, CAMPAIGN_MIN_BODIES};
-use super::{AdvancedAi, EmpireCounts, StrategicPlan};
+use super::{AdvancedAi, EmpireCounts, GrandStrategy, StrategicPlan};
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::rules::UnitSpec;
@@ -769,6 +769,44 @@ impl AdvancedAi {
         army.into_iter().collect()
     }
 
+    /// Let the reserved force assemble before the opening can declare.
+    /// The general plan may still be Expansion or prefer a different city;
+    /// it must not supply this force's pre-war destination. The existing
+    /// mover retains legality, recovery, escort and home-defense priority.
+    pub(super) fn conquest_staging_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<(usize, Pos, Pos)> {
+        if !self.early_conquest_opening
+            || plan.strategy == GrandStrategy::Recovery
+            || plan.threatened_city.is_some()
+            || g.players
+                .iter()
+                .any(|other| other.id != pid && !other.is_barbarian && g.is_at_war(pid, other.id))
+        {
+            return None;
+        }
+        let opening = self.conquest_opening.as_ref()?;
+        if opening.declared.is_some()
+            || !opening.force.contains(&uid)
+            || (opening.assembled.is_none()
+                && g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE))
+            || !self.campaign_target_legal(g, pid, opening.target)
+            || self.all_reserved_civilian_guards().contains(&uid)
+        {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        if unit.owner != pid || unit.hp as f64 <= self.base.w.withdraw_hp {
+            return None;
+        }
+        let city = g.cities.get(&opening.city)?;
+        (city.owner == opening.target).then_some((opening.target, city.pos, opening.rally))
+    }
+
     /// The share of the force standing within [`CONQUEST_ASSEMBLY_RADIUS`]
     /// of the rally. Zero for an empty force: nothing is assembled.
     pub(crate) fn conquest_assembled_share(g: &Game, opening: &ConquestOpening) -> f64 {
@@ -1282,3 +1320,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod staging_tests;

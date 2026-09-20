@@ -18518,15 +18518,26 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<bool> {
-        if plan.strategy != GrandStrategy::Conquest {
-            return None;
-        }
-        let target = plan.target_player?;
-        let objective = plan
-            .target_city
-            .and_then(|city| g.cities.get(&city))
-            .filter(|city| city.owner == target)
-            .map(|city| city.pos)?;
+        let opening = self.conquest_staging_objective(g, pid, uid, plan);
+        let (target, objective) = if let Some((target, objective, _)) = opening {
+            (target, objective)
+        } else {
+            if plan.strategy != GrandStrategy::Conquest {
+                return None;
+            }
+            let target = plan.target_player?;
+            let objective = plan
+                .target_city
+                .and_then(|city| g.cities.get(&city))
+                .filter(|city| city.owner == target)
+                .map(|city| city.pos)?;
+            (target, objective)
+        };
+        let on_opening_ring = |position| {
+            opening.is_none_or(|(_, _, rally)| {
+                g.wdist(position, rally) <= early_conquest::CONQUEST_ASSEMBLY_RADIUS
+            })
+        };
         if !self.campaign_target_legal(g, pid, target) || g.is_at_war(pid, target) {
             return None;
         }
@@ -18544,7 +18555,9 @@ impl AdvancedAi {
         // units keep their normal jobs while the four assault bodies and real
         // breach element assemble without independently changing target.
         if let Some(war) = self.war_plan.as_ref().filter(|war| {
-            war.target_player == target && war.objective_city == plan.target_city.unwrap_or(0)
+            opening.is_none()
+                && war.target_player == target
+                && war.objective_city == plan.target_city.unwrap_or(0)
         }) {
             let designated =
                 self.war_body_kind(g, pid, war, unit.kind) || war.breach_unit == Some(unit.kind);
@@ -18552,8 +18565,8 @@ impl AdvancedAi {
                 return None;
             }
         }
-        let already_staged =
-            self.campaign_staging_position(g, pid, target, uid, objective, unit.pos);
+        let already_staged = on_opening_ring(unit.pos)
+            && self.campaign_staging_position(g, pid, target, uid, objective, unit.pos);
         if already_staged && !g.rules.is_water(&g.map.tiles[&unit.pos]) {
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
@@ -18564,7 +18577,8 @@ impl AdvancedAi {
             g.wdisk(objective, 5)
                 .into_iter()
                 .filter(|position| {
-                    self.campaign_staging_position(g, pid, target, uid, objective, *position)
+                    on_opening_ring(*position)
+                        && self.campaign_staging_position(g, pid, target, uid, objective, *position)
                         && g.unit_ids_at(*position).is_empty()
                 })
                 .collect()
