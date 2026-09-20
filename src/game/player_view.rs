@@ -102,6 +102,18 @@ impl Game {
                     .insert(city.id, self.city_strength(city.id));
             }
         }
+        view.unseen_city_owners.extend(
+            self.cities
+                .values()
+                .filter(|city| {
+                    self.has_met(pid, city.owner)
+                        && !view
+                            .cities
+                            .get(&city.id)
+                            .is_some_and(|seen| seen.owner == city.owner)
+                })
+                .map(|city| city.owner),
+        );
         // A visible border does not disclose its city's location. Preserve
         // the passage/loyalty constraint without a dangling city reference.
         for tile in view.map.tiles.values_mut() {
@@ -197,7 +209,11 @@ impl Game {
                 Arc::make_mut(&mut view.observed_public_empire_stats).insert(
                     other,
                     ObservedPublicEmpireStats {
-                        city_count: Some(self.player_city_ids(other).len()),
+                        city_count: self
+                            .observed_public_empire_stats
+                            .get(&other)
+                            .and_then(|stats| stats.city_count)
+                            .or_else(|| Some(self.player_city_ids(other).len())),
                         techs: Some(source.techs.len()),
                         tech_era: Some(self.player_tech_era(other)),
                         civics: Some(source.civics.len()),
