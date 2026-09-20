@@ -1887,6 +1887,57 @@ impl AdvancedAi {
         best.map(|(_, id)| id)
     }
 
+    /// Denying a suicidal attack need not deny a healthy siege reinforcement
+    /// its approach. Take only one legal, strictly closer step with no reply
+    /// damage predicted by the same field that vetoed the attack. The caller
+    /// ends the unit's turn afterwards, so this cannot reopen that attack.
+    fn advance_vetoed_siege_unit(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        field: &mut DangerField,
+    ) -> bool {
+        if !self.siege_train {
+            return false;
+        }
+        let unit = &g.units[&uid];
+        if unit.hp < RETURN_HP || g.is_embarked(unit) {
+            return false;
+        }
+        let Some(target) = self.force_groups.iter().find_map(|group| {
+            (group.domain == super::ForceDomain::Land
+                && group.units.contains(&uid)
+                && matches!(
+                    group.posture,
+                    ForcePosture::Muster | ForcePosture::Advance | ForcePosture::Engage
+                ))
+            .then_some(group.objective)
+            .filter(|pos| {
+                g.city_at(*pos)
+                    .is_some_and(|cid| g.is_at_war(pid, g.cities[&cid].owner))
+            })
+        }) else {
+            return false;
+        };
+        let distance = g.wdist(unit.pos, target);
+        if distance <= super::siege_train::STAGING_FAR {
+            return false;
+        }
+        let next = g
+            .nbrs(unit.pos)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, target) < distance && g.can_move(uid, *pos))
+            .filter(|pos| {
+                !g.unit_ids_at(*pos)
+                    .iter()
+                    .any(|other| g.is_at_war(pid, g.units[other].owner))
+            })
+            .filter(|pos| field.danger(*pos, uid) <= NO_DANGER)
+            .min_by_key(|pos| (g.wdist(*pos, target), *pos));
+        next.is_some_and(|pos| self.base.tactical_apply_move(g, pid, uid, pos))
+    }
+
     /// Pull the wounded and the exposed out of reach and fortify them.
     /// Returns how many actually moved or swapped.
     fn rotate_wounded(
@@ -1940,17 +1991,24 @@ impl AdvancedAi {
             let margin = if heals { ROTATE_DANGER_MARGIN } else { 0 };
             let exposed = here > f64::from(unit.hp - margin);
             // `doomed-blow-veto`: a unit with no blow it would survive that is
-            // neither wounded nor exposed where it stands holds that ground
-            // and fortifies — the ladder's attack is the one thing denied it;
+            // neither wounded nor exposed may take a safe siege approach
+            // step before fortifying — the ladder's attack stays denied;
             // one that is also exposed rotates like any other.
             if doomed.contains(&uid) && !(wounded || exposed) {
+                let advanced = self.advance_vetoed_siege_unit(g, pid, uid, field);
                 self.base.fortify_or_stop(g, pid, uid);
                 self.battle_planner_ordered.insert(uid);
                 if let Some(now) = g.units.get(&uid) {
-                    think!(self.journal(), Military, Decision,
+                    if advanced {
+                        think!(self.journal(), Military, Decision,
+                            "Battle plan: the {} advances from {:?} to {:?} toward its siege", now.kind, unit.pos, now.pos;
+                            "every attack was vetoed; this approach step has no predicted reply damage, and the unit's turn ends here");
+                    } else {
+                        think!(self.journal(), Military, Decision,
                         "Battle plan: the {} at {:?} holds rather than strike", now.kind, now.pos;
                         "{} hp, danger {here:.0} where it stands; every blow it has would leave it dead next turn",
                         now.hp);
+                    }
                 }
                 continue;
             }
@@ -4525,3 +4583,6 @@ mod tests {
 
 #[cfg(test)]
 mod siege_position_tests;
+
+#[cfg(test)]
+mod siege_veto_advance_tests;
