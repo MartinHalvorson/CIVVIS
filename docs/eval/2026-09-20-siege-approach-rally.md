@@ -28,10 +28,16 @@ production changes.
 
 All 19 objective-board tests pass. Before merging newer main changes, the full
 `cargo test --profile ci --locked` suite passes with 3,674 library and 204 binary
-tests; 49 library and four documentation tests are ignored.
+tests; 49 library and four documentation tests are ignored. After merging
+`6376c0e77` (earned Prophet founding), the full suite passes again: 3,676
+library and 204 binary tests, with the same ignored counts. Formatting and
+`git diff --check` pass.
 
 The frozen replay uses the native events through turn 112 and identical
 domination/Gran Colombia verification arguments for baseline and patched builds
-on base `bd61b7195`. Local evidence is under `/tmp/civvis-siege-rally-replay/`.
+on base `bd61b7195`. Both replays finish all 331 frames successfully. Five
+frames change orders, first at turn 89 frame 1. At turn 96 the initial siege
+rally changes from native (19,29) to (14,31), on the approach side.
+Local evidence is under `/tmp/civvis-siege-rally-replay/`.
 Frozen observations cannot execute revised moves or establish a city capture
 or victory. No engine mechanics change; an engine soak does not apply.
