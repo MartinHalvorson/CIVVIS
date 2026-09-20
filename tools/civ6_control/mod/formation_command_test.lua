@@ -243,6 +243,33 @@ check("theological attack carries the ATTACK modifier",
 	UnitOperationMoveModifiers.ATTACK
 		+ UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION)
 
+-- Ordinary exploration carries the fog-destination bit without ATTACK. Model
+-- the native silent early-out when that bit is absent, even with a legal path.
+reset()
+host.allow[hashFor("UNITOPERATION_MOVE_TO")] = true
+local requestOperation = UnitManager.RequestOperation
+local explored = false
+UnitManager.RequestOperation = function(unit, hash, params)
+	requestOperation(unit, hash, params)
+	if hash == hashFor("UNITOPERATION_MOVE_TO") then
+		explored = params[UnitOperationTypes.PARAM_MODIFIERS]
+			== UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION
+	end
+end
+ok, why = applyOrder(player, PID,
+	{ kind = "unit", subject = 91, verb = "MOVE_TO", x = 6, y = 5 }, 118)
+check("exploration move accepted", ok, true)
+check("exploration reaches native fog move without attack", explored, true)
+local walk = lastCall("RequestOperation", hashFor("UNITOPERATION_MOVE_TO"))
+check("exploration move preserves destination", walk and walk.params[UnitOperationTypes.PARAM_X], 6)
+UnitManager.RequestOperation = requestOperation
+local moveModifiers = UnitOperationMoveModifiers
+UnitOperationMoveModifiers = nil
+ok = applyOrder(player, PID,
+	{ kind = "unit", subject = 91, verb = "MOVE_TO", x = 6, y = 5 }, 118)
+check("missing exploration enum retains compatible movement", ok, true)
+UnitOperationMoveModifiers = moveModifiers
+
 -- 7. Both command names must be resolvable from the shipped tables, or the
 --    verbs above are dead letters. `resolveActions` reports them.
 local resolvedLine = nil

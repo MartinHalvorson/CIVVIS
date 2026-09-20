@@ -13963,6 +13963,19 @@ local function applyOrder(player, pid, row, turn)
 					if survivalRefusal ~= nil then return false, survivalRefusal; end
 					CivvisLedger.strike(unit, subject, verb, x, y, turn);
 				end
+			else
+				-- Civ6Common.lua:151-152 permits movement toward an unexplored
+				-- destination explicitly. Without this bit, a scout can have a
+				-- complete same-turn native path while RequestOperation leaves it
+				-- awake at its origin (live turn 4, civvis-20260920T025944Z).
+				-- Ordinary movement gets only the exploration bit; ATTACK remains
+				-- exclusive to the explicit combat/capture verbs above.
+				local ignore = try(function()
+					return UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION;
+				end, nil);
+				if type(ignore) == "number" and UnitOperationTypes.PARAM_MODIFIERS ~= nil then
+					params[UnitOperationTypes.PARAM_MODIFIERS] = ignore;
+				end
 			end
 			-- See `CivvisBoard.moveNoop`: the plot and movement the unit had
 			-- when the leg was requested are what the queue compares against

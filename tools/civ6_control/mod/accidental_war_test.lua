@@ -260,7 +260,8 @@ do
 	local ok, why = applyOrder(player, 0, { kind = "unit", subject = 7, verb = "MOVE_TO", x = 10, y = 12 }, 40)
 	check("peace_move_sent", ok, true)
 	check("peace_move_requested", #state.requests, 1)
-	check("peace_move_no_attack_modifier", state.requests[1] and state.requests[1].params.mods, nil)
+	check("peace_move_explores_without_attack", state.requests[1] and state.requests[1].params.mods,
+		UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION)
 end
 
 -- 4. an absent API never refuses
