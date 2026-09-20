@@ -32564,6 +32564,7 @@ impl AdvancedAi {
                         && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                         && unit.linked_to.is_none()
                         && !taken.contains(candidate)
+                        && !self.conquest_unit_committed(g, pid, *candidate)
                         && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
                         && !holds_threatened_city(unit.pos)
                         && (!self.settler_guard_holds_on()
@@ -38469,6 +38470,7 @@ impl AdvancedAi {
                 && candidate_spec.class == "military"
                 && !matches!(candidate_spec.domain.as_deref(), Some("sea" | "air"))
                 && !holds_threatened_city(candidate.id)
+                && !self.conquest_unit_committed(g, pid, candidate.id)
         };
 
         let mut settlers: Vec<u32> = g

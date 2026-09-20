@@ -932,6 +932,21 @@ impl AdvancedAi {
                 .is_some_and(|opening| opening.declared.is_some())
     }
 
+    /// A declared opening keeps its surviving strike force when a new
+    /// Settler looks for an escort. Existing civilian guards retain priority;
+    /// this reservation applies only to new assignments while the war stands.
+    pub(super) fn conquest_unit_committed(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.conquest_owns_the_campaign()
+            && self.conquest_opening.as_ref().is_some_and(|opening| {
+                opening.force.contains(&uid)
+                    && g.is_at_war(pid, opening.target)
+                    && g.units.get(&uid).is_some_and(|unit| unit.owner == pid)
+                    && g.cities
+                        .get(&opening.city)
+                        .is_some_and(|city| city.owner == opening.target)
+            })
+    }
+
     /// Write the opening's city into the shared campaign plan, which is what
     /// `assess` reads through `campaign_target` and
     /// `campaign_objective_city`. This is the whole handoff: from here the
@@ -1323,3 +1338,6 @@ mod tests;
 
 #[cfg(test)]
 mod staging_tests;
+
+#[cfg(test)]
+mod escort_reservation_tests;
