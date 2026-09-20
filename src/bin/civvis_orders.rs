@@ -8701,6 +8701,7 @@ fn main() {
                                 })
                                 .collect();
                             if let Some(previous_board) = live.as_ref() {
+                                ai.remap_campaign_city_memory(&previous_board.game, &board.game);
                                 ai.remap_conquest_memory(
                                     &previous_board.game,
                                     &board.game,

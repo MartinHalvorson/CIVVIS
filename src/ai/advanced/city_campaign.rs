@@ -280,6 +280,34 @@ pub(crate) struct CityRequirement {
 }
 
 impl AdvancedAi {
+    /// Carry campaign and strategic city targets through a live rebuild.
+    /// Native city IDs are reallocated even when the host city is unchanged.
+    /// Keep location identity, including actual ownership changes, so normal
+    /// campaign maintenance can distinguish captures from missing cities.
+    pub fn remap_campaign_city_memory(&mut self, previous: &Game, next: &Game) {
+        let remap = |id: u32| {
+            previous
+                .cities
+                .get(&id)
+                .and_then(|city| next.city_at(city.pos))
+        };
+        if let Some(plan) = self.plan.as_mut() {
+            plan.target_city = plan.target_city.and_then(remap);
+            plan.threatened_city = plan.threatened_city.and_then(remap);
+        }
+        if let Some(campaign) = self.campaign.as_mut() {
+            let had_objectives = !campaign.cities.is_empty();
+            campaign.cities = campaign.cities.iter().filter_map(|id| remap(*id)).collect();
+            // A vanished objective is not a capture and cannot keep a stale
+            // campaign pinned to whatever inherited its old numeric ID.
+            // An already-completed plan keeps its capture history until the
+            // normal war/peace maintenance retires it.
+            if had_objectives && campaign.cities.is_empty() {
+                self.campaign = None;
+            }
+        }
+    }
+
     /// Either version of the city-campaign family owns the shared plan.  The
     /// treatment toggles make the versions exclusive, but spelling the family
     /// predicate here keeps every consumer of the plan on the same contract.
@@ -1460,3 +1488,6 @@ mod tests {
         assert!(game.map.tiles[&farms[2]].pillaged);
     }
 }
+
+#[cfg(test)]
+mod rebuild_tests;
