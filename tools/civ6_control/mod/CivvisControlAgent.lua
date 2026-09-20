@@ -15841,6 +15841,27 @@ CivvisBoard.classifyNoop = function(player, pid, unit, fromX, fromY, wantX, want
 	return "unknown";
 end;
 
+-- Preserve native evidence before trying a fallback. A path can exist without
+-- ending on the requested plot, and an accepted request can remain active.
+-- WorldInput.lua:961 reads GetMoveToPathEx; UnitPanel.lua:2147 reads activity.
+CivvisBoard.noopEvidence = function(unit, x, y)
+	local evidence = {};
+	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
+	local destination = try(function() return Map.GetPlotIndex(x, y); end, nil);
+	local path = try(function() return UnitManager.GetMoveToPathEx(unit, destination); end, nil);
+	if type(path) == "table" and type(path.plots) == "table" then
+		local n = 0;
+		for _ in pairs(path.plots) do n = n + 1; end
+		evidence.path_count = n;
+		evidence.path_last = tonumber(path.plots[n]);
+		if evidence.path_last ~= nil and destination ~= nil then
+			evidence.path_reaches_destination = evidence.path_last == destination;
+		end
+		if type(path.turns) == "table" then evidence.path_last_turn = tonumber(path.turns[n]); end
+	end
+	return evidence;
+end;
+
 CivvisBoard.fallbackBetter = function(candidate, best)
 	local dc = candidate.distance;
 	local db = best.distance;
@@ -15929,6 +15950,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
+		native = CivvisBoard.noopEvidence(unit, wantX, wantY),
 	});
 	if afterFallback then return false; end
 	local sent = CivvisBoard.fallbackStep(player, pid, unit, subject, ux, uy, wantX, wantY, turn, why);

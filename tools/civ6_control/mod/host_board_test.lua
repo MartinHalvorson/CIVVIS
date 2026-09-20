@@ -976,6 +976,38 @@ check("active fire: both civilians are counted", board.stats.active_fire_civilia
 check("active fire: refusal is named", has(lastEvent("orders"), '"active_fire_civilian_hold":2'), true)
 check("active fire: event names feature", has(lastEvent("active_fire_civilian_hold"), '"feature":"FEATURE_'), true)
 
+-- Stalled movement reports the host path endpoint and activity before fallback.
+reset()
+host.units[80] = { id = 80, kind = "UNIT_GALLEY", x = 1, y = 1, moves = 3 }
+local stalled = unitObject(host.units[80])
+local oldActivity = UnitManager.GetActivityType
+UnitManager.GetActivityType = function() return 12345 end
+host.paths["80:" .. plotIndex(4, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(3, 1) }, turns = { 0, 1 } }
+board.moveAttempts[80] = { turn = 7, moves = 3, fallback = true }
+local entry = { expect = { x = 4, y = 1 }, wait = 30 }
+check("noop evidence preserves exhausted fallback", board.moveNoop(player, PID, 80,
+	stalled, entry, 7, 1, 1, 3), false)
+local diagnostic = lastEvent("move_noop")
+check("noop evidence includes native activity", has(diagnostic, '"activity":12345'), true)
+check("noop evidence includes partial endpoint", has(diagnostic, '"path_last":103'), true)
+check("noop evidence identifies incomplete path", has(diagnostic, '"path_reaches_destination":false'), true)
+check("noop evidence includes turn and length", has(diagnostic, '"path_last_turn":1')
+	and has(diagnostic, '"path_count":2'), true)
+check("noop evidence issues no orders", #host.ops, 0)
+host.paths["80:" .. plotIndex(4, 1)].plots[2] = plotIndex(4, 1)
+check("noop evidence confirms complete path", board.noopEvidence(stalled, 4, 1).path_reaches_destination, true)
+local oldPath = UnitManager.GetMoveToPathEx
+UnitManager.GetActivityType = function() error("unavailable") end
+UnitManager.GetMoveToPathEx = function() error("unavailable") end
+local unavailable = board.noopEvidence(stalled, 4, 1)
+check("noop evidence unavailable activity stays unknown", unavailable.activity, nil)
+check("noop evidence unavailable path stays unknown", unavailable.path_count, nil)
+UnitManager.GetMoveToPathEx = function() return { plots = {} } end
+check("noop evidence empty path is observed", board.noopEvidence(stalled, 4, 1).path_count, 0)
+check("noop evidence empty path has unknown endpoint", board.noopEvidence(stalled, 4, 1).path_reaches_destination, nil)
+UnitManager.GetMoveToPathEx, UnitManager.GetActivityType = oldPath, oldActivity
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
