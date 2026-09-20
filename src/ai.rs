@@ -2327,13 +2327,11 @@ pub struct BasicAi {
     pursue_religion: bool,
     /// Do not enter the finite Great Prophet race at all.
     ///
-    /// `pursue_religion` alone is NOT this flag. It gates the belief pick, the
-    /// missionary buy and the secret-society lean — the PRIZE — while the Holy
-    /// Site reservation below (search `prophet_race_closed`) is ungated and
-    /// still spends the district slot and the hammers that contest the race.
-    /// Clearing only `pursue_religion` therefore buys the worst of both: the
-    /// entry fee is paid and the winnings are discarded. This flag closes the
-    /// reservation too, so the empire never opens the tab.
+    /// `pursue_religion` alone is NOT this flag. It gates missionary purchases
+    /// and the secret-society lean, while the Holy Site reservation below
+    /// (search `prophet_race_closed`) still spends a district slot and hammers.
+    /// This flag closes that reservation. A Prophet already earned can still
+    /// found a religion without reopening the race or changing the victory lane.
     ///
     /// Set from `AdvancedAi` by the opt-in gene `skip-the-prophet-race-2`
     /// and by `religion-race-is-closed`.
@@ -8084,7 +8082,11 @@ impl BasicAi {
                 }
             }
         }
-        if self.pursue_religion && g.players[pid].prophet_pending {
+        // The Prophet has already been earned. Use that opportunity even when
+        // the victory lane does not invest in a religious race; otherwise a
+        // domination seat can hold its Prophet unused through a rival's win.
+        // Game::apply still enforces the founding prerequisites and free beliefs.
+        if g.players[pid].prophet_pending {
             let mut followers: Vec<String> = [
                 "work_ethic",
                 "choral_music",
@@ -21905,9 +21907,9 @@ mod tests {
 
     #[test]
     fn skipping_the_prophet_race_refuses_the_reservation_the_prize_gate_leaves_open() {
-        // `pursue_religion` gates the belief pick, the missionary buy and the
-        // secret-society lean. It does NOT gate the Holy Site reservation, so a
-        // gene that clears only the prize still pays the entry fee. This pins
+        // `pursue_religion` gates missionary purchases and the secret-society
+        // lean. It does NOT gate the Holy Site reservation, so clearing only
+        // pursuit still pays the entry fee. This pins
         // the other half: `skip_prophet_race` must refuse the district itself.
         let mut game = Game::new_full(
             1,
@@ -22057,8 +22059,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn prophet_uses_remaining_data_backed_beliefs_after_preferred_pairs_are_taken() {
+    fn pending_prophet_after_preferred_beliefs_are_taken() -> Game {
         let mut game = Game::new_full(3, 26, 16, 91_773, 120, 0, false);
         for pid in 0..3 {
             let settler = game
@@ -22091,6 +22092,12 @@ mod tests {
             .insert(crate::name!("holy_site"), holy_site);
         game.players[2].prophet_pending = true;
         game.current = 2;
+        game
+    }
+
+    #[test]
+    fn prophet_uses_remaining_data_backed_beliefs_after_preferred_pairs_are_taken() {
+        let mut game = pending_prophet_after_preferred_beliefs_are_taken();
 
         BasicAi::new().research(&mut game, 2);
 
@@ -22100,6 +22107,31 @@ mod tests {
             .religion_beliefs
             .iter()
             .any(|belief| belief == "cross_cultural_dialogue"));
+    }
+
+    #[test]
+    fn earned_prophet_founds_without_pursuing_the_religious_race() {
+        let mut game = pending_prophet_after_preferred_beliefs_are_taken();
+        let mut ai = BasicAi::new();
+        ai.pursue_religion = false;
+        ai.skip_prophet_race = true;
+        ai.research(&mut game, 2);
+
+        assert!(game.players[2].religion.is_some());
+        assert!(!game.players[2].prophet_pending);
+        assert!(!ai.pursue_religion);
+        assert!(ai.skip_prophet_race);
+    }
+
+    #[test]
+    fn nonreligious_seat_without_a_prophet_does_not_found() {
+        let mut game = pending_prophet_after_preferred_beliefs_are_taken();
+        game.players[2].prophet_pending = false;
+        let mut ai = BasicAi::new();
+        ai.pursue_religion = false;
+        ai.research(&mut game, 2);
+
+        assert!(game.players[2].religion.is_none());
     }
 
     #[test]
