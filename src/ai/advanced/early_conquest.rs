@@ -357,6 +357,52 @@ impl TargetRank {
 }
 
 impl AdvancedAi {
+    /// Carry the opening through a live board rebuild. City positions are
+    /// stable across captures; mirror-local city and unit IDs are not.
+    pub fn remap_conquest_memory(
+        &mut self,
+        previous: &Game,
+        next: &Game,
+        units: &std::collections::BTreeMap<u32, u32>,
+    ) {
+        let Some(opening) = self.conquest_opening.as_mut() else {
+            return;
+        };
+        let city = previous
+            .cities
+            .get(&opening.city)
+            .and_then(|city| next.city_at(city.pos));
+        let Some(city) = city else {
+            if self.campaign.as_ref().is_some_and(|campaign| {
+                campaign.target == opening.target && campaign.cities == vec![opening.city]
+            }) {
+                self.campaign = None;
+            }
+            self.conquest_release(
+                next,
+                "the objective city is no longer on the observed board",
+            );
+            return;
+        };
+        opening.city = city;
+        let force: BTreeSet<u32> = opening
+            .force
+            .iter()
+            .filter_map(|unit| units.get(unit).copied())
+            .collect();
+        if opening.declared.is_some() {
+            opening.losses = opening
+                .losses
+                .saturating_add(opening.force.len().saturating_sub(force.len()) as u32);
+        }
+        opening.force = force;
+        // The next maintenance pass decides captures and peace from the new
+        // board. Do not let its shared campaign still point at the old ID.
+        if opening.declared.is_some() {
+            self.conquest_pin_the_campaign(next);
+        }
+    }
+
     // ------------------------------------------------------------------
     // 1. the target
     // ------------------------------------------------------------------
