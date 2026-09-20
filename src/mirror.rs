@@ -10583,6 +10583,18 @@ fn apply_observed_host_metrics(
         }
         apply_rival_public_economy(game, owner, rival, unmapped);
     }
+    // Rebuild from this authoritative frame: revealing the remaining cities
+    // must clear the guard so a genuine last-city capture can eliminate a seat.
+    game.unseen_city_owners = game
+        .observed_public_empire_stats
+        .iter()
+        .filter_map(|(&owner, stats)| {
+            stats
+                .city_count
+                .filter(|&count| count > game.player_city_ids(owner).len())
+                .map(|_| owner)
+        })
+        .collect();
 }
 
 /// Seat the World Congress diplomatic standing, including the majors this seat
