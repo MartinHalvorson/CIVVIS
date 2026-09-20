@@ -89,6 +89,60 @@ for _, cfg in ipairs({{Play = false, CivvisDecides = true}, {CivvisDecides = fal
 end
 print("all popup heartbeat checks passed")
 
+-- A remembered diplomacy ID is not proof of a live session. Exercise the
+-- actual popup update callback: stale contexts should stop ticking, while an
+-- open session or failed native query must never authorize a forced hide.
+local function diplomacyHost(mode)
+    local h = { hidden = false, nativeCloses = 0, queries = {}, open = false }
+    local env = setmetatable({
+        CivvisControlConfig = { AnnouncementSeconds = 0.05, DialogueSeconds = 0.05 },
+        ms_ActiveSessionID = 17,
+    }, { __index = _G })
+    env.include = function() end
+    env.OnClose = function() end
+    env.Close = function()
+        h.nativeCloses = h.nativeCloses + 1
+        if mode == "replacement" then
+            env.ms_ActiveSessionID, h.open = 18, true
+        end
+    end
+    env.DiplomacyManager = {}
+    if mode ~= "missing" then
+        env.DiplomacyManager.IsSessionIDOpen = function(id)
+            h.queries[#h.queries + 1] = id
+            if mode == "throw" then error("host read failed") end
+            if mode == "unknown" then return nil end
+            return mode == "open" or h.open
+        end
+    end
+    env.m_PopupDialog = { IsOpen = function() return mode == "popup" end }
+    env.ContextPtr = {
+        GetID = function() return "DiplomacyActionView" end,
+        IsHidden = function() return h.hidden end,
+        SetHide = function(_, hidden) h.hidden = hidden end,
+        SetUpdate = function(_, f) h.update = f end,
+    }
+    env.Automation = { Log = function() end }
+    env.LuaEvents = {}
+    local chunk = assert(loadfile(here .. "/CivvisControlAutoClose.lua"))
+    setfenv(chunk, env); chunk()
+    h.update(1)
+    return h
+end
+local stale = diplomacyHost("closed")
+assert(stale.hidden and stale.nativeCloses == 1,
+       "closed remembered session must use native Close before hiding its stale context")
+assert(#stale.queries == 2 and stale.queries[1] == 17 and stale.queries[2] == 17,
+       "native session state must be checked again after Close")
+for _, mode in ipairs({"open", "throw", "unknown", "missing", "popup"}) do
+    local h = diplomacyHost(mode)
+    assert(not h.hidden, mode .. " must not authorize a stale-context hide")
+end
+local replacement = diplomacyHost("replacement")
+assert(not replacement.hidden and replacement.queries[2] == 18,
+       "native Close may open a replacement session; leave its context visible")
+print("all native diplomacy session checks passed")
+
 local closedByAgent = popupHost({CivvisDecides = true, AnnouncementSeconds = 0})
 closedByAgent.hideOnPulse = true
 closedByAgent.update(1)
