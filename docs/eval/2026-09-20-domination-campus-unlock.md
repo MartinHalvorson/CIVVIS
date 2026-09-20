@@ -34,3 +34,26 @@ city states remain recorded observations, so it cannot establish faster actual
 research, completed campuses, higher science yield, captures or victory rate.
 
 This changes AI research selection only. Engine crash soak is inapplicable.
+
+## Results
+
+Both pairs exit 0. Only research orders change; telemetry orders are excluded,
+and the internal native-action comparison agrees on the changed-frame counts.
+
+| Native source | Frames | First Writing request, baseline | Candidate | Changed frames |
+| --- | ---: | ---: | ---: | ---: |
+| `civvis-20260920T080404Z` through 105/0 | 303 | 64 | 24 | 5 |
+| `civvis-20260920T085522Z` through 75/0 | 214 | 55 | 33 | 3 |
+
+The second source is frozen at `/tmp/civvis-native-campus-fresh/events.jsonl`;
+its driver is `/tmp/civvis-campus-fresh-replay.py` and artifact labels are
+`fresh-baseline`/`fresh-patched`. Repeated Writing requests before its recorded
+completion are not multiple completed technologies. The trials isolate this
+research change against `cf52d8c64`; final integration also includes #3610.
+
+Six focused tests pass. After merging current main (`eb080eae9`),
+`cargo test --profile ci --locked` passes 3,671 library tests and 204
+binary/integration tests, with 49 library and four doc tests ignored.
+`git diff --check` passes. Logs: `/tmp/civvis-3612-red.log`,
+`/tmp/civvis-3612-green.log`, `/tmp/civvis-3612-full.log`, and the matching
+`*-replay.log` files under `/tmp`.
