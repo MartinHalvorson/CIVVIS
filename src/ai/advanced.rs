@@ -7111,6 +7111,7 @@ mod granary_payback;
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
 mod housing_research;
+mod live_gp_commitment;
 /// The opportunistic war: a surprise war priced on what the board exposes —
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
@@ -26003,13 +26004,24 @@ impl AdvancedAi {
                 Self::production_commitment_is_legal(g, pid, cid, item)
                     && self.science_endgame_queue_authoritative(g, pid, item)
             });
+            // The physical-person planner runs before this governor. Its
+            // fresh district has no banked production yet and can score far
+            // below an ordinary building, but replacing it strands the person
+            // and repeats the same reservation on every frame. Local siege
+            // defense above and upkeep recovery retain their precedence.
+            let live_gp_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                Self::production_commitment_is_legal(g, pid, cid, item)
+                    && Self::live_gp_district_commitment(g, pid, item)
+            });
             if committed.as_ref().is_some_and(|(value, _)| {
                 !self.victory_planning
                     || (value.is_finite() && *value > -1_000.0)
                     || science_endgame_commitment
+                    || live_gp_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
+                    || live_gp_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
