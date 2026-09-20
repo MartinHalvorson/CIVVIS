@@ -57,6 +57,10 @@ if os.name == "nt":
 # earlier and the countdown is cut off mid-promise, later and it sits at zero.
 # So this is not configurable either — `--cooldown` is accepted and ignored.
 FINAL_COUNTDOWN_SECONDS = 10.0
+# A game can finish while its successor is still compiling. Preserve that
+# work for up to ten minutes, but keep polling for halt/takeover requests and
+# eventually recover from a hung worker instead of waiting indefinitely.
+BOUNDARY_PREBUILD_GRACE_SECONDS = 600.0
 # A halt is normally cleared interactively, so a supervised service stays alive
 # and sleeps rather than exiting into a launchd restart loop while it waits.
 OPERATOR_HALT_POLL_SECONDS = 5.0
@@ -1941,6 +1945,7 @@ def main() -> int:
     resume_attempts: dict[tuple[Any, ...], int] = {}
     finished_key: tuple[Any, ...] | None = None
     finished_seen_at = 0.0
+    boundary_prebuild_wait_reported = False
     update_retry_at = 0.0
     busy_reported = False
     busy_check_at = 0.0
@@ -2255,7 +2260,9 @@ def main() -> int:
             # the standings read its players. Polling above never pays for it,
             # and a failed read falls back to the status fields so the boundary
             # still proceeds.
-            if game_finished(state):
+            if game_finished(state) and (
+                state.get("server_instance"), state.get("seed")
+            ) != finished_key:
                 state = read_state(args.port) or state
             # Prefer the full observation when both probes saw a staged value,
             # but retain the lock-free value if `/state` was an older snapshot
@@ -2400,6 +2407,7 @@ def main() -> int:
             if current_finished_key != finished_key:
                 finished_key = current_finished_key
                 finished_seen_at = now
+                boundary_prebuild_wait_reported = False
                 update_retry_at = 0.0
                 # `victory_turn` is the turn the result is dated on: a score
                 # victory is settled by a count taken on the wrap out of the
@@ -2471,6 +2479,24 @@ def main() -> int:
                 checkpointed_progress = None
                 time.sleep(args.poll)
                 continue
+            if prebuild_process is not None and prebuild_process.poll() is None:
+                elapsed = time.monotonic() - finished_seen_at
+                if elapsed < BOUNDARY_PREBUILD_GRACE_SECONDS:
+                    if not boundary_prebuild_wait_reported:
+                        log(
+                            "game finished while a build is active; letting it finish "
+                            "before refreshing canonical head"
+                        )
+                        boundary_prebuild_wait_reported = True
+                    # Return to the monitoring loop instead of blocking in
+                    # wait(): a halt or a viewer taking the seat still wins.
+                    time.sleep(max(0.1, args.poll))
+                    continue
+                log(
+                    "boundary prebuild grace expired; stopping the worker "
+                    "before a fresh build"
+                )
+
             # `prepare_latest_once` resets the private source worktree. Do
             # not let an old background Cargo process compile that same tree
             # while the boundary refreshes it. The result screen remains up
