@@ -6,11 +6,25 @@
 //! Production, strategic materials and later modernization remain separate
 //! decisions. Existing defensive and appointed breakthrough goals run first.
 
-use super::{AdvancedAi, GrandStrategy, StrategicPlan};
+use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Game, Item};
 use crate::name::Name;
 
 impl AdvancedAi {
+    /// An expanding conquest economy needs campuses before optional branches
+    /// consume its early research. Military commitments and urgent defenses
+    /// retain their earlier slots in the research chooser.
+    pub(super) fn domination_campus_unlock_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<&'static str> {
+        (self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.player_city_ids(pid).len() >= 2
+            && !g.players[pid].techs.contains(&crate::name!("writing")))
+        .then_some("writing")
+    }
+
     pub(super) fn domination_siege_research_goal(
         &self,
         g: &Game,
@@ -99,3 +113,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod campus_unlock_tests;

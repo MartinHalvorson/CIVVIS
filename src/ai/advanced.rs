@@ -14589,6 +14589,7 @@ impl AdvancedAi {
             let defensive_walls_goal = self.culture_defensive_walls_goal(g, pid, plan);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
+            let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let endgame_research_preempts_wartime =
                 self.science_endgame_research_preempts_wartime(g, pid, endgame_goal);
@@ -14685,6 +14686,9 @@ impl AdvancedAi {
                 {
                     luxury_goal
                 }
+                // Two founded cities can invest in campuses. Finish their
+                // unlock before optional bargains and generic branch scores.
+                _ if domination_campus_goal.is_some() => domination_campus_goal,
                 // `boosted-bargain-first`: a Eureka in hand on a technology
                 // two turns from done is a tech for a fifth of its price, and
                 // the beeline walks past it every turn. Behind the luxury
@@ -14829,6 +14833,8 @@ impl AdvancedAi {
                                     "the cheapest step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
                                 )
+                            } else if domination_campus_goal == Some(goal) {
+                                "unlock campuses for the expanding domination economy".to_string()
                             } else {
                                 format!(
                                     "the cheapest step toward {}, which {} needs",
