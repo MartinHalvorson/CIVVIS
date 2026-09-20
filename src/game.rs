@@ -6370,6 +6370,10 @@ pub struct Game {
     /// this empty and derive every standing from their full board.
     #[serde(default)]
     pub observed_public_empire_stats: Arc<BTreeMap<usize, ObservedPublicEmpireStats>>,
+    /// Seats known to own cities omitted from this partial board. Existence
+    /// alone prevents speculative casualties from falsely eliminating them.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub unseen_city_owners: BTreeSet<usize>,
     /// The religion a majority of a seat's cities follow, as the host reports
     /// it for every met major (`GetReligionInMajorityOfCities`, the test the
     /// shipped religion tab runs to call a civilization converted), keyed by
@@ -7141,6 +7145,8 @@ struct GameSer {
     observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
     #[serde(default)]
     observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    unseen_city_owners: BTreeSet<usize>,
     #[serde(default)]
     observed_majority_religion: BTreeMap<usize, String>,
     /// A list, not a map: JSON cannot key an object by a tuple.
@@ -7361,6 +7367,7 @@ impl From<GameSer> for Game {
             observed_leader_types: Arc::new(s.observed_leader_types),
             observed_yield_adjustments: Arc::new(s.observed_yield_adjustments),
             observed_public_empire_stats: Arc::new(s.observed_public_empire_stats),
+            unseen_city_owners: s.unseen_city_owners,
             observed_majority_religion: Arc::new(s.observed_majority_religion),
             observed_visiting_tourists: Arc::new(
                 s.observed_visiting_tourists.into_iter().collect(),
@@ -7591,6 +7598,7 @@ impl From<Game> for GameSer {
             observed_leader_types: Arc::unwrap_or_clone(g.observed_leader_types),
             observed_yield_adjustments: Arc::unwrap_or_clone(g.observed_yield_adjustments),
             observed_public_empire_stats: Arc::unwrap_or_clone(g.observed_public_empire_stats),
+            unseen_city_owners: g.unseen_city_owners,
             observed_majority_religion: Arc::unwrap_or_clone(g.observed_majority_religion),
             observed_visiting_tourists: Arc::unwrap_or_clone(g.observed_visiting_tourists)
                 .into_iter()
@@ -8067,6 +8075,7 @@ impl Game {
             observed_leader_types: Arc::new(BTreeMap::new()),
             observed_yield_adjustments: Arc::new(BTreeMap::new()),
             observed_public_empire_stats: Arc::new(BTreeMap::new()),
+            unseen_city_owners: BTreeSet::new(),
             observed_majority_religion: Arc::new(BTreeMap::new()),
             observed_visiting_tourists: Arc::new(BTreeMap::new()),
             observed_city_yield_adjustments: Arc::new(BTreeMap::new()),
@@ -35204,6 +35213,9 @@ impl Game {
             self.sync_war_log();
             return;
         }
+        if self.unseen_city_owners.contains(&pid) {
+            return;
+        }
         if self.cities.values().any(|c| c.owner == pid) {
             return;
         }
@@ -35971,3 +35983,6 @@ mod attack_reach_flood_tests;
 
 #[cfg(test)]
 mod luxury_allocation_tests;
+
+#[cfg(test)]
+mod fogged_elimination_tests;
