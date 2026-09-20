@@ -217,14 +217,42 @@ def wait_for_main_menu(timeout_s: float = 420.0, poll_s: float = 3.0) -> bool:
     return False
 
 
+def wait_for_launched_main_menu(process: subprocess.Popen, timeout_s: float = 420.0,
+                                stop_timeout_s: float = 5.0) -> bool:
+    """Wait for our new child, cleaning it up if startup fails or is interrupted.
+
+    Only use this before menu readiness, before the controller loads a save or
+    starts a game. A startup can write no run tag at all; ownership comes from
+    the live Popen child, never a name search or an absent tag. An unreaped child
+    cannot have its PID reused, and Popen checks for exit before signalling it.
+    Normal game shutdown retains its separate, non-forcing policy.
+    """
+    ready = False
+    try:
+        ready = wait_for_main_menu(timeout_s)
+        return ready
+    finally:
+        if not ready and process.poll() is None:
+            print(f"[startup] stopping owned failed-startup child {process.pid}",
+                  file=sys.stderr, flush=True)
+            process.terminate()
+            try:
+                process.wait(timeout=stop_timeout_s)
+            except subprocess.TimeoutExpired:
+                print(f"[startup] child {process.pid} ignored termination; killing it",
+                      file=sys.stderr, flush=True)
+                process.kill()
+                process.wait(timeout=stop_timeout_s)
+
+
 def restart(args: list[str] | None = None, stdout: Path | None = None,
             timeout_s: float = 420.0) -> bool:
     """Stop, clear this run's logs, start with arguments, wait for the menu."""
     if not stop():
         raise SystemExit("could not stop the running game")
     clear_run_logs()
-    launch(args, stdout)
-    return wait_for_main_menu(timeout_s)
+    process = launch(args, stdout)
+    return wait_for_launched_main_menu(process, timeout_s)
 
 
 if __name__ == "__main__":
@@ -242,7 +270,7 @@ if __name__ == "__main__":
         print("stopped" if stop() else "could not stop", file=sys.stderr)
     if parsed.start or parsed.restart:
         clear_run_logs()
-        launch(parsed.arg)
-        ok = wait_for_main_menu(parsed.timeout)
+        process = launch(parsed.arg)
+        ok = wait_for_launched_main_menu(process, parsed.timeout)
         print("main menu reached" if ok else "game did not reach the main menu")
         sys.exit(0 if ok else 3)
