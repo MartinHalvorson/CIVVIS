@@ -74,11 +74,37 @@ start_mirror_keeper() {
   /usr/bin/open -g -j -a Terminal "$MIRROR_KEEPER" >/dev/null 2>&1
 }
 
+display_node() {
+  # launchd has a small PATH, and Node need not come from Apple Silicon
+  # Homebrew. Check the APIs the keeper actually uses before calling a
+  # background launch a recovery (older Node lacks the global WebSocket).
+  local candidate
+  local -a candidates
+  if [[ -n ${CIVVIS_DISPLAY_NODE:-} ]]; then
+    candidates=("$CIVVIS_DISPLAY_NODE")
+  else
+    candidates=("$(command -v node 2>/dev/null || true)"
+                "$BASE/.local/bin/node" /opt/homebrew/bin/node /usr/local/bin/node)
+  fi
+  for candidate in "${candidates[@]}"; do
+    [[ -x "$candidate" ]] || continue
+    if "$candidate" -e 'process.exit(typeof fetch === "function" && typeof WebSocket === "function" ? 0 : 1)' >/dev/null 2>&1; then
+      print -r -- "$candidate"
+      return 0
+    fi
+  done
+  say "display recovery unavailable: no Node runtime with fetch and WebSocket; set CIVVIS_DISPLAY_NODE to a compatible executable"
+  return 1
+}
+
 start_display_keeper() {
   verification_intent_running || return 1
+  local runtime
+  runtime=$(display_node) || return 1
+  [[ -r "$DISPLAY_KEEPER" ]] || { say "display recovery unavailable: missing $DISPLAY_KEEPER"; return 1; }
   # This Node keeper needs no Accessibility grant; detach it directly instead
   # of creating another visible shell solely to hold it.
-  /usr/bin/nohup /opt/homebrew/bin/node "$DISPLAY_KEEPER" \
+  /usr/bin/nohup "$runtime" "$DISPLAY_KEEPER" \
       >>"$BASE/civvis-civ6-mirror/display-keeper.launch.log" 2>&1 &
 }
 
