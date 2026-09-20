@@ -290,20 +290,27 @@ local function closeStaleDiplomacyContext()
 		return false;
 	end
 
-	local sessionOpen = false;
-	local sessionReadable = true;
-	if NAME == "DiplomacyActionView" then
-		sessionReadable = pcall(function() sessionOpen = ms_ActiveSessionID ~= nil; end);
-	elseif g_OtherPlayer ~= nil then
-		-- DiplomacyDealView keeps the other-player handle global. If it is not
-		-- present there is no deal session to close; if it is present, require
-		-- Firaxis' own session lookup to prove that the session is gone.
-		sessionReadable = pcall(function()
+	local function sessionStillOpen()
+		if NAME == "DiplomacyActionView" then
+			-- Base/Assets/UI/DiplomacyActionView.lua:299-301 validates the
+			-- remembered ID with IsSessionIDOpen before treating it as live.
+			-- An ended session can retain its ID while the view fades out.
+			if ms_ActiveSessionID ~= nil then
+				local open = DiplomacyManager.IsSessionIDOpen(ms_ActiveSessionID);
+				if type(open) ~= "boolean" then error("session state unavailable"); end
+				return open;
+			end
+			return false;
+		elseif g_OtherPlayer ~= nil then
+			-- The deal view keeps the other-player handle global. Require its
+			-- native session lookup to prove that the session is gone.
 			local sessionID = DiplomacyManager.FindOpenSessionID(
 				Game.GetLocalPlayer(), g_OtherPlayer:GetID());
-			sessionOpen = sessionID ~= nil;
-		end);
+			return sessionID ~= nil;
+		end
+		return false;
 	end
+	local sessionReadable, sessionOpen = pcall(sessionStillOpen);
 	if not sessionReadable or sessionOpen then return false; end
 
 	-- A visible native popup is still an actionable state. Let its own ladder
@@ -329,6 +336,10 @@ local function closeStaleDiplomacyContext()
 	local hiddenReadable = pcall(function() hidden = ContextPtr:IsHidden(); end);
 	if not hiddenReadable then return false; end
 	if hidden then return true; end
+	-- Close() can synchronously advance the queue to a different session.
+	-- Never hide that replacement using the earlier session's observation.
+	sessionReadable, sessionOpen = pcall(sessionStillOpen);
+	if not sessionReadable or sessionOpen then return false; end
 
 	-- The native path above is deliberately first: this branch is only for the
 	-- stock uninitialized-context bug, where UninitializeView returned false.
