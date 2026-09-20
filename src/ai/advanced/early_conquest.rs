@@ -115,8 +115,8 @@
 //! declares on a rival the shipped `campaign_target_legal` mask refuses.
 
 use super::city_campaign::{CampaignPlan, CAMPAIGN_MIN_BODIES};
-use super::{AdvancedAi, EmpireCounts};
-use crate::game::{Action, Game};
+use super::{AdvancedAi, EmpireCounts, StrategicPlan};
+use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::rules::UnitSpec;
 use crate::think;
@@ -631,6 +631,79 @@ impl AdvancedAi {
         }
         let (ranged, melee) = Self::conquest_reservation_shortfall(counts);
         ranged + melee > 0
+    }
+
+    /// Give the scripted opening the same capital reservation as the utility
+    /// governor. Its Settler shortcut never calls `production_value`, so a
+    /// missing strike force otherwise waits until the opening book finishes.
+    /// Only an idle capital after the first expansion is eligible. Existing
+    /// builds and the same local-defense sentinels keep their priority.
+    pub(super) fn conquest_opening_production(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if !self.conquest_reservation_open(g) {
+            return false;
+        }
+        let Some(cid) = Self::conquest_capital(g, pid) else {
+            return false;
+        };
+        let city = &g.cities[&cid];
+        if !city.queue.is_empty() {
+            return false;
+        }
+        let threatened = plan.threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            || (self.base.barbarian_tactics_enabled()
+                && self.base.barbarian_local_alarm_for_controller(g, pid, cid));
+        let counts = self.counts(g, pid);
+        if !self.conquest_defers_the_settler(
+            g,
+            pid,
+            cid,
+            &counts,
+            g.player_city_ids(pid).len(),
+            threatened,
+        ) {
+            return false;
+        }
+        let mut best: Option<(f64, Item)> = None;
+        for item in g.producible_items(pid, cid) {
+            let Item::Unit { unit } = &item else { continue };
+            if self.conquest_reservation(g, pid, cid, &g.rules.units[unit], &counts, threatened)
+                <= 0.0
+            {
+                continue;
+            }
+            // Reuse the ordinary scorer's affordability and unit-quality
+            // vetoes. A reservation does not license an obsolete or insolvent
+            // build that the strategic governor would refuse.
+            let value = self.production_value(g, pid, cid, &item, plan, &counts);
+            if value.is_finite()
+                && value > -1_000.0
+                && best.as_ref().is_none_or(|(old, _)| value > *old)
+            {
+                best = Some((value, item));
+            }
+        }
+        let Some((_, item)) = best else { return false };
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: item.clone(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        think!(self.journal(), Military, Decision,
+            "{} reserves {} for the conquest opening", g.cities[&cid].name, Self::plain_item(&item);
+            "the second city is founded and the strike force is incomplete; claim the idle capital before the scripted opening fills it");
+        true
     }
 
     /// The node that upgrades a range-one shooter into a real one, while the

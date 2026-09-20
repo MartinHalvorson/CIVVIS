@@ -41465,6 +41465,7 @@ impl AdvancedAi {
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
+            self.conquest_opening_production(g, pid, &plan);
             self.base.cities(g, pid);
         } else {
             if self.victory_planning {
