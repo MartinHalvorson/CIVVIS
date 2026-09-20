@@ -39,7 +39,20 @@ impl AdvancedAi {
         let Some(current) = g.cities[&cid].queue.first().cloned() else {
             return false;
         };
-        if g.can_produce(pid, cid, &current) {
+        // A live queue may have paid its strategic resource at construction
+        // start. The local new-start gate cannot invalidate the host's positive
+        // continuation answer just because the remaining stockpile is lower.
+        // Explicit refusals still win over a menu from the same snapshot.
+        let key = Game::production_block_key(&current);
+        let host_confirms = g
+            .host_buildable
+            .get(&cid)
+            .is_some_and(|menu| menu.contains_key(&key))
+            && !g
+                .blocked_production
+                .get(&cid)
+                .is_some_and(|blocked| blocked.contains(&key));
+        if host_confirms || g.can_produce(pid, cid, &current) {
             return false;
         }
         let counts = self.counts_without_city_queue(g, pid, cid);
