@@ -6590,7 +6590,19 @@ fn verify_unit_order(
     }
 }
 
+fn great_person_arrived(
+    class: &str,
+    before: &civvis::mirror::StateSnapshot,
+    observed: &civvis::mirror::StateSnapshot,
+) -> bool {
+    observed.units.iter().any(|unit| {
+        unit.great_person.as_ref().and_then(|gp| gp.class.as_deref()) == Some(class)
+            && own_unit(before, unit.id).is_none()
+    })
+}
+
 struct VerificationContext<'a> {
+    later_great_person: bool,
     same_turn_orders: &'a [IssuedOrder],
     later_fortified: bool,
     /// The decider moved this unit in a later frame of the same turn, so any
@@ -6837,11 +6849,10 @@ fn verify_order_with_context(
             }
         }
         "gp_recruit" | "gp_patronize" | "gp_patronize_faith" => {
-            let arrived = after.units.iter().any(|u| {
-                u.great_person.as_ref().and_then(|gp| gp.class.as_deref()) == Some(verb)
-                    && own_unit(before, u.id).is_none()
-            });
-            if arrived {
+            // A newly recruited person may activate and disappear before the
+            // next turn. A later frame proves its arrival without relying on
+            // an operation request or an activation claim.
+            if great_person_arrived(verb, before, after) || context.later_great_person {
                 Verdict::Verified
             } else {
                 failed("no_great_person".to_string())
@@ -6884,6 +6895,7 @@ fn verify_order(
         tiles,
         evidence,
         VerificationContext {
+            later_great_person: false,
             same_turn_orders: &[],
             later_fortified: false,
             later_moved: false,
@@ -6908,6 +6920,7 @@ fn verify_orders(
         evidence,
         same_turn_orders,
         LaterOrderEvidence {
+            states: &[],
             fortified: &std::collections::BTreeSet::new(),
             moved: &std::collections::BTreeSet::new(),
             policy_deck: false,
@@ -6917,6 +6930,7 @@ fn verify_orders(
 
 /// Verify pending orders with positive evidence from later same-turn frames.
 struct LaterOrderEvidence<'a> {
+    states: &'a [civvis::mirror::StateSnapshot],
     fortified: &'a std::collections::BTreeSet<i64>,
     moved: &'a std::collections::BTreeSet<i64>,
     policy_deck: bool,
@@ -6942,6 +6956,18 @@ fn verify_orders_with_later_fortifications(
                 tiles,
                 evidence,
                 VerificationContext {
+                    later_great_person: matches!(
+                        order.kind.as_str(),
+                        "gp_recruit" | "gp_patronize" | "gp_patronize_faith"
+                    ) && later.states.iter().any(|state| {
+                        state.turn == pending.turn
+                            && state.frame > pending.frame
+                            && great_person_arrived(
+                                order.verb.as_deref().unwrap_or(""),
+                                &pending.before,
+                                state,
+                            )
+                    }),
                     same_turn_orders,
                     later_fortified: order
                         .subject
@@ -7067,6 +7093,7 @@ fn settle_pending_orders(
                 &evidence,
                 context,
                 LaterOrderEvidence {
+                    states: &states,
                     fortified: &later_fortified,
                     moved: &later_moved,
                     policy_deck: later_policy_replan,
@@ -7279,6 +7306,7 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             &window,
             context,
             LaterOrderEvidence {
+                states: &all_states,
                 fortified: &later_fortified,
                 moved: &later_moved,
                 policy_deck: later_policy_replan,
@@ -17197,6 +17225,7 @@ mod order_postcondition_tests {
             &[],
             &pending.orders,
             LaterOrderEvidence {
+                states: &[],
                 fortified: &later,
                 moved: &std::collections::BTreeSet::new(),
                 policy_deck: false,
@@ -17228,6 +17257,7 @@ mod order_postcondition_tests {
             &[],
             &repeated.orders,
             LaterOrderEvidence {
+                states: &[],
                 fortified: &later,
                 moved: &std::collections::BTreeSet::new(),
                 policy_deck: false,
@@ -17258,6 +17288,7 @@ mod order_postcondition_tests {
             &[],
             &overridden.orders,
             LaterOrderEvidence {
+                states: &[],
                 fortified: &std::collections::BTreeSet::new(),
                 moved: &walked_away,
                 policy_deck: false,
@@ -17327,6 +17358,7 @@ mod order_postcondition_tests {
             &[],
             &pending.orders,
             LaterOrderEvidence {
+                states: &[],
                 fortified: &std::collections::BTreeSet::new(),
                 moved: &std::collections::BTreeSet::new(),
                 policy_deck: true,
@@ -17593,6 +17625,78 @@ mod order_postcondition_tests {
             check(&appoint, &before, &none, &[]),
             failed("not_appointed")
         );
+    }
+
+    #[test]
+    fn recruits_consumed_before_next_turn_are_verified_from_later_frames() {
+        for kind in ["gp_recruit", "gp_patronize", "gp_patronize_faith"] {
+            for case in [
+                "arrived",
+                "old_unit",
+                "old_frame",
+                "other_turn",
+                "wrong_class",
+                "absent",
+            ] {
+                let mut before = frame(101);
+                let after = frame(102);
+                let mut observed = frame(101);
+                observed.frame = 1;
+                let person = StateUnit {
+                    id: 3080197,
+                    great_person: Some(StateGreatPerson {
+                        class: Some("GREAT_PERSON_CLASS_SCIENTIST".to_string()),
+                        ..StateGreatPerson::default()
+                    }),
+                    ..unit(3080197, "UNIT_GREAT_SCIENTIST", 44, 19)
+                };
+                observed.units = vec![person.clone()];
+                match case {
+                    "old_unit" => before.units = vec![person],
+                    "old_frame" => observed.frame = 0,
+                    "other_turn" => observed.turn = 100,
+                    "wrong_class" => {
+                        observed.units[0].great_person.as_mut().unwrap().class =
+                            Some("GREAT_PERSON_CLASS_MERCHANT".to_string())
+                    }
+                    "absent" => observed.units.clear(),
+                    _ => {}
+                }
+                let pending = PendingOrders {
+                    turn: 101,
+                    frame: 0,
+                    before,
+                    orders: vec![order(
+                        kind,
+                        None,
+                        Some("GREAT_PERSON_CLASS_SCIENTIST"),
+                        None,
+                    )],
+                };
+                let checks = verify_orders_with_later_fortifications(
+                    &pending,
+                    &after,
+                    &no_tiles(),
+                    &[],
+                    &[],
+                    LaterOrderEvidence {
+                        states: &[observed],
+                        fortified: &std::collections::BTreeSet::new(),
+                        moved: &std::collections::BTreeSet::new(),
+                        policy_deck: false,
+                    },
+                );
+                assert_eq!(
+                    checks[0].verdict,
+                    if case == "arrived" {
+                        Verdict::Verified
+                    } else {
+                        failed("no_great_person")
+                    },
+                    "{kind}: {case}"
+                );
+            }
+        }
     }
 
     #[test]
