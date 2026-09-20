@@ -8707,6 +8707,11 @@ fn main() {
                                     &board.game,
                                     &carried,
                                 );
+                                ai.remap_objective_board_memory(
+                                    &previous_board.game,
+                                    &board.game,
+                                    &carried,
+                                );
                             }
                             ai.remap_unit_memory(&carried);
                         }

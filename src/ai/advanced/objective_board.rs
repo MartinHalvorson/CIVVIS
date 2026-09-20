@@ -525,6 +525,87 @@ fn medoid(g: &Game, tiles: &[Pos]) -> Option<Pos> {
 }
 
 impl AdvancedAi {
+    /// Keep the same task forces across a fresh native board. Cities follow
+    /// their locations; units follow the bridge's host-unit correspondence.
+    /// Missing participants disappear instead of inheriting a reused id.
+    pub fn remap_objective_board_memory(
+        &mut self,
+        previous: &Game,
+        next: &Game,
+        units: &BTreeMap<u32, u32>,
+    ) {
+        let cities: BTreeMap<u32, u32> = previous
+            .cities
+            .iter()
+            .filter_map(|(old, city)| next.city_at(city.pos).map(|new| (*old, new)))
+            .collect();
+        // The bridge's supplied correspondence contains our units. Destroy
+        // rows name foreign units, whose host facts carry the native identity
+        // too. Include owner: native ids from different seats may coincide.
+        let observed: BTreeMap<(usize, i64), u32> = next
+            .units
+            .values()
+            .filter_map(|unit| {
+                let native = next.host_unit_facts.get(&unit.id)?.civ6_id?;
+                Some(((unit.owner, native), unit.id))
+            })
+            .collect();
+        let hostile = |id| {
+            units.get(&id).copied().or_else(|| {
+                let old = previous.units.get(&id)?;
+                let native = previous.host_unit_facts.get(&id)?.civ6_id?;
+                observed.get(&(old.owner, native)).copied()
+            })
+        };
+        let key = |key| match key {
+            ObjectiveKey::Defend(id) => cities.get(&id).copied().map(ObjectiveKey::Defend),
+            ObjectiveKey::Relieve(id) => cities.get(&id).copied().map(ObjectiveKey::Relieve),
+            ObjectiveKey::Siege(id) => cities.get(&id).copied().map(ObjectiveKey::Siege),
+            ObjectiveKey::Deter(id) => cities.get(&id).copied().map(ObjectiveKey::Deter),
+            ObjectiveKey::Destroy(id) => hostile(id).map(ObjectiveKey::Destroy),
+            ObjectiveKey::Escort(id) => units.get(&id).copied().map(ObjectiveKey::Escort),
+            other => Some(other),
+        };
+        let board = &mut self.objective_board_state;
+        board.rows = std::mem::take(&mut board.rows)
+            .into_iter()
+            .filter_map(|mut row| {
+                row.key = key(row.key)?;
+                row.depends_on = row.depends_on.and_then(key);
+                Some(row)
+            })
+            .collect();
+        board.forces = std::mem::take(&mut board.forces)
+            .into_iter()
+            .filter_map(|mut force| {
+                force.objective_key = key(force.objective_key)?;
+                force.units = force
+                    .units
+                    .iter()
+                    .filter_map(|id| units.get(id).copied())
+                    .collect();
+                (!force.units.is_empty() || force.objective_key == ObjectiveKey::Reserve)
+                    .then_some(force)
+            })
+            .collect();
+        board.city_health = std::mem::take(&mut board.city_health)
+            .into_iter()
+            .filter_map(|(id, health)| cities.get(&id).map(|new| (*new, health)))
+            .collect();
+        board.damage_rate = std::mem::take(&mut board.damage_rate)
+            .into_iter()
+            .filter_map(|(id, rate)| cities.get(&id).map(|new| (*new, rate)))
+            .collect();
+        for request in &mut board.requisitions {
+            request.city = request.city.and_then(|id| cities.get(&id).copied());
+        }
+        // Keep the once-per-turn assessment clock. Same-turn replan frames
+        // carry coherent rows and history; only their derived force groups
+        // need rebuilding against the new unit ids and positions.
+        self.force_groups.clear();
+        self.force_groups_dirty = true;
+    }
+
     /// The board's shortfall, per row: what production would have to supply
     /// for every row the allocation left short. Empty with the gene off and
     /// before the first assessment. Published for a production consumer;
@@ -2686,3 +2767,6 @@ mod tests {
             .any(|req| req.kind == ObjectiveKind::Escort && req.count == 1));
     }
 }
+
+#[cfg(test)]
+mod rebuild_tests;
