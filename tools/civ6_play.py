@@ -4246,8 +4246,8 @@ def _play(args: argparse.Namespace) -> int:
     if not args.keep_game_options:
         apply_verification_options()
     launcher.clear_run_logs()
-    launcher.launch(stdout=run_dir / "stdout.log")
-    if not launcher.wait_for_main_menu(args.startup_timeout):
+    game_process = launcher.launch(stdout=run_dir / "stdout.log")
+    if not launcher.wait_for_launched_main_menu(game_process, args.startup_timeout):
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
