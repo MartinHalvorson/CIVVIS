@@ -3283,6 +3283,35 @@ fn adopt_host_production(
     adopted
 }
 
+/// A host queue can advance along its unit's upgrade chain when research
+/// completes. That preserves our military commitment even though its type ID
+/// changes (for example Trebuchet -> Bombard at Metal Casting).
+fn production_is_unit_upgrade(rules: &civvis::rules::Rules, ordered: &str, observed: &str) -> bool {
+    if !ordered.starts_with("UNIT_") || !observed.starts_with("UNIT_") {
+        return false;
+    }
+    let Some((_, spec)) = rules
+        .units
+        .iter()
+        .find(|(name, _)| civ6_unit_type(name) == ordered)
+    else {
+        return false;
+    };
+    let mut next = spec.upgrade_to.as_ref();
+    // Bound traversal even if a modded ruleset contains a cycle.
+    for _ in 0..rules.units.len() {
+        let Some(name) = next else { return false };
+        if civ6_unit_type(name) == observed {
+            return true;
+        }
+        next = rules
+            .units
+            .get(name)
+            .and_then(|spec| spec.upgrade_to.as_ref());
+    }
+    false
+}
+
 fn release_foreign_production(
     planned_game: &mut civvis::game::Game,
     cid_of: &std::collections::BTreeMap<i64, u32>,
@@ -3298,6 +3327,9 @@ fn release_foreign_production(
             .get(&city.id)
             .is_some_and(|owned| owned.starts_with(DEFERRED_PRODUCTION_PREFIX))
             || ours.get(&city.id).map(String::as_str) == Some(producing)
+            || ours.get(&city.id).is_some_and(|owned| {
+                production_is_unit_upgrade(&planned_game.rules, owned, producing)
+            })
         {
             continue;
         }
@@ -10851,6 +10883,36 @@ mod tests {
             !mirror.game.cities[&cid].queue.is_empty(),
             "and the authoritative mirror must be left as the last exported state"
         );
+    }
+
+    #[test]
+    fn host_upgraded_production_keeps_its_existing_commitment() {
+        for (ordered, observed, keep) in [
+            ("UNIT_TREBUCHET", "UNIT_BOMBARD", true),
+            ("UNIT_CATAPULT", "UNIT_BOMBARD", true),
+            ("UNIT_WARRIOR", "UNIT_SWORDSMAN", true),
+            ("UNIT_BOMBARD", "UNIT_TREBUCHET", false),
+            ("UNIT_ARCHER", "UNIT_BOMBARD", false),
+            ("BUILDING_LIBRARY", "UNIT_BOMBARD", false),
+            ("UNIT_UNKNOWN", "UNIT_BOMBARD", false),
+        ] {
+            let (snapshot, mut state) = production_board();
+            state.cities[0].producing = Some(observed.to_string());
+            state.cities[0].production_progress = 67.0;
+            let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+            let cid = mirror.cid_of[&7];
+            let mut planned = mirror.game.clone();
+            let queue = planned.cities[&cid].queue.clone();
+            assert!(!queue.is_empty());
+            let ours = std::collections::BTreeMap::from([(7_i64, ordered.to_string())]);
+            assert_eq!(
+                release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+                usize::from(!keep),
+                "{ordered} -> {observed}"
+            );
+            assert_eq!(planned.cities[&cid].queue.is_empty(), !keep);
+            assert_eq!(mirror.game.cities[&cid].queue, queue);
+        }
     }
 
     /// The other half, and what keeps this from re-creating the thrash the queue

@@ -28223,7 +28223,8 @@ impl AdvancedAi {
                     // once the strike force is complete.
                     let conquest_body =
                         self.conquest_reservation(g, pid, cid, spec, counts, threatened);
-                    let missing_siege = self.missing_domination_siege(g, pid, plan, counts, spec);
+                    let missing_siege =
+                        self.missing_domination_siege(g, pid, cid, plan, counts, spec);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
