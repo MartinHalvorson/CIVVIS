@@ -9024,7 +9024,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- top bar's "from Other"): the last Great Scientist anywhere claimed,
 		-- and the Campus keeps paying, in Faith. Run civvis-20260816T123936Z
 		-- banked 100–113 Faith a turn from t231 against 49 from every city.
-		-- A class is exhausted when the timeline has no unclaimed entry for
+		-- A class is exhausted when the timeline has no available entry for
 		-- it. `great_person_costs` below already implies this (a class with
 		-- points and no cost) — except on the turn EVERY class is gone, when
 		-- that map is nil and cannot be told from an older export. So say it
@@ -9037,7 +9037,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			if timeline == nil then return nil; end
 			local available = {};
 			for _, entry in ipairs(timeline) do
-				if entry.Individual ~= nil and entry.Claimant == nil then
+				if CivvisLedger.greatPersonAvailable(greatPeople, pid, entry) then
 					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
 					if info ~= nil and info.GreatPersonClassType ~= nil then
 						available[info.GreatPersonClassType] = true;
@@ -9071,7 +9071,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			local out = {};
 			local any = false;
 			for _, entry in ipairs(timeline) do
-				if entry.Individual ~= nil and entry.Claimant == nil
+				if CivvisLedger.greatPersonAvailable(greatPeople, pid, entry)
 						and entry.Cost ~= nil then
 					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
 					local class = info ~= nil and info.GreatPersonClassType or nil;
@@ -9111,7 +9111,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			local out, costs = {}, {};
 			local any = false;
 			for _, entry in ipairs(timeline) do
-				if entry.Individual ~= nil and entry.Claimant == nil
+				if CivvisLedger.greatPersonAvailable(greatPeople, pid, entry)
 						and entry.Cost ~= nil then
 					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
 					local class = info ~= nil and info.GreatPersonClassType or nil;
@@ -10757,6 +10757,17 @@ CivvisLedger = {
 	open = {}, damage = {}, pending = {}, kinds = {}, positions = {}, expected_gp_activation = {}
 };
 
+-- The native GreatPeoplePopup.lua:728 asks CanRecruitPerson for every
+-- current timeline entry, including entries with a Claimant. A reserved but
+-- still recruitable person must remain visible to the planner and actuator.
+CivvisLedger.greatPersonAvailable = function(greatPeople, pid, entry)
+	if entry.Individual == nil then return false; end
+	if entry.Claimant == nil then return true; end
+	return try(function()
+		return greatPeople:CanRecruitPerson(pid, entry.Individual);
+	end, false) == true;
+end;
+
 CivvisLedger.componentKey = function(id)
 	if id == nil then return nil; end
 	local player = try(function() return id.playerID; end, nil);
@@ -11603,7 +11614,7 @@ local function applyOrder(player, pid, row, turn)
 		local timeline = try(function() return greatPeople:GetTimeline(); end);
 		if timeline == nil then return false, "gp_no_timeline"; end
 		for _, entry in ipairs(timeline) do
-			if entry.Individual ~= nil and entry.Claimant == nil then
+			if CivvisLedger.greatPersonAvailable(greatPeople, pid, entry) then
 				local info = try(function()
 					return GameInfo.GreatPersonIndividuals[entry.Individual];
 				end);
