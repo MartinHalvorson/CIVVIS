@@ -10796,7 +10796,10 @@ CivvisLedger.describe = function(id)
 		};
 	end
 	-- A city or district defends with its garrison and its walls.
-	local district = try(function() return CityManager.GetDistrict(player, comp); end);
+	-- CityBannerManager.lua:1033 resolves a combat district through the
+	-- player's collection. CityManager.GetDistrict is not that host API;
+	-- treating its failed lookup as removal hid health and invented kills.
+	local district = try(function() return Players[player]:GetDistricts():FindID(comp); end);
 	if district == nil then return { player = player, id = comp, type = "district", gone = true }; end
 	return {
 		player = player, id = comp, type = "district",
