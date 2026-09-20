@@ -52,7 +52,7 @@ setmetatable(_G, { __index = function(_, k)
 end })
 
 -- ---------------------------------------------------------------- fake host
-local host = { units = {}, preview = nil, busy = false, gold = 120 }
+local host = { districts = {}, units = {}, preview = nil, busy = false, gold = 120 }
 local PID = 0
 local function unitObject(u)
 	return {
@@ -84,6 +84,16 @@ Players = setmetatable({}, { __index = function(_, pid)
 	return {
 		GetTreasury = function() return { GetGoldBalance = function() return host.gold end } end,
 		IsBarbarian = function() return pid == 63 end,
+		GetDistricts = function() return { FindID = function(_, districtID)
+			local d = host.districts[pid .. ":" .. districtID]
+			if d == nil or d.gone then return nil end
+			return {
+				GetX = function() return d.x end,
+				GetY = function() return d.y end,
+				GetMaxDamage = function(_, layer) return layer == DefenseTypes.DISTRICT_GARRISON and 200 or 100 end,
+				GetDamage = function(_, layer) return layer == DefenseTypes.DISTRICT_GARRISON and d.damage or d.wall_damage end,
+			}
+		end } end,
 	}
 end })
 Game = { GetLocalPlayer = function() return PID end, GetCurrentGameTurn = function() return 41 end }
@@ -91,7 +101,6 @@ CityManager = {
 	GetCity = function(player, id)
 		return { GetName = function() return "Ostia" end, GetOriginalOwner = function() return 3 end }
 	end,
-	GetDistrict = function() return nil end,
 }
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
@@ -201,6 +210,28 @@ host.preview = nil
 ledger.strike(UnitManager.GetUnit(0, 7) or unitObject(host.units["0:7"]), 7, "ATTACK", 4, 2, 41)
 strike = lastEvent("strike")
 check("absent preview is absent", has(strike, '"preview":'), false)
+
+-- District defenders use the player's collection, as CityBannerManager does.
+-- CityManager deliberately has no GetDistrict API in this fixture.
+host.units["0:17"] = { player = 0, id = 17, kind = "UNIT_ARCHER", x = 2, y = 2, damage = 0 }
+host.districts["1:42"] = { x = 4, y = 2, damage = 40, wall_damage = 15 }
+local districtID = { playerID = 1, componentID = 42, componentType = ComponentType.DISTRICT }
+local districtBefore = ledger.describe(districtID)
+check("district resolves through player collection", districtBefore.gone, nil)
+check("district coordinates read back", districtBefore.x, 4)
+check("district garrison health read back", districtBefore.hp, 160)
+check("district wall health read back", districtBefore.wall_hp, 85)
+ledger.onCombatVisBegin({ attacker = id(0, 17), defender = districtID })
+host.districts["1:42"].damage = 65
+host.districts["1:42"].wall_damage = 35
+ledger.onCombatVisEnd({ attacker = id(0, 17), defender = districtID })
+combat = lastEvent("combat")
+check("surviving district is not killed", has(combat, '"defender_killed":false'), true)
+check("district damage read back", has(combat, '"damage_to_defender":25'), true)
+check("district final garrison health", has(combat, '"defender_hp_end":135'), true)
+check("district final wall health", has(combat, '"defender_wall_hp_end":65'), true)
+host.districts["1:42"].gone = true
+check("removed district remains distinguishable", ledger.describe(districtID).gone, true)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
