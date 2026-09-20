@@ -40,8 +40,11 @@ with only one movement point verifies the gun cannot stop on its screen.
 All 24 siege-train tests pass after the change.
 `cargo test --profile ci --locked` passes 3,710 library and 205 binary tests
 (3,915 active tests; 49 library and four documentation tests ignored).
-Formatting and whitespace checks pass; the branch contains current
-`origin/main` (`7cd566ebe`) before readiness.
+After merging `152a392a` (air-campaign war retargeting), the full suite
+passes again: 3,720 library + 205 binary tests = 3,925 active tests, with
+the same 49 library / four doc exclusions. Formatting and whitespace checks
+pass. The paired replay above isolates this change on the earlier base;
+the combined tree receives the full validation before shipping.
 
 The same 65-frame replay, comparing binaries built from the same base and
 with the same release flags and 19 forced genes, changes seven exported
