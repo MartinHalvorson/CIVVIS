@@ -27864,11 +27864,10 @@ impl AdvancedAi {
         }
         // The air surge prices its own package the same way, and after the
         // melee appointment so a live timed war keeps first claim on a shared
-        // queue. `air_surge_production_value` is `None` for every item that is
-        // not the airfield, a Bomber, or a capture body, and for every item
-        // the package already holds — so an inactive surge cannot change a
-        // single score. See `advanced/air_surge.rs`.
-        if let Some(value) = self.air_surge_production_value(g, pid, item, turns) {
+        // queue. The city-aware score preserves an unfinished package item
+        // without asking other cities to duplicate it. An inactive surge
+        // changes no score. See `advanced/air_surge.rs`.
+        if let Some(value) = self.air_surge_city_production_value(g, pid, cid, item, turns) {
             return value;
         }
         let raw = match item {
