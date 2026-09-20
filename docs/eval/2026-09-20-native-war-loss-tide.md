@@ -53,6 +53,51 @@ prevented the recorded Technology loss.
 ## Validation
 
 Two positive regressions fail before the AI ledger is connected (ordinary
-and nonzero-local-host seats); three initial controls pass. Final focused,
-full-suite, and frozen native replay results will be recorded before shipping.
-No simulator rule changes: this is native observation and AI ledger routing.
+and nonzero-local-host seats); three initial controls pass. All eight final
+AI regressions pass, covering positive/negative exchanges, rival attribution,
+duplicate evidence/frames, native seat mapping, future observation bounds,
+peace and redeclaration, and simulator-versus-host casualty authority.
+Existing parser tests also assert both opponent identities, repeated-event
+idempotence, and selected-frame isolation; existing settler memory tests pass.
+
+After merging #3635 (`8f6a078`), `cargo test --profile ci --locked` passes:
+3,762 library tests plus 205 binary/integration tests; 49 library and four doc
+tests remain ignored. `cargo fmt --all -- --check` and `git diff --check`
+pass. No simulator rule changes: this is native observation and AI ledger
+routing, so an engine-only crash soak would not exercise the change.
+
+## Frozen native replay
+
+Freeze the original game's prefix through 207/2. Replay its 577 unique
+awaited frames with the same Domination/Gran Colombia arguments and 19 forced
+genes, a fresh persistent brain per binary. Baseline `280b3b7` and candidate
+`71a3f96cc` differ only by this observation/ledger fix and its tests/docs.
+The subsequent #3635 integration is covered by the full suite above.
+Both exit 0: baseline 222.40 seconds, candidate 252.98. These timings are
+informational, not a controlled performance benchmark.
+
+Excluding `order_failed`, `order_verified`, and `turn_verified`, 16 frames
+change exported orders. The candidate adds 15 peace requests to Germany:
+104/0, 112/1, 129/0, 139/0, 144/0, 149/0, 154/0, 159/0, 164/0, 174/0,
+179/0, 184/0, 189/0, 198/0, and 203/0. The baseline has none. The first
+explanation reads an infeasible siege and a negative exchange; the rout
+explanation appears at turn 143. The existing request cooldown determines
+which repeated planner offers are exported.
+
+Six rout requests carry the existing bounded tribute caps (8–39 Gold); the
+other nine request white peace. The existing Suzerain peace-to-envoy handoff
+also defers six envoy requests at 134/0 and three at 174/0, as identified by
+`envoy_suzerain_reclaim_peace` in the bridge note. All internal native-action
+lists remain identical on all 577 frames. No unit, production, or research
+order category changes.
+
+A request is not an accepted peace treaty, paid tribute, recovered city, or
+avoided loss. The frozen host remains at war and loses at turn 209. Native
+verification must establish whether the rival accepts a proposal and whether
+the resulting recovery improves a later campaign.
+
+Local artifacts: `/tmp/civvis-native-war-loss-replay/`,
+`/tmp/civvis-native-war-loss-frame-replay.py`,
+`/tmp/civvis-3636-comparison.json`,
+`/tmp/civvis-143728-combat-deaths.json`, and
+`/tmp/civvis-3636-{red,focused,full,merged-full,fmt}.log`.
