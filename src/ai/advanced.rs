@@ -29262,6 +29262,13 @@ impl AdvancedAi {
                     !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                 let continuing_wonder = city.queue.first() == Some(item)
                     || (self.victory_planning && g.item_invested_production(cid, item) > 0.0);
+                // A Domination contract needs production for its campaign,
+                // not a new race for fifteen score points. Keep an existing
+                // investment's valuation so adopting the target does not
+                // cancel a wonder already under construction.
+                let score_race_allowed = !science_target
+                    && (self.victory_target != Some(VictoryTarget::Domination)
+                        || continuing_wonder);
                 let already_queued = g.cities.values().any(|other| {
                     (!self.victory_planning || other.owner == pid)
                         && other.id != cid
@@ -29342,7 +29349,7 @@ impl AdvancedAi {
                 // score production buys — fifteen points and an era-score
                 // moment — and the guards below were written for the
                 // ordinary race, not for a bargain.
-                let bargain_race = !science_target
+                let bargain_race = score_race_allowed
                     && self.cheapest_wonder_first
                     && self.live_wonder_race
                     && !lane_opens
@@ -29351,7 +29358,7 @@ impl AdvancedAi {
                     && wonder_era + 2 >= g.world_era
                     && wonders_in_flight < Self::live_wonder_race_lanes(city_count).max(1)
                     && self.wonder_bargain_city(g, pid, cid);
-                let live_race_opens = !science_target
+                let live_race_opens = score_race_allowed
                     && (bargain_race
                         || (self.live_wonder_race
                             && !lane_opens
@@ -29417,7 +29424,7 @@ impl AdvancedAi {
                 // refused by one bar and handed a bonus by another — the
                 // mistake the `strategic_value` comment above records.
                 let tally_opens = self.wonder_score_tally
-                    && !science_target
+                    && score_race_allowed
                     && !lane_opens
                     && !live_race_opens
                     && plan.strategy != GrandStrategy::Recovery
@@ -41890,3 +41897,6 @@ mod defensive_repair_queue_tests;
 
 #[cfg(test)]
 mod domination_maintenance_tests;
+
+#[cfg(test)]
+mod domination_wonder_tests;
