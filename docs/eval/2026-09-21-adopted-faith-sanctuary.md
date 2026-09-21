@@ -16,7 +16,7 @@ Buddhism.
 
 The existing non-founder defense attempts to buy adopted-faith Missionaries
 but does not provide their Holy Site and Shrine. Its first-city threat scan
-can also call the minority counter-faith the invader. The draft change selects
+can also call the minority counter-faith the invader. The change selects
 an invading faith that holds at least half our cities, prioritizing its hold
 on other civilizations, and reserves one legal Holy Site–Shrine chain in a
 currently observed counter-faith city. It prefers an existing commitment and
@@ -31,7 +31,27 @@ existing Temple defense. The production governor preserves the one reserved
 chain, including its initial zero-progress frame. Other victory lanes retain
 their existing policy.
 
-Validation is in progress. The recorded conversion window establishes a legal
-opportunity, not proof that a counterfactual Holy Site would have completed in
-time or that its Missionaries would have prevented the loss. No native
+Validation passed: 4,024 Rust tests (53 ignored), including seven focused
+regressions; fourteen treatment-append tests; formatting and diff checks; and
+eight four-player simulator games, seeds 0–7, limited to 180 turns with four jobs.
+The focused regressions exercise threat selection, zero-progress queue protection,
+Holy Site → Shrine → adopted-faith Missionary purchase, source eligibility,
+non-applicable lanes, unsafe counter-faith rejection, and a single reservation
+across two eligible cities.
+
+A matched replay of all 406 recorded frames against the preceding trade-budget
+fix adds four immediate Holy Site requests in Cumaná: 98/0, 102/0, 103/0, and
+104/0, versus none in the baseline. Neither replay requests a Shrine; the frozen
+host never completes the hypothetical district. Sixteen frames have actionable
+order differences, eighteen including synthetic receipts, and thirty-three have
+internal action differences. Other changes are production, production lookahead,
+and one unit's movement. At turn 99 the source has changed religion, so the
+reservation releases and ordinary production can replace it. Later repeated
+requests encounter the unchanged historical Aqueduct/Dam and synthetic failure
+receipts; those are not new native execution failures.
+
+Baseline and candidate replay times were 122.78s and 125.66s, unpaired; required
+CI supplies the paired cost gate. The recorded conversion window establishes a
+legal opportunity, not proof that a counterfactual Holy Site would have completed
+in time or that its Missionaries would have prevented the loss. No native
 Domination victory has been verified.
