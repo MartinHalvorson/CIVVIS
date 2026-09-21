@@ -545,7 +545,7 @@ impl AdvancedAi {
 
     /// Whether the gene keeps pressing the war on `other` against the
     /// fatigue clause: `other` is the campaign front, the tide is not
-    /// against us, and a prize is in reach.
+    /// against us, and a prize is in reach or the captured capital needs relief.
     pub(crate) fn one_war_presses(&self, g: &Game, pid: usize, other: usize) -> bool {
         let Some(front) = self.one_war.as_ref().filter(|_| self.one_war_at_a_time) else {
             return false;
@@ -556,7 +556,32 @@ impl AdvancedAi {
                 .domination_followup_target(g, pid, Some(other))
                 .is_none()
             && front.tide_against_since.is_none()
-            && self.one_war_prizes_in_reach(g, pid)
+            && (self.one_war_prizes_in_reach(g, pid)
+                || self.domination_capital_needs_front(g, pid, other))
+    }
+
+    /// A quiet siege window does not finish a campaign while the captured
+    /// original capital is bleeding loyalty and this rival still has cities
+    /// close enough to exert pressure. Keep that opportunity only while we
+    /// can afford the war and retain a clear military advantage.
+    fn domination_capital_needs_front(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || g.players[other].is_minor
+            || g.players[other].is_barbarian
+            || !self.treasury_can_carry_a_war(g, pid)
+            || g.military_power(pid) <= g.military_power(other) * 1.25
+        {
+            return false;
+        }
+        g.cities.values().any(|capital| {
+            capital.owner == pid
+                && capital.is_capital
+                && capital.original_owner == other
+                && g.city_loyalty_per_turn(capital) < 0.0
+                && g.cities
+                    .values()
+                    .any(|city| city.owner == other && g.wdist(capital.pos, city.pos) <= 9)
+        })
     }
 
     /// Whether a declaration on `target` is held: a major war is already

@@ -218,3 +218,88 @@ fn native_original_capital_handoff_ignores_the_rivals_replacement_palace() {
         }
     }
 }
+
+#[test]
+fn fatigue_does_not_close_a_solvent_winning_front_with_a_bleeding_capital() {
+    let (mut g, mut ai, plan, capital) = captured_front();
+    let second = g.found_city_for(1, (9, 12), None);
+    g.cities.get_mut(&second).unwrap().is_capital = false;
+    Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, -5.0);
+    g.players[0].gold = 151.0;
+    g.players[0].gold_per_turn = 8.0;
+    ai.major_war_since = Some(g.turn - 40);
+    ai.last_campaign_progress = g.turn - 12;
+    ai.enable_peace_when_war_does_not_pay();
+    assert!(!ai.one_war_prizes_in_reach(&g, 0));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        !ai.peace_offers.contains(&1),
+        "a captured capital still losing loyalty is not a completed front"
+    );
+    assert!(!g
+        .pending_deals
+        .iter()
+        .any(|d| d.from == 0 && d.to == 1 && d.peace));
+}
+
+#[test]
+fn capital_retention_does_not_trap_a_bankrupt_or_outmatched_army() {
+    for bankrupt in [true, false] {
+        let (mut g, mut ai, plan, capital) = captured_front();
+        let second = g.found_city_for(1, (9, 12), None);
+        g.cities.get_mut(&second).unwrap().is_capital = false;
+        Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, -5.0);
+        g.players[0].gold = if bankrupt { 0.0 } else { 151.0 };
+        g.players[0].gold_per_turn = if bankrupt { -10.0 } else { 8.0 };
+        if !bankrupt {
+            for _ in 0..12 {
+                g.spawn_test_unit("modern_armor", 1, (8, 8));
+            }
+        }
+        ai.major_war_since = Some(g.turn - 40);
+        ai.last_campaign_progress = g.turn - 40;
+        ai.enable_peace_when_war_does_not_pay();
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert!(
+            ai.peace_offers.contains(&1),
+            "survival peace must remain available"
+        );
+    }
+}
+
+#[test]
+fn capital_retention_requires_a_relevant_pressure_front() {
+    for case in [
+        "other_lane",
+        "ordinary_city",
+        "stable",
+        "distant",
+        "wrong_owner",
+        "losing_tide",
+    ] {
+        let (mut g, mut ai, _, capital) = captured_front();
+        Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, -5.0);
+        g.players[0].gold = 151.0;
+        g.players[0].gold_per_turn = 8.0;
+        assert!(ai.one_war_presses(&g, 0, 1), "positive control: {case}");
+        match case {
+            "other_lane" => ai.retarget(VictoryTarget::Science),
+            "ordinary_city" => g.cities.get_mut(&capital).unwrap().is_capital = false,
+            "stable" => {
+                Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, 0.0);
+            }
+            "distant" => {
+                for city in g.cities.values_mut().filter(|c| c.owner == 1) {
+                    city.pos = (18, 18);
+                }
+            }
+            "wrong_owner" => g.cities.get_mut(&capital).unwrap().original_owner = 2,
+            "losing_tide" => ai.one_war.as_mut().unwrap().tide_against_since = Some(g.turn - 1),
+            _ => unreachable!(),
+        }
+        assert!(
+            !ai.one_war_presses(&g, 0, 1),
+            "must not prolong this front: {case}"
+        );
+    }
+}
