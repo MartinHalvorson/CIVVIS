@@ -26,3 +26,26 @@ The regression fails before the mapping change and passes afterwards. Native
 execution of the newly exported mission remains a separate verification step;
 a recorded-state replay cannot establish that the host accepted a new order,
 that the siege succeeded, or that the game was won.
+
+## Validation
+
+The isolated patch at 2ba67337c was replayed against 2450248dd on all 497
+decision frames through turn 180/2. The replay's initial genome metadata
+exactly matches the native run. It adds 27 AIR_ATTACK orders on 16 frames,
+including Bomber 8323094's missing mission on 153/1. Internal action choices
+are unchanged across every frame.
+
+Eighteen exported frames differ when verification receipts are included.
+The old recorded future did not execute the newly proposed commands: its
+22 failed and three successful added receipts are counterfactual comparisons
+against that old history, not evidence of native execution.
+
+Local validation on the isolated patch: 4,067 Rust tests passed, 53 ignored;
+all 174 order-bridge tests passed, 14 append-point checks passed, eight soak
+games completed, and scoped formatting and incremental Rust quality passed.
+Replay artifacts are retained under /tmp/civvis-native-air-pillage-replay.
+
+The unchanged native continuation reproduces the gap at turn 184: all four
+Bombers (8323094, 9764894, 9044003, and 11206697) select air-pillage missions
+on frames 0, 1, and 2. This identifies missing wing commands; it does not
+establish the cause of the native game's turn stall.
