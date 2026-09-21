@@ -541,6 +541,11 @@ class _Harness:
         self.logs.mkdir()
         self.runs = root / "runs"
         self.runs.mkdir()
+        self.native_logs = root / "native-logs"
+        self.native_logs.mkdir()
+        native_log_path = mock.patch.object(climb.env, "logs_dir", return_value=self.native_logs)
+        native_log_path.start()
+        self.addCleanup(native_log_path.stop)
         self.ledger = root / "ladder.jsonl"
         self.orders_bin = root / "civvis_orders"
         self.orders_bin.write_text("#!/bin/sh\n")
@@ -1929,11 +1934,30 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
             "a clamped stride must skip saves already used by this attempt",
         )
 
+    def test_native_snapshot_failure_does_not_prevent_recovery(self):
+        with mock.patch.object(climb, "wait_watching_the_turn", side_effect=["frozen", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves",
+                               return_value=[Path("/saves/AutoSave_0101.Civ6Save")]), \
+             mock.patch.object(climb.civ6_native_log_snapshot, "snapshot",
+                               side_effect=OSError("disk full")) as snapshot:
+            _, rows = self.climb_with(
+                [{"last_turn": 102, "last_score": 340, "rival_best": 324},
+                 {"last_turn": 250, "last_score": 910, "rival_best": 880}], attempts=1)
+        self.assertEqual(rows[0]["last_turn"], 250)
+        snapshot.assert_called_once()
+
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
         spawned = []
+        (self.native_logs / "AI.csv").write_text("rival turn evidence")
+        test = self
 
         class Recording(FakeProc):
             def __init__(self, argv, *args, **kwargs):
+                if "--load-save" in argv:
+                    snapshots = list(test.runs.glob("*/native-freeze-logs/AI.csv"))
+                    test.assertEqual(len(snapshots), 1)
+                    test.assertEqual(snapshots[0].read_text(), "rival turn evidence")
+                    (test.native_logs / "AI.csv").write_text("replacement on launch")
                 spawned.append(list(argv))
                 super().__init__(argv, *args, **kwargs)
 
