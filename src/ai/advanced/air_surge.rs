@@ -921,6 +921,64 @@ impl AdvancedAi {
         }
     }
 
+    /// Only a known fuel gap can defer a ground upgrade. A deposit we can
+    /// connect now (or repair) remains a useful near-term source; offshore Oil
+    /// without Plastics does not. Unknown fuel must still be researched.
+    fn air_surge_upgrade_lacks_fuel(g: &Game, pid: usize, goal: Name) -> bool {
+        let mut matched = false;
+        for unit in g.units.values().filter(|unit| unit.owner == pid) {
+            let held = &g.rules.units[unit.kind];
+            if held.class != "military" || matches!(held.domain.as_deref(), Some("sea" | "air")) {
+                continue;
+            }
+            let Some(next) = held.upgrade_to else {
+                continue;
+            };
+            let next = &g.rules.units[g.player_unit_replacement(pid, next)];
+            if !next.buildable
+                || next.tech != Some(goal)
+                || next.strength.max(next.ranged_attack_strength())
+                    <= held.strength.max(held.ranged_attack_strength())
+            {
+                continue;
+            }
+            matched = true;
+            let Some(resource) = next.requires_resource else {
+                return false;
+            };
+            if !g.resource_visible_to(pid, resource.as_str())
+                || g.strategic_stockpile(pid, resource) > 0.0
+                || g.strategic_resource_rate(pid, resource.as_str()) > 0.0
+            {
+                return false;
+            }
+            let connects = |improvement: Name| {
+                g.rules.improvements[improvement]
+                    .resources
+                    .contains(&resource)
+            };
+            let source = g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .any(|city| {
+                    city.owned_tiles.iter().any(|pos| {
+                        g.map.get(*pos).is_some_and(|tile| {
+                            tile.resource == Some(resource)
+                                && !tile.flooded
+                                && (*pos == city.pos
+                                    || tile.improvement.is_some_and(connects)
+                                    || g.valid_improvements(pid, *pos).into_iter().any(connects))
+                        })
+                    })
+                });
+            if source {
+                return false;
+            }
+        }
+        matched
+    }
+
     /// The forced research goal while the breakthrough is still missing.
     /// Consumed by `advanced_research`, which walks the cheapest legal step
     /// toward it.
@@ -942,8 +1000,13 @@ impl AdvancedAi {
         if self.air_surge_2
             && Self::air_surge_missing_techs(g, pid) > 1
             && self.wartime_modernization_tech(g, pid).is_some_and(|goal| {
-                Self::war_remaining_research_cost(g, pid, goal)
-                    < Self::war_remaining_research_cost(g, pid, Name::new(AIR_SURGE_GOAL_TECH))
+                let supplied_air = self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                    && Self::air_surge_metal_ready(g, pid)
+                    && self.threatened_city(g, pid).is_none()
+                    && Self::air_surge_upgrade_lacks_fuel(g, pid, goal);
+                !supplied_air
+                    && Self::war_remaining_research_cost(g, pid, goal)
+                        < Self::war_remaining_research_cost(g, pid, Name::new(AIR_SURGE_GOAL_TECH))
             })
         {
             return None;

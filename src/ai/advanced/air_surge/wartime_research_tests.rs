@@ -141,3 +141,150 @@ fn a_more_expensive_ground_upgrade_does_not_delay_the_air_campaign() {
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].research.as_deref(), Some("steam_power"));
 }
+
+fn supplied_air_without_oil() -> (Game, AdvancedAi, StrategicPlan) {
+    let (mut g, ai, plan) = fixture();
+    for uid in g.player_unit_ids(0) {
+        g.remove_unit(uid);
+    }
+    g.players[0].techs.extend(
+        g.rules.tech_ancestors["combustion"]
+            .iter()
+            .map(|tech| Name::new(tech)),
+    );
+    g.players[0].techs.insert(crate::name!("refining"));
+    for tech in [
+        "steam_power",
+        "flight",
+        "radio",
+        "advanced_flight",
+        "combustion",
+    ] {
+        g.players[0].techs.remove(&Name::new(tech));
+    }
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("aluminum"), 100.0);
+    for pos in [(12, 13), (13, 12)] {
+        g.spawn_test_unit("cuirassier", 0, pos);
+    }
+    assert_eq!(
+        ai.wartime_modernization_tech(&g, 0),
+        Some(crate::name!("combustion"))
+    );
+    assert!(AdvancedAi::air_surge_metal_ready(&g, 0));
+    assert_eq!(g.strategic_stockpile(0, crate::name!("oil")), 0.0);
+    assert_eq!(g.strategic_resource_rate(0, "oil"), 0.0);
+    (g, ai, plan)
+}
+
+#[test]
+fn supplied_air_does_not_wait_for_tanks_without_known_oil() {
+    let (mut g, ai, plan) = supplied_air_without_oil();
+    assert!(
+        AdvancedAi::war_remaining_research_cost(&g, 0, crate::name!("combustion"))
+            < AdvancedAi::war_remaining_research_cost(&g, 0, Name::new(AIR_SURGE_GOAL_TECH))
+    );
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("steam_power"));
+}
+
+fn owned_oil_site(g: &mut Game, water: bool) -> Pos {
+    let city = g.cities.values().find(|city| city.owner == 0).unwrap();
+    let pos = *city
+        .owned_tiles
+        .iter()
+        .find(|pos| **pos != city.pos)
+        .unwrap();
+    let tile = g.map.tiles.get_mut(&pos).unwrap();
+    tile.resource = Some(crate::name!("oil"));
+    tile.terrain = if water {
+        crate::name!("coast")
+    } else {
+        crate::name!("grassland")
+    };
+    tile.improvement = None;
+    tile.pillaged = false;
+    pos
+}
+
+#[test]
+fn offshore_oil_without_plastics_does_not_make_tanks_a_near_term_upgrade() {
+    let (g, ai, _) = supplied_air_without_oil();
+    let mut g = g;
+    let pos = owned_oil_site(&mut g, true);
+    assert!(!g.players[0].techs.contains(&crate::name!("plastics")));
+    assert!(!g
+        .valid_improvements(0, pos)
+        .contains(&crate::name!("offshore_oil_rig")));
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+
+    g.players[0].techs.insert(crate::name!("plastics"));
+    assert!(g
+        .valid_improvements(0, pos)
+        .contains(&crate::name!("offshore_oil_rig")));
+    assert_eq!(ai.air_surge_research_goal(&g, 0), None);
+}
+
+#[test]
+fn available_or_connectable_oil_keeps_the_ground_upgrade_priority() {
+    for case in ["stock", "income", "land", "repair", "unknown"] {
+        let (mut g, ai, _) = supplied_air_without_oil();
+        match case {
+            "stock" => {
+                g.players[0]
+                    .strategic_resources
+                    .insert(crate::name!("oil"), 1.0);
+            }
+            "income" => {
+                std::sync::Arc::make_mut(&mut g.observed_strategic_income_adjustments)
+                    .entry(0)
+                    .or_default()
+                    .insert(crate::name!("oil"), 1.0);
+            }
+            "land" => {
+                let pos = owned_oil_site(&mut g, false);
+                assert_eq!(g.strategic_resource_rate(0, "oil"), 0.0);
+                assert!(g
+                    .valid_improvements(0, pos)
+                    .contains(&crate::name!("oil_well")));
+            }
+            "repair" => {
+                let pos = owned_oil_site(&mut g, false);
+                let tile = g.map.tiles.get_mut(&pos).unwrap();
+                tile.improvement = Some(crate::name!("oil_well"));
+                tile.pillaged = true;
+                assert_eq!(g.strategic_resource_rate(0, "oil"), 0.0);
+            }
+            "unknown" => {
+                g.players[0].techs.remove(&crate::name!("refining"));
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(ai.air_surge_research_goal(&g, 0), None, "{case}");
+    }
+}
+
+#[test]
+fn fuel_priority_requires_a_supplied_domination_wing_and_safe_home() {
+    for case in ["no_air_fuel", "other_lane", "home_emergency"] {
+        let (mut g, mut ai, _) = supplied_air_without_oil();
+        match case {
+            "no_air_fuel" => {
+                g.players[0].strategic_resources.clear();
+            }
+            "other_lane" => {
+                ai.victory_target = Some(VictoryTarget::Science);
+            }
+            "home_emergency" => {
+                for pos in [(11, 12), (12, 11), (11, 13)] {
+                    g.spawn_test_unit("tank", 1, pos);
+                }
+                assert!(ai.threatened_city(&g, 0).is_some());
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(ai.air_surge_research_goal(&g, 0), None, "{case}");
+    }
+}
