@@ -50,9 +50,12 @@ proposals are not evidence of multiple active siege queues.
 
 Neither version issues a Bombard order. By turn 131 the planning journal
 reports 0 Gold at -9.6/turn and chooses upkeep-free recovery projects. The
-host snapshot reports slightly positive income, so this discrepancy and
-sustainable financing need separate investigation. This patch preserves
-the recovery gate; raising military priority cannot bypass that gate.
+host reports -9.58594 Gold/turn in that same 131/0 decision frame. Its
+slightly positive 0.917969 reading comes later, at 132/1, after the last
+recorded decision. Comparing matching frames confirms that the mirror imports
+income correctly; this is a financing constraint, not an income-import defect.
+This patch preserves the recovery gate; raising military priority cannot
+bypass that gate.
 
 These are proposed orders against recorded states, not executed production,
 city captures, or a counterfactual victory. The source run ends at 132 with
