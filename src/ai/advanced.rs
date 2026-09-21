@@ -19675,6 +19675,9 @@ impl AdvancedAi {
                     committed_domination || rushing,
                 )
             });
+        // The Culture clock may expire before capture units reach the ring.
+        // A concrete, safe Theater Square sortie can start denial meanwhile.
+        let staged = staged || self.urgent_culture_air_opening_ready(g, pid, target, plan);
         if close_enough && ready && staged {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
