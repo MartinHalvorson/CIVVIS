@@ -41,9 +41,26 @@ impl AdvancedAi {
         science(pid) < 0.7 * best
     }
 
+    /// A placed Campus already owns its tile and district slot. Finishing it
+    /// opens the research-building chain without committing a new site.
+    pub(super) fn placed_campus_research_item(g: &Game, item: &Item) -> bool {
+        let Item::District { district, pos } = item else {
+            return false;
+        };
+        g.district_family(*district) == "campus"
+            && g.map.get(*pos).is_some_and(|tile| {
+                tile.district_foundation
+                    .as_ref()
+                    .is_some_and(|foundation| foundation.district == *district)
+            })
+    }
+
     pub(super) fn campus_research_building(g: &Game, item: &Item) -> bool {
         let Item::Building { building } = item else {
-            return false;
+            // This predicate protects the catch-up pass's fresh reservation
+            // before it has invested its first hammer, including completion
+            // of the district that makes those buildings possible.
+            return Self::placed_campus_research_item(g, item);
         };
         let spec = &g.rules.buildings[building];
         !spec.wonder

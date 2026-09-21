@@ -37,10 +37,14 @@ impl Debt {
         }
     }
 
-    fn matches(self, g: &Game, item: &Item) -> bool {
+    fn matches(self, ai: &AdvancedAi, g: &Game, item: &Item) -> bool {
         match (self, item) {
             (Self::Expansion, Item::Unit { unit }) => unit == "settler",
             (Self::Builder, Item::Unit { unit }) => unit == "builder",
+            (Self::Research, Item::District { .. }) => {
+                ai.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+                    && AdvancedAi::placed_campus_research_item(g, item)
+            }
             (_, Item::Building { building }) => {
                 let spec = &g.rules.buildings[building];
                 if spec.wonder {
@@ -65,6 +69,14 @@ impl Debt {
         }
     }
 
+    /// A foundation is eligible work, but does not replace a building that
+    /// an already completed Campus can start now. Otherwise finishing one
+    /// district suppresses Libraries elsewhere for its whole build time.
+    fn queued_answer(self, ai: &AdvancedAi, g: &Game, item: &Item) -> bool {
+        self.matches(ai, g, item)
+            && !matches!((self, item), (Self::Research, Item::District { .. }))
+    }
+
     fn prices_queued_yield(self, ai: &AdvancedAi) -> bool {
         match self {
             Self::Culture => ai.culture_building_catchup_3,
@@ -80,6 +92,11 @@ impl Debt {
             }
             (Self::Research, Item::Building { building }) => {
                 g.rules.buildings[building].yields.science
+            }
+            (Self::Research, Item::District { district, pos }) => {
+                // Credit only the district's own yield. The future Library
+                // still needs its own construction and catch-up reservation.
+                g.district_yields(*district, *pos).science.max(0.0)
             }
             _ => 1.0,
         }
@@ -358,7 +375,10 @@ impl AdvancedAi {
                             {
                                 return false;
                             }
-                            g.cities[cid].queue.iter().any(|item| debt.matches(g, item))
+                            g.cities[cid]
+                                .queue
+                                .iter()
+                                .any(|item| debt.queued_answer(self, g, item))
                         }))
             })
             .map(|(debt, _)| debt)
@@ -376,7 +396,7 @@ impl AdvancedAi {
                 let debt = debts
                     .iter()
                     .copied()
-                    .find(|debt| debt.prices_queued_yield(self) && debt.matches(g, item))?;
+                    .find(|debt| debt.prices_queued_yield(self) && debt.matches(self, g, item))?;
                 if g.city_yields(*cid).production <= 0.0 {
                     return None;
                 }
@@ -408,7 +428,11 @@ impl AdvancedAi {
                 continue;
             }
             for item in g.producible_items(pid, cid) {
-                let Some(debt) = debts.iter().copied().find(|debt| debt.matches(g, &item)) else {
+                let Some(debt) = debts
+                    .iter()
+                    .copied()
+                    .find(|debt| debt.matches(self, g, &item))
+                else {
                     continue;
                 };
                 // Market and Lighthouse share one capacity tier in a city.

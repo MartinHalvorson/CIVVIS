@@ -235,3 +235,92 @@ fn a_threatened_city_does_not_gain_the_fresh_research_commitment() {
     ai.advanced_production(&mut g, 0, &plan, false);
     assert_ne!(g.cities[&cid].queue.first(), Some(&item));
 }
+
+fn placed_campus_fixture() -> (Game, u32, AdvancedAi, StrategicPlan, Item) {
+    let (mut g, cid, ai, plan, _) = fixture();
+    let district = crate::name!("campus");
+    let pos = *g.cities[&cid].districts.get(district).unwrap();
+    g.cities.get_mut(&cid).unwrap().districts.clear();
+    let tile = g.map.tiles.get_mut(&pos).unwrap();
+    tile.district = None;
+    tile.district_foundation = Some(crate::world::DistrictFoundation {
+        district,
+        cost: 70.0,
+    });
+    (g, cid, ai, plan, Item::District { district, pos })
+}
+
+#[test]
+fn placed_campus_catchup_is_reserved_and_survives_production_review() {
+    let (mut g, cid, mut ai, plan, item) = placed_campus_fixture();
+    assert!(g.can_produce(0, cid, &item));
+    assert!(ai.domination_research_catchup_needed(&g, 0, &plan));
+    ai.reserve_higher_level_investment(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&item));
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&item));
+}
+
+#[test]
+fn campus_catchup_requires_an_existing_foundation_and_a_domination_shortfall() {
+    for case in ["new_site", "other_foundation", "other_lane", "caught_up"] {
+        let (mut g, cid, mut ai, plan, item) = placed_campus_fixture();
+        let Item::District { pos, .. } = item else {
+            unreachable!()
+        };
+        match case {
+            "new_site" => g.map.tiles.get_mut(&pos).unwrap().district_foundation = None,
+            "other_foundation" => {
+                g.map
+                    .tiles
+                    .get_mut(&pos)
+                    .unwrap()
+                    .district_foundation
+                    .as_mut()
+                    .unwrap()
+                    .district = crate::name!("holy_site")
+            }
+            "other_lane" => ai.retarget(VictoryTarget::Science),
+            "caught_up" => Arc::make_mut(&mut g.observed_yield_adjustments).clear(),
+            _ => unreachable!(),
+        }
+        ai.reserve_higher_level_investment(&mut g, 0, &plan);
+        assert_ne!(g.cities[&cid].queue.first(), Some(&item), "{case}");
+    }
+}
+
+#[test]
+fn campus_completion_keeps_emergency_and_active_queue_guards() {
+    for case in ["threatened", "recovery", "busy"] {
+        let (mut g, cid, ai, mut plan, item) = placed_campus_fixture();
+        match case {
+            "threatened" => plan.threatened_city = Some(cid),
+            "recovery" => plan.strategy = GrandStrategy::Recovery,
+            "busy" => g.cities.get_mut(&cid).unwrap().queue.push(Item::Unit {
+                unit: crate::name!("builder"),
+            }),
+            _ => unreachable!(),
+        }
+        ai.reserve_higher_level_investment(&mut g, 0, &plan);
+        assert_ne!(g.cities[&cid].queue.first(), Some(&item), "{case}");
+    }
+}
+
+#[test]
+fn queued_campus_does_not_block_a_library_in_a_completed_campus() {
+    let (mut g, cid, ai, plan, library) = fixture();
+    let other = g.found_city_for(0, (14, 10), None);
+    g.cities.get_mut(&other).unwrap().pop = 4;
+    let district = crate::name!("campus");
+    let pos = g.district_sites(other, district)[0];
+    g.apply(
+        0,
+        &Action::Produce {
+            city: other,
+            item: Item::District { district, pos },
+        },
+    )
+    .unwrap();
+    ai.reserve_higher_level_investment(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&library));
+}
