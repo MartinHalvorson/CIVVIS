@@ -39,6 +39,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 mod host_deaths;
+mod strategic_income;
 pub use host_deaths::HostUnitDeath;
 
 use crate::{
@@ -3630,6 +3631,10 @@ pub struct StateSnapshot {
     /// a buildable successor. See `apply_strategic_stockpiles`.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub strategic_resources: Option<BTreeMap<String, f64>>,
+    /// Gross host strategic income: accumulation + imports + bonuses, before
+    /// unit or power demand. Missing entries retain the modeled estimate.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub strategic_resource_income: Option<BTreeMap<String, f64>>,
     /// The live RECRUIT COST of each class's current unclaimed Great Person,
     /// by the same class-type key. Points without costs sent the planner's
     /// threshold check to CIVVIS's own market formula, which quoted 60-ish
@@ -5798,6 +5803,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // absent here until 2026-08-26, so every live state record filed a
         // `schema:state.strategic_resources` gap that was not one.
         "strategic_resources",
+        "strategic_resource_income",
         "foreign_tourists", "domestic_tourists",
         "tourism_per_turn",
         "cities_following_religion",
@@ -11598,6 +11604,7 @@ fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
     // Last, because it reads the finished board: every rival, minor and
     // barbarian for this turn is on it by now, and the previous turn's
     // sightings were removed with them.
+    strategic_income::apply(ctx.game, ctx.state, ctx.unmapped);
     record_host_observed(ctx.game, ctx.snapshot);
 }
 
@@ -14196,6 +14203,7 @@ impl LiveMirror {
             apply_governor_state(&mut self.game, state, &mut self.unmapped);
             apply_great_person_points(&mut self.game, state, &mut self.unmapped);
             apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
+            strategic_income::apply(&mut self.game, state, &mut self.unmapped);
             return;
         }
         self.foreign_uid_of.clear();

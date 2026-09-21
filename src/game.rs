@@ -6350,6 +6350,11 @@ pub struct Game {
     /// Public host score for mirrored seats. Empty in native CIVVIS games.
     #[serde(default)]
     pub observed_score: Arc<BTreeMap<usize, i64>>,
+    /// Host gross strategic income minus the reconstructed board's income.
+    /// Corrections preserve policy and improvement counterfactuals on clones.
+    /// Empty in simulated games; refreshed on each host snapshot.
+    #[serde(default)]
+    pub observed_strategic_income_adjustments: Arc<BTreeMap<usize, BTreeMap<Name, f64>>>,
     /// Exact host trade-route capacity for mirrored seats. Native games derive
     /// this from their own infrastructure and leave the map empty.
     #[serde(default)]
@@ -7138,6 +7143,8 @@ struct GameSer {
     #[serde(default)]
     observed_score: BTreeMap<usize, i64>,
     #[serde(default)]
+    observed_strategic_income_adjustments: BTreeMap<usize, BTreeMap<Name, f64>>,
+    #[serde(default)]
     observed_trade_capacity: BTreeMap<usize, i64>,
     #[serde(default)]
     observed_leader_types: BTreeMap<usize, String>,
@@ -7363,6 +7370,9 @@ impl From<GameSer> for Game {
             host_unit_facts: Arc::new(s.host_unit_facts),
             host_maintenance: Arc::new(s.host_maintenance),
             observed_score: Arc::new(s.observed_score),
+            observed_strategic_income_adjustments: Arc::new(
+                s.observed_strategic_income_adjustments,
+            ),
             observed_trade_capacity: Arc::new(s.observed_trade_capacity),
             observed_leader_types: Arc::new(s.observed_leader_types),
             observed_yield_adjustments: Arc::new(s.observed_yield_adjustments),
@@ -7594,6 +7604,9 @@ impl From<Game> for GameSer {
             host_unit_facts: Arc::unwrap_or_clone(g.host_unit_facts),
             host_maintenance: Arc::unwrap_or_clone(g.host_maintenance),
             observed_score: Arc::unwrap_or_clone(g.observed_score),
+            observed_strategic_income_adjustments: Arc::unwrap_or_clone(
+                g.observed_strategic_income_adjustments,
+            ),
             observed_trade_capacity: Arc::unwrap_or_clone(g.observed_trade_capacity),
             observed_leader_types: Arc::unwrap_or_clone(g.observed_leader_types),
             observed_yield_adjustments: Arc::unwrap_or_clone(g.observed_yield_adjustments),
@@ -8071,6 +8084,7 @@ impl Game {
             host_unit_facts: Arc::new(BTreeMap::new()),
             host_maintenance: Arc::new(BTreeMap::new()),
             observed_score: Arc::new(BTreeMap::new()),
+            observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
             observed_trade_capacity: Arc::new(BTreeMap::new()),
             observed_leader_types: Arc::new(BTreeMap::new()),
             observed_yield_adjustments: Arc::new(BTreeMap::new()),
@@ -22123,6 +22137,16 @@ impl Game {
     }
 
     pub fn strategic_resource_rate(&self, pid: usize, res: &str) -> f64 {
+        let modeled = self.modeled_strategic_resource_rate(pid, res);
+        let adjustment = self
+            .observed_strategic_income_adjustments
+            .get(&pid)
+            .and_then(|rates| rates.get(&Name::new(res)))
+            .copied();
+        adjustment.map_or(modeled, |delta| (modeled + delta).max(0.0))
+    }
+
+    fn modeled_strategic_resource_rate(&self, pid: usize, res: &str) -> f64 {
         if !self.resource_visible_to(pid, res) {
             return 0.0;
         }
