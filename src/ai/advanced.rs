@@ -16733,8 +16733,8 @@ impl AdvancedAi {
                         .and_then(|civic| g.rules.civics.get(civic))
                         .map_or(0, |civic| civic.era);
                     (
-                        usize::from(!unproductive_economic_cards.contains(current)),
                         usize::from(policy.slot != slot),
+                        usize::from(!unproductive_economic_cards.contains(current)),
                         era,
                     )
                 };

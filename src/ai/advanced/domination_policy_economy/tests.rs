@@ -120,3 +120,35 @@ fn productive_rationalism_reclaims_a_fallback_after_city_growth() {
         .policies
         .contains(&crate::name!("conscription")));
 }
+
+#[test]
+fn military_relief_uses_a_military_donor_before_an_empty_economic_card() {
+    let (mut g, ai, _) = policy_board();
+    g.players[0].government = Some("monarchy".into());
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -7.0;
+    g.at_war.insert((0, 1));
+    g.players[0].policies.extend([
+        crate::name!("feudal_contract"),
+        crate::name!("logistics"),
+        crate::name!("aesthetics"),
+        crate::name!("charismatic_leader"),
+        crate::name!("natural_philosophy"),
+        crate::name!("rationalism"),
+    ]);
+    let before = g.log.len();
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Conquest);
+    let actions: Vec<_> = g.log.since(before).collect();
+    let conscription = actions
+        .iter()
+        .position(|(_, action)| {
+            matches!(action,
+                Action::SlotPolicy { policy } if policy.as_str() == "conscription"
+            )
+        })
+        .expect("maintenance relief is still selected");
+    assert!(conscription > 0);
+    assert!(matches!(&actions[conscription - 1].1,
+        Action::UnslotPolicy { policy } if policy.as_str() == "feudal_contract"
+    ));
+}
