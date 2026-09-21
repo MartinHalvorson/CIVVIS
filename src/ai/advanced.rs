@@ -19701,7 +19701,9 @@ impl AdvancedAi {
                     });
                 }
                 self.base.war_eve_liquidation(g, pid, &action);
-                let _ = g.apply(pid, &action);
+                if g.apply(pid, &action).is_ok() {
+                    self.air_surge_join_declared_war(g, pid, target);
+                }
             }
         } else if self.journal().wants(crate::reasoning::Level::Detail) {
             // Not opening a war is a decision too, and the observer cannot see
