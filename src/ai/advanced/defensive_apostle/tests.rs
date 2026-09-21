@@ -10,7 +10,7 @@ fn fixture() -> (Game, AdvancedAi, u32) {
     }
     let home = g.found_city_for(0, (4, 4), None);
     let second = g.found_city_for(0, (10, 4), None);
-    g.found_city_for(1, (22, 16), None);
+    g.found_city_for(1, (18, 12), None);
     g.players[0].religion = Some("Buddhism".into());
     g.players[0].holy_city = Some(home);
     g.players[0].religion_beliefs = vec!["work_ethic".into(), "tithe".into()];
@@ -143,4 +143,30 @@ fn existing_apostle_prevents_duplicate_purchase_and_banks_for_its_inquisitor() {
             .count(),
         1
     );
+}
+
+#[test]
+fn host_menu_without_an_affordable_apostle_does_not_release_the_reserve() {
+    let (mut g, mut ai, home) = fixture();
+    g.players[0].faith = 100.0;
+    let missionary = Item::Unit {
+        unit: crate::name!("missionary"),
+    };
+    let mut menu = BTreeMap::new();
+    menu.insert(
+        Game::production_block_key(&missionary),
+        crate::game::HostPurchaseEntry {
+            gold: None,
+            faith: Some(80.0),
+        },
+    );
+    Arc::make_mut(&mut g.host_purchasable).insert(home, menu);
+    assert_eq!(
+        g.unit_purchase_cost(0, home, "missionary", "faith"),
+        Some(80.0)
+    );
+    assert_eq!(g.unit_purchase_cost(0, home, "apostle", "faith"), None);
+    ai.religious_spending(&mut g, 0, false);
+    assert_eq!(g.players[0].faith, 100.0);
+    assert!(!g.units.values().any(|u| u.owner == 0));
 }
