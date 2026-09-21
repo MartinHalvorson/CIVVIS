@@ -39,12 +39,43 @@ CivvisReligionState.holyCity = function(religion)
     if not identity[1] then
         return nil, {status = "identity_error", error = tostring(identity[2]):sub(1, 240)};
     end
+    local function primitive(value)
+        local kind = type(value);
+        if kind == "boolean" then return value; end
+        if kind == "string" then return value:sub(1, 120); end
+        if kind == "number" and value == value and value ~= math.huge and value ~= -math.huge then
+            return value;
+        end
+        return nil;
+    end
     local observation = {identity = {}, identity_returns = identity.n - 1};
     for i = 2, identity.n do
         local value = identity[i];
         local entry = {type = type(value)};
-        if type(value) == "number" or type(value) == "boolean" then entry.value = value; end
-        if type(value) == "string" then entry.value = value:sub(1, 120); end
+        entry.value = primitive(value);
+        if type(value) == "table" then
+            -- Inspect only a few raw scalar members. Never recurse, call a
+            -- member, or replace the identity passed to the native lookup.
+            entry.fields = {};
+            local examined = 0;
+            for key, member in next, value do
+                examined = examined + 1;
+                if examined > 8 then entry.truncated = true; break; end
+                local keyType = type(key);
+                local keyValue, memberValue = primitive(key), primitive(member);
+                if (keyType == "number" or keyType == "string")
+                        and keyValue ~= nil and memberValue ~= nil then
+                    entry.fields[#entry.fields + 1] = {
+                        key = keyValue, key_type = keyType,
+                        value = memberValue, type = type(member),
+                    };
+                end
+            end
+            table.sort(entry.fields, function(a, b)
+                if a.key_type ~= b.key_type then return a.key_type < b.key_type; end
+                return a.key < b.key;
+            end);
+        end
         observation.identity[#observation.identity + 1] = entry;
     end
     local ok, city = pcall(function()
