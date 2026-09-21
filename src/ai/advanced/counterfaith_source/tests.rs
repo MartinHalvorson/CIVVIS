@@ -127,7 +127,7 @@ fn pillaged_or_incomplete_infrastructure_does_not_earn_priority() {
         .clear();
     let pos = *g.cities[&source]
         .districts
-        .get(&crate::name!("holy_site"))
+        .get(crate::name!("holy_site"))
         .unwrap();
     g.map.tiles.get_mut(&pos).unwrap().pillaged = true;
     assert!(ai
