@@ -1793,7 +1793,9 @@ impl AdvancedAi {
             let (result, applied) =
                 Self::tactical_attack_result_in(&mut after, pid, blow.unit, &action, plan);
             if let Some((uid, hp)) = health_floor {
-                if let Some(unit) = after.units.get_mut(&uid) {
+                if hp <= 0 {
+                    rejected.insert(uid);
+                } else if let Some(unit) = after.units.get_mut(&uid) {
                     unit.hp = unit.hp.min(hp);
                 }
             }
