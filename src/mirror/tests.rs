@@ -14182,3 +14182,83 @@ fn host_war_permission_does_not_block_another_actor_or_end_an_observed_war() {
     assert!(mirror.game.is_at_war(0, 1));
     assert!(mirror.game.host_war_blocks.is_empty());
 }
+
+#[test]
+fn fresh_board_treasury_carry_preserves_observed_income() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 94,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+    }]);
+    for observed in [8.03125, 0.0, -4.0] {
+        let state = StateSnapshot {
+            turn: 94,
+            gold: 151,
+            gold_per_turn: Some(observed),
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 1, 1, 500, 0);
+        mirror.carry_treasury_baseline(Some((93, 271.0)));
+        assert_eq!(
+            mirror.game.players[0].gold_per_turn, observed,
+            "a purchase changes the balance, not the exported income"
+        );
+        assert_eq!(mirror.treasury_baseline(), Some((94, 151.0)));
+    }
+}
+
+#[test]
+fn fresh_board_income_fallback_requires_a_missing_rate_and_consecutive_turns() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 94,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+    }]);
+    for rate in [None, Some(f64::NAN), Some(f64::INFINITY)] {
+        for (previous, expected) in [
+            (Some((93, 150.0)), 1.0),
+            (Some((90, 150.0)), 0.0),
+            (None, 0.0),
+        ] {
+            let state = StateSnapshot {
+                turn: 94,
+                gold: 151,
+                gold_per_turn: rate,
+                ..StateSnapshot::default()
+            };
+            let mut mirror = LiveMirror::new(&snapshot, &state, 1, 1, 500, 0);
+            mirror.carry_treasury_baseline(previous);
+            assert_eq!(mirror.game.players[0].gold_per_turn, expected);
+        }
+    }
+}
+
+#[test]
+fn synced_income_replaces_the_previous_observation_before_a_carry() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 94,
+        width: 20,
+        height: 20,
+        chunk: 1,
+        plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 94,
+        gold: 151,
+        gold_per_turn: Some(8.03125),
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 1, 1, 500, 0);
+    for rate in [Some(0.0), Some(-4.0), None] {
+        state.turn += 1;
+        state.gold += 1;
+        state.gold_per_turn = rate;
+        mirror.sync(&snapshot, &state, 0);
+        mirror.carry_treasury_baseline(Some((state.turn - 1, (state.gold - 1) as f64)));
+        assert_eq!(mirror.game.players[0].gold_per_turn, rate.unwrap_or(1.0));
+    }
+}
