@@ -36,3 +36,30 @@ Earlier construction orders on a paired replay are not completed buildings
 in native Civilization VI. The old future never executed the revised queue;
 no successful recruitment, retained city majority or prevented loss can be
 claimed from that counterfactual history.
+
+## Paired replay and validation
+
+The isolated comparison covers all 365 decision frames, with baseline
+production source 040ccce and candidate ba166a3c1. Twelve internal-action
+frames (108/0 through 111/2) and seven exported frames differ. The candidate
+issues Holy Site orders for Xanadu on 108/0, 109/0 and 110/0; the first is seven
+turns before the baseline's Hami order on 115/0. Xanadu had a legal site at
+108 while Hami did not. The candidate also removes the queued Entertainment
+Complex orders on 111/0 through 111/2. This is an explicit construction
+tradeoff in a city losing loyalty, not evidence that its survival improves.
+The existing selector prefers the shortest legal chain; immediate home-defense
+reservations remain excluded.
+
+Repeated orders and failed receipts come from the unchanged recorded future,
+which kept the old Builder/Entertainment Complex production. They are not
+three actually executed new districts. No completed defensive supplier or
+native victory is demonstrated.
+
+The new positive regression fails on baseline at the missing reservation.
+Thirteen sanctuary tests cover the early warning, its survival through
+production review, unchanged ordinary alarm, missing home arrival, missing
+foreign conversion, insufficient global majority, and existing constraints.
+After integrating 11bce44 (founded-faith recruitment recovery), the full Rust
+suite passes 4,097 tests with 53 ignored. Fourteen append checks pass, and
+eight four-player 180-turn soak games complete (start seed 368200). Scoped
+formatting, changed-line Rust quality and diff whitespace checks pass.
