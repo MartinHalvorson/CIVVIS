@@ -1612,6 +1612,14 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
         click_at(*target)
         park_setup_pointer(bounds)
         time.sleep(1.2)
+        # A retry can find the requested text in the selected field itself.
+        # Clicking it opens the list, whose header still reads the requested
+        # value. In the native 20260921T073539Z run this verified King while
+        # its open list covered the map controls. Dismiss on inert artwork
+        # before taking the capture we hand to the next setup field.
+        x, y, w, h = bounds
+        click_at(int(x + w * 0.15), int(y + h * 0.85))
+        time.sleep(0.3)
         screenshot(verified)
         selected = _setup_current_value(verified, bounds, name)
         if selected is not None and selected[0] == value:
