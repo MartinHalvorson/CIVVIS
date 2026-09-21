@@ -36,6 +36,31 @@ position, observation = holy()
 assert(position[1] == 5 and observation.identity[1].type == "table")
 assert(observation.identity[1].value == nil)
 
+-- Native captures return a table even when GetCity cannot resolve it. Retain
+-- bounded primitive members so unset owner/ID values are distinguishable.
+identity = {player = 0, id = -1, valid = false, label = string.rep("x", 200)}
+identity.self = identity
+identity.callback = function() error("must not call identity members") end
+position, observation = holy()
+local fields = {}
+for _, field in ipairs(observation.identity[1].fields) do fields[field.key] = field.value end
+assert(fields.player == 0 and fields.id == -1 and fields.valid == false)
+assert(#fields.label == 120 and fields.self == nil and fields.callback == nil)
+assert(position[1] == 5 and identity.self == identity)
+
+-- Bound the table walk as well as the payload; do not recursively inspect it.
+identity = {}
+for i = 1, 30 do identity[i] = i end
+position, observation = holy()
+assert(#observation.identity[1].fields == 8 and observation.identity[1].truncated == true)
+for _, field in ipairs(observation.identity[1].fields) do
+ assert(field.key_type == "number" and field.type == "number" and field.key == field.value)
+end
+
+identity = {nan = 0/0, infinity = math.huge, negative_infinity = -math.huge}
+position, observation = holy()
+assert(#observation.identity[1].fields == 0)
+
 manager.GetCity = function() return nil end
 position, observation = holy()
 assert(position == nil and observation.status == "city_missing")
