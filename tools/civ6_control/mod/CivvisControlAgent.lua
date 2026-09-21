@@ -18877,6 +18877,12 @@ end
 
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
+	-- ActionPanel.lua:505-506 uses the same guard for automatic end turns.
+	-- Submission can already be pending while settlement/UI callbacks arrive.
+	-- A refusal clears the host flag, so later callbacks can still retry.
+	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
+		return false;
+	end
 	CivvisQueue.endTurnRetryTurn = turn;
 	if parameters == nil then
 		UI.RequestAction(ActionTypes.ACTION_ENDTURN);
