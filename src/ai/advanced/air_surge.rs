@@ -813,6 +813,13 @@ impl AdvancedAi {
                 let tech_owned = g.players[pid]
                     .techs
                     .contains(&Name::new(AIR_SURGE_GOAL_TECH));
+                // A planning board can grant a speculative random technology
+                // (for example, Nalanda's first Mahavihara). The next observed
+                // board is authoritative: without the breakthrough, no resource
+                // deadline has started, even if the previous projection owned it.
+                if !tech_owned {
+                    plan.tech_turn = None;
+                }
                 if tech_owned && plan.tech_turn.is_none() {
                     plan.tech_turn = Some(g.turn);
                     self.air_surge_census.breakthroughs += 1;

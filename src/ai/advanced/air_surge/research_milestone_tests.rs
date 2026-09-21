@@ -138,3 +138,74 @@ fn an_appointed_land_breakthrough_keeps_research_priority() {
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].research.as_deref(), Some("metal_casting"));
 }
+
+fn observed_air_deadline() -> (Game, AdvancedAi) {
+    let (mut g, mut ai, _) = radio_with_renaissance_backlog();
+    g.found_city_for(0, (18, 12), None);
+    g.players[0].met.insert(1);
+    ai.enable_air_surge_2();
+    assert!(
+        ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap())
+            .wing_in_range
+    );
+    (g, ai)
+}
+
+#[test]
+fn speculative_air_breakthrough_does_not_expire_observed_research() {
+    let (mut observed, mut ai) = observed_air_deadline();
+    let mut projection = observed.clone();
+    projection.players[0]
+        .techs
+        .insert(crate::name!("advanced_flight"));
+    ai.maintain_air_surge(&projection, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().tech_turn,
+        Some(observed.turn)
+    );
+
+    observed.turn += observed.standard_duration(AIR_SURGE_ALUMINUM_GRACE);
+    ai.maintain_air_surge(&observed, 0);
+    let plan = ai
+        .air_surge_plan
+        .as_ref()
+        .expect("unconfirmed technology cannot expire its resource deadline");
+    assert_eq!(plan.tech_turn, None);
+    assert_eq!(plan.phase, AirSurgePhase::Beeline);
+    assert_eq!(plan.appointed_turn, 110);
+}
+
+#[test]
+fn confirmed_breakthrough_starts_a_fresh_resource_grace_period() {
+    let (mut observed, mut ai) = observed_air_deadline();
+    ai.air_surge_plan.as_mut().unwrap().tech_turn = Some(observed.turn - 1);
+    ai.maintain_air_surge(&observed, 0);
+    observed.turn += observed.standard_duration(AIR_SURGE_ALUMINUM_GRACE);
+    observed.players[0]
+        .techs
+        .insert(crate::name!("advanced_flight"));
+    ai.maintain_air_surge(&observed, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().tech_turn,
+        Some(observed.turn)
+    );
+}
+
+#[test]
+fn confirmed_air_breakthrough_still_expires_without_aluminum() {
+    let (mut observed, mut ai) = observed_air_deadline();
+    observed.players[0]
+        .techs
+        .insert(crate::name!("advanced_flight"));
+    ai.maintain_air_surge(&observed, 0);
+    let breakthrough = observed.turn;
+    observed.turn += observed.standard_duration(AIR_SURGE_ALUMINUM_GRACE) - 1;
+    ai.maintain_air_surge(&observed, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().tech_turn,
+        Some(breakthrough)
+    );
+    observed.turn += 1;
+    ai.maintain_air_surge(&observed, 0);
+    assert!(ai.air_surge_plan.is_none());
+}
