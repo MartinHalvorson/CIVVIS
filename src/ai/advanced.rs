@@ -22,6 +22,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 mod adopted_faith_sanctuary;
+mod defensive_apostle;
 
 mod regional_production_commitments;
 
@@ -21791,6 +21792,9 @@ impl AdvancedAi {
         let Some(religion) = g.players[pid].religion.clone() else {
             return;
         };
+        if self.prepare_defensive_inquisition(g, pid) {
+            return;
+        }
         let match_point_defense = self
             .victory_denial(g, pid)
             .is_some_and(|(_, counter)| counter == GrandStrategy::Religion);
@@ -35435,11 +35439,12 @@ impl AdvancedAi {
                 .copied()
                 .unwrap_or(0)
                 == 0
-            && religion.as_ref().is_some_and(|faith| {
-                g.player_city_ids(pid)
-                    .iter()
-                    .any(|city| g.city_religion(&g.cities[city]) != Some(faith.as_str()))
-            });
+            && (self.defensive_inquisition_ready(g, pid)
+                || religion.as_ref().is_some_and(|faith| {
+                    g.player_city_ids(pid)
+                        .iter()
+                        .any(|city| g.city_religion(&g.cities[city]) != Some(faith.as_str()))
+                }));
         if needs_inquisition {
             if let Some(action) = legal
                 .iter()
