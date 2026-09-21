@@ -61,7 +61,7 @@ no recorded outcome, and the frozen board does not execute candidate orders.
 Eight simulator soak games complete (four players, seeds 364300–364307,
 180-turn limit, four workers). This checks stability, not native win rate.
 All six focused regressions pass within `cargo test --profile ci --locked`:
-3,781 library tests plus 205 other tests pass (49 library and four doc tests
+3,781 library tests plus 206 other tests pass (49 library and four doc tests
 ignored). Formatting, whitespace checks, and all 14 treatment append-point
 policy tests pass. Initial fixture assertions incorrectly required a new
 Bombard to supersede basic infrastructure; the final tests instead verify
