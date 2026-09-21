@@ -300,29 +300,134 @@ def city_occupations(
 ) -> tuple[int, int]:
     """Ownership transitions, not repeated occupation-status callbacks.
 
-    City IDs change on capture. Use birth owner + name across those changes;
-    unnamed older events can only be deduplicated within an owner/ID pair.
+    Native occupation callbacks can be absent even for a conquered capital.
+    Reconcile them with complete local rosters, using locations across city-ID
+    changes and renames. The first roster is a baseline, including on resume.
+    Older callback-only records retain birth-owner/name or owner/ID identity.
     Prefer explicit own-roster removals for losses when the exporter has them.
     """
+    if local_player is None:
+        return 0, 0
+
+    def position(city):
+        x, y = city.get("x"), city.get("y")
+        if type(x) is int and type(y) is int and x >= 0 and y >= 0:
+            return ("plot", x, y)
+        return None
+
+    def aliases(city, owner, id_field="id"):
+        result = []
+        if owner is not None and city.get(id_field) is not None:
+            result.append(("id", owner, city[id_field]))
+        if city.get("name"):
+            result.append(("name", city.get("original_owner"), city["name"]))
+        return result
+
+    def rival_rosters(event):
+        rivals = event.get("rivals")
+        for rival in rivals if isinstance(rivals, list) else []:
+            if (isinstance(rival, dict) and rival.get("player") is not None
+                    and rival["player"] != local_player
+                    and isinstance(rival.get("cities"), list)):
+                yield rival["player"], rival["cities"]
+
+    # Resolve callback identities against all observed rosters. A callback
+    # may precede the first export of its new owner/ID and use a localization
+    # key while the roster uses the displayed name. This pass learns identity
+    # only; ownership transitions are still processed in recorded order.
+    locations = collections.defaultdict(set)
+    for event in events:
+        if event.get("kind") != "state":
+            continue
+        rosters = [(local_player, event.get("cities"))]
+        rosters.extend(rival_rosters(event))
+        for owner, cities in rosters:
+            for city in cities if isinstance(cities, list) else []:
+                if isinstance(city, dict) and (plot := position(city)) is not None:
+                    for alias in aliases(city, owner):
+                        locations[alias].add(plot)
+
+    def city_key(city, owner, id_field="id"):
+        plot = position(city)
+        if plot is not None:
+            return plot
+        candidates = aliases(city, owner, id_field)
+        for alias in candidates:
+            matches = locations.get(alias, set())
+            if len(matches) == 1:
+                return next(iter(matches))
+        return candidates[-1] if candidates else None
+
     taken = lost = 0
     ownership = {}
     removals = set()
+    previous_roster = None
+    foundings = {}
+
+    def observe(key, ours_now, initial):
+        nonlocal taken, lost
+        was_ours = ownership.get(key, initial)
+        if ours_now and was_ours is False:
+            taken += 1
+        elif not ours_now and was_ours is True:
+            lost += 1
+        ownership[key] = ours_now
+
     for event in events:
-        if event.get("kind") == "city_lost" and local_player is not None:
+        turn = event.get("turn")
+        # A founding request needs prompt roster confirmation. An unconfirmed
+        # request must not suppress a later recapture at the same location.
+        if isinstance(turn, int):
+            for plot, founded_turn in list(foundings.items()):
+                if turn > founded_turn + 1:
+                    del foundings[plot]
+        if event.get("kind") == "found" and (plot := position(event)) is not None:
+            if isinstance(turn, int):
+                foundings[plot] = turn
+        if event.get("kind") == "city_lost":
             removals.add((event.get("turn"), event.get("city", event.get("id"))))
-        if event.get("kind") != "city_occupation" or local_player is None:
+        if event.get("kind") == "state" and isinstance(event.get("cities"), list):
+            cities = event["cities"]
+            if any(not isinstance(city, dict) or city_key(city, local_player) is None
+                   for city in cities):
+                continue  # an incomplete roster cannot establish a loss
+            now = set()
+            for city in cities:
+                key = city_key(city, local_player)
+                now.add(key)
+                founder = city.get("original_owner")
+                # A Settler can rebuild on a razed city's plot. That is a new
+                # founding, not a recapture of the previous city at this site.
+                if key in foundings and founder == local_player:
+                    ownership[key] = True
+                initial = (True if previous_roster is None else
+                           founder == local_player if founder is not None else None)
+                observe(key, True, initial)
+            for owner, rivals in rival_rosters(event):
+                for city in rivals:
+                    if not isinstance(city, dict):
+                        continue
+                    key = city_key(city, owner)
+                    if key is not None and key not in now:
+                        observe(key, False, False)
+            for key in (previous_roster or set()) - now:
+                observe(key, False, True)
+            previous_roster = now
+            for key in now:
+                foundings.pop(key, None)
+            continue
+        if event.get("kind") != "city_occupation":
             continue
         ours_now = event.get("ours_now")
         if not isinstance(ours_now, bool):
             continue
-        key = ((event.get("original_owner"), event["name"]) if event.get("name")
-               else (event.get("player"), event.get("city")))
-        was_ours = ownership.get(key, event.get("original_owner") == local_player)
-        if ours_now and not was_ours:
-            taken += 1
-        elif not ours_now and was_ours:
-            lost += 1
-        ownership[key] = ours_now
+        key = city_key(event, event.get("player"), "city")
+        if key is not None:
+            if ours_now and key in foundings and event.get("original_owner") == local_player:
+                ownership[key] = True
+            observe(key, ours_now, event.get("original_owner") == local_player)
+            if ours_now and previous_roster is not None:
+                previous_roster.add(key)
     return taken, len(removals) if removals else lost
 
 
