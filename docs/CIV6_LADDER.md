@@ -21,14 +21,14 @@ before that export carries the index alone and reads `—` here.
 | 3 | Warlord | 2026-08-22T04:33:08Z | 0 | VICTORY_SCORE | 250 | `civvis-20260822T020434Z-cont-timeout1` |
 | 4 | Prince | 2026-08-23T18:12:42Z | 0 | VICTORY_SCORE | 250 | `civvis-20260823T163705Z` |
 | 5 | King | 2026-09-01T03:38:08Z | 5 | VICTORY_TECHNOLOGY | 234 | `civvis-20260901T033000Z-cont8` |
-| 6 | Emperor | — | | | | |
+| 6 | Emperor | 2026-09-09T09:49:39Z | 5 | VICTORY_TECHNOLOGY | 213 | `civvis-20260909T091009Z` |
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 934.
+Attempts recorded: 1224.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 488 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 631 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
 
 ## Which victories have been won, per difficulty
 
@@ -48,7 +48,7 @@ install offers and nobody has won still appears, empty.
 | 2 | VICTORY_CONQUEST | — | — | — | — | — | — | — | — |
 | 3 | VICTORY_CULTURE | — | 2026-08-18T18:46:46Z | — | — | — | — | — | — |
 | 4 | VICTORY_RELIGIOUS | — | — | — | — | — | — | — | — |
-| 5 | VICTORY_TECHNOLOGY | — | — | — | — | 2026-09-01T03:38:08Z | — | — | — |
+| 5 | VICTORY_TECHNOLOGY | — | — | — | — | 2026-09-01T03:38:08Z | 2026-09-09T09:49:39Z | — | — |
 | 6 | VICTORY_DIPLOMATIC | — | — | — | — | — | — | — | — |
 
 ## How these games ended
@@ -61,14 +61,14 @@ absent from this table have never been completed by anyone here.
 
 | victory | type | games | of ended |
 |---|---|---|---|
-| 0 | VICTORY_SCORE | 202 | 55% |
-| 6 | VICTORY_DIPLOMATIC | 64 | 18% |
-| 3 | VICTORY_CULTURE | 60 | 16% |
-| 5 | VICTORY_TECHNOLOGY | 33 | 9% |
-| 4 | — | 5 | 1% |
+| 0 | VICTORY_SCORE | 202 | 41% |
+| 3 | VICTORY_CULTURE | 97 | 20% |
+| 5 | VICTORY_TECHNOLOGY | 88 | 18% |
+| 6 | VICTORY_DIPLOMATIC | 75 | 15% |
+| 4 | VICTORY_RELIGIOUS | 30 | 6% |
 | 2 | — | 1 | 0% |
 
-365 of 934 attempts reached a terminal victory event, and 8 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
+493 of 1224 attempts reached a terminal victory event, and 21 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
 
 ## How the harness ended games, per day (last 14 days)
 
@@ -94,17 +94,12 @@ they did not produce.
 
 | day | killed | operator_retired | abandoned | stopped | game exited | timeout | other | games | restarts | won |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2026-08-27 | 0 | 0 | 5 | 4 | 6 | 0 | 0 | 15 | 0 | 0 |
-| 2026-08-28 | 0 | 0 | 1 | 2 | 0 | 0 | 1 | 4 | 0 | 0 |
-| 2026-08-29 | 0 | 0 | 18 | 2 | 2 | 0 | 0 | 22 | 0 | 0 |
-| 2026-08-30 | 1 | 0 | 3 | 0 | 1 | 0 | 0 | 5 | 0 | 0 |
-| 2026-08-31 | 16 | 11 | 0 | 1 | 0 | 0 | 0 | 28 | 4 | 0 |
-| 2026-09-01 | 6 | 9 | 6 | 4 | 1 | 0 | 0 | 26 | 14 | 1 |
-| 2026-09-02 | 3 | 8 | 3 | 8 | 1 | 0 | 0 | 23 | 31 | 0 |
-| 2026-09-03 | 5 | 5 | 0 | 9 | 1 | 0 | 1 | 21 | 26 | 0 |
-| 2026-09-04 | 0 | 2 | 0 | 0 | 0 | 0 | 1 | 3 | 0 | 0 |
 | 2026-09-08 | 0 | 1 | 0 | 8 | 0 | 0 | 0 | 9 | 15 | 0 |
-| 2026-09-09 | 0 | 4 | 0 | 7 | 0 | 0 | 0 | 11 | 6 | 0 |
+| 2026-09-09 | 3 | 5 | 0 | 34 | 1 | 0 | 0 | 43 | 26 | 2 |
+| 2026-09-10 | 2 | 2 | 0 | 33 | 0 | 0 | 0 | 37 | 17 | 0 |
+| 2026-09-11 | 1 | 0 | 0 | 25 | 1 | 0 | 0 | 27 | 18 | 0 |
+| 2026-09-20 | 5 | 0 | 0 | 34 | 0 | 0 | 0 | 39 | 31 | 0 |
+| 2026-09-21 | 7 | 0 | 0 | 22 | 1 | 0 | 0 | 30 | 39 | 0 |
 
 ## Every attempt
 
@@ -139,43 +134,43 @@ ground.
 
 | run | difficulty | playing for | configured | outcome | turns | score | techs@150 (ours/rival) | launches | ended |
 |---|---|---|---|---|---|---|---|---|---|
-| `civvis-20260908T173748Z` | Emperor | science | yes | rival victory | 208 | 491 | 45/60 | — | 2026-09-08T18:04:48Z |
-| `civvis-20260908T181447Z` | Emperor | — | NO | killed | 116 | 385 | — | — | 2026-09-08T18:34:18Z |
-| `civvis-20260908T181447Z-cont1` | Emperor | science | yes | rival victory | 155 | 567 | 46/58 | — | 2026-09-08T18:48:17Z |
-| `civvis-20260908T184849Z` | Emperor | — | NO | killed | 74 | 147 | — | — | 2026-09-08T18:58:55Z |
-| `civvis-20260908T184849Z-cont1` | Emperor | science | yes | rival victory | 177 | 458 | 40/49 | — | 2026-09-08T19:18:46Z |
-| `civvis-20260908T191919Z` | Emperor | — | NO | killed | 184 | 548 | 44/50 | — | 2026-09-08T19:54:05Z |
-| `civvis-20260908T191919Z-cont1` | Emperor | — | NO | killed | 184 | 548 | 57/70 | — | 2026-09-08T20:00:37Z |
-| `civvis-20260908T191919Z-cont2` | Emperor | — | NO | killed | 184 | 548 | 56/68 | — | 2026-09-08T20:10:20Z |
-| `civvis-20260908T191919Z-cont3` | Emperor | — | NO | killed | 201 | 604 | 54/64 | — | 2026-09-08T20:27:54Z |
-| `civvis-20260908T191919Z-cont4` | Emperor | science | yes | rival victory | 213 | 549 | 61/74 | — | 2026-09-08T20:37:24Z |
-| `civvis-20260908T204713Z` | Emperor | — | NO | killed | 36 | 68 | — | — | 2026-09-08T20:53:34Z |
-| `civvis-20260908T204713Z-cont1` | Emperor | — | NO | killed | 147 | 443 | — | — | 2026-09-08T21:17:22Z |
-| `civvis-20260908T204713Z-cont2` | Emperor | science | yes | rival victory | 177 | 540 | 41/54 | — | 2026-09-08T21:26:58Z |
-| `civvis-20260908T212728Z` | Emperor | — | NO | killed | 109 | 350 | — | — | 2026-09-08T21:43:04Z |
-| `civvis-20260908T212728Z-cont1` | Emperor | — | NO | killed | 109 | 350 | — | — | 2026-09-08T21:47:40Z |
-| `civvis-20260908T212728Z-cont2` | Emperor | — | NO | killed | 108 | 345 | — | — | 2026-09-08T21:52:10Z |
-| `civvis-20260908T212728Z-cont3` | Emperor | science | yes | rival victory | 228 | 829 | 42/50 | — | 2026-09-08T22:26:27Z |
-| `civvis-20260908T222710Z` | Emperor | — | NO | killed | 97 | 198 | — | — | 2026-09-08T22:43:20Z |
-| `civvis-20260908T222710Z-cont1` | Emperor | — | NO | killed | 97 | 198 | — | — | 2026-09-08T22:47:11Z |
-| `civvis-20260908T222710Z-cont2` | Emperor | — | NO | killed | 93 | 194 | — | — | 2026-09-08T22:51:52Z |
-| `civvis-20260908T222710Z-cont3` | Emperor | science | yes | operator_retired | 96 | 199 | — | — | 2026-09-08T22:54:36Z |
-| `civvis-20260908T225920Z` | Emperor | — | NO | killed | 102 | 314 | — | — | 2026-09-08T23:19:40Z |
-| `civvis-20260908T225920Z-cont1` | Emperor | science | yes | rival victory | 213 | 744 | 49/58 | — | 2026-09-08T23:51:37Z |
-| `civvis-20260908T235216Z` | Emperor | science | yes | operator_retired | 112 | 206 | — | — | 2026-09-09T00:11:53Z |
-| `civvis-20260909T002110Z` | Emperor | science | yes | operator_retired | 88 | 188 | — | — | 2026-09-09T00:32:52Z |
-| `civvis-20260909T003711Z` | Emperor | science | yes | rival victory | 175 | 521 | 43/48 | — | 2026-09-09T01:03:21Z |
-| `civvis-20260909T010354Z` | Emperor | science | yes | operator_retired | 185 | 502 | 43/59 | — | 2026-09-09T01:34:00Z |
-| `civvis-20260909T013436Z` | Emperor | — | NO | killed | 208 | 688 | 49/49 | — | 2026-09-09T02:29:26Z |
-| `civvis-20260909T013436Z-cont1` | Emperor | — | NO | killed | 208 | 688 | 73/76 | — | 2026-09-09T02:34:58Z |
-| `civvis-20260909T013436Z-cont2` | Emperor | — | NO | killed | 208 | 690 | 72/75 | — | 2026-09-09T02:40:32Z |
-| `civvis-20260909T013436Z-cont3` | Emperor | science | yes | rival victory | 208 | 691 | 71/73 | — | 2026-09-09T02:44:48Z |
-| `civvis-20260909T025914Z` | Emperor | — | NO | killed | 199 | 704 | 39/51 | 0/4 | 2026-09-09T03:39:57Z |
-| `civvis-20260909T025914Z-cont1` | Emperor | science | yes | rival victory | 224 | 779 | 58/69 | 2/4 port t204 last t215 | 2026-09-09T03:50:16Z |
-| `civvis-20260909T035048Z` | Emperor | science | yes | rival victory | 213 | 259 | 34/57 | 0/4 | 2026-09-09T04:25:22Z |
-| `civvis-20260909T042557Z` | Emperor | science | yes | operator_retired | 15 | 23 | — | 0/4 | 2026-09-09T04:27:35Z |
-| `civvis-20260909T043723Z` | Emperor | — | NO | killed | 99 | 341 | — | 0/4 | 2026-09-09T04:54:07Z |
-| `civvis-20260909T043723Z-cont1` | Emperor | science | yes | rival victory | 195 | 747 | 49/57 | 3/4 port t159 last t188 | 2026-09-09T05:19:49Z |
-| `civvis-20260909T052021Z` | Emperor | — | NO | killed | 158 | 274 | 40/61 | 0/4 | 2026-09-09T05:50:18Z |
-| `civvis-20260909T052021Z-cont1` | Emperor | science | yes | defeat | 173 | 257 | 41/66 | 0/4 | 2026-09-09T05:53:39Z |
-| `civvis-20260909T055408Z` | Emperor | science | yes | defeat | 119 | 129 | — | 0/4 | 2026-09-09T06:11:01Z |
+| `civvis-20260921T062836Z-cont6` | King | — | NO | killed | 208 | 482 | 39/59 | 0/4 | 2026-09-21T07:34:11Z |
+| `civvis-20260921T073539Z` | King | — | NO | killed | 132 | 430 | — | 0/4 | 2026-09-21T07:57:37Z |
+| `civvis-20260921T075909Z` | King | domination | yes | rival victory | 153 | 514 | 40/53 | 0/4 | 2026-09-21T08:19:21Z |
+| `civvis-20260921T082117Z` | King | domination | yes | rival victory | 162 | 463 | 34/49 | 0/4 | 2026-09-21T08:58:05Z |
+| `civvis-20260921T085911Z` | King | — | NO | killed | 64 | 174 | — | 0/4 | 2026-09-21T09:09:08Z |
+| `civvis-20260921T085911Z-cont1` | King | — | NO | killed | 64 | 174 | — | 0/4 | 2026-09-21T09:16:48Z |
+| `civvis-20260921T085911Z-cont2` | King | — | NO | killed | 64 | 174 | — | 0/4 | 2026-09-21T09:22:27Z |
+| `civvis-20260921T085911Z-cont3` | King | domination | yes | rival victory | 90 | 222 | — | 0/4 | 2026-09-21T09:31:04Z |
+| `civvis-20260921T093226Z` | King | domination | yes | rival victory | 176 | 568 | 40/58 | 0/4 | 2026-09-21T09:53:06Z |
+| `civvis-20260921T095426Z` | King | — | NO | killed | 184 | 370 | 37/45 | 0/4 | 2026-09-21T10:23:28Z |
+| `civvis-20260921T095426Z-cont1` | King | — | NO | killed | 184 | 370 | 40/60 | 0/4 | 2026-09-21T10:27:55Z |
+| `civvis-20260921T095426Z-cont2` | King | — | NO | killed | 184 | 370 | 39/57 | 0/4 | 2026-09-21T10:32:29Z |
+| `civvis-20260921T095426Z-cont3` | King | — | NO | killed | 184 | 370 | 39/55 | 0/4 | 2026-09-21T10:41:10Z |
+| `civvis-20260921T095426Z-cont4` | King | — | NO | killed | 184 | 370 | 39/56 | 0/4 | 2026-09-21T10:46:55Z |
+| `civvis-20260921T095426Z-cont5` | King | — | NO | killed | 184 | 370 | 39/56 | 0/4 | 2026-09-21T10:54:21Z |
+| `civvis-20260921T095426Z-cont6` | King | — | NO | killed | 184 | 370 | 39/56 | 0/4 | 2026-09-21T11:01:54Z |
+| `civvis-20260921T110313Z` | King | domination | yes | rival victory | 146 | 539 | — | 0/4 | 2026-09-21T11:20:36Z |
+| `civvis-20260921T112210Z` | King | domination | yes | rival victory | 135 | 502 | — | 0/4 | 2026-09-21T11:41:18Z |
+| `civvis-20260921T114215Z` | King | domination | yes | rival victory | 114 | 389 | — | 0/4 | 2026-09-21T11:56:22Z |
+| `civvis-20260921T120510Z` | King | domination | yes | rival victory | 207 | 549 | 33/47 | 0/4 | 2026-09-21T12:35:52Z |
+| `civvis-20260921T123659Z` | King | — | NO | killed | -1 | -1 | — | — | 2026-09-21T12:39:26Z |
+| `civvis-20260921T123956Z` | King | — | NO | killed | 136 | 375 | — | 0/4 | 2026-09-21T13:00:29Z |
+| `civvis-20260921T123956Z-cont1` | King | — | NO | killed | 136 | 375 | — | 0/4 | 2026-09-21T13:05:03Z |
+| `civvis-20260921T123956Z-cont2` | King | — | NO | killed | 136 | 375 | — | 0/4 | 2026-09-21T13:10:43Z |
+| `civvis-20260921T123956Z-cont3` | King | — | NO | killed | 136 | 376 | — | 0/4 | 2026-09-21T13:16:03Z |
+| `civvis-20260921T123956Z-cont4` | King | domination | yes | rival victory | 211 | 558 | 40/46 | 0/4 | 2026-09-21T13:32:27Z |
+| `civvis-20260921T133405Z` | King | — | NO | killed | 99 | 233 | — | 0/4 | 2026-09-21T13:45:15Z |
+| `civvis-20260921T134621Z` | King | — | NO | killed | 184 | 961 | 40/43 | 0/4 port t178 | 2026-09-21T14:20:34Z |
+| `civvis-20260921T134621Z-cont1` | King | — | NO | killed | 184 | 961 | 56/54 | 0/4 port t183 | 2026-09-21T14:26:07Z |
+| `civvis-20260921T134621Z-cont2` | King | — | NO | killed | 184 | 960 | 55/52 | 0/4 port t180 | 2026-09-21T14:31:54Z |
+| `civvis-20260921T134621Z-cont3` | King | — | NO | killed | 184 | 953 | 52/51 | 0/4 port t178 | 2026-09-21T14:39:05Z |
+| `civvis-20260921T134621Z-cont4` | King | — | NO | killed | 184 | 944 | 48/48 | 0/4 port t178 | 2026-09-21T14:46:40Z |
+| `civvis-20260921T134621Z-cont5` | King | domination | yes | rival victory | 210 | 1100 | 43/46 | 0/4 port t182 | 2026-09-21T15:00:01Z |
+| `civvis-20260921T150141Z` | King | domination | yes | rival victory | 154 | 596 | 43/45 | 0/4 | 2026-09-21T15:25:22Z |
+| `civvis-20260921T152749Z` | King | domination | yes | rival victory | 167 | 450 | 39/52 | 0/4 | 2026-09-21T15:51:05Z |
+| `civvis-20260921T155411Z` | King | domination | yes | game exited | 141 | 415 | — | 0/4 | 2026-09-21T16:13:25Z |
+| `civvis-20260921T161428Z` | King | — | NO | killed | 184 | 923 | 47/47 | 0/4 | 2026-09-21T16:55:08Z |
+| `civvis-20260921T161428Z-cont1` | King | — | NO | killed | 184 | 923 | 57/57 | 0/4 | 2026-09-21T17:02:58Z |
+| `civvis-20260921T161428Z-cont2` | King | — | NO | killed | 184 | 930 | 56/56 | 0/4 | 2026-09-21T17:08:17Z |
+| `civvis-20260921T161428Z-cont3` | King | domination | yes | rival victory | 211 | 1049 | 55/55 | 0/4 | 2026-09-21T17:16:15Z |
