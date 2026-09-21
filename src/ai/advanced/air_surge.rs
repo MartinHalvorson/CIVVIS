@@ -1224,6 +1224,15 @@ impl AdvancedAi {
             return false;
         }
         if self.urgent_victory_threat(g, target) {
+            // Denial may need the staged ground army before the wing is
+            // ready. Release the declaration hold without throwing away its
+            // research and production. Ordinary diplomacy still checks the
+            // army, treasury, and peace deadline before opening this war.
+            if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                && self.threatened_city(g, pid).is_none()
+            {
+                return false;
+            }
             self.record_air_surge_abort(g, "victory denial superseded the surge");
             self.air_surge_plan = None;
             self.air_surge_status = AirSurgeStatus::default();
@@ -1272,6 +1281,25 @@ impl AdvancedAi {
                    g.turn.saturating_sub(plan.appointed_turn));
         }
         true
+    }
+
+    /// An urgent ordinary declaration can precede the wing's readiness.
+    /// Record that actual war so maintenance does not mistake it for an
+    /// opponent interrupting the appointment on the next observed board.
+    pub(crate) fn air_surge_join_declared_war(&mut self, g: &Game, pid: usize, target: usize) {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.is_at_war(pid, target)
+        {
+            return;
+        }
+        let Some(plan) = self.air_surge_plan.as_mut().filter(|plan| {
+            plan.target_player == target && plan.declared_turn.is_none() && !plan.opened_at_war
+        }) else {
+            return;
+        };
+        plan.declared_turn = Some(g.turn);
+        plan.phase = AirSurgePhase::Exploit;
+        self.air_surge_census.declarations += 1;
     }
 }
 
