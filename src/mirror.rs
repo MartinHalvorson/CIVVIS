@@ -38,6 +38,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+mod capital_identity;
 mod host_deaths;
 mod strategic_income;
 pub use host_deaths::HostUnitDeath;
@@ -2102,6 +2103,10 @@ pub struct StateCity {
     pub pop: i32,
     #[serde(default)]
     pub capital: bool,
+    /// Original capital used by Domination, unlike `capital` (current Palace).
+    /// Absent in old exports or when the host method is unavailable.
+    #[serde(default)]
+    pub original_capital: Option<bool>,
     /// ★★★ THE CAPTURE DECISION THE HOST IS WAITING ON. The Firaxis player id
     /// this city was just taken from (`City:GetJustConqueredFrom()`,
     /// `Popups/RazeCity.lua:86`), exported on exactly the city the shipped
@@ -5635,6 +5640,7 @@ const CITY_KEYS: &[&str] = &[
     "y",
     "pop",
     "capital",
+    "original_capital",
     "defense",
     "damage",
     "max_damage",
@@ -10405,20 +10411,7 @@ fn apply_observed_city_economy(
 /// planted city as the capital; the host can have moved its Palace elsewhere.
 /// Population, loyalty and pillage state also affect the modeled total.
 fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot) {
-    // Which seats the export names a capital for. A record that flags none
-    // (an older export, or a fixture) keeps `place_city`'s own choice rather
-    // than clearing every flag and leaving the seat capital-less.
-    let flagged_capitals: std::collections::BTreeSet<usize> = state
-        .cities
-        .iter()
-        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
-        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
-        .filter(|observed| observed.capital)
-        .filter_map(|observed| {
-            game.city_at(crate::hex::offset_to_axial(observed.x, observed.y))
-                .map(|cid| game.cities[&cid].owner)
-        })
-        .collect();
+    capital_identity::apply(game, state);
     let cities = state
         .cities
         .iter()
@@ -10434,11 +10427,6 @@ fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot
         // before any yield or pressure correction is measured.
         if observed.pop > 0 {
             game.cities.get_mut(&cid).unwrap().pop = observed.pop;
-        }
-        // `city_has_palace` reads this positional fact; do not leave the
-        // reconstruction's first planted city capital after a Palace move.
-        if flagged_capitals.contains(&game.cities[&cid].owner) {
-            game.cities.get_mut(&cid).unwrap().is_capital = observed.capital;
         }
         apply_city_health(game, cid, observed);
         if observed.loyalty_per_turn.is_finite() {

@@ -401,9 +401,18 @@ impl Game {
     }
 
     pub(super) fn home_continent(&self, pid: usize) -> Option<usize> {
-        self.cities
-            .values()
-            .find(|city| city.is_capital && city.original_owner == pid)
+        self.observed_city_palaces
+            .iter()
+            .filter(|(_, current)| **current)
+            .filter_map(|(id, _)| self.cities.get(id))
+            .find(|city| city.owner == pid)
+            .or_else(|| {
+                self.cities.values().find(|city| {
+                    !self.observed_city_palaces.contains_key(&city.id)
+                        && city.is_capital
+                        && city.original_owner == pid
+                })
+            })
             .and_then(|city| self.map.get(city.pos))
             .and_then(|tile| tile.continent)
     }
@@ -4817,11 +4826,32 @@ impl Game {
         ys
     }
 
+    pub(super) fn forget_observed_palaces(&mut self, old: usize, new: usize) {
+        Arc::make_mut(&mut self.observed_city_palaces).retain(|id, _| {
+            self.cities
+                .get(id)
+                .is_some_and(|city| city.owner != old && city.owner != new)
+        });
+    }
+
+    /// The host's current-capital flag for location-based rules. Without an
+    /// observation, preserve the engine's existing capital-flag behavior.
+    /// Domination and original-capital rules read `City::is_capital` directly.
+    pub(super) fn city_capital_flag(&self, city: &City) -> bool {
+        self.observed_city_palaces
+            .get(&city.id)
+            .copied()
+            .unwrap_or(city.is_capital)
+    }
+
     /// The Palace occupies the original capital while it is controlled;
     /// after that city is captured it moves to another owned city. City-states
     /// likewise have a Palace even though their city is not an original
     /// capital for Domination Victory purposes.
     pub(crate) fn city_has_palace(&self, city: &City) -> bool {
+        if let Some(&has_palace) = self.observed_city_palaces.get(&city.id) {
+            return has_palace;
+        }
         let owns_original_capital = self.cities.values().any(|candidate| {
             candidate.owner == city.owner
                 && candidate.original_owner == city.owner
@@ -5724,7 +5754,7 @@ impl Game {
                 "adjacent_capital" => neighbors.iter().any(|neighbor| {
                     self.city_at(*neighbor).is_some_and(|candidate| {
                         self.cities[&candidate].owner == city.owner
-                            && self.cities[&candidate].is_capital
+                            && self.city_capital_flag(&self.cities[&candidate])
                     })
                 }),
                 "panama_canal" => {
