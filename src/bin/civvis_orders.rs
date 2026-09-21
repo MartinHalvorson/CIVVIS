@@ -11499,11 +11499,54 @@ mod tests {
             .filter(|order| order["verb"] == "ATTACK" && order["x"] == 5 && order["y"] == 4)
             .map(|order| order["subject"].as_i64().unwrap())
             .collect();
-        assert_eq!(
-            strikers.last(),
-            Some(&102),
-            "the ordinary planner must not restore the unsafe wounded followup: {reply}"
-        );
+        if strikers.contains(&101) {
+            // A stricter reply reserve can leave the healthy warrior in
+            // cover and allow only the garrison's nonlethal opening blow.
+            // That is safe: it cannot kill and advance onto the archer's
+            // exposed tile. It must never follow the healthy warrior's hit.
+            assert_eq!(strikers, vec![101], "no wounded followup: {reply}");
+            let ours = mirror
+                .civ6_of
+                .iter()
+                .find(|(_, host)| **host == 101)
+                .unwrap()
+                .0;
+            let target = civvis::hex::offset_to_axial(5, 4);
+            let defender = *mirror.game.unit_ids_at(target).first().unwrap();
+            let (att, def) = mirror
+                .game
+                .melee_exchange_strengths(*ours, defender)
+                .unwrap();
+            let upper_damage = (30.0 * ((att - def) / 25.0).exp() * 1.2)
+                .round()
+                .clamp(1.0, 100.0);
+            assert!(
+                upper_damage < f64::from(mirror.game.units[&defender].hp),
+                "even the high roll must leave the defender alive"
+            );
+            let mut after = mirror.game.clone();
+            after
+                .apply(
+                    0,
+                    &Action::Attack {
+                        unit: *ours,
+                        target,
+                    },
+                )
+                .unwrap();
+            assert!(after.units.contains_key(&defender));
+            assert!(after.units[ours].hp > 0);
+            let city = after
+                .city_at(after.units[ours].pos)
+                .expect("still sheltered in the city");
+            assert_eq!(after.cities[&city].owner, 0);
+        } else {
+            assert_eq!(
+                strikers,
+                vec![102],
+                "only the healthy striker may advance: {reply}"
+            );
+        }
         assert!(reply["note"]
             .as_str()
             .unwrap()
