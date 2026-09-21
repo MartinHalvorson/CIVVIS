@@ -21714,11 +21714,7 @@ impl AdvancedAi {
             self.religious_spending(g, pid, false);
             return;
         }
-        let defenders = g
-            .units
-            .values()
-            .filter(|unit| unit.owner == pid && unit.kind == "missionary")
-            .count();
+        let defenders = self.religious_defense_missionary_count(g, pid, threat);
         let veto = self.religious_veto_engaged(g, pid);
         if defenders >= 2 + Self::religious_veto_extra_spreaders(veto.as_ref()) {
             return;
@@ -42081,3 +42077,5 @@ mod domination_maintenance_tests;
 mod domination_wonder_tests;
 
 mod domination_policy_economy;
+
+mod adopted_faith_balance;
