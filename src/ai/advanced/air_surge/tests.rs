@@ -206,3 +206,35 @@ fn joining_an_air_war_requires_its_actual_matching_declaration() {
     ai.air_surge_join_declared_war(&g, 0, 1);
     assert_eq!(ai.air_surge_census.declarations, 1);
 }
+
+#[test]
+fn urgent_domination_target_opening_war_keeps_the_existing_air_investment() {
+    let (mut g, mut ai, _) = staged_domination_denial();
+    assert!(!ai.air_surge_opening(&mut g, 0, 1));
+    g.at_war.insert((0, 1));
+    let counter = ai.choose_air_surge(&g, 0).expect("reachable counterattack");
+    assert_eq!(counter.target_player, 1);
+    g.turn += 1;
+    ai.maintain_air_surge(&g, 0);
+    let surge = ai
+        .air_surge_plan
+        .as_ref()
+        .expect("retain the urgent counterattack");
+    assert!(surge.opened_at_war);
+    assert_eq!(surge.declared_turn, None, "we did not declare this war");
+    assert_eq!(surge.appointed_turn, 140);
+    assert_eq!(surge.phase, AirSurgePhase::Exploit);
+    assert_eq!(ai.air_surge_cooldown_until, 0);
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+}
+
+#[test]
+fn an_unexpected_nonurgent_war_still_ends_the_elective_air_plan() {
+    let (mut g, mut ai, _) = staged_domination_denial();
+    g.players[1].dvp = 0;
+    assert!(!ai.urgent_victory_threat(&g, 1));
+    g.at_war.insert((0, 1));
+    ai.maintain_air_surge(&g, 0);
+    assert!(ai.air_surge_plan.is_none());
+    assert!(ai.air_surge_cooldown_until > g.turn);
+}

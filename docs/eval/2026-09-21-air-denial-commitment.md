@@ -22,6 +22,11 @@ appointment as declared and enter Exploit. Next-turn maintenance then
 recognizes our opening instead of aborting as though the target attacked
 first. Failed or held declarations do not create a fictitious war.
 
+If that urgent target opens the war first, the existing counterattack
+selector can take over without resetting the investment. This requires one
+major front, no threatened home city, and a reachable legal objective. It
+records a counterattack, not a declaration we did not make.
+
 Other victory lanes retain the existing cancellation. Ordinary research can
 still temporarily prioritize a cheaper standing-army upgrade during a major
 war; this does not change the research priority rules. Existing Aluminum,

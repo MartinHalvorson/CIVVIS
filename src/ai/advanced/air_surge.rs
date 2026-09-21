@@ -752,13 +752,23 @@ impl AdvancedAi {
                 plan.objective_city = objective_city.unwrap_or(plan.objective_city);
             }
             let mut at_war = target_alive && g.is_at_war(pid, plan.target_player);
+            // The urgent rival may open the war while ordinary diplomacy is
+            // still waiting on staging or its treasury. Join that front with
+            // the existing investment, using the same reachable-objective
+            // checks as any other counterattack handoff.
+            let urgent_counter = at_war
+                && plan.declared_turn.is_none()
+                && !plan.opened_at_war
+                && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                && self.urgent_victory_threat(g, plan.target_player)
+                && self.threatened_city(g, pid).is_none();
             // The investment belongs to the active front, even when a new
             // war supersedes an elective target or its city changes hands.
             // Use a known reachable replacement without an abort cooldown or
             // restarting the research and Aluminum clocks.
             if target_alive
                 && fronts.len() == 1
-                && (!at_war || objective_owner != Some(plan.target_player))
+                && (!at_war || objective_owner != Some(plan.target_player) || urgent_counter)
             {
                 if let Some(mut counter) = self.choose_air_surge(g, pid) {
                     if (plan.declared_turn.is_some() || plan.opened_at_war)
