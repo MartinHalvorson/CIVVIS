@@ -2001,6 +2001,39 @@ impl AdvancedAi {
         next.is_some_and(|pos| self.base.tactical_apply_move(g, pid, uid, pos))
     }
 
+    /// A free scout must not spend every turn beside a contact merely because
+    /// attacking it is fatal. Leave for reachable dry ground with no predicted
+    /// reply damage; the caller still ends the turn and owns the attack veto.
+    fn escape_vetoed_recon(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        field: &mut DangerField,
+    ) -> bool {
+        if !self.distance_scout_available(g, pid, uid) {
+            return false;
+        }
+        let from = g.units[&uid].pos;
+        if field.danger(from, uid) <= NO_DANGER || g.is_embarked(&g.units[&uid]) {
+            return false;
+        }
+        let destination = g
+            .reachable(uid)
+            .into_iter()
+            .filter(|pos| {
+                *pos != from && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+            })
+            .filter(|pos| {
+                !g.unit_ids_at(*pos)
+                    .iter()
+                    .any(|other| g.is_at_war(pid, g.units[other].owner))
+            })
+            .filter(|pos| field.danger(*pos, uid) <= NO_DANGER)
+            .min_by_key(|pos| (g.wdist(from, *pos), *pos));
+        destination.is_some_and(|to| self.base.path_walk_to(g, pid, uid, to))
+    }
+
     /// Pull the wounded and the exposed out of reach and fortify them.
     /// Returns how many actually moved or swapped.
     fn rotate_wounded(
@@ -2059,6 +2092,7 @@ impl AdvancedAi {
             // one that is also exposed rotates like any other.
             if doomed.contains(&uid) && !(wounded || exposed) {
                 let advanced = self.advance_vetoed_siege_unit(g, pid, uid, field);
+                let escaped = !advanced && self.escape_vetoed_recon(g, pid, uid, field);
                 self.base.fortify_or_stop(g, pid, uid);
                 self.battle_planner_ordered.insert(uid);
                 if let Some(now) = g.units.get(&uid) {
@@ -2066,6 +2100,10 @@ impl AdvancedAi {
                         think!(self.journal(), Military, Decision,
                             "Battle plan: the {} advances from {:?} to {:?} toward its siege", now.kind, unit.pos, now.pos;
                             "every attack was vetoed; this approach step has no predicted reply damage, and the unit's turn ends here");
+                    } else if escaped {
+                        think!(self.journal(), Military, Decision,
+                            "Battle plan: the {} escapes from {:?} to {:?}", now.kind, unit.pos, now.pos;
+                            "every attack was vetoed; this recon move has no predicted reply damage, and the unit's turn ends here");
                     } else {
                         think!(self.journal(), Military, Decision,
                         "Battle plan: the {} at {:?} holds rather than strike", now.kind, now.pos;
@@ -3043,6 +3081,9 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod healing_tests;
+
+#[cfg(test)]
+mod recon_veto_tests;
 
 #[cfg(test)]
 mod tests {
