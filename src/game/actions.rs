@@ -1525,6 +1525,7 @@ impl Game {
                         let non_aggression = self.peace_treaty_until(pid, o.id).is_some()
                             || self.emergency_coalition_pair(pid, o.id);
                         if !non_aggression
+                            && !self.host_blocks_war(pid, o.id)
                             && !self.are_friends(pid, o.id)
                             && !self.are_allied(pid, o.id)
                         {
@@ -1638,6 +1639,7 @@ impl Game {
                             }
                         }
                     } else if !p.is_minor
+                        && !self.host_blocks_war(pid, o.id)
                         && !self.are_friends(pid, o.id)
                         && !self.are_allied(pid, o.id)
                         && self.peace_treaty_until(pid, o.id).is_none()
@@ -8824,7 +8826,14 @@ impl Game {
         Ok(())
     }
 
+    pub(crate) fn host_blocks_war(&self, pid: usize, other: usize) -> bool {
+        self.host_war_blocks.contains(&(pid, other, self.turn))
+    }
+
     pub(super) fn do_declare_war(&mut self, pid: usize, other: usize) -> Result<(), String> {
+        if self.host_blocks_war(pid, other) {
+            return Err("host forbids declaring war this turn".into());
+        }
         self.start_war(
             pid,
             other,
@@ -8839,6 +8848,9 @@ impl Game {
         other: usize,
         casus_belli: &str,
     ) -> Result<(), String> {
+        if self.host_blocks_war(pid, other) {
+            return Err("host forbids declaring war this turn".into());
+        }
         let Some(profile) = casus_belli_profile(casus_belli) else {
             return Err("unknown casus belli".into());
         };
