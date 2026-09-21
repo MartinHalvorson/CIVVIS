@@ -12674,7 +12674,10 @@ fn religious_match_point_spends_the_reserve_only_in_own_faith_cities() {
     assert_eq!(missionary.religion.as_deref(), Some("Home Faith"));
     assert_eq!(
         missionary.pos,
-        game.cities[&faithful_city].districts["holy_site"]
+        *game.cities[&faithful_city]
+            .districts
+            .get(crate::name!("holy_site"))
+            .unwrap()
     );
     assert!(game.players[0].faith < 1.0);
 }
