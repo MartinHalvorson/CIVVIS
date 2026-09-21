@@ -11606,6 +11606,19 @@ impl BasicAi {
             return None;
         }
         let queued = g.cities[&cid].queue.first();
+        // A city cannot advance two activation districts in one pass. Keep
+        // any queued district serving a waiting person, not just the family
+        // currently being considered. Otherwise two paused foundations and
+        // two needs repeatedly replace each other without ending the pass.
+        // Include the host's tail queue: it already supplies that path too.
+        if g.cities[&cid].queue.iter().any(|item| {
+            matches!(item, Item::District { district, .. }
+                if g.players[pid].live_great_person_activation_needs.iter().any(|need|
+                    Self::live_great_person_district(need)
+                        .is_some_and(|family| g.district_family(*district) == family)))
+        }) {
+            return None;
+        }
         let queue_can_yield = match queued {
             None => true,
             Some(Item::Building { building }) => g
@@ -11647,17 +11660,6 @@ impl BasicAi {
                 continue;
             };
             let item = Item::District { district, pos };
-            // The foundation may already be in the host's tail queue, or the
-            // current item may be another district of the same family. Either
-            // way the city already has a path that will satisfy the person, so
-            // do not preempt the head merely to move an equivalent district
-            // forward.
-            if g.cities[&cid].queue.iter().any(|queued| {
-                matches!(queued, Item::District { district, .. }
-                    if g.district_family(*district) == family)
-            }) {
-                continue;
-            }
             if g.can_produce(pid, cid, &item) {
                 return Some(item);
             }
@@ -11728,10 +11730,14 @@ impl BasicAi {
             return false;
         }
         let mut changed = false;
+        // Produce reserves a queue; it does not finish the prerequisite.
+        // Each city can therefore supply only one new path during this pass.
+        let mut reserved = BTreeSet::new();
         loop {
             let choice = g
                 .player_city_ids(pid)
                 .into_iter()
+                .filter(|city| !reserved.contains(city))
                 .filter_map(|city| {
                     let item = if g.cities[&city].queue.is_empty() {
                         self.live_great_person_activation_item(g, pid, city)
@@ -11766,6 +11772,7 @@ impl BasicAi {
                 break;
             }
             changed = true;
+            reserved.insert(city);
             if resumed {
                 think!(self.journal, Cities, Decision,
                       "Resuming an activation path for a live Great Person";
@@ -19388,7 +19395,7 @@ mod tests {
     }
 
     #[test]
-    fn a_live_great_person_resumes_a_paused_activation_foundation() {
+    fn a_live_great_person_resumes_a_foundation_without_displacing_another_activation_path() {
         let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
         let settler = game
             .player_unit_ids(0)
@@ -19460,6 +19467,31 @@ mod tests {
         );
 
         let ai = BasicAi::new();
+        let waiting_scientist = crate::game::LiveGreatPersonActivationNeed {
+            kind: "scientist".to_string(),
+            individual: Some("isaac_newton".to_string()),
+            required_district: Some("campus".to_string()),
+            ..crate::game::LiveGreatPersonActivationNeed::default()
+        };
+        game.players[0]
+            .live_great_person_activation_needs
+            .push(waiting_scientist.clone());
+        // Native turn 95/frame 1 alternated these two foundations forever.
+        // Check the candidate first so the old implementation fails promptly
+        // instead of hanging the entire test suite inside the planner loop.
+        assert_eq!(
+            ai.live_great_person_activation_resume_item(&game, 0, city),
+            None,
+            "the Campus already serves another waiting person"
+        );
+        assert!(!ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert_eq!(game.cities[&city].production, 17.0);
+        assert!(matches!(game.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if *district == "campus"));
+
+        // Once that person no longer needs the Campus, the Holy Site can
+        // resume normally and bank the Campus's progress.
+        game.players[0].live_great_person_activation_needs.pop();
         assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
         assert!(matches!(
             game.cities[&city].queue.first(),
@@ -19477,6 +19509,15 @@ mod tests {
             !ai.prioritize_live_great_person_activation(&mut game, 0),
             "the active foundation must not be re-applied in a loop"
         );
+        game.players[0]
+            .live_great_person_activation_needs
+            .push(waiting_scientist);
+        assert_eq!(
+            ai.live_great_person_activation_resume_item(&game, 0, city),
+            None,
+            "the Holy Site is also protected when it is the active path"
+        );
+        assert!(!ai.prioritize_live_great_person_activation(&mut game, 0));
     }
 
     #[test]
