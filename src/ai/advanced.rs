@@ -22,6 +22,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 mod adopted_faith_sanctuary;
+mod counterfaith_source;
 mod defensive_apostle;
 
 mod regional_production_commitments;
@@ -35357,7 +35358,8 @@ impl AdvancedAi {
         // `religious_veto_defence`: our cities the threat faith holds or is
         // closing on outrank the rest, cheapest flip first.
         let veto = self.religious_veto_engaged(g, pid);
-        let mut targets: Vec<(i32, std::cmp::Reverse<u32>, Pos)> = g
+        let recovery = self.counterfaith_recruitment_targets(g, pid, &religion);
+        let mut targets: Vec<(bool, i32, std::cmp::Reverse<u32>, Pos)> = g
             .cities
             .values()
             .filter(|city| {
@@ -35388,7 +35390,12 @@ impl AdvancedAi {
                     + swing / 10
                     + Self::religious_veto_target_bonus(pid, city, veto.as_ref(), held)
                     - g.wdist(current, city.pos) * 4;
-                (score, std::cmp::Reverse(city.id), city.pos)
+                (
+                    recovery.contains(&city.id),
+                    score,
+                    std::cmp::Reverse(city.id),
+                    city.pos,
+                )
             })
             .collect();
         targets.sort_by(|left, right| right.cmp(left));
@@ -35396,7 +35403,7 @@ impl AdvancedAi {
         // life, and the fog is worth more than a third pass at the same city.
         // Version two is an intentionally separate long-range expedition, so
         // the registry can screen it beside the original local policy.
-        let sites: Vec<Pos> = targets.iter().map(|(_, _, target)| *target).collect();
+        let sites: Vec<Pos> = targets.iter().map(|(_, _, _, target)| *target).collect();
         if let Some(acted) = self.last_charge_missionary_expedition(g, pid, uid, &religion, &sites)
         {
             return acted;
@@ -35404,7 +35411,7 @@ impl AdvancedAi {
         if let Some(acted) = self.last_charge_missionary_explores(g, pid, uid, &religion, &sites) {
             return acted;
         }
-        for (_, _, target) in targets {
+        for (_, _, _, target) in targets {
             if g.wdist(current, target) <= 1 {
                 return g.apply(pid, &Action::Spread { unit: uid }).is_ok();
             }
