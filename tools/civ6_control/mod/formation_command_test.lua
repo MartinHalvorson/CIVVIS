@@ -283,6 +283,79 @@ for _, name in ipairs({ "UNITCOMMAND_FORM_CORPS", "UNITCOMMAND_FORM_ARMY",
 		resolvedLine ~= nil and resolvedLine:find(name, 1, true) ~= nil, true)
 end
 
+-- Condemn completion is native target removal, not a spread charge spent by
+-- the military actor. Exercise the real order handler and event callback.
+local ledger = rawget(_G, "CivvisLedger")
+local turn = 118
+Game.GetCurrentGameTurn = function() return turn end
+PlayerManager = { GetAliveMajorIDs = function() return { 0, 2, 3 } end }
+local enemy = { GetUnits = function()
+	return { Members = function()
+		local target = host.units["2:93"]
+		local remaining = target ~= nil
+		return function()
+			if remaining then remaining = false; return 93, unitObject(target); end
+		end
+	end }
+end }
+Players = { [2] = enemy }
+local condemnPlayer = { GetDiplomacy = function()
+	return { IsAtWarWith = function(_, other) return other == 2 end }
+end }
+GameInfo.Units = setmetatable({}, { __index = function(_, name)
+	-- Base Units.xml:754: missionaries have ReligiousStrength=100 and no
+	-- PromotionClass. Requiring the Apostle's promotion class misses them.
+	return { UnitType = name, ReligiousStrength = name == "UNIT_MISSIONARY" and 100 or 0 }
+end })
+local condemnHash = hashFor("UNITCOMMAND_CONDEMN_HERETIC")
+local requestCommand = UnitManager.RequestCommand
+local function condemnEvents()
+	local count = 0
+	for _, line in ipairs(LOG) do
+		if line:find('"kind":"condemn_removed"', 1, true) then count = count + 1 end
+	end
+	return count
+end
+local function prepareCondemn()
+	reset()
+	turn = 118
+	ledger.expected_condemn = {}
+	host.units["0:41"].x = 4
+	host.units["2:93"] = { player = 2, id = 93, x = 4, y = 4, kind = "UNIT_MISSIONARY" }
+	host.allow[condemnHash] = true
+	UnitManager.RequestCommand = requestCommand
+end
+local function issueCondemn()
+	return applyOrder(condemnPlayer, PID,
+		{ kind = "unit", subject = 41, verb = "CONDEMN_HERETIC" }, turn)
+end
+prepareCondemn()
+local count = condemnEvents()
+UnitManager.RequestCommand = function(unit, hash, ...)
+	check("condemn has no command parameters", select("#", ...), 0)
+	host.units["2:93"] = nil
+	ledger.onUnitRemoved(2, 93)
+end
+check("synchronous condemn accepted", issueCondemn(), true)
+check("synchronous removal witnessed", condemnEvents(), count + 1)
+ledger.onUnitRemoved(2, 93)
+check("duplicate removal is not replayed", condemnEvents(), count + 1)
+
+for _, scenario in ipairs({ "delayed", "still_exists", "other_owner", "later_turn",
+		"actor_moved", "refused", "wrong_tile", "military_target" }) do
+	prepareCondemn()
+	count = condemnEvents()
+	if scenario == "refused" then host.allow[condemnHash] = false end
+	if scenario == "wrong_tile" then host.units["2:93"].x = 5 end
+	if scenario == "military_target" then host.units["2:93"].kind = "UNIT_WARRIOR" end
+	issueCondemn()
+	if scenario ~= "still_exists" then host.units["2:93"] = nil end
+	if scenario == "later_turn" then turn = 119 end
+	if scenario == "actor_moved" then host.units["0:41"].x = 5 end
+	ledger.onUnitRemoved(scenario == "other_owner" and 3 or 2, 93)
+	check("condemn removal " .. scenario, condemnEvents(), count + (scenario == "delayed" and 1 or 0))
+end
+
 if failures > 0 then
 	print(string.format("%d check(s) failed", failures))
 	os.exit(1)
