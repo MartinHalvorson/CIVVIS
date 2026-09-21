@@ -11384,11 +11384,11 @@ impl AdvancedAi {
             return None;
         }
         let targeted = self.active_victory_target(g).is_some();
-        if targeted && !self.deny_while_targeted {
-            return None;
-        }
         let culture_pressures = self.rival_culture_pressures(g);
         let denial = self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)?;
+        if targeted && !self.deny_while_targeted && !self.domination_counter_target(g, denial.0) {
+            return None;
+        }
         // An assigned lane keeps its focus against ordinary pressure; a rival
         // at match point ends the game for every lane alike.
         if targeted && !self.urgent_victory_threat(g, denial.0) {
@@ -11578,7 +11578,8 @@ impl AdvancedAi {
         } else {
             pressure.progress
         };
-        pressure.progress >= 90
+        self.domination_counter_pressure(g, pressure)
+            || pressure.progress >= 90
             || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
             || (self.stock_denial_lead_time && stock_lane && stock_progress >= STOCK_DENIAL_BAR)
             || (pressure.strategy == GrandStrategy::Religion
@@ -12002,9 +12003,9 @@ impl AdvancedAi {
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
             )
-        } else if let Some((_, counter)) =
-            actionable_denial.filter(|_| self.denial_outranks_expansion)
-        {
+        } else if let Some((_, counter)) = actionable_denial.filter(|(rival, _)| {
+            self.denial_outranks_expansion || self.domination_counter_target(g, *rival)
+        }) {
             // `denial-outranks-expansion`: the same answer the branch below
             // gives, reached before the lane can say "keep expanding". A
             // rival at match point does not wait for our sixth city.
