@@ -40,3 +40,24 @@ Nine exported frames and twelve internal-action frames differ; some are
 counterfactual retry/receipt consequences because the original recorded
 future never executed the new rebase requests. This comparison predates
 integration of #3674 and is not evidence of native execution or a victory.
+
+
+## Final integrated comparison and validation
+
+The final paired replay includes the #3674 air-pillage exporter on both sides.
+Baseline production source is 6810f5e00; candidate source is 4032a8ad9. Both
+consume the same 497 recorded decision frames. Twelve exported frames and
+twelve internal-action frames differ. The first bomber exchanges mine bombing
+for rebasing at 153/1, 154/0 and 155/0; the second exchanges current attacks
+for rebasing at 156/0 and 157/0. Across the recorded history, five rebase
+requests replace seven air attacks and three later rebase requests; these
+counts also include retry-state effects and do not represent five executed
+rebases. The old future never performed the new requests, so replay receipts
+cannot establish native success, subsequent city damage, captures or victory.
+
+Final local validation passes: 4,091 Rust tests (53 ignored), all six focused
+regressions, the existing bomber airstrip-priority regression, 14 append tests,
+and eight four-player 180-turn soak games (seed 367600). Scoped formatting,
+changed-line Rust quality against 6810f5e00, and diff whitespace checks pass.
+The completed native game used older code and ultimately lost to Culture on
+turn 211. This change has not yet demonstrated a native Domination win.
