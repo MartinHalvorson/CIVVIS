@@ -1362,12 +1362,12 @@ impl HostOrderRefusals {
             let Some(allowed) = rival.can_declare else {
                 continue;
             };
-            let prior = self.war_permissions.insert(rival.player, allowed);
+            let prior = self.war_permissions.insert(rival.player as i64, allowed);
             if allowed && prior == Some(false) {
                 self.seen.retain(|(kind, verb, subject, _), record| {
                     !(kind == "war"
                         && verb.as_deref() == Some("DECLARE")
-                        && *subject == Some(rival.player)
+                        && *subject == Some(rival.player as i64)
                         && matches!(record.reason.as_str(), "not_at_war" | "cannot_declare"))
                 });
             }

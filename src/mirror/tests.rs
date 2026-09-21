@@ -14101,8 +14101,9 @@ fn host_war_permission_does_not_block_another_actor_or_end_an_observed_war() {
     };
     let (snapshot, mut state) = diplomacy_board(97, rival);
     let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
-    assert!(mirror
-        .game
+    let mut other_actor = mirror.game.clone();
+    other_actor.current = 1;
+    assert!(other_actor
         .legal_actions_within(1, crate::game::ActionFamilies::DIPLOMACY)
         .iter()
         .any(|a| matches!(a, crate::game::Action::DeclareWar { player: 0 })));
