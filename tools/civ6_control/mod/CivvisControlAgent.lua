@@ -16147,22 +16147,35 @@ end;
 
 -- When a visible hostile already covers a Settler's CURRENT tile, merely
 -- refusing its planned leg is not a safety action: the hostile phase still
--- captures the stationary civilian.  Find a destination within two hexes that
--- the host can actually execute this turn and that every supplied hostile cannot
--- reach under the same conservative host-side predicate.  Two hexes is the
--- ordinary Settler allowance; the host path query remains the authority, so a
--- blocked second step is simply ignored.  The caller owns the threat predicate
+-- captures the stationary civilian.  Search the host's reachable movement plots
+-- plus a two-ring fallback, retaining only paths executable this turn that every
+-- supplied hostile cannot reach. Faster civilians and roads can escape beyond
+-- the fallback radius. The caller owns the threat predicate
 -- because scouts use their measured geometric floor, while combat units prefer
 -- their path query and then a BaseMoves fallback.
 CivvisBoard.findSettlerCaptureEscape = function(settler, fromX, fromY, wantX, wantY,
 		threats, threatReaches)
 	local candidates = {};
+	local checked = { [fromX .. ":" .. fromY] = true };
+	local function consider(x, y)
+		local key = x .. ":" .. y;
+		if checked[key] then return; end
+		checked[key] = true;
+		if not CivvisBoard.reachesThisTurn(settler, x, y) then return; end
+		for _, threat in ipairs(threats) do
+			if threatReaches(threat, x, y) then return; end
+		end
+		local distance = tonumber(try(function()
+			return Map.GetPlotDistance(x, y, wantX, wantY);
+		end, 9999)) or 9999;
+		candidates[#candidates + 1] = { x = x, y = y, distance = distance };
+	end
 	local frontier = { { x = fromX, y = fromY } };
 	local seen = { [fromX .. ":" .. fromY] = true };
 	-- Keep this bounded. Enumerating the whole map through GetMoveToPathEx on
-	-- every safety pass would make a rare emergency expensive, while two rings
-	-- cover a normal Settler's full fresh-turn movement and the live failure that
-	-- exposed this gap.
+	-- every safety pass would make a rare emergency expensive. Preserve the
+	-- existing two-ring fallback when the movement-list API is unavailable;
+	-- the host movement list below adds longer legal routes.
 	for _ = 1, 2 do
 		local nextFrontier = {};
 		for _, origin in ipairs(frontier) do
@@ -16171,25 +16184,22 @@ CivvisBoard.findSettlerCaptureEscape = function(settler, fromX, fromY, wantX, wa
 				if not seen[key] then
 					seen[key] = true;
 					nextFrontier[#nextFrontier + 1] = plot;
-					if CivvisBoard.reachesThisTurn(settler, plot.x, plot.y) then
-						local safe = true;
-						for _, threat in ipairs(threats) do
-							local reaches = threatReaches(threat, plot.x, plot.y);
-							if reaches then safe = false; break; end
-						end
-						if safe then
-							local distance = tonumber(try(function()
-								return Map.GetPlotDistance(plot.x, plot.y, wantX, wantY);
-							end, 9999)) or 9999;
-							candidates[#candidates + 1] = {
-								x = plot.x, y = plot.y, distance = distance,
-							};
-						end
-					end
+					consider(plot.x, plot.y);
 				end
 			end
 		end
 		frontier = nextFrontier;
+	end
+	-- SelectedUnit.lua:53 reads this list for the movement border. It contains
+	-- plot indices, not paths; each candidate still needs the path witness above.
+	local reachable = try(function() return UnitManager.GetReachableMovement(settler); end, nil);
+	if type(reachable) == "table" then
+		for _, index in ipairs(reachable) do
+			local plot = try(function() return Map.GetPlotByIndex(index); end, nil);
+			local x = tonumber(try(function() return plot:GetX(); end, nil));
+			local y = tonumber(try(function() return plot:GetY(); end, nil));
+			if x ~= nil and y ~= nil then consider(x, y); end
+		end
 	end
 	table.sort(candidates, function(a, b)
 		if a.distance ~= b.distance then return a.distance < b.distance; end
