@@ -142,3 +142,27 @@ fn counterfaith_cannot_finish_another_founders_victory() {
     assert!(!AdvancedAi::safe_adopted_counterfaith(&g, 0, "Orthodoxy"));
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
 }
+
+#[test]
+fn repeated_reservation_does_not_start_a_second_supplier() {
+    let (mut g, ai, plan, home) = fixture();
+    let other = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != home)
+        .unwrap();
+    let city = g.cities.get_mut(&other).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Orthodoxy".into(), 1000.0);
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert_eq!(
+        g.player_city_ids(0)
+            .into_iter()
+            .filter(|cid| g.cities[cid].queue.first().is_some_and(
+                |item| matches!(item, Item::District { district, .. } if district == "holy_site")
+            ))
+            .count(),
+        1
+    );
+}
