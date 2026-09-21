@@ -1,0 +1,37 @@
+# Preserve an adopted faith before the religious defense loses its supplier
+
+Native run `civvis-20260921T110313Z`, pinned to `480216769`, lost to China's
+religious victory at turn 146. It retained ten cities and reported 771
+military strength, with no recorded city captures. Economic growth alone did
+not deny the other victory condition.
+
+The player founded no religion. Orthodoxy nevertheless remained a possible
+counter-faith: Cumaná followed it from turn 81, and other cities adopted it
+intermittently through 113. At turn 98 Cumaná could legally build a Holy Site
+for 63 production, estimated at four turns, while the empire held 197 Faith.
+Instead it queued an Aqueduct. At 102–108 the Holy Site remained legal there
+in three or four turns, competing with a Dam. No adopted-faith city offered a
+Missionary purchase in the recorded menus. By turn 130 all ten cities followed
+Buddhism.
+
+The existing non-founder defense attempts to buy adopted-faith Missionaries
+but does not provide their Holy Site and Shrine. Its first-city threat scan
+can also call the minority counter-faith the invader. The draft change selects
+an invading faith that holds at least half our cities, prioritizing its hold
+on other civilizations, and reserves one legal Holy Site–Shrine chain in a
+currently observed counter-faith city. It prefers an existing commitment and
+then the shortest production chain. A threatened supplier is excluded, and
+local emergency production retains precedence. Purchase remains gated on the
+actual city faith and legality; another religion that would complete a rival's
+victory is not used as the counter-faith.
+
+This applies to Domination non-founders with religious victory enabled and
+Faith sufficient for the undiscounted Missionary estimate. Founders keep the
+existing Temple defense. The production governor preserves the one reserved
+chain, including its initial zero-progress frame. Other victory lanes retain
+their existing policy.
+
+Validation is in progress. The recorded conversion window establishes a legal
+opportunity, not proof that a counterfactual Holy Site would have completed in
+time or that its Missionaries would have prevented the loss. No native
+Domination victory has been verified.
