@@ -917,11 +917,27 @@ impl AdvancedAi {
     ///
     /// ⚠ Keyed off the technology, not off [`AirSurgePhase::Beeline`]. A
     /// counter appointed into a running war sits in `Exploit` from its first
-    /// turn — and it is precisely the appointment that most needs the beeline,
-    /// because the wing is what answers the invasion. The goal retires when
-    /// the technology lands, which is the only condition that ever mattered.
+    /// turn and still needs research before its wing can answer the invasion.
+    /// A nearer standing-army upgrade can temporarily take priority; the air
+    /// goal retires when the breakthrough technology lands.
     pub(crate) fn air_surge_research_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
         self.air_surge_plan.as_ref()?;
+        // Native King run 20260921T110313Z kept Crossbowmen and Trebuchets
+        // through Flight while a nine-tech air appointment owned research.
+        // Keep that appointment, but let a nearer upgrade for the standing
+        // army interrupt its beeline during a major war. The modernization
+        // helper requires at least two units and releases the slot as soon
+        // as their immediate successor is unlocked. Finish the last air tech
+        // rather than interrupting the breakthrough at the end of the chain.
+        if self.air_surge_2
+            && Self::air_surge_missing_techs(g, pid) > 1
+            && self.wartime_modernization_tech(g, pid).is_some_and(|goal| {
+                Self::war_remaining_research_cost(g, pid, goal)
+                    < Self::war_remaining_research_cost(g, pid, Name::new(AIR_SURGE_GOAL_TECH))
+            })
+        {
+            return None;
+        }
         (!g.players[pid]
             .techs
             .contains(&Name::new(AIR_SURGE_GOAL_TECH)))
@@ -1270,3 +1286,6 @@ mod research_milestone_tests;
 
 #[cfg(test)]
 mod war_retarget_tests;
+
+#[cfg(test)]
+mod wartime_research_tests;
