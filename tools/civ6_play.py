@@ -2371,11 +2371,10 @@ def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
         click_at(*tile)
         time.sleep(1.0)
         chosen = run_dir / "map-picker-chosen.png"
-        screenshot(chosen)
-        commit = _map_picker_commit_point(chosen, bounds)
+        commit = _map_picker_commit_point(chosen, bounds) if screenshot(chosen) else None
         if commit is None:
-            print(f"[setup] map_type: {label} was clicked but the Select Map "
-                  "button was not readable", flush=True)
+            refusal = (f"[setup] map_type: {label} was clicked but the Select Map "
+                       "button was not readable")
             break
         focus_game(GAME_SIDE, GAME_FRACTION)
         click_at(*commit)
