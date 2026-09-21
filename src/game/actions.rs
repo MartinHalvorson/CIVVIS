@@ -6519,8 +6519,9 @@ impl Game {
             // spawn_unit applies a building bonus only at a city center.
             // A purchase always takes that bonus from its source city,
             // including when district placement or overflow moves it away.
-            let source_bonus =
-                self.city_building_effect(&self.cities[&cid], "religious_unit_spread_charges") as i32;
+            let source_bonus = self
+                .city_building_effect(&self.cities[&cid], "religious_unit_spread_charges")
+                as i32;
             let spawned_bonus = self
                 .city_at(self.units[&placed].pos)
                 .filter(|city| self.cities[city].owner == pid)
