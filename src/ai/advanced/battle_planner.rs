@@ -1068,8 +1068,43 @@ impl AdvancedAi {
         let mut after = before.speculative_clone();
         let mut strikers = BTreeSet::new();
         for action in actions {
+            // A sampled melee exchange is not the health the host promises.
+            // Reserve the upper roll before pricing the reply at the resulting
+            // wounded strength. Do not spend uncertain post-kill healing here.
+            let melee_health_floor = if let Action::Attack { unit, target } = action {
+                after.units.get(unit).and_then(|attacker| {
+                    after
+                        .unit_ids_at(*target)
+                        .iter()
+                        .filter_map(|enemy| {
+                            let defender = &after.units[enemy];
+                            (defender.owner != pid
+                                && after.is_at_war(pid, defender.owner)
+                                && after.rules.units[defender.kind].class == "military")
+                                .then(|| after.melee_exchange_strengths(*unit, *enemy))
+                                .flatten()
+                                .map(|(att, def)| {
+                                    (expected_damage(def, att) * crate::ai::COMBAT_ROLL_MAX)
+                                        .ceil()
+                                        .min(100.0) as i32
+                                })
+                        })
+                        .max()
+                        .map(|damage| (*unit, attacker.hp - damage))
+                })
+            } else {
+                None
+            };
             if after.apply(pid, action).is_err() {
                 return false;
+            }
+            if let Some((uid, hp)) = melee_health_floor {
+                if hp <= 0 {
+                    return false;
+                }
+                if let Some(unit) = after.units.get_mut(&uid) {
+                    unit.hp = unit.hp.min(hp);
+                }
             }
             if let Action::Attack { unit, .. } | Action::Ranged { unit, .. } = action {
                 strikers.insert(*unit);
@@ -1078,7 +1113,13 @@ impl AdvancedAi {
         let mut field = DangerField::with_reach(&after, pid, self.strike_reach);
         strikers.into_iter().all(|uid| {
             after.units.get(&uid).is_some_and(|unit| {
-                let incoming = field.danger(unit.pos, uid);
+                // Each source rounds independently; rounding only their sum
+                // can lose a lethal point when several enemies can reply.
+                let incoming: f64 = field
+                    .contributions(unit.pos, uid)
+                    .iter()
+                    .map(|(_, damage)| (damage * crate::ai::COMBAT_ROLL_MAX).ceil())
+                    .sum();
                 let started_healthy = before
                     .units
                     .get(&uid)
@@ -3071,6 +3112,56 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_battle_planner_2();
         ai
+    }
+
+    #[test]
+    fn live_finishing_survival_reserves_health_for_both_combat_rolls() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(9, 7));
+        let victim = g.spawn_unit("scout", 1, at(10, 7));
+        let reply = g.spawn_unit("warrior", 1, at(11, 7));
+        wound(&mut g, ours, 60);
+        wound(&mut g, victim, 2);
+        let action = Action::Attack {
+            unit: ours,
+            target: at(10, 7),
+        };
+        let mut after = g.clone();
+        after.apply(0, &action).expect("legal finishing attack");
+        assert!(!after.units.contains_key(&victim));
+        let incoming = DangerField::with_reach(&after, 0, true).danger(at(10, 7), ours);
+        assert!(
+            incoming > 0.0 && incoming < f64::from(after.units[&ours].hp),
+            "the sampled attack survives a mean reply: hp={}, incoming={incoming}",
+            after.units[&ours].hp
+        );
+        let mut ai = AdvancedAi::new();
+        ai.enable_doomed_blow_veto();
+        assert!(
+            !ai.live_finishing_actions_survive(&g, 0, [&action]),
+            "a favorable sampled attack and an average reply do not prove survival"
+        );
+        ai.enable_doomed_blow_veto_2();
+        assert!(!ai.live_finishing_actions_survive(&g, 0, [&action]));
+        ai.disable_doomed_blow_veto_2();
+        assert!(
+            ai.live_finishing_actions_survive(&g, 0, [&action]),
+            "the disabled policy preserves the old choice"
+        );
+        ai.enable_doomed_blow_veto();
+        wound(&mut g, ours, 100);
+        assert!(
+            ai.live_finishing_actions_survive(&g, 0, [&action]),
+            "a healthy attacker can survive the same reply"
+        );
+        wound(&mut g, ours, 60);
+        g.remove_unit(reply);
+        assert!(
+            ai.live_finishing_actions_survive(&g, 0, [&action]),
+            "the same finish is safe without the reply"
+        );
+        ai.disable_doomed_blow_veto();
+        assert!(ai.live_finishing_actions_survive(&g, 0, [&action]));
     }
 
     fn version_three() -> AdvancedAi {
