@@ -10444,6 +10444,14 @@ impl Game {
     ) -> Result<(), String> {
         self.validate_trade(from, to, offer, request)?;
 
+        // A mirrored Trade is a request to the host, not a settled exchange.
+        // Keep the action in apply's log for export, but wait for the next
+        // observed board before spending its proceeds or using its passage.
+        // The simulator still settles its own validated exchanges below.
+        if from == MIRRORED_SEAT && !self.host_observed.is_empty() {
+            return Ok(());
+        }
+
         self.transfer_gold(from, to, offer.gold + offer.gold_per_turn);
         self.transfer_gold(to, from, request.gold + request.gold_per_turn);
         self.players[from].diplomatic_favor -= offer.diplomatic_favor;

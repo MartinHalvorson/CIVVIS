@@ -1,5 +1,7 @@
 //! Core turn engine (mirrors civvis/game.py — same mechanics and action protocol).
 use serde::ser::SerializeMap;
+#[cfg(test)]
+mod host_trade_tests;
 mod player_view;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
