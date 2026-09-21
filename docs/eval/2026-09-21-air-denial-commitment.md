@@ -40,12 +40,46 @@ war declaration and next-turn review, and retaining research while a peace
 deadline holds the declaration. All failed because the appointment was
 removed, not because fixture setup or compilation failed.
 
-Validation and the paired replay are in progress. The replay uses a frozen
-copy of the completed continuation, beginning with its actual fresh-agent
-restart at turn 77. Both sides include the subsequently merged native income
-fix and early counter-faith construction fix. Recorded host observations
-continue after changed orders; this cannot establish an alternative native
-outcome, earlier completed bombers, or a better victory rate.
+Validation on the integrated Rust source:
+
+- `cargo test --profile ci --locked`: 4,108 passed, zero failed, 53 ignored.
+- Forty focused air-surge tests pass (one existing census ignored), including
+  ordinary declaration, counterattack continuation, peace and treasury holds,
+  missing staging, home danger, other lanes, and idempotent declaration tracking.
+- Fourteen treatment append tests pass.
+- Eight four-player, 180-turn smoke games complete, seeds 368600–368607.
+- The integrated native religion exporter test passes under Lua 5.1.
+
+The paired replay uses baseline `31bbac39ec0be2352254956d43a4186412e067a1`
+and candidate `c4467de8c`, both with the merged native income and early
+counter-faith construction fixes. Both complete all 390 frames of the frozen
+continuation, beginning with its actual fresh-agent restart at turn 77.
+The event SHA-256 is
+`e7312443c8310e9237cdec1213a36fd9853aa26ee38f51f5795ab3da6a641673`.
+Binary hashes, complete orders, and reasoning remain in
+`/tmp/civvis-air-denial-replay`; comparison is
+`/tmp/civvis-3686-comparison.json`.
+
+The candidate changes 152 internal-action frames and 122 exported frames,
+including subsequent verification receipts. Four research decisions change:
+turn 142 Sanitation becomes the generic Castles choice; turns 147, 152, and
+158 request Flight instead of Replaceable Parts, Chemistry, and Siege
+Tactics. Flight is first requested thirteen turns before the baseline's
+turn 160 request. This also displaces ground/economic research; it is not an
+unqualified gain. Repeated Flight requests arise because recorded future
+observations continue the old research.
+
+On turn 152 the candidate redirects the existing appointment to Alexandria
+on the same Macedonian front, rather than aborting it. That different
+objective changes subsequent movement, fortification, and combat orders.
+One turn-156/frame-1 peace offer disappears. No production orders change.
+The existing Aluminum timeout still ends the appointment on turn 187.
+
+Recorded host observations continue after changed orders. Receipt failures
+against that old future do not establish native execution failure, and the
+replay cannot establish an alternative outcome, earlier completed bombers,
+successful captures, or a better victory rate. Runtime differences are not a
+performance comparison because concurrent machine workloads differ.
 
 The original game also lacked Aluminum until much later: turn 187 canceled
 the later appointment for lack of Aluminum; turn 197 exported a stock of two.
