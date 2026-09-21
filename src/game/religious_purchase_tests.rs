@@ -1,7 +1,8 @@
 //! Faith-purchased religious units adopt their city's majority religion —
 //! the stock rule that lets civilizations without a founded religion field
 //! Missionaries of an adopted faith.
-use super::{Action, Game};
+use super::{Action, Game, Pos};
+use crate::name::Name;
 
 fn founded_two_cities() -> (Game, u32) {
     let mut game = Game::new_full(2, 30, 18, 4_242, 200, 0, false);
@@ -20,21 +21,69 @@ fn founded_two_cities() -> (Game, u32) {
     (game, city)
 }
 
-fn enable_faith_purchase(game: &mut Game, city: u32) {
+fn enable_faith_purchase(game: &mut Game, city: u32) -> Pos {
     let pos = game.cities[&city].pos;
     let site = game
-        .wdisk(pos, 1)
+        .wdisk(pos, 2)
         .into_iter()
-        .find(|p| *p != pos && game.map.get(*p).is_some_and(|t| t.district.is_none()))
+        .find(|p| {
+            game.wdist(*p, pos) == 2 && game.map.get(*p).is_some_and(|t| t.district.is_none())
+        })
         .expect("open tile for holy site");
     let tile = game.map.tiles.get_mut(&site).unwrap();
     tile.district = Some(crate::name!("holy_site"));
     tile.owner_city = Some(city);
+    tile.terrain = crate::name!("grassland");
+    tile.feature = None;
     let c = game.cities.get_mut(&city).unwrap();
     c.districts.insert(crate::name!("holy_site"), site);
     c.buildings.push(crate::name!("shrine"));
     game.players[0].techs.insert(crate::name!("astrology"));
     game.players[0].faith = 1_000.0;
+    site
+}
+
+#[test]
+fn religious_purchases_use_holy_site_then_center_with_source_city_bonuses() {
+    for district in ["holy_site", "lavra"] {
+        let (mut game, city) = founded_two_cities();
+        let site = enable_faith_purchase(&mut game, city);
+        let center = game.cities[&city].pos;
+        game.map.tiles.get_mut(&site).unwrap().district = Some(Name::new(district));
+        let c = game.cities.get_mut(&city).unwrap();
+        c.districts.clear();
+        c.districts.insert(Name::new(district), site);
+        c.buildings.push(crate::name!("mosque"));
+        c.pressure.insert("Adopted Faith".to_string(), 1_000.0);
+        game.players[1].religion = Some("Adopted Faith".to_string());
+        // A friendly military unit can share the religious unit's district.
+        game.spawn_unit("warrior", 0, site);
+        for expected in [site, center] {
+            let before = game.player_unit_ids(0);
+            game.apply(
+                0,
+                &Action::Buy {
+                    city,
+                    unit: crate::name!("missionary"),
+                    formation: 0,
+                    currency: "faith".to_string(),
+                },
+            )
+            .expect("religious purchase");
+            let uid = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|uid| !before.contains(uid))
+                .unwrap();
+            let purchased = &game.units[&uid];
+            assert_eq!(purchased.pos, expected, "{district} placement");
+            assert_eq!(purchased.religion.as_deref(), Some("Adopted Faith"));
+            assert_eq!(
+                purchased.charges,
+                game.rules.units["missionary"].charges + 1
+            );
+        }
+    }
 }
 
 #[test]
