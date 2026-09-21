@@ -117,17 +117,6 @@ pub(super) struct ReligiousStakes {
 }
 
 impl AdvancedAi {
-    /// Whether `religion` holds the majority of `owner`'s cities — the
-    /// victory rule's own test, strictly more than half.
-    fn converted_majority(g: &Game, owner: usize, religion: &str) -> bool {
-        let cities = g.player_city_ids(owner);
-        let following = cities
-            .iter()
-            .filter(|city| g.city_religion(&g.cities[city]) == Some(religion))
-            .count();
-        !cities.is_empty() && following * 2 > cities.len()
-    }
-
     /// The rival religion nearest a victory we are a veto on, and how much of
     /// that victory is done. `None` when the gene is off, the lobby has no
     /// religious victory, we hold no cities, or no rival faith has any of
@@ -165,7 +154,9 @@ impl AdvancedAi {
                 .collect();
             let dominated = others
                 .iter()
-                .filter(|other| Self::converted_majority(g, **other, religion))
+                // The host's majority covers unseen rival cities; a native
+                // engine board falls back to the same strict-majority count.
+                .filter(|other| g.civ_follows_religion(**other, religion))
                 .count();
             let our_converted = our_cities
                 .iter()
@@ -360,3 +351,6 @@ impl AdvancedAi {
         Some(self.religious_step_toward_range(g, pid, uid, target, 0))
     }
 }
+
+#[cfg(test)]
+mod tests;
