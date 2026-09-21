@@ -10777,8 +10777,58 @@ end
 -- `applyOrder`); every read re-resolves through `UnitManager.GetUnit`.
 -- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
 CivvisLedger = {
-	open = {}, damage = {}, pending = {}, kinds = {}, positions = {}, expected_gp_activation = {}
+	open = {}, damage = {}, pending = {}, kinds = {}, positions = {}, expected_gp_activation = {},
+	expected_condemn = {}
 };
+
+-- UnitCommands.xml:47 gives Condemn Heretic no target parameters. Record the
+-- hostile religious units under the actor before RequestCommand: removal can
+-- arrive synchronously, and a military actor has no spread charge to spend.
+CivvisLedger.expectCondemn = function(player, pid, unit, turn)
+	local actor = unit:GetID();
+	for key, pending in pairs(CivvisLedger.expected_condemn) do
+		if pending.turn ~= turn or pending.unit == actor then
+			CivvisLedger.expected_condemn[key] = nil;
+		end
+	end
+	local x, y = unit:GetX(), unit:GetY();
+	pcall(function()
+		for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+			if otherId ~= pid and player:GetDiplomacy():IsAtWarWith(otherId) then
+				for _, target in Players[otherId]:GetUnits():Members() do
+					local info = GameInfo.Units[target:GetUnitType()];
+					if target:GetX() == x and target:GetY() == y and info ~= nil
+							and info.PromotionClass == "PROMOTION_CLASS_RELIGIOUS" then
+						local key = tostring(otherId) .. ":" .. tostring(target:GetID());
+						CivvisLedger.expected_condemn[key] = {
+							turn = turn, unit = actor, owner = pid, x = x, y = y,
+						};
+					end
+				end
+			end
+		end
+	end);
+end;
+
+CivvisLedger.cancelCondemn = function(unitId)
+	for key, pending in pairs(CivvisLedger.expected_condemn) do
+		if pending.unit == unitId then CivvisLedger.expected_condemn[key] = nil; end
+	end
+end;
+
+CivvisLedger.condemnRemoved = function(player, unitId, turn)
+	local key = tostring(player) .. ":" .. tostring(unitId);
+	local pending = CivvisLedger.expected_condemn[key];
+	CivvisLedger.expected_condemn[key] = nil;
+	if pending == nil or pending.turn ~= turn then return; end
+	local actor = try(function() return UnitManager.GetUnit(pending.owner, pending.unit); end);
+	local removed = try(function() return UnitManager.GetUnit(player, unitId) == nil; end, false);
+	if actor == nil or not removed then return; end
+	if actor:GetX() ~= pending.x or actor:GetY() ~= pending.y then return; end
+	emit("condemn_removed", { turn = turn, unit = pending.unit,
+		target_player = tonumber(player), target = tonumber(unitId),
+		x = pending.x, y = pending.y });
+end;
 
 -- The native GreatPeoplePopup.lua:728 asks CanRecruitPerson for every
 -- current timeline entry, including entries with a Claimant. A reserved but
@@ -11125,8 +11175,9 @@ end;
 -- so a ledger cannot mistake a successful science/culture action for a kill.
 CivvisLedger.onUnitRemoved = function(player, unitId)
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
-	if tonumber(player) ~= pid then return; end
 	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
+	CivvisLedger.condemnRemoved(player, unitId, turn);
+	if tonumber(player) ~= pid then return; end
 	local key = tostring(unitId);
 	local activationTurn = CivvisLedger.expected_gp_activation[key];
 	CivvisLedger.expected_gp_activation[key] = nil;
@@ -14716,7 +14767,9 @@ local function applyOrder(player, pid, row, turn)
 		if verb == "CONDEMN_HERETIC" then
 			local hash = CMD["UNITCOMMAND_CONDEMN_HERETIC"];
 			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			CivvisLedger.expectCondemn(player, pid, unit, turn);
 			local ok, why = commandUnit(unit, hash, true);
+			if not ok then CivvisLedger.cancelCondemn(unit:GetID()); end
 			return ok, ok and verb or (why or "condemn_refused");
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
