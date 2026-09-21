@@ -21,6 +21,7 @@ use crate::Pos;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
+mod adopted_faith_sanctuary;
 
 mod regional_production_commitments;
 
@@ -21614,6 +21615,9 @@ impl AdvancedAi {
     /// reconversion alone denies it — this is the trigger for the
     /// cross-strategy defense below.
     fn home_conversion_threat(&self, g: &Game, pid: usize) -> Option<String> {
+        if let Some(threat) = self.adopted_faith_threat(g, pid) {
+            return Some(threat);
+        }
         let own = g.players[pid].religion.as_deref();
         let rival_faith = |religion: &str| {
             g.players.iter().any(|o| {
@@ -21697,7 +21701,10 @@ impl AdvancedAi {
             let Some(majority) = g.city_religion(&g.cities[&cid]) else {
                 continue;
             };
-            if majority == threat {
+            if majority == threat
+                || (self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                    && !Self::safe_adopted_counterfaith(g, pid, majority))
+            {
                 continue;
             }
             if g.apply(
@@ -25911,6 +25918,7 @@ impl AdvancedAi {
         let preempt_margin = self.production_review_margin(g);
         let city_ids = g.player_city_ids(pid);
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
         let domination_research_catchup =
@@ -26087,6 +26095,11 @@ impl AdvancedAi {
                     Self::production_commitment_is_legal(g, pid, cid, item)
                         && Self::campus_research_building(g, item)
                 });
+            let sanctuary_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                sanctuary
+                    .as_ref()
+                    .is_some_and(|(source, reserved)| *source == cid && reserved == item)
+            });
             let defensive_temple_commitment = plan.threatened_city != Some(cid)
                 && committed.as_ref().is_some_and(|(_, item)| {
                     self.domination_defensive_temple(g, pid, cid, item)
@@ -26099,12 +26112,14 @@ impl AdvancedAi {
                     || live_gp_commitment
                     || domination_research_commitment
                     || defensive_temple_commitment
+                    || sanctuary_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
                     || live_gp_commitment
                     || domination_research_commitment
                     || defensive_temple_commitment
+                    || sanctuary_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
@@ -41687,6 +41702,7 @@ impl AdvancedAi {
             // would price an Aerodrome nobody ever asked it about. One idle,
             // unthreatened queue per turn; exact no-op while the gene is off.
             self.air_surge_production(g, pid);
+            self.reserve_adopted_faith_sanctuary(g, pid, &plan);
             // Explicit victory-target runs use strategic production directly;
             // otherwise the baseline governor remains the stronger general
             // policy in paired evaluation.
@@ -41705,7 +41721,8 @@ impl AdvancedAi {
             if self.victory_planning
                 && g.victory_conditions.religious
                 && g.players[pid].religion.is_none()
-                && plan.strategy != GrandStrategy::Religion
+                && (plan.strategy != GrandStrategy::Religion
+                    || active_victory_target == Some(VictoryTarget::Domination))
             {
                 // Every other strategy still defends its homeland: a rival's
                 // religious victory needs a majority in every living major,
