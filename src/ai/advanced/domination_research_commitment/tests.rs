@@ -239,7 +239,7 @@ fn a_threatened_city_does_not_gain_the_fresh_research_commitment() {
 fn placed_campus_fixture() -> (Game, u32, AdvancedAi, StrategicPlan, Item) {
     let (mut g, cid, ai, plan, _) = fixture();
     let district = crate::name!("campus");
-    let pos = *g.cities[&cid].districts.get(&district).unwrap();
+    let pos = *g.cities[&cid].districts.get(district).unwrap();
     g.cities.get_mut(&cid).unwrap().districts.clear();
     let tile = g.map.tiles.get_mut(&pos).unwrap();
     tile.district = None;
@@ -304,4 +304,23 @@ fn campus_completion_keeps_emergency_and_active_queue_guards() {
         ai.reserve_higher_level_investment(&mut g, 0, &plan);
         assert_ne!(g.cities[&cid].queue.first(), Some(&item), "{case}");
     }
+}
+
+#[test]
+fn queued_campus_does_not_block_a_library_in_a_completed_campus() {
+    let (mut g, cid, ai, plan, library) = fixture();
+    let other = g.found_city_for(0, (14, 10), None);
+    g.cities.get_mut(&other).unwrap().pop = 4;
+    let district = crate::name!("campus");
+    let pos = g.district_sites(other, district)[0];
+    g.apply(
+        0,
+        &Action::Produce {
+            city: other,
+            item: Item::District { district, pos },
+        },
+    )
+    .unwrap();
+    ai.reserve_higher_level_investment(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&library));
 }

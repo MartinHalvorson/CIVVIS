@@ -69,6 +69,14 @@ impl Debt {
         }
     }
 
+    /// A foundation is eligible work, but does not replace a building that
+    /// an already completed Campus can start now. Otherwise finishing one
+    /// district suppresses Libraries elsewhere for its whole build time.
+    fn queued_answer(self, ai: &AdvancedAi, g: &Game, item: &Item) -> bool {
+        self.matches(ai, g, item)
+            && !matches!((self, item), (Self::Research, Item::District { .. }))
+    }
+
     fn prices_queued_yield(self, ai: &AdvancedAi) -> bool {
         match self {
             Self::Culture => ai.culture_building_catchup_3,
@@ -370,7 +378,7 @@ impl AdvancedAi {
                             g.cities[cid]
                                 .queue
                                 .iter()
-                                .any(|item| debt.matches(self, g, item))
+                                .any(|item| debt.queued_answer(self, g, item))
                         }))
             })
             .map(|(debt, _)| debt)
