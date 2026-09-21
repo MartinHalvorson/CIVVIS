@@ -14262,3 +14262,62 @@ fn synced_income_replaces_the_previous_observation_before_a_carry() {
         assert_eq!(mirror.game.players[0].gold_per_turn, rate.unwrap_or(1.0));
     }
 }
+
+#[test]
+fn requested_state_turn_filter_handles_root_keys_and_ambiguous_headers() {
+    assert!(!state_line_can_match_turn(
+        r#"{"kind":"state","nested":{"turn":7},"turn":8}"#,
+        Some(7)
+    ));
+    assert!(state_line_can_match_turn(
+        r#"{"kind":"state","nested":{"turn":8},"turn":7}"#,
+        Some(7)
+    ));
+    assert!(state_line_can_match_turn(
+        r#"{"kind":"state","turn":8}"#,
+        None
+    ));
+    // The full Value-based parser owns defaults, errors, and duplicate keys.
+    for line in [
+        r#"{"kind":"state"}"#,
+        r#"{"kind":"state","turn":null}"#,
+        r#"{"kind":"state","turn":8,"turn":7}"#,
+        r#"{"kind":"state","turn":"7"}"#,
+        r#"{"kind":"state","turn":7,"units":["#,
+    ] {
+        assert!(state_line_can_match_turn(line, Some(7)), "{line}");
+    }
+}
+
+#[test]
+fn requested_state_readers_keep_latest_valid_frame_and_its_tiles() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-requested-state-filter-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    let raw = [
+        r#"{"kind":"seat","civ":"CIVILIZATION_GRAN_COLOMBIA","players":4}"#,
+        r#"{"kind":"state","turn":7,"frame":0,"gold":10}"#,
+        r#"{"kind":"tiles","turn":7,"frame":0,"width":8,"height":8,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS"}]}"#,
+        r#"{"kind":"state","turn":6,"turn":7,"frame":2,"gold":23}"#,
+        r#"{"kind":"tiles","turn":7,"frame":2,"width":8,"height":8,"delta":true,"plots":[{"x":2,"y":2,"t":"TERRAIN_PLAINS"}]}"#,
+        r#"{"kind":"state","turn":7,"frame":3,"units":"invalid"}"#,
+        r#"{"kind":"state","turn":8,"frame":0,"gold":99,"nested":{"turn":7}}"#,
+        r#"{"kind":"tiles","turn":8,"frame":0,"width":8,"height":8,"delta":true,"plots":[{"x":3,"y":3,"t":"TERRAIN_DESERT"}]}"#,
+    ].join("\n");
+    std::fs::write(&path, &raw).unwrap();
+    assert_eq!(latest_state_line(&raw, Some(7)), Some(3));
+    let state = state_from_events(&path, Some(7)).unwrap();
+    assert_eq!((state.turn, state.frame, state.gold), (7, 2, 23));
+    assert_eq!(state.seat.civ, "CIVILIZATION_GRAN_COLOMBIA");
+    let snapshot = snapshot_from_events_at(&path, Some(7)).unwrap();
+    assert!(snapshot.plot((1, 1)).is_some());
+    assert!(snapshot.plot((2, 2)).is_some());
+    assert!(snapshot.plot((3, 3)).is_none());
+    let newest = state_from_events(&path, None).unwrap();
+    assert_eq!((newest.turn, newest.gold), (8, 99));
+    assert!(state_from_events(&path, Some(9)).is_none());
+    std::fs::remove_dir_all(dir).unwrap();
+}
