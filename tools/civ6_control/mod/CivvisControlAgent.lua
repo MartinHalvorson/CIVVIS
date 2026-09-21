@@ -26,6 +26,51 @@
 local cfg = CivvisControlConfig or {};
 local PREFIX = "CIVVISJSON ";
 
+-- BEGIN holy-city observation
+-- ReligionScreen.lua:795 forwards every GetHolyCityID return to GetCity.
+-- Keep that call shape, but distinguish an API error from a missing city:
+-- both formerly disappeared through try(..., nil), hiding why a founded
+-- religion could not enable the planner's defensive Inquisition.
+-- Bare global avoids the agent chunk's Lua 5.1 file-local limit.
+CivvisReligionState = {};
+CivvisReligionState.holyCity = function(religion)
+    local function pack(...) return {n = select("#", ...), ...}; end
+    local identity = pack(pcall(function() return religion:GetHolyCityID(); end));
+    if not identity[1] then
+        return nil, {status = "identity_error", error = tostring(identity[2]):sub(1, 240)};
+    end
+    local observation = {identity = {}, identity_returns = identity.n - 1};
+    for i = 2, identity.n do
+        local value = identity[i];
+        local entry = {type = type(value)};
+        if type(value) == "number" or type(value) == "boolean" then entry.value = value; end
+        if type(value) == "string" then entry.value = value:sub(1, 120); end
+        observation.identity[#observation.identity + 1] = entry;
+    end
+    local ok, city = pcall(function()
+        return CityManager.GetCity(unpack(identity, 2, identity.n));
+    end);
+    if not ok then
+        observation.status = "lookup_error";
+        observation.error = tostring(city):sub(1, 240);
+    elseif city == nil then
+        observation.status = "city_missing";
+    else
+        local coordinates, x, y = pcall(function() return city:GetX(), city:GetY(); end);
+        if not coordinates then
+            observation.status = "coordinate_error";
+            observation.error = tostring(x):sub(1, 240);
+        elseif type(x) ~= "number" or type(y) ~= "number" or x < 0 or y < 0 then
+            observation.status = "invalid_coordinates";
+        else
+            observation.status = "observed";
+            return {x, y}, observation;
+        end
+    end
+    return nil, observation;
+end;
+-- END holy-city observation
+
 -- The optional game modes, from the `ConfigurationId`s the content packs
 -- register. Same list as CivvisControlSetup.lua's; that one sets them and this
 -- one reports what the running game actually has.
@@ -8572,6 +8617,11 @@ local function exportState(player, pid, turn, frame, eventKind)
 			end);
 		end
 	end
+    local holyCity, holyCityObservation = nil, nil;
+    if founded_religion ~= nil then
+        holyCity, holyCityObservation = CivvisReligionState.holyCity(playerReligion);
+        holyCityObservation.religion_created = religionCreated;
+    end
 	emit(eventKind or "state", {
 		turn = turn,
 		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
@@ -8611,10 +8661,8 @@ local function exportState(player, pid, turn, frame, eventKind)
         -- are player-local, so send coordinates for unambiguous remapping. The
         -- Inquisition accessor is registered by shipped GameCore_XP2.dll;
         -- observe its boolean rather than remembering an attempted operation.
-        holy_city = try(function()
-            local holy = CityManager.GetCity(playerReligion:GetHolyCityID());
-            return holy and {holy:GetX(), holy:GetY()} or nil;
-        end, nil),
+        holy_city = holyCity,
+        holy_city_observation = holyCityObservation,
         inquisition_launched = try(function()
             return playerReligion:HasLaunchedInquisition();
         end, nil),
