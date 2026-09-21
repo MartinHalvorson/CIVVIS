@@ -303,3 +303,31 @@ fn capital_retention_requires_a_relevant_pressure_front() {
         );
     }
 }
+
+#[test]
+fn brief_loyalty_recovery_does_not_finish_the_capital_front() {
+    let (mut g, mut ai, plan, capital) = captured_front();
+    let second = g.found_city_for(1, (9, 12), None);
+    g.cities.get_mut(&second).unwrap().is_capital = false;
+    g.players[0].gold = 151.0;
+    g.players[0].gold_per_turn = 8.0;
+    Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, -0.109375);
+    ai.one_war_observe(&g, 0);
+    let last_decline = g.turn;
+    g.turn += 2;
+    Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, 6.53125);
+    ai.one_war_observe(&g, 0);
+    ai.major_war_since = Some(g.turn - 40);
+    ai.last_campaign_progress = g.turn - 12;
+    ai.enable_peace_when_war_does_not_pay();
+    assert!(ai.domination_followup_target(&g, 0, Some(1)).is_none());
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+    g.turn = last_decline + g.standard_duration(10).max(1);
+    ai.one_war_observe(&g, 0);
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "sustained recovery permits peace again"
+    );
+}

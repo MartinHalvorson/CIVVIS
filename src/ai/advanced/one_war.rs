@@ -109,6 +109,8 @@ pub(crate) struct OneWarFront {
     pub(crate) city_health: BTreeMap<u32, (i32, i32)>,
     /// Cities of the front whose health fell at the last observation.
     pub(crate) sieges_advancing: usize,
+    /// Last observed loyalty decline in each captured original capital.
+    capital_loyalty_decline: BTreeMap<u32, u32>,
 }
 
 impl OneWarFront {
@@ -121,6 +123,7 @@ impl OneWarFront {
             tide_against_since: None,
             city_health: BTreeMap::new(),
             sieges_advancing: 0,
+            capital_loyalty_decline: BTreeMap::new(),
         }
     }
 
@@ -202,6 +205,7 @@ impl AdvancedAi {
                 && !g.players[city.original_owner].is_barbarian
                 && city.loyalty >= 75.0
                 && g.city_loyalty_per_turn(city) >= 0.0
+                && !self.capital_recently_lost_loyalty(g, city.id)
         });
         if !secured {
             return None;
@@ -379,6 +383,18 @@ impl AdvancedAi {
                 fresh
             }
         };
+        front
+            .capital_loyalty_decline
+            .retain(|cid, _| g.cities.get(cid).is_some_and(|city| city.owner == pid));
+        for city in g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid && city.is_capital && city.original_owner == target)
+        {
+            if g.city_loyalty_per_turn(city) < 0.0 {
+                front.capital_loyalty_decline.insert(city.id, g.turn);
+            }
+        }
         let ledger = self.one_war_ledger(g, pid, target);
         let (our_units, their_units, our_cities, their_cities) = (
             ledger.0.saturating_sub(front.ledger.0) as i32,
@@ -560,6 +576,18 @@ impl AdvancedAi {
                 || self.domination_capital_needs_front(g, pid, other))
     }
 
+    // Require ten Standard-speed turns (five Online) without an observed
+    // decline before treating a recovered capital as stable. This is a
+    // strategic observation window, not a native loyalty rule.
+    fn capital_recently_lost_loyalty(&self, g: &Game, cid: u32) -> bool {
+        self.one_war.as_ref().is_some_and(|front| {
+            front
+                .capital_loyalty_decline
+                .get(&cid)
+                .is_some_and(|turn| g.turn.saturating_sub(*turn) < g.standard_duration(10).max(1))
+        })
+    }
+
     /// A quiet siege window does not finish a campaign while the captured
     /// original capital is bleeding loyalty and this rival still has cities
     /// close enough to exert pressure. Keep that opportunity only while we
@@ -577,7 +605,8 @@ impl AdvancedAi {
             capital.owner == pid
                 && capital.is_capital
                 && capital.original_owner == other
-                && g.city_loyalty_per_turn(capital) < 0.0
+                && (g.city_loyalty_per_turn(capital) < 0.0
+                    || self.capital_recently_lost_loyalty(g, capital.id))
                 && g.cities
                     .values()
                     .any(|city| city.owner == other && g.wdist(capital.pos, city.pos) <= 9)
