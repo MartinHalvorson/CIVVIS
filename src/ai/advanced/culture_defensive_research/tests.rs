@@ -54,25 +54,157 @@ fn besieged_culture_unlocks_walls_before_pikeman_prerequisites() {
 fn wall_unlock_requires_an_unwalled_culture_city_in_a_defensive_war() {
     let (mut g, mut plan) = threatened_culture();
     let ai = AdvancedAi::targeting(VictoryTarget::Culture);
-    assert!(ai.culture_defensive_walls_goal(&g, 0, &plan).is_some());
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_some());
     assert!(AdvancedAi::targeting(VictoryTarget::Science)
-        .culture_defensive_walls_goal(&g, 0, &plan)
+        .defensive_walls_research_goal(&g, 0, &plan)
         .is_none());
     plan.strategy = GrandStrategy::Expansion;
-    assert!(ai.culture_defensive_walls_goal(&g, 0, &plan).is_none());
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_none());
     plan.strategy = GrandStrategy::Recovery;
     let city = plan.threatened_city.take().unwrap();
     // A power-deficit recovery is the warning; the city need not already
     // be in the attacker's one-turn capture radius.
-    assert!(ai.culture_defensive_walls_goal(&g, 0, &plan).is_some());
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_some());
     plan.threatened_city = Some(city);
     g.at_war.clear();
-    assert!(ai.culture_defensive_walls_goal(&g, 0, &plan).is_none());
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_none());
     g.at_war.insert((0, 1));
     g.cities
         .get_mut(&city)
         .unwrap()
         .buildings
         .push(crate::name!("walls"));
-    assert!(ai.culture_defensive_walls_goal(&g, 0, &plan).is_none());
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_none());
+}
+
+fn exposed_domination() -> (Game, StrategicPlan, u32) {
+    let (mut g, mut plan) = threatened_culture();
+    plan.strategy = GrandStrategy::Expansion;
+    plan.threatened_city = None;
+    g.players[1].is_barbarian = true;
+    let city = g.player_city_ids(0)[0];
+    let center = g.cities[&city].pos;
+    let near = g
+        .nbrs(center)
+        .into_iter()
+        .find(|p| {
+            g.map
+                .get(*p)
+                .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+        })
+        .unwrap();
+    let attacker = g.spawn_test_unit("knight", 1, near);
+    let visible = g.player_vision_frame(0);
+    assert!(AdvancedAi::imminent_city_attack(&g, 0, city, &visible));
+    (g, plan, attacker)
+}
+
+#[test]
+fn exposed_domination_unlocks_walls_before_waiting_for_damage_or_recovery() {
+    let (mut g, plan, _) = exposed_domination();
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(g.cities[&g.player_city_ids(0)[0]].hp, 200);
+    g.players[0].research = None;
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("masonry"));
+}
+
+#[test]
+fn domination_recovery_keeps_the_existing_major_war_wall_unlock() {
+    let (g, plan) = threatened_culture();
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert_eq!(
+        ai.defensive_walls_research_goal(&g, 0, &plan),
+        Some(crate::name!("masonry"))
+    );
+}
+
+#[test]
+fn domination_wall_warning_requires_visible_competitive_attack_on_unwalled_city() {
+    let (mut g, plan, attacker) = exposed_domination();
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let city = g.player_city_ids(0)[0];
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_some());
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_none());
+    g.cities.get_mut(&city).unwrap().buildings.clear();
+    g.remove_unit(attacker);
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_none());
+}
+
+#[test]
+fn defensive_wall_goal_does_not_discard_in_progress_research() {
+    let (mut g, plan, _) = exposed_domination();
+    g.players[0].research = Some("iron_working".into());
+    g.players[0].research_progress = 17.0;
+    AdvancedAi::targeting(VictoryTarget::Domination).advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("iron_working"));
+    assert_eq!(g.players[0].research_progress, 17.0);
+}
+
+#[test]
+fn weak_or_distant_hostile_does_not_force_wall_research() {
+    let (mut g, plan, attacker) = exposed_domination();
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let near = g.units[&attacker].pos;
+    g.remove_unit(attacker);
+    let weak = g.spawn_test_unit("scout", 1, near);
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_none());
+    g.remove_unit(weak);
+    let center = g.cities[&g.player_city_ids(0)[0]].pos;
+    let far = *g
+        .map
+        .tiles
+        .keys()
+        .find(|p| g.wdist(center, **p) > 8)
+        .unwrap();
+    g.spawn_test_unit("knight", 1, far);
+    assert!(ai.defensive_walls_research_goal(&g, 0, &plan).is_none());
+}
+
+#[test]
+fn reachable_approach_warns_before_the_one_turn_attack_envelope() {
+    let (mut g, plan, attacker) = exposed_domination();
+    let city = g.player_city_ids(0)[0];
+    let center = g.cities[&city].pos;
+    g.remove_unit(attacker);
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = Some(crate::name!("forest"));
+    }
+    let approach = *g
+        .map
+        .tiles
+        .keys()
+        .find(|p| g.wdist(center, **p) == 3)
+        .unwrap();
+    let attacker = g.spawn_test_unit("knight", 1, approach);
+    let observer = g
+        .nbrs(approach)
+        .into_iter()
+        .find(|p| g.wdist(center, *p) > 3)
+        .unwrap();
+    g.spawn_test_unit("scout", 0, observer);
+    let visible = g.player_vision_frame(0);
+    assert!(g.sees(&visible, approach));
+    assert!(g.unit_visible_to(attacker, 0));
+    assert!(
+        crate::game::effective_strength(
+            g.unit_strength(&g.units[&attacker], false),
+            g.units[&attacker].hp
+        ) >= g.city_strength(city) * IMMINENT_ATTACK_STRENGTH_RATIO
+    );
+    assert!(!AdvancedAi::imminent_city_attack(&g, 0, city, &visible));
+    assert!(g
+        .route_distance(attacker, center, 1)
+        .is_some_and(|steps| steps <= 4));
+    assert_eq!(
+        AdvancedAi::targeting(VictoryTarget::Domination)
+            .defensive_walls_research_goal(&g, 0, &plan),
+        Some(crate::name!("masonry"))
+    );
 }

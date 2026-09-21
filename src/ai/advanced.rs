@@ -14637,7 +14637,7 @@ impl AdvancedAi {
                 None
             };
             let opening_archery_goal = self.opening_archery_goal(g, pid);
-            let defensive_walls_goal = self.culture_defensive_walls_goal(g, pid, plan);
+            let defensive_walls_goal = self.defensive_walls_research_goal(g, pid, plan);
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             let wartime_modernization_goal = self.wartime_modernization_tech(g, pid);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
@@ -14904,7 +14904,7 @@ impl AdvancedAi {
                             if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {
-                                "unlock Ancient Walls during Culture wartime recovery before the longer army upgrade path".to_string()
+                                "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string()
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the cheapest step toward {}, needed to catch a nearby barbarian army",
