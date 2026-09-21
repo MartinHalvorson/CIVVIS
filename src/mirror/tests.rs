@@ -8932,9 +8932,10 @@ fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
         .apply(0, &crate::game::Action::Produce { city: cid, item })
         .unwrap();
     assert!(
-        !bonus
-            .game
-            .city_accepts_new_district_site(&bonus.game.cities[&cid], crate::name!("theater_square")),
+        !bonus.game.city_accepts_new_district_site(
+            &bonus.game.cities[&cid],
+            crate::name!("theater_square")
+        ),
         "a new foundation consumes the bonus slot"
     );
 
