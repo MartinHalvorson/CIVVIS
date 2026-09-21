@@ -1396,6 +1396,8 @@ struct EmpireCounts {
     carriers: usize,
     aircraft: usize,
     siege: usize,
+    /// Strongest fielded or queued land siege weapon; used to reserve a useful replacement.
+    land_siege_power: f64,
     support: usize,
     air_defense: usize,
     military_engineers: usize,
@@ -1583,6 +1585,10 @@ impl EmpireCounts {
                     if spec.siege && spec.domain.as_deref() != Some("air") {
                         self.siege += 1;
                     }
+                    if spec.siege && !matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+                        self.land_siege_power =
+                            self.land_siege_power.max(spec.ranged_attack_strength());
+                    }
                 } else if spec.class == "support" {
                     self.support += 1;
                     if spec.anti_air_strength > 0.0 {
@@ -1593,9 +1599,32 @@ impl EmpireCounts {
         }
     }
 
+    fn add_field_unit(&mut self, g: &Game, unit: &crate::game::Unit) {
+        self.add_unit(g, &unit.kind);
+        let spec = &g.rules.units[unit.kind];
+        if spec.siege && !matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            // Formations/support can keep an older weapon useful. The base
+            // strength already counted above prevents wounds alone from
+            // creating replacement demand.
+            self.land_siege_power = self
+                .land_siege_power
+                .max(g.unit_ranged_attack_strength(unit));
+        }
+    }
+
     fn add_item(&mut self, g: &Game, item: &Item) {
         match item {
-            Item::Unit { unit } | Item::Formation { unit, .. } => self.add_unit(g, unit),
+            Item::Unit { unit } => self.add_unit(g, unit),
+            Item::Formation { unit, formation } => {
+                self.add_unit(g, unit);
+                let spec = &g.rules.units[unit];
+                if spec.siege && !matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+                    let bonus = if *formation >= 2 { 17.0 } else { 10.0 };
+                    self.land_siege_power = self
+                        .land_siege_power
+                        .max(spec.ranged_attack_strength() + bonus);
+                }
+            }
             _ => {}
         }
     }
@@ -21223,7 +21252,7 @@ impl AdvancedAi {
     fn counts(&self, g: &Game, pid: usize) -> EmpireCounts {
         let mut counts = EmpireCounts::default();
         for uid in g.player_unit_ids(pid) {
-            counts.add_unit(g, &g.units[&uid].kind);
+            counts.add_field_unit(g, &g.units[&uid]);
         }
         for cid in g.player_city_ids(pid) {
             if let Some(item) = g.cities[&cid].queue.first() {
