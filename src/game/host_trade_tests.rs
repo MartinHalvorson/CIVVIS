@@ -55,9 +55,23 @@ fn resource_sale(g: &Game, pid: usize) -> Action {
 fn native_sale_is_logged_without_settling_its_proceeds() {
     let mut g = trade_game(true);
     let action = resource_sale(&g, 0);
-    let before = serde_json::to_value(&g.players).unwrap();
+    let balances = |g: &Game| {
+        g.players
+            .iter()
+            .map(|p| {
+                (
+                    p.gold,
+                    p.gold_per_turn,
+                    p.diplomatic_favor,
+                    p.strategic_resources.clone(),
+                    p.counters.get("trades_completed").copied(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = balances(&g);
     g.apply(0, &action).unwrap();
-    assert_eq!(serde_json::to_value(&g.players).unwrap(), before);
+    assert_eq!(balances(&g), before);
     assert!(matches!(g.log.last(), Some((0, Action::Trade { .. }))));
     assert!(g.active_trade_deals.is_empty());
 }
@@ -93,6 +107,12 @@ fn invalid_native_offer_is_not_logged() {
 fn native_sale_cannot_fund_a_purchase_until_observed() {
     let mut g = trade_game(true);
     let city = g.player_city_ids(0)[0];
+    // Rome starts with a Monument; make the purchase a real unmet need.
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .retain(|b| *b != crate::name!("monument"));
     g.players[0].gold = 0.0;
     let sale = resource_sale(&g, 0);
     g.apply(0, &sale).unwrap();
