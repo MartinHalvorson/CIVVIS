@@ -2000,7 +2000,8 @@ class MapPickerTests(unittest.TestCase):
     BOUNDS = (0, 33, 864, 542)
 
     def _drive(self, *, current, frames, commit=(432, 566),
-               verified=("Pangaea.lua", (432, 300)), pages=None):
+               verified=("Pangaea.lua", (432, 300)), pages=None,
+               capture_failures=()):
         """Run the picker against a scripted screen; return what it did.
 
         ``frames`` is one list of caption points per wheel step: an empty list
@@ -2028,6 +2029,8 @@ class MapPickerTests(unittest.TestCase):
                 return frozenset()
 
         def labels(path, bounds, label):
+            self.assertNotIn(path.name, capture_failures,
+                             "failed captures must not supply stale OCR")
             if label == "Select Map":
                 return [(432, 120), commit] if commit else []
             if label == "Back":
@@ -2040,7 +2043,8 @@ class MapPickerTests(unittest.TestCase):
         def current_value(path, bounds, name):
             return reads.pop(0) if reads else None
 
-        with mock.patch.object(civ6_play, "screenshot", return_value=True), \
+        with mock.patch.object(civ6_play, "screenshot",
+                               side_effect=lambda path: path.name not in capture_failures), \
              mock.patch.object(civ6_play, "_map_picker_labels", labels), \
              mock.patch.object(civ6_play, "_labels_in_strip", return_value=[]), \
              mock.patch.object(civ6_play, "_map_picker_open", side_effect=picker_open), \
@@ -2058,6 +2062,21 @@ class MapPickerTests(unittest.TestCase):
             chosen = civ6_play.select_requested_map(
                 self.BOUNDS, "Pangaea.lua", Path("/tmp"))
         return chosen, clicks, wheel
+
+    def test_unreadable_commit_button_refuses_cleanly(self):
+        # Native run 20260921T123659Z lost the chosen and recovery captures;
+        # the missing commit button left the final refusal uninitialized.
+        for failures in ((), ("map-picker-chosen.png",),
+                         ("map-picker-chosen.png", "map-picker-parting.png")):
+            with self.subTest(capture_failures=failures):
+                chosen, clicks, _ = self._drive(
+                    current=("Continents.lua", (432, 300)),
+                    frames=[[(500, 430)]], commit=None,
+                    capture_failures=failures)
+                self.assertFalse(chosen)
+                self.assertEqual(clicks, [(432, 300), (500, 430)]
+                                 + ([] if "map-picker-parting.png" in failures
+                                    else [(700, 120)]))
 
     def test_the_map_already_shown_never_opens_the_browser(self):
         """The fast path is the one that protects every other host. A run that
