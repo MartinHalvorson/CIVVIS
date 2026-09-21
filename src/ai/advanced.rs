@@ -25,6 +25,7 @@ mod adopted_faith_sanctuary;
 mod counterfaith_source;
 mod defensive_apostle;
 
+mod domination_governors;
 mod domination_modernization;
 mod regional_production_commitments;
 
@@ -22146,8 +22147,13 @@ impl AdvancedAi {
             return base.to_vec();
         }
         let mut order = Vec::with_capacity(base.len());
-        order.push("moksha");
-        order.extend(base.iter().copied().filter(|name| *name != "moksha"));
+        let first = if self.domination_needs_economic_governor(g, pid) {
+            "pingala"
+        } else {
+            "moksha"
+        };
+        order.push(first);
+        order.extend(base.iter().copied().filter(|name| *name != first));
         order
     }
 
@@ -22356,9 +22362,9 @@ impl AdvancedAi {
     }
 
     fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let priority = self.governor_priority_for(g, pid, plan.strategy);
-        let priority = priority.as_slice();
         while g.governor_titles_available(pid) > 0 {
+            let priority = self.governor_priority_for(g, pid, plan.strategy);
+            let priority = priority.as_slice();
             // Strategy can change every assessment window, but Governor
             // Titles arrive much more slowly. Finish the earliest incumbent's
             // two-promotion foundation before adapting the roster, otherwise
