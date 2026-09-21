@@ -28,6 +28,7 @@ fn fixture() -> (Game, AdvancedAi, u32, u32) {
     let mut ai = AdvancedAi::new();
     ai.enable_battle_planner_2();
     ai.enable_doomed_blow_veto_2();
+    ai.enable_strike_reach();
     (g, ai, scout, enemy)
 }
 
@@ -118,4 +119,50 @@ fn a_combat_unit_does_not_take_the_recon_escape() {
     let mut field = DangerField::with_reach(&g, 0, true);
     assert!(!ai.escape_vetoed_recon(&mut g, 0, warrior, &mut field));
     assert_eq!(g.units[&warrior].pos, before);
+}
+
+#[test]
+fn escaped_scout_resumes_exploration_on_later_turns() {
+    let (mut g, mut ai, scout, enemy) = fixture();
+    let origin = g.units[&scout].pos;
+    g.players[0].explored = g.wdisk(origin, 4).into_iter().collect();
+    let known = g.players[0].explored.len();
+    let plan = StrategicPlan {
+        strategy: super::super::GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: 0,
+        rush: false,
+    };
+    let mut positions = Vec::new();
+    for _ in 0..8 {
+        g.turn += 1;
+        let moves = g.unit_max_moves(scout);
+        let unit = g.units.get_mut(&scout).unwrap();
+        unit.moves_left = moves;
+        unit.attacks_left = 1;
+        unit.moved = false;
+        unit.acted = false;
+        ai.plan_battle(&mut g, 0, &plan);
+        for _ in 0..8 {
+            if ai.battle_planner_claims(scout) || g.units[&scout].moves_left <= 0.0 {
+                break;
+            }
+            if ai.distance_scout_step(&mut g, 0, scout) != Some(true) {
+                break;
+            }
+        }
+        positions.push(g.units[&scout].pos);
+    }
+    assert!(
+        g.players[0].explored.len() > known + 10,
+        "exploration did not resume: {positions:?}"
+    );
+    assert!(
+        g.wdist(origin, g.units[&scout].pos) >= 5,
+        "scout remains near the contact: {positions:?}"
+    );
+    assert_eq!(g.units[&enemy].hp, 100);
 }
