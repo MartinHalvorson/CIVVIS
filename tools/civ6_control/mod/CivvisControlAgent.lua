@@ -18932,6 +18932,24 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
 		return false;
 	end
+	-- The completion flag can clear repeatedly while the host rejects a turn.
+	-- Native t208 logged 7,843 unready requests, up to 70 in one second. Bound
+	-- retries across ALL callbacks, not just the divided game-core tick. The
+	-- shipped PlotToolTip.lua:879 uses this clock for a seconds-based delay.
+	local now = try(function() return UI.GetElapsedTime(); end, nil);
+	if type(now) == "number" and now == now and now >= 0 and now < math.huge then
+		local previous = CivvisQueue.endTurnSubmittedAt;
+		if CivvisQueue.endTurnSubmittedTurn == turn and previous ~= nil
+				and now >= previous and now - previous < 0.25 then
+			if CivvisQueue.endTurnRateObservedTurn ~= turn then
+				CivvisQueue.endTurnRateObservedTurn = turn;
+				emit("end_turn_retry_deferred", { turn = turn, elapsed = now - previous });
+			end
+			return false;
+		end
+		CivvisQueue.endTurnSubmittedTurn = turn;
+		CivvisQueue.endTurnSubmittedAt = now;
+	end
 	CivvisQueue.endTurnRetryTurn = turn;
 	if parameters == nil then
 		UI.RequestAction(ActionTypes.ACTION_ENDTURN);

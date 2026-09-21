@@ -499,6 +499,40 @@ UI.HasSentTurnComplete = nil
 queue.requestEndTurn(7, parameters)
 check("older hosts without the completion query retain submission", #requested, 4)
 check("fallback preserves forced parameters", requested[4].parameters, parameters)
+-- A host that repeatedly clears its completion flag must not be flooded by
+-- settlement/blocker callbacks in the same small wall-clock interval.
+local now = 100
+UI.GetElapsedTime = function() return now end
+UI.HasSentTurnComplete = function() return false end
+local before = #requested
+queue.requestEndTurn(7)
+for i = 1, 100 do queue.requestEndTurn(7, parameters) end
+check("one native request during a callback burst", #requested - before, 1)
+local deferredLogs = 0
+for _, line in ipairs(LOG) do
+    if line:find('"kind":"end_turn_retry_deferred"', 1, true) then deferredLogs = deferredLogs + 1 end
+end
+check("callback burst emits one diagnostic", deferredLogs, 1)
+now = 100.24
+queue.requestEndTurn(7)
+check("retry waits through the bounded interval", #requested - before, 1)
+now = 100.25
+queue.requestEndTurn(7, parameters)
+check("rejected completion can retry after quarter second", #requested - before, 2)
+check("delayed forced request keeps parameters", requested[#requested].parameters, parameters)
+queue.requestEndTurn(8)
+check("a new turn does not inherit retry delay", #requested - before, 3)
+now = 10
+queue.requestEndTurn(8)
+check("a reset native clock cannot strand a turn", #requested - before, 4)
+UI.GetElapsedTime = function() error("clock unavailable") end
+queue.requestEndTurn(8)
+check("missing native clock keeps the existing fallback", #requested - before, 5)
+UI.GetElapsedTime = function() return 0/0 end
+queue.requestEndTurn(8)
+check("invalid clock keeps fallback", #requested - before, 6)
+UI.GetElapsedTime = nil
+queue.requestEndTurn(7)
 queue.onUnitSettled(PID, 10)
 check("final settled move retries requested turn with empty queue", settledTickCalls, 1)
 queue.onUnitSettled(PID + 1, 10)
