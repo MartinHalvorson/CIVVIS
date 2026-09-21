@@ -917,9 +917,9 @@ impl AdvancedAi {
     ///
     /// ⚠ Keyed off the technology, not off [`AirSurgePhase::Beeline`]. A
     /// counter appointed into a running war sits in `Exploit` from its first
-    /// turn — and it is precisely the appointment that most needs the beeline,
-    /// because the wing is what answers the invasion. The goal retires when
-    /// the technology lands, which is the only condition that ever mattered.
+    /// turn and still needs research before its wing can answer the invasion.
+    /// A nearer standing-army upgrade can temporarily take priority; the air
+    /// goal retires when the breakthrough technology lands.
     pub(crate) fn air_surge_research_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
         self.air_surge_plan.as_ref()?;
         // Native King run 20260921T110313Z kept Crossbowmen and Trebuchets
