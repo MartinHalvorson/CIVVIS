@@ -401,11 +401,11 @@ impl Game {
     }
 
     pub(super) fn home_continent(&self, pid: usize) -> Option<usize> {
-        self.cities
-            .values()
-            .find(|city| {
-                city.owner == pid && self.observed_city_palaces.get(&city.id) == Some(&true)
-            })
+        self.observed_city_palaces
+            .iter()
+            .filter(|(_, current)| **current)
+            .filter_map(|(id, _)| self.cities.get(id))
+            .find(|city| city.owner == pid)
             .or_else(|| {
                 self.cities.values().find(|city| {
                     !self.observed_city_palaces.contains_key(&city.id)
