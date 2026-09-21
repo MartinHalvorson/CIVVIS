@@ -38307,6 +38307,15 @@ impl AdvancedAi {
         });
 
         if doctrine == UnitDoctrine::AirStrike {
+            if let (Some((mission_value, _, _)), Some((_, to, action))) =
+                (best_mission.as_ref(), best_rebase.as_ref())
+            {
+                if *mission_value > 0.0
+                    && self.air_campaign_rebase_is_better(g, pid, uid, plan, *to, *mission_value)
+                {
+                    return Some(action.clone());
+                }
+            }
             return best_mission
                 .filter(|(value, _, _)| *value > 0.0)
                 .map(|(_, _, action)| action)
@@ -42079,3 +42088,5 @@ mod domination_wonder_tests;
 mod domination_policy_economy;
 
 mod adopted_faith_balance;
+
+mod air_campaign;
