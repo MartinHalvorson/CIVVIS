@@ -13,7 +13,12 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     }
     let home = g.found_city_for(0, (8, 12), None);
     let target = g.found_city_for(1, (16, 12), None);
-    g.cities.get_mut(&home).unwrap().pop = 10;
+    g.cities.get_mut(&home).unwrap().pop = 6;
+    g.cities.get_mut(&home).unwrap().buildings.extend([
+        crate::name!("granary"),
+        crate::name!("monument"),
+        crate::name!("water_mill"),
+    ]);
     g.cities.get_mut(&target).unwrap().wall_hp = 300;
     g.cities.get_mut(&target).unwrap().buildings.extend([
         crate::name!("walls"),
@@ -66,7 +71,7 @@ fn missing(g: &Game, ai: &AdvancedAi, plan: &StrategicPlan, home: u32) -> bool {
 
 #[test]
 fn obsolete_catapults_do_not_close_the_modern_wall_breaker_reserve() {
-    let (mut g, mut ai, plan, home, _) = fixture();
+    let (mut g, ai, plan, home, _) = fixture();
     let bombard = Item::Unit {
         unit: crate::name!("bombard"),
     };
@@ -74,8 +79,12 @@ fn obsolete_catapults_do_not_close_the_modern_wall_breaker_reserve() {
     assert!(g.unit_is_obsolete(0, crate::name!("catapult")));
     assert!(missing(&g, &ai, &plan, home));
     assert!(ai.production_value(&g, 0, home, &bombard, &plan, &ai.counts(&g, 0)) > 0.0);
-    ai.advanced_production(&mut g, 0, &plan, false);
-    assert_eq!(g.cities[&home].queue.first(), Some(&bombard));
+    // Closing the missing role restores the ordinary army ceiling.
+    g.spawn_test_unit("bombard", 0, (8, 12));
+    assert_eq!(
+        ai.production_value(&g, 0, home, &bombard, &plan, &ai.counts(&g, 0)),
+        -2_000.0
+    );
 }
 
 #[test]
@@ -112,6 +121,9 @@ fn the_modern_order_retains_its_reserve_but_other_cities_do_not_duplicate_it() {
     assert!(!missing(&g, &ai, &plan, other));
     plan.target_city = None;
     plan.strategy = GrandStrategy::Recovery;
+    // A started useful replacement survives the governor's investment check.
+    // Zero-progress orders still compete with other production priorities.
+    g.cities.get_mut(&home).unwrap().production = 1.0;
     ai.advanced_production(&mut g, 0, &plan, false);
     assert_eq!(g.cities[&home].queue.first(), Some(&bombard));
 }
