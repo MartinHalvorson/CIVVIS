@@ -166,3 +166,93 @@ fn repeated_reservation_does_not_start_a_second_supplier() {
         1
     );
 }
+
+#[test]
+fn adopted_missionaries_stop_when_their_counterfaith_becomes_the_threat() {
+    let (mut g, ai, _, home) = fixture();
+    let target = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != home)
+        .unwrap();
+    let unit = g.spawn_test_unit("missionary", 0, g.cities[&target].pos);
+    g.units.get_mut(&unit).unwrap().religion = Some("Orthodoxy".into());
+    assert!(ai.advanced_missionary_step(&mut g, 0, unit, false));
+    assert_eq!(
+        g.units[&unit].charges, 2,
+        "safe adopted faith still defends"
+    );
+
+    // The same purchased unit remains alive while the other cities convert.
+    for cid in g.player_city_ids(0) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.pressure.insert(
+            if cid == target {
+                "Buddhism"
+            } else {
+                "Orthodoxy"
+            }
+            .into(),
+            1000.0,
+        );
+    }
+    assert_eq!(ai.adopted_faith_threat(&g, 0).as_deref(), Some("Orthodoxy"));
+    g.units.get_mut(&unit).unwrap().moves_left = 4.0;
+    let before = g.cities[&target].pressure.clone();
+    for offensive in [false, true] {
+        assert!(!ai.advanced_missionary_step(&mut g, 0, unit, offensive));
+        assert_eq!(g.units[&unit].charges, 2);
+        assert_eq!(g.cities[&target].pressure, before);
+    }
+
+    // Re-evaluate the current board, rather than permanently disabling a unit.
+    for cid in g.player_city_ids(0).into_iter().filter(|cid| *cid != home) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.pressure.insert("Buddhism".into(), 1000.0);
+    }
+    assert!(ai.advanced_missionary_step(&mut g, 0, unit, false));
+    assert_eq!(g.units[&unit].charges, 1);
+}
+
+#[test]
+fn adopted_spread_cannot_help_a_faith_that_holds_every_other_major() {
+    let (mut g, ai, _, home) = fixture();
+    let target = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != home)
+        .unwrap();
+    for cid in g.player_city_ids(1) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.pressure.insert("Orthodoxy".into(), 1000.0);
+    }
+    let unit = g.spawn_test_unit("missionary", 0, g.cities[&target].pos);
+    g.units.get_mut(&unit).unwrap().religion = Some("Orthodoxy".into());
+    assert!(!ai.advanced_missionary_step(&mut g, 0, unit, false));
+    assert_eq!(g.units[&unit].charges, 3);
+}
+
+#[test]
+fn adopted_spread_restraint_preserves_founder_other_lane_and_disabled_victory() {
+    for mode in ["founder", "science", "disabled"] {
+        let (mut g, mut ai, _, home) = fixture();
+        let unit = g.spawn_test_unit("missionary", 0, g.cities[&home].pos);
+        g.units.get_mut(&unit).unwrap().religion = Some("Buddhism".into());
+        match mode {
+            "founder" => {
+                g.players[1].religion = None;
+                g.players[0].religion = Some("Buddhism".into());
+            }
+            "science" => ai = AdvancedAi::targeting(VictoryTarget::Science),
+            _ => g.victory_conditions.religious = false,
+        }
+        assert!(
+            ai.advanced_missionary_step(&mut g, 0, unit, false),
+            "{mode}"
+        );
+        assert_eq!(g.units[&unit].charges, 2, "{mode}");
+    }
+}

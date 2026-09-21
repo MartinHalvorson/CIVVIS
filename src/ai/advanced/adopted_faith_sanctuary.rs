@@ -69,6 +69,20 @@ impl AdvancedAi {
             .any(|p| !g.civ_follows_religion(p.id, faith))
     }
 
+    /// A purchased defender keeps its faith when city majorities change.
+    /// Reconsider that faith before every spread: a former counterweight can
+    /// become the rival victory we now need to prevent.
+    pub(super) fn adopted_faith_spread_allowed(&self, g: &Game, pid: usize, faith: &str) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.victory_conditions.religious
+            || g.players[pid].religion.is_some()
+        {
+            return true;
+        }
+        Self::safe_adopted_counterfaith(g, pid, faith)
+            && self.adopted_faith_threat(g, pid).as_deref() != Some(faith)
+    }
+
     fn sanctuary_item(g: &Game, item: &Item) -> bool {
         match item {
             Item::District { district, .. } => g.district_family(*district).as_str() == "holy_site",
