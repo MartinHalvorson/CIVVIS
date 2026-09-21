@@ -321,12 +321,18 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// The war ledger's loss counts for our war with `other`:
-    /// (our units, their units, our cities, their cities). Zero before the
-    /// first blow: the record is opened on demand.
-    pub(super) fn one_war_ledger(g: &Game, pid: usize, other: usize) -> (u32, u32, u32, u32) {
+    /// Cumulative losses against `other`: our units, their units, our cities,
+    /// their cities. Native unit counts come from confirmed combat events;
+    /// each newly observed front seeds its baseline before reading changes.
+    pub(super) fn one_war_ledger(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+    ) -> (u32, u32, u32, u32) {
         let key = (pid.min(other), pid.max(other));
-        g.wars
+        let mut ledger = g
+            .wars
             .get(&key)
             .map(|war| {
                 let ours = war.losses.get(&pid);
@@ -338,7 +344,12 @@ impl AdvancedAi {
                     theirs.map_or(0, |l| l.cities),
                 )
             })
-            .unwrap_or((0, 0, 0, 0))
+            .unwrap_or((0, 0, 0, 0));
+        if let Some(losses) = &self.host_war_unit_losses {
+            ledger.0 = losses.get(&(pid, other)).copied().unwrap_or(0);
+            ledger.1 = losses.get(&(other, pid)).copied().unwrap_or(0);
+        }
+        ledger
     }
 
     /// The observation pass: pick or keep the front, read the exchange since
@@ -359,11 +370,11 @@ impl AdvancedAi {
             Some(front) if front.target == target => front,
             _ => {
                 let mut fresh = OneWarFront::new(target, g.turn);
-                fresh.ledger = Self::one_war_ledger(g, pid, target);
+                fresh.ledger = self.one_war_ledger(g, pid, target);
                 fresh
             }
         };
-        let ledger = Self::one_war_ledger(g, pid, target);
+        let ledger = self.one_war_ledger(g, pid, target);
         let (our_units, their_units, our_cities, their_cities) = (
             ledger.0.saturating_sub(front.ledger.0) as i32,
             ledger.1.saturating_sub(front.ledger.1) as i32,

@@ -19939,17 +19939,36 @@ end;
 -- TopPanel has a visible UI clock even when Game Core stops publishing.
 -- Observe normal ticks first; only a quiet interval needs a fallback wakeup.
 -- `tick` retains every existing ownership, turn, order and reentrancy guard.
-CivvisQueue.onUiPulse = function()
-	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
+CivvisQueue.noteUiPulse = function(source, disposition)
+	-- Once per source/disposition for the whole run: a rejected clock must be
+	-- observable without repeated diagnostic writes keeping a wedge alive.
+	CivvisQueue.uiPulseEvidence = CivvisQueue.uiPulseEvidence or {};
+	local seen = CivvisQueue.uiPulseEvidence;
+	seen[source] = seen[source] or {};
+	if seen[source][disposition] then return; end
+	seen[source][disposition] = true;
+	emit("controller_clock", {
+		source = source, disposition = disposition,
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+	});
+end;
+
+CivvisQueue.onUiPulse = function(source)
+	source = type(source) == "string" and source or "unknown";
+	local rejected = finished and "finished" or inTick and "in_tick"
+		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";
+	if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end
 	local serial = CivvisQueue.controllerTicks or 0;
 	if CivvisQueue.lastUiTick ~= serial then
+		CivvisQueue.noteUiPulse(source, "observing");
 		CivvisQueue.lastUiTick = serial;
 		return;
 	end
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
-	if pid == nil or pid < 0 then return; end
+	if pid == nil or pid < 0 then CivvisQueue.noteUiPulse(source, "no_player"); return; end
 	ensureStarted();
 	emit("controller_wake", {
+		source = source,
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		active = try(function() return Players[pid]:IsTurnActive(); end, false),
 		frame = awaiting.frame or 0,

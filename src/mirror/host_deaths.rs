@@ -6,6 +6,8 @@ pub struct HostUnitDeath {
     pub player: usize,
     pub unit: i64,
     pub turn: u32,
+    /// The other combatant's owner; absent in older or incomplete events.
+    pub opponent: Option<usize>,
 }
 
 #[derive(Default)]
@@ -25,9 +27,9 @@ impl HostDeaths {
         let Some(turn) = event["turn"].as_u64().and_then(|t| u32::try_from(t).ok()) else {
             return;
         };
-        for (side, killed) in [
-            ("attacker", "attacker_killed"),
-            ("defender", "defender_killed"),
+        for (side, killed, other) in [
+            ("attacker", "attacker_killed", "defender"),
+            ("defender", "defender_killed", "attacker"),
         ] {
             let participant = &event[side];
             if event[killed].as_bool() != Some(true) || participant["type"].as_str() != Some("unit")
@@ -42,8 +44,19 @@ impl HostDeaths {
             ) else {
                 continue;
             };
-            self.0
-                .insert((player, unit), HostUnitDeath { player, unit, turn });
+            let opponent = event[other]["player"]
+                .as_u64()
+                .and_then(|p| usize::try_from(p).ok())
+                .filter(|other| *other != player);
+            self.0.insert(
+                (player, unit),
+                HostUnitDeath {
+                    player,
+                    unit,
+                    turn,
+                    opponent,
+                },
+            );
         }
     }
 

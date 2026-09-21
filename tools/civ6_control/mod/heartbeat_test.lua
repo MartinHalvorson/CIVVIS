@@ -10,7 +10,8 @@ local function host(stock, cfg)
         result.stockLoaded = true
     end
     env.ContextPtr = { SetUpdate = function(_, callback) result.update = callback end }
-    env.LuaEvents = { CivvisControlPulse = function()
+    env.LuaEvents = { CivvisControlPulse = function(source)
+        assert(source == "TopPanel", "HUD pulse must identify its native context")
         result.pulses = result.pulses + 1
         if result.throw then error("listener temporarily unavailable") end
     end }
@@ -58,7 +59,8 @@ local function popupHost(cfg)
         SetShowHandler = function(_, f) h.show = f end,
     }
     env.Automation = { Log = function() end }
-    env.LuaEvents = { CivvisControlPulse = function()
+    env.LuaEvents = { CivvisControlPulse = function(source)
+        assert(source == "NaturalWonderPopup", "popup pulse must identify its native context")
         h.pulses = h.pulses + 1
         if h.hideOnPulse then h.hidden = true end
         if h.throw then error("listener unavailable") end

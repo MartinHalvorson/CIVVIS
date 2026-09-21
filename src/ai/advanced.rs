@@ -5913,6 +5913,10 @@ pub struct AdvancedAi {
     /// already does the adopting. Opt-in gene `government-ladder`.
     government_ladder: bool,
 
+    /// Confirmed native unit losses by (victim, opponent). None in simulated
+    /// games; Some(empty) means the host has confirmed no casualties.
+    host_war_unit_losses: Option<BTreeMap<(usize, usize), u32>>,
+
     // ---- append: l-o ------------------------------------------------
     /// Opt-in governor relocation; see `governor_dividends`.
     magnus_follows_settlers: bool,
@@ -7111,6 +7115,7 @@ mod granary_payback;
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
+mod host_war_losses;
 mod housing_research;
 mod live_gp_commitment;
 /// The opportunistic war: a surprise war priced on what the board exposes —
@@ -8310,6 +8315,7 @@ impl AdvancedAi {
             holy_site_where_the_threat_is_2: false,
             government_ladder: false,
 
+            host_war_unit_losses: None,
             // ---- append: l-o ----------------------------------------
             magnus_follows_settlers: false,
             liang_follows_builders: false,
