@@ -1,0 +1,7 @@
+# Fund standing Domination upgrades
+
+Native run `civvis-20260921T120510Z` had three legal Archer-to-Crossbow offers at 125 Gold each and two Trebuchet-to-Bombard offers at 85 Gold each on turn 125, with 156 Gold. It was at peace, and its strongest land unit (55) exceeded the barbarian quality-alarm threshold: the strongest observed barbarian was 65 against the required 73.75. The generic peacetime reserve of 120 blocked those upgrades. Military Training was available by turn 100, but Mercenaries was not completed until 204 despite being boosted since 45. The empire lost to religion on 207. Another game lost to culture on 211, underlining the need to improve offensive capability rather than only religious survival.
+
+The change connects civic research, policy choice, and the upgrade budget for the explicit Domination lane. Multiple standing land units with unlocked, stronger successors create an early Mercenaries goal after the first government. An available upgrade-discount card gets an ordinary military slot while the cohort is modernized, preserving maintenance, loyalty and culture-defense cards. A named offensive funds legal ground-unit upgrades before discretionary spending, keeping 30 Gold plus one turn of any current deficit. City-saving purchases and appointed war packages keep their priority. Other victory lanes and actual upgrade rules are unchanged.
+
+Validation in progress. No native victory is claimed.

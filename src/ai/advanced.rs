@@ -25,6 +25,7 @@ mod adopted_faith_sanctuary;
 mod counterfaith_source;
 mod defensive_apostle;
 
+mod domination_modernization;
 mod regional_production_commitments;
 
 /// Local strength ratio a force group needs before it will advance or press an
@@ -15002,6 +15003,9 @@ impl AdvancedAi {
                 {
                     self.culture_civic_goal(g, pid)
                 }
+                _ if self.domination_upgrade_civic_goal(g, pid).is_some() => {
+                    self.domination_upgrade_civic_goal(g, pid)
+                }
                 // See `government_ladder`: the same sentence one rung up. The
                 // tier-1 arm above exists because "a victory beeline cannot
                 // usefully precede the government's policy capacity"; tier 2
@@ -16631,6 +16635,11 @@ impl AdvancedAi {
         desired.splice(0..0, culture_defense_cards.iter().copied());
         let unproductive_economic_cards =
             self.domination_productive_policy_fallbacks(g, pid, &mut desired);
+        let upgrade_card = self.domination_upgrade_policy(g, pid);
+        if let Some(card) = upgrade_card {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+        }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -16705,6 +16714,14 @@ impl AdvancedAi {
                         return !culture_defense_cards.contains(&current.as_str())
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())
                             && self.builder_window_can_replace(g, pid, current);
+                    }
+                    if upgrade_card == Some(card) {
+                        return g.rules.policies[current].slot == "military"
+                            && !matches!(
+                                current.as_str(),
+                                "conscription" | "levee_en_masse" | "limitanei" | "praetorium"
+                            )
+                            && !culture_defense_cards.contains(&current.as_str());
                     }
                     !desired_set.contains(current.as_str())
                         || self.domination_multiplier_reclaims_fallback(
@@ -41547,6 +41564,7 @@ impl AdvancedAi {
         // breakthrough arrives still upgrades appointed predecessors before
         // Great Person patronage, ordinary purchases, diplomacy, or movement.
         self.execute_war_upgrades(g, pid);
+        self.fund_domination_upgrades(g, pid, &plan);
         self.modernize_science_core(g, pid);
         // Modernization normally waits until after every purchase and is
         // suppressed by an appointed war package. A defender that did not
