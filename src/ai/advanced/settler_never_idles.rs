@@ -300,6 +300,21 @@ impl AdvancedAi {
                     && self.settler_target_clears_floor(g, from, *pos, *value)
             })
             .collect();
+        // Exhausting the preferred filters does not make travel free. Keep
+        // the same turn price as the normal target search, including the
+        // growing cost of leaving an older Settler without a city.
+        let turn_price = self.settle_sooner_walk_price(g, uid);
+        if let Some((_, moves)) = turn_price {
+            let costs = Self::settle_sooner_walk_costs(g, uid, radius);
+            for (position, value) in &mut ranked {
+                let movement_cost = costs
+                    .get(position)
+                    .copied()
+                    .unwrap_or_else(|| g.wdist(from, *position) as f64 * moves.max(1.0) / 2.0);
+                *value -= Self::settle_sooner_walk_cost(turn_price, movement_cost);
+            }
+            ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        }
         self.set_aside_unpriceable_sites(g, pid, &mut ranked);
         for _ in 0..=STRANDED_FORECAST_RETRIES {
             let Some((site, value)) = BasicAi::first_reachable_settle_site(g, uid, &ranked) else {
@@ -2011,3 +2026,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod walk_price_tests;
