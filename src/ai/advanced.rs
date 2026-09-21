@@ -11391,7 +11391,10 @@ impl AdvancedAi {
         }
         // An assigned lane keeps its focus against ordinary pressure; a rival
         // at match point ends the game for every lane alike.
-        if targeted && !self.urgent_victory_threat(g, denial.0) {
+        if targeted
+            && !self.urgent_victory_threat(g, denial.0)
+            && !self.domination_counter_target(g, denial.0)
+        {
             return None;
         }
         Some(denial)
@@ -11578,7 +11581,8 @@ impl AdvancedAi {
         } else {
             pressure.progress
         };
-        self.domination_counter_pressure(g, pressure)
+        (self.domination_counter_pressure(g, pressure)
+            && (pressure.strategy == GrandStrategy::Religion || pressure.progress >= 78))
             || pressure.progress >= 90
             || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
             || (self.stock_denial_lead_time && stock_lane && stock_progress >= STOCK_DENIAL_BAR)

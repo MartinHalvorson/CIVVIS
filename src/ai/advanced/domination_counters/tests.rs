@@ -167,7 +167,7 @@ fn domination_counters_leave_other_lanes_and_low_pressure_unchanged() {
             progress: if strategy == GrandStrategy::Religion {
                 74
             } else {
-                77
+                49
             },
         };
         assert!(!ai.domination_counter_pressure(&g, below));
@@ -211,4 +211,25 @@ fn domination_religious_counter_tracks_the_living_major_match_point() {
             }
         ));
     }
+}
+
+#[test]
+fn domination_culture_preparation_starts_early_without_bypassing_war_readiness() {
+    let (mut g, objective) = board(GrandStrategy::Culture);
+    std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(50);
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(!ai.denial_is_urgent(&g, 1));
+    assert_eq!(ai.denial_target(&g, 0), Some((1, GrandStrategy::Conquest)));
+    assert_eq!(ai.victory_denial(&g, 0), Some((1, GrandStrategy::Conquest)));
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_city, Some(objective));
+    std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(49);
+    assert_eq!(ai.denial_target(&g, 0), None);
 }

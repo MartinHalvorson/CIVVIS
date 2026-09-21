@@ -29,7 +29,7 @@ impl AdvancedAi {
             return false;
         }
         match pressure.strategy {
-            GrandStrategy::Culture => pressure.progress >= 78,
+            GrandStrategy::Culture => pressure.progress >= self.culture_threat_pressure(),
             GrandStrategy::Religion => {
                 let living = g
                     .players
@@ -153,6 +153,11 @@ impl AdvancedAi {
         pressure: VictoryFocus,
     ) -> Option<GrandStrategy> {
         let urgent = self.victory_pressure_is_urgent(g, rival, pressure);
+        if self.domination_counter_pressure(g, pressure) {
+            // Faith purchases and home religious defense still run; this only
+            // keeps the campaign in its assigned military lane.
+            return Some(GrandStrategy::Conquest);
+        }
         // Religious progress advances in whole-civilization jumps, and a
         // defender needs time to produce and route religious counters. Start
         // reacting with two holdouts left when the rival also leads our own
@@ -190,11 +195,6 @@ impl AdvancedAi {
             )
         {
             return None;
-        }
-        if self.domination_counter_pressure(g, pressure) {
-            // Faith purchases and home religious defense still run; this only
-            // keeps the campaign in its assigned military lane.
-            return Some(GrandStrategy::Conquest);
         }
         Some(match pressure.strategy {
             GrandStrategy::Science if self.counter_in_lane => GrandStrategy::Science,
