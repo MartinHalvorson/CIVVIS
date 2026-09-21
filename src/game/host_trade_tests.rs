@@ -113,8 +113,10 @@ fn native_sale_cannot_fund_a_purchase_until_observed() {
         .unwrap()
         .buildings
         .retain(|b| *b != crate::name!("monument"));
-    g.players[0].gold = 0.0;
+    let cost = g.building_gold_purchase_cost(0, city, "monument").unwrap();
+    g.players[0].gold = cost - 1.0;
     let sale = resource_sale(&g, 0);
+    assert!(matches!(&sale, Action::Trade { request, .. } if request.gold > 1.0));
     g.apply(0, &sale).unwrap();
     let buy = Action::BuyBuilding {
         city,
@@ -123,7 +125,7 @@ fn native_sale_cannot_fund_a_purchase_until_observed() {
     };
     assert!(g.apply(0, &buy).is_err());
     // A subsequent host snapshot can supply real proceeds normally.
-    g.players[0].gold = 500.0;
+    g.players[0].gold = cost;
     g.apply(0, &buy).unwrap();
     assert!(g.cities[&city]
         .buildings
