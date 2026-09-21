@@ -5581,6 +5581,7 @@ fn unverifiable_unit_verb(op: &str) -> bool {
 
 /// Ledger event kinds the checks read as evidence between two frames.
 const EVIDENCE_KINDS: &[&str] = &[
+    "condemn_removed",
     "combat_policy_applied",
     "strike_survival_refused",
     "combat",
@@ -6595,8 +6596,24 @@ fn verify_unit_order(
                 Verdict::Failed("not_activated".to_string())
             }
         }
+        "CONDEMN_HERETIC" => {
+            // A military actor has no religious charge. The host correlates
+            // this command with removal of a hostile religious unit under it;
+            // losing sight of a target or losing the actor is not that proof.
+            if evidence.iter().any(|event| {
+                event["kind"].as_str() == Some("condemn_removed")
+                    && event["turn"].as_u64() == Some(u64::from(turn))
+                    && event["unit"].as_i64() == Some(id)
+                    && event["target_player"].as_u64().is_some()
+                    && event["target"].as_u64().is_some()
+            }) {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("no_condemn_removal".to_string())
+            }
+        }
         "SPREAD_RELIGION" | "RELIGIOUS_HEAL" | "REMOVE_HERESY" | "LAUNCH_INQUISITION"
-        | "CONDEMN_HERETIC" | "CONVERT_BARBARIANS" => {
+        | "CONVERT_BARBARIANS" => {
             let spent = matches!(
                 (was.and_then(|u| u.spread_charges), now.and_then(|u| u.spread_charges)),
                 (Some(b), Some(a)) if a < b
@@ -11806,6 +11823,53 @@ mod tests {
                 .any(|(unit, to)| *unit == warrior && *to != target),
             "the same unit's other targets are not blocked"
         );
+    }
+
+    #[test]
+    fn condemn_verification_requires_the_native_target_removal() {
+        let (tiles, before) = local_barbarian_defense_board();
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("CONDEMN_HERETIC".to_string()),
+            pos: None,
+        };
+        let verdict = |after: &civvis::mirror::StateSnapshot, evidence: &[serde_json::Value]| {
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                after,
+                &tiles,
+                evidence,
+                LaterFrames::default(),
+            )
+        };
+        assert!(EVIDENCE_KINDS.contains(&"condemn_removed"));
+        let removal = serde_json::json!({
+            "kind": "condemn_removed", "turn": 30, "unit": 101,
+            "target_player": 2, "target": 201, "x": 4, "y": 4
+        });
+        assert!(matches!(
+            verdict(&before, std::slice::from_ref(&removal)),
+            Verdict::Verified
+        ));
+        assert!(matches!(verdict(&before, &[]),
+            Verdict::Failed(reason) if reason == "no_condemn_removal"));
+        for (key, wrong) in [
+            ("turn", serde_json::json!(29)),
+            ("unit", serde_json::json!(102)),
+            ("kind", serde_json::json!("unit_lost")),
+            ("target", serde_json::Value::Null),
+            ("target_player", serde_json::Value::Null),
+        ] {
+            let mut unrelated = removal.clone();
+            unrelated[key] = wrong;
+            assert!(matches!(verdict(&before, &[unrelated]), Verdict::Failed(_)));
+        }
+        let mut actor_lost = before.clone();
+        actor_lost.units.retain(|unit| unit.id != 101);
+        assert!(matches!(verdict(&actor_lost, &[]), Verdict::Failed(_)));
     }
 
     /// An ATTACK/RANGE_ATTACK that left its target unharmed verifies with the
