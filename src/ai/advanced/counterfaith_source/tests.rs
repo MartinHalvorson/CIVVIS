@@ -125,12 +125,15 @@ fn pillaged_or_incomplete_infrastructure_does_not_earn_priority() {
         .unwrap()
         .pillaged_buildings
         .clear();
-    let pos = g.cities[&source].districts[&crate::name!("holy_site")];
-    g.map.get_mut(pos).unwrap().pillaged = true;
+    let pos = *g.cities[&source]
+        .districts
+        .get(&crate::name!("holy_site"))
+        .unwrap();
+    g.map.tiles.get_mut(&pos).unwrap().pillaged = true;
     assert!(ai
         .counterfaith_recruitment_targets(&g, 0, "Orthodoxy")
         .is_empty());
-    g.map.get_mut(pos).unwrap().pillaged = false;
+    g.map.tiles.get_mut(&pos).unwrap().pillaged = false;
     g.cities.get_mut(&source).unwrap().buildings.clear();
     assert!(ai
         .counterfaith_recruitment_targets(&g, 0, "Orthodoxy")
