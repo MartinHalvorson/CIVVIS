@@ -12672,7 +12672,13 @@ fn religious_match_point_spends_the_reserve_only_in_own_faith_cities() {
         .find(|unit| unit.owner == 0 && unit.kind == "missionary")
         .expect("match-point defense should spend the ordinary Faith reserve");
     assert_eq!(missionary.religion.as_deref(), Some("Home Faith"));
-    assert_eq!(missionary.pos, game.cities[&faithful_city].pos);
+    assert_eq!(
+        missionary.pos,
+        *game.cities[&faithful_city]
+            .districts
+            .get(crate::name!("holy_site"))
+            .unwrap()
+    );
     assert!(game.players[0].faith < 1.0);
 }
 

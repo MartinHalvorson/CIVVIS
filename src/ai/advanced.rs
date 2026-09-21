@@ -16626,6 +16626,8 @@ impl AdvancedAi {
         let culture_defense_cards = self.culture_defense_cards(g, pid);
         desired.retain(|card| !culture_defense_cards.contains(card));
         desired.splice(0..0, culture_defense_cards.iter().copied());
+        let unproductive_economic_cards =
+            self.domination_productive_policy_fallbacks(g, pid, &mut desired);
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -16702,6 +16704,9 @@ impl AdvancedAi {
                             && self.builder_window_can_replace(g, pid, current);
                     }
                     !desired_set.contains(current.as_str())
+                        || self.domination_multiplier_reclaims_fallback(
+                            g, card, current.as_str(), &unproductive_economic_cards,
+                        )
                         // Defensive cards must be able to take an occupied
                         // slot, but never evict each other or a different
                         // typed lane card merely to borrow wildcard capacity.
@@ -16729,7 +16734,11 @@ impl AdvancedAi {
                         .as_ref()
                         .and_then(|civic| g.rules.civics.get(civic))
                         .map_or(0, |civic| civic.era);
-                    (usize::from(policy.slot != slot), era)
+                    (
+                        usize::from(policy.slot != slot),
+                        usize::from(!unproductive_economic_cards.contains(current)),
+                        era,
+                    )
                 };
                 key(first).cmp(&key(second)).then(first.cmp(second))
             });
@@ -42005,3 +42014,5 @@ mod domination_maintenance_tests;
 
 #[cfg(test)]
 mod domination_wonder_tests;
+
+mod domination_policy_economy;

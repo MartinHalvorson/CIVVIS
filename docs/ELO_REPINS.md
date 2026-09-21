@@ -2133,3 +2133,25 @@ The unchanged five-profile anchor reproduces the v39 baseline exactly:
 measures **18,911 decisions / `0xf49f_29f4_564a_dc6e`**. The re-pin records the
 deliberate setup change; native outcome comparisons across this boundary must
 account for the changed barbarian pressure.
+
+## v41 (2026-09-21) — religious purchases start at their Holy Site
+
+#3650 corrects shared purchase placement: religious units use an available,
+active Holy Site, including replacements, before falling back to the city
+center. Purchases retain the source city's majority religion and spread-charge
+building bonus. This changes the engine used by every controller, including
+`AdvancedAi::legacy()`; it is not an AI policy or a gene-gate change.
+
+Native run `civvis-20260921T085911Z-cont3` shows Bogotá's purchased Missionary
+at the Holy Site `(51,21)` on turn 68/frame 2, then a second at the city center
+`(49,21)` while the Holy Site remains occupied on turn 69/frame 0. Purchases
+on turns 76 and 89 also appear at the open Holy Site. The regression covers
+this placement order, friendly military stacking, Lavras, majority religion,
+and the Mosque bonus at both spawn positions.
+
+The unchanged five-profile probe now measures **18,909 decisions and
+`0x73b8_2ccc_dff4_361b`**, replacing v40's **18,911 decisions and
+`0xf49f_29f4_564a_dc6e`**. Two independent runs of the existing profile and
+hashing function agree. The full suite exposed this deliberate shared-engine
+change; updating the pin records that boundary. The fingerprint and smoke
+games do not establish stronger play or a native Domination win.

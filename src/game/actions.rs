@@ -6492,9 +6492,45 @@ impl Game {
             return Err("insufficient strategic resources".into());
         }
         let pos = self.cities[&cid].pos;
-        let placed = self
-            .place_new_unit(unit, pid, pos)
+        // Native purchases prefer the Holy Site itself; an occupied site
+        // falls back to the city center, not to the site's neighboring tiles.
+        let religious_site = if religious {
+            let city = &self.cities[&cid];
+            city.districts.iter().find_map(|(district, position)| {
+                (self.district_is_family(district, crate::name!("holy_site"))
+                    && self.district_is_active(city, district, *position)
+                    && self.map.get(*position).is_some_and(|tile| {
+                        self.rules.is_passable(tile) && !self.rules.is_water(tile)
+                    })
+                    && self.unit_ids_at(*position).iter().all(|uid| {
+                        let other = &self.units[uid];
+                        other.owner == pid && self.rules.units[other.kind].class != "religious"
+                    }))
+                .then_some(*position)
+            })
+        } else {
+            None
+        };
+        let placed = religious_site
+            .map(|site| self.spawn_unit(unit, pid, site))
+            .or_else(|| self.place_new_unit(unit, pid, pos))
             .ok_or_else(|| "no space to place unit".to_string())?;
+        if religious && self.rules.units[unit].religious_spread > 0.0 {
+            // spawn_unit applies a building bonus only at a city center.
+            // A purchase always takes that bonus from its source city,
+            // including when district placement or overflow moves it away.
+            let source_bonus = self
+                .city_building_effect(&self.cities[&cid], "religious_unit_spread_charges")
+                as i32;
+            let spawned_bonus = self
+                .city_at(self.units[&placed].pos)
+                .filter(|city| self.cities[city].owner == pid)
+                .map_or(0, |city| {
+                    self.city_building_effect(&self.cities[&city], "religious_unit_spread_charges")
+                        as i32
+                });
+            self.units.get_mut(&placed).unwrap().charges += source_bonus - spawned_bonus;
+        }
         self.set_unit_formation(placed, formation);
         self.apply_training_district_effects(cid, placed);
         if unit == "builder" {
