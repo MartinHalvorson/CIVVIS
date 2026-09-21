@@ -4439,6 +4439,57 @@ local GOVERNOR_ORDER = {
 -- the request did not throw; it cannot prove the host applied the choice.
 local pendingReligionChoice = nil;
 
+-- BEGIN staged religion founding
+-- ReligionScreen.lua:318-322 waits for GetNumBeliefsEarned before opening
+-- ChooseReligion; UnitPanel.lua:2535 starts the Prophet operation first.
+-- Keep the selected beliefs across that asynchronous native state transition.
+CivvisReligionFounding = {};
+CivvisReligionFounding.ready = function(religion)
+	local earned = try(function() return religion:GetNumBeliefsEarned(); end, nil);
+	return type(earned) == "number" and earned > 0;
+end
+CivvisReligionFounding.confirm = function(player, pid, choice)
+	if choice == nil or choice.mode ~= "found" or choice.failure ~= nil then return false; end
+	if choice.confirm_requested then return true; end
+	local religion = try(function() return player:GetReligion(); end);
+	if religion == nil or not CivvisReligionFounding.ready(religion) then return false; end
+	if try(function() return religion:GetReligionTypeCreated(); end, -1) >= 0 then return true; end
+	local gameReligion = try(function() return Game.GetReligion(); end);
+	if gameReligion == nil then return false; end
+	for _, index in ipairs({choice.follower_index, choice.founder_index}) do
+		if try(function() return gameReligion:IsInSomeReligion(index); end, true) then
+			choice.failure = "belief_taken";
+			return false;
+		end
+	end
+	for _, existing in ipairs(try(function() return gameReligion:GetReligions(); end, {}) or {}) do
+		if existing.Religion == choice.religion_index then
+			choice.failure = "religion_taken";
+			return false;
+		end
+	end
+	local ok = pcall(function()
+		local found = {};
+		found[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+		found[PlayerOperations.PARAM_RELIGION_TYPE] = choice.religion_hash;
+		UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_RELIGION, found);
+		for _, hash in ipairs({choice.follower_hash, choice.founder_hash}) do
+			local params = {};
+			params[PlayerOperations.PARAM_BELIEF_TYPE] = hash;
+			params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+			UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
+		end
+	end);
+	if ok then
+		choice.confirm_requested = true;
+		choice.confirm_turn = Game.GetCurrentGameTurn();
+	else
+		choice.failure = "confirmation_throw";
+	end
+	return ok;
+end
+-- END staged religion founding
+
 -- Which city each appointed governor was posted to, kept across turns. The engine
 -- has query methods for this but their names differ between builds, and guessing
 -- a Civilization VI API has cost this project three failed fixes today, so the
@@ -5372,6 +5423,11 @@ end
 
 local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	local name = blockerName(blocker);
+	if name == "ENDTURN_BLOCKING_BELIEF" and pendingReligionChoice ~= nil
+			and pendingReligionChoice.mode == "found" then
+		CivvisReligionFounding.confirm(player, pid, pendingReligionChoice);
+		return "civvis_complete";
+	end
 	-- Firaxis's UnitPanel starts the Apostle operation, then ReligionScreen
 	-- confirms the selected belief with ADD_BELIEF. Keep those two asynchronous
 	-- steps together through a pending record so the exact CIVVIS choice reaches
@@ -8419,10 +8475,14 @@ local function exportState(player, pid, turn, frame, eventKind)
 	-- religion is a player operation whose belief choices CIVVIS must make, so
 	-- export both the decision gate and the worldwide availability facts.
 	local playerReligion = try(function() return player:GetReligion(); end);
+	if pendingReligionChoice ~= nil and pendingReligionChoice.mode == "found" then
+		CivvisReligionFounding.confirm(player, pid, pendingReligionChoice);
+	end
 	local religionCreated = playerReligion ~= nil and
 		try(function() return playerReligion:GetReligionTypeCreated(); end, -1) or -1;
 	local prophet_pending = religionCreated < 0 and playerReligion ~= nil and
-		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) or false;
+		(CivvisReligionFounding.ready(playerReligion) or
+		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false)) or false;
 	-- ★ SAY SO WHEN A RELIGIOUS CHOICE DID NOT TAKE. The request reports
 	-- `applied` because nothing threw; only the turn AFTER can read whether the
 	-- player's own religion carries the selected belief or exists at all.
@@ -8476,12 +8536,15 @@ local function exportState(player, pid, turn, frame, eventKind)
 				founder = pendingReligionChoice.founder,
 			});
 			pendingReligionChoice = nil;
-		elseif now > pendingReligionChoice.turn then
+		elseif pendingReligionChoice.failure ~= nil
+				or now > (pendingReligionChoice.confirm_turn or pendingReligionChoice.turn) then
 			emit("religion_founding_failed", {
 				player = pid,
 				turn = now,
 				requested_turn = pendingReligionChoice.turn,
 				religion = pendingReligionChoice.religion,
+				stage = pendingReligionChoice.confirm_requested and "confirmation" or "activation",
+				reason = pendingReligionChoice.failure,
 				-- The two facts that separate the failure modes: whether the
 				-- Prophet survived, and whether the slot is still open.
 				founding_unit_left = prophet_pending,
@@ -13121,6 +13184,7 @@ local function applyOrder(player, pid, row, turn)
 	end
 
 	if kind == "religion" then
+		if pendingReligionChoice ~= nil then return false, "religion_choice_pending"; end
 		local requested = {};
 		for beliefType in string.gmatch(verb, "[^,]+") do
 			requested[#requested + 1] = beliefType;
@@ -13136,7 +13200,8 @@ local function applyOrder(player, pid, row, turn)
 		if try(function() return playerReligion:GetReligionTypeCreated(); end, -1) >= 0 then
 			return false, "religion_already_founded";
 		end
-		if not try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) then
+		local ready = CivvisReligionFounding.ready(playerReligion);
+		if not ready and not try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) then
 			return false, "no_great_prophet";
 		end
 		local gameReligion = try(function() return Game.GetReligion(); end);
@@ -13164,91 +13229,44 @@ local function applyOrder(player, pid, row, turn)
 		if religion == nil then return false, "no_religion_type"; end
 
 		local prophet = nil;
-		for _, unit in player:GetUnits():Members() do
-			local unitRow = GameInfo.Units[try(function() return unit:GetType(); end, -1)];
-			if unitRow ~= nil and unitRow.UnitType == "UNIT_GREAT_PROPHET" then
-				prophet = unit;
-				break;
+		local foundOperation = nil;
+		if not ready then
+			for _, unit in player:GetUnits():Members() do
+				local unitRow = GameInfo.Units[try(function() return unit:GetType(); end, -1)];
+				if unitRow ~= nil and unitRow.UnitType == "UNIT_GREAT_PROPHET" then
+					prophet = unit;
+					break;
+				end
 			end
-		end
-		if prophet == nil then return false, "no_great_prophet_unit"; end
-		local foundOperation = GameInfo.UnitOperations["UNITOPERATION_FOUND_RELIGION"];
-		if foundOperation == nil then return false, "no_found_religion_operation"; end
-		local okCanOperate, canOperate = pcall(function()
-			return UnitManager.CanStartOperation(prophet, foundOperation.Hash, nil, false,
-				OperationResultsTypes.NO_TARGETS);
-		end);
-		if not (okCanOperate and canOperate == true) then
-			return false, "cannot_found_religion_here";
-		end
-
-		-- Reproduce the full human path. UnitPanel starts the Prophet-specific
-		-- operation that opens religion selection; ReligionScreen then founds the
-		-- named religion and attaches the two selected beliefs.
-		--
-		-- ★★★★★ THE PLAYER OPERATION GOES FIRST, AND THAT ORDER IS THE WHOLE FIX.
-		--
-		-- This block used to request the UNIT operation first. Measured across the
-		-- 24 completed live runs of 2026-08-07/08, that sequence has a single,
-		-- perfectly repeatable outcome:
-		--
-		--     turn t-1   prophet 1   prophet_pending false   religion none
-		--     turn t     prophet 1   prophet_pending TRUE    religion none   <- order
-		--     turn t+1   prophet 0   prophet_pending false   religion NONE
-		--
-		-- The Great Prophet is CONSUMED and no religion is created. A religion
-		-- order reached the host in 19 of 24 runs, every one of them reported
-		-- `applied` with zero refusals, and a religion was founded in **0 of 24**.
-		-- All four slots go to rivals in every game, a median 494 Faith banks with
-		-- nothing to buy, and the religious victory lane -- which this controller
-		-- wins 19 games in 50 in the headless evaluator -- is unreachable in live
-		-- play by construction.
-		--
-		-- The comment this replaces already named the mechanism without drawing the
-		-- conclusion: "omitting the first request creates the religion but leaves
-		-- its Prophet occupying the Holy Site". The player operation is what FOUNDS;
-		-- the unit operation only spends the Prophet. Requesting the spend first
-		-- retires the founding unit before the founding it was needed for, and
-		-- `HasReligiousFoundingUnit()` is false by the time the host processes it.
-		--
-		-- ⚠ EVERY ONE OF THESE FLAGS IS A `pcall` VERDICT -- "did not throw" -- and
-		-- this file has been bitten by exactly that before. `ok` cannot mean the
-		-- engine took it, because `UI.RequestPlayerOperation` is asynchronous and
-		-- there is nothing to read back on this frame. `pendingReligionFounding`
-		-- below is how the NEXT turn finds out, so a silent failure stops being
-		-- indistinguishable from success.
-		local found = {};
-		found[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
-		found[PlayerOperations.PARAM_RELIGION_TYPE] = religion.Hash;
-		local okFound = pcall(function()
-			UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_RELIGION, found);
-		end);
-		local function addBelief(row)
-			local params = {};
-			params[PlayerOperations.PARAM_BELIEF_TYPE] = row.Hash;
-			params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
-			return pcall(function()
-				UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
+			if prophet == nil then return false, "no_great_prophet_unit"; end
+			foundOperation = GameInfo.UnitOperations["UNITOPERATION_FOUND_RELIGION"];
+			if foundOperation == nil then return false, "no_found_religion_operation"; end
+			local okCanOperate, canOperate = pcall(function()
+				return UnitManager.CanStartOperation(prophet, foundOperation.Hash, nil, false,
+					OperationResultsTypes.NO_TARGETS);
 			end);
+			if not (okCanOperate and canOperate == true) then
+				return false, "cannot_found_religion_here";
+			end
+
 		end
-		local okFollower = addBelief(follower);
-		local okFounder = addBelief(founder);
-		-- Spend the Prophet only after the founding has been asked for.
-		local okOperation = pcall(function()
-			UnitManager.RequestOperation(prophet, foundOperation.Hash);
-		end);
-		local ok = okFound and okFollower and okFounder and okOperation;
-		if ok then
-			pendingReligionChoice = {
-				mode = "found",
-				turn = Game.GetCurrentGameTurn(),
-				religion = religion.ReligionType,
-				follower = followerName,
-				founder = founderName,
-			};
+		pendingReligionChoice = {
+			mode = "found", turn = Game.GetCurrentGameTurn(),
+			religion = religion.ReligionType, religion_index = religion.Index,
+			religion_hash = religion.Hash,
+			follower = followerName, follower_index = follower.Index, follower_hash = follower.Hash,
+			founder = founderName, founder_index = founder.Index, founder_hash = founder.Hash,
+		};
+		if ready then
+			local ok = CivvisReligionFounding.confirm(player, pid, pendingReligionChoice);
+			if not ok then pendingReligionChoice = nil; end
+			return ok, ok and religion.ReligionType or "cannot_confirm_religion";
 		end
-		return ok, ok and (religion.ReligionType .. ":" .. followerName .. ":" .. founderName)
-			or "throw";
+		-- Only activate now. The blocker/export path submits the retained
+		-- choice after the native earned-belief gate opens, as the UI does.
+		local ok = pcall(function() UnitManager.RequestOperation(prophet, foundOperation.Hash); end);
+		if not ok then pendingReligionChoice = nil; end
+		return ok, ok and "religion_activation_requested" or "throw";
 	end
 
 	if kind == "research" or kind == "civic" then
