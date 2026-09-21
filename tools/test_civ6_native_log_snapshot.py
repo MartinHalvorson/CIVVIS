@@ -42,6 +42,76 @@ class SnapshotTests(unittest.TestCase):
                          ["b.csv", "d.log"])
         self.assertFalse((self.destination / "a.log").exists())
 
+    def test_oversized_log_keeps_tail_after_whole_logs_within_both_limits(self):
+        (self.source / "AI_Behavior_Trees.csv").write_bytes(b"old-data-latest")
+        (self.source / "Lua.log").write_bytes(b"ok")
+        report = self.capture(file_limit=6, total_limit=8)
+        self.assertEqual(report["copied_bytes"], 8)
+        self.assertEqual((self.destination / "Lua.log").read_bytes(), b"ok")
+        tail = (self.destination / "AI_Behavior_Trees.csv").read_bytes()
+        self.assertEqual(tail, b"latest")
+        entry = next(e for e in report["files"] if e["name"] == "AI_Behavior_Trees.csv")
+        self.assertEqual(entry["source_bytes"], 15)
+        self.assertEqual(entry["start_offset"], 9)
+        self.assertTrue(entry["truncated"])
+        self.assertEqual(entry["sha256"], hashlib.sha256(tail).hexdigest())
+        self.assertFalse(entry["changed_during_read"])
+        (self.source / "AI_Behavior_Trees.csv").write_bytes(b"replacement")
+        self.assertEqual(self.capture(), report)
+        self.assertEqual((self.destination / "AI_Behavior_Trees.csv").read_bytes(), tail)
+
+    def test_total_budget_can_preserve_a_smaller_tail(self):
+        (self.source / "a.log").write_bytes(b"0123456789")
+        (self.source / "b.log").write_bytes(b"1234")
+        report = self.capture(file_limit=6, total_limit=7)
+        self.assertEqual(report["copied_bytes"], 7)
+        self.assertEqual((self.destination / "a.log").read_bytes(), b"789")
+        self.assertEqual(report["files"][0]["start_offset"], 7)
+
+    def test_tail_reads_stay_bounded_and_identify_source_growth(self):
+        path = self.source / "growing.log"
+        original_bytes = b"old-data-latest"
+        path.write_bytes(original_bytes)
+        original_open = Path.open
+        reads = []
+
+        class GrowingStream(io.BytesIO):
+            def read(self, size):
+                reads.append(size)
+                path.write_bytes(original_bytes + b"new data")
+                return super().read(size)
+
+        def read(candidate, *args, **kwargs):
+            if candidate == path and args == ("rb",):
+                return GrowingStream(original_bytes)
+            return original_open(candidate, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", read):
+            report = self.capture(file_limit=6, total_limit=6)
+        self.assertEqual(reads, [6])
+        self.assertEqual((self.destination / path.name).read_bytes(), b"latest")
+        self.assertTrue(report["files"][0]["changed_during_read"])
+
+    def test_deferred_tail_does_not_follow_a_replaced_symlink(self):
+        large = self.source / "a.log"
+        large.write_bytes(b"oversized")
+        small = self.source / "b.log"
+        small.write_bytes(b"ok")
+        other = Path(self.tmp.name) / "other"
+        other.write_bytes(b"not a log")
+        original_open = Path.open
+
+        def read(candidate, *args, **kwargs):
+            if candidate == small and args == ("rb",):
+                large.unlink()
+                large.symlink_to(other)
+            return original_open(candidate, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", read):
+            report = self.capture(file_limit=4, total_limit=8)
+        self.assertEqual(report["files"][0]["skipped"], "not_regular_file")
+        self.assertFalse((self.destination / "a.log").exists())
+
     def test_symlinks_directories_and_reserved_manifest_are_not_copied(self):
         (self.source / "nested").mkdir()
         (self.source / "link").symlink_to(self.source / "nested", target_is_directory=True)
@@ -96,11 +166,14 @@ class SnapshotTests(unittest.TestCase):
                 raise OSError("disk full")
             return original(path, data)
 
-        with mock.patch.object(Path, "write_bytes", write):
-            report = self.capture()
-        self.assertIn("disk full", report["files"][0]["error"])
-        self.assertFalse((self.destination / "a.log").exists())
-        self.assertEqual(report["copied_bytes"], 0)
+        for limit in (32, 4):
+            with self.subTest(file_limit=limit):
+                self.destination = Path(self.tmp.name) / f"failed-write-{limit}"
+                with mock.patch.object(Path, "write_bytes", write):
+                    report = self.capture(file_limit=limit)
+                self.assertIn("disk full", report["files"][0]["error"])
+                self.assertFalse((self.destination / "a.log").exists())
+                self.assertEqual(report["copied_bytes"], 0)
 
     def test_incomplete_existing_snapshot_is_not_reported_as_success(self):
         self.destination.mkdir(parents=True)

@@ -2085,7 +2085,7 @@ impl AdvancedAi {
                 .filter(|tile| field.danger(*tile, uid) <= NO_DANGER)
                 .map(|tile| {
                     (
-                        -heal_preference(g, pid, tile),
+                        -g.unit_heal_rate_at(uid, tile),
                         g.wdist(unit.pos, tile),
                         tile,
                     )
@@ -2112,7 +2112,7 @@ impl AdvancedAi {
                     // `safest-stand`: no tile out of reach — the least
                     // dangerous one, or nothing.
                     None if self.safest_stand => {
-                        self.least_danger_stand(g, pid, uid, field, here, wounded)
+                        self.least_danger_stand(g, uid, field, here, wounded)
                     }
                     None => None,
                 };
@@ -2143,9 +2143,9 @@ impl AdvancedAi {
                     "Battle plan: the {} at {:?} {} to heal", now.kind, now.pos,
                     match (fell_back, moved) {
                         (false, true) => "rotates out",
-                        (false, false) => "holds and fortifies",
+                        (false, false) => "holds position",
                         (true, true) => "falls back to the least danger",
-                        (true, false) => "holds under fire and fortifies",
+                        (true, false) => "holds under fire",
                     };
                     "{} hp, danger {here:.0} where it stood, {} where it stands{}",
                     now.hp, field.danger(now.pos, uid),
@@ -2165,7 +2165,6 @@ impl AdvancedAi {
     fn least_danger_stand(
         &self,
         g: &Game,
-        pid: usize,
         uid: u32,
         field: &mut DangerField,
         here: f64,
@@ -2179,7 +2178,7 @@ impl AdvancedAi {
             .map(|tile| {
                 (
                     (field.danger(tile, uid) * 100.0).round() as i64,
-                    -heal_preference(g, pid, tile),
+                    -g.unit_heal_rate_at(uid, tile),
                     g.wdist(unit.pos, tile),
                     tile,
                 )
@@ -2751,7 +2750,7 @@ impl AdvancedAi {
                 .filter(|tile| !reserved.contains(tile) && field.danger(*tile, *uid) <= NO_DANGER)
                 .map(|tile| {
                     (
-                        -heal_preference(g, pid, tile),
+                        -g.unit_heal_rate_at(*uid, tile),
                         g.wdist(unit.pos, tile),
                         tile,
                     )
@@ -3042,20 +3041,8 @@ impl AdvancedAi {
     }
 }
 
-/// How good a tile is to heal on: the engine's own location rate — a
-/// district 20, friendly ground 15 — plus the best `adjacent_heal` support
-/// unit of ours beside it.
-fn heal_preference(g: &Game, pid: usize, tile: Pos) -> i32 {
-    let location = g.healing_location(pid, tile).rate();
-    let support = g
-        .nbrs(tile)
-        .into_iter()
-        .flat_map(|pos| g.unit_ids_at(pos).iter().copied())
-        .filter(|id| g.units[id].owner == pid)
-        .map(|id| g.promotion_effect(&g.units[&id], "adjacent_heal"))
-        .fold(0.0, f64::max);
-    location + support.round() as i32
-}
+#[cfg(test)]
+mod healing_tests;
 
 #[cfg(test)]
 mod tests {

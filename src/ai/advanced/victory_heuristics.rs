@@ -17,6 +17,34 @@ const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
 ];
 
 impl AdvancedAi {
+    /// A Domination army is already the counterforce. Do not require opt-in
+    /// lane switching to aim it at a Culture leader or a religious match point.
+    /// Culture leaves a preparation window; religion uses the existing strict
+    /// majority tally and its whole-civilization match-point threshold.
+    pub(super) fn domination_counter_pressure(&self, g: &Game, pressure: VictoryFocus) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.deny_leaders
+            || !Self::victory_strategy_enabled(g, pressure.strategy)
+        {
+            return false;
+        }
+        match pressure.strategy {
+            GrandStrategy::Culture => pressure.progress >= self.culture_threat_pressure(),
+            GrandStrategy::Religion => {
+                let living = g
+                    .players
+                    .iter()
+                    .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+                    .count() as i32;
+                living > 1 && pressure.progress >= 100 * (living - 1) / living
+            }
+            _ => false,
+        }
+    }
+
+    pub(super) fn domination_counter_target(&self, g: &Game, rival: usize) -> bool {
+        self.domination_counter_pressure(g, self.rival_victory_pressure(g, rival))
+    }
     /// The next irreducible Science milestone. An explicit or adaptive
     /// Science plan can still honour a declared rush or a war breakthrough,
     /// but an unrelated live Great Person must not detour it away from the
@@ -85,7 +113,11 @@ impl AdvancedAi {
             .players
             .iter()
             .filter(|player| {
-                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+                player.id != pid
+                    && !g.same_team(pid, player.id)
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
             })
             .map(|player| {
                 (
@@ -121,6 +153,11 @@ impl AdvancedAi {
         pressure: VictoryFocus,
     ) -> Option<GrandStrategy> {
         let urgent = self.victory_pressure_is_urgent(g, rival, pressure);
+        if self.domination_counter_pressure(g, pressure) {
+            // Faith purchases and home religious defense still run; this only
+            // keeps the campaign in its assigned military lane.
+            return Some(GrandStrategy::Conquest);
+        }
         // Religious progress advances in whole-civilization jumps, and a
         // defender needs time to produce and route religious counters. Start
         // reacting with two holdouts left when the rival also leads our own
@@ -212,12 +249,14 @@ impl AdvancedAi {
             return None;
         }
         let targeted = self.active_victory_target(g).is_some();
-        if targeted && !self.deny_while_targeted {
-            return None;
-        }
         let own_progress = self.victory_focus(g, pid).progress;
         for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, culture_pressures) {
-            if targeted && !self.victory_pressure_is_urgent(g, rival, pressure) {
+            let domination_counter = self.domination_counter_pressure(g, pressure);
+            if targeted
+                && !domination_counter
+                && (!self.deny_while_targeted
+                    || !self.victory_pressure_is_urgent(g, rival, pressure))
+            {
                 continue;
             }
             let Some(counter) =
@@ -298,7 +337,7 @@ impl AdvancedAi {
         rival: usize,
         pressure: VictoryFocus,
     ) -> Option<u32> {
-        if pressure.progress < 78 {
+        if pressure.progress < 78 && !self.domination_counter_pressure(g, pressure) {
             return None;
         }
         let district = match pressure.strategy {
@@ -307,10 +346,12 @@ impl AdvancedAi {
             // The Theatre Square is where a culture leader's Great Works are
             // slotted, so it is the same kind of concrete bottleneck the other
             // two arms name — and the only one whose capture moves the tourism
-            // rather than merely stopping it. Reached only with
-            // `counter-culture-by-conquest` on, because without it a Culture
-            // threat never selects Conquest and this function is never asked.
-            GrandStrategy::Culture if self.counter_culture_by_conquest => {
+            // rather than merely stopping it. Domination uses this counter
+            // directly; other lanes opt in with `counter-culture-by-conquest`.
+            GrandStrategy::Culture
+                if self.counter_culture_by_conquest
+                    || self.domination_counter_pressure(g, pressure) =>
+            {
                 crate::name!("theater_square")
             }
             _ => return None,
@@ -330,6 +371,10 @@ impl AdvancedAi {
 }
 
 #[cfg(test)]
+#[path = "domination_counters/tests.rs"]
+mod domination_counter_tests;
+
+#[cfg(test)]
 mod tests {
     use super::super::StrategicPlan;
     use super::*;
@@ -338,7 +383,7 @@ mod tests {
         game::{Game, LiveGreatPersonActivationNeed, ObservedPublicEmpireStats},
     };
 
-    fn found_capitals(game: &mut Game) {
+    pub(super) fn found_capitals(game: &mut Game) {
         let majors: Vec<_> = game
             .players
             .iter()
@@ -368,7 +413,7 @@ mod tests {
         }
     }
 
-    fn open_land_near(game: &Game, center: crate::Pos, radius: i32) -> crate::Pos {
+    pub(super) fn open_land_near(game: &Game, center: crate::Pos, radius: i32) -> crate::Pos {
         game.wdisk(center, radius)
             .into_iter()
             .find(|position| {

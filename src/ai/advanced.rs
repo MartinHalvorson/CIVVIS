@@ -11385,14 +11385,17 @@ impl AdvancedAi {
             return None;
         }
         let targeted = self.active_victory_target(g).is_some();
-        if targeted && !self.deny_while_targeted {
-            return None;
-        }
         let culture_pressures = self.rival_culture_pressures(g);
         let denial = self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)?;
+        if targeted && !self.deny_while_targeted && !self.domination_counter_target(g, denial.0) {
+            return None;
+        }
         // An assigned lane keeps its focus against ordinary pressure; a rival
         // at match point ends the game for every lane alike.
-        if targeted && !self.urgent_victory_threat(g, denial.0) {
+        if targeted
+            && !self.urgent_victory_threat(g, denial.0)
+            && !self.domination_counter_target(g, denial.0)
+        {
             return None;
         }
         Some(denial)
@@ -11579,7 +11582,9 @@ impl AdvancedAi {
         } else {
             pressure.progress
         };
-        pressure.progress >= 90
+        (self.domination_counter_pressure(g, pressure)
+            && (pressure.strategy == GrandStrategy::Religion || pressure.progress >= 78))
+            || pressure.progress >= 90
             || (pressure.strategy == GrandStrategy::Science && pressure.progress >= 78)
             || (self.stock_denial_lead_time && stock_lane && stock_progress >= STOCK_DENIAL_BAR)
             || (pressure.strategy == GrandStrategy::Religion
@@ -12003,9 +12008,9 @@ impl AdvancedAi {
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
             )
-        } else if let Some((_, counter)) =
-            actionable_denial.filter(|_| self.denial_outranks_expansion)
-        {
+        } else if let Some((_, counter)) = actionable_denial.filter(|(rival, _)| {
+            self.denial_outranks_expansion || self.domination_counter_target(g, *rival)
+        }) {
             // `denial-outranks-expansion`: the same answer the branch below
             // gives, reached before the lane can say "keep expanding". A
             // rival at match point does not wait for our sixth city.
@@ -19439,6 +19444,7 @@ impl AdvancedAi {
                     let key = match peace {
                         one_war::OneWarPeace::SecondFront => "one_war:peace:second_front",
                         one_war::OneWarPeace::CapitalSecured => "one_war:peace:capital_secured",
+                        one_war::OneWarPeace::VictoryThreat => "one_war:peace:victory_threat",
                         one_war::OneWarPeace::TideTurned => "one_war:peace:tide",
                         one_war::OneWarPeace::Rout => "one_war:peace:rout",
                     };
@@ -21708,11 +21714,7 @@ impl AdvancedAi {
             self.religious_spending(g, pid, false);
             return;
         }
-        let defenders = g
-            .units
-            .values()
-            .filter(|unit| unit.owner == pid && unit.kind == "missionary")
-            .count();
+        let defenders = self.religious_defense_missionary_count(g, pid, threat);
         let veto = self.religious_veto_engaged(g, pid);
         if defenders >= 2 + Self::religious_veto_extra_spreaders(veto.as_ref()) {
             return;
@@ -42075,3 +42077,5 @@ mod domination_maintenance_tests;
 mod domination_wonder_tests;
 
 mod domination_policy_economy;
+
+mod adopted_faith_balance;

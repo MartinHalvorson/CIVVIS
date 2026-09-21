@@ -14,6 +14,9 @@ def snapshot(source: Path, destination: Path, *, file_limit: int = 32 * 1024 * 1
     Call after owned-game teardown and before the next launch clears Logs.
     Limits bound reads as well as disk use. A changing source is identified in
     the manifest; hashes describe the copied bytes, not a claimed atomic view.
+    Whole files take priority. Remaining space preserves tails of oversized
+    files; their source size and byte offset identify the truncated capture.
+    A tail may begin partway through a record.
     Directory/manifest errors propagate so the caller can report them without
     preventing recovery. Individual file failures are recorded and skipped.
     """
@@ -25,6 +28,7 @@ def snapshot(source: Path, destination: Path, *, file_limit: int = 32 * 1024 * 1
     paths = sorted(source.iterdir())
     destination.mkdir(parents=True)
     entries = []
+    tails = []
     used = 0
     for path in paths:
         entry = {"name": path.name}
@@ -38,6 +42,7 @@ def snapshot(source: Path, destination: Path, *, file_limit: int = 32 * 1024 * 1
                 limit = min(file_limit, max(0, total_limit - used))
                 if before.st_size > limit:
                     entry.update(skipped="byte_limit", source_bytes=before.st_size)
+                    tails.append((path, entry))
                 else:
                     with path.open("rb") as stream:
                         data = stream.read(limit + 1)
@@ -57,6 +62,34 @@ def snapshot(source: Path, destination: Path, *, file_limit: int = 32 * 1024 * 1
             # must not accumulate outside the successful-copy byte budget.
             (destination / path.name).unlink(missing_ok=True)
         entries.append(entry)
+    # Do not let an early large file displace smaller complete logs. Revisit
+    # omitted files only after all whole-file candidates have had a chance.
+    for path, entry in tails:
+        limit = min(file_limit, max(0, total_limit - used))
+        if limit <= 0:
+            break
+        try:
+            if path.is_symlink() or not path.is_file():
+                entry["skipped"] = "not_regular_file"
+                continue
+            entry.pop("skipped", None)
+            before = path.stat()
+            offset = max(0, before.st_size - limit)
+            with path.open("rb") as stream:
+                stream.seek(offset)
+                data = stream.read(limit)
+            after = path.stat()
+            (destination / path.name).write_bytes(data)
+            used += len(data)
+            entry.update(source_bytes=before.st_size, start_offset=offset,
+                         truncated=offset > 0 or len(data) < before.st_size,
+                         bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                         source_mtime_ns=before.st_mtime_ns,
+                         changed_during_read=(before.st_size != after.st_size
+                                             or before.st_mtime_ns != after.st_mtime_ns))
+        except OSError as error:
+            entry["error"] = str(error)
+            (destination / path.name).unlink(missing_ok=True)
     manifest.write_text(json.dumps({"source": str(source), "copied_bytes": used,
                                     "file_limit": file_limit, "total_limit": total_limit,
                                     "files": entries}, indent=2) + "\n")
