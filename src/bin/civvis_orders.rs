@@ -6588,15 +6588,21 @@ fn verify_unit_order(
                 Verdict::Failed("not_pillaged".to_string())
             }
         }
-        // ⚠ FOUND BY `every_issued_unit_verb_is_checked_or_declared_unverifiable`,
-        // in the change that added it. `Action::CombineUnits` translates to
-        // `FORM_CORPS` or `FORM_ARMY` depending on the two units' tiers, and
-        // neither had an arm here — both fell through the `_` at the bottom to
-        // `Unverifiable`, so every corps and every army CIVVIS has ever ordered
-        // was excluded from both actuation rates and no floor could see one.
-        // The postcondition is `ENTER_FORMATION`'s: the subject is now part of
-        // a formation of more than one body.
-        "ENTER_FORMATION" | "FORM_CORPS" | "FORM_ARMY" => match now {
+        // Corps and Armies are single units. The host's military tier, not
+        // its escort member count, proves this command's postcondition.
+        // Missing or invalid tiers cannot prove either success or failure.
+        "FORM_CORPS" | "FORM_ARMY" => match now {
+            None => gone(),
+            Some(u) => {
+                let required = if op == "FORM_CORPS" { 1 } else { 2 };
+                match u.formation {
+                    Some(tier @ 0..=2) if tier >= required => Verdict::Verified,
+                    Some(0..=2) => Verdict::Failed("military_formation_tier_too_low".to_string()),
+                    _ => Verdict::Unverifiable,
+                }
+            }
+        },
+        "ENTER_FORMATION" => match now {
             None => gone(),
             Some(u) if u.formation_count > 1 => Verdict::Verified,
             Some(_) => Verdict::Failed("not_in_formation".to_string()),
@@ -18279,6 +18285,84 @@ mod order_postcondition_tests {
                  UNVERIFIABLE_UNIT_VERBS with a reason (got {verdict:?})"
             );
         }
+    }
+
+    #[test]
+    fn military_formation_receipts_use_tier_instead_of_escort_count() {
+        for (verb, tier) in [("FORM_CORPS", 1), ("FORM_ARMY", 2)] {
+            let mut before = frame(153);
+            before.units = vec![unit(5701651, "UNIT_CUIRASSIER", 40, 24)];
+            before.units[0].formation = Some(tier - 1);
+            let mut after = frame(154);
+            after.units = before.units.clone();
+            after.units[0].formation = Some(tier);
+            after.units[0].formation_count = 1;
+            let form = order("unit", Some(5701651), Some(verb), Some((0, 5832725)));
+            assert_eq!(
+                check(&form, &before, &after, &[]),
+                Verdict::Verified,
+                "{verb}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_escort_stack_cannot_verify_a_military_formation() {
+        let mut before = frame(153);
+        before.units = vec![unit(7, "UNIT_CUIRASSIER", 40, 24)];
+        let mut after = frame(154);
+        after.units = before.units.clone();
+        after.units[0].formation = Some(0);
+        after.units[0].formation_count = 2;
+        let form = order("unit", Some(7), Some("FORM_CORPS"), Some((0, 8)));
+        assert!(matches!(
+            check(&form, &before, &after, &[]),
+            Verdict::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn military_formation_receipts_require_the_requested_known_tier() {
+        let mut before = frame(153);
+        before.units = vec![unit(7, "UNIT_CUIRASSIER", 40, 24)];
+        let mut after = frame(154);
+        after.units = before.units.clone();
+        after.units[0].formation_count = 2;
+        let army = order("unit", Some(7), Some("FORM_ARMY"), Some((0, 8)));
+        after.units[0].formation = Some(1);
+        assert_eq!(
+            check(&army, &before, &after, &[]),
+            failed("military_formation_tier_too_low")
+        );
+        for unknown in [None, Some(-1), Some(3)] {
+            after.units[0].formation = unknown;
+            assert_eq!(check(&army, &before, &after, &[]), Verdict::Unverifiable);
+        }
+        after.units.clear();
+        assert_eq!(check(&army, &before, &after, &[]), failed("unit_gone"));
+    }
+
+    #[test]
+    fn escort_receipts_still_use_member_count_independently_of_military_tier() {
+        let mut before = frame(153);
+        before.units = vec![unit(7, "UNIT_CUIRASSIER", 40, 24)];
+        let mut after = frame(154);
+        after.units = before.units.clone();
+        after.units[0].formation = Some(2);
+        let enter = order("unit", Some(7), Some("ENTER_FORMATION"), Some((0, 8)));
+        let exit = order("unit", Some(7), Some("EXIT_FORMATION"), None);
+        after.units[0].formation_count = 1;
+        assert_eq!(
+            check(&enter, &before, &after, &[]),
+            failed("not_in_formation")
+        );
+        assert_eq!(check(&exit, &before, &after, &[]), Verdict::Verified);
+        after.units[0].formation_count = 2;
+        assert_eq!(check(&enter, &before, &after, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&exit, &before, &after, &[]),
+            failed("still_in_formation")
+        );
     }
 
     fn refused(order: &IssuedOrder, why: &str) -> OrderCheck {
