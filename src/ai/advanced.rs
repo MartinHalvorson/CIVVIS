@@ -22,6 +22,8 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
+mod regional_production_commitments;
+
 /// Local strength ratio a force group needs before it will advance or press an
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
@@ -22793,6 +22795,10 @@ impl AdvancedAi {
     ) -> f64 {
         if spec.regional_range <= 0 || spec.yields.production <= 0.0 {
             return 0.0;
+        }
+        if self.active_victory_target(g) == Some(VictoryTarget::Domination) {
+            return self
+                .committed_regional_production_value(g, pid, city, building, spec, strategy);
         }
         let range = spec.regional_range;
         let own: Vec<&crate::game::City> = g
