@@ -17,7 +17,7 @@ Usage::
     python tools/civ6_setup.py --apply        # turn the channels on
     python tools/civ6_setup.py --apply --restart
     python tools/civ6_setup.py --revert       # back to shipped defaults
-    python tools/civ6_setup.py --verification # the cosmetic cuts a live game makes
+    python tools/civ6_setup.py --verification # startup cuts and recovery saves
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ USER_OPTIONS = {
     "GameEraMomentsLog": 1,
 }
 
-# What a VERIFICATION game turns off or acknowledges, by file. None changes a
+# What a VERIFICATION game configures, by file. None changes a
 # rule, an order, a turn or anything the ledger reads. The cosmetic cuts save
 # wall clock; the two acknowledgements are exactly the choices Civ VI writes
 # after its own one-time front-end dialogs are accepted. Those dialogs sit in
@@ -84,6 +84,12 @@ VERIFICATION_OPTIONS = {
     },
     "UserOptions.txt": {
         "PlayHistoricMomentAnimation": 0,
+        # Recovery's deepest stride needs 36 older saves plus the parked one.
+        # The native ten-save default clamped retries back to newer boards in
+        # civvis-20260921T095426Z. Options.lua offers 50 as the next size after
+        # 10; retain that supported rotation, with a boundary every turn.
+        "AutoSaveKeepCount": 50,
+        "AutoSaveFrequency": 1,
     },
     "GraphicsOptions.txt": {
         "EnableShadows": 0,
@@ -99,7 +105,8 @@ VERIFICATION_DEFAULTS = {
         "AcceptedUnknownDevice": 0,
         "AcceptedOutdatedDriver": 0,
     },
-    "UserOptions.txt": {"PlayHistoricMomentAnimation": 1},
+    "UserOptions.txt": {"PlayHistoricMomentAnimation": 1,
+                        "AutoSaveKeepCount": 10, "AutoSaveFrequency": 1},
     "GraphicsOptions.txt": {"EnableShadows": 1, "EnableCloudShadows": 1},
 }
 
@@ -127,7 +134,7 @@ def report(user: Path) -> None:
             have = env.read_option(path, key)
             flag = "ok " if have == str(want) else "-> "
             print(f"  {flag}{key:<32} {have!r:<8} want {want!r}")
-    print("\nverification (startup cuts and front-end acknowledgements)")
+    print("\nverification (startup cuts, front-end acknowledgements, and recovery saves)")
     for name, keys in VERIFICATION_OPTIONS.items():
         path = user / name
         for key, want in keys.items():
@@ -178,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--apply", action="store_true", help="turn the channels on")
     ap.add_argument("--revert", action="store_true", help="restore shipped defaults")
     ap.add_argument("--verification", action="store_true",
-                    help="apply verification startup cuts and front-end acknowledgements")
+                    help="apply verification startup cuts, front-end acknowledgements, and recovery saves")
     ap.add_argument("--restart", action="store_true", help="quit and relaunch around the change")
     args = ap.parse_args(argv)
 

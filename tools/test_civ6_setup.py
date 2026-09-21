@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Verification startup cuts and front-end acknowledgements reach the game files.
+"""Verification startup settings and recovery saves reach the game files.
 
 `civ6_setup.VERIFICATION_OPTIONS` turns off the intro video, the historic-moment
 animation and two shadow passes, and saves the game's own acknowledgement of
-its known native startup warnings. None changes the game that is played. These
+its known native startup warnings. It also retains enough per-turn autosaves
+for the recovery sequence. None changes the game rules. These
 options are only useful if they land in the game's own files, in the keys this
 version defines, while the game is closed -- so the tests exercise the real
 rewrite on copies of the real file shapes, the guards around it, and the place
@@ -18,11 +19,13 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_env as env  # noqa: E402
+import civ6_civvis_climb as climb  # noqa: E402
 import civ6_play  # noqa: E402
 import civ6_setup  # noqa: E402
 
@@ -39,6 +42,8 @@ EnableTuner 1
 
 USER_OPTIONS = """[Game]
 AutoEndTurn 0
+AutoSaveKeepCount 10
+AutoSaveFrequency 5
 QuickMovement 1
 QuickCombat 1
 PlayHistoricMomentAnimation 1
@@ -77,7 +82,9 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
                     "AcceptedUnknownDevice": ("0", 1),
                     "AcceptedOutdatedDriver": ("0", 1),
                 },
-                "UserOptions.txt": {"PlayHistoricMomentAnimation": ("1", 0)},
+                "UserOptions.txt": {"PlayHistoricMomentAnimation": ("1", 0),
+                                    "AutoSaveKeepCount": ("10", 50),
+                                    "AutoSaveFrequency": ("5", 1)},
                 "GraphicsOptions.txt": {"EnableShadows": ("1", 0),
                                         "EnableCloudShadows": ("1", 0)},
             })
@@ -151,6 +158,31 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
 
 
 class TheHarnessAppliesThemRightBeforeLaunching(unittest.TestCase):
+    def test_saved_rotation_covers_every_configured_recovery_stride(self) -> None:
+        with TemporaryDirectory() as tmp:
+            user = write_user_dir(Path(tmp))
+            with mock.patch.dict(os.environ, {"CIV6_USER_DIR": str(user)}), \
+                    mock.patch.object(civ6_play.env, "game_pids", return_value=[]):
+                civ6_play.apply_verification_options()
+            options = user / "UserOptions.txt"
+            retained = int(env.read_option(options, "AutoSaveKeepCount"))
+            self.assertGreaterEqual(retained, max(climb.RESUME_STEPS) + 2,
+                                    "include the parked save and every older recovery stride")
+            self.assertEqual(env.read_option(options, "AutoSaveFrequency"), "1")
+            # Feed the configured rotation to the real recovery selector. No
+            # later attempt should clamp to a newer save merely because the
+            # launch retained too few entries.
+            saves = [Path(f"AutoSave_{turn:04d}.Civ6Save")
+                     for turn in range(retained, 0, -1)]
+            used = []
+            args = SimpleNamespace(max_resumes=len(climb.RESUME_STEPS), resume_min_turn=1)
+            for attempt, stride in enumerate(climb.RESUME_STEPS):
+                selected = climb.resume_from_autosave(
+                    {"last_turn": retained}, "frozen", attempt, args, 0,
+                    recent=lambda **kwargs: saves, used_saves=used)
+                self.assertEqual(selected, saves[stride + 1])
+                used.append(selected)
+
     def test_the_cuts_land_when_the_game_is_closed(self) -> None:
         with TemporaryDirectory() as tmp:
             user = write_user_dir(Path(tmp))
@@ -170,6 +202,8 @@ class TheHarnessAppliesThemRightBeforeLaunching(unittest.TestCase):
                     mock.patch.object(civ6_play.env, "game_pids", return_value=[4242]):
                 self.assertEqual(civ6_play.apply_verification_options(), {})
             self.assertEqual(env.read_option(user / "AppOptions.txt", "PlayIntroVideo"), "1")
+            self.assertEqual(env.read_option(user / "UserOptions.txt", "AutoSaveKeepCount"), "10")
+            self.assertEqual(env.read_option(user / "UserOptions.txt", "AutoSaveFrequency"), "5")
 
     def test_a_failure_to_apply_never_costs_the_launch(self) -> None:
         with mock.patch.object(civ6_play.env, "game_pids", return_value=[]), \
