@@ -57,7 +57,7 @@ fn saves_for_apostle_instead_of_affordable_repeat_missionary() {
 
 #[test]
 fn prepares_inquisition_before_any_home_city_flips_then_funds_first_defender() {
-    let (mut g, mut ai, home) = fixture();
+    let (mut g, mut ai, _) = fixture();
     ai.religious_spending(&mut g, 0, false);
     let apostle = g
         .units
@@ -66,7 +66,6 @@ fn prepares_inquisition_before_any_home_city_flips_then_funds_first_defender() {
         .unwrap()
         .id;
     g.units.get_mut(&apostle).unwrap().moves_left = 3.0;
-    g.units.get_mut(&apostle).unwrap().pos = g.cities[&home].pos;
     assert!(ai.advanced_religious_step(&mut g, 0, apostle, false));
     assert_eq!(g.players[0].counters.get("inquisition"), Some(&1));
     assert_eq!(g.players[0].religion_beliefs.len(), 2);
