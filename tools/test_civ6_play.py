@@ -2143,6 +2143,64 @@ class MapPickerTests(unittest.TestCase):
         # now and must not be clicked on the way out.
         self.assertNotIn((700, 120), clicks)
 
+    def test_recovery_frame_can_verify_a_commit_after_capture_failures(self):
+        # Native run 20260921T075909Z lost both commit-verification captures.
+        # Its recovery frame showed Pangaea, but setup still backed out.
+        for readable, browser_open, value, expected in (
+            (True, False, "Pangaea.lua", True),
+            (True, False, "Continents.lua", False),
+            (True, False, None, False),
+            (True, True, "Pangaea.lua", False),
+            (False, False, "Pangaea.lua", False),
+        ):
+            with self.subTest(readable=readable, browser_open=browser_open, value=value):
+                reads = []
+                panel_out = {}
+
+                def capture(path, **kwargs):
+                    if path.name == "map-picker-selected.png":
+                        return False
+                    return readable if path.name == "map-picker-parting.png" else True
+
+                def is_open(path, bounds):
+                    self.assertNotEqual(path.name, "map-picker-selected.png",
+                                        "do not OCR a failed capture")
+                    return browser_open if path.name == "map-picker-parting.png" else True
+
+                def current_value(path, bounds, name):
+                    reads.append(path.name)
+                    self.assertNotEqual(path.name, "map-picker-selected.png",
+                                        "do not read stale pixels after capture failure")
+                    if path.name == "map-picker-closed.png":
+                        return ("Continents.lua", (432, 300))
+                    self.assertTrue(readable)
+                    self.assertFalse(browser_open, "a map caption is not a setup row")
+                    return (value, (432, 300)) if value else None
+
+                with mock.patch.object(civ6_play, "screenshot", side_effect=capture), \
+                     mock.patch.object(civ6_play, "_map_picker_open", side_effect=is_open), \
+                     mock.patch.object(civ6_play, "_setup_current_value", side_effect=current_value), \
+                     mock.patch.object(civ6_play, "_map_picker_tile_point", return_value=(500, 430)), \
+                     mock.patch.object(civ6_play, "_map_picker_commit_point", return_value=(432, 566)), \
+                     mock.patch.object(civ6_play, "_map_picker_labels", return_value=[(700, 120)]), \
+                     mock.patch.object(civ6_play, "focus_game"), \
+                     mock.patch.object(civ6_play, "park_setup_pointer"), \
+                     mock.patch.object(civ6_play, "click_at") as click, \
+                     mock.patch.object(civ6_play.macos_input, "move"), \
+                     mock.patch.object(civ6_play.macos_input, "scroll"), \
+                     mock.patch.object(civ6_play.time, "sleep"):
+                    result = civ6_play.select_requested_map(
+                        self.BOUNDS, "Pangaea.lua", Path("/tmp"), panel_out=panel_out)
+                self.assertEqual(result, expected)
+                self.assertEqual(panel_out, {"shot": Path("/tmp/map-picker-parting.png")}
+                                 if expected else {})
+                self.assertEqual("map-picker-parting.png" in reads,
+                                 readable and not browser_open)
+                expected_clicks = [mock.call(432, 300), mock.call(500, 430), mock.call(432, 566)]
+                if readable and browser_open:
+                    expected_clicks.append(mock.call(700, 120))
+                self.assertEqual(click.call_args_list, expected_clicks)
+
     def test_a_lone_heading_is_never_taken_for_the_commit_button(self):
         """⚠⚠ "LOWEST WINS" IS ONLY RIGHT WHILE BOTH ARE LEGIBLE.
 
