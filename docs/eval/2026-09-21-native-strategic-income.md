@@ -48,7 +48,21 @@ stockpiles, maintenance, and bomber thresholds are unchanged.
 
 ## Validation
 
-Validation results will be recorded before this PR is marked ready. No native
+- `cargo test --profile ci --locked`: 3,767 library and 205 binary/integration
+  tests passed; 49 library and four documentation tests ignored.
+- Five new Rust tests cover a sustainable four-bomber wing with no visible
+  deposit, existing fighter demand, explicit zero versus a modeled deposit,
+  repeat calibration, legacy fallback, counterfactual gains, serialization,
+  invalid inputs, and full mirror construction/sync.
+- All 52 control-mod `*_test.lua` files passed using `lupa.lua51.LuaRuntime`;
+  the full controller also compiled with Lua 5.1. The new test executes the
+  production export, including imported/bonus income and partial API failure.
+- `cargo fmt --all -- --check`, `git diff --check origin/main...`, and all
+  14 treatment append-point tests passed.
+- `target/ci/civvis soak --players 4 --games 8 --start-seed 363800 --turns 180 --jobs 4`:
+  8/8 games completed. This is a simulation crash check, not native victory evidence.
+
+No native
 capture, completed bomber campaign, or Domination victory is claimed by this
 observation repair. The runtime owner adopts the exporter and brain together at
 a normal fresh-game boundary; the running verification game is not restarted.
