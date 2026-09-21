@@ -1261,7 +1261,67 @@ impl AdvancedAi {
                 }
             }
         }
+        if self.safe_taker_pressure(g, pid, uid, city) {
+            return true;
+        }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// A healthy capture unit can contribute before the final blow when an
+    /// unwalled city would otherwise heal away the siege's ranged damage.
+    /// Keep enough health to survive the reply and remain a capture body.
+    fn safe_taker_pressure(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> bool {
+        let unit = &g.units[&uid];
+        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+            || city.wall_hp > 0
+            || unit.hp < 80
+            || unit.attacks_left <= 0
+            || unit.moves_left <= 0.0
+            || g.is_embarked(unit)
+            || !g.melee_order_is_legal(pid, uid, city.pos)
+        {
+            return false;
+        }
+        let action = Action::Attack {
+            unit: uid,
+            target: city.pos,
+        };
+        let before_hp = unit.hp;
+        let mut after = g.speculative_clone();
+        if after.apply(pid, &action).is_err() {
+            return false;
+        }
+        let (Some(survivor), Some(target)) = (after.units.get(&uid), after.cities.get(&city.id))
+        else {
+            return false;
+        };
+        let dealt = city.hp - target.hp;
+        let taken = before_hp - survivor.hp;
+        if dealt <= 20 || dealt <= taken {
+            return false;
+        }
+        let reply = super::battle_planner::strike_danger(&after, pid, survivor.pos, uid);
+        if f64::from(survivor.hp) - reply < 60.0 {
+            return false;
+        }
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        self.force_groups_dirty = true;
+        if g.cities[&city.id].owner == pid {
+            if let Some(siege) = self.sieges.get_mut(&city.id) {
+                siege.stage = SiegeStage::Hold;
+                siege.entered = g.turn;
+                siege.taker = None;
+            }
+            self.reserved_units.remove(&uid);
+            self.census.siege_captures += 1;
+        }
+        think!(self.journal(), Military, Decision,
+            "Siege of {}: the reserved {} helps reduce the unwalled city", g.cities[&city.id].name, g.units[&uid].kind;
+            "{dealt} city damage for {taken} immediate damage; at least 60 hp remain after the predicted reply";
+            city.pos);
+        true
     }
 
     /// Toward the unit's post for the turn, when it has one it is not on.
@@ -2247,3 +2307,6 @@ mod tests {
 
 #[cfg(test)]
 mod rebuild_tests;
+
+#[cfg(test)]
+mod taker_pressure_tests;
