@@ -518,13 +518,15 @@ for i = 1, 30 do
     end
 end
 queue.controllerTicks = 5; queue.lastUiTick = nil
-queue.onUiPulse()
+queue.onUiPulse("TopPanel")
 check("first pulse observes normal controller activity", pulseCalls, 0)
+check("first HUD clock is attributed", (lastEvent("controller_clock") or ""):find('"source":"TopPanel"', 1, true) ~= nil, true)
 queue.controllerTicks = 6
 queue.onUiPulse()
 check("normal controller activity suppresses fallback", pulseCalls, 0)
-queue.onUiPulse()
+queue.onUiPulse("TopPanel")
 check("quiet interval wakes controller without game-core events", pulseCalls, 1)
+check("wakeup records its clock", (lastEvent("controller_wake") or ""):find('"source":"TopPanel"', 1, true) ~= nil, true)
 queue.onUiPulse()
 check("continued quiet intervals remain recoverable", pulseCalls, 2)
 pulseCfg.Play = false
@@ -535,8 +537,12 @@ queue.onUiPulse()
 check("standalone harness has no CivVis heartbeat", pulseCalls, 2)
 pulseCfg.CivvisDecides = true
 debug.setupvalue(queue.onUiPulse, pulseUpvalues.inTick, true)
-queue.onUiPulse()
+queue.onUiPulse("DiplomacyActionView")
 check("reentrant pulse cannot wake controller", pulseCalls, 2)
+check("reentrant rejection is observable", (lastEvent("controller_clock") or ""):find('"disposition":"in_tick"', 1, true) ~= nil, true)
+local rejectedLogCount = #LOG
+for i = 1, 120 do queue.onUiPulse("DiplomacyActionView") end
+check("rejected clock cannot keep the watchdog alive with repeated logs", #LOG, rejectedLogCount)
 debug.setupvalue(queue.onUiPulse, pulseUpvalues.inTick, false)
 debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, true)
 queue.onUiPulse()

@@ -1049,7 +1049,7 @@ else
 			controllerPulseSeconds = controllerPulseSeconds + math.max(0, tonumber(fDTime) or 0);
 			if controllerPulseSeconds >= 1 then
 				controllerPulseSeconds = 0;
-				pcall(function() LuaEvents.CivvisControlPulse(); end);
+				pcall(function() LuaEvents.CivvisControlPulse(NAME); end);
 				if not isUp() then showing = false; return; end
 			end
 		end
