@@ -48,5 +48,21 @@ host metrics pass. No game runtime is modified mid-run.
 
 ## Validation
 
-Final validation results will be recorded before marking the PR ready. No native
-capital capture or Domination victory is claimed from fixtures or simulation.
+- `cargo test --profile ci --locked`: 3,775 library and 205 binary/integration
+  tests passed (49 library and four documentation tests ignored).
+- Eight new Rust regressions cover captured originals, replacement capitals,
+  rival occupation/recapture, nonzero host seats, unknown founders, old saves
+  and snapshots, hypothetical liberation, current Palace yield/loyalty parity,
+  and the real AI's front handoff after a mirrored original-capital capture.
+- The capital-focused run passed 61 tests before the final unknown-founder
+  refinement; the full suite above includes the final refinement.
+- All 53 control-mod `*_test.lua` files passed under `lupa.lua51.LuaRuntime`;
+  the full controller compiled with Lua 5.1. The new test executes the actual
+  own/rival/minor export expressions, including explicit false and API failure.
+- `cargo fmt --all -- --check`, `git diff --check origin/main...`, and all 14
+  treatment append-point tests passed.
+- `target/ci/civvis soak --players 4 --games 8 --start-seed 364000 --turns 180 --jobs 4`:
+  8/8 completed. This checks simulation stability, not native victory.
+
+No native capital capture or Domination victory is claimed from fixtures or
+simulation. New native observations are needed to validate the full campaign.
