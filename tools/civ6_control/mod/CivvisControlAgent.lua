@@ -10893,18 +10893,24 @@ CivvisLedger.describe = function(id)
 	-- treating its failed lookup as removal hid health and invented kills.
 	local district = try(function() return Players[player]:GetDistricts():FindID(comp); end);
 	if district == nil then return { player = player, id = comp, type = "district", gone = true }; end
+	-- Captured/removed districts can briefly return damage above their maximum.
+	-- Keep those readings unknown rather than emitting negative remaining health.
+	local function remainingHealth(layer)
+		return try(function()
+			local maximum = tonumber(district:GetMaxDamage(layer));
+			local damage = tonumber(district:GetDamage(layer));
+			if maximum == nil or damage == nil
+				or not (maximum >= 0 and maximum < math.huge
+					and damage >= 0 and damage <= maximum) then return nil; end
+			return maximum - damage;
+		end, nil);
+	end
 	return {
 		player = player, id = comp, type = "district",
 		x = tonumber(try(function() return district:GetX(); end, -1)) or -1,
 		y = tonumber(try(function() return district:GetY(); end, -1)) or -1,
-		hp = tonumber(try(function()
-			return district:GetMaxDamage(DefenseTypes.DISTRICT_GARRISON)
-				- district:GetDamage(DefenseTypes.DISTRICT_GARRISON);
-		end, nil)),
-		wall_hp = tonumber(try(function()
-			return district:GetMaxDamage(DefenseTypes.DISTRICT_OUTER)
-				- district:GetDamage(DefenseTypes.DISTRICT_OUTER);
-		end, nil)),
+		hp = remainingHealth(DefenseTypes.DISTRICT_GARRISON),
+		wall_hp = remainingHealth(DefenseTypes.DISTRICT_OUTER),
 	};
 end;
 

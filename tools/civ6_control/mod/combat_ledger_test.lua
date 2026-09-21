@@ -90,7 +90,10 @@ Players = setmetatable({}, { __index = function(_, pid)
 			return {
 				GetX = function() return d.x end,
 				GetY = function() return d.y end,
-				GetMaxDamage = function(_, layer) return layer == DefenseTypes.DISTRICT_GARRISON and 200 or 100 end,
+				GetMaxDamage = function(_, layer)
+					return layer == DefenseTypes.DISTRICT_GARRISON
+						and (d.max_garrison or 200) or (d.max_wall or 100)
+				end,
 				GetDamage = function(_, layer) return layer == DefenseTypes.DISTRICT_GARRISON and d.damage or d.wall_damage end,
 			}
 		end } end,
@@ -232,6 +235,49 @@ check("district final garrison health", has(combat, '"defender_hp_end":135'), tr
 check("district final wall health", has(combat, '"defender_wall_hp_end":65'), true)
 host.districts["1:42"].gone = true
 check("removed district remains distinguishable", ledger.describe(districtID).gone, true)
+
+-- The captured Istanbul district in run 20260921T114215Z reported -190 HP
+-- at CombatVisBegin and no longer resolved at End. Unknown health must not
+-- become -190 damage or a fabricated zero-health measurement.
+host.districts["1:42"] = {
+	x = 4, y = 2, damage = 190, max_garrison = 0, wall_damage = 1, max_wall = 0,
+}
+local invalid = ledger.describe(districtID)
+check("invalid garrison health is unknown", invalid.hp, nil)
+check("invalid wall health is unknown", invalid.wall_hp, nil)
+check("invalid health does not invent removal", invalid.gone, nil)
+ledger.onCombatVisBegin({ attacker = id(0, 17), defender = districtID })
+host.districts["1:42"].gone = true
+ledger.onCombatVisEnd({ attacker = id(0, 17), defender = districtID })
+combat = lastEvent("combat")
+check("capture still records removal", has(combat, '"defender_killed":true'), true)
+check("invalid capture health supplies no damage", has(combat, '"damage_to_defender":'), false)
+
+host.districts["1:42"] = { x = 4, y = 2, damage = 40, wall_damage = 15 }
+ledger.onCombatVisBegin({ attacker = id(0, 17), defender = districtID })
+host.districts["1:42"].damage = 201
+host.districts["1:42"].wall_damage = 101
+ledger.onCombatVisEnd({ attacker = id(0, 17), defender = districtID })
+combat = lastEvent("combat")
+check("invalid final health supplies no damage", has(combat, '"damage_to_defender":'), false)
+check("invalid final garrison health is omitted", has(combat, '"defender_hp_end":'), false)
+check("invalid final wall health is omitted", has(combat, '"defender_wall_hp_end":'), false)
+check("invalid final health does not invent a kill", has(combat, '"defender_killed":false'), true)
+
+host.districts["1:42"] = { x = 4, y = 2, damage = 0, max_garrison = 0, wall_damage = 0, max_wall = 0 }
+check("known zero garrison health is preserved", ledger.describe(districtID).hp, 0)
+check("known zero wall health is preserved", ledger.describe(districtID).wall_hp, 0)
+host.districts["1:42"] = { x = 4, y = 2, damage = -1, wall_damage = -1 }
+check("negative garrison damage is not extra health", ledger.describe(districtID).hp, nil)
+check("negative wall damage is not extra health", ledger.describe(districtID).wall_hp, nil)
+
+-- Valid health can increase between animation callbacks; retain that observed
+-- change instead of clamping every negative delta to zero.
+host.districts["1:42"] = { x = 4, y = 2, damage = 65, wall_damage = 35 }
+ledger.onCombatVisBegin({ attacker = id(0, 17), defender = districtID })
+host.districts["1:42"].damage = 40
+ledger.onCombatVisEnd({ attacker = id(0, 17), defender = districtID })
+check("valid health increase remains observable", has(lastEvent("combat"), '"damage_to_defender":-25'), true)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
