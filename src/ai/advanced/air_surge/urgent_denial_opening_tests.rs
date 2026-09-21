@@ -16,6 +16,9 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, Pos) {
     g.found_city_for(0, base, None);
     g.found_city_for(0, (2, 14), None);
     let city = g.found_city_for(1, (9, 8), None);
+    g.cities.get_mut(&city).unwrap().wall_hp = 400;
+    Arc::make_mut(&mut g.observed_city_strength).insert(city, 100.0);
+    Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(city, 400);
     let theater = (8, 8);
     g.cities
         .get_mut(&city)
@@ -35,6 +38,9 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, Pos) {
         .strategic_resources
         .insert(crate::name!("aluminum"), 100.0);
     let bomber = g.spawn_test_unit("bomber", 0, base);
+    // Native evidence includes a currently visible Theater Square. One
+    // spotter supplies that visibility without a staged capture formation.
+    g.spawn_test_unit("scout", 0, (7, 8));
     let observed = Arc::make_mut(&mut g.observed_public_empire_stats);
     observed.entry(0).or_default().domestic_tourists = Some(100);
     observed.entry(1).or_default().foreign_tourists = Some(85);
@@ -54,8 +60,20 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, Pos) {
 
 #[test]
 fn urgent_culture_air_sortie_opens_without_a_ground_capture_force() {
-    let (mut g, mut ai, plan, _, _) = fixture();
+    let (mut g, mut ai, plan, bomber, _) = fixture();
     assert!(!ai.campaign_staged_for_war(&g, 0, 1, g.cities[&plan.target_city.unwrap()].pos, true));
+    let opening = ai.preferred_war_opening(&g, 0, 1).expect("legal opening");
+    let mut forecast = g.speculative_clone();
+    forecast.apply(0, &opening).unwrap();
+    assert!(forecast.is_at_war(0, 1), "{opening:?}");
+    assert!(
+        matches!(
+            ai.advanced_air_action(&forecast, 0, bomber, &plan),
+            Some(Action::AirPillage { .. })
+        ),
+        "{:?}",
+        ai.advanced_air_action(&forecast, 0, bomber, &plan)
+    );
     assert!(ai.urgent_culture_air_opening_ready(&g, 0, 1, &plan));
     assert!(
         !g.is_at_war(0, 1),
