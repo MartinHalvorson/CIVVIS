@@ -40,6 +40,7 @@ fn departure() -> (Game, AdvancedAi, StateSnapshot, u32, u32, Pos) {
         player: 1,
         unit: 851980,
         turn: 9,
+        opponent: None,
     });
     ai.settler_targets.insert(settler, (8, 4));
     (game, ai, state, settler, hostile, home)
