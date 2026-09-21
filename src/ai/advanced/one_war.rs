@@ -515,7 +515,8 @@ impl AdvancedAi {
         // Keep the current front until peace is actually accepted. A public
         // victory clock is a reason to offer peace, never proof that the old
         // enemy has stopped attacking or permission to erase its threat field.
-        if self.forced_target_player.is_none()
+        if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.forced_target_player.is_none()
             && !g.emergency_war_pair(pid, other)
             && !self.urgent_victory_threat(g, other)
             && self
