@@ -357,6 +357,110 @@ class EvacuationTest(unittest.TestCase):
 
 
 class CityOccupationTest(unittest.TestCase):
+    def test_roster_proves_istanbul_capture_without_an_occupation_callback(self):
+        # Native run 20260921T114215Z: the Ottoman capital entered our roster
+        # at turn 106, but CityOccupationChanged never emitted a callback.
+        home = {"id": 1, "name": "Bogotá", "original_owner": 0, "x": 23, "y": 25}
+        target = {"id": 65536, "name": "Istanbul", "original_owner": 1, "x": 46, "y": 12}
+        captured = {**target, "id": 393223}
+        before = {"kind": "state", "turn": 105, "cities": [home],
+                  "rivals": [{"player": 1, "cities": [target]}]}
+        after = {"kind": "state", "turn": 106, "cities": [home, captured]}
+        callback = {"kind": "city_occupation", "turn": 106, "player": 0,
+                    "city": 393223, "name": "LOC_CITY_NAME_ISTANBUL",
+                    "original_owner": 1, "ours_now": True}
+        for events in ([before, after, after],
+                       [before, callback, after, callback],
+                       [before, after, callback, callback]):
+            with self.subTest(events=events):
+                self.assertEqual(ledger.city_occupations(events, 0), (1, 0))
+
+    def test_resume_baseline_rename_loss_and_recapture(self):
+        city = {"id": 8, "name": "Istanbul", "original_owner": 1, "x": 46, "y": 12}
+        renamed = {**city, "id": 9, "name": "Renamed capital"}
+        events = [
+            {"kind": "state", "turn": 110, "cities": [city]},
+            {"kind": "state", "turn": 111, "cities": [renamed]},
+        ]
+        self.assertEqual(ledger.city_occupations(events, 0), (0, 0))
+        events.extend([
+            {"kind": "state", "turn": 112, "cities": []},
+            {"kind": "state", "turn": 113, "cities": [{**renamed, "id": 10}]},
+            {"kind": "state", "turn": 113, "cities": [{**renamed, "id": 10}]},
+        ])
+        self.assertEqual(ledger.city_occupations(events, 0), (1, 1))
+
+    def test_callback_only_transfer_is_not_hidden_by_another_roster_transfer(self):
+        city = {"id": 8, "name": "Istanbul", "original_owner": 1, "x": 46, "y": 12}
+        events = [
+            {"kind": "state", "turn": 1, "cities": []},
+            {"kind": "city_occupation", "turn": 2, "player": 0,
+             "city": 7, "name": "Antium", "original_owner": 2, "ours_now": True},
+            {"kind": "city_occupation", "turn": 2, "player": 2,
+             "city": 70, "name": "Antium", "original_owner": 2, "ours_now": False},
+            {"kind": "state", "turn": 3, "cities": [city]},
+        ]
+        self.assertEqual(ledger.city_occupations(events, 0), (2, 1))
+
+    def test_foundings_and_partial_states_do_not_invent_transfers(self):
+        home = {"id": 1, "name": "Bogotá", "original_owner": 0, "x": 23, "y": 25}
+        target = {"id": 2, "name": "Unknown founder", "x": 46, "y": 12}
+        events = [
+            {"kind": "state", "turn": 1, "cities": [],
+             "rivals": [{"player": 1, "cities": [target]}]},
+            {"kind": "state", "turn": 2, "cities": [home]},
+            {"kind": "state", "turn": 2},
+            {"kind": "state", "turn": 2, "cities": [{}]},
+            {"kind": "state", "turn": 3, "cities": [home, {**target, "id": 3}]},
+        ]
+        self.assertEqual(ledger.city_occupations(events, 0), (1, 0))
+
+    def test_complete_roster_can_prove_loss_after_a_callback_only_acquisition(self):
+        events = [
+            {"kind": "state", "turn": 1, "cities": []},
+            {"kind": "city_occupation", "turn": 2, "player": 0,
+             "city": 7, "name": "Antium", "original_owner": 2, "ours_now": True},
+            {"kind": "state", "turn": 3, "cities": []},
+        ]
+        self.assertEqual(ledger.city_occupations(events, 0), (1, 1))
+
+    def test_refounding_on_a_lost_city_site_is_not_a_recapture(self):
+        old = {"id": 1, "name": "Bogotá", "original_owner": 0, "x": 23, "y": 25}
+        new = {**old, "id": 2, "name": "Barinas"}
+        events = [
+            {"kind": "state", "turn": 1, "cities": [old]},
+            {"kind": "state", "turn": 2, "cities": []},
+            {"kind": "found", "turn": 3, "x": 23, "y": 25},
+            {"kind": "city_occupation", "turn": 3, "player": 0,
+             "city": 2, "name": "Barinas", "original_owner": 0, "ours_now": True},
+            {"kind": "state", "turn": 3, "cities": [new]},
+        ]
+        self.assertEqual(ledger.city_occupations(events, 0), (0, 1))
+
+    def test_same_name_cities_do_not_merge_when_owner_ids_resolve_their_locations(self):
+        first = {"id": 7, "name": "Renamed", "original_owner": 2, "x": 4, "y": 6}
+        second = {**first, "id": 8, "x": 10}
+        callback = {"kind": "city_occupation", "turn": 2, "player": 0,
+                    "city": 7, "name": "Renamed", "original_owner": 2, "ours_now": True}
+        events = [
+            {"kind": "state", "turn": 1, "cities": []},
+            callback,
+            {"kind": "state", "turn": 2, "cities": [first, second]},
+            {**callback, "city": 8},
+        ]
+        self.assertEqual(ledger.city_occupations(events, 0), (2, 0))
+
+    def test_unconfirmed_founding_does_not_mask_a_later_recapture(self):
+        city = {"id": 1, "name": "Bogotá", "original_owner": 0, "x": 23, "y": 25}
+        events = [
+            {"kind": "state", "turn": 1, "cities": [city]},
+            {"kind": "state", "turn": 2, "cities": []},
+            {"kind": "found", "turn": 3, "x": 23, "y": 25},
+            {"kind": "state", "turn": 3, "cities": []},
+            {"kind": "state", "turn": 6, "cities": [{**city, "id": 9}]},
+        ]
+        self.assertEqual(ledger.city_occupations(events, 0), (1, 1))
+
     def test_repeated_callbacks_and_recapture_track_ownership(self):
         lost = {"kind": "city_occupation", "turn": 10, "player": 1,
                 "city": 90, "name": "Rome", "original_owner": 0, "ours_now": False}
