@@ -7237,6 +7237,7 @@ mod religion;
 /// non-founder's answer and the spreaders' targets by how much of a rival's
 /// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
 mod religious_defence;
+mod religious_defense_production;
 
 /// Price it like the engine: the exact exchange, and the defender priced
 /// where it would stand. Two opt-in genes; see `advanced/engine_pricing.rs`.
@@ -21529,6 +21530,16 @@ impl AdvancedAi {
         if city_ids.iter().any(|cid| owns(g, *cid, "temple")) {
             return;
         }
+        // The strategic governor now honors this defensive commitment. Do
+        // not reserve another city's Temple while the first one is building.
+        if city_ids.iter().any(|cid| {
+            g.cities[cid].queue.first().is_some_and(|item| {
+                self.domination_defensive_temple(g, pid, *cid, item)
+                    && Self::production_commitment_is_legal(g, pid, *cid, item)
+            })
+        }) {
+            return;
+        }
         let under_pressure = city_ids
             .iter()
             .any(|cid| Self::city_needs_religious_support(g, pid, &g.cities[cid], &religion));
@@ -26061,17 +26072,24 @@ impl AdvancedAi {
                     Self::production_commitment_is_legal(g, pid, cid, item)
                         && Self::campus_research_building(g, item)
                 });
+            let defensive_temple_commitment = plan.threatened_city != Some(cid)
+                && committed.as_ref().is_some_and(|(_, item)| {
+                    self.domination_defensive_temple(g, pid, cid, item)
+                        && Self::production_commitment_is_legal(g, pid, cid, item)
+                });
             if committed.as_ref().is_some_and(|(value, _)| {
                 !self.victory_planning
                     || (value.is_finite() && *value > -1_000.0)
                     || science_endgame_commitment
                     || live_gp_commitment
                     || domination_research_commitment
+                    || defensive_temple_commitment
             }) && !recovery_preemption
                 && (finish_investment
                     || science_endgame_commitment
                     || live_gp_commitment
                     || domination_research_commitment
+                    || defensive_temple_commitment
                     || preempt_margin <= 1.0
                     || economic_recovery)
             {
@@ -28489,6 +28507,7 @@ impl AdvancedAi {
                 if self.victory_target.is_some()
                     && self.victory_target != Some(VictoryTarget::Culture)
                     && great_work_vetoed
+                    && !self.domination_defensive_temple(g, pid, cid, item)
                     && !self.lane_lost
                     && !self.culture_floor_lifts_veto(g, pid, spec)
                     && !(spec.yields.culture > 0.0
