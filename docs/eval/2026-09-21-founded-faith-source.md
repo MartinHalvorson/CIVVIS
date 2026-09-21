@@ -51,3 +51,9 @@ infrastructure cases. Full Rust validation passes 4,088 tests (53 ignored),
 (start seed 367900). Scoped rustfmt, changed-line Rust quality against
 de08f3914, and diff whitespace checks pass. No performance claim is made
 from sequential replay timings under different machine load.
+
+Final integration through 040ccce (#3676 bomber rebasing and #3680 holy-city
+observation diagnostics) passes 4,094 Rust tests, with 53 ignored, and repeats
+the eight-game soak successfully. Changed-line quality and the Lua 5.1
+religion-exporter behavior test also pass on the integrated branch. The paired
+replay above remains the isolated recovery-policy comparison.
