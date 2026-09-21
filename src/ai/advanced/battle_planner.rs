@@ -604,6 +604,14 @@ impl DangerField {
             .sum()
     }
 
+    fn upper_danger_without(&mut self, tile: Pos, uid: u32, hp: i32, dead: &BTreeSet<u32>) -> f64 {
+        self.contributions_at_hp(tile, uid, hp)
+            .iter()
+            .filter(|(source, _)| source.is_none_or(|id| !dead.contains(&id)))
+            .map(|(_, blow)| upper_roll_damage(*blow))
+            .sum()
+    }
+
     /// Stand `uid` on `to` by an actual `MoveTo` on the probe, read the board
     /// there, and put it back. `None` when the move is refused or stops
     /// short — then the stand is not one this unit can take this turn. The
@@ -821,6 +829,9 @@ impl BeamState {
         let mut dies = false;
         if !candidate.ranged {
             returned = candidate.return_on(def);
+            if survival_after_sequence {
+                returned = upper_roll_damage(returned);
+            }
             if returned >= f64::from(shooter.hp) {
                 // The host's word that the attacker dies is a veto, whatever
                 // the kill is worth (`battle-planner-3`).
@@ -891,8 +902,12 @@ impl BeamState {
             let dead = Self::dead_of(killed, targets);
             for (index, tile, hp) in &next.reply_stands {
                 let striker = &shooters[*index];
-                let incoming =
-                    field.danger_without(*tile, striker.uid, hp.floor().max(1.0) as i32, &dead);
+                let incoming = field.upper_danger_without(
+                    *tile,
+                    striker.uid,
+                    hp.floor().max(1.0) as i32,
+                    &dead,
+                );
                 let lethal = incoming >= *hp;
                 next.survives &=
                     !lethal && (striker.hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER);
@@ -1014,7 +1029,7 @@ fn doomed_shooters(
             let back = if candidate.ranged {
                 0.0
             } else {
-                candidate.return_on(def)
+                upper_roll_damage(candidate.return_on(def))
             };
             let hp = f64::from(shooter.hp) - back;
             if hp <= 0.0 {
@@ -1031,7 +1046,8 @@ fn doomed_shooters(
             } else {
                 BTreeSet::new()
             };
-            let after = field.danger_without(end, shooter.uid, hp.floor().max(1.0) as i32, &dead);
+            let after =
+                field.upper_danger_without(end, shooter.uid, hp.floor().max(1.0) as i32, &dead);
             if hp - after > 0.0 {
                 survivable = true;
                 break;
@@ -1042,6 +1058,30 @@ fn doomed_shooters(
         }
     }
     doomed
+}
+
+fn upper_roll_damage(mean: f64) -> f64 {
+    (mean * crate::ai::COMBAT_ROLL_MAX).ceil().min(100.0)
+}
+
+fn melee_health_floor(g: &Game, pid: usize, action: &Action) -> Option<(u32, i32)> {
+    let Action::Attack { unit, target } = action else {
+        return None;
+    };
+    let attacker = g.units.get(unit)?;
+    g.unit_ids_at(*target)
+        .iter()
+        .filter_map(|enemy| {
+            let defender = &g.units[enemy];
+            (defender.owner != pid
+                && g.is_at_war(pid, defender.owner)
+                && g.rules.units[defender.kind].class == "military")
+                .then(|| g.melee_exchange_strengths(*unit, *enemy))
+                .flatten()
+                .map(|(att, def)| upper_roll_damage(expected_damage(def, att)) as i32)
+        })
+        .max()
+        .map(|damage| (*unit, attacker.hp - damage))
 }
 
 impl AdvancedAi {
@@ -1071,34 +1111,11 @@ impl AdvancedAi {
             // A sampled melee exchange is not the health the host promises.
             // Reserve the upper roll before pricing the reply at the resulting
             // wounded strength. Do not spend uncertain post-kill healing here.
-            let melee_health_floor = if let Action::Attack { unit, target } = action {
-                after.units.get(unit).and_then(|attacker| {
-                    after
-                        .unit_ids_at(*target)
-                        .iter()
-                        .filter_map(|enemy| {
-                            let defender = &after.units[enemy];
-                            (defender.owner != pid
-                                && after.is_at_war(pid, defender.owner)
-                                && after.rules.units[defender.kind].class == "military")
-                                .then(|| after.melee_exchange_strengths(*unit, *enemy))
-                                .flatten()
-                                .map(|(att, def)| {
-                                    (expected_damage(def, att) * crate::ai::COMBAT_ROLL_MAX)
-                                        .ceil()
-                                        .min(100.0) as i32
-                                })
-                        })
-                        .max()
-                        .map(|damage| (*unit, attacker.hp - damage))
-                })
-            } else {
-                None
-            };
+            let health_floor = melee_health_floor(&after, pid, action);
             if after.apply(pid, action).is_err() {
                 return false;
             }
-            if let Some((uid, hp)) = melee_health_floor {
+            if let Some((uid, hp)) = health_floor {
                 if hp <= 0 {
                     return false;
                 }
@@ -1115,11 +1132,7 @@ impl AdvancedAi {
             after.units.get(&uid).is_some_and(|unit| {
                 // Each source rounds independently; rounding only their sum
                 // can lose a lethal point when several enemies can reply.
-                let incoming: f64 = field
-                    .contributions(unit.pos, uid)
-                    .iter()
-                    .map(|(_, damage)| (damage * crate::ai::COMBAT_ROLL_MAX).ceil())
-                    .sum();
+                let incoming = field.upper_danger_without(unit.pos, uid, unit.hp, &BTreeSet::new());
                 let started_healthy = before
                     .units
                     .get(&uid)
@@ -1776,8 +1789,14 @@ impl AdvancedAi {
                     target: blow.target,
                 }
             };
+            let health_floor = melee_health_floor(&after, pid, &action);
             let (result, applied) =
                 Self::tactical_attack_result_in(&mut after, pid, blow.unit, &action, plan);
+            if let Some((uid, hp)) = health_floor {
+                if let Some(unit) = after.units.get_mut(&uid) {
+                    unit.hp = unit.hp.min(hp);
+                }
+            }
             if matches!(applied, AppliedAttack::Applied)
                 && (result.eliminates_enemy_unit || result.value >= 0.0)
             {
@@ -1789,7 +1808,8 @@ impl AdvancedAi {
         let mut field = DangerField::with_reach(&after, pid, self.strike_reach);
         for blow in blows {
             let survives = after.units.get(&blow.unit).is_some_and(|unit| {
-                let incoming = field.danger(unit.pos, unit.id);
+                let incoming =
+                    field.upper_danger_without(unit.pos, unit.id, unit.hp, &BTreeSet::new());
                 incoming < f64::from(unit.hp)
                     && (g.units[&blow.unit].hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER)
             });
@@ -3143,6 +3163,10 @@ mod tests {
         );
         ai.enable_doomed_blow_veto_2();
         assert!(!ai.live_finishing_actions_survive(&g, 0, [&action]));
+        assert!(
+            ai.kill_sequence(&g, 0).is_empty(),
+            "the ordinary battle pass must not restore the rejected finish"
+        );
         ai.disable_doomed_blow_veto_2();
         assert!(
             ai.live_finishing_actions_survive(&g, 0, [&action]),
