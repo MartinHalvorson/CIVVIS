@@ -387,9 +387,8 @@ class TheOpeningBandIsComparedAtTheLiveMark(unittest.TestCase):
         self.assertAlmostEqual(cell["sim"], 5.0, msg="median of 4 and 6")
 
 
-class TheCityLedgerIsComparable(unittest.TestCase):
-    """Over 96 deep live Emperor runs the seat took 2 cities and lost 65.
-    Nothing on the simulator side could be set beside that number."""
+class TheCityLedgerKeepsDifferentMeasuresSeparate(unittest.TestCase):
+    """Capture counters align; loss events and final ownership do not."""
 
     def test_both_halves_are_read_from_each_corpus(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -426,12 +425,19 @@ class TheCityLedgerIsComparable(unittest.TestCase):
         self.assertAlmostEqual(taken["live"], 2.0)
         self.assertAlmostEqual(taken["sim"], 3.0, msg="median of 2 and 4")
         lost = subsystems["cities_lost"]
-        self.assertTrue(lost["available"])
+        self.assertFalse(lost["available"])
+        self.assertEqual(lost["why"], "incomparable")
         self.assertAlmostEqual(lost["live"], 65.0)
         self.assertAlmostEqual(lost["sim"], 2.0, msg="median of 1 and 3")
-        self.assertGreater(
-            lost["divergence"], 10.0, "a 65-against-2 gap must show as a large one"
-        )
+        self.assertNotIn("divergence", lost)
+        rendered = fidelity.render(report)
+        self.assertIn("| cities_lost | 65.00 | 2.00 | **not compared**", rendered)
+        status, notes = fidelity.check(report, {
+            "emperor/online/small/rivals|cities_lost": 1.0,
+            "emperor/online/small/rivals|cities_taken": 1.0,
+        }, 0)
+        self.assertEqual(status, 1, "comparable capture regressions still fail")
+        self.assertTrue(any("cities_lost: not compared" in note for note in notes))
 
     def test_a_live_run_with_no_combat_block_says_which_side_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -450,7 +456,39 @@ class TheCityLedgerIsComparable(unittest.TestCase):
             report = fidelity.ledger(live, sim)
         lost = report["matched_cells"][0]["subsystems"]["cities_lost"]
         self.assertFalse(lost["available"])
-        self.assertEqual(lost["why"], "live")
+        self.assertEqual(lost["why"], "incomparable")
+        self.assertIsNone(lost["live"])
+        self.assertEqual(lost["sim"], 2.0)
+
+    def test_recaptured_city_is_a_native_loss_but_not_a_final_foreign_holding(self):
+        from civ6_tactics_ledger import city_occupations
+
+        city = {"id": 1, "original_owner": 0, "x": 3, "y": 4}
+        events = [
+            {"kind": "state", "turn": 100, "cities": [city]},
+            {"kind": "state", "turn": 101, "cities": []},
+            {"kind": "state", "turn": 102, "cities": [city]},
+        ]
+        self.assertEqual(city_occupations(events, 0), (1, 1))
+        # gene_screen.rs counts final original_owner == seat && owner != seat.
+        final_board = [{**city, "owner": 0}]
+        final_foreign = sum(c["original_owner"] == 0 and c["owner"] != 0
+                            for c in final_board)
+        self.assertEqual(final_foreign, 0)
+        cell = ("emperor", "online", "small", "rivals")
+        report = fidelity.ledger(
+            [{"_cell": cell, "_cities_lost": 1}],
+            [{"_cell": cell, "cities_lost": final_foreign}],
+        )
+        lost = report["matched_cells"][0]["subsystems"]["cities_lost"]
+        self.assertFalse(lost["available"])
+        self.assertEqual((lost["live"], lost["sim"]), (1, 0))
+        self.assertNotIn("divergence", lost)
+        status, notes = fidelity.check(report, {
+            "emperor/online/small/rivals|cities_lost": 1.0,
+        }, 0)
+        self.assertEqual(status, 0)
+        self.assertTrue(any("cities_lost: not compared" in note for note in notes))
 
 
 class TheHandicapIsPartOfTheConfiguration(unittest.TestCase):

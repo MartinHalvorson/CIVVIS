@@ -201,7 +201,18 @@ SUBSYSTEMS = [
         "cities_taken", "_cities_taken", "cities_taken", "cities conquered by the end"
     ),
     Subsystem(
-        "cities_lost", "_cities_lost", "cities_lost", "cities founded here and lost"
+        "cities_lost", "_cities_lost", "cities_lost", "city losses",
+        # civ6_tactics_ledger.city_occupations counts roster-removal events,
+        # including recaptured cities and cities founded by other players.
+        # gene_screen.rs reads surviving cities on the FINAL board with
+        # original_owner == seat && owner != seat. A lost-and-recaptured city
+        # is 1 on the former and 0 on the latter; a razed city disappears from
+        # the latter entirely. Equal historical medians do not align measures.
+        incomparable=(
+            "live counts city-loss events (including subsequent recaptures); "
+            "simulator counts surviving founded cities held by rivals at the end. "
+            "These are different measures, not a fidelity ratio"
+        ),
     ),
     Subsystem(
         "boost_coverage",
@@ -574,6 +585,8 @@ def ledger(live: list[dict], sim: list[dict]) -> dict:
                     "available": False,
                     "why": "incomparable",
                     "incomparable": subsystem.incomparable,
+                    "live": median_of(live_cells[cell], subsystem.live),
+                    "sim": median_of(sim_cells[cell], subsystem.sim),
                 }
                 continue
             live_median = median_of(live_cells[cell], subsystem.live)
@@ -665,7 +678,11 @@ def render(report: dict) -> str:
                     if body.get("why") == "incomparable"
                     else f"unavailable ({body['why']} side has no value)"
                 )
-                lines.append(f"| {subsystem.name} | — | — | {why} |")
+                live_value = body.get("live")
+                sim_value = body.get("sim")
+                live_text = "—" if live_value is None else f"{live_value:.2f}"
+                sim_text = "—" if sim_value is None else f"{sim_value:.2f}"
+                lines.append(f"| {subsystem.name} | {live_text} | {sim_text} | {why} |")
                 continue
             lines.append(
                 f"| {subsystem.name} | {body['live']:.2f} | {body['sim']:.2f} "
@@ -709,6 +726,14 @@ def check(report: dict, tolerances: dict[str, float], most: int) -> tuple[int, l
     """Subsystems outside their recorded tolerance, and why."""
     notes = []
     over = 0
+    for cell in report["matched_cells"]:
+        for name, body in cell["subsystems"].items():
+            if body.get("why") == "incomparable":
+                notes.append(
+                    f"{tolerance_key(cell['cell'], name)}: not compared — "
+                    f"{body['incomparable']} "
+                    f"(live={body.get('live')}, simulator={body.get('sim')})"
+                )
     for name, worst in sorted(worst_divergences(report).items()):
         allowed = tolerances.get(name)
         if allowed is None:
