@@ -237,3 +237,67 @@ fn harmless_or_distant_spreader_does_not_break_apostle_reserve() {
         assert!(!g.units.values().any(|u| u.owner == 0));
     }
 }
+
+#[test]
+fn distant_charged_missionary_does_not_cover_a_threatened_source() {
+    let (mut g, mut ai, home) = fixture();
+    approaching_spreader(&mut g, "Orthodoxy", (5, 4));
+    let distant = g.spawn_test_unit("missionary", 0, (14, 4));
+    g.units.get_mut(&distant).unwrap().religion = Some("Buddhism".into());
+    g.units.get_mut(&distant).unwrap().charges = 2;
+    g.players[0].faith = g
+        .unit_purchase_cost(0, home, "missionary", "faith")
+        .unwrap();
+    ai.religious_spending(&mut g, 0, false);
+    assert_eq!(
+        g.units
+            .values()
+            .filter(|u| u.owner == 0 && u.kind == "missionary")
+            .count(),
+        2
+    );
+    assert!(g.units.contains_key(&distant));
+}
+
+#[test]
+fn nearby_reachable_spreader_keeps_the_apostle_reserve() {
+    let (mut g, mut ai, home) = fixture();
+    approaching_spreader(&mut g, "Orthodoxy", (5, 4));
+    let cover = g.spawn_test_unit("missionary", 0, (2, 4));
+    g.units.get_mut(&cover).unwrap().religion = Some("Buddhism".into());
+    g.units.get_mut(&cover).unwrap().charges = 2;
+    assert!(g.route_distance(cover, g.cities[&home].pos, 1).is_some());
+    g.players[0].faith = g
+        .unit_purchase_cost(0, home, "missionary", "faith")
+        .unwrap();
+    let bank = g.players[0].faith;
+    ai.religious_spending(&mut g, 0, false);
+    assert_eq!(g.players[0].faith, bank);
+    assert_eq!(g.units.values().filter(|u| u.owner == 0).count(), 1);
+}
+
+#[test]
+fn nearby_trapped_spreader_does_not_cover_a_threatened_source() {
+    let (mut g, mut ai, home) = fixture();
+    approaching_spreader(&mut g, "Orthodoxy", (5, 4));
+    let cover = g.spawn_test_unit("missionary", 0, (1, 4));
+    g.units.get_mut(&cover).unwrap().religion = Some("Buddhism".into());
+    g.units.get_mut(&cover).unwrap().charges = 2;
+    for tile in g.map.tiles.values_mut() {
+        if crate::hex::distance(tile.pos, (1, 4)) == 1 {
+            tile.terrain = crate::name!("mountain");
+        }
+    }
+    assert_eq!(g.route_distance(cover, g.cities[&home].pos, 1), None);
+    g.players[0].faith = g
+        .unit_purchase_cost(0, home, "missionary", "faith")
+        .unwrap();
+    ai.religious_spending(&mut g, 0, false);
+    assert_eq!(
+        g.units
+            .values()
+            .filter(|u| u.owner == 0 && u.kind == "missionary")
+            .count(),
+        2
+    );
+}
