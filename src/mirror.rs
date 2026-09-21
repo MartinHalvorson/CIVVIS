@@ -3299,9 +3299,9 @@ pub struct StateSnapshot {
     /// Player-level religion facts, distinct from each city's majority religion.
     #[serde(default)]
     pub founded_religion: Option<String>,
-    /// Host city identity of the founder's Holy City, mapped after cities exist.
+    /// Native map coordinates of the Holy City; city IDs are player-local.
     #[serde(default)]
-    pub holy_city_id: Option<i64>,
+    pub holy_city: Option<[i32; 2]>,
     /// Unknown on older hosts; false is an observed unlaunched Inquisition.
     #[serde(default)]
     pub inquisition_launched: Option<bool>,
@@ -5805,7 +5805,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "research_progress", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
-        "holy_city_id", "inquisition_launched",
+        "holy_city", "inquisition_launched",
         "taken_religion_beliefs", "religions", "prophet_pending",
         "policies", "available_policies", "policy_slots", "gold", "gold_per_turn",
         "unit_maintenance_total", "building_maintenance_total", "district_maintenance_total",

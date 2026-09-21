@@ -2,10 +2,10 @@
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local f = assert(io.open(here .. "/CivvisControlAgent.lua"))
 local source = f:read("*a"); f:close()
-local holy = assert(source:match("holy_city_id = (try%(function%(%)%s+local holy =.-end, nil%))"))
+local holy = assert(source:match("holy_city = (try%(function%(%)%s+local holy =.-end, nil%))"))
 local launched = assert(source:match("inquisition_launched = (try%(function%(%).-end, nil%))"))
 local religion = {}
-local city = {GetID = function() return 65536 end}
+local city = {GetX = function() return 5 end, GetY = function() return 7 end}
 local env = setmetatable({
  playerReligion = religion,
  CityManager = {GetCity = function(identity) assert(identity == 42); return city end},
@@ -15,7 +15,7 @@ local function expression(text) local fn = assert(loadstring("return " .. text))
 holy = expression(holy); launched = expression(launched)
 religion.GetHolyCityID = function() return 42 end
 religion.HasLaunchedInquisition = function() return false end
-assert(holy() == 65536 and launched() == false)
+assert(holy()[1] == 5 and holy()[2] == 7 and launched() == false)
 religion.HasLaunchedInquisition = function() return true end
 assert(launched() == true)
 religion.GetHolyCityID = nil; religion.HasLaunchedInquisition = nil

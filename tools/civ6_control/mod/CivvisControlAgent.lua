@@ -8600,12 +8600,13 @@ local function exportState(player, pid, turn, frame, eventKind)
 		used_governments = used_governments,
 		pantheon = pantheon,
 		founded_religion = founded_religion,
-        -- ReligionScreen.lua:795 reads this exact CityManager identity. The
+        -- ReligionScreen.lua:795 reads this exact CityManager identity. City IDs
+        -- are player-local, so send coordinates for unambiguous remapping. The
         -- Inquisition accessor is registered by shipped GameCore_XP2.dll;
         -- observe its boolean rather than remembering an attempted operation.
-        holy_city_id = try(function()
+        holy_city = try(function()
             local holy = CityManager.GetCity(playerReligion:GetHolyCityID());
-            return holy and holy:GetID() or nil;
+            return holy and {holy:GetX(), holy:GetY()} or nil;
         end, nil),
         inquisition_launched = try(function()
             return playerReligion:HasLaunchedInquisition();
