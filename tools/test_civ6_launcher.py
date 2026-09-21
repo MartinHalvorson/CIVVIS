@@ -105,15 +105,39 @@ class WaitForMainMenuTest(unittest.TestCase):
                 self.assertTrue(launcher.wait_for_main_menu(timeout_s=1.0))
         pids.assert_not_called()
 
+    def test_successful_reconfiguration_keeps_the_ready_child_alive(self) -> None:
+        # Native run 20260921T115736Z visibly reached the main menu, but
+        # emitted the changed-content completion path rather than the
+        # unchanged-content marker. The old wait killed it after 420 seconds.
+        with TemporaryDirectory() as tmp:
+            log_dir = Path(tmp)
+            (log_dir / "Modding.log").write_text(
+                "[3285481.864] Modding Framework - Finished Apply Settings\n"
+                "[3285481.864] ConfigureContent - Importing implicit files, post settings\n"
+                "[3285481.864] Successfully reconfigured game.\n")
+            child = mock.Mock()
+            child.poll.return_value = None
+            with mock.patch.object(launcher.env, "logs_dir", return_value=log_dir), \
+                 mock.patch.object(launcher.env, "game_pids", return_value=[]):
+                self.assertTrue(launcher.wait_for_launched_main_menu(child, timeout_s=1.0))
+            child.terminate.assert_not_called()
+            child.kill.assert_not_called()
+
     def test_early_discovery_is_not_mistaken_for_an_interactive_menu(self) -> None:
         with TemporaryDirectory() as tmp:
             log_dir = Path(tmp)
-            (log_dir / "Modding.log").write_text("Discovered 123 mods\n")
-            with mock.patch.object(launcher.env, "logs_dir", return_value=log_dir), \
-                 mock.patch.object(launcher.env, "game_pids", return_value=[]), \
-                 mock.patch.object(launcher, "gatekeeper_refusal") as asked:
-                self.assertFalse(launcher.wait_for_main_menu(timeout_s=1.0))
-        asked.assert_not_called()
+            for incomplete in (
+                "Discovered 123 mods\n",
+                "Modding Framework - Finished Apply Settings\n",
+                "ConfigureContent - Importing implicit files, post settings\n",
+            ):
+                with self.subTest(incomplete=incomplete):
+                    (log_dir / "Modding.log").write_text(incomplete)
+                    with mock.patch.object(launcher.env, "logs_dir", return_value=log_dir), \
+                         mock.patch.object(launcher.env, "game_pids", return_value=[]), \
+                         mock.patch.object(launcher, "gatekeeper_refusal") as asked:
+                        self.assertFalse(launcher.wait_for_main_menu(timeout_s=1.0))
+                    asked.assert_not_called()
 
     def test_a_refusal_returns_immediately_instead_of_waiting_out_the_timeout(self) -> None:
         slept = []
