@@ -3592,9 +3592,9 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
             again = Path(temporary) / "dropdown-speed-selected-again.png"
 
         self.assertTrue(ok)
-        # One click on the closed row, one on the option -- the list was NOT reopened.
-        self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
-        self.assertEqual(input_order, ["focus", "click", "focus", "click"])
+        # Open, select, then dismiss on artwork before reading the closed panel.
+        self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340), call(113, 408)])
+        self.assertEqual(input_order, ["focus", "click", "focus", "click", "click"])
         self.assertEqual(move.call_args_list, [call(113, 408), call(113, 408)])
         self.assertEqual(screenshot.call_args_list[-1], call(again))
         self.assertEqual(out["shot"], again)
@@ -3621,12 +3621,47 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertTrue(ok)
         # First click opens the list late.  The retry waits, proves Online is
         # now rendered, and clicks that row rather than toggling Standard again.
-        self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340), call(113, 408)])
         self.assertEqual(move.call_args_list, [call(113, 408), call(113, 408)])
         self.assertEqual(observed.call_count, 2)
         self.assertIn(call(2.0), sleep.call_args_list)
         self.assertEqual(screenshot.call_args_list[-1],
                          call(Path(temporary) / "dropdown-speed-selected.png"))
+
+    def test_retry_matching_selected_field_does_not_leave_dropdown_open(self) -> None:
+        # The first capture is unreadable; the next one shows the correct
+        # closed King field. The retry's option lookup clicks that field and
+        # opens it. Its header still reads King even while the list is open.
+        opened = False
+        captures = {}
+        reads = 0
+
+        def capture(path):
+            captures[path] = opened
+
+        def click(x, y):
+            nonlocal opened
+            opened = not opened if (x, y) == (400, 230) else False
+
+        def selected(*args):
+            nonlocal reads
+            reads += 1
+            return None if reads == 1 else ("DIFFICULTY_KING", (400, 230))
+
+        out = {}
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot", side_effect=capture), \
+             patch.object(civ6_play, "_setup_current_value", side_effect=selected), \
+             patch.object(civ6_play, "_observed_label_point", return_value=(400, 230)), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play, "click_at", side_effect=click), \
+             patch.object(civ6_play.macos_input, "move"), \
+             patch.object(civ6_play.time, "sleep"):
+            ok = civ6_play.set_dropdown((0, 33, 864, 542), "difficulty", "DIFFICULTY_KING",
+                                        Path(temporary), panel_out=out)
+        self.assertTrue(ok)
+        self.assertFalse(opened, "the next field must not be covered by a dropdown")
+        self.assertFalse(captures[out["shot"]], "the handed-off image must show the closed panel")
 
     def test_the_leader_picker_walks_straight_to_where_it_found_the_leader_last_game(self) -> None:
         bounds = (756, 33, 756, 480)
