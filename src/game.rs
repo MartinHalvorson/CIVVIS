@@ -11340,8 +11340,7 @@ impl Game {
     /// Holy Site district, or any adjacent tiles" — so a rival's Holy Site does
     /// not heal this army. No id in this belief appears in
     /// `Expansion2_RemoveData.xml`.
-    fn pantheon_holy_site_heal(&self, uid: u32) -> i32 {
-        let unit = &self.units[&uid];
+    fn pantheon_holy_site_heal(&self, unit: &Unit) -> i32 {
         let amount = self.pantheon_effect(unit.owner, "holy_site_heal");
         if amount == 0.0 {
             return 0;
@@ -11367,8 +11366,7 @@ impl Game {
     /// every Holy Site in a city following the religion, and
     /// `MODIFIER_ALL_UNITS_ADJUST_HEAL_RELIGION_PER_TURN` applies it to that
     /// religion's units on the district's own plot or its adjacent ring.
-    fn holy_waters_heal(&self, uid: u32) -> i32 {
-        let unit = &self.units[&uid];
+    fn holy_waters_heal(&self, unit: &Unit) -> i32 {
         if self.rules.units[unit.kind].class != "religious" {
             return 0;
         }
@@ -11397,7 +11395,18 @@ impl Game {
     }
 
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
-        let unit = &self.units[&uid];
+        self.unit_heal_rate_for(&self.units[&uid])
+    }
+
+    /// Evaluate a recovery destination without moving the live unit. The
+    /// projected position controls embarkation, territory and nearby support.
+    pub(crate) fn unit_heal_rate_at(&self, uid: u32, pos: Pos) -> i32 {
+        let mut unit = self.units[&uid].clone();
+        unit.pos = pos;
+        self.unit_heal_rate_for(&unit)
+    }
+
+    fn unit_heal_rate_for(&self, unit: &Unit) -> i32 {
         let spec = &self.rules.units[unit.kind];
         // Barbarian units never recover passively in Civ VI. They can still
         // receive an immediate healing plunder reward, such as from a Farm.
@@ -11431,8 +11440,8 @@ impl Game {
         // Bound once, below the guards that mean "cannot recover at all" — a
         // barbarian, an arena, fallout, a grounded aircraft — because a
         // healing modifier lifts a rate, it does not create one.
-        let holy_site_heal = self.pantheon_holy_site_heal(uid);
-        let holy_waters_heal = self.holy_waters_heal(uid);
+        let holy_site_heal = self.pantheon_holy_site_heal(unit);
+        let holy_waters_heal = self.holy_waters_heal(unit);
         if self
             .map
             .get(unit.pos)
