@@ -19677,8 +19677,8 @@ impl AdvancedAi {
             });
         // The Culture clock may expire before capture units reach the ring.
         // A concrete, safe Theater Square sortie can start denial meanwhile.
-        let staged = staged || self.urgent_culture_air_opening_ready(g, pid, target, plan);
-        if close_enough && ready && staged {
+        let air_ready = !staged && self.urgent_culture_air_opening_ready(g, pid, target, plan);
+        if close_enough && ready && (staged || air_ready) {
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
             // `advanced/coalition.rs`.
@@ -19693,10 +19693,14 @@ impl AdvancedAi {
                         }
                         _ => String::new(),
                     };
+                    let readiness = if air_ready {
+                        "a ready aircraft can disrupt the rival's Theater Square immediately"
+                    } else {
+                        "the army is staged within reach of the first objective"
+                    };
                     think!(self.journal(), Military, Strategy,
                     "Declaring war on {}", g.players[target].civ;
-                    "{my_power:.0} power against their {target_power:.0}, the army is \
-                     staged within reach of the first objective{casus}{}",
+                    "{my_power:.0} power against their {target_power:.0}, {readiness}{casus}{}",
                     if urgent_denial {
                         ", and they are close enough to winning that waiting loses it"
                     } else {
