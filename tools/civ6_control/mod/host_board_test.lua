@@ -683,6 +683,48 @@ check("two-ring combat retreat identifies the escape", has(lastEvent("settler_ca
 	and has(lastEvent("settler_capture_escape"), '"sent":[3,1]'), true)
 check("two-ring combat retreat is not counted as a hold", has(lastEvent("orders"), '"settler_barbarian_combat_capture_held":0'), true)
 
+-- Gran Colombia and roads can expose escapes beyond the fallback's two rings.
+-- Host movement candidates still need a same-turn path and threat clearance.
+reset()
+host.units[57] = { id = 57, kind = "UNIT_SETTLER", x = 1, y = 1, moves = 3 }
+host.paths["57:" .. plotIndex(4, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1), plotIndex(3, 1), plotIndex(4, 1) },
+	turns = { 0, 1, 1, 1 } }
+UnitManager.GetReachableMovement = function() return { plotIndex(4, 1), plotIndex(4, 1) } end
+local escape = CivvisBoard.findSettlerCaptureEscape(unitObject(host.units[57]), 1, 1, 4, 1,
+	{ {} }, function(_, x) return x < 4 end)
+check("host movement admits a safe third-ring escape", escape and escape.x, 4)
+host.barbarians[104] = { id = 104, kind = "UNIT_HORSEMAN", x = 1, y = 4, moves = 0 }
+host.paths["57:" .. plotIndex(2, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+for _, p in ipairs({ { 1, 1 }, { 2, 1 } }) do
+	host.paths["104:" .. plotIndex(p[1], p[2])] = {
+		plots = { plotIndex(1, 4), plotIndex(p[1], p[2]) }, turns = { 0, 1 } }
+end
+applyOrders(player, PID, 7, { row(57, "MOVE_TO", 2, 1) })
+check("third-ring escape reaches native order emission", ops(57), "UNITOPERATION_MOVE_TO@4,1")
+check("third-ring escape records its destination",
+	has(lastEvent("settler_capture_escape"), '"sent":[4,1]'), true)
+host.paths["57:" .. plotIndex(4, 1)].turns = { 0, 1, 1, 2 }
+escape = CivvisBoard.findSettlerCaptureEscape(unitObject(host.units[57]), 1, 1, 4, 1,
+	{ {} }, function(_, x) return x < 4 end)
+check("host movement cannot override a next-turn path", escape, nil)
+host.paths["57:" .. plotIndex(4, 1)].turns = { 0, 1, 1, 1 }
+escape = CivvisBoard.findSettlerCaptureEscape(unitObject(host.units[57]), 1, 1, 4, 1,
+	{ {} }, function() return true end)
+check("host movement cannot override a threat", escape, nil)
+host.paths["57:" .. plotIndex(7, 1)] = {
+	plots = { plotIndex(1, 1), plotIndex(4, 1), plotIndex(7, 1) }, turns = { 0, 1, 1 } }
+UnitManager.GetReachableMovement = function() return { plotIndex(7, 1) } end
+escape = CivvisBoard.findSettlerCaptureEscape(unitObject(host.units[57]), 1, 1, 7, 1,
+	{ {} }, function(_, x) return x < 7 end)
+check("host road reach is not guessed from movement points", escape and escape.x, 7)
+UnitManager.GetReachableMovement = function() error("unavailable") end
+escape = CivvisBoard.findSettlerCaptureEscape(unitObject(host.units[57]), 1, 1, 2, 1,
+	{}, function() return false end)
+check("unavailable movement API preserves the local fallback", escape and escape.x, 2)
+UnitManager.GetReachableMovement = nil
+
 -- A co-located guard can be queued in an earlier combat frame than the
 -- Settler's later safety row.  Keep that guard on the exposed current tile;
 -- otherwise it leaves first and the Settler is captured before its held row
