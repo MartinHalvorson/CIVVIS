@@ -58,6 +58,10 @@ fn fixture(held_faith: &str) -> (Game, AdvancedAi, u32) {
 #[test]
 fn held_threat_missionaries_do_not_block_a_counterfaith_purchase() {
     let (mut g, mut ai, _) = fixture("Orthodoxy");
+    for uid in g.player_unit_ids(0) {
+        assert!(!ai.advanced_missionary_step(&mut g, 0, uid, false));
+        assert_eq!(g.units[&uid].charges, 3);
+    }
     let before = g.units.len();
     ai.religious_defense(&mut g, 0, "Orthodoxy");
     assert_eq!(g.units.len(), before + 1);
