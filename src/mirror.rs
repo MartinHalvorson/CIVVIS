@@ -559,6 +559,25 @@ pub fn snapshot_from_events_at(
     Ok(snapshot)
 }
 
+// The live reader requests one turn, but late-game logs contain hundreds of
+// large state records. Inspect only the root turn before constructing their
+// units, cities, schema-gap values, and cloned JSON trees. Ambiguous headers
+// still reach the full parser: in particular it accepts duplicate keys via
+// Value's last-key-wins semantics, while this small typed header rejects them.
+fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
+    let Some(want) = turn else {
+        return true;
+    };
+    #[derive(Deserialize)]
+    struct TurnHeader {
+        turn: Option<u32>,
+    }
+    serde_json::from_str::<TurnHeader>(line)
+        .ok()
+        .and_then(|header| header.turn)
+        .is_none_or(|found| found == want)
+}
+
 /// The line at which [`state_from_events`] selects its state.
 ///
 /// State selection is newest-wins for a turn, and highest-turn-wins when no
@@ -567,7 +586,7 @@ pub fn snapshot_from_events_at(
 fn latest_state_line(raw: &str, turn: Option<u32>) -> Option<usize> {
     let mut best: Option<(u32, usize)> = None;
     for (line_number, line) in raw.lines().enumerate() {
-        if !line.contains("\"state\"") {
+        if !line.contains("\"state\"") || !state_line_can_match_turn(line, turn) {
             continue;
         }
         let Ok(state) = state_from_json(line) else {
@@ -6222,7 +6241,7 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
                 }
             }
         }
-        if !line.contains("\"state\"") {
+        if !line.contains("\"state\"") || !state_line_can_match_turn(line, turn) {
             continue;
         }
         let Ok(mut state) = state_from_json(line) else {
