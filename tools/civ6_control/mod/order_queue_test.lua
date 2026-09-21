@@ -483,6 +483,22 @@ check("end-turn action reaches host", requested[1].action, "end_turn")
 check("forced request parameters survive", requested[1].parameters, parameters)
 queue.requestEndTurn(7)
 check("ordinary request keeps the single-argument host signature", requested[2].argc, 1)
+
+-- A completed request is still pending in the host while movement callbacks
+-- and other UI ticks arrive. Match ActionPanel's automatic-end-turn guard.
+UI.HasSentTurnComplete = function() return true end
+queue.requestEndTurn(8)
+queue.requestEndTurn(8, parameters)
+check("pending completion suppresses ordinary and forced duplicates", #requested, 2)
+check("suppressed requests do not replace the retry turn", queue.endTurnRetryTurn, 7)
+UI.HasSentTurnComplete = function() return false end
+queue.requestEndTurn(7)
+check("host rejection or cleared completion permits retry", #requested, 3)
+check("retry preserves ordinary host signature", requested[3].argc, 1)
+UI.HasSentTurnComplete = nil
+queue.requestEndTurn(7, parameters)
+check("older hosts without the completion query retain submission", #requested, 4)
+check("fallback preserves forced parameters", requested[4].parameters, parameters)
 queue.onUnitSettled(PID, 10)
 check("final settled move retries requested turn with empty queue", settledTickCalls, 1)
 queue.onUnitSettled(PID + 1, 10)
