@@ -93,6 +93,7 @@ from civ6_brain import binary_provenance, binary_sha256  # noqa: E402
 # The settler-capture detector: one module, imported here so the ladder row
 # and the per-run dossier count the same captures the CLI does.
 import civ6_settler_captures  # noqa: E402
+import civ6_native_log_snapshot  # noqa: E402
 import genes  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
@@ -2902,6 +2903,13 @@ def main() -> int:
                 # refusal from the built-in ownership guard.
                 cleanup_ok = teardown(run_tag) is not False
                 torn_down = cleanup_ok
+                if why == "frozen" and cleanup_ok:
+                    try:
+                        manifest = civ6_native_log_snapshot.snapshot(
+                            env.logs_dir(), RUN_ROOT / run_tag / "native-freeze-logs")
+                        print(f"[resume] native log snapshot: {manifest}", flush=True)
+                    except OSError as error:
+                        print(f"[resume] native log snapshot failed: {error}", flush=True)
                 # The run is over: write up every settler it lost to capture,
                 # beside its events, before the row is read.
                 write_settler_capture_dossiers(run_tag)
