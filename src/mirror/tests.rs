@@ -10636,7 +10636,7 @@ fn formal_war_legal(game: &crate::game::Game) -> bool {
 fn a_host_denouncement_and_its_grievances_land_on_the_board_and_a_neutral_export_clears_them() {
     let rival = StateRival {
         player: 3,
-        can_declare: true,
+        can_declare: Some(true),
         diplomatic_state: Some("DIPLO_STATE_DENOUNCED".to_string()),
         our_denounce_turn: Some(38),
         their_denounce_turn: Some(0),
@@ -10701,7 +10701,7 @@ fn a_host_denouncement_and_its_grievances_land_on_the_board_and_a_neutral_export
     state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
     state.rivals[0].our_denounce_turn = Some(38);
     state.rivals[0].grievances_against_us = Some(0.0);
-    state.rivals[0].can_declare = false;
+    state.rivals[0].can_declare = Some(false);
     mirror.sync(&snapshot, &state, 0);
     let game = &mirror.game;
     assert_eq!(game.relationship_state(0, 1), "neutral");
@@ -10767,7 +10767,7 @@ fn a_host_alliance_lands_with_its_kind_level_and_expiry_and_clears_on_neutral() 
 fn a_host_declared_friendship_lands_and_bars_war_until_a_neutral_export() {
     let rival = StateRival {
         player: 3,
-        can_declare: false,
+        can_declare: Some(false),
         diplomatic_state: Some("DIPLO_STATE_DECLARED_FRIEND".to_string()),
         friendship_turn: Some(30),
         denounce_time_limit: Some(30),
@@ -10909,7 +10909,7 @@ fn host_missions_promises_visibility_and_our_grant_cross_both_ways() {
 fn an_export_without_diplomatic_state_keeps_the_can_declare_fallback() {
     let rival = StateRival {
         player: 3,
-        can_declare: true,
+        can_declare: Some(true),
         ..StateRival::default()
     };
     let (snapshot, mut state) = diplomacy_board(40, rival);
@@ -10934,13 +10934,13 @@ fn an_export_without_diplomatic_state_keeps_the_can_declare_fallback() {
 
     // Withdrawn permission clears the fake (sync path).
     state.turn = 41;
-    state.rivals[0].can_declare = false;
+    state.rivals[0].can_declare = Some(false);
     mirror.sync(&snapshot, &state, 0);
     assert!(!mirror.game.players[0].denounced_until.contains_key(&1));
 
     // A NEUTRAL export with the permission keeps the fake alive.
     state.turn = 42;
-    state.rivals[0].can_declare = true;
+    state.rivals[0].can_declare = Some(true);
     state.rivals[0].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
     mirror.sync(&snapshot, &state, 0);
     assert_eq!(
@@ -14008,4 +14008,106 @@ fn native_band_choices_override_refusals_and_refresh_without_stale_offers() {
         mirror.game.available_promotions(uid).is_empty(),
         "legacy refusal behavior remains the fallback"
     );
+}
+
+#[test]
+fn host_war_permission_overrides_a_mature_denouncement_then_reopens() {
+    let rival = StateRival {
+        player: 3,
+        can_declare: Some(false),
+        diplomatic_state: Some("DIPLO_STATE_DENOUNCED".into()),
+        our_denounce_turn: Some(92),
+        denounce_time_limit: Some(20),
+        ..Default::default()
+    };
+    let (snapshot, mut state) = diplomacy_board(97, rival);
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    for turn in [97, 98] {
+        state.turn = turn;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(!diplomacy_actions(&mirror.game)
+            .iter()
+            .any(|action| matches!(
+                action,
+                crate::game::Action::DeclareWar { player: 1 }
+                    | crate::game::Action::DeclareWarWithCasusBelli { player: 1, .. }
+            )));
+        for action in [
+            crate::game::Action::DeclareWar { player: 1 },
+            crate::game::Action::DeclareWarWithCasusBelli {
+                player: 1,
+                casus_belli: "formal_war".into(),
+            },
+        ] {
+            assert!(mirror.game.apply(0, &action).is_err());
+            assert!(!mirror.game.is_at_war(0, 1));
+        }
+        assert_eq!(mirror.game.players[0].denounced_since.get(&1), Some(&92));
+    }
+    state.turn = 99;
+    state.rivals[0].can_declare = Some(true);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(formal_war_legal(&mirror.game));
+    mirror
+        .game
+        .apply(
+            0,
+            &crate::game::Action::DeclareWarWithCasusBelli {
+                player: 1,
+                casus_belli: "formal_war".into(),
+            },
+        )
+        .unwrap();
+    assert!(mirror.game.is_at_war(0, 1));
+}
+
+#[test]
+fn host_war_permission_unknown_is_not_false_and_blocks_do_not_predict_future_turns() {
+    let mut rival: StateRival = serde_json::from_value(serde_json::json!({
+        "player": 3,
+        "diplomatic_state": "DIPLO_STATE_DENOUNCED",
+        "our_denounce_turn": 92,
+        "denounce_time_limit": 20
+    }))
+    .unwrap();
+    assert_eq!(rival.can_declare, None);
+    let (snapshot, state) = diplomacy_board(97, rival.clone());
+    let unknown = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    assert!(formal_war_legal(&unknown.game));
+    rival.can_declare = Some(false);
+    let (snapshot, mut state) = diplomacy_board(97, rival);
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    assert!(!formal_war_legal(&mirror.game));
+    let mut future = mirror.game.clone();
+    future.turn += 1;
+    assert!(
+        formal_war_legal(&future),
+        "a current refusal is not a treaty with an invented expiry"
+    );
+    state.rivals[0].can_declare = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        formal_war_legal(&mirror.game),
+        "a missing new observation clears the old mask"
+    );
+}
+
+#[test]
+fn host_war_permission_does_not_block_another_actor_or_end_an_observed_war() {
+    let rival = StateRival {
+        player: 3,
+        can_declare: Some(false),
+        ..Default::default()
+    };
+    let (snapshot, mut state) = diplomacy_board(97, rival);
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    assert!(mirror
+        .game
+        .legal_actions_within(1, crate::game::ActionFamilies::DIPLOMACY)
+        .iter()
+        .any(|a| matches!(a, crate::game::Action::DeclareWar { player: 0 })));
+    state.rivals[0].at_war = true;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(mirror.game.is_at_war(0, 1));
+    assert!(mirror.game.host_war_blocks.is_empty());
 }

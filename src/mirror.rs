@@ -2639,8 +2639,9 @@ pub struct StateRival {
     #[serde(default)]
     pub heroic_golden_age: Option<bool>,
     /// Whether Civilization VI says this seat may declare war on them RIGHT NOW.
+    /// Missing on an older export is unknown, not an explicit refusal.
     #[serde(default)]
-    pub can_declare: bool,
+    pub can_declare: Option<bool>,
     #[serde(default)]
     pub score: i64,
     /// Firaxis's current Diplomatic Victory-point total for this rival.
@@ -10748,7 +10749,15 @@ pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, r
         return;
     }
     let turn = game.turn;
-    let permitted = rival.can_declare && !rival.at_war;
+    // Read CanDeclareWarOn independently of the relationship label. A mature
+    // denouncement does not override the host's post-peace declaration ban.
+    // CityStates.lua:1496 reads the same engine permission accessor.
+    let blocks = Arc::make_mut(&mut game.host_war_blocks);
+    blocks.retain(|(actor, target, _)| *actor != 0 || *target != owner);
+    if rival.can_declare == Some(false) && !rival.at_war {
+        blocks.insert((0, owner, turn));
+    }
+    let permitted = rival.can_declare == Some(true) && !rival.at_war;
     let Some(state) = rival.diplomatic_state.as_deref() else {
         if permitted {
             game.players[0].denounced_until.insert(owner, turn + 1);

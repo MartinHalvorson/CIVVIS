@@ -6565,6 +6565,11 @@ pub struct Game {
     /// refused the same way the picker is.
     #[serde(default)]
     pub blocked_strikes: Arc<BTreeSet<(u32, Pos)>>,
+    /// Explicit host declaration refusals, keyed by (actor, target, observed
+    /// turn). They mask voluntary war actions only on that observed turn;
+    /// hypothetical later turns and games without host facts use normal rules.
+    #[serde(default)]
+    pub host_war_blocks: Arc<BTreeSet<(usize, usize, u32)>>,
     /// ★★★ THE HOST'S OWN PRICE OF A STRIKE, asked for this turn and answered
     /// without fighting it. Keyed `(attacker, target, ranged)` in CIVVIS unit
     /// ids and axial tiles; the value is Civilization VI's
@@ -7423,6 +7428,7 @@ impl From<GameSer> for Game {
             blocked_promotions: Arc::new(BTreeMap::new()),
             host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
+            host_war_blocks: Arc::new(BTreeSet::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
@@ -8133,6 +8139,7 @@ impl Game {
             blocked_promotions: Arc::new(BTreeMap::new()),
             host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
+            host_war_blocks: Arc::new(BTreeSet::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),

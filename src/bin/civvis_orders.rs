@@ -1351,9 +1351,29 @@ struct RefusalRecord {
 #[derive(Default)]
 struct HostOrderRefusals {
     seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
+    war_permissions: std::collections::BTreeMap<i64, bool>,
 }
 
 impl HostOrderRefusals {
+    /// A changed host permission is new evidence, not another blind retry.
+    /// Keep ordinary cooldowns while permission stays true or is unknown.
+    fn observe_war_permissions(&mut self, state: &civvis::mirror::StateSnapshot) {
+        for rival in &state.rivals {
+            let Some(allowed) = rival.can_declare else {
+                continue;
+            };
+            let prior = self.war_permissions.insert(rival.player, allowed);
+            if allowed && prior == Some(false) {
+                self.seen.retain(|(kind, verb, subject, _), record| {
+                    !(kind == "war"
+                        && verb.as_deref() == Some("DECLARE")
+                        && *subject == Some(rival.player)
+                        && matches!(record.reason.as_str(), "not_at_war" | "cannot_declare"))
+                });
+            }
+        }
+    }
+
     /// Read one turn's checks. `turn` is the turn the orders were sent on.
     fn observe(&mut self, checks: &[OrderCheck], turn: u32) {
         for check in checks {
@@ -1416,9 +1436,11 @@ impl HostOrderRefusals {
 /// than simply absent.
 fn withhold_refused_orders(
     orders: Vec<Order>,
-    turn: u32,
+    state: &civvis::mirror::StateSnapshot,
     refusals: &mut HostOrderRefusals,
 ) -> (Vec<Order>, Vec<String>) {
+    let turn = state.turn;
+    refusals.observe_war_permissions(state);
     refusals.sweep(turn);
     let mut allowed = Vec::with_capacity(orders.len());
     let mut withheld = Vec::new();
@@ -4257,8 +4279,7 @@ fn decide(
     // `ORDER_REFUSAL_COOLDOWN_TURNS`. Placed after every other suppressor, so
     // the strike list is applied to the orders that would really have gone,
     // and before `record`, which is the ledger of what was actually sent.
-    let (mut orders, refused_before) =
-        withhold_refused_orders(orders, state.turn, host_order_refusals);
+    let (mut orders, refused_before) = withhold_refused_orders(orders, state, host_order_refusals);
     if !refused_before.is_empty() {
         note_bits.push(format!(
             "withheld_refused={} [{}]",
@@ -18379,6 +18400,63 @@ mod order_postcondition_tests {
 
     /// The withheld order is named in the reply rather than simply absent.
     #[test]
+    fn host_war_permission_reopening_clears_only_the_resolved_declaration_refusal() {
+        let war = order("war", Some(3), Some("DECLARE"), None);
+        let other_war = order("war", Some(5), Some("DECLARE"), None);
+        let step = order("unit", Some(3), Some("MOVE_TO"), Some((4, 4)));
+        let mut state = StateSnapshot {
+            turn: 98,
+            rivals: vec![civvis::mirror::StateRival {
+                player: 3,
+                can_declare: Some(false),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut refusals = HostOrderRefusals::default();
+        // Record the closed window through the real export filter, even with
+        // no selected orders. Each refused declaration used the same target.
+        withhold_refused_orders(Vec::new(), &state, &mut refusals);
+        for _ in 0..ORDER_REFUSAL_STRIKES {
+            refusals.observe(
+                &[
+                    refused(&war, "not_at_war"),
+                    refused(&other_war, "not_at_war"),
+                    refused(&step, "did_not_move"),
+                ],
+                98,
+            );
+        }
+        assert!(refusals.withheld(&wire(&war), 99).is_some());
+        state.turn = 99;
+        state.rivals[0].can_declare = Some(true);
+        let (allowed, withheld) = withhold_refused_orders(
+            vec![wire(&war), wire(&other_war), wire(&step)],
+            &state,
+            &mut refusals,
+        );
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(allowed[0].kind, "war");
+        assert_eq!(allowed[0].subject, Some(3));
+        assert_eq!(withheld.len(), 2);
+        // A new failure while the host continues to report permission is
+        // still a real problem: do not bypass the ordinary retry bound.
+        for _ in 0..ORDER_REFUSAL_STRIKES {
+            refusals.observe(&[refused(&war, "not_at_war")], 99);
+        }
+        state.turn = 100;
+        let (allowed, withheld) = withhold_refused_orders(vec![wire(&war)], &state, &mut refusals);
+        assert!(allowed.is_empty());
+        assert_eq!(withheld.len(), 1);
+        state.rivals[0].can_declare = None;
+        let (allowed, _) = withhold_refused_orders(vec![wire(&war)], &state, &mut refusals);
+        assert!(
+            allowed.is_empty(),
+            "unknown permission is not proof of reopening"
+        );
+    }
+
+    #[test]
     fn a_withheld_order_is_reported_by_name() {
         let issued = order("unit", Some(1), Some("MOVE_TO"), Some((4, 4)));
         let mut refusals = HostOrderRefusals::default();
@@ -18393,7 +18471,10 @@ mod order_postcondition_tests {
         };
         let (allowed, withheld) = withhold_refused_orders(
             vec![wire(&issued), other],
-            ORDER_REFUSAL_STRIKES + 1,
+            &StateSnapshot {
+                turn: ORDER_REFUSAL_STRIKES + 1,
+                ..Default::default()
+            },
             &mut refusals,
         );
         assert_eq!(allowed.len(), 1, "the unrelated order still goes");
