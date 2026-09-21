@@ -100,6 +100,25 @@ class DeciderProtocolTest(unittest.TestCase):
         rows, note = decider.ask(1)
         self.assertEqual(rows, [])
         self.assertEqual(note, "real")
+        self.assertEqual(decider.proc.stdin.getvalue(), "1\n")
+
+    def test_notices_do_not_queue_extra_turn_responses(self) -> None:
+        decider = _Decider([
+            '{"kind":"genome"}\n',
+            '{"kind":"notice"}\n',
+            '{"turn":1,"orders":[],"note":"first"}\n',
+            '{"turn":2,"orders":[],"note":"second"}\n',
+        ])
+        self.assertEqual(decider.ask(1), ([], "first"))
+        self.assertEqual(decider.ask(2), ([], "second"))
+        self.assertEqual(decider.proc.stdin.getvalue(), "1\n2\n")
+
+    def test_eof_after_a_notice_does_not_resend_the_request(self) -> None:
+        decider = _Decider(['{"kind":"notice"}\n'])
+        proc = decider.proc
+        self.assertEqual(decider.ask(1), ([], "decider closed"))
+        self.assertIsNone(decider.proc)
+        self.assertEqual(proc.stdin.getvalue(), "1\n")
 
 
 class _RuntimeCommandRunner:

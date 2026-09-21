@@ -670,39 +670,27 @@ class Decider:
         try:
             self.proc.stdin.write(f"{turn}\n")
             self.proc.stdin.flush()
-            line = self.proc.stdout.readline()
+            while True:
+                line = self.proc.stdout.readline()
+                if not line:
+                    print("[brain] decider closed its output", flush=True)
+                    self.proc = None
+                    return [], "decider closed"
+                try:
+                    payload = json.loads(line)
+                except ValueError:
+                    return [], f"unparseable: {line.strip()[:120]}"
+                if "orders" in payload:
+                    break
+                # A notice is not an empty answer. Keep reading this request's
+                # response without sending it again: recursive ask() queued a
+                # duplicate reply, shifting subsequent turns behind the board.
+                print(f"[brain] IGNORING non-response line on the decider's stdout: "
+                      f"{line.strip()[:160]}", flush=True)
         except (OSError, ValueError) as exc:
             print(f"[brain] decider died mid-turn: {exc}", flush=True)
             self.proc = None
             return [], "decider died"
-        if not line:
-            print("[brain] decider closed its output", flush=True)
-            self.proc = None
-            return [], "decider closed"
-        try:
-            payload = json.loads(line)
-        except ValueError:
-            return [], f"unparseable: {line.strip()[:120]}"
-        # ★★★★★ A LINE THAT IS NOT A RESPONSE MUST NOT BE READ AS AN EMPTY ONE.
-        #
-        # `--serve` is one line in, one line out, and this used to trust that
-        # absolutely: any JSON object was accepted and `payload.get("orders", [])`
-        # turned one without that key into "CIVVIS chose nothing". A single stray
-        # println in the decider therefore shifted every turn by one and read as a
-        # silent, total abdication -- the run kept going, reported
-        # `orders_source: "fallback"`, and the hand-written ladder played the game.
-        # That happened: the genome report went to stdout, and a run that had been
-        # 236 turns of CIVVIS flipped the moment the new binary was swapped in.
-        #
-        # So a line without `orders` is skipped and LOGGED, and the real response is
-        # read behind it. Recursion depth is bounded by the fact that the decider
-        # emits one response per request; a decider that only ever emitted noise would
-        # block on `readline` instead, which is a visible hang rather than a quiet
-        # wrong answer.
-        if "orders" not in payload:
-            print(f"[brain] IGNORING non-response line on the decider's stdout: "
-                  f"{line.strip()[:160]}", flush=True)
-            return self.ask(turn)
         if "decision" in payload:
             # Preserve the native action plan AND the final emitted orders.
             # SQLite rows can be replaced by a later frame or a reload; this
