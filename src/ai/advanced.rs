@@ -5913,6 +5913,10 @@ pub struct AdvancedAi {
     /// already does the adopting. Opt-in gene `government-ladder`.
     government_ladder: bool,
 
+    /// Confirmed native unit losses by (victim, opponent). None in simulated
+    /// games; Some(empty) means the host has confirmed no casualties.
+    host_war_unit_losses: Option<BTreeMap<(usize, usize), u32>>,
+
     // ---- append: l-o ------------------------------------------------
     /// Opt-in governor relocation; see `governor_dividends`.
     magnus_follows_settlers: bool,
@@ -6228,9 +6232,6 @@ pub struct AdvancedAi {
     /// The gene's chosen front and its tide clock; `None` at peace or with
     /// the gene off.
     one_war: Option<one_war::OneWarFront>,
-    /// Confirmed native unit losses by (victim, opponent). None in simulated
-    /// games; Some(empty) means the host has confirmed no casualties.
-    host_war_unit_losses: Option<BTreeMap<(usize, usize), u32>>,
 
     // ---- append: p-r ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -8314,6 +8315,7 @@ impl AdvancedAi {
             holy_site_where_the_threat_is_2: false,
             government_ladder: false,
 
+            host_war_unit_losses: None,
             // ---- append: l-o ----------------------------------------
             magnus_follows_settlers: false,
             liang_follows_builders: false,
@@ -8340,7 +8342,6 @@ impl AdvancedAi {
             missionary_evades_raiders: false,
             one_war_at_a_time: false,
             one_war: None,
-            host_war_unit_losses: None,
 
             // ---- append: p-r ----------------------------------------
             reinforce_before_stall: false,
