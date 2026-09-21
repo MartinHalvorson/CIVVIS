@@ -141,7 +141,7 @@ fn pillaged_or_incomplete_infrastructure_does_not_earn_priority() {
 }
 
 #[test]
-fn founder_other_lane_disabled_victory_and_invading_faith_stand_aside() {
+fn foreign_faith_other_lane_disabled_victory_and_invading_faith_stand_aside() {
     let (mut g, ai, _, _, _) = fixture();
     assert!(AdvancedAi::targeting(VictoryTarget::Science)
         .counterfaith_recruitment_targets(&g, 0, "Orthodoxy")
@@ -149,7 +149,7 @@ fn founder_other_lane_disabled_victory_and_invading_faith_stand_aside() {
     assert!(ai
         .counterfaith_recruitment_targets(&g, 0, "Buddhism")
         .is_empty());
-    g.players[0].religion = Some("Orthodoxy".into());
+    g.players[0].religion = Some("Confucianism".into());
     assert!(ai
         .counterfaith_recruitment_targets(&g, 0, "Orthodoxy")
         .is_empty());
@@ -171,5 +171,63 @@ fn recovery_cannot_finish_another_founders_religious_victory() {
     assert!(!AdvancedAi::safe_adopted_counterfaith(&g, 0, "Orthodoxy"));
     assert!(ai
         .counterfaith_recruitment_targets(&g, 0, "Orthodoxy")
+        .is_empty());
+}
+
+fn founded_fixture() -> (Game, AdvancedAi, u32, u32, u32) {
+    let (mut g, ai, source, large, uid) = fixture();
+    g.players[0].religion = Some("Confucianism".into());
+    g.units.get_mut(&uid).unwrap().religion = Some("Confucianism".into());
+    // Native observation may omit the holy-city ID. Recruitment depends on
+    // the local majority and usable infrastructure, not that missing field.
+    g.players[0].holy_city = None;
+    (g, ai, source, large, uid)
+}
+
+#[test]
+fn founded_faith_recovers_last_supplier_before_population_target() {
+    let (mut g, ai, source, large, uid) = founded_fixture();
+    assert!(ai.advanced_missionary_step(&mut g, 0, uid, false));
+    assert_eq!(g.units[&uid].charges, 2);
+    assert_eq!(g.city_religion(&g.cities[&source]), Some("Confucianism"));
+    assert_eq!(g.city_religion(&g.cities[&large]), Some("Buddhism"));
+}
+
+#[test]
+fn founded_faith_existing_supplier_releases_recovery_priority() {
+    let (mut g, ai, source, _, _) = founded_fixture();
+    assert_eq!(
+        ai.counterfaith_recruitment_targets(&g, 0, "Confucianism"),
+        vec![source]
+    );
+    let city = g.cities.get_mut(&source).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Confucianism".into(), 1000.0);
+    assert!(ai
+        .counterfaith_recruitment_targets(&g, 0, "Confucianism")
+        .is_empty());
+}
+
+#[test]
+fn founded_faith_recovery_keeps_lane_and_infrastructure_guards() {
+    let (mut g, ai, source, _, _) = founded_fixture();
+    assert!(AdvancedAi::targeting(VictoryTarget::Science)
+        .counterfaith_recruitment_targets(&g, 0, "Confucianism")
+        .is_empty());
+    assert!(ai
+        .counterfaith_recruitment_targets(&g, 0, "Orthodoxy")
+        .is_empty());
+    g.victory_conditions.religious = false;
+    assert!(ai
+        .counterfaith_recruitment_targets(&g, 0, "Confucianism")
+        .is_empty());
+    g.victory_conditions.religious = true;
+    g.cities
+        .get_mut(&source)
+        .unwrap()
+        .pillaged_buildings
+        .insert(crate::name!("shrine"));
+    assert!(ai
+        .counterfaith_recruitment_targets(&g, 0, "Confucianism")
         .is_empty());
 }
