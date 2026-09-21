@@ -303,8 +303,9 @@ local condemnPlayer = { GetDiplomacy = function()
 	return { IsAtWarWith = function(_, other) return other == 2 end }
 end }
 GameInfo.Units = setmetatable({}, { __index = function(_, name)
-	return { UnitType = name, PromotionClass = name == "UNIT_MISSIONARY"
-		and "PROMOTION_CLASS_RELIGIOUS" or "PROMOTION_CLASS_MELEE" }
+	-- Base Units.xml:754: missionaries have ReligiousStrength=100 and no
+	-- PromotionClass. Requiring the Apostle's promotion class misses them.
+	return { UnitType = name, ReligiousStrength = name == "UNIT_MISSIONARY" and 100 or 0 }
 end })
 local condemnHash = hashFor("UNITCOMMAND_CONDEMN_HERETIC")
 local requestCommand = UnitManager.RequestCommand

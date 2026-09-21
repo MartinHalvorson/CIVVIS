@@ -10806,7 +10806,7 @@ CivvisLedger.expectCondemn = function(player, pid, unit, turn)
 				for _, target in Players[otherId]:GetUnits():Members() do
 					local info = GameInfo.Units[target:GetUnitType()];
 					if target:GetX() == x and target:GetY() == y and info ~= nil
-							and info.PromotionClass == "PROMOTION_CLASS_RELIGIOUS" then
+							and (tonumber(info.ReligiousStrength) or 0) > 0 then
 						local key = tostring(otherId) .. ":" .. tostring(target:GetID());
 						CivvisLedger.expected_condemn[key] = {
 							turn = turn, unit = actor, owner = pid, x = x, y = y,
