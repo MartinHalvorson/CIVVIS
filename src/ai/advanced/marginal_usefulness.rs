@@ -24,7 +24,7 @@ impl AdvancedAi {
     ) -> EmpireCounts {
         let mut counts = EmpireCounts::default();
         for uid in g.player_unit_ids(pid) {
-            counts.add_unit(g, &g.units[&uid].kind);
+            counts.add_field_unit(g, &g.units[&uid]);
         }
         for cid in g.player_city_ids(pid) {
             if cid != city {

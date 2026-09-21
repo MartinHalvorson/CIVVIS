@@ -20,10 +20,17 @@ impl AdvancedAi {
         spec: &crate::rules::UnitSpec,
     ) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || counts.siege != 0
             || !spec.siege
             || matches!(spec.domain.as_deref(), Some("sea" | "air"))
         {
+            return false;
+        }
+        // A full roster of obsolete Catapults is not a modern siege train.
+        // Ten strength is a meaningful step (roughly 50% more damage under
+        // the combat curve). Field formations and queued replacements count;
+        // the governor's queue-excluded census keeps a reservation from
+        // cancelling itself. This still opens only one missing weapon slot.
+        if counts.siege != 0 && spec.ranged_attack_strength() < counts.land_siege_power + 10.0 {
             return false;
         }
         if let Some(target) = plan.target_city {
@@ -62,3 +69,6 @@ mod tests;
 
 #[cfg(test)]
 mod war_strategy_tests;
+
+#[cfg(test)]
+mod modernization_tests;
