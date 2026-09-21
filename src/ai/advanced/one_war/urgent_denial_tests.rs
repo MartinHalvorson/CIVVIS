@@ -103,6 +103,7 @@ fn nonurgent_or_disabled_denial_does_not_switch_fronts() {
 #[test]
 fn a_religious_counter_does_not_reassign_the_army() {
     let (mut g, mut ai) = two_fronts();
+    ai.retarget(VictoryTarget::Religion);
     convert(&mut g, &[0, 1, 2]);
     g.players[0].religion = Some("taoism".to_string());
     assert_eq!(
@@ -164,4 +165,71 @@ fn a_cityless_threat_cannot_take_over_the_military_front() {
     assert_eq!(ai.actionable_victory_denial(&g, 0), None);
     ai.one_war_observe(&g, 0);
     assert_eq!(ai.one_war_front(), Some(1));
+}
+
+#[test]
+fn domination_founders_redirect_the_army_against_a_religious_match_point() {
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    g.players[0].religion = Some("taoism".to_string());
+    assert_eq!(
+        ai.actionable_victory_denial(&g, 0),
+        Some((2, GrandStrategy::Conquest))
+    );
+    ai.one_war_observe(&g, 0);
+    assert_eq!(ai.one_war_front(), Some(2));
+    assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+    assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::SecondFront));
+    assert_eq!(ai.one_war_peace(&g, 0, 2), None);
+}
+
+#[test]
+fn domination_seeks_peace_to_free_the_army_but_keeps_the_front_until_acceptance() {
+    for culture in [false, true] {
+        let (mut g, mut ai) = two_fronts();
+        if culture {
+            let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+            for pid in 0..4 {
+                stats.insert(
+                    pid,
+                    crate::game::ObservedPublicEmpireStats {
+                        domestic_tourists: Some(100),
+                        foreign_tourists: Some(if pid == 2 { 90 } else { 0 }),
+                        ..Default::default()
+                    },
+                );
+            }
+        } else {
+            convert(&mut g, &[0, 1, 2]);
+        }
+        g.at_war.remove(&(0, 2));
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.one_war_front(), Some(1));
+        assert_eq!(ai.one_war_peace(&g, 0, 1), Some(OneWarPeace::VictoryThreat));
+        let plan = ai.assess(&g, 0);
+        assert_eq!(plan.target_player, Some(1));
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert!(g
+            .pending_deals
+            .iter()
+            .any(|d| d.from == 0 && d.to == 1 && d.peace));
+        // An offer is not acceptance: the current enemy remains the army front.
+        assert!(g.is_at_war(0, 1));
+        assert_eq!(ai.one_war_front(), Some(1));
+        g.at_war.remove(&(0, 1));
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.assess(&g, 0).target_player, Some(2));
+    }
+}
+
+#[test]
+fn domination_counter_peace_respects_explicit_targets_and_other_victory_lanes() {
+    let (mut g, mut ai) = two_fronts();
+    convert(&mut g, &[0, 1, 2]);
+    g.at_war.remove(&(0, 2));
+    ai.forced_target_player = Some(1);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None);
+    ai.forced_target_player = None;
+    ai.retarget(VictoryTarget::Science);
+    assert_eq!(ai.one_war_peace(&g, 0, 1), None);
 }

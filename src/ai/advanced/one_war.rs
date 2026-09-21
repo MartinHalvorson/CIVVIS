@@ -137,6 +137,8 @@ pub(crate) enum OneWarPeace {
     SecondFront,
     /// The required capital is secure and another capital remains to pursue.
     CapitalSecured,
+    /// Another rival's religious or culture finish outranks optional conquest.
+    VictoryThreat,
     /// The campaign front, and the tide has run against us for long enough
     /// with nothing left in reach worth the next turn.
     TideTurned,
@@ -150,6 +152,9 @@ impl OneWarPeace {
             OneWarPeace::SecondFront => "one war at a time, and this is not the one",
             OneWarPeace::CapitalSecured => {
                 "the required capital is secure and another capital remains to pursue"
+            }
+            OneWarPeace::VictoryThreat => {
+                "freeing the Domination army to counter a rival victory threat"
             }
             OneWarPeace::TideTurned => {
                 "the tide has run against us for long enough and nothing in reach is worth the next turn"
@@ -506,6 +511,23 @@ impl AdvancedAi {
             .is_some()
         {
             return Some(OneWarPeace::CapitalSecured);
+        }
+        // Keep the current front until peace is actually accepted. A public
+        // victory clock is a reason to offer peace, never proof that the old
+        // enemy has stopped attacking or permission to erase its threat field.
+        if self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.forced_target_player.is_none()
+            && !g.emergency_war_pair(pid, other)
+            && !self.urgent_victory_threat(g, other)
+            && self
+                .actionable_victory_denial(g, pid)
+                .is_some_and(|(rival, counter)| {
+                    rival != other
+                        && counter == GrandStrategy::Conquest
+                        && self.domination_counter_target(g, rival)
+                })
+        {
+            return Some(OneWarPeace::VictoryThreat);
         }
         if front.window_net() <= ONE_WAR_ROUT_NET {
             return Some(OneWarPeace::Rout);
