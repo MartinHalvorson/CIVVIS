@@ -14,6 +14,23 @@ fn trade_game(observed: bool) -> Game {
         g.players[pid].diplomatic_favor = 100.0;
         g.players[pid].civics.insert(crate::name!("early_empire"));
     }
+    for (pid, resource) in [(0, "silk"), (1, "wine")] {
+        let city = g.player_city_ids(pid)[0];
+        let positions = g.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|pos| g.city_at(*pos).is_none())
+            .take(2)
+            .collect::<Vec<_>>();
+        assert_eq!(positions.len(), 2);
+        for pos in positions {
+            let tile = g.map.tiles.get_mut(&pos).unwrap();
+            tile.resource = Some(Name::new(resource));
+            tile.improvement = Some(crate::name!("plantation"));
+            tile.pillaged = false;
+        }
+    }
     if observed {
         let pos = g.cities[&g.player_city_ids(0)[0]].pos;
         Arc::make_mut(&mut g.host_observed).insert(pos);
@@ -21,12 +38,12 @@ fn trade_game(observed: bool) -> Game {
     g
 }
 
-fn favor_sale(g: &Game, pid: usize) -> Action {
+fn resource_sale(g: &Game, pid: usize) -> Action {
     let deal = g
         .quick_deals(pid)
         .into_iter()
-        .find(|d| d.direction == "sell" && d.category == "favor")
-        .expect("mutually beneficial favor quote");
+        .find(|d| d.direction == "sell" && d.item == if pid == 0 { "silk" } else { "wine" })
+        .expect("mutually beneficial surplus luxury quote");
     Action::Trade {
         player: deal.partner,
         offer: Box::new(deal.offer),
@@ -37,7 +54,7 @@ fn favor_sale(g: &Game, pid: usize) -> Action {
 #[test]
 fn native_sale_is_logged_without_settling_its_proceeds() {
     let mut g = trade_game(true);
-    let action = favor_sale(&g, 0);
+    let action = resource_sale(&g, 0);
     let before = serde_json::to_value(&g.players).unwrap();
     g.apply(0, &action).unwrap();
     assert_eq!(serde_json::to_value(&g.players).unwrap(), before);
@@ -48,10 +65,10 @@ fn native_sale_is_logged_without_settling_its_proceeds() {
 #[test]
 fn simulator_sale_still_settles() {
     let mut g = trade_game(false);
-    let action = favor_sale(&g, 0);
+    let action = resource_sale(&g, 0);
     g.apply(0, &action).unwrap();
     assert!(g.players[0].gold > 500.0);
-    assert!(g.players[0].diplomatic_favor < 100.0);
+    assert_eq!(g.active_trade_deals.len(), 1);
     assert_eq!(g.players[0].counters["trades_completed"], 1);
 }
 
@@ -77,7 +94,7 @@ fn native_sale_cannot_fund_a_purchase_until_observed() {
     let mut g = trade_game(true);
     let city = g.player_city_ids(0)[0];
     g.players[0].gold = 0.0;
-    let sale = favor_sale(&g, 0);
+    let sale = resource_sale(&g, 0);
     g.apply(0, &sale).unwrap();
     let buy = Action::BuyBuilding {
         city,
@@ -97,7 +114,7 @@ fn native_sale_cannot_fund_a_purchase_until_observed() {
 fn other_seat_on_observed_board_retains_simulator_settlement() {
     let mut g = trade_game(true);
     g.current = 1;
-    let sale = favor_sale(&g, 1);
+    let sale = resource_sale(&g, 1);
     g.apply(1, &sale).unwrap();
     assert!(g.players[1].gold > 500.0);
 }

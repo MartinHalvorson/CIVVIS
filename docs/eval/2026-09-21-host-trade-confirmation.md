@@ -3,7 +3,8 @@
 Native run `civvis-20260921T095426Z` at revision `bdd4ca620` recorded 22
 trade offers and 16 expirations, with no `deal_response` events. At turn 108,
 the planner simulated an iron sale for 394 Gold, bought a Monument, then
-requested a unit upgrade. The host had 125 Gold before the purchase and 5
+requested an Archer-to-Crossbowman upgrade whose observed cost was 125 Gold.
+The host had 125 Gold before the purchase and 5
 afterward; the next turn reported both `no_deal_response` for the sale and
 `same_unit_type` for the upgrade. A submitted sale did not fund that upgrade.
 
