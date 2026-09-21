@@ -8952,6 +8952,29 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- host's resource type; the Rust side translates. Only the strategic
 		-- class — the same filter the shipped TopPanel_Expansion2 uses.
 		-- ⚠ nil, not `{}`, when nothing is stocked: see `great_person_points`.
+		-- TopPanel_Expansion2.lua:50-55,64: gross accumulation includes imports
+		-- and bonuses. Unit/power demand is separate, not subtracted here.
+		strategic_resource_income = try(function()
+			local resources = player:GetResources();
+			if resources == nil then return nil; end
+			local out = {};
+			local any = false;
+			for row in GameInfo.Resources() do
+				if row.ResourceClassType == "RESOURCECLASS_STRATEGIC" then
+					local amount = try(function()
+						return resources:GetResourceAccumulationPerTurn(row.ResourceType)
+							+ resources:GetResourceImportPerTurn(row.ResourceType)
+							+ resources:GetBonusResourcePerTurn(row.ResourceType);
+					end, nil);
+					if type(amount) == "number" and amount >= 0 and amount < math.huge then
+						out[row.ResourceType] = amount;
+						any = true;
+					end
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
 		strategic_resources = try(function()
 			local resources = player:GetResources();
 			if resources == nil then return nil; end
