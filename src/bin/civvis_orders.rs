@@ -3853,6 +3853,7 @@ fn decide(
                     | Action::Ranged { unit, .. }
                     | Action::Swap { unit, .. }
                     | Action::AirStrike { unit, .. }
+                    | Action::AirPillage { unit, .. }
                     | Action::AirRebase { unit, .. }
                     | Action::AirPatrol { unit, .. }
                     | Action::FoundCity { unit }
@@ -4641,12 +4642,18 @@ fn translate(
         //
         // so `pos` is the target plot for `AIR_ATTACK`, the base plot for
         // `REBASE` and the patrol plot for `PATROL`.
-        Action::AirStrike { unit, target } => civ6_of.get(unit).map(|civ6| Order {
-            kind: "unit",
-            subject: Some(*civ6),
-            verb: Some("AIR_ATTACK".to_string()),
-            pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
-        }),
+        // Strategic bombing uses the same operation: shipped
+        // Base/Assets/UI/Panels/UnitPanel.lua:3629 explicitly includes
+        // air-pillage plots in the air-attack interface. Omitting this action
+        // silently stranded the native bomber on t153–156 of run 161428.
+        Action::AirStrike { unit, target } | Action::AirPillage { unit, target } => {
+            civ6_of.get(unit).map(|civ6| Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some("AIR_ATTACK".to_string()),
+                pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+            })
+        }
         Action::AirRebase { unit, to } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -11118,7 +11125,7 @@ mod tests {
         );
     }
 
-    fn local_barbarian_defense_board() -> (Snapshot, StateSnapshot) {
+    pub(super) fn local_barbarian_defense_board() -> (Snapshot, StateSnapshot) {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 30,
             width: 12,
@@ -19046,3 +19053,7 @@ mod civ6_name_audit {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "civvis_orders/air_pillage_tests.rs"]
+mod air_pillage_tests;
