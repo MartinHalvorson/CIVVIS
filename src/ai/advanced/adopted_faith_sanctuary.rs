@@ -69,6 +69,58 @@ impl AdvancedAi {
             .any(|p| !g.civ_follows_religion(p.id, faith))
     }
 
+    /// A Holy Site and Shrine need time to finish before the last alternative
+    /// faith disappears. Global conversion plus an arrival at home can warn
+    /// construction sooner without changing when ordinary spreaders act.
+    fn adopted_faith_construction_threat(&self, g: &Game, pid: usize) -> Option<String> {
+        if let Some(threat) = self.adopted_faith_threat(g, pid) {
+            return Some(threat);
+        }
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.victory_conditions.religious
+            || g.players[pid].religion.is_some()
+        {
+            return None;
+        }
+        let majors: Vec<_> = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .collect();
+        let home = g.player_city_ids(pid);
+        let mut best: Option<(usize, usize, String)> = None;
+        for founder in majors.iter().filter(|p| p.id != pid) {
+            let Some(faith) = founder.religion.as_deref() else {
+                continue;
+            };
+            let arrived = home
+                .iter()
+                .filter(|cid| g.city_religion(&g.cities[cid]) == Some(faith))
+                .count();
+            if arrived == 0 {
+                continue;
+            }
+            let converted = majors
+                .iter()
+                .filter(|p| g.civ_follows_religion(p.id, faith))
+                .count();
+            let foreign_conversion = majors
+                .iter()
+                .any(|p| p.id != pid && p.id != founder.id && g.civ_follows_religion(p.id, faith));
+            if !foreign_conversion || converted * 2 < majors.len() {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(old, old_home, name)| {
+                converted > *old
+                    || (converted == *old
+                        && (arrived > *old_home || (arrived == *old_home && faith < name.as_str())))
+            }) {
+                best = Some((converted, arrived, faith.to_owned()));
+            }
+        }
+        best.map(|(_, _, faith)| faith)
+    }
+
     /// A purchased defender keeps its faith when city majorities change.
     /// Reconsider that faith before every spread: a former counterweight can
     /// become the rival victory we now need to prevent.
@@ -100,7 +152,7 @@ impl AdvancedAi {
         pid: usize,
         threatened: Option<u32>,
     ) -> Option<(u32, Item)> {
-        let threat = self.adopted_faith_threat(g, pid)?;
+        let threat = self.adopted_faith_construction_threat(g, pid)?;
         let missionary = Item::Unit {
             unit: crate::name!("missionary"),
         };
@@ -185,7 +237,7 @@ impl AdvancedAi {
         {
             think!(self.journal(), Economy, Decision,
                 "{} starts {} for adopted-faith defense", g.cities[&cid].name, Self::plain_item(&item);
-                "a rival faith holds at least half our cities; preserve one source of counter-faith Missionaries");
+                "conversion threatens recruitment; preserve one source of counter-faith Missionaries while its faith survives");
         }
     }
 }

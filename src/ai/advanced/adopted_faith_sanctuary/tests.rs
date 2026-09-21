@@ -1,7 +1,7 @@
 use super::super::*;
 
-fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32) {
-    let mut g = Game::new_full(3, 32, 24, 365_400, 300, 0, false);
+fn fixture_with_players(players: usize) -> (Game, AdvancedAi, StrategicPlan, u32) {
+    let mut g = Game::new_full(players, 32, 24, 365_400, 300, 0, false);
     g.units.clear();
     for tile in g.map.tiles.values_mut() {
         tile.terrain = crate::name!("grassland");
@@ -255,4 +255,81 @@ fn adopted_spread_restraint_preserves_founder_other_lane_and_disabled_victory() 
         );
         assert_eq!(g.units[&unit].charges, 2, "{mode}");
     }
+}
+
+fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32) {
+    fixture_with_players(3)
+}
+
+fn early_warning_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut g, ai, plan, supplier) = fixture_with_players(4);
+    let home = g.player_city_ids(0);
+    for cid in home.iter().skip(2) {
+        let city = g.cities.get_mut(cid).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 1000.0;
+    }
+    let converted = g.found_city_for(3, (20, 18), None);
+    let city = g.cities.get_mut(&converted).unwrap();
+    city.pop = 4;
+    city.atheist_pressure = 0.0;
+    city.pressure.clear();
+    city.pressure.insert("Buddhism".into(), 1000.0);
+    (g, ai, plan, supplier, converted)
+}
+
+#[test]
+fn global_conversion_lead_reserves_supplier_before_home_majority() {
+    let (mut g, mut ai, plan, supplier, _) = early_warning_fixture();
+    assert!(ai.adopted_faith_threat(&g, 0).is_none());
+    assert_eq!(
+        g.player_city_ids(0)
+            .iter()
+            .filter(|cid| g.city_religion(&g.cities[cid]) == Some("Buddhism"))
+            .count(),
+        1
+    );
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    let item = g.cities[&supplier]
+        .queue
+        .first()
+        .cloned()
+        .expect("start the defensive chain while the minority source survives");
+    assert!(matches!(item, Item::District { district, .. } if district == "holy_site"));
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&supplier].queue.first(), Some(&item));
+    assert!(
+        ai.adopted_faith_threat(&g, 0).is_none(),
+        "construction warning does not lower the ordinary spread/purchase alarm"
+    );
+}
+
+#[test]
+fn construction_warning_requires_a_foreign_conversion_and_home_arrival() {
+    let (mut g, ai, _, _, converted) = early_warning_fixture();
+    let city = g.cities.get_mut(&converted).unwrap();
+    city.pressure.clear();
+    city.atheist_pressure = 1000.0;
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+    let (mut g, ai, _, _, _) = early_warning_fixture();
+    for cid in g.player_city_ids(0) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        if city.pressure.contains_key("Buddhism") {
+            city.pressure.clear();
+            city.atheist_pressure = 1000.0;
+        }
+    }
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+}
+
+#[test]
+fn one_converted_foreign_civilization_below_half_is_not_a_construction_alarm() {
+    let (mut g, ai, _, _, _) = early_warning_fixture();
+    let founder_city = g.player_city_ids(1)[0];
+    let city = g.cities.get_mut(&founder_city).unwrap();
+    city.pressure.clear();
+    city.atheist_pressure = 1000.0;
+    assert!(g.civ_follows_religion(3, "Buddhism"));
+    assert!(!g.civ_follows_religion(1, "Buddhism"));
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
 }
