@@ -1,6 +1,34 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn domination_multiplier_reclaims_fallback(
+        &self,
+        g: &Game,
+        card: &str,
+        current: &str,
+        unproductive: &BTreeSet<String>,
+    ) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && matches!(
+                card,
+                "rationalism"
+                    | "grand_opera"
+                    | "five_year_plan"
+                    | "aesthetics"
+                    | "natural_philosophy"
+            )
+            && !unproductive.contains(card)
+            && matches!(
+                current,
+                "urban_planning"
+                    | "caravansaries"
+                    | "town_charters"
+                    | "scripture"
+                    | "economic_union"
+            )
+            && g.rules.policies[card].slot == g.rules.policies[current].slot
+    }
+
     /// Preserve the strategic deck's useful multipliers. A multiplier with no
     /// current yield must not occupy the slot of an available productive card.
     pub(super) fn domination_productive_policy_fallbacks(

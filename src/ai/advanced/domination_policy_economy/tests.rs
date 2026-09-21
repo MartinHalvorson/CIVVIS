@@ -92,3 +92,31 @@ fn another_victory_lane_retains_its_existing_policy_preferences() {
         .is_empty());
     assert_eq!(desired, vec!["aesthetics", "rationalism"]);
 }
+
+#[test]
+fn productive_rationalism_reclaims_a_fallback_after_city_growth() {
+    let (mut g, ai, cid) = policy_board();
+    crate::game::install_test_district(&mut g, cid, "campus");
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    g.cities.get_mut(&cid).unwrap().pop = 4;
+    g.players[0]
+        .policies
+        .extend([crate::name!("aesthetics"), crate::name!("conscription")]);
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Conquest);
+    assert!(g.players[0]
+        .policies
+        .contains(&crate::name!("urban_planning")));
+    g.cities.get_mut(&cid).unwrap().pop = 15;
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Conquest);
+    assert!(g.players[0].policies.contains(&crate::name!("rationalism")));
+    assert!(!g.players[0]
+        .policies
+        .contains(&crate::name!("urban_planning")));
+    assert!(g.players[0]
+        .policies
+        .contains(&crate::name!("conscription")));
+}

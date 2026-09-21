@@ -15,15 +15,22 @@ The source is the strategic policy pass's unconditional wartime-economy
 priority list after the army reaches its size target. The protected desired
 set then keeps those cards even when their multiplier has nothing to affect.
 
-## Correction in progress
+## Correction
 
 For an assigned Domination seat, evaluate current marginal yields of the
 five wartime economic multipliers on a disposable board. Remove zero-yield
 multipliers from the desired set, and offer available ordinary economic
 yield cards as fallbacks, ranked by the existing Conquest yield valuation.
 Prefer an empty multiplier as the donor when a fitting replacement is chosen.
-Useful multipliers, military priorities, and other victory lanes keep their
+A useful strategic multiplier can reclaim a fallback slot after city growth
+or a new district makes it productive. Useful multipliers, military priorities,
+and other victory lanes keep their
 existing behavior. The correction does not alter game rules or policy costs.
 
-Validation, matched replay, and cost measurement are in progress. This is
-not evidence of a native Domination victory.
+Five focused regressions cover empty multipliers and board immutability,
+the actual Aesthetics-to-Urban-Planning swap with its military slot retained,
+Rationalism below and above its population threshold, reclaiming a fallback
+after growth, and unchanged Science-lane preferences. The full Rust suite
+passes 3,795 library tests and 206 other tests; 49 library and four doc tests
+are ignored. Matched replay and final stability validation are in progress.
+This is not evidence of a native Domination victory.

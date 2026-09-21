@@ -16702,6 +16702,9 @@ impl AdvancedAi {
                             && self.builder_window_can_replace(g, pid, current);
                     }
                     !desired_set.contains(current.as_str())
+                        || self.domination_multiplier_reclaims_fallback(
+                            g, card, current.as_str(), &unproductive_economic_cards,
+                        )
                         // Defensive cards must be able to take an occupied
                         // slot, but never evict each other or a different
                         // typed lane card merely to borrow wildcard capacity.
