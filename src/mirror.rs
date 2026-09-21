@@ -1807,6 +1807,10 @@ pub struct StateQueueItem {
 /// One city as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateCity {
+    /// CityDistricts:GetNumAllowedDistrictsRequiringPopulation(), including
+    /// native bonuses that cannot be recovered from population alone.
+    #[serde(default)]
+    pub district_capacity: Option<i32>,
     #[serde(default)]
     pub id: i64,
     /// The name Civilization VI shows on the banner, e.g. `Pasargadae`.
@@ -7200,13 +7204,30 @@ fn blocked_districts_from(
     out
 }
 
+/// Translate current native limits; missing or invalid values leave no override.
+fn host_district_capacity_from(
+    cities: &[StateCity],
+    city_ids: &BTreeMap<u32, i64>,
+) -> BTreeMap<u32, usize> {
+    let capacities: BTreeMap<_, _> = cities
+        .iter()
+        .filter_map(|city| {
+            city.district_capacity
+                .and_then(|value| usize::try_from(value).ok())
+                .map(|value| (city.id, value))
+        })
+        .collect();
+    city_ids
+        .iter()
+        .filter_map(|(cid, host_id)| capacities.get(host_id).map(|value| (*cid, *value)))
+        .collect()
+}
+
 /// Translate fresh, host-approved district plots onto the reconstructed city ids.
 ///
 /// A `build_no_plot` with `offered > 0` says the district is valid in this city,
-/// but the direct CIVVIS order named a different coordinate.  The companion
-/// `offered_plots` list is Firaxis's authoritative replacement candidate set.  It
-/// is deliberately separate from [`blocked_districts_from`]: one is a negative
-/// feedback signal and this is the positive way out of that same mismatch.
+/// but the direct CIVVIS order named a different coordinate. The companion
+/// `offered_plots` list is Firaxis's authoritative replacement candidate set.
 fn host_district_sites_from(
     offered: &BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>>,
     city_ids: &BTreeMap<u32, i64>,
@@ -12497,6 +12518,7 @@ pub fn rebuild_from_state(
         &city_ids,
         &game.rules,
     ));
+    game.host_district_capacity = Arc::new(host_district_capacity_from(&state.cities, &city_ids));
     game.host_district_sites = Arc::new(host_district_sites_from(
         &state.host_district_sites,
         &city_ids,
@@ -13678,6 +13700,14 @@ impl LiveMirror {
                 .or_default()
                 .extend(names);
         }
+        self.game.host_district_capacity = Arc::new(host_district_capacity_from(
+            &state.cities,
+            &self
+                .cid_of
+                .iter()
+                .map(|(host, cid)| (*cid, *host))
+                .collect(),
+        ));
         self.game.host_district_sites = Arc::new(host_district_sites_from(
             &state.host_district_sites,
             &self

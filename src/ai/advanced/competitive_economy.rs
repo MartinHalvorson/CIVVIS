@@ -30,7 +30,7 @@ impl AdvancedAi {
         // cannot deliver the hypothesized district acceleration now.
         if city.owner != pid
             || !matches!(city.pop, 3 | 6 | 9)
-            || g.city_specialty_district_count(city) < (1 + (city.pop - 1) / 3) as usize
+            || g.city_specialty_district_count(city) < g.city_specialty_district_capacity(city)
             || g.city_housing_headroom(city) < 2.0
             || g.city_amenity_surplus(city) < 0
             || city.loyalty < 76.0
