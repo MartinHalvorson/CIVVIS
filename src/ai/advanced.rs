@@ -35373,6 +35373,12 @@ impl AdvancedAi {
         else {
             return false;
         };
+        if !self.adopted_faith_spread_allowed(g, pid, &religion) {
+            think!(self.journal(), Faith, Decision,
+                "Holding an adopted {} spreader", religion;
+                "this faith is now our conversion threat or holds every other major; preserve its charges until it is a safe counterweight again");
+            return false;
+        }
         let current = g.units[&uid].pos;
         // `religious_veto_defence`: our cities the threat faith holds or is
         // closing on outrank the rest, cheapest flip first.
