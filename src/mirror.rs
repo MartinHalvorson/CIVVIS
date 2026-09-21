@@ -5629,6 +5629,7 @@ const CITY_KEYS: &[&str] = &[
     "religion_turns",
     "pantheon_active",
     "districts",
+    "district_capacity",
     "wonders",
     "worked",
     "specialists",
