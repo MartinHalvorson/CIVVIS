@@ -1493,16 +1493,19 @@ class ProtectedInstallTest(unittest.TestCase):
             'if kind == "research" or kind == "civic" then', 1
         )[0]
 
+        confirmation = source.split("-- BEGIN staged religion founding", 1)[1].split(
+            "-- END staged religion founding", 1
+        )[0]
         self.assertIn("HasReligiousFoundingUnit()", source)
         self.assertIn("founded_religion = founded_religion", source)
         self.assertIn("founded_religions = founded_religions", source)
         self.assertIn("religion_beliefs = religion_beliefs", source)
         self.assertIn("taken_religion_beliefs = taken_religion_beliefs", source)
         self.assertIn("prophet_pending = prophet_pending", source)
-        self.assertIn("PlayerOperations.FOUND_RELIGION", handler)
-        self.assertIn("PlayerOperations.ADD_BELIEF", handler)
-        self.assertIn("PlayerOperations.PARAM_RELIGION_TYPE", handler)
-        self.assertIn("PlayerOperations.PARAM_BELIEF_TYPE", handler)
+        self.assertIn("PlayerOperations.FOUND_RELIGION", confirmation)
+        self.assertIn("PlayerOperations.ADD_BELIEF", confirmation)
+        self.assertIn("PlayerOperations.PARAM_RELIGION_TYPE", confirmation)
+        self.assertIn("PlayerOperations.PARAM_BELIEF_TYPE", confirmation)
         self.assertIn("gameReligion:IsInSomeReligion(follower.Index)", handler)
         self.assertNotIn("IsBeliefInSomeReligion", handler)
         self.assertIn('GameInfo.UnitOperations["UNITOPERATION_FOUND_RELIGION"]', handler)
@@ -1513,15 +1516,22 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("OperationResultsTypes.NO_TARGETS", handler)
         self.assertIn("RequestOperation(prophet, foundOperation.Hash);", handler)
 
-        # ⚠ THE PLAYER OPERATION MUST PRECEDE THE UNIT OPERATION. Requesting the
-        # Prophet's spend first retires the founding unit before the founding it
-        # was needed for: across the 24 completed live runs of 2026-08-07/08 the
-        # Prophet was consumed on the order turn and a religion was founded in
-        # 0 of 24, every order reporting `applied` with no refusal.
+        # The shipped UI waits for earned beliefs between activating the
+        # Prophet and confirming the chosen religion. Owning a Prophet alone
+        # is not that readiness gate; the Lua behavior test exercises both ticks.
+        self.assertIn("GetNumBeliefsEarned()", confirmation)
+        self.assertIn("CivvisReligionFounding.ready(playerReligion)", handler)
+        self.assertIn("CivvisReligionFounding.confirm(player, pid, pendingReligionChoice)", handler)
+        self.assertNotIn("UI.RequestPlayerOperation", handler)
+        self.assertIn("choice.confirm_requested", confirmation)
+        self.assertIn("choice.follower_hash, choice.founder_hash", confirmation)
         self.assertLess(
-            handler.index("PlayerOperations.FOUND_RELIGION, found"),
-            handler.index("RequestOperation(prophet, foundOperation.Hash);"),
-            "found the religion before spending the Prophet on it",
+            confirmation.index("not CivvisReligionFounding.ready(religion)"),
+            confirmation.index("PlayerOperations.FOUND_RELIGION, found"),
+        )
+        self.assertLess(
+            confirmation.index("PlayerOperations.FOUND_RELIGION, found"),
+            confirmation.index("PlayerOperations.ADD_BELIEF, params"),
         )
         # And the request cannot report success on its own say-so: a pcall
         # verdict is "did not throw", so the next turn has to check.
