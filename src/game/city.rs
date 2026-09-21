@@ -5327,6 +5327,13 @@ impl Game {
         false
     }
 
+    pub(crate) fn city_specialty_district_capacity(&self, city: &City) -> usize {
+        self.host_district_capacity
+            .get(&city.id)
+            .copied()
+            .unwrap_or_else(|| 1 + (city.pop.max(1) - 1) as usize / 3)
+    }
+
     /// The city-level gates a new district site must pass before any tile
     /// is looked at: the family caps, the exclusion list, and the specialty
     /// capacity. Split out of `district_sites` unchanged so a planner can
@@ -5366,7 +5373,7 @@ impl Game {
                 .iter()
                 .any(|excluded| self.city_has_district_or_foundation_family(city, excluded));
         let specialty_capacity_full = if spec.specialty {
-            let capacity = 1 + (city.pop.max(1) - 1) as usize / 3;
+            let capacity = self.city_specialty_district_capacity(city);
             let built = city
                 .districts
                 .keys()

@@ -6728,6 +6728,10 @@ pub struct Game {
     /// outside it is not producible and `district_sites` drops it.
     #[serde(default)]
     pub host_district_plots: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
+    /// Actual native specialty-district limit, including Great Person bonuses.
+    /// Missing entries retain the ordinary population-derived limit.
+    #[serde(default)]
+    pub host_district_capacity: Arc<BTreeMap<u32, usize>>,
     /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
     /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
     ///
@@ -7444,6 +7448,7 @@ impl From<GameSer> for Game {
             host_buildable: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
+            host_district_capacity: Arc::new(BTreeMap::new()),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -8155,6 +8160,7 @@ impl Game {
             host_buildable: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
+            host_district_capacity: Arc::new(BTreeMap::new()),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),

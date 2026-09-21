@@ -691,7 +691,7 @@ impl AdvancedAi {
             return;
         }
         let city = &g.cities[&cid];
-        let specialty_capacity = 1 + (city.pop.max(1) - 1) as usize / 3;
+        let specialty_capacity = g.city_specialty_district_capacity(city);
         let used_specialty = city
             .districts
             .keys()

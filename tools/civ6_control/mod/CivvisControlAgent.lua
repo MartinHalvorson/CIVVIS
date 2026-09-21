@@ -6748,6 +6748,13 @@ local function exportState(player, pid, turn, frame, eventKind)
 			x = try(function() return city:GetX(); end, -1),
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
+			-- Expansion2/UI/Replacements/CitySupport.lua:408 includes GP bonuses.
+			district_capacity = try(function()
+				local value = city:GetDistricts():GetNumAllowedDistrictsRequiringPopulation();
+				if type(value) == "number" and value >= 0 and value < math.huge
+					and value == math.floor(value) then return value; end
+				return nil;
+			end, nil),
 			capital = try(function() return city:IsCapital(); end, false),
 			-- WorldRankings.lua:1842-1848 counts original capitals and founders.
 			original_capital = try(function() return city:IsOriginalCapital(); end, nil),

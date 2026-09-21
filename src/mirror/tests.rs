@@ -8763,12 +8763,9 @@ fn the_game_speed_civ6_is_running_reaches_the_board() {
 /// Ostia       8          4                3        19
 /// ```
 ///
-/// CIVVIS models the cap correctly and always has — `Game::district_sites`
-/// computes `1 + (pop - 1) / 3`, the same 1/4/7 ladder Civilization VI uses. So
-/// the rule is not the defect; the only way CIVVIS can ask anyway is if the
-/// MIRRORED city carries the wrong population or is missing the districts it has
-/// already built. This test pins both through the reconstruction rather than
-/// asserting the rule in isolation, which `Game`'s own tests already do.
+/// Population supplies the ordinary 1/4/7 ladder. Native Great Person bonuses
+/// can raise it, so a current export's actual limit must take precedence.
+/// Pin population, completed districts, and the bonus through reconstruction.
 ///
 /// ⚠ Two-sided on purpose. "No sites" passes trivially when the city owns no
 /// workable ground, so the under-cap case must FIRST prove a site is offered.
@@ -8788,7 +8785,7 @@ fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
             p
         })
         .collect();
-    let build = |districts: Vec<&str>, pop: i32| {
+    let build = |districts: Vec<&str>, pop: i32, district_capacity: Option<i32>| {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 30,
             width: 12,
@@ -8803,6 +8800,7 @@ fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
         state.cities.push(StateCity {
             id: 1,
             name: "Ravenna".to_string(),
+            district_capacity,
             x: 5,
             y: 5,
             pop,
@@ -8844,11 +8842,11 @@ fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
         for civic in civics {
             recon.game.players[0].civics.insert(civic);
         }
-        recon
+        (recon, snapshot, state)
     };
 
     // Ravenna's real shape: population 4, so the cap is 2.
-    let under = build(vec!["DISTRICT_CITY_CENTER"], 4);
+    let (under, _, _) = build(vec!["DISTRICT_CITY_CENTER"], 4, None);
     let (&cid, city) = under
         .game
         .cities
@@ -8873,7 +8871,7 @@ fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
         .expect("a pop-4 city under its cap must be able to site SOME specialty district");
 
     // Same city, same population, but three specialty districts already built.
-    let at_cap = build(
+    let (at_cap, _, _) = build(
         vec![
             "DISTRICT_CITY_CENTER",
             "DISTRICT_CAMPUS",
@@ -8881,6 +8879,7 @@ fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
             "DISTRICT_INDUSTRIAL_ZONE",
         ],
         4,
+        None,
     );
     let (&capped, city) = at_cap
         .game
@@ -8902,6 +8901,77 @@ fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
         at_cap.game.district_sites(capped, probe).is_empty(),
         "population 4 allows 1 + (4-1)/3 = 2 specialty districts and this city has 3, \
              so CIVVIS must stop choosing {probe}"
+    );
+
+    let (mut bonus, snapshot, mut state) = build(
+        vec![
+            "DISTRICT_CITY_CENTER",
+            "DISTRICT_CAMPUS",
+            "DISTRICT_HOLY_SITE",
+            "DISTRICT_INDUSTRIAL_ZONE",
+        ],
+        4,
+        Some(4),
+    );
+    let cid = *bonus
+        .city_ids
+        .keys()
+        .find(|cid| bonus.game.cities[cid].owner == 0)
+        .unwrap();
+    assert_eq!(
+        bonus
+            .game
+            .city_specialty_district_capacity(&bonus.game.cities[&cid]),
+        4
+    );
+    let item = bonus.game.producible_items(0, cid).into_iter().find(|item| {
+        matches!(item, crate::game::Item::District { district, .. } if bonus.game.rules.districts[district].specialty)
+    }).expect("the host bonus must open a real specialty district site");
+    bonus
+        .game
+        .apply(0, &crate::game::Action::Produce { city: cid, item })
+        .unwrap();
+    assert!(
+        !bonus.game.city_accepts_new_district_site(
+            &bonus.game.cities[&cid],
+            crate::name!("theater_square")
+        ),
+        "a new foundation consumes the bonus slot"
+    );
+
+    let mut live = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+    state.cities[0].district_capacity = Some(7);
+    live.sync(&snapshot, &state, 0);
+    let cid = live.cid_of[&1];
+    assert_eq!(
+        live.game
+            .city_specialty_district_capacity(&live.game.cities[&cid]),
+        7
+    );
+    state.cities[0].district_capacity = None;
+    live.sync(&snapshot, &state, 0);
+    assert!(
+        !live.game.host_district_capacity.contains_key(&cid),
+        "a legacy export clears the earlier host limit"
+    );
+    assert_eq!(
+        live.game
+            .city_specialty_district_capacity(&live.game.cities[&cid]),
+        2
+    );
+    state.cities[0].district_capacity = Some(-1);
+    live.sync(&snapshot, &state, 0);
+    assert_eq!(
+        live.game
+            .city_specialty_district_capacity(&live.game.cities[&cid]),
+        2
+    );
+    state.cities[0].district_capacity = Some(0);
+    live.sync(&snapshot, &state, 0);
+    assert_eq!(
+        live.game
+            .city_specialty_district_capacity(&live.game.cities[&cid]),
+        0
     );
 }
 
