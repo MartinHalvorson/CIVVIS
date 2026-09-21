@@ -40,6 +40,7 @@ use serde::Deserialize;
 
 mod capital_identity;
 mod host_deaths;
+mod religion_state;
 mod strategic_income;
 pub use host_deaths::HostUnitDeath;
 
@@ -3298,6 +3299,12 @@ pub struct StateSnapshot {
     /// Player-level religion facts, distinct from each city's majority religion.
     #[serde(default)]
     pub founded_religion: Option<String>,
+    /// Host city identity of the founder's Holy City, mapped after cities exist.
+    #[serde(default)]
+    pub holy_city_id: Option<i64>,
+    /// Unknown on older hosts; false is an observed unlaunched Inquisition.
+    #[serde(default)]
+    pub inquisition_launched: Option<bool>,
     /// Every non-pantheon religion founded worldwide. Firaxis exposes this in
     /// the Religion screen even when its founder has not otherwise been met.
     #[serde(default)]
@@ -5798,6 +5805,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "research_progress", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
+        "holy_city_id", "inquisition_launched",
         "taken_religion_beliefs", "religions", "prophet_pending",
         "policies", "available_policies", "policy_slots", "gold", "gold_per_turn",
         "unit_maintenance_total", "building_maintenance_total", "district_maintenance_total",
@@ -11190,6 +11198,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("tile_memory", BOTH, step_tile_memory),
             ("city_memory", BOTH, step_city_memory),
             ("trade_routes", REBUILD, step_trade_routes),
+            ("religion_identity", BOTH, religion_state::apply),
             ("governor_state", BOTH, step_governor_state),
             ("host_envoys", BOTH, step_host_envoys),
             ("great_person_points", BOTH, step_great_person_points),
