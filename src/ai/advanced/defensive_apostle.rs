@@ -112,6 +112,54 @@ impl AdvancedAi {
                 return true;
             }
         }
+        // Saving must not leave an exposed source without any charged
+        // defender. A visible foreign spreader can remove its majority before
+        // the Apostle becomes affordable; preserve one Missionary while the
+        // city can still supply our faith, then resume the reserve.
+        let has_cover = g.units.values().any(|unit| {
+            unit.owner == pid
+                && unit.religion.as_deref() == Some(faith.as_str())
+                && unit.charges > 0
+                && g.rules.units[unit.kind].religious_spread > 0.0
+        });
+        if !has_cover {
+            for cid in g.player_city_ids(pid) {
+                let city = &g.cities[&cid];
+                if g.city_religion(city) != Some(faith.as_str()) {
+                    continue;
+                }
+                let threatened = g.units.values().any(|unit| {
+                    unit.owner != pid
+                        && unit.charges > 0
+                        && g.rules.units[unit.kind].religious_spread > 0.0
+                        && unit.religion.as_deref().is_some_and(|other| other != faith)
+                        && g.wdist(city.pos, unit.pos) <= RELIGIOUS_HOME_WATCH
+                });
+                if !threatened {
+                    continue;
+                }
+                let Some(price) = g.unit_purchase_cost(pid, cid, "missionary", "faith") else {
+                    continue;
+                };
+                if g.players[pid].faith + f64::EPSILON >= price
+                    && g.apply(
+                        pid,
+                        &Action::Buy {
+                            city: cid,
+                            unit: crate::name!("missionary"),
+                            formation: 0,
+                            currency: "faith".into(),
+                        },
+                    )
+                    .is_ok()
+                {
+                    think!(self.journal(), Faith, Decision,
+                        "Preserving a threatened faith source";
+                        "one Missionary covers the source while the defensive Apostle is unaffordable");
+                    return true;
+                }
+            }
+        }
         true
     }
 }
