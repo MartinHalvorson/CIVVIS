@@ -2394,8 +2394,12 @@ def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
             if settle:
                 time.sleep(settle)
             verified = run_dir / "map-picker-selected.png"
-            screenshot(verified)
-            if _map_picker_open(verified, bounds):
+            selected = None
+            browser_open = None
+            if not screenshot(verified):
+                continue
+            browser_open = _map_picker_open(verified, bounds)
+            if browser_open:
                 continue
             selected = _setup_current_value(verified, bounds, "map_type")
             if selected is not None and selected[0] == map_script:
@@ -2404,7 +2408,7 @@ def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
                 print(f"[setup] map_type: selected and verified {label} "
                       f"at wheel step {step}", flush=True)
                 return True
-        if _map_picker_open(verified, bounds):
+        if browser_open:
             refusal = (f"[setup] map_type: {label} was clicked but the SELECT MAP "
                        "browser is still open, so nothing was committed")
         else:
@@ -2420,13 +2424,24 @@ def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
     # closed. Only if we are still in it -- a commit that took but did not
     # register has already returned us, and `Back` there is a different control.
     parting = run_dir / "map-picker-parting.png"
-    if screenshot(parting) and _map_picker_open(parting, bounds):
-        back = _map_picker_labels(parting, bounds, "Back")
-        if back:
-            focus_game(GAME_SIDE, GAME_FRACTION)
-            click_at(*back[0])
+    if screenshot(parting):
+        if _map_picker_open(parting, bounds):
+            back = _map_picker_labels(parting, bounds, "Back")
+            if back:
+                focus_game(GAME_SIDE, GAME_FRACTION)
+                click_at(*back[0])
+            else:
+                press_escape(1)
         else:
-            press_escape(1)
+            # The recovery capture can be the first readable frame after a
+            # successful commit. Keep that proof instead of restarting setup.
+            selected = _setup_current_value(parting, bounds, "map_type")
+            if selected is not None and selected[0] == map_script:
+                if panel_out is not None:
+                    panel_out["shot"] = parting
+                print(f"[setup] map_type: verified {label} on the recovery frame",
+                      flush=True)
+                return True
     print(refusal, flush=True)
     return False
 
