@@ -6350,6 +6350,10 @@ pub struct Game {
     /// Public host score for mirrored seats. Empty in native CIVVIS games.
     #[serde(default)]
     pub observed_score: Arc<BTreeMap<usize, i64>>,
+    /// Current host Palace locations, distinct from original capitals required
+    /// for Domination. Empty in simulated games and older host snapshots.
+    #[serde(default)]
+    pub observed_city_palaces: Arc<BTreeMap<u32, bool>>,
     /// Host gross strategic income minus the reconstructed board's income.
     /// Corrections preserve policy and improvement counterfactuals on clones.
     /// Empty in simulated games; refreshed on each host snapshot.
@@ -7143,6 +7147,8 @@ struct GameSer {
     #[serde(default)]
     observed_score: BTreeMap<usize, i64>,
     #[serde(default)]
+    observed_city_palaces: BTreeMap<u32, bool>,
+    #[serde(default)]
     observed_strategic_income_adjustments: BTreeMap<usize, BTreeMap<Name, f64>>,
     #[serde(default)]
     observed_trade_capacity: BTreeMap<usize, i64>,
@@ -7370,6 +7376,7 @@ impl From<GameSer> for Game {
             host_unit_facts: Arc::new(s.host_unit_facts),
             host_maintenance: Arc::new(s.host_maintenance),
             observed_score: Arc::new(s.observed_score),
+            observed_city_palaces: Arc::new(s.observed_city_palaces),
             observed_strategic_income_adjustments: Arc::new(
                 s.observed_strategic_income_adjustments,
             ),
@@ -7604,6 +7611,7 @@ impl From<Game> for GameSer {
             host_unit_facts: Arc::unwrap_or_clone(g.host_unit_facts),
             host_maintenance: Arc::unwrap_or_clone(g.host_maintenance),
             observed_score: Arc::unwrap_or_clone(g.observed_score),
+            observed_city_palaces: Arc::unwrap_or_clone(g.observed_city_palaces),
             observed_strategic_income_adjustments: Arc::unwrap_or_clone(
                 g.observed_strategic_income_adjustments,
             ),
@@ -7732,6 +7740,7 @@ impl Game {
         self.routes.clear();
         Arc::make_mut(&mut self.observed_city_loyalty_per_turn).clear();
         Arc::make_mut(&mut self.observed_city_strength).clear();
+        Arc::make_mut(&mut self.observed_city_palaces).clear();
         Arc::make_mut(&mut self.observed_city_max_wall_hp).clear();
         Arc::make_mut(&mut self.observed_city_yield_adjustments).clear();
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).clear();
@@ -7811,6 +7820,7 @@ impl Game {
         }
         Arc::make_mut(&mut self.observed_city_loyalty_per_turn).remove(&cid);
         Arc::make_mut(&mut self.observed_city_strength).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_palaces).remove(&cid);
         Arc::make_mut(&mut self.observed_city_max_wall_hp).remove(&cid);
         Arc::make_mut(&mut self.observed_city_yield_adjustments).remove(&cid);
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).remove(&cid);
@@ -8084,6 +8094,7 @@ impl Game {
             host_unit_facts: Arc::new(BTreeMap::new()),
             host_maintenance: Arc::new(BTreeMap::new()),
             observed_score: Arc::new(BTreeMap::new()),
+            observed_city_palaces: Arc::new(BTreeMap::new()),
             observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
             observed_trade_capacity: Arc::new(BTreeMap::new()),
             observed_leader_types: Arc::new(BTreeMap::new()),
@@ -10792,7 +10803,7 @@ impl Game {
         let opening_site = if declaration.declared_front {
             self.cities
                 .values()
-                .find(|city| city.owner == declaration.target && city.is_capital)
+                .find(|city| city.owner == declaration.target && self.city_capital_flag(city))
                 .or_else(|| {
                     self.cities
                         .values()
@@ -13029,7 +13040,7 @@ impl Game {
         self.cities
             .values()
             .filter(|city| city.owner == pid)
-            .min_by_key(|city| (!city.is_capital, city.id))
+            .min_by_key(|city| (!self.city_capital_flag(city), city.id))
             .map(|city| city.id)
     }
 
@@ -14485,7 +14496,7 @@ impl Game {
         let capital = self
             .player_city_ids(pid)
             .into_iter()
-            .find(|city| self.cities[city].is_capital)
+            .find(|city| self.city_capital_flag(&self.cities[city]))
             .or_else(|| self.player_city_ids(pid).into_iter().min());
         if let Some(city) = capital {
             for (effect, unit) in [("free_builder", "builder"), ("free_settler", "settler")] {
@@ -28830,7 +28841,12 @@ impl Game {
             // that base before the distance falloff is applied to the total.
             let mut pressure_per_citizen = age_factor(source.owner)
                 + self.city_active_project_effect(source, "citizen_loyalty_pressure");
-            if source.is_capital && source.original_owner == source.owner {
+            if self
+                .observed_city_palaces
+                .get(&source.id)
+                .copied()
+                .unwrap_or(source.is_capital && source.original_owner == source.owner)
+            {
                 pressure_per_citizen += 1.0;
             }
             let pressure = source.pop as f64 * (10.0 - distance as f64) * pressure_per_citizen;
@@ -34565,6 +34581,11 @@ impl Game {
 
     fn transfer_city(&mut self, cid: u32, new_owner: usize, conquest: bool) {
         let old = self.cities[&cid].owner;
+        if old != new_owner {
+            // A hypothetical capture/trade can move either seat's Palace.
+            // Revert those seats to modeled placement until the next host frame.
+            self.forget_observed_palaces(old, new_owner);
+        }
         let original_owner = self.cities[&cid].original_owner;
         let original_capital = self.cities[&cid].is_capital;
         let final_city_of_old = conquest
@@ -35138,6 +35159,7 @@ impl Game {
             })
             .collect();
         let restored_to_game = !self.players[original_owner].alive;
+        self.forget_observed_palaces(pid, original_owner);
         {
             let city = self.cities.get_mut(&cid).unwrap();
             city.owner = original_owner;

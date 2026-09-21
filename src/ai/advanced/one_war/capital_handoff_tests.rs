@@ -156,3 +156,65 @@ fn an_urgent_victory_threat_is_not_left_after_losing_its_capital() {
     assert!(ai.urgent_victory_threat(&g, 1));
     assert!(ai.one_war_peace(&g, 0, 1).is_none());
 }
+
+#[test]
+fn native_original_capital_handoff_ignores_the_rivals_replacement_palace() {
+    use crate::mirror::{rebuild_from_state, Snapshot, StateSnapshot, TilesChunk};
+    let plots = (0..26)
+        .flat_map(|x| {
+            (0..18).map(move |y| {
+                serde_json::from_value(serde_json::json!({"x":x,"y":y,"t":"TERRAIN_GRASS","o":-1}))
+                    .unwrap()
+            })
+        })
+        .collect();
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 150,
+        width: 26,
+        height: 18,
+        chunk: 1,
+        plots,
+    }]);
+    let city = |id: i64, x: i32, current: bool, original: bool, founder: i64| {
+        serde_json::json!({
+            "id":id,"x":x,"y":8,"pop":8,"loyalty":100,"loyalty_per_turn":0,
+            "capital":current,"original_capital":original,"original_owner":founder
+        })
+    };
+    let mut value = serde_json::json!({
+        "turn":150,"seat":{"players":3,"local_player":0},
+        "cities":[city(1,3,true,true,0),city(2,8,false,true,1)],
+        "rivals":[
+            {"player":1,"cities":[city(3,13,true,false,1)]},
+            {"player":2,"cities":[city(4,21,true,true,2)]}
+        ]
+    });
+    for modern in [true, false] {
+        if !modern {
+            for city in value["cities"].as_array_mut().unwrap() {
+                city.as_object_mut().unwrap().remove("original_capital");
+            }
+            for rival in value["rivals"].as_array_mut().unwrap() {
+                for city in rival["cities"].as_array_mut().unwrap() {
+                    city.as_object_mut().unwrap().remove("original_capital");
+                }
+            }
+        }
+        let state: StateSnapshot = serde_json::from_value(value.clone()).unwrap();
+        let mut g = rebuild_from_state(&snapshot, &state, 3, 364006, 500, 0).game;
+        g.record_contact(0, 1);
+        g.record_contact(0, 2);
+        g.at_war.insert((0, 1));
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_one_war_at_a_time();
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.domination_followup_target(&g,0,Some(1)),modern.then_some(2),
+            "the next original capital should replace a completed front; legacy snapshots remain unchanged");
+        if modern {
+            assert!(
+                ai.one_war_peace(&g, 0, 1).is_some(),
+                "the captured original capital completes this front"
+            );
+        }
+    }
+}

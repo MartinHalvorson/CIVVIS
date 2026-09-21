@@ -6749,6 +6749,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
 			capital = try(function() return city:IsCapital(); end, false),
+			-- WorldRankings.lua:1842-1848 counts original capitals and founders.
+			original_capital = try(function() return city:IsOriginalCapital(); end, nil),
 			-- See `pendingCaptureId`: the Firaxis player this city was just taken
 			-- from, present exactly while the host waits on its disposition; and
 			-- its founder (`GetOriginalOwner`, `RazeCity.lua:85`), whom LIBERATE
@@ -7306,6 +7308,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 							end, ""),
 							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
+							-- WorldRankings.lua:1842-1848 counts original capitals and founders.
+							original_capital = try(function() return city:IsOriginalCapital(); end, nil),
+							original_owner = try(function() return city:GetOriginalOwner(); end, nil),
 							-- Defence is on the city banner when the city is
 							-- visible, so this is information a human has.
 							defense = theirDef,
@@ -7863,6 +7868,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 							name = try(function() return Locale.Lookup(city:GetName()); end, ""),
 							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
+							-- WorldRankings.lua:1842-1848 counts original capitals and founders.
+							original_capital = try(function() return city:IsOriginalCapital(); end, nil),
+							original_owner = try(function() return city:GetOriginalOwner(); end, nil),
 							defense = strength, damage = damage,
 							max_damage = maxDamage,
 							wall_damage = wallDamage,
