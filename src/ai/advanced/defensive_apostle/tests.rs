@@ -169,3 +169,71 @@ fn host_menu_without_an_affordable_apostle_does_not_release_the_reserve() {
     assert_eq!(g.players[0].faith, 100.0);
     assert!(!g.units.values().any(|u| u.owner == 0));
 }
+
+fn approaching_spreader(g: &mut Game, religion: &str, position: Pos) -> u32 {
+    g.players[1].religion = Some("Orthodoxy".into());
+    let uid = g.spawn_test_unit("missionary", 1, position);
+    let unit = g.units.get_mut(&uid).unwrap();
+    unit.religion = Some(religion.into());
+    unit.charges = 3;
+    uid
+}
+
+#[test]
+fn threatened_source_buys_affordable_cover_before_saving_for_apostle() {
+    let (mut g, mut ai, home) = fixture();
+    approaching_spreader(&mut g, "Orthodoxy", (5, 4));
+    g.players[0].faith = g
+        .unit_purchase_cost(0, home, "missionary", "faith")
+        .unwrap();
+    ai.religious_spending(&mut g, 0, false);
+    assert!(g
+        .units
+        .values()
+        .any(|u| u.owner == 0 && u.kind == "missionary"));
+    g.players[0].faith = g
+        .unit_purchase_cost(0, home, "missionary", "faith")
+        .unwrap();
+    let bank = g.players[0].faith;
+    ai.religious_spending(&mut g, 0, false);
+    assert_eq!(
+        g.players[0].faith, bank,
+        "one charged defender restores saving"
+    );
+    assert_eq!(g.units.values().filter(|u| u.owner == 0).count(), 1);
+}
+
+#[test]
+fn funded_apostle_still_precedes_emergency_missionary() {
+    let (mut g, mut ai, _) = fixture();
+    approaching_spreader(&mut g, "Orthodoxy", (5, 4));
+    ai.religious_spending(&mut g, 0, false);
+    assert!(g
+        .units
+        .values()
+        .any(|u| u.owner == 0 && u.kind == "apostle"));
+    assert!(!g
+        .units
+        .values()
+        .any(|u| u.owner == 0 && u.kind == "missionary"));
+}
+
+#[test]
+fn harmless_or_distant_spreader_does_not_break_apostle_reserve() {
+    for (religion, position, charges) in [
+        ("Buddhism", (5, 4), 3),
+        ("Orthodoxy", (18, 12), 3),
+        ("Orthodoxy", (5, 4), 0),
+    ] {
+        let (mut g, mut ai, home) = fixture();
+        let uid = approaching_spreader(&mut g, religion, position);
+        g.units.get_mut(&uid).unwrap().charges = charges;
+        g.players[0].faith = g
+            .unit_purchase_cost(0, home, "missionary", "faith")
+            .unwrap();
+        let bank = g.players[0].faith;
+        ai.religious_spending(&mut g, 0, false);
+        assert_eq!(g.players[0].faith, bank);
+        assert!(!g.units.values().any(|u| u.owner == 0));
+    }
+}
