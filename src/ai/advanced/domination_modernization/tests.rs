@@ -104,6 +104,7 @@ fn prepare_civics(g: &mut Game) {
             "political_philosophy",
             "military_tradition",
             "games_recreation",
+            "defensive_tactics",
             "feudalism",
         ]
         .into_iter()
@@ -153,17 +154,25 @@ fn discount_policy_displaces_ordinary_card_and_funds_actual_cohort() {
     .map(Name::new)
     .collect();
     let undiscounted = g.unit_gold_upgrade_offer(0, units[0]).unwrap().1;
-    ai.strategic_policies(&mut g, 0, GrandStrategy::Conquest);
+    // Exactly enough for one discounted upgrade, but not a full-price one.
+    g.players[0].gold = undiscounted / 2.0 + 31.0;
+    ai.fund_domination_upgrades(&mut g, 0, &plan);
     assert!(g.players[0]
         .policies
         .contains(&crate::name!("professional_army")));
     assert!(g.players[0]
         .policies
         .contains(&crate::name!("conscription")));
-    let discounted = g.unit_gold_upgrade_offer(0, units[0]).unwrap().1;
+    let discounted = g
+        .unit_upgrade_price_in_formation(
+            0,
+            crate::name!("archer"),
+            crate::name!("crossbowman"),
+            g.units[&units[1]].formation,
+        )
+        .unwrap()
+        .0;
     assert!(discounted < undiscounted);
-    g.players[0].gold = discounted + 31.0;
-    ai.fund_domination_upgrades(&mut g, 0, &plan);
     assert_eq!(g.units[&units[0]].kind, "crossbowman");
     assert_eq!(
         ai.domination_upgrade_policy(&g, 0),
@@ -211,4 +220,30 @@ fn locked_successors_and_scouts_do_not_redirect_the_civic_path() {
     g.spawn_test_unit("scout", 0, (4, 4));
     g.spawn_test_unit("scout", 0, (4, 5));
     assert!(ai.domination_upgrade_civic_goal(&g, 0).is_none());
+}
+
+#[test]
+fn appointed_war_package_keeps_its_own_budget() {
+    let (mut g, mut ai, plan, units) = fixture();
+    ai.war_plan = Some(WarPlan {
+        target_player: 1,
+        objective_city: plan.target_city.unwrap(),
+        breakthrough_tech: crate::name!("machinery"),
+        assault_unit: crate::name!("crossbowman"),
+        predecessor: Some(crate::name!("archer")),
+        breach_unit: None,
+        estimated_research_turns: 1,
+        estimated_production_turns: 1,
+        estimated_upgrade_gold: 500.0,
+        estimated_march_turns: 1,
+        phase: WarPhase::Research,
+        appointed_turn: g.turn,
+        tech_turn: None,
+        declared_turn: None,
+        last_reviewed_turn: g.turn,
+        recovery_assessments: 0,
+    });
+    ai.fund_domination_upgrades(&mut g, 0, &plan);
+    assert_eq!(g.players[0].gold, 1000.0);
+    assert!(units.iter().all(|uid| g.units[uid].kind == "archer"));
 }

@@ -91,6 +91,16 @@ impl AdvancedAi {
         {
             return;
         }
+        // The ordinary policy pass follows discretionary spending. Seat a
+        // newly useful discount now; an already-held card needs no extra pass.
+        // A mirrored host quote remains authoritative until the next frame,
+        // even when the local policy swap projects a cheaper upgrade.
+        if self
+            .domination_upgrade_policy(g, pid)
+            .is_some_and(|card| !g.players[pid].policies.contains(&Name::new(card)))
+        {
+            self.strategic_policies(g, pid, self.policy_lane(g, pid, plan));
+        }
         let floor = 30.0 + (-g.players[pid].gold_per_turn).max(0.0);
         loop {
             let best = self
