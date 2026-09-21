@@ -32,3 +32,22 @@ A paired replay can establish changed decisions on recorded boards. It cannot
 show that the new spreads survive hostile Apostles, restore the majority in
 native Civilization VI, or prevent the later religious loss. The original
 recorded future never executed new orders.
+
+## Paired replay and validation
+
+The final isolated comparison covers all 388 frames. Baseline production
+source is 6810f5e00 (source-equivalent to this branch's de08f3914 base);
+candidate is 176ec2042. Two internal-action frames and three exported frames
+change. On 121/0 and 122/0, Missionary 4849689 spreads at Maracaibo instead
+of moving toward Bogotá; Missionary 4587543 begins moving toward the supplier
+instead of continuing western spreads. The 123/0 difference is receipt-only.
+Counterfactual charge/movement receipts are not native execution evidence.
+
+The two new positive regressions fail on baseline (no priority and no nearby
+spread). The candidate passes all nine recruitment-source tests, including
+other-lane, foreign-faith, disabled-victory, existing-supplier, and damaged
+infrastructure cases. Full Rust validation passes 4,088 tests (53 ignored),
+14 append checks pass, and eight four-player 180-turn soak games complete
+(start seed 367900). Scoped rustfmt, changed-line Rust quality against
+de08f3914, and diff whitespace checks pass. No performance claim is made
+from sequential replay timings under different machine load.
