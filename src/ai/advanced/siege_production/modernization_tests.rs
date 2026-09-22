@@ -286,3 +286,24 @@ fn available_bombard_still_replaces_weaker_siege_production() {
         ) > 0.0
     );
 }
+
+#[test]
+fn an_existing_wall_breaker_closes_the_exception_to_field_fire_comparison() {
+    let (mut g, ai, plan, home) = field_cannon_without_niter_case();
+    g.spawn_test_unit("trebuchet", 0, g.cities[&home].pos);
+    let counts = ai.counts(&g, 0);
+    assert_eq!(counts.siege, 1);
+    assert_eq!(
+        ai.production_value(
+            &g,
+            0,
+            home,
+            &Item::Unit {
+                unit: crate::name!("trebuchet")
+            },
+            &plan,
+            &counts
+        ),
+        -2_000.0
+    );
+}
