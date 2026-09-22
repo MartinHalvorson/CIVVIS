@@ -48,7 +48,7 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32) {
 #[test]
 fn research_shortfall_can_start_a_missing_campus_in_a_mature_domination_city() {
     for strategy in [GrandStrategy::Expansion, GrandStrategy::Conquest] {
-        let (mut g, ai, mut plan, city) = fixture();
+        let (mut g, mut ai, mut plan, city) = fixture();
         plan.strategy = strategy;
         let (chosen, item, debt) = ai
             .higher_level_investment_target(&g, 0, &plan)
@@ -65,6 +65,8 @@ fn research_shortfall_can_start_a_missing_campus_in_a_mature_domination_city() {
             AdvancedAi::campus_research_building(&g, &item),
             "the ordinary commitment guard must protect the new foundation"
         );
+        ai.advanced_production(&mut g, 0, &plan, false);
+        assert_eq!(g.cities[&city].queue.first(), Some(&item));
     }
 }
 
