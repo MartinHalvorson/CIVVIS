@@ -87,3 +87,46 @@ fn open_approach_reaches_the_post_without_displacing_a_friendly_builder() {
     assert_eq!(g.units[&uid].pos, goal);
     assert_eq!(g.units[&builder].pos, transit);
 }
+
+#[test]
+fn siege_assigns_a_reachable_post_instead_of_a_closer_sealed_pocket() {
+    let (mut g, cid) = walled_city();
+    let city = g.cities[&cid].pos;
+    let at = |x, y| (city.0 + x, city.1 + y);
+    let start = at(-3, 0);
+    let pocket = at(-1, 0);
+    let reachable = at(-1, 1);
+    let corridor = [
+        city,
+        start,
+        pocket,
+        at(-3, 1),
+        at(-3, 2),
+        at(-2, 2),
+        reachable,
+    ];
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = if corridor.contains(&tile.pos) {
+            crate::name!("grassland")
+        } else {
+            crate::name!("mountain")
+        };
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let uid = g.spawn_unit("warrior", 0, start);
+    assert!(g.wdist(start, pocket) < g.wdist(start, reachable));
+    let view = CityView::of(&g, cid).unwrap();
+    let posts = siege_posts(&g, 0, &view, &[uid], None);
+    assert_eq!(posts.get(&uid), Some(&reachable));
+    let mut ai = AdvancedAi::new();
+    for _ in 0..4 {
+        ai.approach(&mut g, 0, uid, reachable, city);
+        if g.units[&uid].pos == reachable {
+            break;
+        }
+        g.apply(0, &Action::EndTurn).unwrap();
+        g.apply(1, &Action::EndTurn).unwrap();
+    }
+    assert_eq!(g.units[&uid].pos, reachable);
+}

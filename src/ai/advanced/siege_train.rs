@@ -629,8 +629,32 @@ fn anvil_orders_for(
     posts
 }
 
+/// The same exclusions must govern post assignment and the march to it.
+/// Otherwise spread-first assignment can reserve a pocket whose only entry
+/// crosses another ring tile, and the mover can never fulfill that order.
+fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Option<Pos> {
+    let unit = g.units.get(&uid)?;
+    let mut avoid: BTreeSet<Pos> = g
+        .wdisk(city, 1)
+        .into_iter()
+        .filter(|pos| *pos != goal)
+        .collect();
+    avoid.extend(
+        g.units
+            .values()
+            .filter(|other| {
+                other.id != uid
+                    && g.rules.units[other.kind].domain.as_deref() != Some("air")
+                    && (other.owner != pid || g.rules.units[other.kind].class == "military")
+            })
+            .map(|other| other.pos),
+    );
+    avoid.remove(&unit.pos);
+    g.route_step_avoiding_tiles(uid, goal, &avoid)
+}
+
 /// The train's posts for the turn. Melee already on the ring keep their
-/// tile; the taker, then the rest by distance, take free ring tiles in the
+/// tile; the taker, then the rest by distance, take reachable free ring tiles in the
 /// spread-first order — the free tile furthest from every held or assigned
 /// one, then the nearest. Guns, then shooters, keep a tile they can already
 /// shoot the city from, else take a tile at their range behind a ring post
@@ -679,18 +703,22 @@ fn siege_posts(
     );
     for uid in order {
         let here = g.units[&uid].pos;
-        let best = ring_free
+        let mut candidates: Vec<Pos> = ring_free
             .iter()
             .copied()
             .filter(|pos| !ring_taken.contains(pos) && g.unit_can_traverse(uid, *pos))
-            .min_by_key(|pos| {
-                let spread = ring_taken
-                    .iter()
-                    .map(|held| g.wdist(*pos, *held))
-                    .min()
-                    .unwrap_or(i32::MAX);
-                (Reverse(spread), g.wdist(here, *pos), *pos)
-            });
+            .collect();
+        candidates.sort_by_key(|pos| {
+            let spread = ring_taken
+                .iter()
+                .map(|held| g.wdist(*pos, *held))
+                .min()
+                .unwrap_or(i32::MAX);
+            (Reverse(spread), g.wdist(here, *pos), *pos)
+        });
+        let best = candidates
+            .into_iter()
+            .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some());
         if let Some(pos) = best {
             posts.insert(uid, pos);
             ring_taken.insert(pos);
@@ -1372,25 +1400,8 @@ impl AdvancedAi {
             if unit.pos == goal || unit.moves_left <= 0.0 {
                 break;
             }
-            let mut avoid: BTreeSet<Pos> = g
-                .wdisk(city_pos, 1)
-                .into_iter()
-                .filter(|pos| *pos != goal)
-                .collect();
-            avoid.extend(
-                g.units
-                    .values()
-                    .filter(|other| {
-                        other.id != uid
-                            && g.rules.units[other.kind].domain.as_deref() != Some("air")
-                            && (other.owner != pid || g.rules.units[other.kind].class == "military")
-                    })
-                    .map(|other| other.pos),
-            );
-            avoid.remove(&unit.pos);
-            let Some(next) = g
-                .route_step_avoiding_tiles(uid, goal, &avoid)
-                .filter(|next| g.can_move(uid, *next))
+            let Some(next) =
+                siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next))
             else {
                 break;
             };
