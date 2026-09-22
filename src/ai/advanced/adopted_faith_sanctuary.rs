@@ -166,12 +166,10 @@ impl AdvancedAi {
         } else {
             self.adopted_faith_construction_threat(g, pid)?
         };
-        let missionary = Item::Unit {
-            unit: crate::name!("missionary"),
-        };
-        if g.players[pid].faith < 2.0 * g.item_cost_for(pid, &missionary) {
-            return None;
-        }
+        // Production establishes the source of both faith income and defenders.
+        // Waiting for a Missionary's purchase budget can let conversion or
+        // another specialty district close the last recruitment site first.
+        // The eventual unit purchase still checks the actual faith balance.
         let eligible = g
             .player_city_ids(pid)
             .into_iter()
