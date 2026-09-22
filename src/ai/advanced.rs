@@ -1871,7 +1871,8 @@ pub struct AdvancedAi {
     /// counter. The deployed Science recovery and the version-three idle-queue
     /// challenger consume it only after the second distinct idle turn.
     idle_production_streak: BTreeMap<u32, (u32, u32)>,
-    domination_siege_milestones: BTreeMap<u32, domination_siege_milestones::SiegeMilestone>,
+    domination_siege_milestones:
+        BTreeMap<(usize, Pos), domination_siege_milestones::SiegeMilestone>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,

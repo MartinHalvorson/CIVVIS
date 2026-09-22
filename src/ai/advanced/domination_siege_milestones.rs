@@ -5,7 +5,6 @@ use crate::game::Game;
 
 #[derive(Clone, Debug)]
 pub(super) struct SiegeMilestone {
-    owner: usize,
     greatest_quarter: i32,
     initial_maximum: i32,
     progressed_at: Option<u32>,
@@ -32,10 +31,13 @@ impl AdvancedAi {
             self.domination_siege_milestones.clear();
             return;
         }
-        self.domination_siege_milestones.retain(|id, milestone| {
-            g.cities
-                .get(id)
-                .is_some_and(|city| city.owner == milestone.owner && g.is_at_war(pid, city.owner))
+        // Mirror rebuilds renumber city IDs. Owner and position identify the
+        // same physical siege without transferring its credit to a reused ID.
+        self.domination_siege_milestones.retain(|(owner, pos), _| {
+            g.is_at_war(pid, *owner)
+                && g.cities
+                    .values()
+                    .any(|city| city.owner == *owner && city.pos == *pos)
         });
         let visible = g.player_vision_frame(pid);
         for city in g.cities.values().filter(|city| {
@@ -47,16 +49,15 @@ impl AdvancedAi {
             let maximum = 200 + g.city_max_wall_hp(city);
             let remaining = (city.hp + city.wall_hp).clamp(0, maximum);
             let quarter = (maximum - remaining) * 4 / maximum;
-            let milestone =
-                self.domination_siege_milestones
-                    .entry(city.id)
-                    .or_insert(SiegeMilestone {
-                        owner: city.owner,
-                        greatest_quarter: quarter,
-                        initial_maximum: maximum,
-                        progressed_at: None,
-                        observed_turn: g.turn,
-                    });
+            let milestone = self
+                .domination_siege_milestones
+                .entry((city.owner, city.pos))
+                .or_insert(SiegeMilestone {
+                    greatest_quarter: quarter,
+                    initial_maximum: maximum,
+                    progressed_at: None,
+                    observed_turn: g.turn,
+                });
             // Hold the scale fixed for this war. An upgrade to stronger
             // walls is not damage, and rebuilding cannot reuse old thresholds.
             let remaining = (city.hp + city.wall_hp).clamp(0, milestone.initial_maximum);
@@ -91,16 +92,17 @@ impl AdvancedAi {
             return false;
         }
         plan.target_city.is_some_and(|id| {
-            g.cities.get(&id).is_some_and(|city| city.owner == other)
-                && Self::domination_siege_present(g, pid, id)
+            let Some(city) = g.cities.get(&id).filter(|city| city.owner == other) else {
+                return false;
+            };
+            Self::domination_siege_present(g, pid, id)
                 && self
                     .domination_siege_milestones
-                    .get(&id)
+                    .get(&(city.owner, city.pos))
                     .is_some_and(|milestone| {
-                        milestone.owner == other
-                            && milestone
-                                .progressed_at
-                                .is_some_and(|turn| g.turn.saturating_sub(turn) < 12)
+                        milestone
+                            .progressed_at
+                            .is_some_and(|turn| g.turn.saturating_sub(turn) < 12)
                     })
         })
     }

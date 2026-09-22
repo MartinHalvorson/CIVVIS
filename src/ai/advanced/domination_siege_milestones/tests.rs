@@ -202,3 +202,18 @@ fn peace_clears_old_siege_credit_before_a_later_war() {
     ai.observe_campaign(&g, 0);
     assert!(!ai.domination_siege_is_progressing(&g, 0, 1, &plan));
 }
+
+#[test]
+fn mirror_city_renumbering_preserves_progress_at_the_same_owned_location() {
+    let (mut g, mut ai, mut plan, city, _) = fixture();
+    ai.observe_campaign(&g, 0);
+    g.clear_mirror_cities();
+    g.found_city_for(0, (8, 10), None);
+    g.found_city_for(1, (29, 10), None);
+    let rebuilt = g.found_city_for(1, (20, 10), None);
+    assert_ne!(rebuilt, city);
+    plan.target_city = Some(rebuilt);
+    damage(&mut g, &mut ai, rebuilt, 121, 240);
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+}
