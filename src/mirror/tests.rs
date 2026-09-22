@@ -59,6 +59,7 @@ fn plot(x: i32, y: i32, t: &str) -> Plot {
         f: None,
         r: None,
         o: -1,
+        oc: None,
         w: false,
         i: false,
         fw: None,
@@ -1793,6 +1794,7 @@ fn a_revealed_land_plot_becomes_land_and_can_hold_a_city() {
             f: None,
             r: None,
             o: 0,
+            oc: None,
             w: false,
             i: false,
             fw: Some(true),
@@ -5066,6 +5068,7 @@ fn corrections_are_measured_after_population_and_dedications_are_on_the_board() 
                 } else {
                     -1
                 },
+                oc: None,
                 w: false,
                 i: false,
                 fw: None,
@@ -5203,6 +5206,7 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
                 } else {
                     -1
                 },
+                oc: None,
                 w: false,
                 i: false,
                 fw: None,
@@ -12098,6 +12102,7 @@ fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
                     f: None,
                     r: None,
                     o: -1,
+                    oc: None,
                     w: false,
                     i: false,
                     fw: None,
@@ -12642,6 +12647,7 @@ fn open_grass_board(side: i32) -> Snapshot {
                     f: None,
                     r: None,
                     o: -1,
+                    oc: None,
                     w: false,
                     i: false,
                     fw: None,
@@ -12843,6 +12849,7 @@ fn a_rivals_districts_and_wonders_cross_with_the_plots() {
                 f: None,
                 r: None,
                 o: -1,
+                oc: None,
                 w: false,
                 i: false,
                 fw: None,
@@ -13174,6 +13181,7 @@ fn a_seated_but_cityless_minors_ground_is_still_blocked() {
                     } else {
                         -1
                     },
+                    oc: None,
                     w: false,
                     i: false,
                     fw: None,
@@ -14321,3 +14329,5 @@ fn requested_state_readers_keep_latest_valid_frame_and_its_tiles() {
     assert!(state_from_events(&path, Some(9)).is_none());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+mod plot_city_ownership;

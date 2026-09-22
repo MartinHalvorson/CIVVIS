@@ -158,6 +158,9 @@ pub struct Plot {
     /// Owning player, or -1 for nobody.
     #[serde(default = "minus_one")]
     pub o: i32,
+    /// Native owning city for our plots; absent in older or foreign exports.
+    #[serde(default)]
+    pub oc: Option<i64>,
     #[serde(default)]
     pub w: bool,
     #[serde(default)]
@@ -13041,15 +13044,27 @@ fn apply_territory(game: &mut crate::game::Game, snapshot: &Snapshot, state: &St
                 assign.push((pos, None));
                 continue;
             };
-            // The city that would work it: the owner's nearest. Civ 6 records only
-            // the owning PLAYER per plot, so which of their cities holds it is not in
-            // the export and the nearest is the only defensible reconstruction.
+            // Older recordings and foreign plots carry only the owning player.
+            // Keep their nearest-city fallback; our new plots name the actual
+            // purchasing city below.
             let nearest = centres.get(&seat).and_then(|list| {
                 list.iter()
                     .min_by_key(|(cid, centre)| (game.wdist(pos, *centre), *cid))
                     .map(|(cid, centre)| (*cid, game.wdist(pos, *centre)))
             });
-            let owner = nearest.map(|(cid, _)| cid);
+            // Our native city assignment can differ from the nearest city,
+            // especially after a tile swap. Never redirect an explicit but
+            // unresolved city ID to a different production queue.
+            let owner = if seat == 0 && plot.oc.is_some() {
+                state
+                    .cities
+                    .iter()
+                    .find(|city| Some(city.id) == plot.oc)
+                    .and_then(|city| game.city_at(crate::hex::offset_to_axial(city.x, city.y)))
+                    .filter(|cid| game.cities.get(cid).is_some_and(|city| city.owner == seat))
+            } else {
+                nearest.map(|(cid, _)| cid)
+            };
             if owner.is_some() {
                 // A plot on the outermost known-city ownership ring is
                 // ambiguous: the export names only a player, so it may instead
@@ -13079,7 +13094,11 @@ fn apply_territory(game: &mut crate::game::Game, snapshot: &Snapshot, state: &St
                     }
                 }
                 assign.push((pos, owner));
-            } else if seat != 0 {
+            } else if seat == 0 {
+                if plot.oc.is_some() {
+                    assign.push((pos, None));
+                }
+            } else {
                 if is_major(seat) {
                     unseen_major.insert(pos);
                 }
