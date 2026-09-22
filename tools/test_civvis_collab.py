@@ -65,6 +65,100 @@ def body(
 {validation_block(checked)}"""
 
 
+class ShipResumeTests(unittest.TestCase):
+    def run_ship(self, *, draft=False, remote_head="local-head", conflict=False,
+                 stale=False, gate_state=None):
+        branch = "agent/render-win-02/codex-47/resume-20260921T230000Z-abcd"
+        ready = pr(branch, body() + "\n## What changed\nPreserve ready CI.\n",
+                   draft=draft)
+        ready.update(state="OPEN", headRefOid=remote_head,
+                     mergeStateStatus="DIRTY" if conflict else "CLEAN")
+        merged = dict(ready, state="MERGED", isDraft=False,
+                      headRefOid="local-head", mergeCommit={"oid": "merged-head"})
+
+        def git_result(repo, *args, **kwargs):
+            if args[:1] == ("symbolic-ref",):
+                return branch
+            if args == ("rev-parse", "HEAD"):
+                return "local-head"
+            if args[:1] == ("rev-list",):
+                return str(collab.STALE_BASE_LIMIT if stale else 1)
+            return ""
+
+        def run_result(argv, **kwargs):
+            # The task contains file changes. Every other command is a
+            # successful fake; no GitHub calls, pushes or builds may escape.
+            code = int(argv[0] == "git" and "--quiet" in argv)
+            return subprocess.CompletedProcess(argv, code, stdout="", stderr="")
+
+        patches = {
+            "repo_root": mock.Mock(return_value=Path("/repo")),
+            "git": mock.Mock(side_effect=git_result),
+            "run": mock.Mock(side_effect=run_result),
+            "install_push_guard": mock.Mock(),
+            "fetch_main": mock.Mock(),
+            "current_pr": mock.Mock(
+                side_effect=[ready] * 4 + [merged] if gate_state == "pending" else None,
+                return_value=ready),
+            "merge_current_main": mock.Mock(return_value=False),
+            "wait_for_pr_head": mock.Mock(
+                side_effect=([ready] if gate_state else
+                             [ready, merged] if conflict or stale else [merged])),
+            "ref_contains": mock.Mock(return_value=False),
+            "gh_api_write": mock.Mock(return_value=None),
+            "required_check_state": mock.Mock(return_value=(gate_state, ["cargo-test"])),
+            "finish_ship": mock.Mock(return_value=0),
+        }
+        args = collab.build_parser().parse_args(["ship"])
+        with mock.patch.multiple(collab, **patches), \
+                mock.patch.object(collab.shutil, "which", return_value="gh"), \
+                mock.patch.object(collab.time, "sleep"):
+            if gate_state == "failed":
+                with self.assertRaisesRegex(collab.CommandError, "required checks failed"):
+                    collab.ship_task(args)
+            else:
+                self.assertEqual(collab.ship_task(args), 0)
+        if gate_state == "failed":
+            patches["finish_ship"].assert_not_called()
+        else:
+            patches["finish_ship"].assert_called_once()
+        return patches
+
+    def test_ready_same_head_resumes_without_merging_or_pushing(self):
+        calls = self.run_ship(gate_state="pending")
+        calls["merge_current_main"].assert_not_called()
+        calls["required_check_state"].assert_called_once()
+        self.assertFalse(any(c.args[1:2] == ("push",)
+                             for c in calls["git"].call_args_list))
+
+    def test_resumed_failed_required_check_still_blocks_shipping(self):
+        calls = self.run_ship(gate_state="failed")
+        calls["merge_current_main"].assert_not_called()
+        calls["required_check_state"].assert_called_once()
+
+    def test_draft_still_integrates_main_before_shipping(self):
+        calls = self.run_ship(draft=True)
+        calls["merge_current_main"].assert_called_once()
+        self.assertTrue(any(c.args[1:2] == ("push",)
+                            for c in calls["git"].call_args_list))
+
+    def test_unpushed_local_commit_still_integrates_and_pushes(self):
+        calls = self.run_ship(remote_head="older-remote-head")
+        calls["merge_current_main"].assert_called_once()
+        self.assertTrue(any(c.args[1:2] == ("push",)
+                            for c in calls["git"].call_args_list))
+
+    def test_resumed_real_conflict_still_returns_to_integration(self):
+        calls = self.run_ship(conflict=True)
+        calls["merge_current_main"].assert_called_once()
+        self.assertEqual(calls["wait_for_pr_head"].call_count, 2)
+
+    def test_resumed_stale_branch_still_uses_existing_update_path(self):
+        calls = self.run_ship(stale=True)
+        calls["gh_api_write"].assert_called_once()
+        calls["merge_current_main"].assert_called_once()
+
+
 class BranchTests(unittest.TestCase):
     def test_launcher_and_push_guard_branch_formats_stay_in_sync(self):
         self.assertEqual(collab.BRANCH_RE.pattern, push_guard.BRANCH_RE.pattern)
