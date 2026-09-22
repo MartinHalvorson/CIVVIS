@@ -25,10 +25,10 @@ before that export carries the index alone and reads `—` here.
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 1266.
+Attempts recorded: 1276.
 
 
-Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 651 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
+Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 659 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
 
 ## Which victories have been won, per difficulty
 
@@ -62,13 +62,13 @@ absent from this table have never been completed by anyone here.
 | victory | type | games | of ended |
 |---|---|---|---|
 | 0 | VICTORY_SCORE | 205 | 40% |
-| 3 | VICTORY_CULTURE | 105 | 20% |
+| 3 | VICTORY_CULTURE | 106 | 21% |
 | 5 | VICTORY_TECHNOLOGY | 90 | 17% |
 | 6 | VICTORY_DIPLOMATIC | 76 | 15% |
-| 4 | VICTORY_RELIGIOUS | 38 | 7% |
+| 4 | VICTORY_RELIGIOUS | 39 | 8% |
 | 2 | — | 1 | 0% |
 
-515 of 1266 attempts reached a terminal victory event, and 21 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
+517 of 1276 attempts reached a terminal victory event, and 21 more ended in our own elimination; the rest stalled, exited, or were stopped before one.
 
 ## How the harness ended games, per day (last 14 days)
 
@@ -99,7 +99,7 @@ they did not produce.
 | 2026-09-11 | 1 | 0 | 0 | 25 | 1 | 0 | 0 | 27 | 18 | 0 |
 | 2026-09-20 | 5 | 0 | 0 | 34 | 0 | 0 | 0 | 39 | 31 | 0 |
 | 2026-09-21 | 7 | 0 | 0 | 33 | 1 | 0 | 0 | 41 | 47 | 0 |
-| 2026-09-22 | 1 | 0 | 0 | 11 | 0 | 0 | 0 | 12 | 11 | 0 |
+| 2026-09-22 | 2 | 0 | 0 | 13 | 0 | 0 | 0 | 15 | 18 | 0 |
 
 ## Every attempt
 
@@ -134,16 +134,6 @@ ground.
 
 | run | difficulty | playing for | configured | outcome | turns | score | techs@150 (ours/rival) | launches | ended |
 |---|---|---|---|---|---|---|---|---|---|
-| `civvis-20260921T180336Z` | King | — | NO | killed | 120 | 444 | — | 0/4 | 2026-09-21T18:25:43Z |
-| `civvis-20260921T180336Z-cont1` | King | domination | yes | rival victory | 152 | 609 | 42/46 | 0/4 | 2026-09-21T18:34:15Z |
-| `civvis-20260921T183544Z` | King | — | NO | killed | 78 | 169 | — | 0/4 | 2026-09-21T18:47:18Z |
-| `civvis-20260921T183544Z-cont1` | King | domination | yes | rival victory | 202 | 643 | 40/56 | 0/4 | 2026-09-21T19:11:39Z |
-| `civvis-20260921T191318Z` | King | — | NO | killed | 230 | 682 | 39/43 | 0/4 | 2026-09-21T19:52:05Z |
-| `civvis-20260921T191318Z-cont1` | King | — | NO | killed | 230 | 684 | 58/70 | 0/4 | 2026-09-21T19:59:40Z |
-| `civvis-20260921T191318Z-cont2` | King | domination | yes | rival victory | 250 | 737 | 57/68 | 0/4 port t250 | 2026-09-21T20:06:32Z |
-| `civvis-20260921T200755Z` | King | domination | yes | rival victory | 194 | 579 | 38/48 | 0/4 | 2026-09-21T20:32:40Z |
-| `civvis-20260921T203333Z` | King | — | NO | killed | 189 | 615 | 39/48 | 0/4 | 2026-09-21T21:04:34Z |
-| `civvis-20260921T203333Z-cont1` | King | — | NO | killed | 208 | 656 | 50/60 | 0/4 | 2026-09-21T21:14:02Z |
 | `civvis-20260921T203333Z-cont2` | King | domination | yes | rival victory | 233 | 739 | 54/64 | 0/4 | 2026-09-21T21:25:28Z |
 | `civvis-20260921T212727Z` | King | domination | yes | rival victory | 122 | 412 | — | 0/4 | 2026-09-21T21:44:36Z |
 | `civvis-20260921T214546Z` | King | domination | yes | rival victory | 184 | 539 | 35/46 | 0/4 | 2026-09-21T22:17:09Z |
@@ -174,3 +164,13 @@ ground.
 | `civvis-20260922T061755Z` | King | domination | yes | rival victory | 155 | 650 | 42/47 | 0/4 | 2026-09-22T06:39:20Z |
 | `civvis-20260922T064037Z` | King | — | NO | killed | 112 | 312 | — | 0/4 | 2026-09-22T06:58:03Z |
 | `civvis-20260922T064037Z-cont1` | King | — | NO | killed | -1 | -1 | — | — | 2026-09-22T07:00:07Z |
+| `civvis-20260922T070259Z` | King | — | NO | killed | 136 | 413 | — | 0/4 | 2026-09-22T07:24:53Z |
+| `civvis-20260922T070259Z-cont1` | King | — | NO | killed | 136 | 413 | — | 0/4 | 2026-09-22T07:32:29Z |
+| `civvis-20260922T070259Z-cont2` | King | — | NO | killed | 136 | 412 | — | 0/4 | 2026-09-22T07:41:12Z |
+| `civvis-20260922T070259Z-cont3` | King | — | NO | killed | 136 | 409 | — | 0/4 | 2026-09-22T07:50:48Z |
+| `civvis-20260922T070259Z-cont4` | King | — | NO | killed | 141 | 419 | — | 0/4 | 2026-09-22T08:01:24Z |
+| `civvis-20260922T070259Z-cont5` | King | — | NO | killed | 123 | 352 | — | 0/4 | 2026-09-22T08:09:58Z |
+| `civvis-20260922T070259Z-cont6` | King | — | NO | killed | 123 | 347 | — | 0/4 | 2026-09-22T08:20:33Z |
+| `civvis-20260922T082146Z` | King | domination | yes | rival victory | 123 | 456 | — | 0/4 | 2026-09-22T08:36:11Z |
+| `civvis-20260922T083707Z` | King | — | NO | killed | 195 | 668 | 37/46 | 0/4 | 2026-09-22T09:02:03Z |
+| `civvis-20260922T083707Z-cont1` | King | domination | yes | rival victory | 235 | 848 | 56/60 | 0/4 | 2026-09-22T09:12:00Z |
