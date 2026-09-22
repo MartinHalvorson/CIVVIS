@@ -67,7 +67,8 @@ def body(
 
 class ShipResumeTests(unittest.TestCase):
     def run_ship(self, *, draft=False, remote_head="local-head", conflict=False,
-                 stale=False, gate_state=None):
+                 stale=False, gate_state=None, rollups=None, expected_error=None,
+                 rerun_ok=False, timeout_seconds=3600):
         branch = "agent/render-win-02/codex-47/resume-20260921T230000Z-abcd"
         ready = pr(branch, body() + "\n## What changed\nPreserve ready CI.\n",
                    draft=draft)
@@ -91,6 +92,10 @@ class ShipResumeTests(unittest.TestCase):
             code = int(argv[0] == "git" and "--quiet" in argv)
             return subprocess.CompletedProcess(argv, code, stdout="", stderr="")
 
+        clock = [0.0]
+        observed = ([ready] * 2 + [dict(ready, statusCheckRollup=rows)
+                    for rows in rollups for _ in range(2)] + [merged]
+                    if rollups is not None else None)
         patches = {
             "repo_root": mock.Mock(return_value=Path("/repo")),
             "git": mock.Mock(side_effect=git_result),
@@ -98,30 +103,44 @@ class ShipResumeTests(unittest.TestCase):
             "install_push_guard": mock.Mock(),
             "fetch_main": mock.Mock(),
             "current_pr": mock.Mock(
-                side_effect=[ready] * 4 + [merged] if gate_state == "pending" else None,
+                side_effect=(observed if rollups is not None else
+                             [ready] * 4 + [merged] if gate_state == "pending" else None),
                 return_value=ready),
             "merge_current_main": mock.Mock(return_value=False),
             "wait_for_pr_head": mock.Mock(
-                side_effect=([ready] if gate_state else
+                side_effect=([ready] if gate_state or rollups is not None else
                              [ready, merged] if conflict or stale else [merged])),
             "ref_contains": mock.Mock(return_value=False),
             "gh_api_write": mock.Mock(return_value=None),
-            "required_check_state": mock.Mock(return_value=(gate_state, ["cargo-test"])),
+            "rerun_required_check": mock.Mock(return_value=rerun_ok),
+            "merge_pr_or_observe_auto_merge": mock.Mock(return_value="merged-head"),
             "finish_ship": mock.Mock(return_value=0),
         }
-        args = collab.build_parser().parse_args(["ship"])
+        if gate_state:
+            patches["required_check_state"] = mock.Mock(
+                return_value=(gate_state, ["cargo-test"]))
+        args = collab.build_parser().parse_args(
+            ["ship", "--poll-seconds", "20", "--timeout-seconds", str(timeout_seconds)])
+        if gate_state == "failed":
+            expected_error = "required checks failed"
+
+        def advance(seconds):
+            clock[0] += seconds
+
         with mock.patch.multiple(collab, **patches), \
                 mock.patch.object(collab.shutil, "which", return_value="gh"), \
-                mock.patch.object(collab.time, "sleep"):
-            if gate_state == "failed":
-                with self.assertRaisesRegex(collab.CommandError, "required checks failed"):
+                mock.patch.object(collab.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(collab.time, "sleep", side_effect=advance):
+            if expected_error:
+                with self.assertRaisesRegex(collab.CommandError, expected_error):
                     collab.ship_task(args)
             else:
                 self.assertEqual(collab.ship_task(args), 0)
-        if gate_state == "failed":
+        if expected_error:
             patches["finish_ship"].assert_not_called()
         else:
             patches["finish_ship"].assert_called_once()
+        patches["elapsed"] = clock[0]
         return patches
 
     def test_ready_same_head_resumes_without_merging_or_pushing(self):
@@ -157,6 +176,70 @@ class ShipResumeTests(unittest.TestCase):
         calls = self.run_ship(stale=True)
         calls["gh_api_write"].assert_called_once()
         calls["merge_current_main"].assert_called_once()
+
+
+    @staticmethod
+    def policy_rows(conclusion="CANCELLED", *, replacement=None):
+        rows = [{"name": name, "status": "COMPLETED", "conclusion": "SUCCESS",
+                 "startedAt": "2026-09-22T01:18:13Z"}
+                for name in collab.REQUIRED_CHECKS if name != "collaboration-policy"]
+        rows.append({"name": "collaboration-policy", "status": "COMPLETED",
+                     "conclusion": conclusion, "startedAt": "2026-09-22T01:18:13Z"})
+        if replacement:
+            rows.append({"name": "collaboration-policy",
+                         "status": "IN_PROGRESS" if replacement == "pending" else "COMPLETED",
+                         "conclusion": "" if replacement == "pending" else replacement,
+                         "startedAt": "2026-09-22T01:18:25Z"})
+        return rows
+
+    def test_replacement_appears_after_cancelled_check_without_retry(self):
+        calls = self.run_ship(rollups=[self.policy_rows(),
+            self.policy_rows(replacement="pending"), self.policy_rows(replacement="SUCCESS")])
+        calls["rerun_required_check"].assert_not_called()
+        calls["merge_current_main"].assert_not_called()
+        self.assertEqual(calls["elapsed"], 40)
+
+    def test_missing_replacement_without_retry_url_stops_after_grace(self):
+        calls = self.run_ship(rollups=[self.policy_rows()] * 4,
+            expected_error="required checks cannot reach a verdict")
+        calls["rerun_required_check"].assert_called_once()
+        self.assertEqual(calls["elapsed"], 60)
+
+    def test_retry_dispatch_gets_time_to_publish_before_retry_limit(self):
+        calls = self.run_ship(rollups=[self.policy_rows()] * 10, rerun_ok=True,
+            expected_error="re-run 2x already")
+        self.assertEqual(calls["rerun_required_check"].call_count, 2)
+        self.assertEqual(calls["elapsed"], 180)
+
+    def test_retry_recovers_without_waiting_for_other_pending_workflow(self):
+        rows = self.policy_rows()
+        cargo = next(row for row in rows if row["name"] == "cargo-test")
+        cargo.update(status="IN_PROGRESS", conclusion="")
+        calls = self.run_ship(rollups=[rows] * 4 + [
+            self.policy_rows(replacement="pending"), self.policy_rows(replacement="SUCCESS")],
+            rerun_ok=True)
+        calls["rerun_required_check"].assert_called_once()
+        calls["merge_pr_or_observe_auto_merge"].assert_called_once()
+        self.assertEqual(calls["elapsed"], 100)
+
+    def test_real_failure_beside_cancelled_check_fails_without_grace(self):
+        rows = self.policy_rows()
+        next(row for row in rows if row["name"] == "cargo-test")["conclusion"] = "FAILURE"
+        calls = self.run_ship(rollups=[rows], expected_error="required checks failed: cargo-test")
+        calls["rerun_required_check"].assert_not_called()
+        self.assertEqual(calls["elapsed"], 0)
+
+    def test_replacement_failure_is_not_retried(self):
+        calls = self.run_ship(rollups=[self.policy_rows(), self.policy_rows(replacement="FAILURE")],
+            expected_error="required checks failed: collaboration-policy")
+        calls["rerun_required_check"].assert_not_called()
+        self.assertEqual(calls["elapsed"], 20)
+
+    def test_observation_timeout_does_not_dispatch_a_retry(self):
+        calls = self.run_ship(rollups=[self.policy_rows()] * 2, timeout_seconds=10,
+            expected_error="timed out")
+        calls["rerun_required_check"].assert_not_called()
+        self.assertEqual(calls["elapsed"], 20)
 
 
 class BranchTests(unittest.TestCase):
