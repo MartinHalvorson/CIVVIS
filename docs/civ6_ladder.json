@@ -241663,6 +241663,3498 @@
       "victory_type": null,
       "withheld": null,
       "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 101.2,
+      "boosts": {
+        "at_t100": {
+          "civics_adopted": 17,
+          "civics_inspired": 9,
+          "civics_inspired_share": 0.5294,
+          "techs_boosted": 14,
+          "techs_boosted_share": 0.5,
+          "techs_researched": 28
+        },
+        "at_t150": {
+          "civics_adopted": 23,
+          "civics_inspired": 10,
+          "civics_inspired_share": 0.4348,
+          "techs_boosted": 24,
+          "techs_boosted_share": 0.5854,
+          "techs_researched": 41
+        },
+        "civics_adopted": 35,
+        "civics_inspired": 15,
+        "civics_inspired_share": 0.4286,
+        "techs_boosted": 32,
+        "techs_boosted_share": 0.5161,
+        "techs_researched": 62
+      },
+      "buildings": null,
+      "cities_at_60": 4,
+      "city_two_turn": 13,
+      "civvis_unit_share": 1.0,
+      "combat": {
+        "cities_lost": 0,
+        "cities_taken": 1,
+        "damage_dealt": 8624,
+        "damage_taken": 9583,
+        "deaths_after_unexecuted_move": 1,
+        "deaths_wounded_at_turn_start": 8,
+        "kills": 62,
+        "kills_per_loss": 1.48,
+        "losses": 42,
+        "lost_when_salvageable": 7,
+        "military_removal_context": {
+          "hostile_within_2": 6,
+          "no_visible_threat": 64
+        },
+        "military_units_gone": 70,
+        "move_fallback": 0,
+        "move_noop": 466
+      },
+      "configured": true,
+      "decider_binaries": [
+        {
+          "binary_revision": "9449cbd40490adda0b185c58f521ea104e47c430",
+          "binary_sha256": "86ea993fccce9cf0740194fd682917358208cc3886a2e51e37c375329a7f5e4a",
+          "binary_source": "binary-checkout",
+          "revision": "9449cbd40490adda0b185c58f521ea104e47c430",
+          "source": "binary-checkout"
+        }
+      ],
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": 11,
+      "domestic_tourists_at_150": 22,
+      "forced": [
+        "army-target-weighs-enemy",
+        "campus-through-expansion",
+        "city-campaign-2",
+        "conversion-majority-alarm-2",
+        "culture-building-debt",
+        "denial-outranks-expansion",
+        "domination-lane-hands-over",
+        "domination-siege-research",
+        "early-conquest-opening",
+        "expansion-scales-with-difficulty",
+        "garrison-under-fire",
+        "peacetime-deterrence",
+        "ranged-hp-reserve",
+        "rapid-city-expansion-2",
+        "science-expansion-phase",
+        "settler-walk-deadline",
+        "siege-commitment",
+        "siege-train",
+        "war-reinforcement"
+      ],
+      "game_id": "civvis-20260922T151652Z",
+      "genome": {
+        "civ": null,
+        "lane": null,
+        "source": "AdvancedAi::new",
+        "strategy": "stock",
+        "strength_bound": null
+      },
+      "genome_treatments": {
+        "forced": [
+          "army-target-weighs-enemy",
+          "conversion-majority-alarm-2",
+          "culture-building-debt",
+          "denial-outranks-expansion",
+          "domination-lane-hands-over",
+          "domination-siege-research",
+          "early-conquest-opening",
+          "garrison-under-fire",
+          "peacetime-deterrence",
+          "ranged-hp-reserve",
+          "siege-commitment",
+          "siege-train"
+        ],
+        "ledger_withheld": [
+          "blind-objective-units",
+          "relief-targets-the-siege",
+          "war-economy",
+          "bounded-recovery",
+          "recon-replacement",
+          "naval-recon",
+          "camp-party",
+          "settler-guard-holds",
+          "housing-research",
+          "district-coverage",
+          "one-launch-pad",
+          "settler-target-hysteresis",
+          "relief-column-marches",
+          "threatened-city-reserve"
+        ],
+        "treatments": [
+          "war-reinforcement",
+          "come-ashore",
+          "recorded-tactical-step",
+          "whole-turn-backtrack-guard",
+          "blind-objective-strength",
+          "army-target-weighs-enemy",
+          "peacetime-deterrence",
+          "siege-commitment",
+          "garrison-under-fire",
+          "strike-opening",
+          "barbarian-scouts-are-scouts",
+          "barbarian-bargain",
+          "barbarian-ranged-answer",
+          "religion-sues-peace",
+          "escort-unstick",
+          "buildings-before-projects",
+          "stranded-settler-discount",
+          "wide-map-capacity",
+          "amenity-project-preemption",
+          "amenity-district-path",
+          "slot-kind-tiebreak",
+          "loyalty-rate-alarm",
+          "culture-building-debt",
+          "live-trader-route",
+          "live-religious-purchase",
+          "live-motion-turn-accounting",
+          "solvent-faith-army",
+          "live-formationless-settler-shadow",
+          "live-wonder-race",
+          "expansion-before-prophet",
+          "no-elective-war",
+          "fog-land-capacity",
+          "counter-in-lane",
+          "era-paced-expansion",
+          "tally-culture",
+          "frontier-loyalty",
+          "tally-great-people",
+          "deny-while-targeted",
+          "stock-denial-lead-time",
+          "projected-stock-denial",
+          "parallel-settlers",
+          "host-settler-pop",
+          "explore-dead-targets",
+          "explore-commit",
+          "bank-envoys",
+          "land-grab",
+          "spy-mission-patience",
+          "expansion-pantheon",
+          "expansion-hall",
+          "opening-settler-waits",
+          "escort-patience-runs-out",
+          "barbarian-settler-capture",
+          "live-barbarian-scouts-capture",
+          "live-settler-capture-lessons",
+          "live-move-refusal-break",
+          "guard-breaks-the-pin",
+          "builder-barbarian-safety",
+          "apostle-promotion-by-role",
+          "founder-temple",
+          "religious-defence-scales",
+          "religious-units-heal-first",
+          "early-contact-window",
+          "settle-sooner",
+          "research-tier-premium",
+          "one-shot-recovery",
+          "lane-great-people",
+          "lane-policy-deck",
+          "lane-culture-spending",
+          "lane-space-race",
+          "competition-victory-points",
+          "defensible-sites",
+          "elective-war-in-reach",
+          "recovery-reads-the-war",
+          "domination-city-count",
+          "unchosen-war-keeps-the-lane",
+          "elective-war-yields-to-a-lane",
+          "rival-suzerainty-alarm",
+          "congress-counter-leader",
+          "culture-lane-forecast",
+          "culture-cold-war-window",
+          "diplomatic-lane-forecast",
+          "coordinated-finish",
+          "pantheon-board",
+          "maintenance-aware-deck",
+          "unit-cost-efficiency",
+          "settlement-gap-target",
+          "price-the-suzerainty",
+          "engine-faith-price",
+          "promote-when-wounded",
+          "district-planning",
+          "wonder-score-tally",
+          "religious-veto-defence",
+          "deals-for-our-gain",
+          "deals-at-the-ceiling",
+          "no-free-passage",
+          "one-war-at-a-time",
+          "pass-picket",
+          "campaign-pillage",
+          "science-victory-drive",
+          "expansion-schedule",
+          "growth-to-settle",
+          "order-retry",
+          "opening-warrior-recon-2",
+          "eureka-chasing-production",
+          "campus-adjacency-threshold-2",
+          "district-coverage-2",
+          "guru-heals-the-corps-2",
+          "power-the-laboratory-2",
+          "settler-guard-holds-2",
+          "settler-target-hysteresis-2",
+          "builder-supply-floor",
+          "first-builder-reserve-2",
+          "wonder-adjacent-sites-2",
+          "contested-land-first",
+          "native-emergency-purchase",
+          "quest-production",
+          "quest-trade-route",
+          "science-building-first",
+          "boost-first-research",
+          "chokepoint-siting",
+          "chokepoint-garrison",
+          "government-capacity-fallback",
+          "government-ladder-2",
+          "war-needs-a-treasury",
+          "peace-when-the-war-does-not-pay",
+          "city-target-meets-the-map",
+          "moksha-defends-the-faithless",
+          "treasury-at-work-2",
+          "fire-plan",
+          "close-as-a-body",
+          "screen-the-shooters",
+          "defend-where-you-stand",
+          "coastal-city-sites-2",
+          "gold-income-floor",
+          "capture-go-or-stand-down-2",
+          "commitment-patience",
+          "island-exploration",
+          "settler-never-idles",
+          "settler-backlog-brake-2",
+          "connect-the-luxury",
+          "walls-after-districts",
+          "science-expansion-phase",
+          "science-opening-band",
+          "capital-settler-after-completion",
+          "settler-site-gate",
+          "settler-target-floor",
+          "spaceport-surplus-veto",
+          "air-surge-2",
+          "campus-through-expansion",
+          "trade-route-network",
+          "industrial-chain-debt",
+          "rapid-city-expansion-2",
+          "naval-recon-3",
+          "never-an-empty-queue-3",
+          "coalition-before-war-3",
+          "settler-walk-deadline",
+          "chase-every-boost",
+          "early-project-restraint-2",
+          "battle-planner-2",
+          "siege-train",
+          "eureka-chasing-builder-2",
+          "conversion-majority-alarm-2",
+          "objective-board",
+          "war-policy-via-board",
+          "swap-rotation-2",
+          "city-campaign-2",
+          "strike-reach",
+          "safest-stand",
+          "missionary-last-charge-explores-2",
+          "standing-still-is-a-risk",
+          "research-building-catchup",
+          "builder-workforce-recovery-2",
+          "expansion-best-idle-city-2",
+          "doomed-blow-veto-2",
+          "scout-first-opening",
+          "early-conquest-opening",
+          "expansion-scales-with-difficulty",
+          "research-alliance-first",
+          "denial-outranks-expansion",
+          "ranged-hp-reserve",
+          "domination-lane-hands-over",
+          "domination-siege-research"
+        ]
+      },
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": -266,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": {
+        "ActionTransitions": false,
+        "CampusSpecialist": false,
+        "CancelQueuedPaths": true,
+        "CapMovesToReach": true,
+        "CombatFrames": 0,
+        "CounterResolutions": true,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "IsolatedActionProbes": false,
+        "MoveFallback": true,
+        "OrderQueue": true,
+        "PeaceDeterrence": true,
+        "PeacetimeWarFloors": false,
+        "ProbeCitizens": false,
+        "ReplanFrames": 2,
+        "SettlerEscortCapSync": true,
+        "StrikePreview": true,
+        "TileDelta": true
+      },
+      "modes": [],
+      "partial": null,
+      "race": {
+        "boost_audit": {
+          "civics": [
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CODE_OF_LAWS",
+              "observed_turn": 9,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CRAFTSMANSHIP",
+              "observed_turn": 19,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_FOREIGN_TRADE",
+              "observed_turn": 23,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_EARLY_EMPIRE",
+              "observed_turn": 27,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_STATE_WORKFORCE",
+              "observed_turn": 33,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_POLITICAL_PHILOSOPHY",
+              "observed_turn": 38,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_MYSTICISM",
+              "observed_turn": 40,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DRAMA_POETRY",
+              "observed_turn": 48,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_GAMES_RECREATION",
+              "observed_turn": 53,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_THEOLOGY",
+              "observed_turn": 59,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_MILITARY_TRADITION",
+              "observed_turn": 61,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MILITARY_TRAINING",
+              "observed_turn": 66,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DEFENSIVE_TACTICS",
+              "observed_turn": 72,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_FEUDALISM",
+              "observed_turn": 80,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_MERCENARIES",
+              "observed_turn": 87,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_RECORDED_HISTORY",
+              "observed_turn": 89,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CIVIL_SERVICE",
+              "observed_turn": 97,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DIVINE_RIGHT",
+              "observed_turn": 105,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MEDIEVAL_FAIRES",
+              "observed_turn": 114,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_GUILDS",
+              "observed_turn": 123,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DIPLOMATIC_SERVICE",
+              "observed_turn": 134,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_REFORMED_CHURCH",
+              "observed_turn": 139,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_EXPLORATION",
+              "observed_turn": 146,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_HUMANISM",
+              "observed_turn": 154,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MERCANTILISM",
+              "observed_turn": 163,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_THE_ENLIGHTENMENT",
+              "observed_turn": 166,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_COLONIALISM",
+              "observed_turn": 168,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_NATURAL_HISTORY",
+              "observed_turn": 179,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_CIVIL_ENGINEERING",
+              "observed_turn": 186,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_NATIONALISM",
+              "observed_turn": 194,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_NAVAL_TRADITION",
+              "observed_turn": 196,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_OPERA_BALLET",
+              "observed_turn": 203,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_SCORCHED_EARTH",
+              "observed_turn": 208,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_URBANIZATION",
+              "observed_turn": 213,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CONSERVATION",
+              "observed_turn": 222,
+              "present_at_first_frame": false
+            }
+          ],
+          "techs": [
+            {
+              "boost_observed": false,
+              "node": "TECH_MINING",
+              "observed_turn": 6,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ANIMAL_HUSBANDRY",
+              "observed_turn": 10,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_POTTERY",
+              "observed_turn": 14,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_WRITING",
+              "observed_turn": 18,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SAILING",
+              "observed_turn": 24,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_ARCHERY",
+              "observed_turn": 28,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_MASONRY",
+              "observed_turn": 31,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_THE_WHEEL",
+              "observed_turn": 36,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_BRONZE_WORKING",
+              "observed_turn": 38,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_IRON_WORKING",
+              "observed_turn": 45,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_ENGINEERING",
+              "observed_turn": 50,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_MACHINERY",
+              "observed_turn": 58,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_CURRENCY",
+              "observed_turn": 61,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_IRRIGATION",
+              "observed_turn": 62,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_HORSEBACK_RIDING",
+              "observed_turn": 63,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ASTROLOGY",
+              "observed_turn": 64,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_MATHEMATICS",
+              "observed_turn": 64,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_APPRENTICESHIP",
+              "observed_turn": 68,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_EDUCATION",
+              "observed_turn": 73,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SHIPBUILDING",
+              "observed_turn": 76,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_CELESTIAL_NAVIGATION",
+              "observed_turn": 77,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BUTTRESS",
+              "observed_turn": 81,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CARTOGRAPHY",
+              "observed_turn": 91,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CONSTRUCTION",
+              "observed_turn": 92,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_MILITARY_ENGINEERING",
+              "observed_turn": 93,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_STIRRUPS",
+              "observed_turn": 94,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_GUNPOWDER",
+              "observed_turn": 98,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MILITARY_TACTICS",
+              "observed_turn": 99,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_METAL_CASTING",
+              "observed_turn": 104,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BALLISTICS",
+              "observed_turn": 113,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_CASTLES",
+              "observed_turn": 114,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_PRINTING",
+              "observed_turn": 117,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_SIEGE_TACTICS",
+              "observed_turn": 120,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MILITARY_SCIENCE",
+              "observed_turn": 128,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_SQUARE_RIGGING",
+              "observed_turn": 130,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_RIFLING",
+              "observed_turn": 134,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_STEEL",
+              "observed_turn": 143,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_MASS_PRODUCTION",
+              "observed_turn": 145,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_INDUSTRIALIZATION",
+              "observed_turn": 146,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_BANKING",
+              "observed_turn": 147,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_ASTRONOMY",
+              "observed_turn": 149,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SCIENTIFIC_THEORY",
+              "observed_turn": 152,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_STEAM_POWER",
+              "observed_turn": 157,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_FLIGHT",
+              "observed_turn": 162,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_REFINING",
+              "observed_turn": 165,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_COMBUSTION",
+              "observed_turn": 170,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_RADIO",
+              "observed_turn": 172,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ADVANCED_FLIGHT",
+              "observed_turn": 178,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_ECONOMICS",
+              "observed_turn": 180,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_REPLACEABLE_PARTS",
+              "observed_turn": 182,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ADVANCED_BALLISTICS",
+              "observed_turn": 187,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SANITATION",
+              "observed_turn": 190,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CHEMISTRY",
+              "observed_turn": 194,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_ROCKETRY",
+              "observed_turn": 196,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_GUIDANCE_SYSTEMS",
+              "observed_turn": 202,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_PLASTICS",
+              "observed_turn": 206,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_SYNTHETIC_MATERIALS",
+              "observed_turn": 207,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_COMPOSITES",
+              "observed_turn": 210,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_COMBINED_ARMS",
+              "observed_turn": 211,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_NUCLEAR_FISSION",
+              "observed_turn": 214,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_ELECTRICITY",
+              "observed_turn": 215,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_LASERS",
+              "observed_turn": 219,
+              "present_at_first_frame": false
+            }
+          ]
+        },
+        "checkpoints": {
+          "100": {
+            "campuses": 3,
+            "cities": 6,
+            "culture": 17.6016,
+            "gold": 29,
+            "gold_per_turn": -1.39453,
+            "libraries": 2,
+            "military": 420,
+            "operational_spaceports": 0,
+            "production": 83.2031,
+            "research": "TECH_METAL_CASTING",
+            "science": 53.9531,
+            "science_projects": [],
+            "science_victory_points": 0,
+            "science_victory_points_per_turn": 0,
+            "techs": 28
+          },
+          "150": {
+            "campuses": 5,
+            "cities": 10,
+            "culture": 28.3984,
+            "gold": 91,
+            "gold_per_turn": 1.20703,
+            "libraries": 5,
+            "military": 733,
+            "operational_spaceports": 0,
+            "production": 218.91,
+            "research": "TECH_SCIENTIFIC_THEORY",
+            "science": 103.086,
+            "science_projects": [],
+            "science_victory_points": 0,
+            "science_victory_points_per_turn": 0,
+            "techs": 41
+          },
+          "180": {
+            "campuses": 6,
+            "cities": 10,
+            "culture": 39.4766,
+            "gold": 119,
+            "gold_per_turn": 23.1055,
+            "libraries": 5,
+            "military": 696,
+            "operational_spaceports": 0,
+            "production": 367.906,
+            "research": null,
+            "science": 129.605,
+            "science_projects": [],
+            "science_victory_points": 0,
+            "science_victory_points_per_turn": 0,
+            "techs": 49
+          },
+          "200": {
+            "campuses": 6,
+            "cities": 11,
+            "culture": 45.9219,
+            "gold": 214,
+            "gold_per_turn": 33.0977,
+            "libraries": 6,
+            "military": 1056,
+            "operational_spaceports": 0,
+            "production": 389.707,
+            "research": "TECH_GUIDANCE_SYSTEMS",
+            "science": 138.609,
+            "science_projects": [],
+            "science_victory_points": 0,
+            "science_victory_points_per_turn": 0,
+            "techs": 54
+          },
+          "30": {
+            "campuses": 0,
+            "cities": 2,
+            "culture": 5.28125,
+            "gold": 57,
+            "gold_per_turn": 2.90234,
+            "libraries": 0,
+            "military": 157,
+            "operational_spaceports": 0,
+            "production": 17.4023,
+            "research": "TECH_MASONRY",
+            "science": 5.80078,
+            "science_projects": [],
+            "science_victory_points": 0,
+            "science_victory_points_per_turn": 0,
+            "techs": 6
+          },
+          "60": {
+            "campuses": 2,
+            "cities": 4,
+            "culture": 9.79297,
+            "gold": 119,
+            "gold_per_turn": 8,
+            "libraries": 1,
+            "military": 207,
+            "operational_spaceports": 0,
+            "production": 32,
+            "research": "TECH_CURRENCY",
+            "science": 16,
+            "science_projects": [],
+            "science_victory_points": 0,
+            "science_victory_points_per_turn": 0,
+            "techs": 12
+          }
+        },
+        "cities": {
+          "131073": {
+            "campus_observed_turn": 50,
+            "first_observed_turn": 13,
+            "library_observed_turn": 103
+          },
+          "196610": {
+            "campus_observed_turn": 65,
+            "first_observed_turn": 31,
+            "library_observed_turn": 72
+          },
+          "262147": {
+            "first_observed_turn": 52
+          },
+          "327684": {
+            "campus_observed_turn": 124,
+            "first_observed_turn": 69,
+            "library_observed_turn": 128
+          },
+          "393221": {
+            "first_observed_turn": 72
+          },
+          "458758": {
+            "campus_observed_turn": 142,
+            "first_observed_turn": 111,
+            "library_observed_turn": 148
+          },
+          "524295": {
+            "campus_observed_turn": 162,
+            "first_observed_turn": 122,
+            "library_observed_turn": 187
+          },
+          "589832": {
+            "campus_observed_turn": 192,
+            "first_observed_turn": 141,
+            "library_observed_turn": 203
+          },
+          "65536": {
+            "campus_observed_turn": 34,
+            "first_observed_turn": 1,
+            "library_observed_turn": 43,
+            "spaceport_observed_turn": 218
+          },
+          "655369": {
+            "first_observed_turn": 147
+          },
+          "720906": {
+            "first_observed_turn": 188
+          },
+          "786443": {
+            "campus_observed_turn": 203,
+            "first_observed_turn": 203,
+            "library_observed_turn": 203
+          }
+        },
+        "economy_observed_turns": 222,
+        "empty_treasury_deficit_turns": 0,
+        "first_turn": 1,
+        "idle_city_turns": 0,
+        "last_turn": 222,
+        "milestones": {
+          "campus": {
+            "observed_turn": 34,
+            "present_at_first_frame": false
+          },
+          "chemistry": {
+            "observed_turn": 194,
+            "present_at_first_frame": false
+          },
+          "education": {
+            "observed_turn": 73,
+            "present_at_first_frame": false
+          },
+          "industrialization": {
+            "observed_turn": 146,
+            "present_at_first_frame": false
+          },
+          "library": {
+            "observed_turn": 43,
+            "present_at_first_frame": false
+          },
+          "rocketry": {
+            "observed_turn": 196,
+            "present_at_first_frame": false
+          },
+          "second_city": {
+            "observed_turn": 13,
+            "present_at_first_frame": false
+          },
+          "spaceport": {
+            "observed_turn": 218,
+            "present_at_first_frame": false
+          },
+          "writing": {
+            "observed_turn": 18,
+            "present_at_first_frame": false
+          }
+        },
+        "missing_turns": 0,
+        "observed_turns": 222
+      },
+      "reason": "stopped",
+      "reported_pct": 80.7,
+      "revisions": [
+        "9449cbd40490adda0b185c58f521ea104e47c430"
+      ],
+      "rival_best": 1193,
+      "rival_culture_at_100": 7.41,
+      "rival_culture_at_150": 12.12,
+      "rival_techs_at_100": 31,
+      "rival_techs_at_150": 45,
+      "ruleset": "RULESET_EXPANSION_2",
+      "score": 927,
+      "seat": {
+        "action_transitions": false,
+        "city_states": 6,
+        "civ": "CIVILIZATION_GRAN_COLOMBIA",
+        "ctx": "agent",
+        "difficulty": "DIFFICULTY_KING",
+        "is_human": true,
+        "isolated_action_probes": false,
+        "kind": "seat",
+        "leader": "LEADER_SIMON_BOLIVAR",
+        "local_player": 0,
+        "map": "Pangaea.lua",
+        "max_turns": 250,
+        "modes": [],
+        "moves_at_turn_start": true,
+        "order_queue": true,
+        "players": 4,
+        "replan_frames": true,
+        "ruleset": "RULESET_EXPANSION_2",
+        "run": "civvis-20260922T151652Z",
+        "settler_escort_sync": true,
+        "setup": "(absent)",
+        "size": "MAPSIZE_TINY",
+        "speed": "GAMESPEED_ONLINE",
+        "t": 1790095398,
+        "tile_delta": true,
+        "utc": "2026-09-22T16:43:24.347Z",
+        "victories": {
+          "conquest": true,
+          "culture": true,
+          "diplomatic": true,
+          "religious": true,
+          "score": true,
+          "technology": true
+        },
+        "victory_types": [
+          {
+            "index": 0,
+            "type": "VICTORY_SCORE"
+          },
+          {
+            "index": 1,
+            "type": "VICTORY_DEFAULT"
+          },
+          {
+            "index": 2,
+            "type": "VICTORY_CONQUEST"
+          },
+          {
+            "index": 3,
+            "type": "VICTORY_CULTURE"
+          },
+          {
+            "index": 4,
+            "type": "VICTORY_RELIGIOUS"
+          },
+          {
+            "index": 5,
+            "type": "VICTORY_TECHNOLOGY"
+          },
+          {
+            "index": 6,
+            "type": "VICTORY_DIPLOMATIC"
+          }
+        ]
+      },
+      "seat_autonomy": {
+        "civvis_unit_share": 1.0,
+        "engine_explored": 0,
+        "explore_guarded": 0,
+        "unit_orders": 5241,
+        "unit_orders_applied": 4816
+      },
+      "seed_probe": false,
+      "seed_request": null,
+      "spaceport_turn": 218,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T151652Z",
+      "techs_at_100": 28,
+      "techs_at_150": 41,
+      "turns": 222,
+      "utc": "2026-09-22T17:19:56Z",
+      "victory": 6,
+      "victory_target": "domination",
+      "victory_type": "VICTORY_DIPLOMATIC",
+      "withheld": [],
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 100.0,
+      "boosts": {
+        "at_t100": {
+          "civics_adopted": 21,
+          "civics_inspired": 0,
+          "civics_inspired_share": 0.0,
+          "techs_boosted": 0,
+          "techs_boosted_share": 0.0,
+          "techs_researched": 36
+        },
+        "at_t150": null,
+        "civics_adopted": 22,
+        "civics_inspired": 0,
+        "civics_inspired_share": 0.0,
+        "techs_boosted": 2,
+        "techs_boosted_share": 0.0526,
+        "techs_researched": 38
+      },
+      "buildings": null,
+      "cities_at_60": null,
+      "city_two_turn": null,
+      "civvis_unit_share": 1.0,
+      "combat": {
+        "cities_lost": 0,
+        "cities_taken": 0,
+        "damage_dealt": 349,
+        "damage_taken": 472,
+        "deaths_after_unexecuted_move": 0,
+        "deaths_wounded_at_turn_start": 1,
+        "kills": 4,
+        "kills_per_loss": 2.0,
+        "losses": 2,
+        "lost_when_salvageable": 0,
+        "military_removal_context": {
+          "full_hp_treasury_empty": 2,
+          "no_visible_threat": 5
+        },
+        "military_units_gone": 7,
+        "move_fallback": 0,
+        "move_noop": 11
+      },
+      "configured": true,
+      "decider_binaries": [
+        {
+          "binary_revision": "ed0415a43c3f3e9972f872634ac72ca1956d2301",
+          "binary_sha256": "29c9e4ff841f078094d8204f723943363c4afe33a56361dbb9754923c1efa0dc",
+          "binary_source": "binary-checkout",
+          "revision": "ed0415a43c3f3e9972f872634ac72ca1956d2301",
+          "source": "binary-checkout"
+        }
+      ],
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": 22,
+      "domestic_tourists_at_150": null,
+      "forced": [
+        "army-target-weighs-enemy",
+        "campus-through-expansion",
+        "city-campaign-2",
+        "conversion-majority-alarm-2",
+        "culture-building-debt",
+        "denial-outranks-expansion",
+        "domination-lane-hands-over",
+        "domination-siege-research",
+        "early-conquest-opening",
+        "expansion-scales-with-difficulty",
+        "garrison-under-fire",
+        "peacetime-deterrence",
+        "ranged-hp-reserve",
+        "rapid-city-expansion-2",
+        "science-expansion-phase",
+        "settler-walk-deadline",
+        "siege-commitment",
+        "siege-train",
+        "war-reinforcement"
+      ],
+      "game_id": "civvis-20260922T172147Z",
+      "genome": {
+        "civ": null,
+        "lane": null,
+        "source": "AdvancedAi::new",
+        "strategy": "stock",
+        "strength_bound": null
+      },
+      "genome_treatments": {
+        "forced": [
+          "army-target-weighs-enemy",
+          "conversion-majority-alarm-2",
+          "culture-building-debt",
+          "denial-outranks-expansion",
+          "domination-lane-hands-over",
+          "domination-siege-research",
+          "early-conquest-opening",
+          "garrison-under-fire",
+          "peacetime-deterrence",
+          "ranged-hp-reserve",
+          "siege-commitment",
+          "siege-train"
+        ],
+        "ledger_withheld": [
+          "blind-objective-units",
+          "relief-targets-the-siege",
+          "war-economy",
+          "bounded-recovery",
+          "recon-replacement",
+          "naval-recon",
+          "camp-party",
+          "settler-guard-holds",
+          "housing-research",
+          "district-coverage",
+          "one-launch-pad",
+          "settler-target-hysteresis",
+          "relief-column-marches",
+          "threatened-city-reserve"
+        ],
+        "treatments": [
+          "war-reinforcement",
+          "come-ashore",
+          "recorded-tactical-step",
+          "whole-turn-backtrack-guard",
+          "blind-objective-strength",
+          "army-target-weighs-enemy",
+          "peacetime-deterrence",
+          "siege-commitment",
+          "garrison-under-fire",
+          "strike-opening",
+          "barbarian-scouts-are-scouts",
+          "barbarian-bargain",
+          "barbarian-ranged-answer",
+          "religion-sues-peace",
+          "escort-unstick",
+          "buildings-before-projects",
+          "stranded-settler-discount",
+          "wide-map-capacity",
+          "amenity-project-preemption",
+          "amenity-district-path",
+          "slot-kind-tiebreak",
+          "loyalty-rate-alarm",
+          "culture-building-debt",
+          "live-trader-route",
+          "live-religious-purchase",
+          "live-motion-turn-accounting",
+          "solvent-faith-army",
+          "live-formationless-settler-shadow",
+          "live-wonder-race",
+          "expansion-before-prophet",
+          "no-elective-war",
+          "fog-land-capacity",
+          "counter-in-lane",
+          "era-paced-expansion",
+          "tally-culture",
+          "frontier-loyalty",
+          "tally-great-people",
+          "deny-while-targeted",
+          "stock-denial-lead-time",
+          "projected-stock-denial",
+          "parallel-settlers",
+          "host-settler-pop",
+          "explore-dead-targets",
+          "explore-commit",
+          "bank-envoys",
+          "land-grab",
+          "spy-mission-patience",
+          "expansion-pantheon",
+          "expansion-hall",
+          "opening-settler-waits",
+          "escort-patience-runs-out",
+          "barbarian-settler-capture",
+          "live-barbarian-scouts-capture",
+          "live-settler-capture-lessons",
+          "live-move-refusal-break",
+          "guard-breaks-the-pin",
+          "builder-barbarian-safety",
+          "apostle-promotion-by-role",
+          "founder-temple",
+          "religious-defence-scales",
+          "religious-units-heal-first",
+          "early-contact-window",
+          "settle-sooner",
+          "research-tier-premium",
+          "one-shot-recovery",
+          "lane-great-people",
+          "lane-policy-deck",
+          "lane-culture-spending",
+          "lane-space-race",
+          "competition-victory-points",
+          "defensible-sites",
+          "elective-war-in-reach",
+          "recovery-reads-the-war",
+          "domination-city-count",
+          "unchosen-war-keeps-the-lane",
+          "elective-war-yields-to-a-lane",
+          "rival-suzerainty-alarm",
+          "congress-counter-leader",
+          "culture-lane-forecast",
+          "culture-cold-war-window",
+          "diplomatic-lane-forecast",
+          "coordinated-finish",
+          "pantheon-board",
+          "maintenance-aware-deck",
+          "unit-cost-efficiency",
+          "settlement-gap-target",
+          "price-the-suzerainty",
+          "engine-faith-price",
+          "promote-when-wounded",
+          "district-planning",
+          "wonder-score-tally",
+          "religious-veto-defence",
+          "deals-for-our-gain",
+          "deals-at-the-ceiling",
+          "no-free-passage",
+          "one-war-at-a-time",
+          "pass-picket",
+          "campaign-pillage",
+          "science-victory-drive",
+          "expansion-schedule",
+          "growth-to-settle",
+          "order-retry",
+          "opening-warrior-recon-2",
+          "eureka-chasing-production",
+          "campus-adjacency-threshold-2",
+          "district-coverage-2",
+          "guru-heals-the-corps-2",
+          "power-the-laboratory-2",
+          "settler-guard-holds-2",
+          "settler-target-hysteresis-2",
+          "builder-supply-floor",
+          "first-builder-reserve-2",
+          "wonder-adjacent-sites-2",
+          "contested-land-first",
+          "native-emergency-purchase",
+          "quest-production",
+          "quest-trade-route",
+          "science-building-first",
+          "boost-first-research",
+          "chokepoint-siting",
+          "chokepoint-garrison",
+          "government-capacity-fallback",
+          "government-ladder-2",
+          "war-needs-a-treasury",
+          "peace-when-the-war-does-not-pay",
+          "city-target-meets-the-map",
+          "moksha-defends-the-faithless",
+          "treasury-at-work-2",
+          "fire-plan",
+          "close-as-a-body",
+          "screen-the-shooters",
+          "defend-where-you-stand",
+          "coastal-city-sites-2",
+          "gold-income-floor",
+          "capture-go-or-stand-down-2",
+          "commitment-patience",
+          "island-exploration",
+          "settler-never-idles",
+          "settler-backlog-brake-2",
+          "connect-the-luxury",
+          "walls-after-districts",
+          "science-expansion-phase",
+          "science-opening-band",
+          "capital-settler-after-completion",
+          "settler-site-gate",
+          "settler-target-floor",
+          "spaceport-surplus-veto",
+          "air-surge-2",
+          "campus-through-expansion",
+          "trade-route-network",
+          "industrial-chain-debt",
+          "rapid-city-expansion-2",
+          "naval-recon-3",
+          "never-an-empty-queue-3",
+          "coalition-before-war-3",
+          "settler-walk-deadline",
+          "chase-every-boost",
+          "early-project-restraint-2",
+          "battle-planner-2",
+          "siege-train",
+          "eureka-chasing-builder-2",
+          "conversion-majority-alarm-2",
+          "objective-board",
+          "war-policy-via-board",
+          "swap-rotation-2",
+          "city-campaign-2",
+          "strike-reach",
+          "safest-stand",
+          "missionary-last-charge-explores-2",
+          "standing-still-is-a-risk",
+          "research-building-catchup",
+          "builder-workforce-recovery-2",
+          "expansion-best-idle-city-2",
+          "doomed-blow-veto-2",
+          "scout-first-opening",
+          "early-conquest-opening",
+          "expansion-scales-with-difficulty",
+          "research-alliance-first",
+          "denial-outranks-expansion",
+          "ranged-hp-reserve",
+          "domination-lane-hands-over",
+          "domination-siege-research"
+        ]
+      },
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": -263,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": {
+        "ActionTransitions": false,
+        "CampusSpecialist": false,
+        "CancelQueuedPaths": true,
+        "CapMovesToReach": true,
+        "CombatFrames": 0,
+        "CounterResolutions": true,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "IsolatedActionProbes": false,
+        "MoveFallback": true,
+        "OrderQueue": true,
+        "PeaceDeterrence": true,
+        "PeacetimeWarFloors": false,
+        "ProbeCitizens": false,
+        "ReplanFrames": 2,
+        "SettlerEscortCapSync": true,
+        "StrikePreview": true,
+        "TileDelta": true
+      },
+      "modes": [],
+      "partial": null,
+      "race": {
+        "boost_audit": {
+          "civics": [
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CIVIL_SERVICE",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CODE_OF_LAWS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CRAFTSMANSHIP",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DEFENSIVE_TACTICS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DIPLOMATIC_SERVICE",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DIVINE_RIGHT",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DRAMA_POETRY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_EARLY_EMPIRE",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_FEUDALISM",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_FOREIGN_TRADE",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_GAMES_RECREATION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_GUILDS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MEDIEVAL_FAIRES",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MERCENARIES",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MILITARY_TRADITION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MILITARY_TRAINING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MYSTICISM",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_POLITICAL_PHILOSOPHY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_RECORDED_HISTORY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_STATE_WORKFORCE",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_THEOLOGY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_HUMANISM",
+              "observed_turn": 127,
+              "present_at_first_frame": false
+            }
+          ],
+          "techs": [
+            {
+              "boost_observed": false,
+              "node": "TECH_ANIMAL_HUSBANDRY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_APPRENTICESHIP",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ARCHERY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ASTROLOGY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ASTRONOMY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BALLISTICS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BANKING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BRONZE_WORKING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BUTTRESS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CARTOGRAPHY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CASTLES",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CELESTIAL_NAVIGATION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CONSTRUCTION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CURRENCY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_EDUCATION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ENGINEERING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_GUNPOWDER",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_HORSEBACK_RIDING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_INDUSTRIALIZATION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_IRON_WORKING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_IRRIGATION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MACHINERY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MASONRY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MASS_PRODUCTION",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MATHEMATICS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_METAL_CASTING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MILITARY_ENGINEERING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MILITARY_TACTICS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MINING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_POTTERY",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SAILING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SHIPBUILDING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SQUARE_RIGGING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_STIRRUPS",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_THE_WHEEL",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_WRITING",
+              "observed_turn": 123,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_SCIENTIFIC_THEORY",
+              "observed_turn": 128,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_PRINTING",
+              "observed_turn": 130,
+              "present_at_first_frame": false
+            }
+          ]
+        },
+        "checkpoints": {},
+        "cities": {
+          "196610": {
+            "first_observed_turn": 123
+          },
+          "262147": {
+            "campus_observed_turn": 123,
+            "first_observed_turn": 123,
+            "library_observed_turn": 123
+          },
+          "327684": {
+            "first_observed_turn": 123
+          },
+          "393217": {
+            "campus_observed_turn": 123,
+            "first_observed_turn": 123,
+            "library_observed_turn": 123
+          },
+          "65536": {
+            "campus_observed_turn": 123,
+            "first_observed_turn": 123,
+            "library_observed_turn": 123
+          }
+        },
+        "economy_observed_turns": 10,
+        "empty_treasury_deficit_turns": 5,
+        "first_turn": 123,
+        "idle_city_turns": 0,
+        "last_turn": 132,
+        "milestones": {
+          "campus": {
+            "observed_turn": 123,
+            "present_at_first_frame": true
+          },
+          "education": {
+            "observed_turn": 123,
+            "present_at_first_frame": true
+          },
+          "industrialization": {
+            "observed_turn": 123,
+            "present_at_first_frame": true
+          },
+          "library": {
+            "observed_turn": 123,
+            "present_at_first_frame": true
+          },
+          "second_city": {
+            "observed_turn": 123,
+            "present_at_first_frame": true
+          },
+          "writing": {
+            "observed_turn": 123,
+            "present_at_first_frame": true
+          }
+        },
+        "missing_turns": 0,
+        "observed_turns": 10
+      },
+      "reason": "stopped",
+      "reported_pct": 79.5,
+      "revisions": [
+        "ed0415a43c3f3e9972f872634ac72ca1956d2301"
+      ],
+      "rival_best": 724,
+      "rival_culture_at_100": 14.29,
+      "rival_culture_at_150": null,
+      "rival_techs_at_100": 40,
+      "rival_techs_at_150": null,
+      "ruleset": "RULESET_EXPANSION_2",
+      "score": 461,
+      "seat": {
+        "action_transitions": false,
+        "city_states": 6,
+        "civ": "CIVILIZATION_GRAN_COLOMBIA",
+        "ctx": "agent",
+        "difficulty": "DIFFICULTY_KING",
+        "is_human": true,
+        "isolated_action_probes": false,
+        "kind": "seat",
+        "leader": "LEADER_SIMON_BOLIVAR",
+        "local_player": 0,
+        "map": "Pangaea.lua",
+        "max_turns": 250,
+        "modes": [],
+        "moves_at_turn_start": true,
+        "order_queue": true,
+        "players": 4,
+        "replan_frames": true,
+        "ruleset": "RULESET_EXPANSION_2",
+        "run": "civvis-20260922T172147Z-cont3",
+        "settler_escort_sync": true,
+        "setup": "(absent)",
+        "size": "MAPSIZE_TINY",
+        "speed": "GAMESPEED_ONLINE",
+        "t": 1790099415,
+        "tile_delta": true,
+        "utc": "2026-09-22T17:50:16.341Z",
+        "victories": {
+          "conquest": true,
+          "culture": true,
+          "diplomatic": true,
+          "religious": true,
+          "score": true,
+          "technology": true
+        },
+        "victory_types": [
+          {
+            "index": 0,
+            "type": "VICTORY_SCORE"
+          },
+          {
+            "index": 1,
+            "type": "VICTORY_DEFAULT"
+          },
+          {
+            "index": 2,
+            "type": "VICTORY_CONQUEST"
+          },
+          {
+            "index": 3,
+            "type": "VICTORY_CULTURE"
+          },
+          {
+            "index": 4,
+            "type": "VICTORY_RELIGIOUS"
+          },
+          {
+            "index": 5,
+            "type": "VICTORY_TECHNOLOGY"
+          },
+          {
+            "index": 6,
+            "type": "VICTORY_DIPLOMATIC"
+          }
+        ]
+      },
+      "seat_autonomy": {
+        "civvis_unit_share": 1.0,
+        "engine_explored": 0,
+        "explore_guarded": 0,
+        "unit_orders": 159,
+        "unit_orders_applied": 142
+      },
+      "seed_probe": false,
+      "seed_request": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T172147Z-cont3",
+      "techs_at_100": 36,
+      "techs_at_150": null,
+      "turns": 132,
+      "utc": "2026-09-22T17:51:54Z",
+      "victory": 4,
+      "victory_target": "domination",
+      "victory_type": "VICTORY_RELIGIOUS",
+      "withheld": [],
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 101.0,
+      "buildings": null,
+      "cities_at_60": 5,
+      "city_two_turn": null,
+      "civvis_unit_share": null,
+      "combat": null,
+      "configured": false,
+      "decider_binaries": null,
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": null,
+      "domestic_tourists_at_150": null,
+      "forced": null,
+      "genome": null,
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": null,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": null,
+      "modes": null,
+      "partial": true,
+      "reason": "killed",
+      "reported_pct": 83.2,
+      "revisions": null,
+      "rival_best": null,
+      "rival_culture_at_100": null,
+      "rival_culture_at_150": null,
+      "rival_techs_at_100": null,
+      "rival_techs_at_150": null,
+      "ruleset": null,
+      "score": 214,
+      "seat_autonomy": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T172147Z",
+      "techs_at_100": null,
+      "techs_at_150": null,
+      "turns": 64,
+      "utc": "2026-09-22T17:31:59Z",
+      "victory": null,
+      "victory_target": null,
+      "victory_type": null,
+      "withheld": null,
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 78.0,
+      "buildings": null,
+      "cities_at_60": null,
+      "city_two_turn": null,
+      "civvis_unit_share": null,
+      "combat": null,
+      "configured": false,
+      "decider_binaries": null,
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": null,
+      "domestic_tourists_at_150": null,
+      "forced": null,
+      "genome": null,
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": null,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": null,
+      "modes": null,
+      "partial": true,
+      "reason": "killed",
+      "reported_pct": 75.6,
+      "revisions": null,
+      "rival_best": null,
+      "rival_culture_at_100": null,
+      "rival_culture_at_150": null,
+      "rival_techs_at_100": null,
+      "rival_techs_at_150": null,
+      "ruleset": null,
+      "score": 214,
+      "seat_autonomy": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T172147Z-cont1",
+      "techs_at_100": null,
+      "techs_at_150": null,
+      "turns": 64,
+      "utc": "2026-09-22T17:37:40Z",
+      "victory": null,
+      "victory_target": null,
+      "victory_type": null,
+      "withheld": null,
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 91.9,
+      "buildings": null,
+      "cities_at_60": 5,
+      "city_two_turn": null,
+      "civvis_unit_share": null,
+      "combat": null,
+      "configured": false,
+      "decider_binaries": null,
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": 13,
+      "domestic_tourists_at_150": null,
+      "forced": null,
+      "genome": null,
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": null,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": null,
+      "modes": null,
+      "partial": true,
+      "reason": "killed",
+      "reported_pct": 76.5,
+      "revisions": null,
+      "rival_best": null,
+      "rival_culture_at_100": 11.11,
+      "rival_culture_at_150": null,
+      "rival_techs_at_100": 37,
+      "rival_techs_at_150": null,
+      "ruleset": null,
+      "score": 467,
+      "seat_autonomy": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T172147Z-cont2",
+      "techs_at_100": 29,
+      "techs_at_150": null,
+      "turns": 132,
+      "utc": "2026-09-22T17:48:38Z",
+      "victory": null,
+      "victory_target": null,
+      "victory_type": null,
+      "withheld": null,
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 98.1,
+      "boosts": {
+        "at_t100": {
+          "civics_adopted": 27,
+          "civics_inspired": 0,
+          "civics_inspired_share": 0.0,
+          "techs_boosted": 0,
+          "techs_boosted_share": 0.0,
+          "techs_researched": 39
+        },
+        "at_t150": {
+          "civics_adopted": 27,
+          "civics_inspired": 0,
+          "civics_inspired_share": 0.0,
+          "techs_boosted": 0,
+          "techs_boosted_share": 0.0,
+          "techs_researched": 39
+        },
+        "civics_adopted": 36,
+        "civics_inspired": 5,
+        "civics_inspired_share": 0.1389,
+        "techs_boosted": 5,
+        "techs_boosted_share": 0.0943,
+        "techs_researched": 53
+      },
+      "buildings": null,
+      "cities_at_60": null,
+      "city_two_turn": null,
+      "civvis_unit_share": 1.0,
+      "combat": {
+        "cities_lost": 0,
+        "cities_taken": 0,
+        "damage_dealt": 2410,
+        "damage_taken": 1535,
+        "deaths_after_unexecuted_move": 0,
+        "deaths_wounded_at_turn_start": 0,
+        "kills": 24,
+        "kills_per_loss": 4.0,
+        "losses": 6,
+        "lost_when_salvageable": 0,
+        "military_removal_context": {
+          "hostile_within_2": 1,
+          "no_visible_threat": 22
+        },
+        "military_units_gone": 23,
+        "move_fallback": 0,
+        "move_noop": 57
+      },
+      "configured": true,
+      "decider_binaries": [
+        {
+          "binary_revision": "d7e4561ef28a5a90531a0f6a3e3b2963528aeea6",
+          "binary_sha256": "e0a35eec89ffe362a5219292d44ec5f7b5cd69cdda0a352f8feb610bfd109550",
+          "binary_source": "binary-checkout",
+          "revision": "d7e4561ef28a5a90531a0f6a3e3b2963528aeea6",
+          "source": "binary-checkout"
+        }
+      ],
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": 31,
+      "domestic_tourists_at_150": 31,
+      "forced": [
+        "army-target-weighs-enemy",
+        "campus-through-expansion",
+        "city-campaign-2",
+        "conversion-majority-alarm-2",
+        "culture-building-debt",
+        "denial-outranks-expansion",
+        "domination-lane-hands-over",
+        "domination-siege-research",
+        "early-conquest-opening",
+        "expansion-scales-with-difficulty",
+        "garrison-under-fire",
+        "peacetime-deterrence",
+        "ranged-hp-reserve",
+        "rapid-city-expansion-2",
+        "science-expansion-phase",
+        "settler-walk-deadline",
+        "siege-commitment",
+        "siege-train",
+        "war-reinforcement"
+      ],
+      "game_id": "civvis-20260922T175317Z",
+      "genome": {
+        "civ": null,
+        "lane": null,
+        "source": "AdvancedAi::new",
+        "strategy": "stock",
+        "strength_bound": null
+      },
+      "genome_treatments": {
+        "forced": [
+          "army-target-weighs-enemy",
+          "conversion-majority-alarm-2",
+          "culture-building-debt",
+          "denial-outranks-expansion",
+          "domination-lane-hands-over",
+          "domination-siege-research",
+          "early-conquest-opening",
+          "garrison-under-fire",
+          "peacetime-deterrence",
+          "ranged-hp-reserve",
+          "siege-commitment",
+          "siege-train"
+        ],
+        "ledger_withheld": [
+          "blind-objective-units",
+          "relief-targets-the-siege",
+          "war-economy",
+          "bounded-recovery",
+          "recon-replacement",
+          "naval-recon",
+          "camp-party",
+          "settler-guard-holds",
+          "housing-research",
+          "district-coverage",
+          "one-launch-pad",
+          "settler-target-hysteresis",
+          "relief-column-marches",
+          "threatened-city-reserve"
+        ],
+        "treatments": [
+          "war-reinforcement",
+          "come-ashore",
+          "recorded-tactical-step",
+          "whole-turn-backtrack-guard",
+          "blind-objective-strength",
+          "army-target-weighs-enemy",
+          "peacetime-deterrence",
+          "siege-commitment",
+          "garrison-under-fire",
+          "strike-opening",
+          "barbarian-scouts-are-scouts",
+          "barbarian-bargain",
+          "barbarian-ranged-answer",
+          "religion-sues-peace",
+          "escort-unstick",
+          "buildings-before-projects",
+          "stranded-settler-discount",
+          "wide-map-capacity",
+          "amenity-project-preemption",
+          "amenity-district-path",
+          "slot-kind-tiebreak",
+          "loyalty-rate-alarm",
+          "culture-building-debt",
+          "live-trader-route",
+          "live-religious-purchase",
+          "live-motion-turn-accounting",
+          "solvent-faith-army",
+          "live-formationless-settler-shadow",
+          "live-wonder-race",
+          "expansion-before-prophet",
+          "no-elective-war",
+          "fog-land-capacity",
+          "counter-in-lane",
+          "era-paced-expansion",
+          "tally-culture",
+          "frontier-loyalty",
+          "tally-great-people",
+          "deny-while-targeted",
+          "stock-denial-lead-time",
+          "projected-stock-denial",
+          "parallel-settlers",
+          "host-settler-pop",
+          "explore-dead-targets",
+          "explore-commit",
+          "bank-envoys",
+          "land-grab",
+          "spy-mission-patience",
+          "expansion-pantheon",
+          "expansion-hall",
+          "opening-settler-waits",
+          "escort-patience-runs-out",
+          "barbarian-settler-capture",
+          "live-barbarian-scouts-capture",
+          "live-settler-capture-lessons",
+          "live-move-refusal-break",
+          "guard-breaks-the-pin",
+          "builder-barbarian-safety",
+          "apostle-promotion-by-role",
+          "founder-temple",
+          "religious-defence-scales",
+          "religious-units-heal-first",
+          "early-contact-window",
+          "settle-sooner",
+          "research-tier-premium",
+          "one-shot-recovery",
+          "lane-great-people",
+          "lane-policy-deck",
+          "lane-culture-spending",
+          "lane-space-race",
+          "competition-victory-points",
+          "defensible-sites",
+          "elective-war-in-reach",
+          "recovery-reads-the-war",
+          "domination-city-count",
+          "unchosen-war-keeps-the-lane",
+          "elective-war-yields-to-a-lane",
+          "rival-suzerainty-alarm",
+          "congress-counter-leader",
+          "culture-lane-forecast",
+          "culture-cold-war-window",
+          "diplomatic-lane-forecast",
+          "coordinated-finish",
+          "pantheon-board",
+          "maintenance-aware-deck",
+          "unit-cost-efficiency",
+          "settlement-gap-target",
+          "price-the-suzerainty",
+          "engine-faith-price",
+          "promote-when-wounded",
+          "district-planning",
+          "wonder-score-tally",
+          "religious-veto-defence",
+          "deals-for-our-gain",
+          "deals-at-the-ceiling",
+          "no-free-passage",
+          "one-war-at-a-time",
+          "pass-picket",
+          "campaign-pillage",
+          "science-victory-drive",
+          "expansion-schedule",
+          "growth-to-settle",
+          "order-retry",
+          "opening-warrior-recon-2",
+          "eureka-chasing-production",
+          "campus-adjacency-threshold-2",
+          "district-coverage-2",
+          "guru-heals-the-corps-2",
+          "power-the-laboratory-2",
+          "settler-guard-holds-2",
+          "settler-target-hysteresis-2",
+          "builder-supply-floor",
+          "first-builder-reserve-2",
+          "wonder-adjacent-sites-2",
+          "contested-land-first",
+          "native-emergency-purchase",
+          "quest-production",
+          "quest-trade-route",
+          "science-building-first",
+          "boost-first-research",
+          "chokepoint-siting",
+          "chokepoint-garrison",
+          "government-capacity-fallback",
+          "government-ladder-2",
+          "war-needs-a-treasury",
+          "peace-when-the-war-does-not-pay",
+          "city-target-meets-the-map",
+          "moksha-defends-the-faithless",
+          "treasury-at-work-2",
+          "fire-plan",
+          "close-as-a-body",
+          "screen-the-shooters",
+          "defend-where-you-stand",
+          "coastal-city-sites-2",
+          "gold-income-floor",
+          "capture-go-or-stand-down-2",
+          "commitment-patience",
+          "island-exploration",
+          "settler-never-idles",
+          "settler-backlog-brake-2",
+          "connect-the-luxury",
+          "walls-after-districts",
+          "science-expansion-phase",
+          "science-opening-band",
+          "capital-settler-after-completion",
+          "settler-site-gate",
+          "settler-target-floor",
+          "spaceport-surplus-veto",
+          "air-surge-2",
+          "campus-through-expansion",
+          "trade-route-network",
+          "industrial-chain-debt",
+          "rapid-city-expansion-2",
+          "naval-recon-3",
+          "never-an-empty-queue-3",
+          "coalition-before-war-3",
+          "settler-walk-deadline",
+          "chase-every-boost",
+          "early-project-restraint-2",
+          "battle-planner-2",
+          "siege-train",
+          "eureka-chasing-builder-2",
+          "conversion-majority-alarm-2",
+          "objective-board",
+          "war-policy-via-board",
+          "swap-rotation-2",
+          "city-campaign-2",
+          "strike-reach",
+          "safest-stand",
+          "missionary-last-charge-explores-2",
+          "standing-still-is-a-risk",
+          "research-building-catchup",
+          "builder-workforce-recovery-2",
+          "expansion-best-idle-city-2",
+          "doomed-blow-veto-2",
+          "scout-first-opening",
+          "early-conquest-opening",
+          "expansion-scales-with-difficulty",
+          "research-alliance-first",
+          "denial-outranks-expansion",
+          "ranged-hp-reserve",
+          "domination-lane-hands-over",
+          "domination-siege-research"
+        ]
+      },
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": -535,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": {
+        "ActionTransitions": false,
+        "CampusSpecialist": false,
+        "CancelQueuedPaths": true,
+        "CapMovesToReach": true,
+        "CombatFrames": 0,
+        "CounterResolutions": true,
+        "EnvoyConsider": true,
+        "EnvoyLevy": true,
+        "EnvoyPlace": true,
+        "IsolatedActionProbes": false,
+        "MoveFallback": true,
+        "OrderQueue": true,
+        "PeaceDeterrence": true,
+        "PeacetimeWarFloors": false,
+        "ProbeCitizens": false,
+        "ReplanFrames": 2,
+        "SettlerEscortCapSync": true,
+        "StrikePreview": true,
+        "TileDelta": true
+      },
+      "modes": [],
+      "partial": null,
+      "race": {
+        "boost_audit": {
+          "civics": [
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CIVIL_SERVICE",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CODE_OF_LAWS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_CRAFTSMANSHIP",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DEFENSIVE_TACTICS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DIPLOMATIC_SERVICE",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DIVINE_RIGHT",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_DRAMA_POETRY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_EARLY_EMPIRE",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_EXPLORATION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_FEUDALISM",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_FOREIGN_TRADE",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_GAMES_RECREATION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_GUILDS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_HUMANISM",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MEDIEVAL_FAIRES",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MERCANTILISM",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MERCENARIES",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MILITARY_TRADITION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MILITARY_TRAINING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_MYSTICISM",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_NAVAL_TRADITION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_POLITICAL_PHILOSOPHY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_RECORDED_HISTORY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_REFORMED_CHURCH",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_STATE_WORKFORCE",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_THEOLOGY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_THE_ENLIGHTENMENT",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_COLONIALISM",
+              "observed_turn": 152,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_NATURAL_HISTORY",
+              "observed_turn": 158,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_CIVIL_ENGINEERING",
+              "observed_turn": 162,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_NATIONALISM",
+              "observed_turn": 167,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_SCORCHED_EARTH",
+              "observed_turn": 171,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_URBANIZATION",
+              "observed_turn": 177,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_MASS_MEDIA",
+              "observed_turn": 182,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "CIVIC_MOBILIZATION",
+              "observed_turn": 186,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "CIVIC_IDEOLOGY",
+              "observed_turn": 194,
+              "present_at_first_frame": false
+            }
+          ],
+          "techs": [
+            {
+              "boost_observed": false,
+              "node": "TECH_ANIMAL_HUSBANDRY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_APPRENTICESHIP",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ARCHERY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ASTROLOGY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ASTRONOMY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BALLISTICS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BANKING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BRONZE_WORKING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_BUTTRESS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CARTOGRAPHY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CASTLES",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CELESTIAL_NAVIGATION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CONSTRUCTION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_CURRENCY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ECONOMICS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_EDUCATION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ENGINEERING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_GUNPOWDER",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_HORSEBACK_RIDING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_INDUSTRIALIZATION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_IRON_WORKING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_IRRIGATION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MACHINERY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MASONRY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MASS_PRODUCTION",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MATHEMATICS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_METAL_CASTING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MILITARY_ENGINEERING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MILITARY_TACTICS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MINING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_POTTERY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SAILING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SCIENTIFIC_THEORY",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SHIPBUILDING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SQUARE_RIGGING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_STEAM_POWER",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_STIRRUPS",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_THE_WHEEL",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_WRITING",
+              "observed_turn": 151,
+              "present_at_first_frame": true
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_FLIGHT",
+              "observed_turn": 153,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_RADIO",
+              "observed_turn": 158,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_ADVANCED_FLIGHT",
+              "observed_turn": 164,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SANITATION",
+              "observed_turn": 168,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_REPLACEABLE_PARTS",
+              "observed_turn": 173,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_CHEMISTRY",
+              "observed_turn": 175,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_PRINTING",
+              "observed_turn": 176,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_SIEGE_TACTICS",
+              "observed_turn": 179,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_MILITARY_SCIENCE",
+              "observed_turn": 181,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_RIFLING",
+              "observed_turn": 183,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_REFINING",
+              "observed_turn": 186,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_STEEL",
+              "observed_turn": 190,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": false,
+              "node": "TECH_COMBUSTION",
+              "observed_turn": 194,
+              "present_at_first_frame": false
+            },
+            {
+              "boost_observed": true,
+              "node": "TECH_COMBINED_ARMS",
+              "observed_turn": 196,
+              "present_at_first_frame": false
+            }
+          ]
+        },
+        "checkpoints": {
+          "180": {
+            "campuses": 7,
+            "cities": 10,
+            "culture": 83.7344,
+            "gold": 84,
+            "gold_per_turn": -20.5898,
+            "libraries": 6,
+            "military": 1258,
+            "operational_spaceports": 0,
+            "production": 320.406,
+            "research": "TECH_MILITARY_SCIENCE",
+            "science": 135.785,
+            "science_projects": [],
+            "science_victory_points": 0,
+            "science_victory_points_per_turn": 0,
+            "techs": 47
+          }
+        },
+        "cities": {
+          "131073": {
+            "campus_observed_turn": 151,
+            "first_observed_turn": 151,
+            "library_observed_turn": 151
+          },
+          "196610": {
+            "campus_observed_turn": 151,
+            "first_observed_turn": 151,
+            "library_observed_turn": 151
+          },
+          "262147": {
+            "campus_observed_turn": 151,
+            "first_observed_turn": 151,
+            "library_observed_turn": 151
+          },
+          "327684": {
+            "campus_observed_turn": 151,
+            "first_observed_turn": 151,
+            "library_observed_turn": 185
+          },
+          "393221": {
+            "first_observed_turn": 151
+          },
+          "458758": {
+            "campus_observed_turn": 151,
+            "first_observed_turn": 151,
+            "library_observed_turn": 151
+          },
+          "524295": {
+            "campus_observed_turn": 192,
+            "first_observed_turn": 151
+          },
+          "589832": {
+            "campus_observed_turn": 171,
+            "first_observed_turn": 151,
+            "library_observed_turn": 176
+          },
+          "65536": {
+            "campus_observed_turn": 151,
+            "first_observed_turn": 151,
+            "library_observed_turn": 151
+          },
+          "655369": {
+            "first_observed_turn": 151
+          }
+        },
+        "economy_observed_turns": 47,
+        "empty_treasury_deficit_turns": 5,
+        "first_turn": 151,
+        "idle_city_turns": 0,
+        "last_turn": 197,
+        "milestones": {
+          "campus": {
+            "observed_turn": 151,
+            "present_at_first_frame": true
+          },
+          "chemistry": {
+            "observed_turn": 175,
+            "present_at_first_frame": false
+          },
+          "education": {
+            "observed_turn": 151,
+            "present_at_first_frame": true
+          },
+          "industrialization": {
+            "observed_turn": 151,
+            "present_at_first_frame": true
+          },
+          "library": {
+            "observed_turn": 151,
+            "present_at_first_frame": true
+          },
+          "second_city": {
+            "observed_turn": 151,
+            "present_at_first_frame": true
+          },
+          "writing": {
+            "observed_turn": 151,
+            "present_at_first_frame": true
+          }
+        },
+        "missing_turns": 0,
+        "observed_turns": 47
+      },
+      "reason": "stopped",
+      "reported_pct": 78.8,
+      "revisions": [
+        "d7e4561ef28a5a90531a0f6a3e3b2963528aeea6"
+      ],
+      "rival_best": 1220,
+      "rival_culture_at_100": 12.71,
+      "rival_culture_at_150": 12.71,
+      "rival_techs_at_100": 49,
+      "rival_techs_at_150": 49,
+      "ruleset": "RULESET_EXPANSION_2",
+      "score": 685,
+      "seat": {
+        "action_transitions": false,
+        "city_states": 6,
+        "civ": "CIVILIZATION_GRAN_COLOMBIA",
+        "ctx": "agent",
+        "difficulty": "DIFFICULTY_KING",
+        "is_human": true,
+        "isolated_action_probes": false,
+        "kind": "seat",
+        "leader": "LEADER_SIMON_BOLIVAR",
+        "local_player": 0,
+        "map": "Pangaea.lua",
+        "max_turns": 250,
+        "modes": [],
+        "moves_at_turn_start": true,
+        "order_queue": true,
+        "players": 4,
+        "replan_frames": true,
+        "ruleset": "RULESET_EXPANSION_2",
+        "run": "civvis-20260922T175317Z-cont3",
+        "settler_escort_sync": true,
+        "setup": "(absent)",
+        "size": "MAPSIZE_TINY",
+        "speed": "GAMESPEED_ONLINE",
+        "t": 1790101489,
+        "tile_delta": true,
+        "utc": "2026-09-22T18:24:50.684Z",
+        "victories": {
+          "conquest": true,
+          "culture": true,
+          "diplomatic": true,
+          "religious": true,
+          "score": true,
+          "technology": true
+        },
+        "victory_types": [
+          {
+            "index": 0,
+            "type": "VICTORY_SCORE"
+          },
+          {
+            "index": 1,
+            "type": "VICTORY_DEFAULT"
+          },
+          {
+            "index": 2,
+            "type": "VICTORY_CONQUEST"
+          },
+          {
+            "index": 3,
+            "type": "VICTORY_CULTURE"
+          },
+          {
+            "index": 4,
+            "type": "VICTORY_RELIGIOUS"
+          },
+          {
+            "index": 5,
+            "type": "VICTORY_TECHNOLOGY"
+          },
+          {
+            "index": 6,
+            "type": "VICTORY_DIPLOMATIC"
+          }
+        ]
+      },
+      "seat_autonomy": {
+        "civvis_unit_share": 1.0,
+        "engine_explored": 0,
+        "explore_guarded": 0,
+        "unit_orders": 1112,
+        "unit_orders_applied": 1016
+      },
+      "seed_probe": false,
+      "seed_request": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T175317Z-cont3",
+      "techs_at_100": 39,
+      "techs_at_150": 39,
+      "turns": 197,
+      "utc": "2026-09-22T18:32:49Z",
+      "victory": 4,
+      "victory_target": "domination",
+      "victory_type": "VICTORY_RELIGIOUS",
+      "withheld": [],
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 106.8,
+      "buildings": null,
+      "cities_at_60": 4,
+      "city_two_turn": null,
+      "civvis_unit_share": null,
+      "combat": null,
+      "configured": false,
+      "decider_binaries": null,
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": null,
+      "domestic_tourists_at_150": null,
+      "forced": null,
+      "genome": null,
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": null,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": null,
+      "modes": null,
+      "partial": true,
+      "reason": "killed",
+      "reported_pct": 81.4,
+      "revisions": null,
+      "rival_best": null,
+      "rival_culture_at_100": null,
+      "rival_culture_at_150": null,
+      "rival_techs_at_100": null,
+      "rival_techs_at_150": null,
+      "ruleset": null,
+      "score": 215,
+      "seat_autonomy": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T175317Z",
+      "techs_at_100": null,
+      "techs_at_150": null,
+      "turns": 88,
+      "utc": "2026-09-22T18:06:18Z",
+      "victory": null,
+      "victory_target": null,
+      "victory_type": null,
+      "withheld": null,
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 99.9,
+      "buildings": null,
+      "cities_at_60": null,
+      "city_two_turn": null,
+      "civvis_unit_share": null,
+      "combat": null,
+      "configured": false,
+      "decider_binaries": null,
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": 12,
+      "domestic_tourists_at_150": 32,
+      "forced": null,
+      "genome": null,
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": null,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": null,
+      "modes": null,
+      "partial": true,
+      "reason": "killed",
+      "reported_pct": 79.5,
+      "revisions": null,
+      "rival_best": null,
+      "rival_culture_at_100": 0.0,
+      "rival_culture_at_150": 11.3,
+      "rival_techs_at_100": 29,
+      "rival_techs_at_150": 49,
+      "ruleset": null,
+      "score": 501,
+      "seat_autonomy": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T175317Z-cont1",
+      "techs_at_100": 23,
+      "techs_at_150": 39,
+      "turns": 160,
+      "utc": "2026-09-22T18:18:55Z",
+      "victory": null,
+      "victory_target": null,
+      "victory_type": null,
+      "withheld": null,
+      "won": false
+    },
+    {
+      "abandoned": null,
+      "applied_pct": 89.6,
+      "buildings": null,
+      "cities_at_60": null,
+      "city_two_turn": null,
+      "civvis_unit_share": null,
+      "combat": null,
+      "configured": false,
+      "decider_binaries": null,
+      "defeat": false,
+      "developed_cities": null,
+      "difficulty": "DIFFICULTY_KING",
+      "districts": null,
+      "domestic_tourists_at_100": 32,
+      "domestic_tourists_at_150": 32,
+      "forced": null,
+      "genome": null,
+      "last_launch_turn": null,
+      "launches_completed": 0,
+      "lead": null,
+      "map_size": "MAPSIZE_TINY",
+      "max_turns": 650,
+      "met": null,
+      "mod_arms": null,
+      "modes": null,
+      "partial": true,
+      "reason": "killed",
+      "reported_pct": 81.1,
+      "revisions": null,
+      "rival_best": null,
+      "rival_culture_at_100": 15.32,
+      "rival_culture_at_150": 15.32,
+      "rival_techs_at_100": 51,
+      "rival_techs_at_150": 51,
+      "ruleset": null,
+      "score": 501,
+      "seat_autonomy": null,
+      "spaceport_turn": null,
+      "speed": "GAMESPEED_ONLINE",
+      "strategy_requested": null,
+      "tag": "civvis-20260922T175317Z-cont2",
+      "techs_at_100": 40,
+      "techs_at_150": 40,
+      "turns": 160,
+      "utc": "2026-09-22T18:23:26Z",
+      "victory": null,
+      "victory_target": null,
+      "victory_type": null,
+      "withheld": null,
+      "won": false
     }
   ],
   "victory_types": [
