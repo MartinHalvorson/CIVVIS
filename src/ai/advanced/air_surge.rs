@@ -990,7 +990,37 @@ impl AdvancedAi {
     /// goal retires when the breakthrough technology lands.
     pub(crate) fn air_surge_research_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
         if self.air_surge_plan.is_none() && !self.domination_air_readiness_active(g, pid) {
-            return None;
+            // Native 20260922T054400Z reached Ballistics and Education but
+            // chased later ground upgrades until a Culture loss at turn 191,
+            // without Industrialization. Preparation cannot require that
+            // industrial branch and leave every choice that reaches it to
+            // optional scoring. Once the first industrial ranged upgrade and
+            // Universities are unlocked, finish this one economic milestone.
+            // Existing appointments and the post-industrial air policy keep
+            // their nearer-upgrade rules; immediate defence and fuel still win.
+            let techs = &g.players[pid].techs;
+            if !self.air_surge_2
+                || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+                || !techs.contains(&crate::name!("education"))
+                || !techs.contains(&crate::name!("ballistics"))
+                || techs.contains(&crate::name!("industrialization"))
+                || techs.contains(&Name::new(AIR_SURGE_GOAL_TECH))
+                || g.player_city_ids(pid).len() < 2
+                || self.threatened_city(g, pid).is_some()
+                || self.standing_army_fuel_goal(g, pid).is_some()
+            {
+                return None;
+            }
+            let research =
+                (Self::war_remaining_research_cost(g, pid, crate::name!("industrialization"))
+                    / Self::war_science_per_turn(g, pid))
+                .ceil() as u32;
+            return (g
+                .turn
+                .saturating_add(research)
+                .saturating_add(g.standard_duration(AIR_SURGE_ENDGAME_RESERVE))
+                < g.max_turns)
+                .then_some("industrialization");
         }
         // Native King run 20260921T110313Z kept Crossbowmen and Trebuchets
         // through Flight while a nine-tech air appointment owned research.
@@ -1556,3 +1586,6 @@ mod urgent_denial_opening_tests;
 mod field_slot_tests;
 
 mod readiness;
+
+#[cfg(test)]
+mod modernization_budget_tests;

@@ -16,7 +16,7 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 		if elapsed < 1 then return; end
 		-- A long frame gets one pulse, never a burst of catch-up calls.
 		elapsed = 0;
-		pcall(function() CivvisMapView.Enforce(); end);
+		pcall(function() CivvisMapView.Pulse(); end);
 		pcall(function() LuaEvents.CivvisControlPulse("TopPanel"); end);
 	end);
 end
