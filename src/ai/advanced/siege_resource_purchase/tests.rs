@@ -164,3 +164,75 @@ fn melee_resource_access_still_requires_a_real_upgrade_and_connection() {
         assert_eq!(g.map.tiles[&(12, 10)].owner_city, None, "{case}");
     }
 }
+
+fn air_resource_fixture() -> (Game, AdvancedAi, StrategicPlan, u32) {
+    let (mut g, ai, plan, city) = fixture();
+    let siege = g.units.values().find(|u| u.kind == "trebuchet").unwrap().id;
+    g.remove_unit(siege);
+    g.players[0].techs.extend(
+        ["flight", "radio", "advanced_flight"]
+            .into_iter()
+            .map(Name::new),
+    );
+    g.map.tiles.get_mut(&(12, 10)).unwrap().resource = Some(crate::name!("aluminum"));
+    crate::game::install_test_district(&mut g, city, "aerodrome");
+    (g, ai, plan, city)
+}
+
+#[test]
+fn air_resource_purchase_connects_first_bomber_source_before_surplus_shopping() {
+    let (mut g, ai, plan, city) = air_resource_fixture();
+    let cost = g.plot_purchase_cost(0, city, (12, 10)).unwrap();
+    let before = g.players[0].gold;
+    assert!(ai.advanced_gold_spending(&mut g, 0, &plan));
+    assert_eq!(g.map.tiles[&(12, 10)].owner_city, Some(city));
+    assert_eq!(g.players[0].gold, before - cost);
+}
+
+#[test]
+fn air_resource_purchase_requires_a_researched_bomber_and_usable_field() {
+    for case in ["tech", "field", "pillaged", "stock"] {
+        let (mut g, ai, plan, city) = air_resource_fixture();
+        match case {
+            "tech" => {
+                g.players[0].techs.remove(&crate::name!("advanced_flight"));
+            }
+            "field" => {
+                g.cities.get_mut(&city).unwrap().districts.clear();
+            }
+            "pillaged" => {
+                let pos = *g.cities[&city]
+                    .districts
+                    .get(crate::name!("aerodrome"))
+                    .unwrap();
+                g.map.tiles.get_mut(&pos).unwrap().pillaged = true;
+            }
+            _ => {
+                g.players[0]
+                    .strategic_resources
+                    .insert(crate::name!("aluminum"), 10.0);
+            }
+        }
+        assert!(!ai.siege_resource_purchase(&mut g, 0, &plan), "{case}");
+        assert_eq!(g.map.tiles[&(12, 10)].owner_city, None);
+    }
+}
+
+#[test]
+fn air_resource_purchase_keeps_builder_treasury_home_and_lane_guards() {
+    for case in ["builder", "treasury", "home", "lane"] {
+        let (mut g, mut ai, mut plan, city) = air_resource_fixture();
+        match case {
+            "builder" => {
+                for u in g.units.values_mut() {
+                    u.charges = 0;
+                }
+            }
+            "treasury" => g.players[0].gold = 40.0,
+            "home" => plan.threatened_city = Some(city),
+            _ => ai = AdvancedAi::targeting(VictoryTarget::Science),
+        }
+        assert!(!ai.siege_resource_purchase(&mut g, 0, &plan), "{case}");
+        assert_eq!(g.map.tiles[&(12, 10)].owner_city, None);
+    }
+}
