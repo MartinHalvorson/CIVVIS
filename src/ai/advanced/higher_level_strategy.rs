@@ -41,9 +41,9 @@ impl Debt {
         match (self, item) {
             (Self::Expansion, Item::Unit { unit }) => unit == "settler",
             (Self::Builder, Item::Unit { unit }) => unit == "builder",
-            (Self::Research, Item::District { .. }) => {
+            (Self::Research, Item::District { district, .. }) => {
                 ai.active_victory_target(g) == Some(super::VictoryTarget::Domination)
-                    && AdvancedAi::placed_campus_research_item(g, item)
+                    && g.district_family(*district) == "campus"
             }
             (_, Item::Building { building }) => {
                 let spec = &g.rules.buildings[building];
@@ -409,7 +409,16 @@ impl AdvancedAi {
                 ))
             })
             .collect();
-        let mut best: Option<(Debt, f64, u32, String, Item)> = None;
+        // Research catch-up may open its missing foundation, but only one
+        // new Campus at a time. Libraries in completed districts still have
+        // their own queue and retain priority over another new foundation.
+        let campus_committed = cities.iter().any(|cid| {
+            g.cities[cid].queue.iter().any(|item| {
+                matches!(item, Item::District { district, .. }
+                    if g.district_family(*district) == "campus")
+            })
+        });
+        let mut best: Option<(Debt, bool, f64, u32, String, Item)> = None;
         for cid in cities {
             let city = &g.cities[&cid];
             if !city.queue.is_empty()
@@ -435,6 +444,14 @@ impl AdvancedAi {
                 else {
                     continue;
                 };
+                let new_research_foundation = debt == Debt::Research
+                    && matches!(&item, Item::District { .. })
+                    && !Self::placed_campus_research_item(g, &item);
+                if new_research_foundation
+                    && (city.pop < super::CAMPUS_EVERY_CITY_POP_FLOOR || campus_committed)
+                {
+                    continue;
+                }
                 // Market and Lighthouse share one capacity tier in a city.
                 if debt == Debt::Trade
                     && (city
@@ -513,21 +530,22 @@ impl AdvancedAi {
                     turns / gain.max(1.0)
                 };
                 let key = format!("{item:?}");
-                let replace =
-                    best.as_ref()
-                        .is_none_or(|(old_debt, old_cost, old_city, old_key, _)| {
-                            debt.cmp(old_debt)
-                                .then_with(|| cost_per_gain.total_cmp(old_cost))
-                                .then_with(|| cid.cmp(old_city))
-                                .then_with(|| key.cmp(old_key))
-                                .is_lt()
-                        });
+                let replace = best.as_ref().is_none_or(
+                    |(old_debt, old_foundation, old_cost, old_city, old_key, _)| {
+                        debt.cmp(old_debt)
+                            .then_with(|| new_research_foundation.cmp(old_foundation))
+                            .then_with(|| cost_per_gain.total_cmp(old_cost))
+                            .then_with(|| cid.cmp(old_city))
+                            .then_with(|| key.cmp(old_key))
+                            .is_lt()
+                    },
+                );
                 if replace {
-                    best = Some((debt, cost_per_gain, cid, key, item));
+                    best = Some((debt, new_research_foundation, cost_per_gain, cid, key, item));
                 }
             }
         }
-        best.map(|(debt, _, cid, _, item)| (cid, item, debt))
+        best.map(|(debt, _, _, cid, _, item)| (cid, item, debt))
     }
 
     /// Additional admission tests belong to the new versions only. The old
@@ -661,3 +679,6 @@ mod repair_recovery_tests;
 
 #[cfg(test)]
 mod queued_yield_tests;
+
+#[cfg(test)]
+mod campus_foundation_tests;
