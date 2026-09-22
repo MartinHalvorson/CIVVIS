@@ -5,7 +5,7 @@
 //! victory_eval --domination-pair siege-is-progress-3 --games 16 \
 //!   --start-seed 37140000 --out /tmp/domination-pairs.jsonl
 //!
-//! Both legs use King, 4 players, 44x26 Pangaea, 6 city-states, Online,
+//! Both legs use King, 4 players, 60x38 Pangaea, 6 city-states, Online,
 //! barbarians, all victory conditions and the natural 250-turn clock.
 //! Only seat zero's named policy is disabled/enabled. The other seats keep
 //! their adaptive deployed controllers. The focal seat also carries the
@@ -75,7 +75,8 @@ fn options(seed: u64) -> GameOptions {
         randomize_civs: true,
         handicap_exempt: BTreeSet::from([0]),
         barbarians: true,
-        ..GameOptions::new(4, 44, 26, seed, 250, 6)
+        // Shipped Civ VI Maps.xml:106: MAPSIZE_TINY, four players, 60x38.
+        ..GameOptions::new(4, 60, 38, seed, 250, 6)
     }
 }
 

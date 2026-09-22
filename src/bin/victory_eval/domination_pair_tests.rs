@@ -38,6 +38,7 @@ fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
 fn focal_identity_and_handicap_match_the_fixed_king_profile() {
     let game = Game::new_with(options(37140000));
     assert_eq!(game.players[0].civ, "Gran Colombia");
+    assert_eq!((game.map.width, game.map.height), (60, 38));
     assert!(game.is_handicap_exempt(0));
     assert_eq!(game.handicap_yield_pct(0).science, 0.0);
     for pid in 1..4 {
@@ -48,10 +49,12 @@ fn focal_identity_and_handicap_match_the_fixed_king_profile() {
     assert_eq!(p["players"], 4);
     assert_eq!(
         (p["width"].as_i64(), p["height"].as_i64()),
-        (Some(44), Some(26))
+        (Some(60), Some(38))
     );
     assert_eq!(p["map"], "Pangaea");
     assert_eq!(p["difficulty"], "king");
+    assert_eq!(p["barbarian_difficulty"], "emperor");
+    assert_eq!(game.barbarian_difficulty, "emperor");
     assert_eq!(p["speed"], "online");
     assert_eq!(p["max_turns"], 250);
     assert_eq!(p["city_states"], 6);
