@@ -9587,7 +9587,7 @@ function CivvisTiles.pillageState(plot, pid, x, y)
         if PlayersVisibility[pid]:IsVisible(x, y) then
             local district = CityManager.GetDistrictAt(x, y);
             if district ~= nil then
-                local pillaged = district:IsPillaged();
+                local pillaged = try(function() return district:IsPillaged(); end, nil);
                 if type(pillaged) == "boolean" then
                     CivvisTiles.districtPillage[key] = pillaged;
                 end

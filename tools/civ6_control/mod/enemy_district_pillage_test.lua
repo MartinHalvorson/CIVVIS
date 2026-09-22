@@ -55,6 +55,9 @@ improvement = 0; pillaged = true
 assert(env.CivvisTiles.pillageState(plot, 0, 0, 0) == true, "improvement pillage remains supported")
 improvement = -1; visible = false
 assert(env.CivvisTiles.pillageState(plot, 0, 9, 9) == nil, "unseen district has no invented observation")
-visible = true; district.IsPillaged = nil
+visible = true; pillaged = true
+assert(env.CivvisTiles.pillageState(plot, 0, 0, 0) == true)
+district.IsPillaged = nil
+assert(env.CivvisTiles.pillageState(plot, 0, 0, 0) == true, "failed read preserves the last observation")
 assert(env.CivvisTiles.pillageState(plot, 0, 9, 9) == nil, "missing accessor is tolerated")
 print("enemy district pillage export, delta, repair and fog checks passed")
