@@ -7166,6 +7166,7 @@ mod surprise_defense;
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_surge;
+mod siege_resource_purchase;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -20817,6 +20818,9 @@ impl AdvancedAi {
             return true;
         }
         if self.border_parity_3_purchase(g, pid) {
+            return true;
+        }
+        if self.siege_resource_purchase(g, pid, plan) {
             return true;
         }
         let city_count = g.player_city_ids(pid).len();
