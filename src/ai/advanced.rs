@@ -28477,6 +28477,8 @@ impl AdvancedAi {
                             candidate.class == "military"
                                 && candidate.domain == spec.domain
                                 && candidate.has_ranged_attack() == spec.has_ranged_attack()
+                                // Field fire does not replace bombardment against walls.
+                                && candidate.siege == spec.siege
                                 && g.can_produce(pid, cid, &Item::Unit { unit: **name })
                         })
                         .map(|(_, candidate)| {

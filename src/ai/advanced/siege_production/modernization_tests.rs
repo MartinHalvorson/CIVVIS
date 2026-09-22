@@ -180,3 +180,97 @@ fn a_queued_old_army_already_provides_comparable_siege_power() {
         });
     assert!(!missing(&g, &ai, &plan, home));
 }
+
+fn field_cannon_without_niter_case() -> (Game, AdvancedAi, StrategicPlan, u32) {
+    let (mut g, ai, plan, home, _) = fixture();
+    let guns: Vec<_> = g
+        .units
+        .values()
+        .filter(|u| g.rules.units[u.kind].siege)
+        .map(|u| u.id)
+        .collect();
+    for uid in guns {
+        g.remove_unit(uid);
+    }
+    g.players[0].strategic_resources.clear();
+    for tech in ["ballistics", "military_engineering"] {
+        let ancestors = g.rules.tech_ancestors[tech].clone();
+        g.players[0]
+            .techs
+            .extend(ancestors.iter().map(|name| Name::new(name)));
+        g.players[0].techs.insert(Name::new(tech));
+    }
+    (g, ai, plan, home)
+}
+
+#[test]
+fn field_cannon_does_not_veto_the_only_available_wall_breaker() {
+    let (mut g, mut ai, plan, home) = field_cannon_without_niter_case();
+    let weapon = Item::Unit {
+        unit: crate::name!("trebuchet"),
+    };
+    assert!(g.can_produce(0, home, &weapon));
+    assert!(g.can_produce(
+        0,
+        home,
+        &Item::Unit {
+            unit: crate::name!("field_cannon")
+        }
+    ));
+    assert!(!g.can_produce(
+        0,
+        home,
+        &Item::Unit {
+            unit: crate::name!("bombard")
+        }
+    ));
+    let counts = ai.counts(&g, 0);
+    assert_eq!(counts.siege, 0);
+    assert!(
+        ai.production_value(&g, 0, home, &weapon, &plan, &counts) > 0.0,
+        "a Field Cannon cannot replace the missing bombardment role"
+    );
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&home].queue.first(), Some(&weapon));
+}
+
+#[test]
+fn available_bombard_still_replaces_weaker_siege_production() {
+    let (mut g, ai, plan, home) = field_cannon_without_niter_case();
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("niter"), 25.0);
+    assert!(g.can_produce(
+        0,
+        home,
+        &Item::Unit {
+            unit: crate::name!("bombard")
+        }
+    ));
+    let counts = ai.counts(&g, 0);
+    assert_eq!(
+        ai.production_value(
+            &g,
+            0,
+            home,
+            &Item::Unit {
+                unit: crate::name!("trebuchet")
+            },
+            &plan,
+            &counts
+        ),
+        -2_000.0
+    );
+    assert!(
+        ai.production_value(
+            &g,
+            0,
+            home,
+            &Item::Unit {
+                unit: crate::name!("bombard")
+            },
+            &plan,
+            &counts
+        ) > 0.0
+    );
+}
