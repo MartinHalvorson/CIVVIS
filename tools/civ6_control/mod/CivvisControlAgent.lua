@@ -14558,7 +14558,7 @@ local function applyOrder(player, pid, row, turn)
 						turn = turn, unit = subject, x = replacement.x, y = replacement.y,
 						resource = replacement.resource, previous = replacement.existing, want = wanted,
 					});
-					return true, "IMPROVEMENT_REPLACEMENT_QUEUED";
+					return true, "improvement_replacement_queued";
 				end
 			end
 			-- ★★★★ FALL BACK TO WHATEVER THIS TILE ALLOWS.

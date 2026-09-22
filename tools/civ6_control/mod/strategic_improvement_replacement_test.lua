@@ -97,7 +97,7 @@ local function logHas(text)
 end
 reset()
 local ok, why = CivvisApplyOrder(player, 0, order(), 187)
-assert(ok and why == 'IMPROVEMENT_REPLACEMENT_QUEUED', tostring(why))
+assert(ok and why == 'improvement_replacement_queued', tostring(why))
 assert(#calls == 1 and calls[1] == 2 and state.improvement == 11)
 assert(logHas('"kind":"improvement_replacement_started"'), 'record the prerequisite')
 assert(not logHas('"kind":"improved"'), 'removal is not a completed mine')
