@@ -143,16 +143,29 @@ impl AdvancedAi {
         }
     }
 
-    /// One legal source of counter-faith Missionaries, using a currently
-    /// observed majority and an available district slot. Finish a reservation
-    /// before selecting another city; otherwise prefer the shortest chain.
+    /// One legal source of defensive Missionaries, using a currently
+    /// observed majority and an available district slot. A founder preserves
+    /// its own faith; a non-founder uses a safe adopted counterfaith. Finish
+    /// a reservation before selecting another city, preferring the shortest chain.
     pub(super) fn adopted_faith_sanctuary_choice(
         &self,
         g: &Game,
         pid: usize,
         threatened: Option<u32>,
     ) -> Option<(u32, Item)> {
-        let threat = self.adopted_faith_construction_threat(g, pid)?;
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.victory_conditions.religious
+        {
+            return None;
+        }
+        let founded = g.players[pid].religion.as_deref();
+        let threat = if founded.is_some() {
+            // Founding alone does not preserve a religion: without a Shrine,
+            // conversion can close the only source before any defender exists.
+            self.home_conversion_threat(g, pid)?
+        } else {
+            self.adopted_faith_construction_threat(g, pid)?
+        };
         let missionary = Item::Unit {
             unit: crate::name!("missionary"),
         };
@@ -165,7 +178,11 @@ impl AdvancedAi {
             .filter(|cid| {
                 Some(*cid) != threatened
                     && g.city_religion(&g.cities[cid]).is_some_and(|faith| {
-                        faith != threat && Self::safe_adopted_counterfaith(g, pid, faith)
+                        if let Some(own) = founded {
+                            faith == own
+                        } else {
+                            faith != threat && Self::safe_adopted_counterfaith(g, pid, faith)
+                        }
                     })
             })
             .collect::<Vec<_>>();
@@ -236,7 +253,7 @@ impl AdvancedAi {
         .is_ok()
         {
             think!(self.journal(), Economy, Decision,
-                "{} starts {} for adopted-faith defense", g.cities[&cid].name, Self::plain_item(&item);
+                "{} starts {} for religious defense", g.cities[&cid].name, Self::plain_item(&item);
                 "conversion threatens recruitment; preserve one source of counter-faith Missionaries while its faith survives");
         }
     }

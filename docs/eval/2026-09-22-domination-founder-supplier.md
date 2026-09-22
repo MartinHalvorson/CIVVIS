@@ -1,0 +1,9 @@
+# Preserve a founder’s defensive recruitment source
+
+Native run `civvis-20260922T082146Z`, source `a7ba7f5d99e526017d33674b42673d473fdc20dd`, lost to Brazil’s Religious victory on turn 123 with no captured cities. Maracaibo completed its Holy Site on turn 70 and founded Buddhism on turn 72. On turns 72–78 it retained that majority and had a legal two- or three-turn Shrine, but production went through a University and Builder instead. Brazil converted the city on turn 79. The Shrine completed on turn 84, after every own-faith city had disappeared. This made subsequent missionary purchases of our religion unavailable despite accumulating Faith.
+
+The Domination sanctuary reservation now covers founders as well as non-founders. A founder requires the existing home-conversion warning and a surviving own-faith city; only that faith can supply the reserved defense. The existing Faith affordability, local military threat, legal production, single-source reservation and production-review protection remain in use. Other victory targets and disabled Religious victories remain excluded. This changes strategic production selection, with no native interaction, game rule or gene changes.
+
+The regression reproduces the missing founder reservation, checks retention through the actual production governor, and checks that the completed Shrine supports an own-faith defensive Missionary. Negative cases cover missing pressure, a lost own-faith majority, another victory lane, disabled Religious victory, insufficient Faith and a locally threatened supplier. Before the implementation, the positive test failed and both negative tests passed.
+
+Full validation and paired native-frame replay are in progress. Replay restores observed boards each frame: a changed order is not evidence that the Shrine finished sooner in Civilization VI or that the loss was prevented. No native Domination win is established.
