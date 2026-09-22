@@ -49,7 +49,7 @@
 //!   [`LATE_FACTOR`] to the power of the turns late after it. A served row
 //!   is never stripped below its need by a lower one; a unit already in a
 //!   force stays unless the gain is at least [`HYSTERESIS_GAIN`] or its row
-//!   is done; an urgent Defend may pull anyone. Whatever is left forms the
+//!   is done; an urgent Defend may pull from lower rows. Whatever is left forms the
 //!   **Reserve** at the Deter row's tile, else the frontier city nearest the
 //!   strongest met rival, else the capital. Sea units form their own forces
 //!   for a coastal Siege, an embarked Escort and a naval Destroy; air units
@@ -319,7 +319,7 @@ pub struct Objective {
     /// What it is about, for the journal.
     pub label: String,
     /// A Defend whose deadline is inside the relief time of the nearest
-    /// force: outranks every offensive row and may pull anyone.
+    /// force: outranks every offensive row and may pull from lower rows.
     pub urgent: bool,
 }
 
@@ -1375,49 +1375,30 @@ impl AdvancedAi {
                 .unwrap_or(u32::MAX);
             row.urgent = deadline <= relief;
         }
+        Self::order_board_rows(rows);
+    }
+
+    fn order_board_rows(rows: &mut Vec<Objective>) {
         rows.sort_by(|a, b| {
-            let tier = |row: &Objective| {
-                if row.urgent {
-                    0u8
-                } else if row.kind.offensive() {
-                    2
-                } else {
-                    1
-                }
-            };
-            // The urgent Defend outranks every offensive row; everything else
-            // is value over deadline. Tier one (defensive, not urgent) and
-            // tier two (offensive) interleave by score; tier zero leads.
-            let (ta, tb) = (tier(a), tier(b));
-            match (ta == 0, tb == 0) {
-                (true, false) => return std::cmp::Ordering::Less,
-                (false, true) => return std::cmp::Ordering::Greater,
-                _ => {}
-            }
             b.score()
                 .total_cmp(&a.score())
                 .then_with(|| a.key.cmp(&b.key))
         });
-        // No row above one it depends on.
-        for _ in 0..rows.len() {
-            let mut moved = false;
-            for index in 0..rows.len() {
-                let Some(dependency) = rows[index].depends_on else {
-                    continue;
-                };
-                let Some(at) = rows.iter().position(|row| row.key == dependency) else {
-                    continue;
-                };
-                if at > index {
-                    let row = rows.remove(index);
-                    rows.insert(at, row);
-                    moved = true;
-                    break;
-                }
-            }
-            if !moved {
-                break;
-            }
+        // Urgency holds back offense, not a more valuable or earlier-due
+        // defense. Select the highest-scoring eligible row so the dependency
+        // and urgent-defense constraints cannot make the comparator cyclic.
+        let mut pending = std::mem::take(rows);
+        while !pending.is_empty() {
+            let urgent_defense = pending.iter().any(|row| row.urgent);
+            let next = pending.iter().position(|row| {
+                !(urgent_defense && row.kind.offensive())
+                    && !row.depends_on.is_some_and(|dependency| {
+                        pending.iter().any(|other| other.key == dependency)
+                    })
+            });
+            // The generated board is acyclic. Preserve deterministic score
+            // order if an invalid dependency cycle ever reaches this layer.
+            rows.push(pending.remove(next.unwrap_or(0)));
         }
     }
 
@@ -1597,14 +1578,14 @@ impl AdvancedAi {
                                 let higher = row_rank
                                     .get(&there.objective_key)
                                     .is_some_and(|other| *other < rank);
-                                if !row.urgent {
-                                    if higher && contribution_there > 0.0 {
-                                        // Never strip a served higher row.
-                                        continue;
-                                    }
-                                    if score_here < HYSTERESIS_GAIN * score_there {
-                                        continue;
-                                    }
+                                // Urgency may bypass reassignment hysteresis,
+                                // but cannot take needed defenders from a
+                                // higher-ranked objective.
+                                if higher && contribution_there > 0.0 {
+                                    continue;
+                                }
+                                if !row.urgent && score_here < HYSTERESIS_GAIN * score_there {
+                                    continue;
                                 }
                             }
                         }
@@ -2876,3 +2857,6 @@ mod rebuild_tests;
 #[cfg(test)]
 #[path = "objective_board/staging_tests.rs"]
 mod staging_tests;
+
+#[cfg(test)]
+mod defense_priority_tests;
