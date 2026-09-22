@@ -16386,11 +16386,17 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .any(|card| matches!(card.as_str(), "conscription" | "levee_en_masse"));
+        // A discounted upgrade still needs cash. Give a named offensive
+        // upkeep relief when four turns of income cannot fund its cohort.
+        let upgrade_funding_relief = domination_target
+            && (at_major_war || staged_conquest)
+            && self.domination_upgrade_funding_shortfall(g, pid);
         let maintenance_emergency = (self.war_economy || domination_target)
             && (at_major_war || staged_conquest)
             && military > 0
             && g.players[pid].gold < recovery_reserve
-            && (g.players[pid].gold_per_turn < -0.5 || retained_domination_relief);
+            && (g.players[pid].gold_per_turn < -0.5 || retained_domination_relief)
+            || upgrade_funding_relief;
         if maintenance_emergency {
             desired.retain(|card| !matches!(*card, "conscription" | "levee_en_masse"));
             desired.splice(0..0, ["levee_en_masse", "conscription"]);
@@ -16708,6 +16714,19 @@ impl AdvancedAi {
                         return !culture_defense_cards.contains(&current.as_str())
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())
                             && self.builder_window_can_replace(g, pid, current);
+                    }
+                    if upgrade_funding_relief && matches!(card, "conscription" | "levee_en_masse") {
+                        // Ordinary desired military cards must not lock out
+                        // the cash needed by the upgrade discount itself.
+                        return g.rules.policies[current].slot == "military"
+                            && !matches!(
+                                current.as_str(),
+                                "professional_army"
+                                    | "force_modernization"
+                                    | "limitanei"
+                                    | "praetorium"
+                            )
+                            && !culture_defense_cards.contains(&current.as_str());
                     }
                     if upgrade_card == Some(card) {
                         return g.rules.policies[current].slot == "military"

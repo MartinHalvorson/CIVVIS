@@ -247,3 +247,98 @@ fn appointed_war_package_keeps_its_own_budget() {
     assert_eq!(g.players[0].gold, 1000.0);
     assert!(units.iter().all(|uid| g.units[uid].kind == "archer"));
 }
+
+fn funding_fixture() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
+    let (mut g, mut ai, plan, units) = fixture();
+    prepare_civics(&mut g);
+    g.players[0].civics.extend(
+        ["mercenaries", "military_training"]
+            .into_iter()
+            .map(Name::new),
+    );
+    g.players[0].policies = [
+        "professional_army",
+        "feudal_contract",
+        "veterancy",
+        "colonization",
+        "charismatic_leader",
+        "inspiration",
+    ]
+    .into_iter()
+    .map(Name::new)
+    .collect();
+    g.players[0].gold = 21.0;
+    g.players[0].gold_per_turn = 5.0;
+    ai.plan = Some(plan.clone());
+    (g, ai, plan, units)
+}
+
+#[test]
+fn funding_relief_slots_upkeep_savings_without_evicting_upgrade_discount() {
+    for war in [false, true] {
+        let (mut g, ai, _, _) = funding_fixture();
+        if war {
+            g.at_war.insert((0, 1));
+        }
+        let before = g.unit_gold_maintenance(0);
+        ai.strategic_policies(&mut g, 0, GrandStrategy::Conquest);
+        assert!(
+            g.players[0]
+                .policies
+                .contains(&crate::name!("conscription")),
+            "war={war}"
+        );
+        assert!(g.players[0]
+            .policies
+            .contains(&crate::name!("professional_army")));
+        assert!(g.unit_gold_maintenance(0) < before);
+    }
+}
+
+#[test]
+fn funding_relief_does_not_take_slots_when_cash_or_income_covers_upgrades() {
+    for income_only in [false, true] {
+        let (mut g, ai, _, _) = funding_fixture();
+        if income_only {
+            g.players[0].gold_per_turn = 1000.0;
+        } else {
+            g.players[0].gold = 1000.0;
+        }
+        ai.strategic_policies(&mut g, 0, GrandStrategy::Conquest);
+        assert!(!g.players[0]
+            .policies
+            .contains(&crate::name!("conscription")));
+    }
+}
+
+#[test]
+fn funding_relief_requires_a_major_offensive_and_an_upgrade_cohort() {
+    for mode in ["peace", "science", "one_unit", "no_successor"] {
+        let (mut g, mut ai, _, units) = funding_fixture();
+        let strategy = match mode {
+            "peace" => {
+                ai.plan = None;
+                GrandStrategy::Expansion
+            }
+            "science" => {
+                ai = AdvancedAi::targeting(VictoryTarget::Science);
+                GrandStrategy::Science
+            }
+            "one_unit" => {
+                g.units.remove(&units[1]);
+                GrandStrategy::Conquest
+            }
+            _ => {
+                g.players[0].techs.remove(&crate::name!("machinery"));
+                GrandStrategy::Conquest
+            }
+        };
+        ai.strategic_policies(&mut g, 0, strategy);
+        assert!(
+            !g.players[0]
+                .policies
+                .contains(&crate::name!("conscription")),
+            "{mode}"
+        );
+    }
+}
