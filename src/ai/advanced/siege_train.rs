@@ -1354,17 +1354,10 @@ impl AdvancedAi {
         self.approach(g, pid, uid, post, city.pos)
     }
 
-    /// Toward `goal` by explicit steps that never cross a ring tile of the
-    /// city other than the goal. The engine's own route runs through the
-    /// ring when that is shortest, and a unit entering the city's zone of
-    /// control there is stopped on the wrong tile — measured on the
-    /// three-warrior fixture, which clumped three adjacent tiles that way
-    /// and left one side of the ring open. Each step closes on the goal;
-    /// the router is asked only when no neighbour does, and its answer is
-    /// held to the same two rules. A sideways step — no closer, but onto a
-    /// tile with a closing step beyond it — is allowed once, before the
-    /// unit has moved this turn, so a ring tile in the straight line can be
-    /// gone round without the unit walking out and back.
+    /// Follow a legal route to the assigned post while excluding the city's
+    /// other ring tiles and occupied stands. Geometric distance may increase
+    /// around a mountain or a friendly screen; route distance still decreases.
+    /// The engine checks the first step and the movement guard rejects retreads.
     fn approach(
         &mut self,
         g: &mut Game,
@@ -1375,55 +1368,31 @@ impl AdvancedAi {
     ) -> Option<bool> {
         let mut moved = false;
         for _ in 0..4 {
-            let Some(unit) = g.units.get(&uid) else {
-                break;
-            };
-            let here = unit.pos;
-            if here == goal || unit.moves_left <= 0.0 {
+            let unit = g.units.get(&uid)?;
+            if unit.pos == goal || unit.moves_left <= 0.0 {
                 break;
             }
-            let distance = g.wdist(here, goal);
-            let allow_sideways = !unit.moved;
-            let ring_tile = |pos: Pos| pos != goal && g.wdist(pos, city_pos) <= 1;
-            let rough = |pos: Pos| {
-                g.map
-                    .get(pos)
-                    .is_some_and(|tile| tile.hills || tile.feature.is_some())
-            };
-            let onward = |pos: Pos| {
-                g.nbrs(pos).into_iter().any(|next| {
-                    !ring_tile(next)
-                        && g.wdist(next, goal) < distance
-                        && g.unit_can_traverse(uid, next)
-                        && (next == goal || g.unit_ids_at(next).is_empty())
-                })
-            };
-            let mut best: Option<((bool, i32, bool, Pos), Pos)> = None;
-            for pos in g.nbrs(here) {
-                if ring_tile(pos) || !g.can_move(uid, pos) {
-                    continue;
-                }
-                let closer = g.wdist(pos, goal);
-                let sideways = closer == distance;
-                if closer > distance || (sideways && !(allow_sideways && onward(pos))) {
-                    continue;
-                }
-                let key = (sideways, closer, rough(pos), pos);
-                if best.as_ref().is_none_or(|(old, _)| key < *old) {
-                    best = Some((key, pos));
-                }
-            }
-            let next = match best {
-                Some((_, pos)) => pos,
-                None => {
-                    let set: HashSet<Pos> = std::iter::once(goal).collect();
-                    match g.route_step_to_any(uid, &set).filter(|pos| {
-                        !ring_tile(*pos) && g.can_move(uid, *pos) && g.wdist(*pos, goal) <= distance
-                    }) {
-                        Some(pos) => pos,
-                        None => break,
-                    }
-                }
+            let mut avoid: BTreeSet<Pos> = g
+                .wdisk(city_pos, 1)
+                .into_iter()
+                .filter(|pos| *pos != goal)
+                .collect();
+            avoid.extend(
+                g.units
+                    .values()
+                    .filter(|other| {
+                        other.id != uid
+                            && g.rules.units[other.kind].domain.as_deref() != Some("air")
+                            && (other.owner != pid || g.rules.units[other.kind].class == "military")
+                    })
+                    .map(|other| other.pos),
+            );
+            avoid.remove(&unit.pos);
+            let Some(next) = g
+                .route_step_avoiding_tiles(uid, goal, &avoid)
+                .filter(|next| g.can_move(uid, *next))
+            else {
+                break;
             };
             if !self.base.tactical_apply_move(g, pid, uid, next) {
                 break;
@@ -2336,3 +2305,7 @@ mod support_tests;
 
 #[cfg(test)]
 mod linked_support_tests;
+
+#[cfg(test)]
+#[path = "siege_train/tests.rs"]
+mod obstacle_routing_tests;
