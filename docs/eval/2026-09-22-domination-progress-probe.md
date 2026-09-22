@@ -1,16 +1,71 @@
-# Gran Colombia siege-progress compact-map pilot — 2026-09-22
+# Gran Colombia siege-progress paired evaluation — 2026-09-22
 
-The `siege-is-progress-3` policy produced **zero focal wins in either arm across
-32 matched pairs**. Only one pair changed its applied-action history. This is
-insufficient evidence to enable the policy; the deployment bundle is unchanged.
+The `siege-is-progress-3` policy produced **zero focal wins in either arm** in
+both the 32-pair Tiny-map follow-up and the separate 32-pair compact pilot.
+Each sample had only one pair with different applied actions. Neither showed
+additional foreign cities held. The policy remains outside the deployment
+bundle; no native win or King-to-Emperor progression is credited.
 
-The completed sample below used a **44×26 compact map**. Shipped Civilization VI
-`Base/Assets/Gameplay/Data/Maps.xml:106` defines four-player `MAPSIZE_TINY` as
-**60×38**. The current CLI and its actual generated-world regression now use
-60×38; a separately registered 32-pair follow-up is pending. Do not treat this
-compact-map pilot as a native-size evaluation.
+## Tiny-map follow-up
 
-## Method and provenance
+Shipped Civilization VI `Base/Assets/Gameplay/Data/Maps.xml:106` defines
+four-player `MAPSIZE_TINY` as **60×38**. The CLI and its generated-world test
+now use those dimensions. The initial 44×26 pilot below is explicitly separate.
+
+The follow-up plan was registered at 07:12 UTC before its 07:14:12 UTC launch:
+32 matched pairs, seeds 37140000–37140031, four eight-pair blocks, complete every
+pair regardless of the result. All 32 completed. Three blocks exited 2 after
+writing all eight pairs because their actions were identical; the one exposed
+block exited 0. These are evaluator outcomes, not interrupted runs.
+
+The focal Gran Colombia seat targets Domination and has no AI difficulty
+bonuses. Three adaptive CIVVIS live-bridge rivals receive King bonuses. The
+profile is 60×38 Pangaea, Online, six city-states, all victories, 250 turns,
+barbarians and no mercy rule. Barbarians retain the repository's separate
+**Emperor** training difficulty. Opponents are **not Firaxis AI**; matching the
+map dimensions does not make this native-game verification.
+
+Fresh worlds and controllers are initialized for each arm. Only the focal
+seat's policy changes; its other forced policies match the compiled native
+bundle. Execution order alternates. Complete serialized applied-action logs
+are compared byte for byte before summaries are written. Foreign-city counts
+observe unique cities held at turn boundaries or the end, not every capture.
+
+Source: `12c21d853617ab269b6e07ef77a65e2c8a67084a`, integrating main
+`5cfe07ed876f7d77c9e5636f9bd6e4bf10cce7de`. Release binary SHA-256:
+`9ae2bf6e313c58a7712e3091a4c095c1e95c3be0745a60520c06b71d1937a78c`.
+The follow-up also includes newer strategy code than the pilot; differences
+between samples cannot be attributed to map size alone. Later main changes
+merged into this PR are not measured by either frozen experiment.
+
+| Measure | Off | On |
+|---|---:|---:|
+| Focal wins | 0/32 | 0/32 |
+| Focal Domination wins | 0/32 | 0/32 |
+| Mean final focal score | 381.4375 | 382.4375 |
+| Foreign cities observed held, summed | 12 | 12 |
+| Foreign cities held at the end, summed | 7 | 7 |
+| Rival Science victories | 24 | 24 |
+| Rival Culture victories | 4 | 4 |
+| Rival Religious victories | 3 | 3 |
+| Rival Domination victories | 1 | 1 |
+
+Games ended between turns 145 and 223. Only seed **37140017** changed, against
+Aztec, France and Mongolia. Off lost to Mongolia's Science victory at turn 194
+with score 345; on lost to Aztec's Science victory at turn 201 with score 377.
+Neither held a foreign city. The higher score and later loss do not demonstrate
+stronger conquest. With 31 identical-action pairs, the sample provides little
+behavioral exposure and does not establish equivalence or safety.
+
+The [64 machine-readable pairs](2026-09-22-domination-progress-probe.jsonl)
+retain both samples, distinguished by `evaluation_batch`, dimensions, source
+and binary hash. Do not pool them as 64 pairs of one frozen treatment.
+To reproduce either sample, check out its recorded source and use the build
+and four-block command below. The CLI refuses to overwrite an output file.
+
+## Compact-map pilot (44×26)
+
+### Pilot method and provenance
 
 The evaluated `victory_eval --domination-pair POLICY` revision holds one Gran Colombia
 seat to Domination and pits it against three adaptive CIVVIS live-bridge rivals.
@@ -56,7 +111,7 @@ files. Output files are created exclusively, never overwritten. A block with
 no changed action histories exits 2 **after writing every pair**, explicitly
 reporting lack of behavioral contrast. The other block exits successfully.
 
-## Results
+### Pilot results
 
 | Measure | Off | On |
 |---|---:|---:|
@@ -76,11 +131,11 @@ arm held a foreign city in that pair. The score increase occurred in an earlier
 loss to a different victory condition; it is not evidence of stronger conquest.
 The formerly crashing seed 37140009 completed in both arms.
 
-The [32 machine-readable pairs](2026-09-22-domination-progress-probe.jsonl)
+The [machine-readable pairs, filtered to `compact-pilot`](2026-09-22-domination-progress-probe.jsonl)
 include complete setup axes, actual civilizations, execution order, policy
 bundle, outcomes, action contrast and source/binary provenance.
 
-## Interpretation
+### Pilot interpretation
 
 The native replay that motivated this test showed the policy suppressing a
 peace offer when a siege was finally staged. That established a decision
