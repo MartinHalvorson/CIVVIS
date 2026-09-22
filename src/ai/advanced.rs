@@ -22,6 +22,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 mod adopted_faith_sanctuary;
+mod counterfaith_condemnation;
 mod counterfaith_source;
 mod defensive_apostle;
 
@@ -38498,9 +38499,9 @@ impl AdvancedAi {
         patrol
     }
 
-    /// Condemning a foreign Missionary or Apostle destroys it and pushes our
-    /// own Pressure back — the standing military answer to a religious
-    /// offensive. Previously this only fired when an enemy religious unit
+    /// Condemning a foreign Missionary or Apostle destroys it and reduces
+    /// its faith's nearby pressure. Preserve a safe competing faith when a
+    /// different foreign religion is taking our empire. Previously this only fired when an enemy religious unit
     /// happened to already share our tile, which almost never happens, so
     /// the counter was effectively dead. Now a military unit will step onto
     /// an adjacent one and condemn it.
@@ -38511,6 +38512,7 @@ impl AdvancedAi {
                 target.owner != pid
                     && game.is_at_war(pid, target.owner)
                     && game.rules.units[target.kind].class == "religious"
+                    && !self.preserve_competing_faith(game, pid, target)
             })
         };
         let here = g.units[&uid].pos;
