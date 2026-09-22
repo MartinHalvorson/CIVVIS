@@ -83,7 +83,7 @@ fn lower_urgent_defense_does_not_take_the_higher_citys_only_guard() {
     assert_eq!(defenses[0].key, ObjectiveKey::Defend(first));
     assert!(
         defenses[1].urgent,
-        "exercise the lower urgent row's steal path"
+        "exercise the lower urgent row's steal path: {defenses:?}"
     );
     let force = board
         .forces
