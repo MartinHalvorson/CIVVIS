@@ -1705,6 +1705,7 @@ def ship_task(args: argparse.Namespace) -> int:
     ready_thresholds: Dict[str, str] = {}
     auto_merge_armed = False
     rerun_attempts: Dict[str, int] = {name: 0 for name in REQUIRED_CHECKS}
+    resume_ready_head = True
 
     def finish_merged(pr: Dict[str, Any]) -> Optional[int]:
         merged_sha = pr_merge_sha(pr)
@@ -1732,12 +1733,24 @@ def ship_task(args: argparse.Namespace) -> int:
         if (finished := finish_merged(pr)) is not None:
             return finished
 
-        merged_main = merge_current_main(root)
-        if merged_main and git(root, "status", "--porcelain"):
-            raise CommandError("main integration left unexpected worktree changes")
-        git(root, "diff", "--check", "origin/main...")
-        git(root, "push", "origin", f"HEAD:{branch}")
         local_head = git(root, "rev-parse", "HEAD")
+        resume = (resume_ready_head and pr.get("isDraft") is False
+                  and str(pr.get("headRefOid") or "") == local_head)
+        # A fresh invocation after a network failure must rejoin the ready
+        # head's gate, just as the inner loop does when main advances. Merging
+        # here cancels that head's CI and starts its full gate again. Consume
+        # this exception once: real conflicts and excessive staleness still
+        # return from the inner loop to the normal integration path below.
+        resume_ready_head = False
+        if resume:
+            print(f"resuming ready PR #{pr['number']} on its existing head")
+        else:
+            merged_main = merge_current_main(root)
+            if merged_main and git(root, "status", "--porcelain"):
+                raise CommandError("main integration left unexpected worktree changes")
+            git(root, "diff", "--check", "origin/main...")
+            git(root, "push", "origin", f"HEAD:{branch}")
+            local_head = git(root, "rev-parse", "HEAD")
 
         pr = wait_for_pr_head(
             root,
