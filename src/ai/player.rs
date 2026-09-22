@@ -113,11 +113,20 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         }
         let mut view = game.player_decision_view(pid);
         let mapped = view.units.keys().map(|id| (*id, i64::from(*id))).collect();
+        let movement_memory = ai.observed_movement_memory();
         let (finishing, ordinary_begin) = plan_frame(ai, &mut view, pid, &mapped);
         // Governor preferences are player decisions, not predicted resources.
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
-        let changed = execute_frame(game, pid, &finishing, view.log.since(ordinary_begin));
+        let mut executed_movement = Vec::new();
+        let changed = execute_frame_recorded(
+            game,
+            pid,
+            &finishing,
+            view.log.since(ordinary_begin),
+            &mut executed_movement,
+        );
+        ai.reconcile_observed_movement(game, movement_memory, &executed_movement);
         if !changed {
             break;
         }
@@ -148,17 +157,28 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
     }
 }
 
+#[cfg(test)]
 fn execute_frame<'a>(
     game: &mut Game,
     pid: usize,
     finishing: &super::finishing::WarFinishingVolley,
     ordinary: impl Iterator<Item = &'a (usize, Action)>,
 ) -> bool {
+    execute_frame_recorded(game, pid, finishing, ordinary, &mut Vec::new())
+}
+
+fn execute_frame_recorded<'a>(
+    game: &mut Game,
+    pid: usize,
+    finishing: &super::finishing::WarFinishingVolley,
+    ordinary: impl Iterator<Item = &'a (usize, Action)>,
+    movement: &mut Vec<(u32, crate::Pos, crate::Pos)>,
+) -> bool {
     let mut changed = false;
     for (target, actions) in &finishing.execution {
         if game.units.contains_key(target) {
             for action in actions {
-                match execute_observed_action(game, pid, action) {
+                match execute_observed_action_recorded(game, pid, action, movement) {
                     Some(refresh) => changed |= refresh,
                     None => return true,
                 }
@@ -172,7 +192,7 @@ fn execute_frame<'a>(
     }
     for (seat, action) in ordinary {
         if *seat == pid && !matches!(action, Action::EndTurn) {
-            match execute_observed_action(game, pid, action) {
+            match execute_observed_action_recorded(game, pid, action, movement) {
                 Some(refresh) => changed |= refresh,
                 None => return true,
             }
@@ -184,12 +204,28 @@ fn execute_frame<'a>(
 /// None stops a tactical refusal or terminal batch immediately. Some(true) requests a
 /// fresh observation AFTER the batch, preserving the live adapter's bounded
 /// batch cadence instead of silently limiting an army to three attacks.
+#[cfg(test)]
 fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Option<bool> {
+    execute_observed_action_recorded(game, pid, action, &mut Vec::new())
+}
+
+fn execute_observed_action_recorded(
+    game: &mut Game,
+    pid: usize,
+    action: &Action,
+    movement: &mut Vec<(u32, crate::Pos, crate::Pos)>,
+) -> Option<bool> {
     if game.current != pid || game.winner.is_some() {
         return None;
     }
     let explored = game.players[pid].explored.len();
     let allocator = game.next_id;
+    let moved_unit = match action {
+        Action::Move { unit, .. } | Action::MoveTo { unit, .. } => {
+            game.units.get(unit).map(|u| (*unit, u.pos))
+        }
+        _ => None,
+    };
     if game.apply(pid, action).is_err() {
         *game.players[pid]
             .counters
@@ -213,6 +249,16 @@ fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Opti
             _ => false,
         };
         return economic.then_some(true);
+    }
+    if let Some((unit, from)) = moved_unit {
+        if let Some(to) = game
+            .units
+            .get(&unit)
+            .map(|u| u.pos)
+            .filter(|to| *to != from)
+        {
+            movement.push((unit, from, to));
+        }
     }
     Some(
         game.current != pid
