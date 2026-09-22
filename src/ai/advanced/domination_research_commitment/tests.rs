@@ -262,14 +262,22 @@ fn placed_campus_catchup_is_reserved_and_survives_production_review() {
 }
 
 #[test]
-fn campus_catchup_requires_an_existing_foundation_and_a_domination_shortfall() {
-    for case in ["new_site", "other_foundation", "other_lane", "caught_up"] {
+fn campus_catchup_requires_maturity_for_new_sites_and_a_domination_shortfall() {
+    for case in [
+        "small_new_site",
+        "other_foundation",
+        "other_lane",
+        "caught_up",
+    ] {
         let (mut g, cid, mut ai, plan, item) = placed_campus_fixture();
         let Item::District { pos, .. } = item else {
             unreachable!()
         };
         match case {
-            "new_site" => g.map.tiles.get_mut(&pos).unwrap().district_foundation = None,
+            "small_new_site" => {
+                g.map.tiles.get_mut(&pos).unwrap().district_foundation = None;
+                g.cities.get_mut(&cid).unwrap().pop = 3;
+            }
             "other_foundation" => {
                 g.map
                     .tiles
