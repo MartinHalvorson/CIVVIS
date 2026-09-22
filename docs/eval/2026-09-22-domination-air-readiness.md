@@ -4,4 +4,15 @@ Native match `civvis-20260922T013415Z` and its continuations used source `590641
 
 This prototype keeps a small aircraft preparation program for an industrialized Domination seat without requiring a war target. It preserves the research goal and one productive airfield slot, claims an idle queue for the first base, then prepares two supplied Bombers. It counts queued aircraft and newer bomber generations. Immediate home threats suspend preparation, existing queues are not cleared, and aircraft require a treasury reserve for upkeep. It does not open a war or retain a peace-ended war appointment.
 
-Validation and paired native replay are pending. This is not evidence of earlier completed aircraft, captures or a native victory. Local evidence is under `/tmp/civvis-013415-airfield-replay` and `/tmp/civvis-013415-continuations-audit.json`.
+## Prototype evidence
+
+The first prototype (`e2f3add7e2af667507c3307c7b74b04f5d6aaf98`) passes all seven focused tests, 4,172 Rust tests (53 existing ignored), changed-line Rust quality, 14 append-integrity tests and eight four-player smoke games with `--turns 180 --start-seed 371500`.
+
+A paired replay compares it with `430bed6ba17e8c7bba2ab01d871c0faf20062841`, whose compiler inputs and data are identical to integrated base `a0e1dfa349ccbcd3bad6d772ba1346f371e9b064`; differences between those baseline revisions are confined to documentation and tools. The original segment through turn 172 contains 477 frames: 15 exported frames and 20 internal-action frames change. At 164 Bogotá requests an Aerodrome instead of a Commercial Hub and research requests Advanced Flight instead of Rocketry. Later repeated requests compare the new proposal against an unchanged historical board; they are not completed construction or multiple simultaneous bases.
+
+The second continuation is replayed independently, preserving its controller restart and overlapping save chronology. Its 114 frames through turn 208 change 30 exported and 39 internal-action frames. Advanced Flight is requested at 174 instead of Combustion, and Popayán requests an Aerodrome at 188 instead of a Supply Convoy. All internal differences in both comparisons are research or production. There are no movement or combat-order differences.
+
+These are counterfactual proposals, not earlier native aircraft, captures or a prevented loss. The first replay's input SHA-256 is `8f2c06558e9605045dc6c8d55c3fd407cc958af0fd8f97f06d01d382a2d30d52`; the continuation's is `2d1d52a46b8172ca51cead2340b206918454551eff5149257c10b1845121d245`. Baseline binary SHA-256: `d83f8d7e92101513b12ca1b20b6cf5673bca7ab3c85486ac48ebc43a9f165204`; prototype binary: `430ab1c73e474eebc128e846a66edcc6c405c3789b75a67e771728802dda145e`.
+
+A subsequent optimization skips readiness calculations for unrelated menu items; all 4,172 Rust tests still pass. Its replay equivalence and final integration checks remain pending. Timings from concurrently running replays are not a controlled speed result. Artifacts remain under `/tmp/civvis-013415-airfield-replay`, `/tmp/civvis-013415-cont2-readiness-replay` and `/tmp/civvis-3715-*`.
+

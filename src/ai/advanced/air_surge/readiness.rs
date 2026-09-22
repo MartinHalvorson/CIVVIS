@@ -58,7 +58,16 @@ impl AdvancedAi {
         item: &Item,
         turns: f64,
     ) -> Option<f64> {
-        if !self.domination_air_readiness_active(g, pid) {
+        // Most menu entries cannot affect this contract. Avoid re-reading
+        // empire readiness for every ordinary building, project and land unit.
+        let relevant = match item {
+            Item::District { district, .. } => g.rules.districts[district].specialty,
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[*unit].promotion_class == "air_bomber"
+            }
+            _ => false,
+        };
+        if !relevant || !self.domination_air_readiness_active(g, pid) {
             return None;
         }
         if self.air_surge_reserves_field_slot(g, pid, cid, item) {
@@ -95,12 +104,25 @@ impl AdvancedAi {
         if !self.domination_air_readiness_active(g, pid) {
             return false;
         }
+        let field = Self::air_surge_field(g, pid);
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in g.player_city_ids(pid) {
             if !g.cities[&cid].queue.is_empty() {
                 continue;
             }
             for item in g.producible_items(pid, cid) {
+                let package_item = match &item {
+                    Item::District { district, .. } => {
+                        field.is_some_and(|field| g.district_family(*district) == field)
+                    }
+                    Item::Unit { unit } | Item::Formation { unit, .. } => {
+                        g.rules.units[*unit].promotion_class == "air_bomber"
+                    }
+                    _ => false,
+                };
+                if !package_item {
+                    continue;
+                }
                 let turns = g.item_remaining_cost_for_city(pid, cid, &item)
                     / (g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(&item)))
                         .max(0.1);

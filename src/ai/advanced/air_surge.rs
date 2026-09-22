@@ -1113,6 +1113,9 @@ impl AdvancedAi {
         cid: u32,
         item: &Item,
     ) -> bool {
+        let Item::District { district, pos } = item else {
+            return false;
+        };
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return false;
         }
@@ -1126,9 +1129,6 @@ impl AdvancedAi {
         if !needs_field {
             return false;
         }
-        let Item::District { district, pos } = item else {
-            return false;
-        };
         let Some(field) = Self::air_surge_field(g, pid) else {
             return false;
         };
