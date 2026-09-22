@@ -1281,6 +1281,87 @@ impl AdvancedAi {
     /// Own the diplomatic end of the surge. Returning `true` means the
     /// appointment consumed the war-opening decision this turn, even when it
     /// deliberately held.
+    /// An urgent Culture denial can start with an actual infrastructure sortie
+    /// while the capture force travels. Require the tactical planner itself to
+    /// choose a Theater Square strike after a legal declaration, not merely an
+    /// aircraft somewhere in the empire.
+    pub(super) fn urgent_culture_air_opening_ready(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || plan.strategy != GrandStrategy::Conquest
+            || plan.target_player != Some(target)
+            || plan.threatened_city.is_some()
+            || self.threatened_city(g, pid).is_some()
+            || g.is_at_war(pid, target)
+        {
+            return false;
+        }
+        let pressure = self.rival_victory_pressure(g, target);
+        if pressure.strategy != GrandStrategy::Culture
+            || !self.victory_pressure_is_urgent(g, target, pressure)
+        {
+            return false;
+        }
+        let Some(opening) = self.preferred_war_opening(g, pid, target) else {
+            return false;
+        };
+        if !matches!(
+            opening,
+            Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }
+        ) {
+            return false;
+        }
+        let mut forecast = g.speculative_clone();
+        if forecast.apply(pid, &opening).is_err() {
+            return false;
+        }
+        for uid in forecast.player_unit_ids(pid) {
+            let unit = &forecast.units[&uid];
+            if unit.hp < 80
+                || unit.moves_left <= 0.0
+                || unit.attacks_left == 0
+                || !forecast.rules.units[unit.kind].siege
+                || forecast.rules.units[unit.kind].domain.as_deref() != Some("air")
+            {
+                continue;
+            }
+            let Some(action @ Action::AirPillage { target: pos, .. }) =
+                self.advanced_air_action(&forecast, pid, uid, plan)
+            else {
+                continue;
+            };
+            let Some(tile) = forecast.map.get(pos) else {
+                continue;
+            };
+            if !tile
+                .owner_city
+                .and_then(|cid| forecast.cities.get(&cid))
+                .is_some_and(|city| city.owner == target)
+                || !tile
+                    .district
+                    .is_some_and(|district| forecast.district_family(district) == "theater_square")
+                || self.air_pillage_value(&forecast, pid, uid, pos) <= 0.0
+            {
+                continue;
+            }
+            let mut sortie = forecast.speculative_clone();
+            if sortie.apply(pid, &action).is_ok()
+                && sortie
+                    .units
+                    .get(&uid)
+                    .is_some_and(|survivor| survivor.hp >= 60)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) fn air_surge_opening(&mut self, g: &mut Game, pid: usize, target: usize) -> bool {
         let Some(plan) = self
             .air_surge_plan
@@ -1390,3 +1471,6 @@ mod war_retarget_tests;
 
 #[cfg(test)]
 mod wartime_research_tests;
+
+#[cfg(test)]
+mod urgent_denial_opening_tests;
