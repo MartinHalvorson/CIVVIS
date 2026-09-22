@@ -1,12 +1,18 @@
-# Gran Colombia siege-progress probe — 2026-09-22
+# Gran Colombia siege-progress compact-map pilot — 2026-09-22
 
 The `siege-is-progress-3` policy produced **zero focal wins in either arm across
 32 matched pairs**. Only one pair changed its applied-action history. This is
 insufficient evidence to enable the policy; the deployment bundle is unchanged.
 
+The completed sample below used a **44×26 compact map**. Shipped Civilization VI
+`Base/Assets/Gameplay/Data/Maps.xml:106` defines four-player `MAPSIZE_TINY` as
+**60×38**. The current CLI and its actual generated-world regression now use
+60×38; a separately registered 32-pair follow-up is pending. Do not treat this
+compact-map pilot as a native-size evaluation.
+
 ## Method and provenance
 
-The new `victory_eval --domination-pair POLICY` mode holds one Gran Colombia
+The evaluated `victory_eval --domination-pair POLICY` revision holds one Gran Colombia
 seat to Domination and pits it against three adaptive CIVVIS live-bridge rivals.
 These are simulator opponents, not Firaxis AI. The focal player is exempt from
 AI difficulty bonuses; the three rivals receive King bonuses. The profile is
