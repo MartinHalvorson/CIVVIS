@@ -813,6 +813,7 @@ else
 	local heartbeatFrames = 0;      -- tick() calls since load, hidden ones included
 	local heartbeatSeconds = 0;     -- fDTime accumulated over those same calls
 	local controllerPulseSeconds = 0;
+	local dialogueFadeExpired = false;
 
 	-- ★★★★★ A FRESH SHOW IS A FRESH DIALOGUE, EVEN WHEN THIS CONTEXT NEVER TICKS
 	-- WHILE HIDDEN.
@@ -832,6 +833,7 @@ else
 	-- active deal hold is deliberately left alone: it is a real CIVVIS-owned
 	-- session and may have been armed before the view becomes visible.
 	local function resetShownAttemptState()
+		dialogueFadeExpired = false;
         firstMeetChoice = nil;
         firstMeetAnswered = false;
         dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
@@ -937,7 +939,9 @@ else
 	-- the tick runs while hidden but `fDTime` is not meaningful there, and
 	-- no frames at all means `SetUpdate` does not run on a hidden context.
 	local HEARTBEAT_FRAMES = 600;
-	local RETRY_SECONDS = 30.0;
+	-- Retry a complete close ladder promptly, including after many failures.
+	local RETRY_SECONDS = 1.0;
+	local DIALOGUE_FADE_TIMEOUT_SECONDS = 2.0;
 	local DIALOGUE_READY_RETRY_SECONDS = 0.05;
 
 	-- What "up" means. Everywhere else it is the context not being hidden, the
@@ -1033,6 +1037,7 @@ else
 			heartbeatSeconds = 0;
 		end
 		if not isUp() then
+			dialogueFadeExpired = false;
 			controllerPulseSeconds = 0;
 			showing = false;
 			closes = 0;
@@ -1058,7 +1063,7 @@ else
 			remaining = SECONDS;
 			shown = 0;
 		end
-		local dt = tonumber(fDTime) or 0;
+		local dt = math.max(0, tonumber(fDTime) or 0);
 		local civvisDealView = NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView";
 		if civvisDealView and dealHold > 0 then
 			dealHold = dealHold - dt;
@@ -1085,12 +1090,16 @@ else
                 or (dialogueChoice ~= nil and not dialogueAnswered
                     and type(dialogueCallback) == "function"));
 		if remaining > 0 and not responseReady then return; end
-		if civvisDealView and not dealForceClose
+		if civvisDealView and not dealForceClose and not dialogueFadeExpired
 				and not dialogueReady() then
-			-- Keep the elapsed screen time for telemetry, but do not consume a
-			-- closer rung while the shipped controls are still transitioning.
-			remaining = DIALOGUE_READY_RETRY_SECONDS;
-			return;
+			if shown < DIALOGUE_FADE_TIMEOUT_SECONDS then
+				-- Allow a normal transition, but bound a frozen animation.
+				remaining = DIALOGUE_READY_RETRY_SECONDS;
+				return;
+			end
+			-- A frozen transition must not prevent the native exit ladder forever.
+			dialogueFadeExpired = true;
+			report("autoclose_fade_timeout");
 		end
 		local wonderAnimationReadyAtClose = true;
 		local wonderAnimationTimedOut = false;
@@ -1274,7 +1283,7 @@ else
 				reported = true;
 				report("autoclose_stuck", string.format(',"attempts":%d', closes));
 			end
-			remaining = RETRY_SECONDS;
+			if closes % GIVE_UP_AFTER == 0 then remaining = RETRY_SECONDS; end
 		end
 	end
 

@@ -55,6 +55,7 @@
 		</AddUserInterfaces>
 		<ImportFiles id="CivvisControlHeartbeatFiles">
 			<File>CivvisControlHeartbeat.lua</File>
+		<File>CivvisControlMapView.lua</File>
 		</ImportFiles>
 		<ReplaceUIScript id="CivvisControlHeartbeatHUD">
 			<Properties>
@@ -304,5 +305,6 @@
 		<File>CivvisControlAgent.lua</File>
 		<File>CivvisControlAutoClose.lua</File>
 		<File>CivvisControlHeartbeat.lua</File>
+		<File>CivvisControlMapView.lua</File>
 	</Files>
 </Mod>
