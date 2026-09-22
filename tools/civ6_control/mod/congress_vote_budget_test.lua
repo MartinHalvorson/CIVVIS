@@ -2,15 +2,11 @@
 --
 -- Run: lua5.1 tools/civ6_control/mod/congress_vote_budget_test.lua
 --
--- Seventeen multi-vote ballots across four runs were refused whole while
--- ninety-five one-vote ballots registered, and every refused ask saturated
--- the bank priced by the host's own `GetVotesandFavorCost` table -- the
--- ONLINE curve, cumulative `2n(n-1)`.  The Standard curve charges
--- `5n(n-1)`; a core that charges Standard while the accessor reports Online
--- refuses every ask this seat ever made, and no recorded ballot could tell,
--- because none ever asked a count that fits both tables.
--- `CivvisCongressVoteBudget` caps the ask by both walks; these are the
--- recorded sessions it must reprice.
+-- Native civvis-20260922T151652Z t221 had 340 Favor and a host-priced
+-- allowance of 13 votes. A speculative Standard-speed cap asked only eight
+-- and prevented the existing twelve-vote claim policy from activating.
+-- The host subsequently verified all eight votes, option and target exactly.
+-- Price the actual request from the same table as WorldCongressPopup.lua.
 
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 
@@ -55,33 +51,22 @@ local function onlineCosts(entries)
 	return costs
 end
 
--- Run civvis-20260819T004405Z turn 222: 791 Favor, MaxVotes 20.  The old
--- walk asked 20 (Online price 760) and the host recorded one; 13 votes is
--- the largest ask that also fits the Standard table (5*13*12 = 780).
+-- Recorded Online banks use the host quote, not a hypothetical Standard cap.
 local votes, host, standard = voteBudget(791, onlineCosts(20), 20)
-check("t222 ask fits both tables", votes, 13)
-check("t222 host walk still reads the bank", host, 20)
-check("t222 standard walk stops at 780", standard, 13)
-
--- Run civvis-20260818T175125Z turn 162: 352 Favor, MaxVotes 13.  The old
--- walk asked 13 (Online 312, refused); 8 votes cost 280 Standard.
-votes, host, standard = voteBudget(352, onlineCosts(13), 13)
-check("t162 ask", votes, 8)
-check("t162 host walk", host, 13)
-check("t162 standard walk", standard, 8)
-
--- A first-session probe bank: 52 Favor buys 5 votes Online but only 3
--- Standard, so the probe's three votes fit both tables from turn 61 on.
-votes, host, standard = voteBudget(52, onlineCosts(10), 10)
-check("first-session ask", votes, 3)
-check("first-session host walk", host, 5)
-check("first-session standard walk", standard, 3)
-
--- Exact Standard boundary: 780 affords the 13th vote, 779 does not.
-votes = voteBudget(780, onlineCosts(20), 20)
-check("standard boundary at 780", votes, 13)
-votes = voteBudget(779, onlineCosts(20), 20)
-check("standard boundary at 779", votes, 12)
+check("791 Favor Online ask", votes, 20)
+check("host walk", host, 20)
+check("Standard comparison stays observable", standard, 13)
+votes, host, standard = voteBudget(340, onlineCosts(13), 13)
+check("native t221 ask", votes, 13)
+check("native t221 host allowance", host, 13)
+check("native t221 diagnostic Standard allowance", standard, 8)
+check("Online exact boundary", voteBudget(312, onlineCosts(20), 20), 13)
+check("Online below boundary", voteBudget(311, onlineCosts(20), 20), 12)
+check("small Online bank", voteBudget(52, onlineCosts(10), 10), 5)
+local standardCosts = {}
+for k = 0, 20 do standardCosts[k] = 5 * (k + 1) * k end
+check("Standard exact boundary", voteBudget(780, standardCosts, 20), 13)
+check("Standard below boundary", voteBudget(779, standardCosts, 20), 12)
 
 -- MaxVotes caps both walks even when the bank is deep.
 votes, host, standard = voteBudget(10000, onlineCosts(20), 20)
@@ -95,6 +80,82 @@ check("nil bank", voteBudget(nil, onlineCosts(20), 20), 1)
 check("missing cost table", voteBudget(791, nil, 20), 1)
 check("MaxVotes one", voteBudget(791, onlineCosts(20), 1), 1)
 check("missing MaxVotes", voteBudget(791, onlineCosts(20), nil), 1)
+
+-- Exercise the real ballot selector and request, not a duplicate claim rule.
+local function upvalue(fn, key, replacement)
+    for i = 1, 100 do
+        local name, value = debug.getupvalue(fn, i)
+        if name == nil then break end
+        if name == key then
+            if replacement ~= nil then debug.setupvalue(fn, i, replacement) end
+            return value
+        end
+    end
+    error("missing upvalue " .. key)
+end
+local tick = upvalue(CivvisQueue.onUiPulse, "tick")
+upvalue(tick, "cfg", { Play = true, CivvisDecides = false, CounterResolutions = false })
+local hooks = {}
+Events = setmetatable({ WorldCongressStage1 = { Add = function(fn) hooks.stage = fn end } },
+    { __index = function() return stub() end })
+LuaEvents = setmetatable({ CivvisCongressBallot = { Add = function(fn) hooks.popup = fn end } },
+    { __index = function() return stub() end })
+Automation = { Log = function() end }
+local costs = onlineCosts(13)
+costs.MaxVotes = 13
+local wc = {
+    GetVotesandFavorCost = function() return costs end,
+    GetResolutions = function() return {
+        Stage = 2147483647,
+        { Type = "WC_RES_DIPLOVICTORY", TargetType = "PlayerType", PossibleTargets = { 0, 1, 2, 3 } },
+    } end,
+}
+Game = {
+    GetLocalPlayer = function() return 0 end,
+    GetCurrentGameTurn = function() return 221 end,
+    GetCurrentTurnSegment = function() return "TURNSEG_WORLDCONGRESS_1" end,
+    GetWorldCongress = function() return wc end,
+}
+DB = { MakeHash = function(name) return name end }
+Players = { [0] = {
+    IsTurnActive = function() return false end,
+    GetFavor = function() return 340 end,
+    GetFavorEnteringCongress = function() return 340 end,
+} }
+for id = 1, 3 do
+    local points = id == 3 and 15 or 11
+    Players[id] = {
+        GetStats = function() return { GetDiplomaticVictoryPoints = function() return points end } end,
+        GetScore = function() return 1000 end,
+    }
+end
+PlayerManager = { GetAliveMajorIDs = function() return { 0, 1, 2, 3 } end }
+GameInfo = { Resolutions = { WC_RES_DIPLOVICTORY = { ResolutionType = "WC_RES_DIPLOVICTORY", Hash = 99 } } }
+PlayerOperations = {
+    PARAM_RESOLUTION_TYPE = "type", PARAM_WORLD_CONGRESS_VOTES = "votes",
+    PARAM_RESOLUTION_OPTION = "option", PARAM_RESOLUTION_SELECTION = "selection",
+    WORLD_CONGRESS_RESOLUTION_VOTE = "vote", WORLD_CONGRESS_SUBMIT_TURN = "submit",
+}
+local requested, submitted = nil, 0
+UI = { RequestPlayerOperation = function(pid, operation, params)
+    assert(pid == 0)
+    if operation == "vote" then requested = params end
+    if operation == "submit" then submitted = submitted + 1 end
+end }
+tick()
+assert(type(hooks.popup) == "function", "the production popup hook must register")
+local cast = upvalue(hooks.popup, "castBallot")
+local vote = upvalue(cast, "voteWorldCongress")
+local count, spent, _, leader, points, _, mode = vote(0)
+check("actual ballot cast", count, 1)
+check("actual ballot modeled cost", spent, 312)
+check("actual ballot leading rival", leader, 3)
+check("actual ballot rival points", points, 15)
+check("actual ballot mode", mode, "claim")
+check("actual request votes", requested and requested.votes, 13)
+check("actual request option", requested and requested.option, 1)
+check("actual request target index is our seat", requested and requested.selection, 0)
+check("actual ballot submitted once", submitted, 1)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))

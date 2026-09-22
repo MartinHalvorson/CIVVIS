@@ -15164,12 +15164,13 @@ CivvisSelectCongressLeader = function(candidates)
 	return leader, leaderPoints, leaderScore;
 end
 
--- Price the request against the host table and the conservative Standard
--- table. This existing budgeting policy is independent of ballot verification.
--- Historical count-only `registered` totals did not establish that options or
--- targets matched, and therefore cannot prove that only vote counts failed.
--- Later live readbacks include both successful multi-vote counts and wrong
--- single-vote options. Diagnose the full selection before changing submission.
+-- Price the request with the active game's host table, exactly as
+-- WorldCongressPopup.lua:986-998 bounds votes by MaxVotes and costs[n-1].
+-- A speculative Standard-speed cap underbid Online Congress: native run
+-- civvis-20260922T151652Z t221 could afford 13 votes but asked eight.
+-- Later host review verified the requested count, option and target; the
+-- eight-vote denial lost to 29 votes for option A. Keep the Standard walk
+-- as diagnostic telemetry, not a second price that overrides the host.
 -- Exposed for offline regression; a bare global avoids the chunk-local limit.
 CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	local bank = tonumber(favor) or 0;
@@ -15188,8 +15189,7 @@ CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	while standard + 1 <= cap and 5 * (standard + 1) * standard <= bank do
 		standard = standard + 1;
 	end
-	local votes = (host < standard) and host or standard;
-	return votes, host, standard;
+	return host, host, standard;
 end
 
 -- A ballot is verified against all three native selection fields, not just
@@ -19334,10 +19334,9 @@ local function tick()
 						-- nothing is spent; from there every session spends the bank.
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
-						-- Both walks live in `CivvisCongressVoteBudget` (see its
-						-- comment): the host-table bank and the Standard-priced
-						-- bank a mispricing core would charge. The ask takes the
-						-- smaller; the verdict records both.
+						-- Use the active game's host prices. Retain the Standard
+						-- comparison in the verdict for diagnosing pricing, without
+						-- limiting an Online ballot by a different speed's costs.
 						local budget, budgetHost, budgetStandard =
 							CivvisCongressVoteBudget(favor, costs, maxVotes);
 						envoyTally.ballot_budget =
@@ -19375,8 +19374,8 @@ local function tick()
 						-- and the target is simply the rival with the biggest block —
 						-- so a B ballot against the leader changes nothing until the
 						-- rivals themselves turn on a leader at 17. Meanwhile our
-						-- Favor sat at 640–1441 unspent. Twelve votes (780 Favor on
-						-- the shipped ladder) beat every block seen; when the bank
+						-- Favor sat at 640–1441 unspent. Twelve votes beat every
+						-- block seen; price them from the host table. When the bank
 						-- affords that many, vote A with all of them targeting US: the
 						-- +2 lands on this seat and the leader gets nothing that
 						-- session. `DiploVictoryClaimVotes` is that bar; below it the
