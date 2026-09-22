@@ -240,6 +240,29 @@ enum Arm {
     Other,
 }
 
+/// A combat carrier remains part of the army while its support follows.
+/// Civilian and religious escort commitments stay outside combat allocation.
+/// Validate both ends so a stale or separated mirror link cannot supply force.
+pub(super) fn linked_support_carrier(g: &Game, uid: u32) -> bool {
+    let Some(unit) = g.units.get(&uid) else {
+        return false;
+    };
+    let spec = &g.rules.units[unit.kind];
+    if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+        return false;
+    }
+    unit.linked_to
+        .and_then(|peer| g.units.get(&peer))
+        .is_some_and(|peer| {
+            let support = &g.rules.units[peer.kind];
+            peer.owner == unit.owner
+                && peer.pos == unit.pos
+                && peer.linked_to == Some(uid)
+                && support.class == "support"
+                && !matches!(support.domain.as_deref(), Some("sea" | "air"))
+        })
+}
+
 fn arm_of(g: &Game, uid: u32) -> Arm {
     let Some(unit) = g.units.get(&uid) else {
         return Arm::Other;
@@ -247,7 +270,7 @@ fn arm_of(g: &Game, uid: u32) -> Arm {
     let spec = &g.rules.units[unit.kind];
     if spec.class != "military"
         || matches!(spec.domain.as_deref(), Some("sea" | "air"))
-        || unit.linked_to.is_some()
+        || (unit.linked_to.is_some() && !linked_support_carrier(g, uid))
         || g.is_embarked(unit)
     {
         return Arm::Other;
@@ -2310,3 +2333,6 @@ mod taker_pressure_tests;
 
 #[cfg(test)]
 mod support_tests;
+
+#[cfg(test)]
+mod linked_support_tests;
