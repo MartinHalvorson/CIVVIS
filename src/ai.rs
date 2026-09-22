@@ -13489,7 +13489,7 @@ impl BasicAi {
                 .any(|city| (g.wdist(city.pos, pos) as f64) < self.w.min_city_dist)
             && tile
                 .owner_city
-                .is_none_or(|cid| g.cities[&cid].owner == pid)
+                .is_none_or(|cid| g.cities.get(&cid).is_some_and(|city| city.owner == pid))
     }
 
     /// The connected dry ground underneath the Palace city. `Tile::continent`
@@ -28783,3 +28783,6 @@ mod exploration_replan_tests;
 
 #[cfg(test)]
 mod civilian_pursuit_tests;
+
+#[cfg(test)]
+mod settlement_site_tests;
