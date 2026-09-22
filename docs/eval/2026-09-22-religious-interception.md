@@ -1,19 +1,15 @@
-# Religious interception must precede conversion of the defending empire
+# Intercept an urgent religious threat without a known enemy city
 
-## Native evidence
+Native `civvis-20260922T051229Z-cont2` lost to Arabia's religious victory on turn 131 on source `9d8c98737c230390a97ad7c650c55b1506d296b6`. All seven of our cities followed Islam by turn 79. Arabia's cities were still undiscovered at turn 84, but its Missionaries were visible beside our army. The ordinary conquest-denial gate requires a known enemy city.
 
-`civvis-20260922T051229Z-cont2` lost to Arabia's religious victory on turn 131, using source `9d8c98737c230390a97ad7c650c55b1506d296b6`. The war with Arabia remained open through the loss. Earlier, all seven of our cities followed Islam by turn 79. No alternative faith or religious unit survived to restore a recruiting source.
+The prototype supplies a separate, immediate religious interception: an explicit Domination seat facing a religious match point may declare a legal war and condemn a currently visible religious unit at home. A speculative declaration, optional adjacent movement and condemnation must all succeed first. It retains affordability, home-threat and single-major-war gates, requires a healthy military unit with movement, and executes the promised interception rather than merely switching plans. No distant city siege is assumed.
 
-Arabia's cities were undiscovered at turns 79 and 84, although its Missionaries were visible. The military denial selector requires a known rival city. This initially suggested opening a religious interception without a city objective: a turn-83 Missionary was beside a Spearman, and a simulator fixture demonstrated that the existing diplomatic planner would not act.
+## Native command evidence and a corrected interpretation
 
-## Rejected late interception
+`Base/Assets/Gameplay/Data/UnitCommands.xml:47` registers `UNITCOMMAND_CONDEMN_HERETIC`; the shipped command has no target parameters. The existing bridge requests it on the military unit after co-location.
 
-The proposed turn-83 counter is not supported by the native rules. The shipped `Base/Assets/Text/en_US/InGameText.xml:3141–3142` defines `LOC_UNITCOMMAND_CONDEMN_HERETIC_FOLLOWING_THIS_RELIGION` as: "A Religious unit in this tile adheres to the dominant Religion in a majority of your cities." Lines 3138–3139 separately describe a unit following the religion the defender founded. `Base/Assets/Gameplay/Data/UnitCommands.xml:47` registers Condemn Heretic as a command.
+Retained strings in `Base/Assets/Text/en_US/InGameText.xml:3138–3142` describe founded-faith and majority-faith refusal reasons. An initial reading treated those strings as proof that the turn-83 interception was impossible. The actual runtime contradicts that conclusion: at turn 126, Arabian Apostle `5701640` explicitly carries `RELIGION_ISLAM`, all our cities follow Islam, and our Caravel `3145731` moves to `(44,10)`. The native event stream records `condemn_removed` at `05:41:14.875Z` and confirms `CONDEMN_HERETIC` through `order_verified` on turn 127. Therefore the unused/conditional text alone does not establish an unconditional prohibition, and no speculative simulator restriction is added here. This corrects the preliminary note committed during investigation.
 
-Our simulator's `do_condemn_heretic` checks military/religious classes, war, shared position and remaining movement, but lacks these faith restrictions. Its successful speculative condemnation would therefore not establish that a native interception is executable. The initial test fixture explicitly gave our empire an Islamic majority: that invalidates its claimed native counterexample. The red regression (one failed, one control passed) and uninstalled candidate are investigative artifacts, not validation of a shippable policy. No production change is retained from that proposal.
+## Validation in progress
 
-## Earlier window to investigate
-
-The recorded game exposes possible pre-majority contacts: a Spearman was adjacent to an Arabian Missionary on turn 56, and a Heavy Chariot was adjacent on turn 61 while only one of four cities followed Islam. Those are geometric observations, not verified legal interceptions. The Cree war was already active; opening a second front has a strategic cost. Any revised policy must establish native faith eligibility, actual movement and command legality, and a credible benefit from diverting forces or changing fronts before promoting it.
-
-The generic match-point response is too late to supply a non-founder's own religious counter once every recruiting city has converted. Founding or preserving another religion and pre-majority military interception remain alternatives to evaluate. Neither this investigation nor a simulated condemnation proves an avoided native loss or a Domination victory.
+The base regression produces the intended failure: diplomacy does not intercept the adjacent spreader when no city objective is known. The negative-control test passes. Candidate tests and recorded-board replays remain pending. A successful native condemnation supports the command pathway, not the strategic effectiveness of this new opening; no avoided loss or Domination victory is claimed.
