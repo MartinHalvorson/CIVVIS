@@ -1,7 +1,7 @@
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local f = assert(io.open(here .. "/CivvisControlAgent.lua"))
 local source = f:read("*a"); f:close()
-local helper = assert(source:match('(local function cityRangedStrength%(.-\nend)'))
+local helper = assert(source:match('(local function cityRangedStrength%(.-\n\tend)'))
 local _, calls = source:gsub('ranged_strength = cityRangedStrength%(pid, city%)', '')
 assert(calls == 3, "own, rival and minor city exports must carry ranged strength")
 local owner, visible, value, reads = 1, true, 60, 0

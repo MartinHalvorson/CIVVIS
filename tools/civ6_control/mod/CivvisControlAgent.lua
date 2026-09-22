@@ -1451,24 +1451,6 @@ local function cityDefence(x, y)
 	return strength, damage, maxDamage, wallDamage, maxWallDamage;
 end
 
-local function cityRangedStrength(pid, city)
-	return try(function()
-		local x, y = city:GetX(), city:GetY();
-		-- Revealed terrain is not current sight. Never read a fogged rival's
-		-- strength, even though the engine exposes its city object.
-		if city:GetOwner() ~= pid and PlayersVisibility[pid]:IsVisible(x, y) ~= true then
-			return nil;
-		end
-		local district = CityManager.GetDistrictAt(Map.GetPlot(x, y));
-		if district == nil then return nil; end
-		-- Base/Assets/UI/Panels/UnitPanel.lua:2322,3482 displays this directly.
-		local strength = district:GetAttackStrength();
-		if type(strength) == "number" and strength >= 0 and strength < math.huge then
-			return strength;
-		end
-	end);
-end
-
 -- ★★★★★ Loyalty, the mechanism that has been quietly destroying the empire.
 --
 -- 22 of 39 runs past turn 60 lost at least one city, AT PEACE. A city that loses
@@ -6256,6 +6238,26 @@ CivvisUnitVisible = function(pid, unit)
 end;
 
 local function exportState(player, pid, turn, frame, eventKind)
+	-- Keep export-only helpers inside this function: the main chunk is near
+	-- Lua's local-variable ceiling.
+	local function cityRangedStrength(pid, city)
+		return try(function()
+			local x, y = city:GetX(), city:GetY();
+			-- Revealed terrain is not current sight. Never read a fogged rival's
+			-- strength, even though the engine exposes its city object.
+			if city:GetOwner() ~= pid and PlayersVisibility[pid]:IsVisible(x, y) ~= true then
+				return nil;
+			end
+			local district = CityManager.GetDistrictAt(Map.GetPlot(x, y));
+			if district == nil then return nil; end
+			-- Base/Assets/UI/Panels/UnitPanel.lua:2322,3482 displays this directly.
+			local strength = district:GetAttackStrength();
+			if type(strength) == "number" and strength >= 0 and strength < math.huge then
+				return strength;
+			end
+		end);
+	end
+
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
 	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a

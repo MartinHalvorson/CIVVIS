@@ -10501,7 +10501,10 @@ fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot
             Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
                 .insert(cid, observed.loyalty_per_turn);
         }
-        if let Some(strength) = observed.ranged_strength.filter(|v| v.is_finite() && *v >= 0.0) {
+        if let Some(strength) = observed
+            .ranged_strength
+            .filter(|v| v.is_finite() && *v >= 0.0)
+        {
             Arc::make_mut(&mut game.observed_city_ranged_strength).insert(cid, strength);
         }
         if observed.defense.is_finite() && observed.defense >= 0.0 {

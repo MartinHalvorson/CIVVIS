@@ -166,6 +166,7 @@ fn imported_fire_changes_the_simulated_hit_on_a_siege_unit() {
     let owner = game.cities[&cid].owner;
     let target = crate::hex::offset_to_axial(12, 8);
     let unit = game.spawn_test_unit("trebuchet", 0, target);
+    game.spawn_test_unit("warrior", owner, game.cities[&cid].pos);
     game.at_war.insert((0, owner));
     game.current = owner;
     let mut legacy = game.clone();
