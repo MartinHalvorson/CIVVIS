@@ -1,4 +1,4 @@
-//! Buy a connectable first siege resource before treating land as surplus.
+//! Connect the first resource for an existing Domination army before surplus shopping.
 
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Action, Game};
@@ -13,21 +13,28 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || plan.strategy != GrandStrategy::Conquest
+            || !matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Expansion
+            )
             || plan.threatened_city.is_some()
             || self.threatened_city(g, pid).is_some()
         {
             return false;
         }
-        // The resource is what an existing siege unit's researched upgrade
-        // needs, not a speculative deposit for an army we might build later.
+        // Buy only what an existing unit can use through a researched upgrade.
+        // Melee units need their first resource while the Domination empire
+        // is still expanding: waiting for Conquest leaves its capture army
+        // obsolete before it can assemble. Siege keeps its campaign gate.
         let needed: BTreeSet<Name> = g
             .units
             .values()
             .filter(|u| u.owner == pid)
             .filter_map(|u| {
                 let held = &g.rules.units[u.kind];
-                if held.promotion_class != "siege" {
+                if held.promotion_class != "melee"
+                    && (held.promotion_class != "siege" || plan.strategy != GrandStrategy::Conquest)
+                {
                     return None;
                 }
                 let next = &g.rules.units[g.player_unit_replacement(pid, held.upgrade_to?)];
