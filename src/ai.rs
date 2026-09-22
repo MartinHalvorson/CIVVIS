@@ -331,6 +331,7 @@ mod advanced;
 mod movement_risk;
 mod scout_first;
 mod scout_inference;
+mod siege_support;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::victory_portfolio::{
     DevelopmentPhase, PortfolioReport, PortfolioTrace, VictoryEstimate,
@@ -10378,26 +10379,15 @@ impl BasicAi {
     }
 
     fn siege_support_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
-        let wall_levels: Vec<usize> = g
-            .cities
-            .values()
-            .filter(|c| c.owner != pid && g.is_at_war(pid, c.owner))
-            .map(|c| {
-                c.buildings
-                    .iter()
-                    .filter(|b| *b == "walls" || *b == "medieval_walls")
-                    .count()
-            })
-            .filter(|walls| *walls > 0)
-            .collect();
-        if wall_levels.is_empty() {
+        if !siege_support::has_attackers(g, pid) {
             return None;
         }
-        // A tower helps against either wall tier. A ram is still worthwhile
-        // while the more advanced tower is unavailable and at least one
-        // ancient wall is a live target.
         for unit in ["siege_tower", "battering_ram"] {
-            let useful = unit == "siege_tower" || wall_levels.contains(&1);
+            let useful = g.cities.values().any(|city| {
+                city.wall_hp > 0
+                    && g.is_at_war(pid, city.owner)
+                    && g.city_allows_siege_support(city.id, unit)
+            });
             if useful
                 && g.can_produce(
                     pid,
@@ -13849,14 +13839,7 @@ impl BasicAi {
             .cities
             .values()
             .filter(|c| c.owner != pid && g.is_at_war(pid, c.owner))
-            .filter(|c| {
-                let walls = c
-                    .buildings
-                    .iter()
-                    .filter(|b| *b == "walls" || *b == "medieval_walls")
-                    .count();
-                walls > 0 && (support_kind == "siege_tower" || walls == 1)
-            })
+            .filter(|c| c.wall_hp > 0 && g.city_allows_siege_support(c.id, support_kind))
             .map(|c| c.pos)
             .collect();
         if targets.is_empty() {
@@ -13870,7 +13853,7 @@ impl BasicAi {
             .filter(|u| u.owner == pid && u.id != uid)
             .filter(|u| {
                 let spec = &g.rules.units[u.kind];
-                spec.class == "military" && spec.ranged_strength <= 0.0 && !spec.siege
+                siege_support::eligible_attacker(spec)
             })
             .min_by_key(|u| {
                 let front = targets.iter().map(|t| g.wdist(u.pos, *t)).min().unwrap();
@@ -26889,7 +26872,8 @@ mod tests {
 
     #[test]
     fn production_adds_one_support_unit_for_walled_wars() {
-        let (mut g, home, _) = walled_war_game(33);
+        let (mut g, home, enemy) = walled_war_game(33);
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
         let ai = BasicAi::new();
         g.players[0].techs.insert(crate::name!("masonry"));
 
