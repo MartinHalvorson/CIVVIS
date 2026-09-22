@@ -208,3 +208,67 @@ fn reachable_approach_warns_before_the_one_turn_attack_envelope() {
         Some(crate::name!("masonry"))
     );
 }
+
+fn exposed_queue() -> (Game, AdvancedAi, u32, u32) {
+    let (mut g, _, attacker) = exposed_domination();
+    g.players[1].is_barbarian = false;
+    g.players[0].techs.insert(crate::name!("masonry"));
+    let city = g.player_city_ids(0)[0];
+    g.cities.get_mut(&city).unwrap().queue = vec![crate::game::Item::Building {
+        building: crate::name!("monument"),
+    }];
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.base.garrison_under_fire = true;
+    (g, ai, city, attacker)
+}
+
+#[test]
+fn exposed_domination_queue_defends_without_being_the_named_threat() {
+    let (mut g, ai, city, _) = exposed_queue();
+    let claim = ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, None);
+    assert_eq!(claim.as_ref().map(|(city, _)| *city), Some(city));
+    assert!(AdvancedAi::active_queue_answers_siege(
+        &g,
+        &g.cities[&city].queue[0]
+    ));
+}
+
+#[test]
+fn exposed_queue_requires_a_strong_enemy_in_an_active_major_war() {
+    let (mut g, ai, city, attacker) = exposed_queue();
+    g.at_war.clear();
+    assert!(ai
+        .redirect_unsafe_city_queue_for_defense(&mut g, 0, None)
+        .is_none());
+    g.at_war.insert((0, 1));
+    let near = g.units[&attacker].pos;
+    g.remove_unit(attacker);
+    g.spawn_test_unit("scout", 1, near);
+    assert!(ai
+        .redirect_unsafe_city_queue_for_defense(&mut g, 0, None)
+        .is_none());
+    assert_eq!(
+        g.cities[&city].queue[0],
+        crate::game::Item::Building {
+            building: crate::name!("monument")
+        }
+    );
+}
+
+#[test]
+fn exposed_queue_does_not_retask_a_walled_or_non_domination_city() {
+    let (mut g, mut ai, city, _) = exposed_queue();
+    ai.victory_target = Some(VictoryTarget::Science);
+    assert!(ai
+        .redirect_unsafe_city_queue_for_defense(&mut g, 0, None)
+        .is_none());
+    ai.victory_target = Some(VictoryTarget::Domination);
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    assert!(ai
+        .redirect_unsafe_city_queue_for_defense(&mut g, 0, None)
+        .is_none());
+}
