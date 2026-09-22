@@ -115,7 +115,7 @@ fn converted_or_threatened_supplier_is_not_reserved() {
 }
 
 #[test]
-fn founder_other_lane_disabled_victory_and_unfunded_cases_stand_aside() {
+fn founder_other_lane_and_disabled_victory_stand_aside() {
     let (mut g, ai, _, _) = fixture();
     let science = AdvancedAi::targeting(VictoryTarget::Science);
     assert!(science
@@ -125,9 +125,6 @@ fn founder_other_lane_disabled_victory_and_unfunded_cases_stand_aside() {
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
     g.players[0].religion = None;
     g.victory_conditions.religious = false;
-    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
-    g.victory_conditions.religious = true;
-    g.players[0].faith = 0.0;
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
 }
 
@@ -382,7 +379,7 @@ fn founder_supplier_requires_live_pressure_and_a_surviving_own_majority() {
 }
 
 #[test]
-fn founder_supplier_preserves_lane_funding_and_local_defense_guards() {
+fn founder_supplier_preserves_lane_and_local_defense_guards() {
     let (mut g, ai, _, home) = founder_supplier_fixture();
     assert!(ai
         .adopted_faith_sanctuary_choice(&g, 0, Some(home))
@@ -392,7 +389,46 @@ fn founder_supplier_preserves_lane_funding_and_local_defense_guards() {
         .is_none());
     g.victory_conditions.religious = false;
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
-    g.victory_conditions.religious = true;
-    g.players[0].faith = 0.0;
-    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+}
+
+#[test]
+fn defensive_infrastructure_precedes_faith_savings_but_purchase_waits() {
+    for founder in [false, true] {
+        for bank in [0.0, 25.0] {
+            let (mut g, mut ai, plan, home) = if founder {
+                founder_supplier_fixture()
+            } else {
+                fixture()
+            };
+            g.players[0].faith = bank;
+            ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+            let item = g.cities[&home]
+                .queue
+                .first()
+                .cloned()
+                .expect("preserve a religious recruitment source before saving for its units");
+            assert!(
+                matches!(&item, Item::District { district, .. } if district == "holy_site")
+                    || matches!(&item, Item::Building { building } if building == "shrine")
+            );
+            ai.advanced_production(&mut g, 0, &plan, false);
+            assert_eq!(g.cities[&home].queue.first(), Some(&item));
+
+            // Once infrastructure is ready, low faith still cannot buy a unit.
+            if !founder {
+                crate::game::install_test_district(&mut g, home, "holy_site");
+            }
+            let city = g.cities.get_mut(&home).unwrap();
+            city.queue.clear();
+            city.buildings.push(crate::name!("shrine"));
+            g = g.speculative_clone();
+            assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+            ai.religious_defense(&mut g, 0, "Buddhism");
+            assert!(!g
+                .units
+                .values()
+                .any(|u| u.owner == 0 && u.kind == "missionary"));
+            assert_eq!(g.players[0].faith, bank);
+        }
+    }
 }
