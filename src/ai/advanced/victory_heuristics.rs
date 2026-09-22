@@ -229,6 +229,14 @@ impl AdvancedAi {
             GrandStrategy::Religion => GrandStrategy::Conquest,
             GrandStrategy::Diplomacy => GrandStrategy::Diplomacy,
             GrandStrategy::Conquest => GrandStrategy::Recovery,
+            // A score deadline must not park an explicitly assigned Domination
+            // army in Expansion. Keep the existing urgency, stand-down and
+            // executable-campaign gates; this selects a plan, not a declaration.
+            GrandStrategy::Expansion
+                if urgent && self.active_victory_target(g) == Some(VictoryTarget::Domination) =>
+            {
+                GrandStrategy::Conquest
+            }
             GrandStrategy::Expansion if self.counter_in_lane => GrandStrategy::Expansion,
             GrandStrategy::Expansion => GrandStrategy::Conquest,
             GrandStrategy::Recovery => GrandStrategy::Recovery,
@@ -369,6 +377,10 @@ impl AdvancedAi {
             .map(|city| city.id)
     }
 }
+
+#[cfg(test)]
+#[path = "domination_score_counter_tests.rs"]
+mod domination_score_counter_tests;
 
 #[cfg(test)]
 #[path = "domination_counters/tests.rs"]
