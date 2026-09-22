@@ -629,8 +629,32 @@ fn anvil_orders_for(
     posts
 }
 
+/// The same exclusions must govern post assignment and the march to it.
+/// Otherwise spread-first assignment can reserve a pocket whose only entry
+/// crosses another ring tile, and the mover can never fulfill that order.
+fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Option<Pos> {
+    let unit = g.units.get(&uid)?;
+    let mut avoid: BTreeSet<Pos> = g
+        .wdisk(city, 1)
+        .into_iter()
+        .filter(|pos| *pos != goal)
+        .collect();
+    avoid.extend(
+        g.units
+            .values()
+            .filter(|other| {
+                other.id != uid
+                    && g.rules.units[other.kind].domain.as_deref() != Some("air")
+                    && (other.owner != pid || g.rules.units[other.kind].class == "military")
+            })
+            .map(|other| other.pos),
+    );
+    avoid.remove(&unit.pos);
+    g.route_step_avoiding_tiles(uid, goal, &avoid)
+}
+
 /// The train's posts for the turn. Melee already on the ring keep their
-/// tile; the taker, then the rest by distance, take free ring tiles in the
+/// tile; the taker, then the rest by distance, take reachable free ring tiles in the
 /// spread-first order — the free tile furthest from every held or assigned
 /// one, then the nearest. Guns, then shooters, keep a tile they can already
 /// shoot the city from, else take a tile at their range behind a ring post
@@ -679,18 +703,22 @@ fn siege_posts(
     );
     for uid in order {
         let here = g.units[&uid].pos;
-        let best = ring_free
+        let mut candidates: Vec<Pos> = ring_free
             .iter()
             .copied()
             .filter(|pos| !ring_taken.contains(pos) && g.unit_can_traverse(uid, *pos))
-            .min_by_key(|pos| {
-                let spread = ring_taken
-                    .iter()
-                    .map(|held| g.wdist(*pos, *held))
-                    .min()
-                    .unwrap_or(i32::MAX);
-                (Reverse(spread), g.wdist(here, *pos), *pos)
-            });
+            .collect();
+        candidates.sort_by_key(|pos| {
+            let spread = ring_taken
+                .iter()
+                .map(|held| g.wdist(*pos, *held))
+                .min()
+                .unwrap_or(i32::MAX);
+            (Reverse(spread), g.wdist(here, *pos), *pos)
+        });
+        let best = candidates
+            .into_iter()
+            .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some());
         if let Some(pos) = best {
             posts.insert(uid, pos);
             ring_taken.insert(pos);
@@ -1354,17 +1382,10 @@ impl AdvancedAi {
         self.approach(g, pid, uid, post, city.pos)
     }
 
-    /// Toward `goal` by explicit steps that never cross a ring tile of the
-    /// city other than the goal. The engine's own route runs through the
-    /// ring when that is shortest, and a unit entering the city's zone of
-    /// control there is stopped on the wrong tile — measured on the
-    /// three-warrior fixture, which clumped three adjacent tiles that way
-    /// and left one side of the ring open. Each step closes on the goal;
-    /// the router is asked only when no neighbour does, and its answer is
-    /// held to the same two rules. A sideways step — no closer, but onto a
-    /// tile with a closing step beyond it — is allowed once, before the
-    /// unit has moved this turn, so a ring tile in the straight line can be
-    /// gone round without the unit walking out and back.
+    /// Follow a legal route to the assigned post while excluding the city's
+    /// other ring tiles and occupied stands. Geometric distance may increase
+    /// around a mountain or a friendly screen; route distance still decreases.
+    /// The engine checks the first step and the movement guard rejects retreads.
     fn approach(
         &mut self,
         g: &mut Game,
@@ -1375,55 +1396,14 @@ impl AdvancedAi {
     ) -> Option<bool> {
         let mut moved = false;
         for _ in 0..4 {
-            let Some(unit) = g.units.get(&uid) else {
-                break;
-            };
-            let here = unit.pos;
-            if here == goal || unit.moves_left <= 0.0 {
+            let unit = g.units.get(&uid)?;
+            if unit.pos == goal || unit.moves_left <= 0.0 {
                 break;
             }
-            let distance = g.wdist(here, goal);
-            let allow_sideways = !unit.moved;
-            let ring_tile = |pos: Pos| pos != goal && g.wdist(pos, city_pos) <= 1;
-            let rough = |pos: Pos| {
-                g.map
-                    .get(pos)
-                    .is_some_and(|tile| tile.hills || tile.feature.is_some())
-            };
-            let onward = |pos: Pos| {
-                g.nbrs(pos).into_iter().any(|next| {
-                    !ring_tile(next)
-                        && g.wdist(next, goal) < distance
-                        && g.unit_can_traverse(uid, next)
-                        && (next == goal || g.unit_ids_at(next).is_empty())
-                })
-            };
-            let mut best: Option<((bool, i32, bool, Pos), Pos)> = None;
-            for pos in g.nbrs(here) {
-                if ring_tile(pos) || !g.can_move(uid, pos) {
-                    continue;
-                }
-                let closer = g.wdist(pos, goal);
-                let sideways = closer == distance;
-                if closer > distance || (sideways && !(allow_sideways && onward(pos))) {
-                    continue;
-                }
-                let key = (sideways, closer, rough(pos), pos);
-                if best.as_ref().is_none_or(|(old, _)| key < *old) {
-                    best = Some((key, pos));
-                }
-            }
-            let next = match best {
-                Some((_, pos)) => pos,
-                None => {
-                    let set: HashSet<Pos> = std::iter::once(goal).collect();
-                    match g.route_step_to_any(uid, &set).filter(|pos| {
-                        !ring_tile(*pos) && g.can_move(uid, *pos) && g.wdist(*pos, goal) <= distance
-                    }) {
-                        Some(pos) => pos,
-                        None => break,
-                    }
-                }
+            let Some(next) =
+                siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next))
+            else {
+                break;
             };
             if !self.base.tactical_apply_move(g, pid, uid, next) {
                 break;
@@ -2336,3 +2316,7 @@ mod support_tests;
 
 #[cfg(test)]
 mod linked_support_tests;
+
+#[cfg(test)]
+#[path = "siege_train/tests.rs"]
+mod obstacle_routing_tests;
