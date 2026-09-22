@@ -52,7 +52,7 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
 fn hub(g: &Game, city: u32) -> Item {
     Item::District {
         district: crate::name!("commercial_hub"),
-        pos: g.district_sites(city, "commercial_hub")[0],
+        pos: g.district_sites(city, crate::name!("commercial_hub"))[0],
     }
 }
 
@@ -64,7 +64,7 @@ fn reserves_only_the_productive_citys_last_slot_before_flight() {
     assert!(!ai.air_surge_reserves_field_slot(&g, 0, second, &hub(&g, second)));
     let field = Item::District {
         district: crate::name!("aerodrome"),
-        pos: g.district_sites(first, "aerodrome")[0],
+        pos: g.district_sites(first, crate::name!("aerodrome"))[0],
     };
     assert!(!ai.air_surge_reserves_field_slot(&g, 0, first, &field));
 }
@@ -89,7 +89,7 @@ fn committed_airfield_releases_the_other_citys_slot() {
     let item = hub(&g, first);
     let field = Item::District {
         district: crate::name!("aerodrome"),
-        pos: g.district_sites(second, "aerodrome")[0],
+        pos: g.district_sites(second, crate::name!("aerodrome"))[0],
     };
     g.cities.get_mut(&second).unwrap().queue.push(field);
     assert_eq!(
