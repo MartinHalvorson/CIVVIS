@@ -9676,6 +9676,17 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 		end);
 	end
 
+	-- PlotToolTip.lua:661 uses this host API for the owning city. Restrict
+	-- the observation to our plots: revealed rival ground need not reveal
+	-- the city purchasing it. A failed read stays unknown, never city zero.
+	CivvisTiles.owningCity = function(plot, ownerID)
+		return try(function()
+			if plot:GetOwner() ~= ownerID then return nil; end
+			local city = Cities.GetPlotPurchaseCity(plot);
+			if city ~= nil and city:GetOwner() == ownerID then return city:GetID(); end
+		end, nil);
+	end
+
 	local known = CivvisTiles.known;
 	for y = 0, height - 1 do
 		for x = 0, width - 1 do
@@ -9709,6 +9720,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 					-- record carries joins the signature; no new locals, the
 					-- chunk is at its ceiling.
 					mark = (owner * 1024 + feature) .. ":"
+						.. tostring(CivvisTiles.owningCity(plot, pid)) .. ":"
 						.. (try(function() return plot:GetImprovementType(); end, -1) or -1) .. ":"
 						.. (CivvisTiles.pillageState(plot, pid, x, y) and 1 or 0) .. ":"
 						.. (try(function() return plot:GetRouteType(); end, -1) or -1) .. ":"
@@ -9756,6 +9768,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						             try(function() return plot:GetFeatureType(); end, -1)),
 						r = visibleResourceName(player, plot),
 						o = try(function() return plot:GetOwner(); end, -1),
+						oc = CivvisTiles.owningCity(plot, pid),
 						w = water,
 						i = try(function() return plot:IsImpassable(); end, false),
 						fw = try(function() return plot:IsFreshWater(); end, false),
