@@ -121,8 +121,8 @@ ADVISORY_CHECKS = {
 }
 # Terminal check conclusions that say nothing about the code. A run that was
 # superseded by its own concurrency group, killed by the runner clock, or
-# marked stale never reached a verdict — and, critically, GitHub will not start
-# another one on its own. Auto-merge waits for a required check to go green, so
+# marked stale never reached a verdict. A replacement event may already be
+# queued but not yet visible. Auto-merge waits for a required check to go green, so
 # a check that ends in one of these and is never re-run leaves the PR open
 # forever with nothing watching it. `ship` re-runs them instead of reporting a
 # failure the code did not earn. `failure` is deliberately absent: that IS a
@@ -132,6 +132,9 @@ RETRYABLE_CHECK_CONCLUSIONS = frozenset({"cancelled", "timed_out", "stale"})
 # A check that is cancelled twice is not being superseded; something is wrong
 # with it, and quietly re-running forever would hide that.
 CHECK_RERUN_LIMIT = 2
+# Ready/body events can cancel a run before its replacement becomes visible.
+# Give that replacement (and an explicit retry) time to appear before acting.
+CHECK_REPLACEMENT_GRACE_SECONDS = 60.0
 # How long `ship` waits for the production spectator to be LISTENING at all
 # before deciding it is not running. Distinct from `--live-timeout-seconds`,
 # which is how long a spectator that IS up may take to reach the merged
@@ -1706,6 +1709,7 @@ def ship_task(args: argparse.Namespace) -> int:
     auto_merge_armed = False
     rerun_attempts: Dict[str, int] = {name: 0 for name in REQUIRED_CHECKS}
     resume_ready_head = True
+    retryable_since: Dict[Tuple[str, str], float] = {}
 
     def finish_merged(pr: Dict[str, Any]) -> Optional[int]:
         merged_sha = pr_merge_sha(pr)
@@ -1779,13 +1783,9 @@ def ship_task(args: argparse.Namespace) -> int:
 
         while True:
             if time.monotonic() >= deadline:
-                # ⚠ A timeout is not a verdict, and the agent that reads it has
-                # to know which of two very different situations it is in. With
-                # auto-merge armed and every required check still running, the
-                # PR finishes without us and waiting was the whole plan. With a
-                # check that has stopped without a verdict, nothing is coming —
-                # so sweep once more on the way out rather than leaving a PR
-                # that no one will look at again.
+                # An observation timeout is not evidence that a replacement
+                # run is absent. Re-read the verdict, but do not dispatch a
+                # retry merely because this observer's budget expired.
                 pr = current_pr(root)
                 if (finished := finish_merged(pr)) is not None:
                     return finished
@@ -1794,13 +1794,11 @@ def ship_task(args: argparse.Namespace) -> int:
                     rollup, minimum_started=ready_thresholds
                 )
                 if state == "retryable":
-                    for name in names:
-                        rerun_required_check(rollup, name)
                     raise CommandError(
-                        "timed out, and "
+                        "timed out while "
                         + ", ".join(names)
-                        + " had stopped without a verdict; re-ran them, so watch "
-                        f"PR #{pr['number']} rather than assuming it merges"
+                        + " awaited a replacement or retry; resume watching "
+                        f"PR #{pr['number']} on this head"
                     )
                 if state == "failed":
                     raise CommandError("required checks failed: " + ", ".join(names))
@@ -1910,28 +1908,36 @@ def ship_task(args: argparse.Namespace) -> int:
             )
             if state == "failed":
                 raise CommandError("required checks failed: " + ", ".join(names))
+            retryable_since = {
+                key: since for key, since in retryable_since.items()
+                if state == "retryable" and key[0] == local_head and key[1] in names
+            }
             if state == "retryable":
-                # Nothing else will start these. Auto-merge is armed and waiting
-                # for a green required check that can no longer arrive, so the
-                # PR is stuck until someone re-dispatches the run.
+                now = time.monotonic()
                 stuck: List[str] = []
                 for name in names:
+                    key = (local_head, name)
+                    since = retryable_since.setdefault(key, now)
+                    if now - since < CHECK_REPLACEMENT_GRACE_SECONDS:
+                        print(f"waiting for a replacement of required check {name}")
+                        continue
                     if rerun_attempts[name] >= CHECK_RERUN_LIMIT:
                         stuck.append(f"{name} (re-run {rerun_attempts[name]}x already)")
                     elif rerun_required_check(rollup, name):
                         rerun_attempts[name] += 1
+                        retryable_since[key] = now
                         print(
-                            f"required check {name} ended without a verdict and "
-                            f"nothing re-starts it; re-running "
+                            f"required check {name} has no visible replacement "
+                            f"after the grace period; re-running "
                             f"({rerun_attempts[name]}/{CHECK_RERUN_LIMIT})"
                         )
                     else:
-                        stuck.append(f"{name} (no Actions run to re-dispatch)")
+                        stuck.append(f"{name} (re-dispatch unavailable)")
                 if stuck:
                     raise CommandError(
                         "required checks cannot reach a verdict: "
                         + ", ".join(stuck)
-                        + " — re-running did not help, so this needs a look"
+                        + " — automatic recovery could not produce a verdict"
                     )
                 time.sleep(max(0.1, args.poll_seconds))
                 continue
