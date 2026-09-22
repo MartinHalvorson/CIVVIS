@@ -7166,6 +7166,7 @@ mod surprise_defense;
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_surge;
+mod siege_resource_purchase;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -20819,6 +20820,9 @@ impl AdvancedAi {
         if self.border_parity_3_purchase(g, pid) {
             return true;
         }
+        if self.siege_resource_purchase(g, pid, plan) {
+            return true;
+        }
         let city_count = g.player_city_ids(pid).len();
         let reserve = match plan.strategy {
             GrandStrategy::Diplomacy | GrandStrategy::Culture => 300.0 + 75.0 * city_count as f64,
@@ -24920,7 +24924,10 @@ impl AdvancedAi {
     /// it cannot. Reuse the selected family's exact signal here instead of
     /// turning a low treasury into a second threat heuristic.
     ///
-    /// Both paths preserve fortification repairs, walls, and local defenders,
+    /// Domination also reuses its wall-research approach warning to prepare
+    /// an exposed city before damage, even when another city is the plan's
+    /// named threat. The same legal wall-versus-defender choice applies.
+    /// All paths preserve fortification repairs, walls, and local defenders,
     /// and claim at most one unsafe queue each turn.
     fn redirect_unsafe_city_queue_for_defense(
         &self,
@@ -24953,6 +24960,14 @@ impl AdvancedAi {
             return None;
         }
         let visible = armed_major_war_threat.then(|| self.battlefront_visibility(g, pid));
+        // The plan names only one threatened city. A second exposed city
+        // still needs lead time when a stronger visible attacker approaches.
+        // Reuse the wall-research warning and keep the existing one-queue
+        // arbitration, legal defender choice, and completed-defense guard.
+        let approach_visible = (self.victory_planning
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && active_major_war)
+            .then(|| g.player_vision_frame(pid));
         let mut best: Option<(i32, u32, Option<Item>, Item)> = None;
         let mut retained: Option<(i32, u32, Item)> = None;
         for city in g.player_city_ids(pid) {
@@ -24971,7 +24986,24 @@ impl AdvancedAi {
                         .as_ref()
                         .is_some_and(|visible| Self::imminent_city_attack(g, pid, city, visible)),
             );
-            let Some(defence) = siege_defence.or(native_defence).or(preemptive_defence) else {
+            let defence = siege_defence
+                .or(native_defence)
+                .or(preemptive_defence)
+                .or_else(|| {
+                    let visible = approach_visible.as_ref()?;
+                    if !Self::strong_attacker_approaches_unwalled_city(g, pid, city, visible) {
+                        return None;
+                    }
+                    self.preemptive_major_war_defense_item(
+                        g,
+                        pid,
+                        city,
+                        Some(city),
+                        active_major_war,
+                        true,
+                    )
+                });
+            let Some(defence) = defence else {
                 continue;
             };
             // `besieged_city_item` intentionally answers with a defender once

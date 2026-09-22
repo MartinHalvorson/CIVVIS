@@ -47,3 +47,111 @@ fn observed_majorities_count_unseen_rivals_in_religious_defense() {
     ai.disable_religious_veto_defence();
     assert!(ai.religious_veto_stakes(&game, 0).is_none());
 }
+
+fn source_guard_fixture() -> (Game, AdvancedAi, u32, u32, u32) {
+    let mut g = Game::new_full(2, 32, 20, 370200, 400, 0, false);
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    g.barb_camps.clear();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+    }
+    let source = g.found_city_for(0, (10, 10), None);
+    let distant = g.found_city_for(0, (3, 10), None);
+    g.found_city_for(1, (22, 10), None);
+    g.players[0].religion = Some("Home Faith".into());
+    g.players[0].holy_city = Some(source);
+    g.players[0].counters.insert("inquisition".into(), 1);
+    g.players[1].religion = Some("Foreign Faith".into());
+    for cid in [source, distant] {
+        g.cities.get_mut(&cid).unwrap().pressure.clear();
+    }
+    let city = g.cities.get_mut(&source).unwrap();
+    city.pressure.insert("Home Faith".into(), 1000.0);
+    city.buildings
+        .extend([crate::name!("shrine"), crate::name!("temple")]);
+    city.districts.insert(crate::name!("holy_site"), (9, 10));
+    let tile = g.map.tiles.get_mut(&(9, 10)).unwrap();
+    tile.owner_city = Some(source);
+    tile.district = Some(crate::name!("holy_site"));
+    tile.pillaged = false;
+    g.cities
+        .get_mut(&distant)
+        .unwrap()
+        .pressure
+        .insert("Foreign Faith".into(), 1000.0);
+    let inquisitor = g.spawn_test_unit("inquisitor", 0, (10, 10));
+    let invader = g.spawn_test_unit("missionary", 1, (12, 10));
+    g.units.get_mut(&inquisitor).unwrap().religion = Some("Home Faith".into());
+    g.units.get_mut(&inquisitor).unwrap().charges = 3;
+    g.units.get_mut(&invader).unwrap().religion = Some("Foreign Faith".into());
+    g.units.get_mut(&invader).unwrap().charges = 3;
+    g.turn = 172;
+    g.current = 0;
+    let mut ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
+    ai.enable_religious_veto_defence();
+    (g, ai, inquisitor, source, invader)
+}
+
+#[test]
+fn inquisitor_keeps_the_last_threatened_purchase_source_covered() {
+    let (mut g, ai, inquisitor, source, _) = source_guard_fixture();
+    assert_eq!(g.city_religion(&g.cities[&source]), Some("Home Faith"));
+    let legal = g.legal_actions(0);
+    ai.inquisitor_veto_step(&mut g, 0, inquisitor, &legal);
+    assert_eq!(
+        g.units[&inquisitor].pos, g.cities[&source].pos,
+        "the sole purchase source needs cover before the distant converted city"
+    );
+}
+
+#[test]
+fn source_guard_releases_when_the_spreader_is_exhausted_or_another_source_exists() {
+    let (mut g, ai, inquisitor, source, invader) = source_guard_fixture();
+    g.units.get_mut(&invader).unwrap().charges = 0;
+    assert!(ai
+        .inquisitor_purchase_source_guard(&g, 0, inquisitor, "Home Faith")
+        .is_none());
+    g.units.get_mut(&invader).unwrap().charges = 3;
+    let other = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != source)
+        .unwrap();
+    let c = g.cities.get_mut(&other).unwrap();
+    c.pressure.clear();
+    c.pressure.insert("Home Faith".into(), 1000.0);
+    c.buildings.push(crate::name!("shrine"));
+    c.districts.insert(crate::name!("holy_site"), (3, 9));
+    let t = g.map.tiles.get_mut(&(3, 9)).unwrap();
+    t.owner_city = Some(other);
+    t.district = Some(crate::name!("holy_site"));
+    t.pillaged = false;
+    assert!(ai
+        .inquisitor_purchase_source_guard(&g, 0, inquisitor, "Home Faith")
+        .is_none());
+}
+
+#[test]
+fn source_guard_can_restore_the_sole_converted_source_and_assigns_only_one_defender() {
+    let (mut g, ai, inquisitor, source, _) = source_guard_fixture();
+    let c = g.cities.get_mut(&source).unwrap();
+    c.pressure.insert("Foreign Faith".into(), 2000.0);
+    let source_pos = c.pos;
+    assert_eq!(
+        ai.inquisitor_purchase_source_guard(&g, 0, inquisitor, "Home Faith"),
+        Some(source_pos)
+    );
+    let second = g.spawn_test_unit("inquisitor", 0, (11, 10));
+    g.units.get_mut(&second).unwrap().religion = Some("Home Faith".into());
+    g.units.get_mut(&second).unwrap().charges = 3;
+    assert!(ai
+        .inquisitor_purchase_source_guard(&g, 0, second, "Home Faith")
+        .is_none());
+    let legal = g.legal_actions(0);
+    ai.inquisitor_veto_step(&mut g, 0, inquisitor, &legal);
+    assert!(g.cities[&source].pressure["Foreign Faith"] < 2000.0);
+}
