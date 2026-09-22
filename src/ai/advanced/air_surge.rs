@@ -1063,6 +1063,10 @@ impl AdvancedAi {
     ) -> Option<f64> {
         let plan = self.air_surge_plan.as_ref()?;
         let mut status = self.air_surge_status(g, pid, plan);
+        if status.aerodromes_committed == 0 && self.air_surge_reserves_field_slot(g, pid, cid, item)
+        {
+            return Some(-10_000.0);
+        }
         if g.cities
             .get(&cid)
             .is_some_and(|city| city.owner == pid && city.queue.first() == Some(item))
@@ -1094,6 +1098,72 @@ impl AdvancedAi {
             }
         }
         self.air_surge_package_value(g, pid, item, turns, status)
+    }
+
+    /// Keep one productive city's last specialty slot available while the
+    /// appointed wing is still waiting for its airfield technology.
+    pub(super) fn air_surge_reserves_field_slot(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        if self
+            .air_surge_plan
+            .as_ref()
+            .is_none_or(|plan| self.air_surge_status(g, pid, plan).aerodromes_committed > 0)
+        {
+            return false;
+        }
+        let Item::District { district, pos } = item else {
+            return false;
+        };
+        let Some(field) = Self::air_surge_field(g, pid) else {
+            return false;
+        };
+        if g.district_family(*district) == g.district_family(field)
+            // A first Campus supplies the research needed to reach the
+            // aircraft; reserving a slot must not delay that prerequisite.
+            || g.district_family(*district) == crate::name!("campus")
+            || !g.rules.districts[district].specialty
+            || g.map
+                .get(*pos)
+                .is_some_and(|tile| tile.district_foundation.is_some())
+        {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        let used = g.city_specialty_district_count(city)
+            + city
+                .owned_tiles
+                .iter()
+                .filter_map(|pos| g.map.tiles[pos].district_foundation.as_ref())
+                .filter(|foundation| g.rules.districts[foundation.district].specialty)
+                .count();
+        if used + 1 < g.city_specialty_district_capacity(city) {
+            return false;
+        }
+        // district_sites checks terrain and remaining capacity even before
+        // Flight is known. Reserve only a city that can actually host a field.
+        let threatened = self.threatened_city(g, pid);
+        let best = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|candidate| Some(*candidate) != threatened)
+            .filter(|candidate| !g.district_sites(*candidate, field).is_empty())
+            .max_by(|a, b| {
+                g.city_yields(*a)
+                    .production
+                    .total_cmp(&g.city_yields(*b).production)
+                    .then_with(|| b.cmp(a))
+            });
+        best == Some(cid)
     }
 
     fn air_surge_package_value(
@@ -1474,3 +1544,6 @@ mod wartime_research_tests;
 
 #[cfg(test)]
 mod urgent_denial_opening_tests;
+
+#[cfg(test)]
+mod field_slot_tests;

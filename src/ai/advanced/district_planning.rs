@@ -717,6 +717,12 @@ impl AdvancedAi {
             let Item::District { district, pos } = item else {
                 continue;
             };
+            // The economic floor must not spend the air plan's reserved
+            // last slot after production_value has already refused it.
+            if self.air_surge_reserves_field_slot(g, city.owner, cid, item) {
+                *score = PLAN_RESERVED_SPECIALTY_VETO;
+                continue;
+            }
             let family = g.district_family(*district);
             let row = planned.iter().find(|row| {
                 row.district == *district
