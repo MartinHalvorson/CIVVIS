@@ -1126,6 +1126,9 @@ impl AdvancedAi {
             return false;
         };
         if g.district_family(*district) == g.district_family(field)
+            // A first Campus supplies the research needed to reach the
+            // aircraft; reserving a slot must not delay that prerequisite.
+            || g.district_family(*district) == crate::name!("campus")
             || !g.rules.districts[district].specialty
             || g.map
                 .get(*pos)

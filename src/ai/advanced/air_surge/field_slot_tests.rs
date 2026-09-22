@@ -127,3 +127,18 @@ fn district_layout_cannot_raise_the_airfield_slot_veto() {
     ai.district_plan_adjust_menu_scores(&g, &plan, first, &planned, &items, &mut scores);
     assert!(scores[0] > 0.0, "ordinary layout floor remains available");
 }
+
+#[test]
+fn first_campus_keeps_the_research_path_to_aircraft_open() {
+    let (mut g, ai, plan, first, _) = fixture();
+    g.players[0].techs.insert(crate::name!("writing"));
+    let item = Item::District {
+        district: crate::name!("campus"),
+        pos: g.district_sites(first, crate::name!("campus"))[0],
+    };
+    assert!(g.can_produce(0, first, &item));
+    assert!(
+        ai.production_value(&g, 0, first, &item, &plan, &ai.counts(&g, 0)) > -1_000.0,
+        "reserving an airfield must not block the Campus needed to research aircraft"
+    );
+}
