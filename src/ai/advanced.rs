@@ -18826,6 +18826,13 @@ impl AdvancedAi {
             return None;
         }
         let unit = &g.units[&uid];
+        // Arrival belongs to this unit, not the rearward group anchor. The
+        // routing goals exclude occupied tiles, including our own tile, so
+        // an arrived reinforcement otherwise shuttles between staging posts
+        // and consumes its turn before the tactical controller can act.
+        if g.wdist(unit.pos, objective) <= 5 {
+            return None;
+        }
         let spec = &g.rules.units[unit.kind];
         if !matches!(spec.class.as_str(), "military" | "support")
             || matches!(spec.domain.as_deref(), Some("sea" | "air"))
@@ -42203,3 +42210,6 @@ mod religious_interception;
 
 #[cfg(test)]
 mod observed_movement_memory_tests;
+
+#[cfg(test)]
+mod reinforcement_arrival_tests;
