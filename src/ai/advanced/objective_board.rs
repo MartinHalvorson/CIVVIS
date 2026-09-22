@@ -654,7 +654,8 @@ impl AdvancedAi {
                     && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
                         && self.base.has_exploration_target(g, pid, *uid))
                     && !self.guard_is_reserved_for_civilian(*uid)
-                    && unit.linked_to.is_none()
+                    && (unit.linked_to.is_none()
+                        || super::siege_train::linked_support_carrier(g, *uid))
             })
             .collect();
         pool.sort_unstable();

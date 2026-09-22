@@ -1,0 +1,21 @@
+# Keep linked support carriers in siege forces
+
+Native `civvis-20260922T061755Z` lost to Kongo's Culture victory at turn 155 on source `85744fb48b6ff59ecc27014f4ed20f2503bee143`. Its Bombard `5439513` held at `(41,26)` from turns 123 through 134 while the siege of Wente Mapu remained in Stage. It eventually fired on turns 136 and 137. The nearby Pike and Shot `5177368` and Siege Tower `5242911` both reported formation count two and shared `(37,23)` on turn 125.
+
+A local diagnostic build of integrated source `7e9ca63e2b65c792aee13e9acfc303027185d6d6` printed public force assignments after each decision. All 464 complete replies matched the unmodified build. The Pike and Shot was absent from every force, while the main siege force included multiple reinforcements 8–17 tiles away. Source confirms the omission: `board_pool` excludes every linked unit, and `arm_of` classifies every linked unit as Other. The mirror restores reciprocal links from the observed formation counts and co-location; the existing movement engine recognizes the military member as the linked leader.
+
+The candidate admits a land military carrier linked to friendly, co-located support into the objective pool and siege arm classification. The link must be reciprocal. The support follower remains outside the attack roster; civilian and religious escort commitments stay excluded. Existing movement and combat legality still govern orders and keep the support with its carrier. This changes assignment, not the combat or formation rules.
+
+A separate siege-train ablation changed 203 of 464 internal-action frames but produced no earlier Bombard shots and reduced city-targeted attack orders from 27 to 24. It does not support disabling the whole siege policy. Nor does adding one excluded carrier by itself prove an earlier capture or a win: the nearby enemy strength and other reinforcements still matter.
+
+## Validation
+
+Baseline regression: two expected failures (omitted carrier, no depleted-city action), two negative controls pass. Candidate siege suite: 38 passed. Prototype full suite: 4,190 passed, 53 ignored. Changed-line Rust quality, 14 treatment append checks, release binaries and eight four-player 180-turn soak games (seeds 372400–372407) passed.
+
+The isolated baseline (`d9fb0fe5e9c4c544e0c40eee7a472be90dcaaa10`, empty claim on `b99350685aec04f745ed21f775e8f0752da833b8`) and candidate (`194ebdc5bde1e84df628eb798f615962f659fce6`) replay the same 464 native frames with matching effective genomes. Physical orders change in 99 frames from turn 75; complete exported lists change in 110 and internal action lists in 117. Exported receipt differences compare proposed actions against the original game's recorded next state; they are not observed native failures of this candidate.
+
+Bombard `5439513` receives advance orders on turns 128, 129, 130, 132 and 133, whereas the baseline holds until turn 135. All 27 attack orders against cities listed in the corresponding native state remain identical, including its first shots at turns 136/1 and 137/0. Counting every historically known city coordinate would incorrectly count later attacks at Mamüll Mapu after its disappearance; that proxy is not used here. Earlier movement does not prove an earlier capture because the replay restores recorded states rather than simulating a continuous alternative native game.
+
+Latest main merged once: `4336e3c757a771b5b41c5f9c2a4d8f0158ad9fef`. Integrated validation source: `95b156164599c872e20420d97c7306aa0eabc0d3`. Integrated full suite: 4193 passed, 53 ignored; changed-line Rust quality, release binaries and eight four-player 180-turn soak games passed. The integrated source includes any main changes separately from the isolated replay comparison.
+
+Binary SHA-256: baseline `91e8076166db6fa05719a8cd297a57bbef59f6893f195cd0efe54ad80e3c4eb1`; candidate `b2f0dba1dc6d9cf2dfdd89b3a935edbf9a51777ddb2a22c7e25763ba241f804c`. Input events SHA-256: `5990a98535070db433545ca7995b6f0f1a719367bc03b472fe6fd9e19b702991`. Artifacts are under `/tmp/civvis-3724-replay`; diagnostic evidence is under `/tmp/civvis-force-diagnostic` and `/tmp/civvis-3722-replay/force_diagnostic061755`. No native Domination victory is established by these checks.
