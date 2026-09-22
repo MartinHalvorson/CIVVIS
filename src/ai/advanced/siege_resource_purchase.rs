@@ -13,10 +13,6 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || !matches!(
-                plan.strategy,
-                GrandStrategy::Conquest | GrandStrategy::Expansion
-            )
             || plan.threatened_city.is_some()
             || self.threatened_city(g, pid).is_some()
         {
@@ -31,6 +27,12 @@ impl AdvancedAi {
             .values()
             .filter(|u| u.owner == pid)
             .filter_map(|u| {
+                if !matches!(
+                    plan.strategy,
+                    GrandStrategy::Conquest | GrandStrategy::Expansion
+                ) {
+                    return None;
+                }
                 let held = &g.rules.units[u.kind];
                 if held.promotion_class != "melee"
                     && (held.promotion_class != "siege" || plan.strategy != GrandStrategy::Conquest)
@@ -55,6 +57,8 @@ impl AdvancedAi {
         // The first Bomber cannot provide an existing-unit upgrade demand.
         // A researched airframe and an operational field make its missing
         // resource a concrete production blocker, without a speculative beeline.
+        // Keep this demand through recovery and rival-victory counter plans:
+        // changing the current campaign phase does not fuel the airfield.
         if let Some(bomber) = Self::air_surge_bomber(g, pid) {
             let spec = &g.rules.units[bomber];
             if let (Some(tech), Some(field), Some(resource)) =

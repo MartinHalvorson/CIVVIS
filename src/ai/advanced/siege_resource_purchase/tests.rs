@@ -236,3 +236,25 @@ fn air_resource_purchase_keeps_builder_treasury_home_and_lane_guards() {
         assert_eq!(g.map.tiles[&(12, 10)].owner_city, None);
     }
 }
+
+#[test]
+fn researched_air_supply_survives_recovery_and_rival_victory_counter_plans() {
+    for strategy in [GrandStrategy::Recovery, GrandStrategy::Diplomacy] {
+        let (mut g, ai, mut plan, city) = air_resource_fixture();
+        plan.strategy = strategy;
+        assert!(ai.siege_resource_purchase(&mut g, 0, &plan));
+        assert_eq!(g.map.tiles[&(12, 10)].owner_city, Some(city));
+    }
+}
+
+#[test]
+fn air_exception_does_not_expand_ground_upgrade_purchase_phases() {
+    for strategy in [GrandStrategy::Recovery, GrandStrategy::Diplomacy] {
+        for melee in [false, true] {
+            let (mut g, ai, mut plan, _) = if melee { melee_fixture() } else { fixture() };
+            plan.strategy = strategy;
+            assert!(!ai.siege_resource_purchase(&mut g, 0, &plan));
+            assert_eq!(g.map.tiles[&(12, 10)].owner_city, None);
+        }
+    }
+}
