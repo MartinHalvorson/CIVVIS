@@ -230,6 +230,18 @@ fn field_cannon_does_not_veto_the_only_available_wall_breaker() {
         ai.production_value(&g, 0, home, &weapon, &plan, &counts) > 0.0,
         "a Field Cannon cannot replace the missing bombardment role"
     );
+    // Infrastructure can still win an idle city's production comparison.
+    // Once the campaign's weapon starts, ordinary ranged fire must not make
+    // the governor abandon that commitment as obsolete.
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: weapon.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&home).unwrap().production = 1.0;
     ai.advanced_production(&mut g, 0, &plan, false);
     assert_eq!(g.cities[&home].queue.first(), Some(&weapon));
 }
