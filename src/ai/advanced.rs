@@ -27,6 +27,7 @@ mod defensive_apostle;
 
 mod domination_governors;
 mod domination_modernization;
+mod domination_siege_milestones;
 mod regional_production_commitments;
 
 /// Local strength ratio a force group needs before it will advance or press an
@@ -7168,7 +7169,6 @@ mod surprise_defense;
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_surge;
-mod domination_siege_milestones;
 mod siege_resource_purchase;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
