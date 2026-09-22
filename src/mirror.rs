@@ -2158,6 +2158,9 @@ pub struct StateCity {
     pub original_owner: Option<i64>,
     #[serde(default = "unknown_metric")]
     pub defense: f64,
+    /// Native city-center GetAttackStrength, only while owned or visible.
+    #[serde(default)]
+    pub ranged_strength: Option<f64>,
     /// Damage and capacity for the city garrison and outer-defense health pools.
     /// These are the same four values Firaxis's city banner displays.
     #[serde(default = "unknown_metric")]
@@ -10498,6 +10501,9 @@ fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot
             Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
                 .insert(cid, observed.loyalty_per_turn);
         }
+        if let Some(strength) = observed.ranged_strength.filter(|v| v.is_finite() && *v >= 0.0) {
+            Arc::make_mut(&mut game.observed_city_ranged_strength).insert(cid, strength);
+        }
         if observed.defense.is_finite() && observed.defense >= 0.0 {
             Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
         }
@@ -10517,6 +10523,7 @@ fn apply_observed_host_metrics(
     Arc::make_mut(&mut game.observed_visiting_tourists).clear();
     Arc::make_mut(&mut game.observed_city_loyalty_per_turn).clear();
     Arc::make_mut(&mut game.observed_city_strength).clear();
+    Arc::make_mut(&mut game.observed_city_ranged_strength).clear();
     Arc::make_mut(&mut game.observed_city_max_wall_hp).clear();
     Arc::make_mut(&mut game.observed_tourism_per_turn).clear();
     if let Some(capacity) = state.trade_capacity.filter(|capacity| *capacity >= 0) {
@@ -14672,3 +14679,7 @@ mod host_fact_tests;
 
 #[cfg(test)]
 mod enemy_district_pillage_tests;
+
+#[cfg(test)]
+#[path = "mirror/city_ranged_strength/tests.rs"]
+mod city_ranged_strength_tests;

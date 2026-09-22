@@ -1451,6 +1451,24 @@ local function cityDefence(x, y)
 	return strength, damage, maxDamage, wallDamage, maxWallDamage;
 end
 
+local function cityRangedStrength(pid, city)
+	return try(function()
+		local x, y = city:GetX(), city:GetY();
+		-- Revealed terrain is not current sight. Never read a fogged rival's
+		-- strength, even though the engine exposes its city object.
+		if city:GetOwner() ~= pid and PlayersVisibility[pid]:IsVisible(x, y) ~= true then
+			return nil;
+		end
+		local district = CityManager.GetDistrictAt(Map.GetPlot(x, y));
+		if district == nil then return nil; end
+		-- Base/Assets/UI/Panels/UnitPanel.lua:2322,3482 displays this directly.
+		local strength = district:GetAttackStrength();
+		if type(strength) == "number" and strength >= 0 and strength < math.huge then
+			return strength;
+		end
+	end);
+end
+
 -- ★★★★★ Loyalty, the mechanism that has been quietly destroying the empire.
 --
 -- 22 of 39 runs past turn 60 lost at least one city, AT PEACE. A city that loses
@@ -7096,6 +7114,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole
 			-- project's history on every city on the board.
+			ranged_strength = cityRangedStrength(pid, city),
 			defense = defStrength,
 			damage = defDamage,
 			max_damage = defMax,
@@ -7453,6 +7472,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 							original_owner = try(function() return city:GetOriginalOwner(); end, nil),
 							-- Defence is on the city banner when the city is
 							-- visible, so this is information a human has.
+							ranged_strength = cityRangedStrength(pid, city),
 							defense = theirDef,
 							damage = theirDmg,
 							max_damage = theirMax,
@@ -8011,6 +8031,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 							-- WorldRankings.lua:1842-1848 counts original capitals and founders.
 							original_capital = try(function() return city:IsOriginalCapital(); end, nil),
 							original_owner = try(function() return city:GetOriginalOwner(); end, nil),
+							ranged_strength = cityRangedStrength(pid, city),
 							defense = strength, damage = damage,
 							max_damage = maxDamage,
 							wall_damage = wallDamage,
