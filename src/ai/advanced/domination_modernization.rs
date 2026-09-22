@@ -36,6 +36,51 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Positive income can still leave a named offensive's cohort obsolete.
+    /// Fund the two cheapest resource-ready upgrades within four turns, plus
+    /// the same emergency floor used by the actual purchase pass. A host's
+    /// price takes precedence, but never grants permission to upgrade here.
+    pub(super) fn domination_upgrade_funding_shortfall(&self, g: &Game, pid: usize) -> bool {
+        let discount = g.policy_effect(pid, "unit_maintenance_discount");
+        let saves_upkeep = g.player_unit_ids(pid).into_iter().any(|uid| {
+            let unit = &g.units[&uid];
+            let bill = g
+                .host_unit_facts
+                .get(&uid)
+                .and_then(|facts| facts.maintenance)
+                .unwrap_or(g.rules.units[unit.kind].maintenance);
+            bill > discount
+        });
+        if !saves_upkeep {
+            return false;
+        }
+        let mut prices: Vec<f64> = self
+            .domination_upgrade_need(g, pid)
+            .into_iter()
+            .filter_map(|(uid, _)| {
+                let unit = &g.units[&uid];
+                let target = g.unit_upgrade_target(pid, unit.kind)?;
+                let modeled = g
+                    .unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)?
+                    .0;
+                Some(
+                    g.host_unit_facts
+                        .get(&uid)
+                        .and_then(|facts| facts.upgrade.as_ref())
+                        .and_then(|offer| offer.cost)
+                        .unwrap_or(modeled),
+                )
+            })
+            .collect();
+        if prices.len() < 2 {
+            return false;
+        }
+        prices.sort_by(f64::total_cmp);
+        let income = g.players[pid].gold_per_turn;
+        let needed = prices[0] + prices[1] + 30.0 + (-income).max(0.0);
+        g.players[pid].gold + 4.0 * income.max(0.0) < needed
+    }
+
     pub(super) fn domination_upgrade_civic_goal(
         &self,
         g: &Game,

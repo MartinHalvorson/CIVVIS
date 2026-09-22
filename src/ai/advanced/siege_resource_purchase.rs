@@ -1,4 +1,4 @@
-//! Connect the first resource for an existing Domination army before surplus shopping.
+//! Connect the first resource for a Domination army or researched Bomber before surplus shopping.
 
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
 use crate::game::{Action, Game};
@@ -13,10 +13,6 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || !matches!(
-                plan.strategy,
-                GrandStrategy::Conquest | GrandStrategy::Expansion
-            )
             || plan.threatened_city.is_some()
             || self.threatened_city(g, pid).is_some()
         {
@@ -26,11 +22,17 @@ impl AdvancedAi {
         // Melee units need their first resource while the Domination empire
         // is still expanding: waiting for Conquest leaves its capture army
         // obsolete before it can assemble. Siege keeps its campaign gate.
-        let needed: BTreeSet<Name> = g
+        let mut needed: BTreeSet<Name> = g
             .units
             .values()
             .filter(|u| u.owner == pid)
             .filter_map(|u| {
+                if !matches!(
+                    plan.strategy,
+                    GrandStrategy::Conquest | GrandStrategy::Expansion
+                ) {
+                    return None;
+                }
                 let held = &g.rules.units[u.kind];
                 if held.promotion_class != "melee"
                     && (held.promotion_class != "siege" || plan.strategy != GrandStrategy::Conquest)
@@ -52,6 +54,32 @@ impl AdvancedAi {
                     .then_some(resource)
             })
             .collect();
+        // The first Bomber cannot provide an existing-unit upgrade demand.
+        // A researched airframe and an operational field make its missing
+        // resource a concrete production blocker, without a speculative beeline.
+        // Keep this demand through recovery and rival-victory counter plans:
+        // changing the current campaign phase does not fuel the airfield.
+        if let Some(bomber) = Self::air_surge_bomber(g, pid) {
+            let spec = &g.rules.units[bomber];
+            if let (Some(tech), Some(field), Some(resource)) =
+                (spec.tech, spec.requires_district, spec.requires_resource)
+            {
+                let has_field = g.cities.values().filter(|c| c.owner == pid).any(|c| {
+                    c.districts.iter().any(|(district, pos)| {
+                        g.district_family(*district) == g.district_family(field)
+                            && g.map.get(*pos).is_some_and(|tile| !tile.pillaged)
+                    })
+                });
+                if g.players[pid].techs.contains(&tech)
+                    && has_field
+                    && g.resource_visible_to(pid, resource.as_str())
+                    && g.strategic_stockpile(pid, resource) <= 0.0
+                    && g.strategic_resource_rate(pid, resource.as_str()) <= 0.0
+                {
+                    needed.insert(resource);
+                }
+            }
+        }
         if needed.is_empty() {
             return false;
         }

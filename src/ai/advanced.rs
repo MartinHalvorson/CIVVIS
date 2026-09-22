@@ -27,6 +27,7 @@ mod defensive_apostle;
 
 mod domination_governors;
 mod domination_modernization;
+mod domination_siege_milestones;
 mod regional_production_commitments;
 
 /// Local strength ratio a force group needs before it will advance or press an
@@ -1427,6 +1428,12 @@ struct PurchaseScoreContext<'a> {
     reserve: f64,
 }
 
+/// Movement bookkeeping before a disposable observed frame is planned.
+pub(crate) struct ObservedMovementMemory {
+    paths: std::collections::HashMap<u32, (u32, Vec<Pos>)>,
+    watches: std::collections::HashMap<u32, (u32, Pos, Pos)>,
+}
+
 struct UnitIntent {
     actions: Vec<Action>,
     took_a_turn: bool,
@@ -1871,6 +1878,8 @@ pub struct AdvancedAi {
     /// counter. The deployed Science recovery and the version-three idle-queue
     /// challenger consume it only after the second distinct idle turn.
     idle_production_streak: BTreeMap<u32, (u32, u32)>,
+    domination_siege_milestones:
+        BTreeMap<(usize, Pos), domination_siege_milestones::SiegeMilestone>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -7995,6 +8004,7 @@ impl AdvancedAi {
             builder_targets: BTreeMap::new(),
             commitments: commitments::CommitmentLedger::default(),
             idle_production_streak: BTreeMap::new(),
+            domination_siege_milestones: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -8829,6 +8839,7 @@ impl AdvancedAi {
     }
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
+        self.observe_domination_siege_milestones(g, pid);
         let cities = g.player_city_ids(pid).len();
         if cities > self.last_city_count {
             // `last_campaign_progress` also powers the established diplomacy
@@ -16386,11 +16397,17 @@ impl AdvancedAi {
                 .policies
                 .iter()
                 .any(|card| matches!(card.as_str(), "conscription" | "levee_en_masse"));
+        // A discounted upgrade still needs cash. Give a named offensive
+        // upkeep relief when four turns of income cannot fund its cohort.
+        let upgrade_funding_relief = domination_target
+            && (at_major_war || staged_conquest)
+            && self.domination_upgrade_funding_shortfall(g, pid);
         let maintenance_emergency = (self.war_economy || domination_target)
             && (at_major_war || staged_conquest)
             && military > 0
             && g.players[pid].gold < recovery_reserve
-            && (g.players[pid].gold_per_turn < -0.5 || retained_domination_relief);
+            && (g.players[pid].gold_per_turn < -0.5 || retained_domination_relief)
+            || upgrade_funding_relief;
         if maintenance_emergency {
             desired.retain(|card| !matches!(*card, "conscription" | "levee_en_masse"));
             desired.splice(0..0, ["levee_en_masse", "conscription"]);
@@ -16708,6 +16725,19 @@ impl AdvancedAi {
                         return !culture_defense_cards.contains(&current.as_str())
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())
                             && self.builder_window_can_replace(g, pid, current);
+                    }
+                    if upgrade_funding_relief && matches!(card, "conscription" | "levee_en_masse") {
+                        // Ordinary desired military cards must not lock out
+                        // the cash needed by the upgrade discount itself.
+                        return g.rules.policies[current].slot == "military"
+                            && !matches!(
+                                current.as_str(),
+                                "professional_army"
+                                    | "force_modernization"
+                                    | "limitanei"
+                                    | "praetorium"
+                            )
+                            && !culture_defense_cards.contains(&current.as_str());
                     }
                     if upgrade_card == Some(card) {
                         return g.rules.policies[current].slot == "military"
@@ -17119,7 +17149,9 @@ impl AdvancedAi {
         if self.one_war_refuses_joint_war(g, pid, deal) {
             return -1_000.0;
         }
-        let fatigued = fatigued && !self.one_war_presses(g, pid, partner);
+        let fatigued = fatigued
+            && !self.one_war_presses(g, pid, partner)
+            && !self.domination_siege_is_progressing(g, pid, partner, plan);
         let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
@@ -19352,7 +19384,7 @@ impl AdvancedAi {
             let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
-            });
+            }) && !self.domination_siege_is_progressing(g, pid, *other, plan);
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
@@ -41453,6 +41485,41 @@ impl Ai for AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Save the executed movement history before planning a disposable frame.
+    pub(crate) fn observed_movement_memory(&self) -> ObservedMovementMemory {
+        ObservedMovementMemory {
+            paths: self.base.last_path_step_from.borrow().clone(),
+            watches: self.base.move_refusal_watch.borrow().clone(),
+        }
+    }
+
+    /// A frame can stop after its finishing volley or a refused action. Its
+    /// unexecuted movement must not become reversal history or a host-refusal
+    /// watch. Preserve observations judged while planning, restore earlier
+    /// executed steps, then commit only the executor's successful movement.
+    pub(crate) fn reconcile_observed_movement(
+        &mut self,
+        g: &Game,
+        before: ObservedMovementMemory,
+        executed: &[(u32, Pos, Pos)],
+    ) {
+        *self.base.last_path_step_from.borrow_mut() = before.paths;
+        {
+            let mut watches = self.base.move_refusal_watch.borrow_mut();
+            watches.retain(|_, (turn, _, _)| *turn != g.turn);
+            watches.extend(
+                before
+                    .watches
+                    .into_iter()
+                    .filter(|(_, (turn, _, _))| *turn == g.turn),
+            );
+        }
+        for &(uid, from, to) in executed {
+            self.base.record_path_step(g, uid, from);
+            self.base.record_move_refusal_watch(g, uid, from, to);
+        }
+    }
+
     /// Engine adapters call this only on a disposable, observation-limited
     /// board. The authoritative native entry point remains `Ai::take_turn`.
     pub fn plan_observed_turn(&mut self, g: &mut Game, pid: usize) {
@@ -42131,3 +42198,6 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religious_interception;
+
+#[cfg(test)]
+mod observed_movement_memory_tests;
