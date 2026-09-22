@@ -99,6 +99,9 @@ use civvis::game::{Action, Game};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+#[path = "victory_eval/domination_pair.rs"]
+mod domination_pair;
+
 /// One seat's government, as `id=government:slotted/slots`.
 ///
 /// ⚠ `none` and `chiefdom` are different answers and both are worth seeing. A
@@ -446,6 +449,13 @@ fn default_turn_limit(target: VictoryTarget) -> u32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--domination-pair") {
+        if let Err(error) = domination_pair::run(&args) {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+        return;
+    }
     let denial_pair = selected_denial_pair(&args).unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2);
