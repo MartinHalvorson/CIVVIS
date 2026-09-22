@@ -324,19 +324,6 @@ pub(super) fn ring_state(g: &Game, cid: u32) -> (usize, usize) {
     (sealed, total)
 }
 
-/// Our battering ram and siege tower beside the city, in that order — the
-/// adjacency `siege_support_effects` reads.
-fn siege_support_adjacent(g: &Game, pid: usize, city_pos: Pos) -> (bool, bool) {
-    let adjacent = |kind: &str| {
-        g.nbrs(city_pos).into_iter().any(|pos| {
-            g.unit_ids_at(pos)
-                .iter()
-                .any(|id| g.units[id].owner == pid && g.units[id].kind == kind)
-        })
-    };
-    (adjacent("battering_ram"), adjacent("siege_tower"))
-}
-
 /// The taker's expected blow on the city as `do_attack` would land it: the
 /// attacker's strength at its hit points against `city_strength`, at the
 /// centre of the roll, routed through the wall pool.
@@ -348,7 +335,12 @@ pub(super) fn taker_blow(g: &Game, pid: usize, uid: u32, cid: u32) -> f64 {
         return 0.0;
     };
     let mean = expected_damage(att, defense);
-    let (_, tower) = siege_support_adjacent(g, pid, city.pos);
+    let (_, tower) = g.siege_support_effects(
+        pid,
+        cid,
+        city.pos,
+        &g.rules.units[g.units[&uid].kind].promotion_class,
+    );
     city.through(mean, tower)
 }
 
@@ -1129,7 +1121,12 @@ impl AdvancedAi {
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
         if distance <= 1 {
-            let (ram, tower) = siege_support_adjacent(g, pid, city.pos);
+            let (ram, tower) = g.siege_support_effects(
+                pid,
+                city.id,
+                city.pos,
+                &g.rules.units[g.units[&uid].kind].promotion_class,
+            );
             let allow_city = city.wall_fraction() <= MELEE_WALL_FRACTION || ram || tower;
             if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, allow_city) {
                 return acted;
@@ -2310,3 +2307,6 @@ mod rebuild_tests;
 
 #[cfg(test)]
 mod taker_pressure_tests;
+
+#[cfg(test)]
+mod support_tests;
