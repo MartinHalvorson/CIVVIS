@@ -65,19 +65,19 @@
   },
   "ladder": {
     "ahead": 49,
-    "attempts": 1245,
-    "configured": 961,
+    "attempts": 1246,
+    "configured": 962,
     "full_length": 210,
-    "graded": 635,
-    "latest_utc": "2026-09-22T00:09:48Z",
+    "graded": 636,
+    "latest_utc": "2026-09-22T00:45:16Z",
     "lead_best": 759,
     "lead_median": -273,
-    "rival_bar_median": 906,
+    "rival_bar_median": 909,
     "score_best": 1606,
     "score_median": 550,
     "stolen": {
       "conquest": 1,
-      "culture": 94,
+      "culture": 95,
       "diplomatic": 73,
       "religious": 36,
       "technology": 87
@@ -91,7 +91,7 @@
       "culture": {
         "earliest": 145,
         "latest": 247,
-        "median": 211
+        "median": 209
       },
       "diplomatic": {
         "earliest": 175,
@@ -110,7 +110,7 @@
       }
     },
     "stolen_while_ahead": 19,
-    "terminal": 505,
+    "terminal": 506,
     "wins": 26
   },
   "registry": {
