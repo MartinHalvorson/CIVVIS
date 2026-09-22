@@ -292,6 +292,78 @@ impl AdvancedAi {
         heresy / top
     }
 
+    /// Keep one defender at the last source of replacement religious units.
+    /// A converted city elsewhere is recoverable; losing the only purchase
+    /// source can make every remaining charge irreplaceable.
+    fn inquisitor_purchase_source_guard(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        religion: &str,
+    ) -> Option<Pos> {
+        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+            || !g.victory_conditions.religious
+            || g.players[pid].religion.as_deref() != Some(religion)
+            || g.units[&uid].charges == 0
+        {
+            return None;
+        }
+        let sources: Vec<_> = g
+            .cities
+            .values()
+            .filter(|city| {
+                city.owner == pid
+                    && city.districts.iter().any(|(district, pos)| {
+                        g.district_family(*district) == "holy_site"
+                            && g.map.get(*pos).is_some_and(|tile| !tile.pillaged)
+                    })
+                    && city.buildings.iter().any(|building| {
+                        !city.pillaged_buildings.contains(building)
+                            && (g.building_is_family(building, crate::name!("shrine"))
+                                || g.building_is_family(building, crate::name!("temple")))
+                    })
+            })
+            .collect();
+        let faithful: Vec<_> = sources
+            .iter()
+            .copied()
+            .filter(|city| g.city_religion(city) == Some(religion))
+            .collect();
+        let source = match faithful.as_slice() {
+            [source] => *source,
+            [] if sources.len() == 1 => sources[0],
+            _ => return None,
+        };
+        let threatened = g.city_religion(source) != Some(religion)
+            || g.units.values().any(|unit| {
+                unit.owner != pid
+                    && unit.charges > 0
+                    && unit
+                        .religion
+                        .as_deref()
+                        .is_some_and(|faith| faith != religion)
+                    && g.rules.units[unit.kind].religious_spread > 0.0
+                    && g.wdist(unit.pos, source.pos) <= 4
+            });
+        if !threatened {
+            return None;
+        }
+        // Assign one guard, preferring a healthy defender. The rest of the
+        // corps continues to restore cities through the ordinary veto pass.
+        let guard = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && unit.kind == "inquisitor"
+                    && unit.charges > 0
+                    && unit.religion.as_deref() == Some(religion)
+            })
+            .min_by_key(|unit| (unit.hp < 50, g.wdist(unit.pos, source.pos), unit.id))?;
+        (guard.id == uid).then_some(source.pos)
+    }
+
     /// The Inquisitor's turn with the gene on: remove heresy where there is
     /// heresy, otherwise walk to the own city where it is worst. `None`
     /// when the gene is off or the unit is not an Inquisitor of a faith;
@@ -330,6 +402,11 @@ impl AdvancedAi {
             {
                 return Some(g.apply(pid, action).is_ok());
             }
+        }
+        if let Some(source) = self.inquisitor_purchase_source_guard(g, pid, uid, &religion) {
+            return Some(
+                here != source && self.religious_step_toward_range(g, pid, uid, source, 0),
+            );
         }
         let target: Option<Pos> = g
             .player_city_ids(pid)

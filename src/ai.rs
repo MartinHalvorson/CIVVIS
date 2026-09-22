@@ -16842,6 +16842,17 @@ impl BasicAi {
                 if !self.barbarian_target_allowed_for_controller(g, uid, other.pos) {
                     return None;
                 }
+                // An incidental pickup is not a city assault. Majors leave
+                // civilians under known bombardment to the tactical planner;
+                // barbarian raids retain their existing behavior.
+                if major_rescue
+                    && g.cities.values().any(|city| {
+                        Self::city_centre_strikes(g, pid, city, other.pos)
+                            || Self::city_encampment_strikes(g, pid, city, other.pos)
+                    })
+                {
+                    return None;
+                }
                 // A civilian standing under an enemy military unit cannot be
                 // captured by entering; that tile is an attack problem.
                 let guarded = g.unit_ids_at(other.pos).iter().any(|oid| {
@@ -16868,6 +16879,16 @@ impl BasicAi {
         else {
             return false;
         };
+        // A safe prize can still have a dangerous approach. Recheck each
+        // issued step, since native movement may end before reaching the goal.
+        if major_rescue
+            && g.cities.values().any(|city| {
+                Self::city_centre_strikes(g, pid, city, next)
+                    || Self::city_encampment_strikes(g, pid, city, next)
+            })
+        {
+            return false;
+        }
         let kind = g.units[&uid].kind.as_str();
         think!(self.journal, Military, Decision,
                "{kind} {uid} marches to rescue a capturable civilian";
@@ -28759,3 +28780,6 @@ mod opening_defense_tests;
 
 #[cfg(test)]
 mod exploration_replan_tests;
+
+#[cfg(test)]
+mod civilian_pursuit_tests;
