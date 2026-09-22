@@ -9569,7 +9569,34 @@ end
 -- sweep keeps its cadence (resources, improvements and pillage refresh there)
 -- and re-primes `known`. `TileDelta = false` withholds the deltas.
 -- One bare global table (200-local ceiling).
-CivvisTiles = { known = {} };
+CivvisTiles = { known = {}, districtPillage = {} };
+
+-- The existing plot `p` bit also describes a district. Rival city records
+-- do not carry districts, so without this observation every fresh board
+-- treats an already-bombed Campus as another profitable bombing mission.
+-- Shipped WorldBuilderPlayerEditor.lua:732 reads `pDistrict:IsPillaged()`.
+-- Only refresh district damage in sight; fog retains the last observation.
+function CivvisTiles.pillageState(plot, pid, x, y)
+    return try(function()
+        if plot:GetImprovementType() >= 0 then
+            return plot:IsImprovementPillaged() and true or nil;
+        end
+        local kind = plot:GetDistrictType();
+        if kind == nil or kind < 0 then return nil; end
+        local key = pid .. ":" .. x .. ":" .. y .. ":" .. kind;
+        if PlayersVisibility[pid]:IsVisible(x, y) then
+            local district = CityManager.GetDistrictAt(x, y);
+            if district ~= nil then
+                local pillaged = try(function() return district:IsPillaged(); end, nil);
+                if type(pillaged) == "boolean" then
+                    CivvisTiles.districtPillage[key] = pillaged;
+                end
+            end
+        end
+        return CivvisTiles.districtPillage[key];
+    end, nil);
+end
+
 
 local function exportTiles(player, pid, turn, frame, deltaOnly)
 	if cfg.ExportState ~= true then return; end
@@ -9683,7 +9710,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 					-- chunk is at its ceiling.
 					mark = (owner * 1024 + feature) .. ":"
 						.. (try(function() return plot:GetImprovementType(); end, -1) or -1) .. ":"
-						.. (try(function() return plot:IsImprovementPillaged(); end, false) and 1 or 0) .. ":"
+						.. (CivvisTiles.pillageState(plot, pid, x, y) and 1 or 0) .. ":"
 						.. (try(function() return plot:GetRouteType(); end, -1) or -1) .. ":"
 						.. (try(function() return plot:IsRoutePillaged(); end, false) and 1 or 0) .. ":"
 						.. (try(function() return plot:GetDistrictType(); end, -1) or -1) .. ":"
@@ -9748,12 +9775,9 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						-- per-plot yield export (run civvis-20260816T040537Z) showed a
 						-- pastured Horses tile at the bare-terrain figure for ninety
 						-- turns. `IsImprovementPillaged` is what the shipped PlotToolTip
-						-- reads. Sent only where an improvement stands, so an unimproved
-						-- plot costs no bytes; nil (absent) elsewhere.
-						p = try(function()
-							if plot:GetImprovementType() < 0 then return nil; end
-							return plot:IsImprovementPillaged() and true or nil;
-						end, nil),
+						-- reads. Also carries observed district pillage, since rival
+						-- city records have no district list; nil on empty ground.
+						p = CivvisTiles.pillageState(plot, pid, x, y),
 						-- This plot's own three river edges, as a bitmask: 1 = W,
 						-- 2 = NW, 4 = NE. See `riverMask` above for why the other
 						-- three edges do not need sending.

@@ -1,0 +1,19 @@
+# Observe enemy district pillage before assigning bomber missions
+
+Native continuation `civvis-20260922T013415Z-cont3`, pinned to `590641be9305e94fd42020f26dc93e07e3053198`, repeatedly attacked the Aerodrome at (11,16) on turns 218–222, the Campus at (29,28) on 223–226 and 231, and the Campus at (32,27) on 227–229. By turn 227 a healthy Modern Armor stood next to Qusqu, whose 400 wall HP had fallen by only three. No bomber order targeted Qusqu through 232.
+
+The plot exporter carries a district name and completion flag, but no district pillage state. Rival city records do not carry district lists. Each fresh board therefore reconstructs those districts without observing whether earlier native sorties pillaged them. The recording cannot establish the missing fact; repeated attacks alone are not proof of successful pillage or the sole cause of the failed siege.
+
+The patch extends the existing plot `p` bit to observed districts, includes it in the delta signature, and applies it when reconstructing foreign infrastructure. Own districts retain their richer city observations. A visible district can update or clear the bit; outside sight, the exporter retains its last observation. Old recordings without the bit retain legacy behavior. This does not supply missing enemy-building pillage states.
+
+Native accessor: shipped `Base/Assets/UI/WorldBuilderPlayerEditor.lua:732` reads `pDistrict:IsPillaged()`. The existing `CityManager.GetDistrictAt(x,y)` supplies the same district object used for the completion flag. Air-pillage remains the existing AIR_ATTACK operation: shipped `Base/Assets/UI/Panels/UnitPanel.lua:3629` explicitly includes air-pillage in air-attack targets.
+
+## Validation
+
+Two Rust regressions fail on the previous mirror because a true district pillage bit is discarded. The mission test first verifies that an intact district is offered as a legal AirPillage target, then requires an observed pillaged district to be excluded. The repair test checks that an observed false bit clears the previous state. The initial test compile needed a corrected Action import; the subsequent baseline failure is the intended pillage-state assertion.
+
+The actual Lua export function passes a harness covering a pillage-only delta, no resend on unchanged state, observed repair, no hidden repair leakage, improvement compatibility and a missing district accessor. All 65 mod Lua files parse under Lua 5.1 and all 60 discovered Lua harnesses pass. The integrated source `d9939453b` merges main `9d8c98737` and passes 4,175 Rust tests (53 existing ignored), changed-line Rust quality, all 14 append-integrity tests, and eight four-player smoke games with `--turns 180 --start-seed 371900`. The 1,461 controller tests complete with one existing skip. The failed-accessor refinement retains the previous observed district value; its harness and the complete Lua suite pass.
+
+A legacy-compatibility replay compares the isolated Rust change at `c8bd1c222` with native source `453093af81ea2986843474f2fd421e11be309dc4` on all 553 frames of `civvis-20260922T041757Z` through turn 193. Every exported order and internal action is identical. The candidate's base `1ccd3aa8a` differs from that baseline only in Lua/control assets, not Rust compiler inputs. This demonstrates compatibility with recordings lacking district pillage observations, not better bombing decisions from newly observed facts. The integrated source additionally includes the separately validated siege-support changes from main; the 553-frame equivalence claim belongs to the isolated comparison.
+
+Input SHA-256: `2b379cceb503612241ee3b9412ff9afe12d317f30c2520d61f2cb99e285b9ce6`. Baseline binary: `5240a91e77f75a54e6c4227f4f30ff92efe39d974afad3c80fa46e9392255e7d`; candidate binary: `b0d1e9ec502108af017dc317e83af2bc16d03820a48ec5467ee1aae6406a8cee`. Replay artifacts are in `/tmp/civvis-041757-pillage-replay`. No native behavior improvement or victory is claimed.

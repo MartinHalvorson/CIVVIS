@@ -3165,20 +3165,32 @@ impl Game {
         Ok(())
     }
 
+    /// Whether this city's defenses permit a support kind's breach effect.
+    /// Shared by combat and AI equipment selection, including unique walls.
+    pub(crate) fn city_allows_siege_support(&self, cid: u32, kind: &str) -> bool {
+        let city = &self.cities[&cid];
+        if self.tree_effect(city.owner, "urban_defenses") > 0.0 {
+            return false;
+        }
+        let immunity = match kind {
+            "battering_ram" => "battering_ram_immunity",
+            "siege_tower" => "siege_support_immunity",
+            _ => return false,
+        };
+        self.city_building_effect(city, immunity) <= 0.0
+    }
+
     /// Active Battering Ram and Siege Tower effects against a City Center or
     /// Encampment. Their wall-era limits also apply to replacement buildings,
     /// and both support units are ineffective against Steel's Urban Defenses.
-    pub(super) fn siege_support_effects(
+    pub(crate) fn siege_support_effects(
         &self,
         attacker: usize,
         cid: u32,
         target: Pos,
         promotion_class: &str,
     ) -> (bool, bool) {
-        let city = &self.cities[&cid];
-        if !matches!(promotion_class, "melee" | "anti_cavalry")
-            || self.tree_effect(city.owner, "urban_defenses") > 0.0
-        {
+        if !matches!(promotion_class, "melee" | "anti_cavalry") {
             return (false, false);
         }
         let adjacent_support = |kind: &str| {
@@ -3189,9 +3201,9 @@ impl Game {
             })
         };
         let ram = adjacent_support("battering_ram")
-            && self.city_building_effect(city, "battering_ram_immunity") <= 0.0;
-        let tower = adjacent_support("siege_tower")
-            && self.city_building_effect(city, "siege_support_immunity") <= 0.0;
+            && self.city_allows_siege_support(cid, "battering_ram");
+        let tower =
+            adjacent_support("siege_tower") && self.city_allows_siege_support(cid, "siege_tower");
         (ram, tower)
     }
 

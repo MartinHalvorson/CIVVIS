@@ -167,9 +167,10 @@ pub struct Plot {
     /// Improvement type name already built here, e.g. `IMPROVEMENT_FARM`.
     #[serde(default)]
     pub im: Option<String>,
-    /// Whether that improvement is pillaged (`Plot:IsImprovementPillaged`). Sent
-    /// only where an improvement stands; absent reads as not pillaged, which is
-    /// what an older export meant too. A pillaged improvement pays nothing until
+    /// Whether the improvement or observed district is pillaged. Improvements
+    /// use `Plot:IsImprovementPillaged`; districts use `District:IsPillaged`.
+    /// Absent reads as not pillaged, preserving older exports.
+    /// A pillaged improvement pays nothing until
     /// repaired, and without this bit the model paid it in full — a pastured
     /// Horses tile read at the bare-terrain figure for ninety turns on run
     /// civvis-20260816T040537Z.
@@ -828,9 +829,9 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                     None
                 }
             });
-            // The host's pillage bit rides only with an improvement; a district's
-            // pillage is set from the city record and must not be overwritten
-            // here, so a plot without a modelled improvement is left alone.
+            // Own district pillage comes from the city record; foreign district
+            // pillage is applied with its infrastructure after city ownership.
+            // Neither should be overwritten by the improvement path here.
             if tile.improvement.is_some() {
                 tile.pillaged = plot.p;
             }
@@ -13248,6 +13249,9 @@ fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapsho
                 tile.district = Some(name);
                 tile.district_foundation = None;
                 tile.wonder = None;
+                tile.pillaged = snapshot
+                    .plot(crate::hex::axial_to_offset(pos.0, pos.1))
+                    .is_some_and(|plot| plot.p);
             }
         }
         for (name, pos) in wonders {
@@ -14635,3 +14639,6 @@ mod transient_refusal_tests;
 
 #[cfg(test)]
 mod host_fact_tests;
+
+#[cfg(test)]
+mod enemy_district_pillage_tests;

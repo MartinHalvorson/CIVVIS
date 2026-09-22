@@ -989,7 +989,9 @@ impl AdvancedAi {
     /// A nearer standing-army upgrade can temporarily take priority; the air
     /// goal retires when the breakthrough technology lands.
     pub(crate) fn air_surge_research_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        self.air_surge_plan.as_ref()?;
+        if self.air_surge_plan.is_none() && !self.domination_air_readiness_active(g, pid) {
+            return None;
+        }
         // Native King run 20260921T110313Z kept Crossbowmen and Trebuchets
         // through Flight while a nine-tech air appointment owned research.
         // Keep that appointment, but let a nearer upgrade for the standing
@@ -1061,7 +1063,9 @@ impl AdvancedAi {
         item: &Item,
         turns: f64,
     ) -> Option<f64> {
-        let plan = self.air_surge_plan.as_ref()?;
+        let Some(plan) = self.air_surge_plan.as_ref() else {
+            return self.domination_air_readiness_value(g, pid, cid, item, turns);
+        };
         let mut status = self.air_surge_status(g, pid, plan);
         if status.aerodromes_committed == 0 && self.air_surge_reserves_field_slot(g, pid, cid, item)
         {
@@ -1109,19 +1113,22 @@ impl AdvancedAi {
         cid: u32,
         item: &Item,
     ) -> bool {
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
-            return false;
-        }
-        if self
-            .air_surge_plan
-            .as_ref()
-            .is_none_or(|plan| self.air_surge_status(g, pid, plan).aerodromes_committed > 0)
-        {
-            return false;
-        }
         let Item::District { district, pos } = item else {
             return false;
         };
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        let needs_field = self.air_surge_plan.as_ref().map_or_else(
+            || {
+                self.domination_air_readiness_active(g, pid)
+                    && Self::domination_air_readiness_counts(g, pid).0 == 0
+            },
+            |plan| self.air_surge_status(g, pid, plan).aerodromes_committed == 0,
+        );
+        if !needs_field {
+            return false;
+        }
         let Some(field) = Self::air_surge_field(g, pid) else {
             return false;
         };
@@ -1219,7 +1226,7 @@ impl AdvancedAi {
     /// turn, and an exact no-op while the gene is off.
     pub(crate) fn air_surge_production(&mut self, g: &mut Game, pid: usize) -> bool {
         let Some(plan) = self.air_surge_plan.clone() else {
-            return false;
+            return self.domination_air_readiness_production(g, pid);
         };
         let status = self.air_surge_status;
         let threatened = self.threatened_city(g, pid);
@@ -1547,3 +1554,5 @@ mod urgent_denial_opening_tests;
 
 #[cfg(test)]
 mod field_slot_tests;
+
+mod readiness;

@@ -9347,24 +9347,11 @@ impl AdvancedAi {
         if wall_hp <= 0 {
             return Some(None);
         }
-        let wall_levels = city
-            .buildings
-            .iter()
-            .filter(|building| g.rules.buildings[building].outer_defense > 0)
-            .count();
-        if !g.players[city.owner].techs.contains(&crate::name!("steel")) {
-            let support = if wall_levels <= 1 {
-                [crate::name!("battering_ram"), crate::name!("siege_tower")]
-            } else {
-                [crate::name!("siege_tower"), crate::name!("battering_ram")]
-            };
-            for unit in support {
-                let compatible = match unit.as_str() {
-                    "battering_ram" => wall_levels == 1,
-                    "siege_tower" => (1..=2).contains(&wall_levels),
-                    _ => false,
-                };
-                if compatible && Self::war_can_field_unit(g, pid, unit) {
+        if super::siege_support::has_attackers(g, pid) {
+            for unit in [crate::name!("battering_ram"), crate::name!("siege_tower")] {
+                if g.city_allows_siege_support(city.id, unit.as_str())
+                    && Self::war_can_field_unit(g, pid, unit)
+                {
                     return Some(Some(unit));
                 }
             }
@@ -19529,6 +19516,11 @@ impl AdvancedAi {
         {
             self.base.levy_city_state_military(g, pid, true);
         }
+        // A visible spreader can supply an immediate religious counter even
+        // when the founder's cities have not yet been discovered.
+        if self.religious_interception_opening(g, pid) {
+            return;
+        }
         // `science-threat-denial`: close a denial war that has pillaged the
         // pad, or open one on a threat about to finish. A declaration here is
         // the turn's one declaration. See
@@ -24264,12 +24256,55 @@ impl AdvancedAi {
                 + hostile_aircraft.min(4) as f64 * 65.0
                 + desired.saturating_sub(counts.air_defense) as f64 * 90.0;
         }
+        let existing_kinds: Vec<&str> = g
+            .units
+            .values()
+            .filter(|candidate| candidate.owner == pid)
+            .map(|candidate| candidate.kind.as_str())
+            .chain(
+                g.cities
+                    .values()
+                    .filter(|city| city.owner == pid && city.id != cid)
+                    .filter_map(|city| match city.queue.first() {
+                        Some(Item::Unit { unit }) => Some(unit.as_str()),
+                        _ => None,
+                    }),
+            )
+            .collect();
+        let is_breach = matches!(unit, "battering_ram" | "siege_tower");
+        let target_cities: Vec<_> = plan
+            .target_city
+            .and_then(|city| g.cities.get(&city))
+            .into_iter()
+            .chain(
+                g.cities
+                    .values()
+                    .filter(|city| plan.target_city != Some(city.id)),
+            )
+            .filter(|city| city.wall_hp > 0 && g.is_at_war(pid, city.owner))
+            .collect();
+        let useful_breach = |kind: &str| {
+            target_cities
+                .iter()
+                .any(|city| g.city_allows_siege_support(city.id, kind))
+        };
+        if is_breach && (!super::siege_support::has_attackers(g, pid) || !useful_breach(unit)) {
+            return -10_000.0;
+        }
+        // Obsolete breach equipment must not occupy the only support slot
+        // needed by a replacement or by a balloon for the siege artillery.
+        let obsolete_breach = existing_kinds
+            .iter()
+            .filter(|kind| {
+                matches!(**kind, "battering_ram" | "siege_tower") && !useful_breach(kind)
+            })
+            .count();
         let land_military = counts
             .military
             .saturating_sub(counts.naval + counts.aircraft);
         let field_support = counts
             .support
-            .saturating_sub(counts.military_engineers + counts.air_defense);
+            .saturating_sub(counts.military_engineers + counts.air_defense + obsolete_breach);
         let desired_support = if land_military >= 8 {
             2
         } else if land_military >= 3 {
@@ -24281,21 +24316,6 @@ impl AdvancedAi {
             return -10_000.0;
         }
 
-        let existing_kinds: Vec<&str> = g
-            .units
-            .values()
-            .filter(|candidate| candidate.owner == pid)
-            .map(|candidate| candidate.kind.as_str())
-            .chain(
-                g.cities
-                    .values()
-                    .filter(|city| city.owner == pid)
-                    .filter_map(|city| match city.queue.first() {
-                        Some(Item::Unit { unit }) => Some(unit.as_str()),
-                        _ => None,
-                    }),
-            )
-            .collect();
         let has_capability = |effect: &str| {
             existing_kinds.iter().any(|kind| {
                 g.rules.units[*kind]
@@ -24304,7 +24324,6 @@ impl AdvancedAi {
                     .is_some_and(|amount| *amount > 0.0)
             })
         };
-        let is_breach = matches!(unit, "battering_ram" | "siege_tower");
         if (spec
             .effects
             .get("adjacent_siege_range")
@@ -24315,42 +24334,21 @@ impl AdvancedAi {
             || (spec.effects.get("adjacent_heal").copied().unwrap_or(0.0) > 0.0
                 && has_capability("adjacent_heal"))
             || (is_breach
-                && existing_kinds
-                    .iter()
-                    .any(|kind| matches!(*kind, "battering_ram" | "siege_tower")))
+                && existing_kinds.iter().any(|kind| {
+                    matches!(*kind, "battering_ram" | "siege_tower")
+                        && target_cities.iter().any(|city| {
+                            g.city_allows_siege_support(city.id, unit)
+                                && g.city_allows_siege_support(city.id, kind)
+                        })
+                }))
         {
             return -10_000.0;
         }
 
-        let target_cities: Vec<_> = plan
-            .target_city
-            .and_then(|city| g.cities.get(&city))
-            .into_iter()
-            .chain(g.cities.values().filter(|city| {
-                city.owner != pid
-                    && g.is_at_war(pid, city.owner)
-                    && plan.target_city != Some(city.id)
-            }))
-            .collect();
-        let breach_value = if is_breach {
-            target_cities
-                .iter()
-                .filter(|city| !g.players[city.owner].techs.contains(&crate::name!("steel")))
-                .map(|city| {
-                    let wall_levels = city
-                        .buildings
-                        .iter()
-                        .filter(|building| g.rules.buildings[building].outer_defense > 0)
-                        .count();
-                    match unit {
-                        "battering_ram" if wall_levels == 1 => 760.0,
-                        "siege_tower" if (1..=2).contains(&wall_levels) => 800.0,
-                        _ => 0.0,
-                    }
-                })
-                .fold(0.0_f64, f64::max)
-        } else {
-            0.0
+        let breach_value: f64 = match unit {
+            "battering_ram" => 760.0,
+            "siege_tower" => 800.0,
+            _ => 0.0,
         };
         let siege_range = spec
             .effects
@@ -42131,3 +42129,5 @@ mod domination_policy_economy;
 mod adopted_faith_balance;
 
 mod air_campaign;
+
+mod religious_interception;
