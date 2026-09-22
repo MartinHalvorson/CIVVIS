@@ -5686,6 +5686,7 @@ const CITY_KEYS: &[&str] = &[
     "capital",
     "original_capital",
     "defense",
+    "ranged_strength",
     "damage",
     "max_damage",
     "wall_damage",
