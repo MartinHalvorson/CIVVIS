@@ -24991,7 +24991,12 @@ impl AdvancedAi {
                         return None;
                     }
                     self.preemptive_major_war_defense_item(
-                        g, pid, city, Some(city), active_major_war, true,
+                        g,
+                        pid,
+                        city,
+                        Some(city),
+                        active_major_war,
+                        true,
                     )
                 });
             let Some(defence) = defence else {
