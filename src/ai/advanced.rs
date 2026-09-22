@@ -19516,6 +19516,11 @@ impl AdvancedAi {
         {
             self.base.levy_city_state_military(g, pid, true);
         }
+        // A visible spreader can supply an immediate religious counter even
+        // when the founder's cities have not yet been discovered.
+        if self.religious_interception_opening(g, pid) {
+            return;
+        }
         // `science-threat-denial`: close a denial war that has pillaged the
         // pad, or open one on a threat about to finish. A declaration here is
         // the turn's one declaration. See
@@ -42124,3 +42129,5 @@ mod domination_policy_economy;
 mod adopted_faith_balance;
 
 mod air_campaign;
+
+mod religious_interception;
