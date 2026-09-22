@@ -49,32 +49,51 @@ impl AdvancedAi {
         // screening units keep it out of this turn's attack envelope.
         if target == Some(VictoryTarget::Domination) {
             let visible = g.player_vision_frame(pid);
-            if unwalled.into_iter().any(|cid| {
-                let city = &g.cities[&cid];
-                let defense = g.city_strength(cid).max(1.0);
-                g.units.values().any(|unit| {
-                    let spec = &g.rules.units[unit.kind];
-                    unit.owner != pid
-                        && g.is_at_war(pid, unit.owner)
-                        && spec.class == "military"
-                        && spec.is_melee_capable()
-                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-                        && g.map
-                            .get(unit.pos)
-                            .is_some_and(|tile| !g.rules.is_water(tile))
-                        && g.wdist(city.pos, unit.pos) <= 4
-                        && g.sees(&visible, unit.pos)
-                        && g.unit_visible_to(unit.id, pid)
-                        && crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
-                            >= defense * IMMINENT_ATTACK_STRENGTH_RATIO
-                        && g.route_distance(unit.id, city.pos, 1)
-                            .is_some_and(|steps| steps <= 4)
-                })
-            }) {
+            if unwalled
+                .into_iter()
+                .any(|cid| Self::strong_attacker_approaches_unwalled_city(g, pid, cid, &visible))
+            {
                 return Some(masonry);
             }
         }
         None
+    }
+
+    /// Shared warning for research and production: a visible stronger land
+    /// attacker can reach an unwalled city's approach within four route steps.
+    /// This is lead time for defense, not a prediction of its arrival turn.
+    pub(super) fn strong_attacker_approaches_unwalled_city(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> bool {
+        let Some(city) = g
+            .cities
+            .get(&cid)
+            .filter(|city| city.owner == pid && g.city_max_wall_hp(city) == 0)
+        else {
+            return false;
+        };
+        let defense = g.city_strength(cid).max(1.0);
+        g.units.values().any(|unit| {
+            let spec = &g.rules.units[unit.kind];
+            unit.owner != pid
+                && g.is_at_war(pid, unit.owner)
+                && spec.class == "military"
+                && spec.is_melee_capable()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && g.map
+                    .get(unit.pos)
+                    .is_some_and(|tile| !g.rules.is_water(tile))
+                && g.wdist(city.pos, unit.pos) <= 4
+                && g.sees(visible, unit.pos)
+                && g.unit_visible_to(unit.id, pid)
+                && crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
+                    >= defense * IMMINENT_ATTACK_STRENGTH_RATIO
+                && g.route_distance(unit.id, city.pos, 1)
+                    .is_some_and(|steps| steps <= 4)
+        })
     }
 }
 
