@@ -1102,8 +1102,21 @@ impl AdvancedAi {
 
     /// Keep one productive city's last specialty slot available while the
     /// appointed wing is still waiting for its airfield technology.
-    fn air_surge_reserves_field_slot(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
+    pub(super) fn air_surge_reserves_field_slot(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        if self
+            .air_surge_plan
+            .as_ref()
+            .is_none_or(|plan| self.air_surge_status(g, pid, plan).aerodromes_committed > 0)
+        {
             return false;
         }
         let Item::District { district, pos } = item else {

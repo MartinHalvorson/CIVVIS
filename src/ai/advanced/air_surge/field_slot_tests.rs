@@ -97,3 +97,33 @@ fn committed_airfield_releases_the_other_citys_slot() {
         None
     );
 }
+
+#[test]
+fn district_layout_cannot_raise_the_airfield_slot_veto() {
+    let (g, mut ai, plan, first, _) = fixture();
+    let item = hub(&g, first);
+    let Item::District { district, pos } = item else {
+        unreachable!();
+    };
+    let planned = [super::super::district_planning::PlannedDistrict {
+        district,
+        family: district,
+        pos,
+        support: false,
+        order: 0,
+        purchase: None,
+        owned_fallback: None,
+    }];
+    let items = [item];
+    let mut scores = ai.production_values(&g, 0, first, &items, &plan, ai.counts(&g, 0));
+    assert!(scores[0] < -1_000.0);
+    ai.district_plan_adjust_menu_scores(&g, &plan, first, &planned, &items, &mut scores);
+    assert!(
+        scores[0] < -1_000.0,
+        "the layout floor spent the airfield slot"
+    );
+
+    ai.air_surge_plan = None;
+    ai.district_plan_adjust_menu_scores(&g, &plan, first, &planned, &items, &mut scores);
+    assert!(scores[0] > 0.0, "ordinary layout floor remains available");
+}
