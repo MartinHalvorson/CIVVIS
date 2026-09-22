@@ -28453,7 +28453,8 @@ impl AdvancedAi {
                     let conquest_body =
                         self.conquest_reservation(g, pid, cid, spec, counts, threatened);
                     let missing_siege =
-                        self.missing_domination_siege(g, pid, cid, plan, counts, spec);
+                        self.missing_domination_siege(g, pid, cid, plan, counts, spec)
+                            || self.faster_first_siege(g, pid, cid, plan, item);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
