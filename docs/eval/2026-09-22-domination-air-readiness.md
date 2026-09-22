@@ -15,4 +15,3 @@ The second continuation is replayed independently, preserving its controller res
 These are counterfactual proposals, not earlier native aircraft, captures or a prevented loss. The first replay's input SHA-256 is `8f2c06558e9605045dc6c8d55c3fd407cc958af0fd8f97f06d01d382a2d30d52`; the continuation's is `2d1d52a46b8172ca51cead2340b206918454551eff5149257c10b1845121d245`. Baseline binary SHA-256: `d83f8d7e92101513b12ca1b20b6cf5673bca7ab3c85486ac48ebc43a9f165204`; prototype binary: `430ab1c73e474eebc128e846a66edcc6c405c3789b75a67e771728802dda145e`.
 
 A subsequent optimization skips readiness calculations for unrelated menu items; all 4,172 Rust tests still pass. Its replay equivalence and final integration checks remain pending. Timings from concurrently running replays are not a controlled speed result. Artifacts remain under `/tmp/civvis-013415-airfield-replay`, `/tmp/civvis-013415-cont2-readiness-replay` and `/tmp/civvis-3715-*`.
-
