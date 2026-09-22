@@ -73,14 +73,14 @@ Unreachable:
 
 ## Live ladder
 
-- Attempts recorded: **1246**
-- Configured attempts: **962**
-- Terminal outcomes: **506**
+- Attempts recorded: **1248**
+- Configured attempts: **963**
+- Terminal outcomes: **507**
 - Configured wins: **26**
-- Latest ledger entry: **2026-09-22T00:45:16Z**
+- Latest ledger entry: **2026-09-22T01:32:22Z**
 
-- Attempts that ran the full clock: **210**, median score **550**, best **1606**
-- Graded against the best rival: **636 configured attempts**; rival bar median **909**, our lead median **-273**, best **+759**, ahead in **49**
+- Attempts that ran the full clock: **211**, median score **550**, best **1606**
+- Graded against the best rival: **637 configured attempts**; rival bar median **909**, our lead median **-278**, best **+759**, ahead in **49**
 - Lost to a rival's victory before the clock: **292** (culture 95, technology 87, diplomatic 73, religious 36, conquest 1), of which **19** while our own score was the highest on the board
 - The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 209), diplomatic 175–247 (median 224), religious 75–235 (median 153), technology 175–246 (median 214)
 
