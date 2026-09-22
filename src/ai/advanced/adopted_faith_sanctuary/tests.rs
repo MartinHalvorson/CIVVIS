@@ -333,3 +333,66 @@ fn one_converted_foreign_civilization_below_half_is_not_a_construction_alarm() {
     assert!(!g.civ_follows_religion(1, "Buddhism"));
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
 }
+
+fn founder_supplier_fixture() -> (Game, AdvancedAi, StrategicPlan, u32) {
+    let (mut g, ai, plan, home) = fixture();
+    g.players[0].religion = Some("Our faith".into());
+    let city = g.cities.get_mut(&home).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Our faith".into(), 1000.0);
+    crate::game::install_test_district(&mut g, home, "holy_site");
+    (g, ai, plan, home)
+}
+
+#[test]
+fn founder_supplier_keeps_shrine_through_review_and_recruits_own_defender() {
+    let (mut g, mut ai, plan, home) = founder_supplier_fixture();
+    let shrine = Item::Building {
+        building: crate::name!("shrine"),
+    };
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert_eq!(g.cities[&home].queue.first(), Some(&shrine));
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&home].queue.first(), Some(&shrine));
+    let city = g.cities.get_mut(&home).unwrap();
+    city.queue.clear();
+    city.buildings.push(crate::name!("shrine"));
+    g = g.speculative_clone();
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+    ai.religious_defense(&mut g, 0, "Buddhism");
+    assert!(g.units.values().any(|u| u.owner == 0
+        && u.kind == "missionary"
+        && u.religion.as_deref() == Some("Our faith")));
+}
+
+#[test]
+fn founder_supplier_requires_live_pressure_and_a_surviving_own_majority() {
+    let (mut g, ai, _, home) = founder_supplier_fixture();
+    for cid in g.player_city_ids(0).into_iter().filter(|cid| *cid != home) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 1000.0;
+    }
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+    let (mut g, ai, _, home) = founder_supplier_fixture();
+    let city = g.cities.get_mut(&home).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Orthodoxy".into(), 1000.0);
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+}
+
+#[test]
+fn founder_supplier_preserves_lane_funding_and_local_defense_guards() {
+    let (mut g, ai, _, home) = founder_supplier_fixture();
+    assert!(ai
+        .adopted_faith_sanctuary_choice(&g, 0, Some(home))
+        .is_none());
+    assert!(AdvancedAi::targeting(VictoryTarget::Science)
+        .adopted_faith_sanctuary_choice(&g, 0, None)
+        .is_none());
+    g.victory_conditions.religious = false;
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+    g.victory_conditions.religious = true;
+    g.players[0].faith = 0.0;
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+}
