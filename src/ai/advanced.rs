@@ -1871,6 +1871,7 @@ pub struct AdvancedAi {
     /// counter. The deployed Science recovery and the version-three idle-queue
     /// challenger consume it only after the second distinct idle turn.
     idle_production_streak: BTreeMap<u32, (u32, u32)>,
+    domination_siege_milestones: BTreeMap<u32, domination_siege_milestones::SiegeMilestone>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
@@ -7166,6 +7167,7 @@ mod surprise_defense;
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_surge;
+mod domination_siege_milestones;
 mod siege_resource_purchase;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
@@ -7995,6 +7997,7 @@ impl AdvancedAi {
             builder_targets: BTreeMap::new(),
             commitments: commitments::CommitmentLedger::default(),
             idle_production_streak: BTreeMap::new(),
+            domination_siege_milestones: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
@@ -8829,6 +8832,7 @@ impl AdvancedAi {
     }
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
+        self.observe_domination_siege_milestones(g, pid);
         let cities = g.player_city_ids(pid).len();
         if cities > self.last_city_count {
             // `last_campaign_progress` also powers the established diplomacy
@@ -17138,7 +17142,9 @@ impl AdvancedAi {
         if self.one_war_refuses_joint_war(g, pid, deal) {
             return -1_000.0;
         }
-        let fatigued = fatigued && !self.one_war_presses(g, pid, partner);
+        let fatigued = fatigued
+            && !self.one_war_presses(g, pid, partner)
+            && !self.domination_siege_is_progressing(g, pid, partner, plan);
         let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
@@ -19371,7 +19377,7 @@ impl AdvancedAi {
             let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
-            });
+            }) && !self.domination_siege_is_progressing(g, pid, *other, plan);
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
