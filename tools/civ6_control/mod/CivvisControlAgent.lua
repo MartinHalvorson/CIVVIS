@@ -388,7 +388,8 @@ local function resolveActions()
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
-		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
+		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REMOVE_IMPROVEMENT",
+		"UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
 		-- Parameterless Culture actions: Base/Assets/Gameplay/Data/UnitOperations.xml
 		-- :73 (park), :77 (excavate), and DLC/Expansion2/Data/Expansion2_UnitOperations.xml
 		-- :11 (concert). None has InterfaceMode: UnitPanel.lua:2518-2535 requests
@@ -14515,6 +14516,51 @@ local function applyOrder(player, pid, row, turn)
 				end
 				return true, wanted or "IMPROVE";
 			end
+			-- A replacement is two native operations. UnitOperations.xml:96
+			-- declares REMOVE_IMPROVEMENT without an interface mode; the shipped
+			-- UnitPanel.lua:2518-2535 requests it with exactly two arguments.
+			-- Keep the named resource connection, rather than asking the generic
+			-- fallback to restore the same non-extracting improvement.
+			if row.resource_replacement_retry then
+				-- Removal may spend the remaining movement. Leave the bare deposit
+				-- available to the next observed plan, not in the refused-site cache.
+				return false, "replacement_build_not_ready";
+			end
+			if cfg.OrderQueue ~= false and row2 ~= nil then
+				local replacement = try(function()
+					local tx, ty = params[UnitOperationTypes.PARAM_X], params[UnitOperationTypes.PARAM_Y];
+					local plot = Map.GetPlot(tx, ty);
+					if plot == nil or plot:GetOwner() ~= pid
+							or unit:GetX() ~= tx or unit:GetY() ~= ty
+							or unit:GetMovesRemaining() <= 0 or unit:GetBuildCharges() <= 0 then return nil; end
+					local resource = visibleResourceName(player, plot);
+					local resourceRow = resource ~= nil and GameInfo.Resources[resource] or nil;
+					if resourceRow == nil or resourceRow.ResourceClassType ~= "RESOURCECLASS_STRATEGIC" then return nil; end
+					local existing = typeName("Improvements", "ImprovementType", plot:GetImprovementType());
+					if existing == nil or existing == wanted then return nil; end
+					local connects, alreadyConnects = false, false;
+					for link in GameInfo.Improvement_ValidResources() do
+						if link.ResourceType == resource then
+							connects = connects or link.ImprovementType == wanted;
+							alreadyConnects = alreadyConnects or link.ImprovementType == existing;
+						end
+					end
+					if not connects or alreadyConnects then return nil; end
+					return { resource = resource, existing = existing, x = tx, y = ty };
+				end);
+				if replacement ~= nil and operate(unit, OP["UNITOPERATION_REMOVE_IMPROVEMENT"], nil) then
+					local retry = { kind = "unit", subject = subject, verb = verb,
+						x = replacement.x, y = replacement.y, resource_replacement_retry = true };
+					-- Insert before this Builder's later planned walks, even when
+					-- the original IMPROVE was itself a queued follow-up.
+					CivvisQueue.push(subject, retry, nil, row);
+					emit("improvement_replacement_started", {
+						turn = turn, unit = subject, x = replacement.x, y = replacement.y,
+						resource = replacement.resource, previous = replacement.existing, want = wanted,
+					});
+					return true, "improvement_replacement_queued";
+				end
+			end
 			-- ★★★★ FALL BACK TO WHATEVER THIS TILE ALLOWS.
 			--
 			-- CIVVIS names the improvement from ITS terrain model, and the two rulesets
@@ -15544,7 +15590,7 @@ CivvisQueue.isStrike = function(row)
 	return verb == "ATTACK" or verb == "RANGE_ATTACK" or verb == "AIR_ATTACK";
 end;
 
-CivvisQueue.push = function(subject, row, expect)
+CivvisQueue.push = function(subject, row, expect, afterRow)
 	local q = CivvisQueue;
 	local entry = q.pending[subject];
 	if entry == nil then
@@ -15566,7 +15612,11 @@ CivvisQueue.push = function(subject, row, expect)
 			entry.settle_passes = 1;
 		end
 	end
-	entry.rows[#entry.rows + 1] = row;
+	if afterRow ~= nil and entry.rows[entry.next] == afterRow then
+		table.insert(entry.rows, entry.next + 1, row);
+	else
+		entry.rows[#entry.rows + 1] = row;
+	end
 	q.count = q.count + 1;
 	q.stats.queued = q.stats.queued + 1;
 	if CivvisQueue.isStrike(row) then q.stats.strikes_planned = q.stats.strikes_planned + 1; end
