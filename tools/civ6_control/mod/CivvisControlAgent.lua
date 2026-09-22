@@ -6238,6 +6238,26 @@ CivvisUnitVisible = function(pid, unit)
 end;
 
 local function exportState(player, pid, turn, frame, eventKind)
+	-- Keep export-only helpers inside this function: the main chunk is near
+	-- Lua's local-variable ceiling.
+	local function cityRangedStrength(pid, city)
+		return try(function()
+			local x, y = city:GetX(), city:GetY();
+			-- Revealed terrain is not current sight. Never read a fogged rival's
+			-- strength, even though the engine exposes its city object.
+			if city:GetOwner() ~= pid and PlayersVisibility[pid]:IsVisible(x, y) ~= true then
+				return nil;
+			end
+			local district = CityManager.GetDistrictAt(Map.GetPlot(x, y));
+			if district == nil then return nil; end
+			-- Base/Assets/UI/Panels/UnitPanel.lua:2322,3482 displays this directly.
+			local strength = district:GetAttackStrength();
+			if type(strength) == "number" and strength >= 0 and strength < math.huge then
+				return strength;
+			end
+		end);
+	end
+
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
 	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a
@@ -7096,6 +7116,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole
 			-- project's history on every city on the board.
+			ranged_strength = cityRangedStrength(pid, city),
 			defense = defStrength,
 			damage = defDamage,
 			max_damage = defMax,
@@ -7453,6 +7474,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 							original_owner = try(function() return city:GetOriginalOwner(); end, nil),
 							-- Defence is on the city banner when the city is
 							-- visible, so this is information a human has.
+							ranged_strength = cityRangedStrength(pid, city),
 							defense = theirDef,
 							damage = theirDmg,
 							max_damage = theirMax,
@@ -8011,6 +8033,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 							-- WorldRankings.lua:1842-1848 counts original capitals and founders.
 							original_capital = try(function() return city:IsOriginalCapital(); end, nil),
 							original_owner = try(function() return city:GetOriginalOwner(); end, nil),
+							ranged_strength = cityRangedStrength(pid, city),
 							defense = strength, damage = damage,
 							max_damage = maxDamage,
 							wall_damage = wallDamage,

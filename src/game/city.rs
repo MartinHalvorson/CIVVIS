@@ -65,9 +65,12 @@ impl Game {
         }
     }
 
-    /// City ranged strike strength: the strongest ranged unit the owner
-    /// fields, or 3 if none (Civ 6 rule).
+    /// Prefer a visible native city ranged strength. Otherwise use the owner
+    /// history/model, with the base-three fallback when no ranged unit is known.
     pub fn city_ranged_strength(&self, cid: u32) -> f64 {
+        if let Some(strength) = self.observed_city_ranged_strength.get(&cid) {
+            return *strength;
+        }
         let owner = self.cities[&cid].owner;
         let current = self
             .units

@@ -6469,6 +6469,9 @@ pub struct Game {
     /// Observed banner defense strengths for reconstructed cities.
     #[serde(default)]
     pub observed_city_strength: Arc<BTreeMap<u32, f64>>,
+    /// Visible host city ranged strength, already including native modifiers.
+    #[serde(default)]
+    pub observed_city_ranged_strength: Arc<BTreeMap<u32, f64>>,
     /// Host-reported outer-defense capacity for mirrored cities. Native games
     /// derive this from wall buildings and leave the override empty.
     #[serde(default)]
@@ -7212,6 +7215,8 @@ struct GameSer {
     #[serde(default)]
     observed_city_strength: BTreeMap<u32, f64>,
     #[serde(default)]
+    observed_city_ranged_strength: BTreeMap<u32, f64>,
+    #[serde(default)]
     observed_city_max_wall_hp: BTreeMap<u32, i32>,
     #[serde(default)]
     peace_treaties: Vec<((usize, usize), u32)>,
@@ -7419,6 +7424,7 @@ impl From<GameSer> for Game {
             observed_city_specialists: Arc::new(s.observed_city_specialists),
             observed_city_loyalty_per_turn: Arc::new(s.observed_city_loyalty_per_turn),
             observed_city_strength: Arc::new(s.observed_city_strength),
+            observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
@@ -7676,6 +7682,7 @@ impl From<Game> for GameSer {
             observed_city_specialists: Arc::unwrap_or_clone(g.observed_city_specialists),
             observed_city_loyalty_per_turn: Arc::unwrap_or_clone(g.observed_city_loyalty_per_turn),
             observed_city_strength: Arc::unwrap_or_clone(g.observed_city_strength),
+            observed_city_ranged_strength: Arc::unwrap_or_clone(g.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::unwrap_or_clone(g.observed_city_max_wall_hp),
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
@@ -7753,6 +7760,7 @@ impl Game {
         self.routes.clear();
         Arc::make_mut(&mut self.observed_city_loyalty_per_turn).clear();
         Arc::make_mut(&mut self.observed_city_strength).clear();
+        Arc::make_mut(&mut self.observed_city_ranged_strength).clear();
         Arc::make_mut(&mut self.observed_city_palaces).clear();
         Arc::make_mut(&mut self.observed_city_max_wall_hp).clear();
         Arc::make_mut(&mut self.observed_city_yield_adjustments).clear();
@@ -7833,6 +7841,7 @@ impl Game {
         }
         Arc::make_mut(&mut self.observed_city_loyalty_per_turn).remove(&cid);
         Arc::make_mut(&mut self.observed_city_strength).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_ranged_strength).remove(&cid);
         Arc::make_mut(&mut self.observed_city_palaces).remove(&cid);
         Arc::make_mut(&mut self.observed_city_max_wall_hp).remove(&cid);
         Arc::make_mut(&mut self.observed_city_yield_adjustments).remove(&cid);
@@ -8128,6 +8137,7 @@ impl Game {
             observed_city_specialists: Arc::new(BTreeMap::new()),
             observed_city_loyalty_per_turn: Arc::new(BTreeMap::new()),
             observed_city_strength: Arc::new(BTreeMap::new()),
+            observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
             blocked_city_sites: Arc::new(BTreeSet::new()),
             host_observed: Arc::new(BTreeSet::new()),
