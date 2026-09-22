@@ -39,6 +39,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 mod capital_identity;
+mod dedication_history;
 mod host_deaths;
 mod religion_state;
 mod strategic_income;
@@ -3575,6 +3576,10 @@ pub struct StateSnapshot {
     /// older export; a real zero means the seat has no pending era choice.
     #[serde(default)]
     pub dedication_choices: Option<i64>,
+    /// Observed activity in the preceding native era, reconstructed from this log.
+    /// Missing history stays unknown; it is never fabricated from the current board.
+    #[serde(skip)]
+    pub observed_dedication_activity: Option<BTreeMap<String, i64>>,
     /// The World Congress resolutions binding this turn (`GetResolutions`),
     /// mapped onto the model's own `active_congress_effects`. `None` on an
     /// older export leaves the model's Congress alone; `Some([])` is a world
@@ -6264,6 +6269,9 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
         state.seat = seat;
     }
     if let Some(state) = best.as_mut() {
+        if state.dedication_choices.is_some_and(|choices| choices > 0) {
+            state.observed_dedication_activity = dedication_history::through(&raw, state.turn);
+        }
         state.refused_sites = refused_sites_of_kind_through(path, "found_refused", turn);
         state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
@@ -9004,6 +9012,9 @@ fn apply_observed_age(
 
 fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
     let player = &mut game.players[0];
+    if let Some(activity) = &state.observed_dedication_activity {
+        player.last_era_triggers.clone_from(activity);
+    }
     if let Some(score) = state.era_score.filter(|value| *value >= 0) {
         player.era_score = score;
     }
