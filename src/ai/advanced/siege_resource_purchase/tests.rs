@@ -77,3 +77,24 @@ fn refuses_without_a_builder_researched_upgrade_or_safe_treasury() {
         assert_eq!(g.map.tiles[&(12, 10)].owner_city, None);
     }
 }
+
+#[test]
+fn a_campaign_need_does_not_require_a_strategic_city_assignment() {
+    let (mut g, ai, mut plan, city) = fixture();
+    plan.target_city = None;
+    assert!(ai.advanced_gold_spending(&mut g, 0, &plan));
+    assert_eq!(g.map.tiles[&(12, 10)].owner_city, Some(city));
+}
+
+#[test]
+fn does_not_buy_a_second_deposit_when_an_owned_mine_needs_repair() {
+    let (mut g, ai, plan, city) = fixture();
+    let source = (9, 10);
+    let tile = g.map.tiles.get_mut(&source).unwrap();
+    tile.owner_city = Some(city);
+    tile.resource = Some(crate::name!("niter"));
+    tile.improvement = Some(crate::name!("mine"));
+    tile.pillaged = true;
+    assert!(!ai.siege_resource_purchase(&mut g, 0, &plan));
+    assert_eq!(g.map.tiles[&(12, 10)].owner_city, None);
+}

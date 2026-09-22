@@ -14,7 +14,6 @@ impl AdvancedAi {
     ) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || plan.strategy != GrandStrategy::Conquest
-            || plan.target_city.is_none()
             || plan.threatened_city.is_some()
             || self.threatened_city(g, pid).is_some()
         {
@@ -79,7 +78,14 @@ impl AdvancedAi {
             if g.cities.values().filter(|c| c.owner == pid).any(|c| {
                 c.owned_tiles.iter().any(|p| {
                     g.map.get(*p).is_some_and(|t| {
-                        t.resource == Some(resource) && !t.flooded && connects(g, *p)
+                        t.resource == Some(resource)
+                            && !t.flooded
+                            && (connects(g, *p)
+                                || t.improvement.is_some_and(|name| {
+                                    let spec = &g.rules.improvements[name];
+                                    spec.resources.contains(&resource)
+                                        || g.rules.resources[resource].improvement == name
+                                }))
                     })
                 })
             }) {
