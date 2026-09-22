@@ -1428,6 +1428,12 @@ struct PurchaseScoreContext<'a> {
     reserve: f64,
 }
 
+/// Movement bookkeeping before a disposable observed frame is planned.
+pub(crate) struct ObservedMovementMemory {
+    paths: std::collections::HashMap<u32, (u32, Vec<Pos>)>,
+    watches: std::collections::HashMap<u32, (u32, Pos, Pos)>,
+}
+
 struct UnitIntent {
     actions: Vec<Action>,
     took_a_turn: bool,
@@ -41479,6 +41485,41 @@ impl Ai for AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Save the executed movement history before planning a disposable frame.
+    pub(crate) fn observed_movement_memory(&self) -> ObservedMovementMemory {
+        ObservedMovementMemory {
+            paths: self.base.last_path_step_from.borrow().clone(),
+            watches: self.base.move_refusal_watch.borrow().clone(),
+        }
+    }
+
+    /// A frame can stop after its finishing volley or a refused action. Its
+    /// unexecuted movement must not become reversal history or a host-refusal
+    /// watch. Preserve observations judged while planning, restore earlier
+    /// executed steps, then commit only the executor's successful movement.
+    pub(crate) fn reconcile_observed_movement(
+        &mut self,
+        g: &Game,
+        before: ObservedMovementMemory,
+        executed: &[(u32, Pos, Pos)],
+    ) {
+        *self.base.last_path_step_from.borrow_mut() = before.paths;
+        {
+            let mut watches = self.base.move_refusal_watch.borrow_mut();
+            watches.retain(|_, (turn, _, _)| *turn != g.turn);
+            watches.extend(
+                before
+                    .watches
+                    .into_iter()
+                    .filter(|(_, (turn, _, _))| *turn == g.turn),
+            );
+        }
+        for &(uid, from, to) in executed {
+            self.base.record_path_step(g, uid, from);
+            self.base.record_move_refusal_watch(g, uid, from, to);
+        }
+    }
+
     /// Engine adapters call this only on a disposable, observation-limited
     /// board. The authoritative native entry point remains `Ai::take_turn`.
     pub fn plan_observed_turn(&mut self, g: &mut Game, pid: usize) {
@@ -42157,3 +42198,6 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religious_interception;
+
+#[cfg(test)]
+mod observed_movement_memory_tests;
