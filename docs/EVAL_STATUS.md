@@ -73,16 +73,16 @@ Unreachable:
 
 ## Live ladder
 
-- Attempts recorded: **1248**
-- Configured attempts: **963**
-- Terminal outcomes: **507**
+- Attempts recorded: **1266**
+- Configured attempts: **971**
+- Terminal outcomes: **515**
 - Configured wins: **26**
-- Latest ledger entry: **2026-09-22T01:32:22Z**
+- Latest ledger entry: **2026-09-22T07:00:07Z**
 
-- Attempts that ran the full clock: **211**, median score **550**, best **1606**
-- Graded against the best rival: **637 configured attempts**; rival bar median **909**, our lead median **-278**, best **+759**, ahead in **49**
-- Lost to a rival's victory before the clock: **292** (culture 95, technology 87, diplomatic 73, religious 36, conquest 1), of which **19** while our own score was the highest on the board
-- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 209), diplomatic 175–247 (median 224), religious 75–235 (median 153), technology 175–246 (median 214)
+- Attempts that ran the full clock: **212**, median score **551**, best **1606**
+- Graded against the best rival: **645 configured attempts**; rival bar median **920**, our lead median **-280**, best **+759**, ahead in **49**
+- Lost to a rival's victory before the clock: **299** (culture 99, technology 87, diplomatic 74, religious 38, conquest 1), of which **19** while our own score was the highest on the board
+- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 209), diplomatic 175–247 (median 227), religious 75–235 (median 152), technology 175–246 (median 214)
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this
