@@ -155,3 +155,53 @@ fn source_guard_can_restore_the_sole_converted_source_and_assigns_only_one_defen
     ai.inquisitor_veto_step(&mut g, 0, inquisitor, &legal);
     assert!(g.cities[&source].pressure["Foreign Faith"] < 2000.0);
 }
+
+#[test]
+fn source_guard_covers_an_apostle_one_move_from_spread_range() {
+    let (mut g, ai, inquisitor, source, old_invader) = source_guard_fixture();
+    g.remove_unit(old_invader);
+    let invader = g.spawn_test_unit("apostle", 1, (15, 10));
+    let unit = g.units.get_mut(&invader).unwrap();
+    unit.religion = Some("Foreign Faith".into());
+    unit.charges = 3;
+    // The rival has spent this turn's movement, but refreshes it before the
+    // source can next react. Native Quito lost its guard at this distance.
+    unit.moves_left = 0.0;
+    assert_eq!(g.unit_max_moves(invader), 4.0);
+    let source_pos = g.cities[&source].pos;
+    assert_eq!(g.wdist(g.units[&invader].pos, source_pos), 5);
+    let legal = g.legal_actions(0);
+    ai.inquisitor_veto_step(&mut g, 0, inquisitor, &legal);
+    assert_eq!(g.units[&inquisitor].pos, source_pos,
+        "do not send the only source guard to a distant converted city when an Apostle can reach spread range next turn");
+}
+
+#[test]
+fn source_guard_uses_the_spreaders_full_movement_bonus() {
+    let (mut g, ai, inquisitor, source, old_invader) = source_guard_fixture();
+    g.remove_unit(old_invader);
+    let invader = g.spawn_test_unit("apostle", 1, (17, 10));
+    let unit = g.units.get_mut(&invader).unwrap();
+    unit.religion = Some("Foreign Faith".into());
+    unit.charges = 3;
+    unit.bonus_moves = 2.0;
+    assert_eq!(g.unit_max_moves(invader), 6.0);
+    assert_eq!(
+        ai.inquisitor_purchase_source_guard(&g, 0, inquisitor, "Home Faith"),
+        Some(g.cities[&source].pos)
+    );
+}
+
+#[test]
+fn source_guard_releases_beyond_movement_and_spread_warning() {
+    let (mut g, ai, inquisitor, _, old_invader) = source_guard_fixture();
+    g.remove_unit(old_invader);
+    let invader = g.spawn_test_unit("apostle", 1, (16, 10));
+    let unit = g.units.get_mut(&invader).unwrap();
+    unit.religion = Some("Foreign Faith".into());
+    unit.charges = 3;
+    assert_eq!(g.unit_max_moves(invader), 4.0);
+    assert!(ai
+        .inquisitor_purchase_source_guard(&g, 0, inquisitor, "Home Faith")
+        .is_none());
+}

@@ -344,7 +344,12 @@ impl AdvancedAi {
                         .as_deref()
                         .is_some_and(|faith| faith != religion)
                     && g.rules.units[unit.kind].religious_spread > 0.0
-                    && g.wdist(unit.pos, source.pos) <= 4
+                    // Apostles have four base movement points and spread
+                    // from an adjacent tile. Read the refreshed allowance,
+                    // including bonuses, rather than their spent movement.
+                    // Keep the old warning floor for slow/embarked units.
+                    && g.wdist(unit.pos, source.pos)
+                        <= (g.unit_max_moves(unit.id).ceil() as i32 + 1).max(4)
             });
         if !threatened {
             return None;
