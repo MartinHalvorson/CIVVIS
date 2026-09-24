@@ -5079,12 +5079,6 @@ pub struct AdvancedAi {
     /// live seat reached 8 and then 9 cities still reading Expansion, and
     /// declared no war in three Emperor games.
     domination_lane_hands_over: bool,
-    /// `lane-delegates-production`: until the development half ends, an
-    /// assigned lane's cities take the unassigned seat's production dispatch
-    /// — the strategic scorer only where that seat would run it, then
-    /// `advanced_support_production` and the baseline governor — instead of
-    /// the strategic scorer alone. See `advanced/lane_delegates_production.rs`.
-    lane_delegates_production: bool,
     /// `chop-for-expansion`: while a city is building a Settler, a Builder
     /// spends a charge clearing a feature or harvesting a resource for the
     /// Production instead of improving a tile. Off ships the shipped
@@ -6288,6 +6282,12 @@ pub struct AdvancedAi {
     /// The gene's chosen front and its tide clock; `None` at peace or with
     /// the gene off.
     one_war: Option<one_war::OneWarFront>,
+    /// `lane-delegates-production`: until the development half ends, an
+    /// assigned lane's cities take the unassigned seat's production dispatch
+    /// — the strategic scorer only where that seat would run it, then
+    /// `advanced_support_production` and the baseline governor — instead of
+    /// the strategic scorer alone. See `advanced/lane_delegates_production.rs`.
+    lane_delegates_production: bool,
 
     // ---- append: p-r ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -8269,7 +8269,6 @@ impl AdvancedAi {
             denial_outranks_expansion: false,
             conversion: victory_conversion::ConversionState::default(),
             domination_lane_hands_over: false,
-            lane_delegates_production: false,
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
@@ -8406,6 +8405,7 @@ impl AdvancedAi {
             missionary_evades_raiders: false,
             one_war_at_a_time: false,
             one_war: None,
+            lane_delegates_production: false,
 
             // ---- append: p-r ----------------------------------------
             reinforce_before_stall: false,

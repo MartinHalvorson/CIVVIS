@@ -2334,11 +2334,6 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-building-catchup-3", field: "culture_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_building_catchup_3, disable: AdvancedAi::disable_culture_building_catchup_3 },
     Gene { tag: "research-building-catchup-3", field: "research_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_research_building_catchup_3, disable: AdvancedAi::disable_research_building_catchup_3 },
     Gene { tag: "age-closer-2", field: "age_closer_2", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_2, disable: AdvancedAi::disable_age_closer_2 },
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
-    // ---- append: e-f ------------------------------------------------
-    // ---- append: g-k ------------------------------------------------
-    // ---- append: l-o ------------------------------------------------
     // `lane-delegates-production` (2026-09-24): an assigned lane sends every
     // city through the strategic scorer; an unassigned seat hands its routine
     // queues to the baseline governor. On the King ladder proxy the lane alone
@@ -2348,6 +2343,11 @@ pub const GENES: &[Gene] = &[
     // until the development half ends the Science seat gained +1.39 pp (z
     // +2.86). See `advanced/lane_delegates_production.rs`.
     Gene { tag: "lane-delegates-production", field: "lane_delegates_production", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_delegates_production, disable: AdvancedAi::disable_lane_delegates_production },
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
+    // ---- append: g-k ------------------------------------------------
+    // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
