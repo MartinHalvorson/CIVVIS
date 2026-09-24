@@ -176,6 +176,10 @@
     "live_settler_capture_lessons": {
       "group": "host-only",
       "reason": "Every rule under it answers a live-seat fact a native board does not have: settler ids that change on every export (the vanished-settler detector is fed by `remap_unit_memory`), the host's own movement flood disagreeing with the mirror's, camps and raiders walking out of a fog the native barbarian seat does not hunt through, and the native seat's civilian losses being ~zero to begin with. A screen row would be zero-width by construction; the live ladder prices it directly through `settlers_captured` (#2724), with `disable_live_settler_capture_lessons` as the withholding arm."
+    },
+    "native_deployment": {
+      "group": "bundle",
+      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the deployment bundle (`enable_engine_repairs`) planning on the authoritative board, the seat civvis.ai plays (`Session::ai_fleet`)."
     }
   }
 }
