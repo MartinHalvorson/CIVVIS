@@ -1838,6 +1838,10 @@ pub struct AdvancedAi {
     /// Current production players deliberate from an observation. Frozen
     /// historical evaluation anchors retain their original execution contract.
     observed_player: bool,
+    /// Sites the authoritative board refused this seat a city on, blocked in
+    /// every later decision view for the rest of the game. Written only by
+    /// the fog-honest executor; see `player::block_refused_city_sites`.
+    pub(crate) refused_city_sites: BTreeSet<Pos>,
     base: BasicAi,
     plan: Option<StrategicPlan>,
     /// Preserve victory objectives across temporary expansion and war postures.
@@ -8023,6 +8027,7 @@ impl AdvancedAi {
             narrows_atlas: RefCell::new(chokepoints::NarrowsAtlas::default()),
             work_pool: None,
             observed_player: false,
+            refused_city_sites: BTreeSet::new(),
             belief: BeliefState::new(),
             battlefront_observation: true,
             live_trader_route_adapter: false,

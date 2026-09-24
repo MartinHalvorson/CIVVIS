@@ -1,6 +1,10 @@
 //! One production player, with observation and execution owned by adapters.
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
 use super::{finishing::begin_player_turn, AdvancedAi};
 use crate::game::{Action, Game, Item};
+use crate::Pos;
 
 pub mod aid;
 
@@ -121,6 +125,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         }
         let mut view = game.player_decision_view(pid);
         block_refused_production(&mut view, &refused);
+        block_refused_city_sites(&mut view, &ai.refused_city_sites);
         let mapped = view.units.keys().map(|id| (*id, i64::from(*id))).collect();
         let movement_memory = ai.observed_movement_memory();
         let (finishing, ordinary_begin) = plan_frame(ai, &mut view, pid, &mapped);
@@ -135,6 +140,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
             view.log.since(ordinary_begin),
             &mut executed_movement,
             &mut refused,
+            &mut ai.refused_city_sites,
         );
         ai.reconcile_observed_movement(game, movement_memory, &executed_movement);
         if !changed {
@@ -183,6 +189,22 @@ fn block_refused_production(view: &mut Game, refused: &[(u32, Item)]) {
     view.replace_blocked_production(blocked);
 }
 
+/// Block every site this seat has been refused a city on, so no frame plans a
+/// Settler onto one again. The view is fog-honest and the board is not: a
+/// city the seat has never seen, standing within three tiles, makes a site
+/// the view offers one the board refuses. Without this the planner re-chose
+/// the same site every frame of every turn, and a Settler stood on it for 39
+/// turns (ladder proxy, King, seed 37140001: Geneva, unseen, three tiles
+/// away). The native bridge already carries host refusals the same way —
+/// `refused_sites` into `Game::blocked_city_sites` — so this is that channel,
+/// filled from the in-engine board's refusal instead of the host's.
+fn block_refused_city_sites(view: &mut Game, refused: &BTreeSet<Pos>) {
+    if refused.is_empty() {
+        return;
+    }
+    Arc::make_mut(&mut view.blocked_city_sites).extend(refused.iter().copied());
+}
+
 #[cfg(test)]
 fn execute_frame<'a>(
     game: &mut Game,
@@ -197,6 +219,7 @@ fn execute_frame<'a>(
         ordinary,
         &mut Vec::new(),
         &mut Vec::new(),
+        &mut BTreeSet::new(),
     )
 }
 
@@ -207,12 +230,20 @@ fn execute_frame_recorded<'a>(
     ordinary: impl Iterator<Item = &'a (usize, Action)>,
     movement: &mut Vec<(u32, crate::Pos, crate::Pos)>,
     refused: &mut Vec<(u32, Item)>,
+    refused_sites: &mut BTreeSet<Pos>,
 ) -> bool {
     let mut changed = false;
     for (target, actions) in &finishing.execution {
         if game.units.contains_key(target) {
             for action in actions {
-                match execute_observed_action_recorded(game, pid, action, movement, refused) {
+                match execute_observed_action_recorded(
+                    game,
+                    pid,
+                    action,
+                    movement,
+                    refused,
+                    refused_sites,
+                ) {
                     Some(refresh) => changed |= refresh,
                     None => return true,
                 }
@@ -226,7 +257,14 @@ fn execute_frame_recorded<'a>(
     }
     for (seat, action) in ordinary {
         if *seat == pid && !matches!(action, Action::EndTurn) {
-            match execute_observed_action_recorded(game, pid, action, movement, refused) {
+            match execute_observed_action_recorded(
+                game,
+                pid,
+                action,
+                movement,
+                refused,
+                refused_sites,
+            ) {
                 Some(refresh) => changed |= refresh,
                 None => return true,
             }
@@ -240,7 +278,14 @@ fn execute_frame_recorded<'a>(
 /// batch cadence instead of silently limiting an army to three attacks.
 #[cfg(test)]
 fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Option<bool> {
-    execute_observed_action_recorded(game, pid, action, &mut Vec::new(), &mut Vec::new())
+    execute_observed_action_recorded(
+        game,
+        pid,
+        action,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut BTreeSet::new(),
+    )
 }
 
 fn execute_observed_action_recorded(
@@ -249,10 +294,15 @@ fn execute_observed_action_recorded(
     action: &Action,
     movement: &mut Vec<(u32, crate::Pos, crate::Pos)>,
     refused: &mut Vec<(u32, Item)>,
+    refused_sites: &mut BTreeSet<Pos>,
 ) -> Option<bool> {
     if game.current != pid || game.winner.is_some() {
         return None;
     }
+    let founding = match action {
+        Action::FoundCity { unit } => game.units.get(unit).map(|settler| (*unit, settler.pos)),
+        _ => None,
+    };
     let explored = game.players[pid].explored.len();
     let allocator = game.next_id;
     let moved_unit = match action {
@@ -268,6 +318,25 @@ fn execute_observed_action_recorded(
             .or_default() += 1;
         if let Action::Produce { city, item } = action {
             refused.push((*city, item.clone()));
+        }
+        // Only the site itself is condemned: the Settler's own tile, read
+        // before the order and checked against the board's own founding
+        // rule, so a refusal for any other reason (a policy, a unit that is
+        // not a Settler) blocks nothing. Like the native bridge's, the block
+        // lasts the game.
+        if let Some((unit, site)) = founding {
+            if game
+                .units
+                .get(&unit)
+                .is_some_and(|settler| settler.pos == site)
+                && !game.can_found_city(unit)
+                && refused_sites.insert(site)
+            {
+                *game.players[pid]
+                    .counters
+                    .entry("player:refused_city_site".into())
+                    .or_default() += 1;
+            }
         }
         // A rejected queue or financial trade leaves independent military
         // orders executable. Refresh after the batch: stopping here can
