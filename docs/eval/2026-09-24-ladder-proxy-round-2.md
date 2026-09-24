@@ -262,6 +262,7 @@ reservations and victory purchases still run ahead of the routine governors.
 | Science, King | **+2.35 pp (z +4.78)** | +0.96 pp (z +2.78) | −0.49 pp (z −0.46) |
 | Science, Emperor | +0.30 pp (z +0.66) | −0.03 pp (z −0.10) | +0.45 pp (z +0.50) |
 | Domination, King | +1.38 pp (z +1.67) | +0.41 pp (z +0.95) | −2.53 pp (z −2.50) |
+| Domination, Emperor | ±0.00 pp (z 0.00; alive 23 → 25) | — | — |
 
 On the Science lane at King version two closes the lane's whole tax: 17.2%
 against the unassigned seat's 17.7%. Technologies at turn 150 hold (38.6
@@ -289,8 +290,9 @@ one, and forces it on the live seat in version one's place.
   `siege-train` off (null), the Holy Site veto lift (inert),
   `lane-waits-for-specialization` (+0.46 pp, z +1.08; nothing on top of
   delegation).
-  `victory-threat-peace-guard` (+0.25 pp, z +0.97, captures up) awaits a second
-  seed block.
+  `victory-threat-peace-guard` read +0.25 pp (z +0.97, captures up) on the
+  first 32 seeds and +0.03 pp on a second 32 (37140032+): pooled over 64 games
+  +0.14 pp (z +1.06) — too small to carry a gene.
 - **The Reserve flicker is a real defect whose fix alone measured negative**:
   the flicker's ungrouped half was doing the marching. A repair has to give the
   Reserve work at war, not only keep it steady — and marching all of it at
