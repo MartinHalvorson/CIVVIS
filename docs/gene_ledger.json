@@ -2425,6 +2425,15 @@
           "housing-research-2": null
         }
       },
+      "lane-delegates-production": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "lane-delegates-production": null,
+          "lane-delegates-production-2": null
+        }
+      },
       "missionary-last-charge-explores": {
         "rule_on": [
           "missionary-last-charge-explores-2"

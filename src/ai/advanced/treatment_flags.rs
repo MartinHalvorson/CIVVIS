@@ -4155,10 +4155,22 @@ impl AdvancedAi {
     /// `lane-delegates-production`.
     pub fn enable_lane_delegates_production(&mut self) {
         self.lane_delegates_production = true;
+        self.lane_delegates_production_2 = false;
     }
     /// The twin of `enable_lane_delegates_production`.
     pub fn disable_lane_delegates_production(&mut self) {
         self.lane_delegates_production = false;
+    }
+    /// Version two: an assigned lane's cities take the unassigned seat's
+    /// production dispatch for the whole game. Opt-in gene
+    /// `lane-delegates-production-2`.
+    pub fn enable_lane_delegates_production_2(&mut self) {
+        self.lane_delegates_production = false;
+        self.lane_delegates_production_2 = true;
+    }
+    /// The twin of `enable_lane_delegates_production_2`.
+    pub fn disable_lane_delegates_production_2(&mut self) {
+        self.lane_delegates_production_2 = false;
     }
 
     /// `boost-planner-builds`: the boost planner serves `building:` triggers.
