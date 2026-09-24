@@ -1,6 +1,6 @@
 //! One production player, with observation and execution owned by adapters.
 use super::{finishing::begin_player_turn, AdvancedAi};
-use crate::game::{Action, Game};
+use crate::game::{Action, Game, Item};
 
 pub mod aid;
 
@@ -105,6 +105,14 @@ impl PaceSample {
 }
 
 pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
+    // Production orders the authoritative board refused this turn. A view
+    // can offer what the board will not build — a wonder site on a strategic
+    // resource the seat has not revealed yet is one measured case — and
+    // without this every replanned frame chose the same refused order again,
+    // so the city ended its turn with an empty queue and its Production was
+    // lost. Carried as the same per-city block the live bridge fills from
+    // host refusals, for this turn's remaining frames only.
+    let mut refused: Vec<(u32, Item)> = Vec::new();
     // Re-observe after discovery, combat, or a rejected hypothesis. Never
     // execute the tail of a plan whose actor IDs or tactical facts went stale.
     for _frame in 0..=REPLAN_FRAMES {
@@ -112,6 +120,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
             return;
         }
         let mut view = game.player_decision_view(pid);
+        block_refused_production(&mut view, &refused);
         let mapped = view.units.keys().map(|id| (*id, i64::from(*id))).collect();
         let movement_memory = ai.observed_movement_memory();
         let (finishing, ordinary_begin) = plan_frame(ai, &mut view, pid, &mapped);
@@ -125,6 +134,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
             &finishing,
             view.log.since(ordinary_begin),
             &mut executed_movement,
+            &mut refused,
         );
         ai.reconcile_observed_movement(game, movement_memory, &executed_movement);
         if !changed {
@@ -157,6 +167,22 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
     }
 }
 
+/// Block every refused production order in a freshly observed view, so the
+/// frame planned on it cannot choose the same order again.
+fn block_refused_production(view: &mut Game, refused: &[(u32, Item)]) {
+    if refused.is_empty() {
+        return;
+    }
+    let mut blocked = (*view.blocked_production).clone();
+    for (city, item) in refused {
+        blocked
+            .entry(*city)
+            .or_default()
+            .insert(Game::production_block_key(item));
+    }
+    view.replace_blocked_production(blocked);
+}
+
 #[cfg(test)]
 fn execute_frame<'a>(
     game: &mut Game,
@@ -164,7 +190,14 @@ fn execute_frame<'a>(
     finishing: &super::finishing::WarFinishingVolley,
     ordinary: impl Iterator<Item = &'a (usize, Action)>,
 ) -> bool {
-    execute_frame_recorded(game, pid, finishing, ordinary, &mut Vec::new())
+    execute_frame_recorded(
+        game,
+        pid,
+        finishing,
+        ordinary,
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
 }
 
 fn execute_frame_recorded<'a>(
@@ -173,12 +206,13 @@ fn execute_frame_recorded<'a>(
     finishing: &super::finishing::WarFinishingVolley,
     ordinary: impl Iterator<Item = &'a (usize, Action)>,
     movement: &mut Vec<(u32, crate::Pos, crate::Pos)>,
+    refused: &mut Vec<(u32, Item)>,
 ) -> bool {
     let mut changed = false;
     for (target, actions) in &finishing.execution {
         if game.units.contains_key(target) {
             for action in actions {
-                match execute_observed_action_recorded(game, pid, action, movement) {
+                match execute_observed_action_recorded(game, pid, action, movement, refused) {
                     Some(refresh) => changed |= refresh,
                     None => return true,
                 }
@@ -192,7 +226,7 @@ fn execute_frame_recorded<'a>(
     }
     for (seat, action) in ordinary {
         if *seat == pid && !matches!(action, Action::EndTurn) {
-            match execute_observed_action_recorded(game, pid, action, movement) {
+            match execute_observed_action_recorded(game, pid, action, movement, refused) {
                 Some(refresh) => changed |= refresh,
                 None => return true,
             }
@@ -206,7 +240,7 @@ fn execute_frame_recorded<'a>(
 /// batch cadence instead of silently limiting an army to three attacks.
 #[cfg(test)]
 fn execute_observed_action(game: &mut Game, pid: usize, action: &Action) -> Option<bool> {
-    execute_observed_action_recorded(game, pid, action, &mut Vec::new())
+    execute_observed_action_recorded(game, pid, action, &mut Vec::new(), &mut Vec::new())
 }
 
 fn execute_observed_action_recorded(
@@ -214,6 +248,7 @@ fn execute_observed_action_recorded(
     pid: usize,
     action: &Action,
     movement: &mut Vec<(u32, crate::Pos, crate::Pos)>,
+    refused: &mut Vec<(u32, Item)>,
 ) -> Option<bool> {
     if game.current != pid || game.winner.is_some() {
         return None;
@@ -231,6 +266,9 @@ fn execute_observed_action_recorded(
             .counters
             .entry("player:refused".into())
             .or_default() += 1;
+        if let Action::Produce { city, item } = action {
+            refused.push((*city, item.clone()));
+        }
         // A rejected queue or financial trade leaves independent military
         // orders executable. Refresh after the batch: stopping here can
         // repeat the same economic refusal in every frame and never reach
