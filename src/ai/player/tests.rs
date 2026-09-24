@@ -213,3 +213,60 @@ fn all_six_observed_players_finish_a_native_game() {
         );
     }
 }
+
+/// What a fog-honest seat leaves on an empty queue at the end of its own
+/// turn is lost: the engine processes a seat's cities in its next
+/// `begin_turn`, and `process_city_with_upkeep` adds Production only to a
+/// queue head. So the budget is read at exactly that moment, never at the
+/// start of a turn (where every just-completed queue reads as idle).
+///
+/// The failure this guards is a planning view that offers what the
+/// authoritative board refuses. The executor re-plans up to `REPLAN_FRAMES`
+/// times, the same refused order comes back every frame, and the city ends
+/// its turn empty. Measured before #3748 at Emperor over 100 turns, wonders
+/// already finished in unseen cities cost those seats 8.71% of their
+/// Production (worst seat 17.9%); after it, 0.17%.
+#[test]
+fn fog_honest_seats_lose_almost_no_production_to_refused_orders() {
+    use crate::game::GameOptions;
+    let mut game = Game::new_with(GameOptions {
+        speed: "online".to_string(),
+        ..GameOptions::new(4, 44, 28, 3_750_000, 110, 3)
+    });
+    let majors = 4;
+    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+        .map(|_| {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs();
+            ai
+        })
+        .collect();
+    assert!(ais[0].uses_player_observation());
+    game.set_fog_memory(true);
+    game.set_war_ledger(false);
+    let (mut lost, mut total) = (0.0_f64, 0.0_f64);
+    while game.winner.is_none() && game.turn <= game.max_turns {
+        let pid = game.current;
+        ais[pid].take_turn(&mut game, pid);
+        if pid < majors {
+            for city in game.cities.values().filter(|city| city.owner == pid) {
+                let production = game.city_yields(city.id).production;
+                total += production;
+                if city.queue.is_empty() {
+                    lost += production;
+                }
+            }
+        }
+        if game.winner.is_none() && game.current == pid {
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+    }
+    assert!(total > 0.0, "the seats produced something");
+    let share = lost / total;
+    assert!(
+        share < 0.005,
+        "fog-honest seats ended {:.2}% of their city-turns' Production on an empty queue \
+         ({lost:.0} of {total:.0}); an order the view offers is being refused by the board",
+        100.0 * share
+    );
+}

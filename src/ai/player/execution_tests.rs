@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::{DealItems, Item};
+use crate::game::DealItems;
 
 fn battle() -> (Game, u32, u32, u32) {
     let mut g = Game::new_full(3, 28, 18, 41, 30, 0, false);
@@ -121,4 +121,44 @@ fn rejected_district_placement_still_invalidates_the_tactical_tail() {
     );
     batch(&mut g, rejected, gun, target);
     assert_eq!(g.units[&target].hp, 1000);
+}
+
+/// A production order the authoritative board refuses is remembered for the
+/// rest of the turn, and the next frame's view blocks it — so the replanned
+/// frame cannot choose it again and leave the city on an empty queue.
+#[test]
+fn a_refused_production_order_is_blocked_in_the_next_frames_view() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    let home = game.units[&game.player_unit_ids(0)[0]].pos;
+    let city = game.found_city_for(0, home, None);
+    // No site and no unlock: the board must refuse this wonder.
+    let item = Item::Wonder {
+        wonder: crate::name!("pyramids"),
+        pos: home,
+    };
+    assert!(!game.can_produce(0, city, &item));
+    let mut refused = Vec::new();
+    let refresh = execute_observed_action_recorded(
+        &mut game,
+        0,
+        &Action::Produce {
+            city,
+            item: item.clone(),
+        },
+        &mut Vec::new(),
+        &mut refused,
+    );
+    assert_eq!(refresh, Some(true), "an economic refusal keeps the batch going");
+    assert_eq!(refused, vec![(city, item.clone())]);
+    let mut view = game.player_decision_view(0);
+    assert!(view
+        .blocked_production
+        .get(&city)
+        .is_none_or(|blocked| blocked.is_empty()));
+    block_refused_production(&mut view, &refused);
+    assert!(view.blocked_production[&city].contains(&Game::production_block_key(&item)));
+    assert!(
+        game.blocked_production.get(&city).is_none(),
+        "the authoritative board is never changed"
+    );
 }
