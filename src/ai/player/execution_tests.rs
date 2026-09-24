@@ -147,6 +147,7 @@ fn a_refused_production_order_is_blocked_in_the_next_frames_view() {
         },
         &mut Vec::new(),
         &mut refused,
+        &mut BTreeSet::new(),
     );
     assert_eq!(
         refresh,
@@ -164,5 +165,171 @@ fn a_refused_production_order_is_blocked_in_the_next_frames_view() {
     assert!(
         game.blocked_production.get(&city).is_none(),
         "the authoritative board is never changed"
+    );
+}
+
+/// The start Settler of seat 0 on a site three tiles from a rival city the
+/// seat has never seen: the board refuses a city there and the fog-honest
+/// view cannot say why.
+fn site_beside_a_hidden_city() -> (Game, u32, crate::Pos) {
+    let mut game = Game::new_full(2, 40, 26, 91_170, 200, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let site = game.units[&settler].pos;
+    let hidden = game
+        .map
+        .tiles
+        .values()
+        .find(|tile| {
+            game.wdist(site, tile.pos) == 3
+                && !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && !game.player_can_see(0, tile.pos)
+                && game.city_at(tile.pos).is_none()
+        })
+        .unwrap()
+        .pos;
+    game.found_city_for(1, hidden, None);
+    assert!(!game.player_can_see(0, hidden));
+    assert!(!game.can_found_city(settler), "the board refuses the site");
+    assert!(
+        game.player_decision_view(0).can_found_city(settler),
+        "the view cannot see why"
+    );
+    (game, settler, site)
+}
+
+#[test]
+fn a_refused_city_site_is_blocked_in_every_later_view() {
+    let (mut game, settler, site) = site_beside_a_hidden_city();
+    let mut sites = BTreeSet::new();
+    let refresh = execute_observed_action_recorded(
+        &mut game,
+        0,
+        &Action::FoundCity { unit: settler },
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut sites,
+    );
+    assert_eq!(refresh, None, "a refused founding still ends the frame");
+    assert_eq!(sites, BTreeSet::from([site]));
+    assert_eq!(game.players[0].counters["player:refused_city_site"], 1);
+    let mut later = game.player_decision_view(0);
+    block_refused_city_sites(&mut later, &sites);
+    assert!(
+        !later.can_found_city(settler),
+        "no later frame plans the site again"
+    );
+    assert!(
+        game.blocked_city_sites.is_empty(),
+        "the authoritative board is never changed"
+    );
+}
+
+#[test]
+fn a_founding_refused_for_another_reason_blocks_no_site() {
+    let mut game = Game::new_full(2, 24, 16, 41, 20, 0, false);
+    let warrior = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind != "settler")
+        .unwrap();
+    assert!(game.can_found_city(warrior), "open ground");
+    let mut sites = BTreeSet::new();
+    execute_observed_action_recorded(
+        &mut game,
+        0,
+        &Action::FoundCity { unit: warrior },
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut sites,
+    );
+    assert_eq!(game.players[0].counters["player:refused"], 1);
+    assert!(
+        sites.is_empty(),
+        "only a site the board rejects is condemned"
+    );
+}
+
+#[test]
+fn every_frame_of_a_turn_honours_the_seats_refused_sites() {
+    use crate::ai::Ai as _;
+    let fresh = || {
+        let game = Game::new_full(2, 24, 16, 8, 20, 0, false);
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge_universe();
+        assert!(ai.uses_player_observation());
+        (game, ai)
+    };
+    let (mut game, mut ai) = fresh();
+    let start = game
+        .player_unit_ids(0)
+        .into_iter()
+        .map(|uid| &game.units[&uid])
+        .find(|unit| unit.kind == "settler")
+        .unwrap()
+        .pos;
+    take_turn(&mut ai, &mut game, 0);
+    assert_eq!(
+        game.city_at(start).map(|cid| game.cities[&cid].owner),
+        Some(0),
+        "the seat founds where it stands"
+    );
+    let (mut game, mut ai) = fresh();
+    ai.refused_city_sites.insert(start);
+    take_turn(&mut ai, &mut game, 0);
+    assert!(
+        game.city_at(start).is_none(),
+        "a refused site is never planned"
+    );
+    assert!(
+        game.players[0].counters.get("player:refused").is_none(),
+        "and never ordered"
+    );
+}
+
+#[test]
+fn a_seat_is_never_refused_the_same_city_site_twice() {
+    use crate::ai::Ai as _;
+    let mut game = Game::new_full(2, 24, 16, 8, 20, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let start = game.units[&settler].pos;
+    let hidden = game
+        .map
+        .tiles
+        .values()
+        .find(|tile| {
+            game.wdist(start, tile.pos) == 3
+                && !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && !game.player_can_see(0, tile.pos)
+                && game.city_at(tile.pos).is_none()
+        })
+        .unwrap()
+        .pos;
+    game.found_city_for(1, hidden, None);
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(ai.uses_player_observation());
+    for _ in 0..4 {
+        take_turn(&mut ai, &mut game, 0);
+        game.apply(1, &Action::EndTurn).unwrap();
+    }
+    let counters = &game.players[0].counters;
+    assert!(
+        ai.refused_city_sites.contains(&start),
+        "the start was refused and remembered"
+    );
+    assert_eq!(
+        counters.get("player:refused"),
+        counters.get("player:refused_city_site"),
+        "every refusal was a site not tried before: {counters:?}"
     );
 }
