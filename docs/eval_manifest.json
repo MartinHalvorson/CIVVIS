@@ -14,11 +14,11 @@
     "withholdable_live_count": 38
   },
   "genome_coverage": {
-    "capability_toggles": 339,
+    "capability_toggles": 340,
     "measured_by_a_screen": 72,
     "reachable_as_a_gene": 321,
     "resolved_by_a_screen": 16,
-    "unreachable_by_any_screen": 41,
+    "unreachable_by_any_screen": 42,
     "unreachable_toggles": [
       "bank_envoys",
       "camp_bounty",
@@ -51,6 +51,7 @@
       "live_settler_capture_lessons",
       "live_trader_route_adapter",
       "live_wonder_race",
+      "native_deployment",
       "no_elective_war",
       "opening_settler_waits",
       "parallel_settlers",
