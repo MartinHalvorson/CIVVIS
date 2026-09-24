@@ -6288,6 +6288,10 @@ pub struct AdvancedAi {
     /// `advanced_support_production` and the baseline governor — instead of
     /// the strategic scorer alone. See `advanced/lane_delegates_production.rs`.
     lane_delegates_production: bool,
+    /// `lane-delegates-production-2`: the same dispatch for the whole game,
+    /// not only the development half. See
+    /// `advanced/lane_delegates_production.rs`.
+    lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -8406,6 +8410,7 @@ impl AdvancedAi {
             one_war_at_a_time: false,
             one_war: None,
             lane_delegates_production: false,
+            lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
             reinforce_before_stall: false,

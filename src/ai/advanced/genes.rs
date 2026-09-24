@@ -2343,6 +2343,13 @@ pub const GENES: &[Gene] = &[
     // until the development half ends the Science seat gained +1.39 pp (z
     // +2.86). See `advanced/lane_delegates_production.rs`.
     Gene { tag: "lane-delegates-production", field: "lane_delegates_production", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_delegates_production, disable: AdvancedAi::disable_lane_delegates_production },
+    // `lane-delegates-production-2` (2026-09-24): version one's dispatch for
+    // the whole game rather than the development half. On the King ladder
+    // proxy it beat version one by +0.96 pp on the Science lane (z +2.78) and
+    // +0.41 pp on the Domination lane (z +0.95), and matched it at Emperor
+    // (-0.03 pp, z -0.10); against the lane without either, +2.35 pp (z
+    // +4.78) and +1.38 pp (z +1.67). See `advanced/lane_delegates_production.rs`.
+    Gene { tag: "lane-delegates-production-2", field: "lane_delegates_production_2", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_delegates_production_2, disable: AdvancedAi::disable_lane_delegates_production_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

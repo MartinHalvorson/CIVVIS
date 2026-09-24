@@ -35,6 +35,17 @@
 //! prices the victory's own districts and projects. An appointed war and
 //! Recovery keep the scorer throughout, exactly as they do for an unassigned
 //! seat. With the gene off the dispatch is unchanged, byte for byte.
+//!
+//! **Version two, `lane-delegates-production-2`, keeps the unassigned dispatch
+//! for the whole game.** The lane's endgame does not need the scorer on every
+//! city: its reservations and victory purchases run ahead of the routine
+//! governors either way. On the same 32 King seeds it beat version one by
+//! +0.96 pp on the Science lane (z +2.78) — +2.35 pp (z +4.78) over the lane
+//! without either, 0.49 pp short of an unassigned seat — and by +0.41 pp on the
+//! Domination lane (z +0.95); at Emperor the two versions tie (−0.03 pp, z
+//! −0.10). Technologies at turn 150 are unchanged (38.6 against 39.0 without
+//! either). The two versions are one family: enabling one turns the other
+//! off.
 use super::{AdvancedAi, VictoryTarget};
 
 impl AdvancedAi {
@@ -46,7 +57,9 @@ impl AdvancedAi {
         active_victory_target: Option<VictoryTarget>,
         specialization_active: bool,
     ) -> bool {
-        self.lane_delegates_production && active_victory_target.is_some() && !specialization_active
+        active_victory_target.is_some()
+            && ((self.lane_delegates_production && !specialization_active)
+                || self.lane_delegates_production_2)
     }
 }
 
@@ -75,7 +88,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn version_two_delegates_for_the_whole_game_and_replaces_version_one() {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_lane_delegates_production();
+        ai.enable_lane_delegates_production_2();
+        assert!(
+            !ai.lane_delegates_production,
+            "one version of the family at a time"
+        );
+        assert!(ai.lane_delegates_now(Some(VictoryTarget::Science), false));
+        assert!(
+            ai.lane_delegates_now(Some(VictoryTarget::Science), true),
+            "version two keeps the dispatch through the specialized half"
+        );
+        assert!(!ai.lane_delegates_now(None, true));
+        ai.enable_lane_delegates_production();
+        assert!(
+            !ai.lane_delegates_production_2,
+            "and version one turns two off"
+        );
+    }
+
     fn played(target: Option<VictoryTarget>, gene: bool) -> String {
+        played_with(target, if gene { Some(1) } else { None })
+    }
+
+    fn played_with(target: Option<VictoryTarget>, version: Option<u8>) -> String {
         let mut game = Game::new_with(GameOptions::new(3, 32, 20, 92_409, 40, 1));
         let mut ais: Vec<AdvancedAi> = game
             .players
@@ -85,8 +124,10 @@ mod tests {
                     Some(target) => AdvancedAi::targeting(target),
                     None => AdvancedAi::new(),
                 };
-                if gene {
-                    ai.enable_lane_delegates_production();
+                match version {
+                    Some(1) => ai.enable_lane_delegates_production(),
+                    Some(_) => ai.enable_lane_delegates_production_2(),
+                    None => {}
                 }
                 ai
             })
@@ -110,5 +151,16 @@ mod tests {
             played(None, false),
             "an unassigned seat already takes the dispatch"
         );
+    }
+
+    /// The 40-turn clock specializes at turn 20, where version one hands the
+    /// cities back and version two does not.
+    #[test]
+    fn version_two_keeps_delegating_after_the_clock() {
+        assert_ne!(
+            played_with(Some(VictoryTarget::Science), Some(2)),
+            played_with(Some(VictoryTarget::Science), Some(1)),
+        );
+        assert_eq!(played_with(None, Some(2)), played_with(None, None));
     }
 }
