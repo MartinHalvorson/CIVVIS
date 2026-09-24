@@ -94,9 +94,12 @@ impl Game {
         for id in &own_cities {
             view.cities.insert(*id, self.cities[id].clone());
         }
-        // A finished World Wonder is public. Civilization VI tells every
-        // player when one is completed — "in a distant land" when its builder
-        // is unmet — and it leaves every build list at once. Redacting the
+        // A finished World Wonder is public. Civilization VI notifies every
+        // player (`NOTIFICATION_WONDER_COMPLETED`,
+        // Base/Assets/Gameplay/Data/Notifications.xml:233), unmet builders
+        // included: "An unmet player has finished building the world wonder
+        // {1_WonderName}." (Base/Assets/Text/en_US/Notifications_Text.xml:690)
+        // — and the wonder leaves every build list at once. Redacting the
         // builder's city above also redacted that fact, so every wonder
         // standing in an unseen city read as available: the planner ordered
         // it, the authoritative board refused the order, and the city ended
