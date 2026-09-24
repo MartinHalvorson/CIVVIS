@@ -13703,3 +13703,44 @@ fn browser_covers_every_empire_decision() {
     assert!(EMBEDDED_INDEX
         .contains("onclick='sendFromEmpire(${JSON.stringify(action)})'>${label}</button>"));
 }
+
+/// civvis.ai's majors play the deployment genome on the authoritative board,
+/// by construction rather than by comment. The comment on `ai_fleet` said
+/// "the deployment genome" for weeks while the code seated the stock agent;
+/// this pins the seat to `enable_native_deployment` by its whole decision
+/// stream, so neither half can move without the other.
+#[test]
+fn every_site_major_plays_the_native_deployment_genome() {
+    use crate::ai::{run_game, AdvancedAi, Ai, BasicAi};
+    let game = Game::new_with(crate::game::GameOptions::new(3, 32, 20, 90_912, 25, 1));
+    let mut site = Session::ai_fleet(&game);
+    for (player, ai) in game.players.iter().zip(&site) {
+        if !player.is_minor && !player.is_barbarian {
+            assert!(
+                !ai.uses_player_observation(),
+                "a site major plans on the authoritative board"
+            );
+        }
+    }
+    let mut reference: Vec<Box<dyn Ai + Send>> = game
+        .players
+        .iter()
+        .map(|player| -> Box<dyn Ai + Send> {
+            if player.is_minor || player.is_barbarian {
+                Box::new(BasicAi::new())
+            } else {
+                let mut ai = AdvancedAi::new();
+                ai.enable_native_deployment();
+                Box::new(ai)
+            }
+        })
+        .collect();
+    let (mut seated, mut expected) = (game.clone(), game);
+    run_game(&mut seated, &mut site);
+    run_game(&mut expected, &mut reference);
+    assert_eq!(
+        serde_json::to_string(&seated.log).unwrap(),
+        serde_json::to_string(&expected.log).unwrap(),
+        "every site major must play AdvancedAi::new() + enable_native_deployment()"
+    );
+}

@@ -1234,6 +1234,25 @@ impl AdvancedAi {
         self.apply_gene_ledger();
     }
 
+    /// The deployment genome for a board CIVVIS itself owns: the same
+    /// universe and ledger as [`AdvancedAi::enable_engine_repairs`], planning
+    /// on the authoritative board rather than on a fog-redacted view.
+    ///
+    /// This is the player civvis.ai seats (`Session::ai_fleet`). The ledger
+    /// is what makes it the deployment genome — the stock `AdvancedAi::new()`
+    /// the site seated before carried only the production genes, and lost
+    /// head to head: as one major against three of these at Prince (Tiny
+    /// Pangaea, Online, seeds 52000000+) it won 2 of 34 games, and one of
+    /// these against three stock agents won 24 of 48, where parity is one in
+    /// four. Planning on the authoritative board keeps the information
+    /// contract the site's agents always had and costs a third of the
+    /// fog-honest planner's replanned frames; the view-and-replay executor
+    /// stays with the seats that need it (`gene_screen`, the live bridge).
+    pub fn enable_native_deployment(&mut self) {
+        self.enable_engine_repairs();
+        self.observed_player = false;
+    }
+
     /// Every native repair on, the ledger NOT applied — the two halves plus
     /// the fixed shared city horizon. `gene_screen` draws only the registered
     /// repairs, so this production-profile policy remains fixed across every
@@ -4454,6 +4473,9 @@ impl AdvancedAi {
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 }
+
+#[cfg(test)]
+mod native_deployment_tests;
 
 #[cfg(test)]
 mod guard {

@@ -2017,9 +2017,17 @@ fn automatic_successor_seed(seed: u64) -> u64 {
 
 impl Session {
     /// Seat the AIs: every major plays the deployment genome — `AdvancedAi`
-    /// with the gene ledger applied — and minors and barbarians keep the
-    /// cheaper baseline. A seat somebody is playing gets an agent too, so the
-    /// world can be handed to it or watched from it.
+    /// with the gene ledger applied (`enable_native_deployment`) — and minors
+    /// and barbarians keep the cheaper baseline. A seat somebody is playing
+    /// gets an agent too, so the world can be handed to it or watched from it.
+    ///
+    /// ⚠ This comment said "the deployment genome" while the code seated the
+    /// stock `AdvancedAi::new()`, which carries only the production genes:
+    /// every opt-in the screens had promoted was off on civvis.ai. As one
+    /// major against three deployment genomes that stock agent won 2 of 34
+    /// games and averaged 3.2 cities at turn 100; `server::tests` now pins the
+    /// seat to the named constructor. The science drive and the exploration
+    /// loop guard it used to add by hand both ship inside the ledger genome.
     fn ai_fleet(game: &Game) -> Vec<Box<dyn Ai + Send>> {
         game.players
             .iter()
@@ -2028,18 +2036,7 @@ impl Session {
                     Box::new(BasicAi::new())
                 } else {
                     let mut ai = AdvancedAi::new();
-                    // The native spectator constructs its controller directly;
-                    // keep the measured science drive that the live bridge's
-                    // deployment ledger already seats. A science-leading or
-                    // credible science-focused empire must be allowed to
-                    // build and run the launch chain instead of spending the
-                    // endgame on filler work.
-                    ai.enable_science_victory_drive();
-                    // The deployed native controller holds exploration goals
-                    // across turns. Let the same proven loop guard used by the
-                    // live bridge retire a goal once the unit is visibly
-                    // cycling, so a committed Scout can choose fresh ground.
-                    ai.enable_explore_dead_targets();
+                    ai.enable_native_deployment();
                     Box::new(ai)
                 }
             })
