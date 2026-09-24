@@ -208,3 +208,59 @@ fn each_observation_refreshes_the_current_owned_loyalty_rate() {
     assert_ne!(before.city_loyalty_per_turn(&before.cities[&own]), actual);
     assert!(!after.cities.contains_key(&rival));
 }
+
+/// A World Wonder finished in a city the observer has never seen is public
+/// knowledge: Civilization VI announces the completion to every player and
+/// takes the wonder off every build list. The view hid it with the city, so
+/// the planner kept ordering a wonder the authoritative board then refused,
+/// and the city ended its turn with an empty queue.
+#[test]
+fn a_wonder_finished_in_an_unseen_city_leaves_the_observers_build_list() {
+    let (mut g, own, rival) = city_with_hidden_loyalty_pressure();
+    let names: Vec<Name> = g.rules.wonders.keys().cloned().collect();
+    let (wonder, site) = names
+        .iter()
+        .find_map(|name| {
+            let spec = &g.rules.wonders[*name];
+            let mut probe = g.clone();
+            if let Some(tech) = spec.tech {
+                probe.players[0].techs.insert(tech);
+            }
+            if let Some(civic) = spec.civic {
+                probe.players[0].civics.insert(civic);
+            }
+            let site = probe.wonder_sites(own, name.as_str()).first().copied()?;
+            Some((*name, site))
+        })
+        .expect("some wonder has a legal site beside the observer's city");
+    let spec = g.rules.wonders[wonder].clone();
+    if let Some(tech) = spec.tech {
+        g.players[0].techs.insert(tech);
+    }
+    if let Some(civic) = spec.civic {
+        g.players[0].civics.insert(civic);
+    }
+    let item = Item::Wonder { wonder, pos: site };
+    assert!(g.clone().can_produce(0, own, &item));
+    assert!(
+        g.player_decision_view(0).can_produce(0, own, &item),
+        "a wonder nobody has finished stays on the view's build list"
+    );
+
+    let rival_pos = g.cities[&rival].pos;
+    g.cities
+        .get_mut(&rival)
+        .unwrap()
+        .wonders
+        .insert(wonder, rival_pos);
+    assert!(!g.clone().can_produce(0, own, &item));
+    let view = g.player_decision_view(0);
+    assert!(
+        !view.cities.contains_key(&rival),
+        "the builder's city stays hidden"
+    );
+    assert!(
+        !view.can_produce(0, own, &item),
+        "a wonder finished in an unseen city must leave the view's build list"
+    );
+}

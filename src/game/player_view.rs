@@ -94,6 +94,21 @@ impl Game {
         for id in &own_cities {
             view.cities.insert(*id, self.cities[id].clone());
         }
+        // A finished World Wonder is public. Civilization VI tells every
+        // player when one is completed — "in a distant land" when its builder
+        // is unmet — and it leaves every build list at once. Redacting the
+        // builder's city above also redacted that fact, so every wonder
+        // standing in an unseen city read as available: the planner ordered
+        // it, the authoritative board refused the order, and the city ended
+        // its turn with an empty queue and its Production lost. Carry the set,
+        // never the owner, on the world-unique block the live bridge fills
+        // from the host's own "no location anywhere" answer.
+        let built_anywhere = self
+            .cities
+            .values()
+            .flat_map(|city| city.wonders.keys().copied())
+            .chain(self.map.tiles.values().filter_map(|tile| tile.wonder));
+        Arc::make_mut(&mut view.host_unavailable_wonders).extend(built_anywhere);
         for city in remembered.values().filter(|c| c.owner != pid) {
             view.cities.insert(city.id, public_city(city));
             Arc::make_mut(&mut view.observed_city_max_wall_hp).insert(city.id, city.wall_max);
