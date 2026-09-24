@@ -138,6 +138,12 @@ is the war it never starts, not the siege it fights.
 - **Recommended to the operator, not changed:** the native lane is a host
   setting (`~/.civvis-victory-lane` / verification policy on the Civ VI
   seat); the tree default is already `science`. On this evidence the
-  Domination lane is the weakest and least survivable choice at Emperor.
+  Domination lane is the weakest and least survivable choice at Emperor, and
+  the native record agrees so far (both Emperor wins were Science; the
+  recent King Domination games won none). ⚠ The proxy's rivals are our own
+  genome, which defends far better than Firaxis' AI, so the proxy likely
+  understates what a working Domination lane could do natively — the lane's
+  measured bottleneck is that it never starts the war, which no rival
+  quality explains.
 - Not shipped: the trade gate (mixed), the Settler pump (null), the narrower
   camp alarm (null), `camp-party` (negative).
