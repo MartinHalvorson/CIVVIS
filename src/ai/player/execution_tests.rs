@@ -148,7 +148,11 @@ fn a_refused_production_order_is_blocked_in_the_next_frames_view() {
         &mut Vec::new(),
         &mut refused,
     );
-    assert_eq!(refresh, Some(true), "an economic refusal keeps the batch going");
+    assert_eq!(
+        refresh,
+        Some(true),
+        "an economic refusal keeps the batch going"
+    );
     assert_eq!(refused, vec![(city, item.clone())]);
     let mut view = game.player_decision_view(0);
     assert!(view
