@@ -106,6 +106,7 @@ strength stands within three tiles of an enemy and 61.4% within six.
 | `reserve-keeps-its-units` (the flicker fixed alone) | −0.36 pp (−0.50) | 13.4 → 7.4 | 0.41 → 0.28 | the flicker's ungrouped half had been marching at the target |
 | `siege-surge` (leftovers join the top Siege force) | −0.64 pp (−0.91) | 13.4 → 7.6 | 0.41 → 0.38 | Siege force 4.8 → 8.2 units, fewer attacks |
 | `siege-train` off (forced on the live seat) | +0.09 pp (+0.19) | 13.4 → 7.1 | 0.41 → 0.31 | the doctrine is not the passive part: without it the seat attacks even less |
+| `reserve-marches-at-war` (a steady Reserve at peace; at war every leftover marches ungrouped) | −0.48 pp (−0.71) | 13.4 → 8.2 | 0.41 → 0.22 | alive 29 → 27 |
 
 The surge is the informative null: more units under the siege doctrine made
 *fewer* attacks than the same units on the per-unit path — yet removing the
@@ -194,6 +195,7 @@ Two narrower hypotheses were tried first and found wanting:
 | `science-keeps-holy-sites` (the Holy Site veto lifted) | ±0 — byte-identical | — |
 | `lane-waits-for-specialization` (the adaptive strategy chain until halfway) | +0.46 pp (+1.08) | −2.39 pp (−2.50) |
 | both together | +0.48 pp (+1.17) | — |
+| both, with `lane-delegates-production` | +1.45 pp (+3.26) | +0.06 pp over delegation alone (+0.25) |
 
 The veto never binds: no Holy Site ever reaches the top of the scorer's
 ranking under the Science and Expansion weights (Faith 0.4–0.5); the adaptive
@@ -249,28 +251,50 @@ not a King-only trade. Its turn-100 economy at Emperor — Granary 4.5, Market
 2.4, trade capacity 4.0 — is the unassigned seat's or better, on a city fewer
 than the lane without it.
 
+### Version two: the whole game (#3754)
+
+Version one hands the cities back to the strategic scorer at halfway. A
+second version keeps the unassigned dispatch for the whole game; the lane's
+reservations and victory purchases still run ahead of the routine governors.
+
+| 32 paired | v2 against the lane | v2 against v1 | v2 against unassigned |
+|---|---:|---:|---:|
+| Science, King | **+2.35 pp (z +4.78)** | +0.96 pp (z +2.78) | −0.49 pp (z −0.46) |
+| Science, Emperor | +0.30 pp (z +0.66) | −0.03 pp (z −0.10) | +0.45 pp (z +0.50) |
+| Domination, King | +1.38 pp (z +1.67) | +0.41 pp (z +0.95) | −2.53 pp (z −2.50) |
+
+On the Science lane at King version two closes the lane's whole tax: 17.2%
+against the unassigned seat's 17.7%. Technologies at turn 150 hold (38.6
+against 39.0 without delegation; Campuses 5.8 against 7.2). #3754 ships it as
+`lane-delegates-production-2`, in one mutually exclusive family with version
+one, and forces it on the live seat in version one's place.
+
 ## What was decided
 
 - **Shipped**: #3752 (a refused city site is blocked in every later view of
-  the fog-honest seat) and #3753 (`lane-delegates-production`, opt-in and
-  screened like any gene, and forced on the live seat through
-  `deploy/live-force-on.txt`: +1.39 pp at King, +0.33 pp at Emperor on the
-  Science lane, +0.97 pp at King on the Domination lane).
+  the fog-honest seat), #3753 (`lane-delegates-production`: +1.39 pp at King,
+  +0.33 pp at Emperor on the Science lane, +0.97 pp at King on the Domination
+  lane) and #3754 (`lane-delegates-production-2`, the whole game: +2.35 pp and
+  +1.38 pp at King). Both are opt-in and screened like any gene; the live seat
+  forces version two through `deploy/live-force-on.txt`.
 - **Recommended to the operator, not changed**: the native lane. At King the
   unassigned lane (`civvis`) beat the assigned Science lane by 2.3–3.0 pp and
   the Domination lane by 3.9 pp; at Emperor the assigned lane cost nothing.
-  With #3753 on the live seat, 1.45 pp of the Science lane's King gap remains.
+  With #3754 on the live seat, 0.49 pp of the Science lane's King gap remains
+  and 2.53 pp of the Domination lane's.
   The Domination lane stays the weakest at both rungs (round 1: −2.7 pp
   against Science at Emperor; here −1.07 pp at King).
 - **Not shipped**: `domination-majors-only` (null), `reserve-keeps-its-units`
-  (negative), `siege-surge` (negative), `siege-train` off (null), the Holy Site
-  veto lift (inert), `lane-waits-for-specialization` (+0.46 pp, z +1.08).
+  (negative), `siege-surge` (negative), `reserve-marches-at-war` (negative),
+  `siege-train` off (null), the Holy Site veto lift (inert),
+  `lane-waits-for-specialization` (+0.46 pp, z +1.08; nothing on top of
+  delegation).
   `victory-threat-peace-guard` (+0.25 pp, z +0.97, captures up) awaits a second
   seed block.
 - **The Reserve flicker is a real defect whose fix alone measured negative**:
   the flicker's ungrouped half was doing the marching. A repair has to give the
-  Reserve work at war, not only keep it steady (`reserve-marches-at-war`
-  is the next arm).
+  Reserve work at war, not only keep it steady — and marching all of it at
+  the front (`reserve-marches-at-war`) measured worse still.
 
 ⚠ The proxy's rivals are our own deployment genome with the rung's bonuses,
 not Firaxis' AI: its King is harder than the native King, and a gene's native
