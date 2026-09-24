@@ -6282,6 +6282,12 @@ pub struct AdvancedAi {
     /// The gene's chosen front and its tide clock; `None` at peace or with
     /// the gene off.
     one_war: Option<one_war::OneWarFront>,
+    /// `lane-delegates-production`: until the development half ends, an
+    /// assigned lane's cities take the unassigned seat's production dispatch
+    /// — the strategic scorer only where that seat would run it, then
+    /// `advanced_support_production` and the baseline governor — instead of
+    /// the strategic scorer alone. See `advanced/lane_delegates_production.rs`.
+    lane_delegates_production: bool,
 
     // ---- append: p-r ------------------------------------------------
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
@@ -7238,6 +7244,9 @@ pub(crate) mod enemy_of_my_enemy;
 /// the peacetime garrison.
 pub(crate) mod contested_land;
 
+/// An assigned lane's first-half production dispatch. Opt-in gene
+/// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
+mod lane_delegates_production;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
@@ -8396,6 +8405,7 @@ impl AdvancedAi {
             missionary_evades_raiders: false,
             one_war_at_a_time: false,
             one_war: None,
+            lane_delegates_production: false,
 
             // ---- append: p-r ----------------------------------------
             reinforce_before_stall: false,
@@ -41561,6 +41571,9 @@ impl AdvancedAi {
         self.maintain_victory_portfolio(g, pid);
         let active_victory_target = self.active_victory_target(g);
         let specialization_active = self.phase_specialization_active(g);
+        // See `lane_delegates_production`: this turn an assigned lane's
+        // cities may take the unassigned seat's dispatch below.
+        let lane_delegating = self.lane_delegates_now(active_victory_target, specialization_active);
         // See `skip_the_prophet_race_2`: an adaptive seat pursues a religion
         // unconditionally, and in this regime that trade is measured negative;
         // v2 leaves the race at the last call.
@@ -41946,8 +41959,13 @@ impl AdvancedAi {
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
             self.reconcile_production_commitments(g, pid, &plan);
+            let dispatch_target = if lane_delegating {
+                None
+            } else {
+                active_victory_target
+            };
             let adaptive_expansion_dispatch =
-                self.adaptive_expansion_dispatches(&plan, active_victory_target);
+                self.adaptive_expansion_dispatches(&plan, dispatch_target);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -41970,7 +41988,7 @@ impl AdvancedAi {
             // one idle, safe queue, only while `recon_is_the_missing_arm`.
             self.reserve_idle_land_recon(g, pid, &plan);
             if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)
-                || active_victory_target.is_some()
+                || dispatch_target.is_some()
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
             // ★★★★★ `war_economy`'s CONQUEST ROUTING WAS REMOVED
@@ -42000,7 +42018,7 @@ impl AdvancedAi {
             if self.victory_planning {
                 self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, false);
             }
-            if active_victory_target.is_none() {
+            if dispatch_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
                 // The adaptive empire's Settler gate lives in the baseline
                 // governor. Thread the larger, speed-aware plan through that
@@ -42028,7 +42046,11 @@ impl AdvancedAi {
         // or unrelated unit.
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         self.reapply_confirmed_defense_queue(g, pid, confirmed_defense_queue.as_ref());
-        if active_victory_target.is_some() && self.war_plan.is_none() && !surprise_defense_purchase
+        // A delegating lane has already spent through the baseline governor.
+        if active_victory_target.is_some()
+            && !lane_delegating
+            && self.war_plan.is_none()
+            && !surprise_defense_purchase
         {
             let counts = self.counts(g, pid);
             let cities = g.player_city_ids(pid);

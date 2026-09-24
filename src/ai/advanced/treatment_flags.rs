@@ -4150,6 +4150,16 @@ impl AdvancedAi {
     pub fn disable_domination_lane_hands_over(&mut self) {
         self.domination_lane_hands_over = false;
     }
+    /// Until the development half ends, an assigned lane's cities take the
+    /// unassigned seat's production dispatch. Opt-in gene
+    /// `lane-delegates-production`.
+    pub fn enable_lane_delegates_production(&mut self) {
+        self.lane_delegates_production = true;
+    }
+    /// The twin of `enable_lane_delegates_production`.
+    pub fn disable_lane_delegates_production(&mut self) {
+        self.lane_delegates_production = false;
+    }
 
     /// `boost-planner-builds`: the boost planner serves `building:` triggers.
     /// See `advanced/boost_planner.rs`.

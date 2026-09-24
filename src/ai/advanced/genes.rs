@@ -2334,6 +2334,15 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-building-catchup-3", field: "culture_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_building_catchup_3, disable: AdvancedAi::disable_culture_building_catchup_3 },
     Gene { tag: "research-building-catchup-3", field: "research_building_catchup_3", kind: Kind::OptIn, enable: AdvancedAi::enable_research_building_catchup_3, disable: AdvancedAi::disable_research_building_catchup_3 },
     Gene { tag: "age-closer-2", field: "age_closer_2", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_2, disable: AdvancedAi::disable_age_closer_2 },
+    // `lane-delegates-production` (2026-09-24): an assigned lane sends every
+    // city through the strategic scorer; an unassigned seat hands its routine
+    // queues to the baseline governor. On the King ladder proxy the lane alone
+    // cost 2.3-3.0 pp of score share (z -2.8/-4.1): Settlers 18% of Production
+    // to turn 100 against 11%, military 14% against 10%, Granary 3.4 against
+    // 4.2 and trade capacity 1.8 against 3.0. With the unassigned dispatch
+    // until the development half ends the Science seat gained +1.39 pp (z
+    // +2.86). See `advanced/lane_delegates_production.rs`.
+    Gene { tag: "lane-delegates-production", field: "lane_delegates_production", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_delegates_production, disable: AdvancedAi::disable_lane_delegates_production },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
