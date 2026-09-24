@@ -286,7 +286,7 @@ fn every_frame_of_a_turn_honours_the_seats_refused_sites() {
         "a refused site is never planned"
     );
     assert!(
-        game.players[0].counters.get("player:refused").is_none(),
+        !game.players[0].counters.contains_key("player:refused"),
         "and never ordered"
     );
 }
