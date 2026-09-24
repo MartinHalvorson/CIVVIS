@@ -2339,6 +2339,15 @@ pub const GENES: &[Gene] = &[
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
+    // `lane-delegates-production` (2026-09-24): an assigned lane sends every
+    // city through the strategic scorer; an unassigned seat hands its routine
+    // queues to the baseline governor. On the King ladder proxy the lane alone
+    // cost 2.3-3.0 pp of score share (z -2.8/-4.1): Settlers 18% of Production
+    // to turn 100 against 11%, military 14% against 10%, Granary 3.4 against
+    // 4.2 and trade capacity 1.8 against 3.0. With the unassigned dispatch
+    // until the development half ends the Science seat gained +1.39 pp (z
+    // +2.86). See `advanced/lane_delegates_production.rs`.
+    Gene { tag: "lane-delegates-production", field: "lane_delegates_production", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_delegates_production, disable: AdvancedAi::disable_lane_delegates_production },
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
