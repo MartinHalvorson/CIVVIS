@@ -31579,7 +31579,6 @@ impl AdvancedAi {
             score_cache,
             false,
             false,
-            None,
         )
     }
 
@@ -31600,7 +31599,7 @@ impl AdvancedAi {
         score_cache: &mut BTreeMap<Pos, f64>,
         shared: &mut SettlementScanShared,
     ) -> Vec<(Pos, f64)> {
-        self.settle_sites_scanning(
+        self.settle_sites_scanning_shared(
             g,
             pid,
             from,
@@ -31689,12 +31688,39 @@ impl AdvancedAi {
     /// place for "settleable" to drift.
     fn settle_site_exists(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> bool {
         !self
-            .settle_sites_scanning(g, pid, from, radius, None, None, true, false, None)
+            .settle_sites_scanning(g, pid, from, radius, None, None, true, false)
             .is_empty()
     }
 
     #[allow(clippy::too_many_arguments)]
     fn settle_sites_scanning(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+        prefilter_limit: Option<usize>,
+        score_cache: Option<&mut BTreeMap<Pos, f64>>,
+        stop_at_first: bool,
+        include_emergency: bool,
+    ) -> Vec<(Pos, f64)> {
+        self.settle_sites_scanning_shared(
+            g,
+            pid,
+            from,
+            radius,
+            prefilter_limit,
+            score_cache,
+            stop_at_first,
+            include_emergency,
+            None,
+        )
+    }
+
+    /// `settle_sites_scanning` for a caller that scans the same board for
+    /// the same seat from more than one origin; see `SettlementScanShared`.
+    #[allow(clippy::too_many_arguments)]
+    fn settle_sites_scanning_shared(
         &self,
         g: &Game,
         pid: usize,
