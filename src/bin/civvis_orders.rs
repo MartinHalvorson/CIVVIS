@@ -1364,9 +1364,8 @@ impl HostOrderRefusals {
             };
             let prior = self.war_permissions.insert(rival.player as i64, allowed);
             if allowed && prior == Some(false) {
-                self.seen.retain(|(kind, verb, subject, _), record| {
+                self.seen.retain(|(kind, _, subject, _), record| {
                     !(kind == "war"
-                        && verb.as_deref() == Some("DECLARE")
                         && *subject == Some(rival.player as i64)
                         && matches!(record.reason.as_str(), "not_at_war" | "cannot_declare"))
                 });
@@ -5093,21 +5092,42 @@ fn translate(
             verb: Some("CONVERT_BARBARIANS".to_string()),
             pos: None,
         }),
-        // ⚠⚠ A CASUS-BELLI WAR IS STILL A WAR, AND THIS DROPPED IT ON THE FLOOR.
-        // CIVVIS prefers `DeclareWarWithCasusBelli` for a major rival and keeps
-        // surprise war for minors, so this variant is the one it would actually emit
-        // against the civilizations domination needs — and it was falling through to
-        // the `other` tally, counted as untranslatable. Civilization VI has one war
-        // declaration; the grievance bookkeeping is a CIVVIS rule with no counterpart,
-        // so the casus belli is dropped and the war is kept.
-        Action::DeclareWarWithCasusBelli { player, .. } | Action::DeclareWar { player, .. } => {
+        // The host validates and dispatches the exact chosen declaration.
+        // Dropping the casus belli here turned Formal War into the generic
+        // operation Canada refuses (native run 20260926T185025Z).
+        Action::DeclareWarWithCasusBelli {
+            player,
+            casus_belli,
+        } => {
+            let statement = match casus_belli.as_str() {
+                "surprise_war" | "surprise" => "DECLARE_SURPRISE_WAR",
+                "formal_war" | "formal" => "DECLARE_FORMAL_WAR",
+                "holy_war" | "holy" => "DECLARE_HOLY_WAR",
+                "liberation_war" | "liberation" => "DECLARE_LIBERATION_WAR",
+                "reconquest_war" | "reconquest" => "DECLARE_RECONQUEST_WAR",
+                "protectorate_war" | "protectorate" => "DECLARE_PROTECTORATE_WAR",
+                "colonial_war" | "colonial" => "DECLARE_COLONIAL_WAR",
+                "territorial_war" | "territorial" => "DECLARE_TERRITORIAL_WAR",
+                "golden_age_war" | "golden_age" => "DECLARE_GOLDEN_AGE_WAR",
+                "retribution_war" | "retribution" => "DECLARE_WAR_OF_RETRIBUTION",
+                "ideological_war" | "ideological" => "DECLARE_IDEOLOGICAL_WAR",
+                // Joint wars require a partner and a deal, not a unilateral
+                // session. Unknown forms must not silently become surprise wars.
+                _ => return None,
+            };
             Some(Order {
                 kind: "war",
                 subject: host_player_target(mirror_state, state, *player),
-                verb: Some("DECLARE".to_string()),
+                verb: Some(statement.to_string()),
                 pos: None,
             })
         }
+        Action::DeclareWar { player } => Some(Order {
+            kind: "war",
+            subject: host_player_target(mirror_state, state, *player),
+            verb: Some("DECLARE".to_string()),
+            pos: None,
+        }),
         // ★★★★★ PEACE, WHICH HAD NO ARM AT ALL. A losing war could never be
         // exited: run civvis-20260801T221459Z spent 93 turns emitting MakePeace
         // — "Offering peace" in why.log every turn from t118 to the end — while
@@ -14426,6 +14446,44 @@ mod tests {
         assert_eq!(denounce.subject, Some(4));
         assert_eq!(denounce.verb.as_deref(), Some("DENOUNCE"));
 
+        for (casus_belli, statement) in [
+            ("formal_war", "DECLARE_FORMAL_WAR"),
+            ("formal", "DECLARE_FORMAL_WAR"),
+            ("surprise_war", "DECLARE_SURPRISE_WAR"),
+            ("holy_war", "DECLARE_HOLY_WAR"),
+            ("liberation_war", "DECLARE_LIBERATION_WAR"),
+            ("reconquest_war", "DECLARE_RECONQUEST_WAR"),
+            ("protectorate_war", "DECLARE_PROTECTORATE_WAR"),
+            ("colonial_war", "DECLARE_COLONIAL_WAR"),
+            ("territorial_war", "DECLARE_TERRITORIAL_WAR"),
+            ("golden_age_war", "DECLARE_GOLDEN_AGE_WAR"),
+            ("retribution_war", "DECLARE_WAR_OF_RETRIBUTION"),
+            ("ideological_war", "DECLARE_IDEOLOGICAL_WAR"),
+        ] {
+            let war = translate(
+                &Action::DeclareWarWithCasusBelli {
+                    player: 1,
+                    casus_belli: casus_belli.into(),
+                },
+                &mirror,
+                &state,
+            )
+            .expect("a supported declaration retains its native session");
+            assert_eq!(war.subject, Some(4));
+            assert_eq!(war.verb.as_deref(), Some(statement));
+        }
+        for unsupported in ["joint_war", "unknown_war"] {
+            assert!(translate(
+                &Action::DeclareWarWithCasusBelli {
+                    player: 1,
+                    casus_belli: unsupported.into(),
+                },
+                &mirror,
+                &state,
+            )
+            .is_none());
+        }
+
         let embassy = translate(&Action::SendEmbassy { player: 1 }, &mirror, &state)
             .expect("an embassy to a mapped rival translates");
         assert_eq!(embassy.kind, "delegation");
@@ -17755,7 +17813,7 @@ mod order_postcondition_tests {
         before.rivals = vec![rival(true)];
         let sale = order("sell", Some(2), Some("FAVOR=10"), Some((60, 0)));
         let peace = order("peace", Some(2), Some("MAKE_PEACE"), None);
-        let war = order("war", Some(2), Some("DECLARE"), None);
+        let war = order("war", Some(2), Some("DECLARE_FORMAL_WAR"), None);
 
         let mut after = frame(81);
         after.rivals = vec![rival(true)];
@@ -18493,7 +18551,7 @@ mod order_postcondition_tests {
     /// The withheld order is named in the reply rather than simply absent.
     #[test]
     fn host_war_permission_reopening_clears_only_the_resolved_declaration_refusal() {
-        let war = order("war", Some(3), Some("DECLARE"), None);
+        let war = order("war", Some(3), Some("DECLARE_FORMAL_WAR"), None);
         let other_war = order("war", Some(5), Some("DECLARE"), None);
         let step = order("unit", Some(3), Some("MOVE_TO"), Some((4, 4)));
         let mut state = StateSnapshot {
