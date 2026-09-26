@@ -90,3 +90,28 @@ The identical external evaluator harness passed all nine tests, including
 actual major-player and barbarian Prince-rule readback. Baseline completed
 both registered pairs: seed 37870000 won Science off and Score on; seed
 37870001 lost Score off and Culture on. There were no Domination victories.
+
+## Revised native-board replay
+
+Source `afa7f85fd` passes six focused tests and the changed-line Rust quality
+check. On the unchanged turn-160 board, its actual site ranking contains
+31 sites instead of 30: `(2,18)` is newly admitted at rank one, value 175.24.
+The unstable `(1,17)` remains absent. No score bonus was added.
+
+The full late-start controller now selects offset `(2,18)` for Settler
+8650756, a fourteen-step escorted expedition. Baseline selected `(40,10)`,
+an eighteen-step expedition. Both controllers assign a guard and wait for it
+to stack; neither emits a movement order for the Settler on that frame.
+This establishes changed destination planning, not an executed trip, a
+founded native city or received native Aluminum.
+
+| Frozen orders CLI | SHA-256 |
+|---|---|
+| Baseline | `459f01c229a922afd303e68c0b4eff836dfacb81775f26879f2274d3ca7616cc` |
+| Initial candidate | `197b8539dedff3aa0fadcac82617a2f9e6c0096e5882eb2296e6eb1257de7353` |
+| Charted-site candidate | `31e0e6ceba1843ad7d7dcdf3a22ca129c8dbf01b5232c4111712e75537e2f58b` |
+
+The full `cargo test --profile ci --locked` suite at `afa7f85fd` passed
+4,334 tests with 53 existing ignores. The source and harness freezes above
+precede integration of subsequent independent mainline fixes, so the recorded
+before/after comparison isolates the colony change.
