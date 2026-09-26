@@ -1,7 +1,7 @@
-//! Connect the first resource for a Domination army or researched Bomber before surplus shopping.
+//! Connect resources for a Domination army and a sustainable Bomber wing before surplus shopping.
 
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::game::{Action, Game};
+use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use std::collections::BTreeSet;
 
@@ -54,11 +54,11 @@ impl AdvancedAi {
                     .then_some(resource)
             })
             .collect();
-        // The first Bomber cannot provide an existing-unit upgrade demand.
-        // A researched airframe and an operational field make its missing
-        // resource a concrete production blocker, without a speculative beeline.
-        // Keep this demand through recovery and rival-victory counter plans:
-        // changing the current campaign phase does not fuel the airfield.
+        // Radio reveals Aluminum before Advanced Flight. A committed airfield
+        // and an active beeline let a Builder connect it during that window.
+        // After the breakthrough, keep supplying the wing even when the
+        // appointment changes. A stockpile does not replace sustainable income.
+        let mut air_resource = None;
         if let Some(bomber) = Self::air_surge_bomber(g, pid) {
             let spec = &g.rules.units[bomber];
             if let (Some(tech), Some(field), Some(resource)) =
@@ -70,13 +70,49 @@ impl AdvancedAi {
                             && g.map.get(*pos).is_some_and(|tile| !tile.pillaged)
                     })
                 });
-                if g.players[pid].techs.contains(&tech)
-                    && has_field
+                let preparing = self.air_surge_enabled()
+                    && (self.air_surge_active()
+                        || self.air_surge_research_goal(g, pid)
+                            == Some(super::air_surge::AIR_SURGE_GOAL_TECH));
+                let field_committed = has_field
+                    || g.cities.values().filter(|c| c.owner == pid).any(|c| {
+                        c.queue.iter().any(|item| {
+                            matches!(item,
+                            Item::District { district, .. }
+                            if g.district_family(*district) == g.district_family(field))
+                        })
+                    });
+                if ((g.players[pid].techs.contains(&tech) && has_field)
+                    || (preparing && field_committed))
                     && g.resource_visible_to(pid, resource.as_str())
-                    && g.strategic_stockpile(pid, resource) <= 0.0
-                    && g.strategic_resource_rate(pid, resource.as_str()) <= 0.0
                 {
-                    needed.insert(resource);
+                    let mut bombers = 0usize;
+                    let mut demand = 0.0;
+                    for unit in g.units.values().filter(|u| u.owner == pid) {
+                        let held = &g.rules.units[unit.kind];
+                        bombers += usize::from(held.promotion_class == "air_bomber");
+                        if !unit.free_upkeep && held.requires_resource == Some(resource) {
+                            demand += held.resource_maintenance;
+                        }
+                    }
+                    for city in g.cities.values().filter(|c| c.owner == pid) {
+                        for item in &city.queue {
+                            if let Item::Unit { unit } | Item::Formation { unit, .. } = item {
+                                let queued = &g.rules.units[*unit];
+                                bombers += usize::from(queued.promotion_class == "air_bomber");
+                                if queued.requires_resource == Some(resource) {
+                                    demand += queued.resource_maintenance;
+                                }
+                            }
+                        }
+                    }
+                    demand += super::air_surge::AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(bombers)
+                        as f64
+                        * spec.resource_maintenance;
+                    if g.strategic_resource_rate(pid, resource.as_str()) + f64::EPSILON < demand {
+                        needed.insert(resource);
+                        air_resource = Some(resource);
+                    }
                 }
             }
         }
@@ -109,12 +145,22 @@ impl AdvancedAi {
                             || board.rules.resources[resource].improvement == *name)
                 })
             };
-            // A deposit already owned needs a Builder, not another purchase.
+            // An unconnected deposit already owned needs a Builder first.
+            // A healthy mine may be insufficient for the growing air wing;
+            // only its repair or improvement backlog defers another purchase.
             if g.cities.values().filter(|c| c.owner == pid).any(|c| {
                 c.owned_tiles.iter().any(|p| {
                     g.map.get(*p).is_some_and(|t| {
                         t.resource == Some(resource)
                             && !t.flooded
+                            && (air_resource != Some(resource)
+                                || t.pillaged
+                                || (*p != c.pos
+                                    && !t.improvement.is_some_and(|name| {
+                                        let spec = &g.rules.improvements[name];
+                                        spec.resources.contains(&resource)
+                                            || g.rules.resources[resource].improvement == name
+                                    })))
                             && (connects(g, *p)
                                 || t.improvement.is_some_and(|name| {
                                     let spec = &g.rules.improvements[name];
