@@ -4858,6 +4858,21 @@ end
 -- `GetLevyMilitaryCost`, and one `GIVE_INFLUENCE_TOKEN` request PER TOKEN.
 local MIN_ENVOY_TOKENS_SUZERAIN = 3;
 
+-- Base/Assets/UI/PartialScreens/CityStates.lua:1429,1499 reads these
+-- permissions separately from IsAtWarWith (:1508). Do not guess legality
+-- from war status. Bare global: the native UI sandbox does not expose _G.
+function CivvisCanSendEnvoy(player, target)
+	local ok, allowed = pcall(function()
+		local influence = player:GetInfluence();
+		local canGive = influence:CanGiveInfluence();
+		local canTarget = influence:CanGiveTokensToPlayer(target);
+		if type(canGive) ~= "boolean" or type(canTarget) ~= "boolean" then return nil; end
+		return canGive and canTarget;
+	end);
+	if ok and type(allowed) == "boolean" then return allowed; end
+	return nil;
+end
+
 -- Carried onto every turn event. ⚠ A boolean "envoys handled" would read green
 -- both when a suzerainty was bought and when nothing was buyable and the flag
 -- was merely cleared -- the same trap that let a Settler request report
@@ -8122,6 +8137,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				player = mid,
 				civ = civilization,
 				at_war = try(function() return diplomacy:IsAtWarWith(mid); end, false),
+				can_send_envoy = CivvisCanSendEnvoy(player, mid),
 				score = try(function() return minor:GetScore(); end, -1),
 				military = try(function() return minor:GetStats():GetMilitaryStrength(); end, -1),
 				envoys = influence ~= nil and try(function()

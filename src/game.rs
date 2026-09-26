@@ -6585,6 +6585,12 @@ pub struct Game {
     /// hypothetical later turns and games without host facts use normal rules.
     #[serde(default)]
     pub host_war_blocks: Arc<BTreeSet<(usize, usize, u32)>>,
+    /// Native envoy permissions for (actor, city-state), with observed turn.
+    /// Only that turn uses the host answer; simulations without it retain
+    /// their own rules. Contact, a living minor and an available envoy remain
+    /// mandatory even when the host permits placement.
+    #[serde(default)]
+    pub host_envoy_permissions: Arc<BTreeMap<(usize, usize), (u32, bool)>>,
     /// ★★★ THE HOST'S OWN PRICE OF A STRIKE, asked for this turn and answered
     /// without fighting it. Keyed `(attacker, target, ranged)` in CIVVIS unit
     /// ids and axial tiles; the value is Civilization VI's
@@ -7451,6 +7457,7 @@ impl From<GameSer> for Game {
             host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_war_blocks: Arc::new(BTreeSet::new()),
+            host_envoy_permissions: Arc::new(BTreeMap::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
@@ -8167,6 +8174,7 @@ impl Game {
             host_band_promotions: Arc::new(BTreeMap::new()),
             blocked_strikes: Arc::new(BTreeSet::new()),
             host_war_blocks: Arc::new(BTreeSet::new()),
+            host_envoy_permissions: Arc::new(BTreeMap::new()),
             host_previews: Arc::new(BTreeMap::new()),
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
@@ -17230,7 +17238,12 @@ impl Game {
                 .get(minor)
                 .is_some_and(|player| player.is_minor && !player.is_barbarian && player.alive)
             && self.has_met(pid, minor)
-            && !self.is_at_war(pid, minor)
+            && self
+                .host_envoy_permissions
+                .get(&(pid, minor))
+                .filter(|(observed, _)| *observed == self.turn)
+                .map(|(_, allowed)| *allowed)
+                .unwrap_or_else(|| !self.is_at_war(pid, minor))
     }
 
     fn do_send_envoy(&mut self, pid: usize, minor: usize) -> Result<(), String> {
