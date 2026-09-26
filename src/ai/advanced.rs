@@ -24352,7 +24352,13 @@ impl AdvancedAi {
         } else {
             0
         };
-        if field_support >= desired_support {
+        // A breach element belongs to a concrete city assault, not to the
+        // empire-wide support quota. In particular, two infantry already
+        // marching on a walled foreign city need their Ram/Tower even though
+        // the ordinary field quota does not begin until a third land unit.
+        // The capability check below still rejects a duplicate or equipment
+        // that cannot affect this city's current defenses.
+        if field_support >= desired_support && !is_breach {
             return -10_000.0;
         }
 
@@ -24571,10 +24577,20 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether the strategic plan currently sends an army to take a foreign
+    /// city. The support scorer separately verifies that an eligible infantry
+    /// escort and a useful capability exist, so this only identifies the
+    /// front that may claim an otherwise-idle production queue.
+    fn has_foreign_city_assault(g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        plan.target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+    }
+
     /// The adaptive agent normally delegates routine city queues to the
     /// lightweight governor. Reserve at most one empty queue per turn for a
     /// support capability that the active campaign and army can actually use.
-    fn advanced_support_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    fn advanced_support_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
         let counts = self.counts(g, pid);
         if self.base.book_pos < 4
             || !g
@@ -24583,7 +24599,7 @@ impl AdvancedAi {
                 .any(|other| other.id != pid && g.is_at_war(pid, other.id))
             || self.live_war_economy_requires_recovery(g, pid, &counts)
         {
-            return;
+            return false;
         }
         let best: Option<(f64, u32, String)> = {
             let _memo = g.query_memo();
@@ -24615,10 +24631,10 @@ impl AdvancedAi {
             best
         };
         let Some((value, city, unit)) = best else {
-            return;
+            return false;
         };
         if value > 0.0 {
-            let _ = g.apply(
+            g.apply(
                 pid,
                 &Action::Produce {
                     city,
@@ -24626,8 +24642,26 @@ impl AdvancedAi {
                         unit: Name::new(&unit),
                     },
                 },
-            );
+            )
+            .is_ok()
+        } else {
+            false
         }
+    }
+
+    /// Let a live foreign-city assault reserve its Ram, Tower, or other
+    /// applicable support before broad strategic production consumes every
+    /// idle queue. Appointed timed wars own their exact breach package, so
+    /// this deliberately leaves that production route untouched.
+    fn reserve_foreign_city_assault_support(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.war_plan.is_none()
+            && Self::has_foreign_city_assault(g, pid, plan)
+            && self.advanced_support_production(g, pid, plan)
     }
 
     /// The live peacetime deterrence target is normally a small multiplier of
@@ -41943,6 +41977,13 @@ impl AdvancedAi {
             self.reconcile_production_commitments(g, pid, &plan);
             let adaptive_expansion_dispatch =
                 self.adaptive_expansion_dispatches(&plan, active_victory_target);
+            // A real city assault gets one compatible support element before
+            // the broad production chooser fills every idle queue. This is
+            // especially important for an explicit Domination target, which
+            // routes directly through strategic production rather than the
+            // baseline city governor.
+            let city_assault_support_reserved =
+                self.reserve_foreign_city_assault_support(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -41996,7 +42037,9 @@ impl AdvancedAi {
                 self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, false);
             }
             if active_victory_target.is_none() {
-                self.advanced_support_production(g, pid, &plan);
+                if !city_assault_support_reserved {
+                    self.advanced_support_production(g, pid, &plan);
+                }
                 // The adaptive empire's Settler gate lives in the baseline
                 // governor. Thread the larger, speed-aware plan through that
                 // call without leaking it to later consumers.
