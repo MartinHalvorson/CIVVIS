@@ -2669,7 +2669,9 @@ pub struct StateRival {
     pub golden_age: Option<bool>,
     #[serde(default)]
     pub heroic_golden_age: Option<bool>,
-    /// Whether Civilization VI says this seat may declare war on them RIGHT NOW.
+    /// Whether Civilization VI permits at least one supported war declaration
+    /// right now. Major permissions come from IsDiplomaticActionValid for each
+    /// named war; the order handler validates the selected type again.
     /// Missing on an older export is unknown, not an explicit refusal.
     #[serde(default)]
     pub can_declare: Option<bool>,
@@ -10820,9 +10822,10 @@ pub(crate) fn apply_host_diplomacy(game: &mut crate::game::Game, owner: usize, r
         return;
     }
     let turn = game.turn;
-    // Read CanDeclareWarOn independently of the relationship label. A mature
-    // denouncement does not override the host's post-peace declaration ban.
-    // CityStates.lua:1496 reads the same engine permission accessor.
+    // Read the host's aggregate declaration permission independently of the
+    // relationship label. A mature denouncement cannot override a refusal of
+    // every war type. New major exports query IsDiplomaticActionValid, matching
+    // DiplomacyStatementSupport.lua:167; older exports used CanDeclareWarOn.
     let blocks = Arc::make_mut(&mut game.host_war_blocks);
     blocks.retain(|(actor, target, _)| *actor != 0 || *target != owner);
     if rival.can_declare == Some(false) && !rival.at_war {
