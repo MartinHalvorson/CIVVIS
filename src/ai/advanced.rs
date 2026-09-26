@@ -1663,6 +1663,9 @@ const SETTLER_THREAT_DETOUR_TURNS: u32 = 6;
 /// few next-best sites before deciding there is no safe detour; this work runs
 /// only when a visible blocker has already stopped the preferred route.
 const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
+/// One Settler decision's `settle_sooner_walk_costs` floods, by radius; see
+/// `AdvancedAi::settler_walk_costs_cached`.
+type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
 
 /// `detour-keeps-the-site-worth`: the least of the deferred site's value a
 /// detour may settle for. The detour picks the best site whose approach is
@@ -31912,9 +31915,22 @@ impl AdvancedAi {
         avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
         let mut score_cache = BTreeMap::new();
-        self.best_reachable_settle_site_except_cached(g, pid, uid, radius, avoid, &mut score_cache)
+        let mut walk_costs = SettlerWalkCosts::new();
+        self.best_reachable_settle_site_except_cached(
+            g,
+            pid,
+            uid,
+            radius,
+            avoid,
+            &mut score_cache,
+            &mut walk_costs,
+        )
     }
 
+    // Two caches, one per shared derivation, beside the ranking's own six
+    // inputs; the callers that hold both are the ones documented on
+    // `settler_walk_costs_cached`.
+    #[allow(clippy::too_many_arguments)]
     fn best_reachable_settle_site_except_cached(
         &self,
         g: &Game,
@@ -31923,6 +31939,7 @@ impl AdvancedAi {
         radius: i32,
         avoid: Option<Pos>,
         score_cache: &mut BTreeMap<Pos, f64>,
+        walk_costs: &mut SettlerWalkCosts,
     ) -> Option<(Pos, f64)> {
         let from = g.units[&uid].pos;
         let mut candidates = self
@@ -31968,7 +31985,7 @@ impl AdvancedAi {
         // (`advanced_v1_plays_the_same_game_it_always_did`).
         if self.settle_sooner && g.player_city_ids(pid).is_empty() && g.can_found_city(uid) {
             let stand = self.settle_value(g, pid, from);
-            let costs = Self::settle_sooner_walk_costs(g, uid, radius);
+            let costs = Self::settler_walk_costs_cached(g, uid, radius, walk_costs);
             let (budget, per_turn) = Self::opening_walk_budget(g.game_speed);
             // Priced on `settle_value` itself — the number the journal prints —
             // not on the scan's ranking score, which carries its own terms.
@@ -31977,7 +31994,7 @@ impl AdvancedAi {
                     || Self::opening_walk_pays(
                         stand,
                         self.settle_value(g, pid, *position),
-                        Self::opening_walk_turns(g, uid, from, *position, &costs),
+                        Self::opening_walk_turns(g, uid, from, *position, costs),
                         budget,
                         per_turn,
                     )
@@ -31992,7 +32009,7 @@ impl AdvancedAi {
         // radius is priced by hex distance at one point a step.
         let turn_price = self.settle_sooner_walk_price(g, uid);
         if let Some((_, moves)) = turn_price {
-            let costs = Self::settle_sooner_walk_costs(g, uid, radius);
+            let costs = Self::settler_walk_costs_cached(g, uid, radius, walk_costs);
             for (position, value) in candidates.iter_mut() {
                 let movement_cost = costs
                     .get(position)
@@ -32256,6 +32273,30 @@ impl AdvancedAi {
         best
     }
 
+    /// `settle_sooner_walk_costs` for one Settler decision, built at most
+    /// once per radius.
+    ///
+    /// The flood is a pure function of the board, the Settler and the radius,
+    /// and one decision asks for it repeatedly: the ranking prices the opening
+    /// walk and the per-turn walk from the same flood, `best_settler_target`
+    /// ranks a local and a global radius, and a threat detour re-asks the
+    /// whole ranking up to `SETTLER_THREAT_DETOUR_RETRIES` times against the
+    /// same unchanged `&Game`. Every one of those calls rebuilt the flood —
+    /// 3% of a ladder game's CPU in the 2026-09-26 profile, most of it the
+    /// same answer. A `SettlerWalkCosts` lives no longer than the shared
+    /// `&Game` borrow of the decision that owns it, so an entry can never go
+    /// stale: the board cannot change while it exists.
+    fn settler_walk_costs_cached<'c>(
+        g: &Game,
+        uid: u32,
+        radius: i32,
+        walk_costs: &'c mut SettlerWalkCosts,
+    ) -> &'c BTreeMap<Pos, f64> {
+        walk_costs
+            .entry(radius)
+            .or_insert_with(|| Self::settle_sooner_walk_costs(g, uid, radius))
+    }
+
     fn best_settler_target(
         &self,
         g: &Game,
@@ -32263,6 +32304,22 @@ impl AdvancedAi {
         uid: u32,
         local_radius: i32,
         avoid: Option<Pos>,
+    ) -> Option<(Pos, f64)> {
+        let mut walk_costs = SettlerWalkCosts::new();
+        self.best_settler_target_cached(g, pid, uid, local_radius, avoid, &mut walk_costs)
+    }
+
+    /// `best_settler_target` sharing the Settler's walk floods with a caller
+    /// that asks the ranking more than once against the same `&Game`; see
+    /// `settler_walk_costs_cached`.
+    fn best_settler_target_cached(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        local_radius: i32,
+        avoid: Option<Pos>,
+        walk_costs: &mut SettlerWalkCosts,
     ) -> Option<(Pos, f64)> {
         if let Some(site) = self.wonder_clearance_site(g, pid, uid) {
             return Some((site, self.settle_value(g, pid, site)));
@@ -32275,6 +32332,7 @@ impl AdvancedAi {
             local_radius,
             avoid,
             &mut score_cache,
+            walk_costs,
         );
         if !self.settlement_safety {
             let global = self.best_reachable_settle_site_except_cached(
@@ -32284,6 +32342,7 @@ impl AdvancedAi {
                 g.map.width + g.map.height,
                 avoid,
                 &mut score_cache,
+                walk_costs,
             );
             return match (local, global) {
                 (Some(local), Some(global)) if global.1 > local.1 + 5.0 => Some(global),
@@ -32306,6 +32365,7 @@ impl AdvancedAi {
             global_radius,
             avoid,
             &mut score_cache,
+            walk_costs,
         );
         match (local, global) {
             (Some(local), Some(global)) if global.0 != local.0 => {
@@ -32404,8 +32464,13 @@ impl AdvancedAi {
         // remains deferred for the empire after this decision.
         let mut scratch = Vec::new();
         let mut fallback = None;
+        // Every retry ranks against the same unchanged board from the same
+        // tile; only the deferral set moves. Share the walk floods.
+        let mut walk_costs = SettlerWalkCosts::new();
         for _ in 0..SETTLER_THREAT_DETOUR_RETRIES {
-            let Some((candidate, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+            let Some((candidate, _)) =
+                self.best_settler_target_cached(g, pid, uid, 8, avoid, &mut walk_costs)
+            else {
                 break;
             };
             if !self.settler_target_has_visible_route_threat(g, pid, uid, candidate) {
