@@ -18,10 +18,19 @@ Artifacts live under `~/civvis-tactics-results/2026-09-26/bomber-resource-builde
 
 ## Local results so far
 
-The original ordinary Builder regression compiled and failed at the missing Mine assertion (`None` versus `mine`). The corrected version connects the tile during the Radio-to-Advanced-Flight window and derives two Aluminum per turn from the engine. Five new tests pass, including thirteen no-action cases, client-mine repair, lost-suzerainty follow-up and visible hostile reach. The three existing resource-purchase tests selected by `cargo test --profile ci --locked --lib air_resource` also pass. The complete Rust suite is running. Changed-line Rust quality checks pass.
+The original ordinary Builder regression compiled and failed at the missing Mine assertion (`None` versus `mine`). The corrected version connects the tile during the Radio-to-Advanced-Flight window and derives two Aluminum per turn from the engine. Five new tests pass, including thirteen no-action cases, client-mine repair, lost-suzerainty follow-up and visible hostile reach. The three existing resource-purchase tests selected by `cargo test --profile ci --locked --lib air_resource` also pass. `cargo test --profile ci --locked` passes 4,301 tests before main integration, then 4,318 after integrating main `72b0d8bee` (including the assault and native-flooding changes); both runs have 53 existing ignores. Changed-line Rust quality and whitespace checks pass after integration.
 
 Frozen candidate source is `58908497b98e317fd5929e941f3ee4877bd98ba9`. Its CLI SHA-256 is `fe659b1fdaeace5e926a46c1d3aa78ad0792f6800a3531dcdf375faf1b6f7c17`; evaluator SHA-256 is `61a39f6b0c46055742579d20a3d43ed65c84d727dbb8a13af0490d7cf7034152`.
 
 Both immutable native replay commands complete. At turn 135 the selected Builder's order is unchanged. At turn 137 the new policy records an approach to Aluminum `(40, 24)` and exports a legal modeled `MOVE_TO (39, 25)` for native Builder `5570585`; the baseline exports no order for that unit. These are fresh-agent proposals on an opening frame, not actual native movement or a mined deposit. The controlled fixture proves the eventual income; native acceptance and timing remain to be observed.
 
-No native gain or win-rate improvement is claimed.
+Both preregistered candidate smoke pairs completed, with no crashes or early stops:
+
+| Seed | Toggle | Ending turn | Score | Rival victory |
+|---|---|---|---|---|
+| 37790000 | off | 145 | 352 | Culture |
+| 37790000 | on | 143 | 349 | Culture |
+| 37790001 | off | 236 | 774 | Science |
+| 37790001 | on | 140 | 463 | Religion |
+
+All four focal games lost, with no foreign major city ever observed held and no foreign original capital held at the end. These are candidate-only completion checks on the frozen pre-integration source, not evidence of improved play. The later integrated source has the complete test coverage described above. No deployment default or promotion record changes. No native gain or win-rate improvement is claimed.
