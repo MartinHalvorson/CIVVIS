@@ -1429,6 +1429,39 @@ struct PurchaseScoreContext<'a> {
     reserve: f64,
 }
 
+/// The span of one scoring batch over one unchanging board; see
+/// `AdvancedAi::air_surge_status_frame`. Nested frames are one frame: only
+/// the outermost clears the status when it drops.
+struct AirSurgeStatusFrame<'a> {
+    ai: &'a AdvancedAi,
+    outermost: bool,
+}
+
+impl Drop for AirSurgeStatusFrame<'_> {
+    fn drop(&mut self) {
+        if self.outermost {
+            *self.ai.air_surge_status_frame.borrow_mut() = None;
+        }
+    }
+}
+
+impl AdvancedAi {
+    /// Open a scoring batch's frame; see `air_surge_status_frame`. The
+    /// caller holds the `&Game` it scores for at least as long as the guard.
+    fn open_air_surge_status_frame(&self) -> AirSurgeStatusFrame<'_> {
+        let mut frame = self.air_surge_status_frame.borrow_mut();
+        let outermost = frame.is_none();
+        if outermost {
+            *frame = Some(None);
+        }
+        drop(frame);
+        AirSurgeStatusFrame {
+            ai: self,
+            outermost,
+        }
+    }
+}
+
 /// Movement bookkeeping before a disposable observed frame is planned.
 pub(crate) struct ObservedMovementMemory {
     paths: std::collections::HashMap<u32, (u32, Vec<Pos>)>,
@@ -4065,6 +4098,16 @@ pub struct AdvancedAi {
     /// The package as of the last lifecycle pass, so production, diplomacy
     /// and the journal all read one census rather than three.
     air_surge_status: AirSurgeStatus,
+    /// One scoring batch's `air_surge_status`, derived on first use and
+    /// cleared when the batch's `AirSurgeStatusFrame` drops. `None` outside
+    /// a batch, where every call derives fresh exactly as before; `Some(None)`
+    /// inside a batch that has not asked yet. The status is a function of
+    /// the board and the appointed plan alone, and a batch (`production_values`,
+    /// `gold_purchase_scores`) scores every candidate against one unchanging
+    /// `&Game` under `&self`, so the first answer is every answer. Before
+    /// this, every candidate item re-counted the empire's queues, units and
+    /// Aluminum — 5% of a ladder game's CPU in the 2026-09-26 profile.
+    air_surge_status_frame: RefCell<Option<Option<AirSurgeStatus>>>,
     /// What the surge did this game.
     air_surge_census: AirSurgeCensus,
     /// No surge is appointed before this turn. Set whenever one stands down;
@@ -8211,6 +8254,7 @@ impl AdvancedAi {
             air_surge: false,
             air_surge_plan: None,
             air_surge_status: AirSurgeStatus::default(),
+            air_surge_status_frame: RefCell::new(None),
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
@@ -21316,6 +21360,9 @@ impl AdvancedAi {
         context: PurchaseScoreContext<'_>,
         options: &[(Action, u32, Item)],
     ) -> Vec<Option<f64>> {
+        // Every option is scored against `context.g`; see
+        // `air_surge_status_frame`.
+        let _air_surge = self.open_air_surge_status_frame();
         options
             .iter()
             .map(|(action, city, item)| self.gold_purchase_score(context, action, *city, item))
@@ -27247,6 +27294,7 @@ impl AdvancedAi {
         counts: EmpireCounts,
     ) -> Vec<f64> {
         let _memo = g.query_memo();
+        let _air_surge = self.open_air_surge_status_frame();
         items
             .iter()
             .map(|item| {

@@ -3368,6 +3368,19 @@ impl Game {
     /// [`Self::workable_tile_yields`] pays on a native game, and the number the
     /// mirror measures the host's per-plot export against.
     pub fn modeled_tile_yields(&self, pos: Pos) -> Yields {
+        if let Some(memo) = self.query_memo.tile_yields.borrow().as_ref() {
+            if let Some(yields) = memo.get(&pos) {
+                return *yields;
+            }
+        }
+        let yields = self.modeled_tile_yields_uncached(pos);
+        if let Some(memo) = self.query_memo.tile_yields.borrow_mut().as_mut() {
+            memo.insert(pos, yields);
+        }
+        yields
+    }
+
+    fn modeled_tile_yields_uncached(&self, pos: Pos) -> Yields {
         let tile = &self.map.tiles[&pos];
         let owner = tile
             .owner_city
@@ -3397,6 +3410,7 @@ impl Game {
         if outermost {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.tile_yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.air_patrols.borrow_mut() = None;
             *self.query_memo.passage_improvements.borrow_mut() = None;
@@ -3428,6 +3442,11 @@ impl Game {
                 return *yields;
             }
         }
+        // One derivation prices every owned plot to plan the citizens and
+        // the worked plots again to sum them, and asks the city's amenities
+        // more than once. A caller with no memo open still shares those
+        // answers within this one derivation; a caller with one open nests.
+        let _memo = self.query_memo();
         let yields = self.city_yields_uncached(cid);
         if let Some(memo) = self.query_memo.yields.borrow_mut().as_mut() {
             memo.insert(cid, yields);
