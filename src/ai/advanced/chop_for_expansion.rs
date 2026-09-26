@@ -297,7 +297,7 @@ impl AdvancedAi {
             return Some(acted);
         }
         self.builder_targets.insert(uid, best.pos);
-        let stepped = if self.civilian_reach_safety_on() {
+        let stepped = if self.builder_reach_safety_on() {
             self.builder_step_out_of_reach(g, pid, uid, best.pos)
         } else {
             self.builder_step_toward_barbarian_safe(g, pid, uid, best.pos)

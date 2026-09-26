@@ -136,7 +136,7 @@ impl AdvancedAi {
             if !g.can_stop(uid, pos) || g.route_step(uid, pos, 0).is_none() {
                 continue;
             }
-            let stepped = if self.civilian_reach_safety_on() {
+            let stepped = if self.builder_reach_safety_on() {
                 self.builder_step_out_of_reach(g, pid, uid, pos)
             } else {
                 self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
