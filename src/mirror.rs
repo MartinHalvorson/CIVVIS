@@ -2935,6 +2935,10 @@ pub struct StateMinor {
     pub military: f64,
     #[serde(default)]
     pub at_war: bool,
+    /// The host's CanGiveInfluence AND CanGiveTokensToPlayer result, not an
+    /// inference from war status. None is an older or unreadable export.
+    #[serde(default)]
+    pub can_send_envoy: Option<bool>,
     #[serde(default = "minus_one")]
     pub suzerain: i32,
     /// Whether this city-state holds Early Empire and so enforces its border
@@ -6029,6 +6033,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "score",
         "military",
         "at_war",
+        "can_send_envoy",
         "suzerain",
         "envoys",
         "most_envoys",
@@ -11626,6 +11631,18 @@ fn step_governor_state(ctx: &mut HostStepCtx<'_>) {
 
 fn step_host_envoys(ctx: &mut HostStepCtx<'_>) {
     reconcile_host_envoys(ctx.game, ctx.minor_assignments, ctx.seat_of_host);
+    // Refresh on BOTH reconstruction paths, including same-turn frames.
+    // An omitted city-state or unknown permission must not retain an older
+    // grant/refusal. Keys use mapped board seats, never raw host ids.
+    let permissions = Arc::make_mut(&mut ctx.game.host_envoy_permissions);
+    permissions.retain(|(actor, _), _| *actor != 0);
+    for &(minor, owner) in ctx.minor_assignments {
+        if minor.is_city_state() {
+            if let Some(allowed) = minor.can_send_envoy {
+                permissions.insert((0, owner), (ctx.game.turn, allowed));
+            }
+        }
+    }
 }
 
 fn step_great_person_points(ctx: &mut HostStepCtx<'_>) {
@@ -14687,3 +14704,6 @@ mod enemy_district_pillage_tests;
 #[cfg(test)]
 #[path = "mirror/city_ranged_strength/tests.rs"]
 mod city_ranged_strength_tests;
+
+#[cfg(test)]
+mod envoy_permission_tests;
