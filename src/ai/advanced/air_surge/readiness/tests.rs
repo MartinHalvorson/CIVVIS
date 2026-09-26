@@ -152,3 +152,82 @@ fn an_immediate_home_threat_suspends_preparation() {
     assert_eq!(ai.air_surge_research_goal(&g, 0), None);
     assert!(!ai.air_surge_production(&mut g, 0));
 }
+
+fn deterrence_fixture() -> (Game, AdvancedAi, u32, u32, super::super::StrategicPlan) {
+    let (mut g, mut ai, field, other) = fixture();
+    crate::game::install_test_district(&mut g, field, "aerodrome");
+    g.record_contact(0, 1);
+    for pos in [(24, 12), (25, 12), (24, 13)] {
+        g.spawn_test_unit("tank", 1, pos);
+    }
+    ai.enable_peacetime_deterrence();
+    let plan = super::super::StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    assert!(ai.peacetime_deterrence_force_gap(&g, 0, &plan).is_some());
+    (g, ai, field, other, plan)
+}
+
+#[test]
+fn peacetime_deterrence_leaves_the_launch_wing_a_queue() {
+    let (mut g, mut ai, field, other, plan) = deterrence_fixture();
+    // This is the production order in take_turn_inner: deterrence runs first.
+    // The native turn212 board had an idle airfield and Aluminum8/+2, but
+    // this pass took its queue for a land unit before the air pass could run.
+    ai.redirect_repeatable_projects_for_force_gap(&mut g, 0, &plan);
+    assert!(g.cities[&field].queue.is_empty(), "keep the ready airfield");
+    assert!(matches!(
+        g.cities[&other].queue.first(),
+        Some(Item::Unit { .. })
+    ));
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert_eq!(
+        g.cities[&field].queue,
+        vec![Item::Unit {
+            unit: crate::name!("bomber")
+        }]
+    );
+}
+
+#[test]
+fn deterrence_keeps_idle_queues_when_a_launch_bomber_cannot_be_reserved() {
+    for case in 0..8 {
+        let (mut g, mut ai, field, other, plan) = deterrence_fixture();
+        match case {
+            0 => g.players[0].strategic_resources.clear(),
+            1 => g.players[0].gold = 20.0,
+            2 => ai.disable_air_surge_2(),
+            3 => ai.retarget(VictoryTarget::Science),
+            4 => g.max_turns = g.turn + 1,
+            5 => {
+                g.cities.get_mut(&other).unwrap().queue = vec![
+                    Item::Unit {
+                        unit: crate::name!("bomber")
+                    };
+                    2
+                ];
+            }
+            6 => {
+                g.cities.get_mut(&field).unwrap().districts.clear();
+            }
+            7 => g.max_turns = g.turn + 60,
+            _ => unreachable!(),
+        }
+        let mut control = g.clone();
+        let mut no_air = ai.clone();
+        no_air.disable_air_surge_2();
+        no_air.air_surge = false;
+        no_air.redirect_repeatable_projects_for_force_gap(&mut control, 0, &plan);
+        ai.redirect_repeatable_projects_for_force_gap(&mut g, 0, &plan);
+        assert_eq!(
+            g.cities[&field].queue, control.cities[&field].queue,
+            "case {case}"
+        );
+    }
+}
