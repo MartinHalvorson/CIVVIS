@@ -1005,6 +1005,8 @@ fn flooded_district_and_building_repairs_wait_for_dry_ground() {
         let tile = game.map.tiles.get_mut(&position).unwrap();
         tile.flooded = flooded;
         tile.submerged = submerged;
+        // Direct fixture mutation bypasses normal action/turn invalidation.
+        game.query_memo.producible.borrow_mut().clear();
         for repair in ["district", "library"] {
             let item = Item::Repair {
                 repair: Name::new(repair),
