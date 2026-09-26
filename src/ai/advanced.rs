@@ -4095,6 +4095,9 @@ pub struct AdvancedAi {
     pub air_surge: bool,
     /// The one surge appointed and not yet finished.
     air_surge_plan: Option<AirSurge>,
+    /// This frame's combined maneuver, for adapters that observe between phases.
+    air_city_assault: Option<AirCityAssault>,
+    air_assault_observation: Option<(BTreeSet<Pos>, u32)>,
     /// The package as of the last lifecycle pass, so production, diplomacy
     /// and the journal all read one census rather than three.
     air_surge_status: AirSurgeStatus,
@@ -7251,7 +7254,9 @@ mod surprise_defense;
 /// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
+mod air_city_assault;
 mod air_surge;
+pub use air_city_assault::AirCityAssault;
 mod siege_resource_purchase;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
@@ -8253,6 +8258,8 @@ impl AdvancedAi {
             raid_war: None,
             air_surge: false,
             air_surge_plan: None,
+            air_city_assault: None,
+            air_assault_observation: None,
             air_surge_status: AirSurgeStatus::default(),
             air_surge_status_frame: RefCell::new(None),
             air_surge_census: AirSurgeCensus::default(),
@@ -41016,6 +41023,7 @@ impl AdvancedAi {
             // first. Empty with the gene off. See `advanced/fire_plan.rs`.
             self.plan_fire(g, pid);
         }
+        let air_assault_units = self.plan_air_city_assault(g, pid, plan);
         // `pass-picket`: this turn's recon orders, drawn once from the
         // start-of-turn board so units planned in parallel agree on them.
         // Nothing is read with the gene off. See
@@ -41030,6 +41038,7 @@ impl AdvancedAi {
             !settled_first.contains(uid)
                 && Some(*uid) != opening_recon_warrior
                 && !withdrawn.contains(uid)
+                && !air_assault_units.contains(uid)
         });
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
@@ -41786,6 +41795,7 @@ impl AdvancedAi {
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        self.air_city_assault = None;
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
