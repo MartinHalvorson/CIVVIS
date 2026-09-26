@@ -3101,6 +3101,9 @@ mod healing_tests;
 mod linked_recovery_tests;
 
 #[cfg(test)]
+mod doomed_recovery_tests;
+
+#[cfg(test)]
 mod recon_veto_tests;
 
 #[cfg(test)]
