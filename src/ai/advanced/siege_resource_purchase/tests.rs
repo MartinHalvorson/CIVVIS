@@ -191,7 +191,7 @@ fn air_resource_purchase_connects_first_bomber_source_before_surplus_shopping() 
 
 #[test]
 fn air_resource_purchase_requires_a_researched_bomber_and_usable_field() {
-    for case in ["tech", "field", "pillaged", "stock"] {
+    for case in ["tech", "field", "pillaged"] {
         let (mut g, ai, plan, city) = air_resource_fixture();
         match case {
             "tech" => {
@@ -207,14 +207,97 @@ fn air_resource_purchase_requires_a_researched_bomber_and_usable_field() {
                     .unwrap();
                 g.map.tiles.get_mut(&pos).unwrap().pillaged = true;
             }
-            _ => {
-                g.players[0]
-                    .strategic_resources
-                    .insert(crate::name!("aluminum"), 10.0);
-            }
+            _ => unreachable!(),
         }
         assert!(!ai.siege_resource_purchase(&mut g, 0, &plan), "{case}");
         assert_eq!(g.map.tiles[&(12, 10)].owner_city, None);
+    }
+}
+
+#[test]
+fn bomber_supply_is_connected_during_the_final_beeline() {
+    for queued_field in [false, true] {
+        let (mut g, mut ai, plan, city) = air_resource_fixture();
+        g.found_city_for(0, (5, 10), None);
+        g.players[0].techs.remove(&crate::name!("advanced_flight"));
+        g.players[0].techs.insert(crate::name!("industrialization"));
+        ai.enable_air_surge_2();
+        if queued_field {
+            let pos = g.cities.get_mut(&city).unwrap().districts.remove(crate::name!("aerodrome")).unwrap()[0];
+            g.cities.get_mut(&city).unwrap().queue = vec![crate::game::Item::District {
+                district: crate::name!("aerodrome"), pos,
+            }];
+        }
+        assert!(ai.siege_resource_purchase(&mut g, 0, &plan), "queued={queued_field}");
+        assert_eq!(g.map.tiles[&(12, 10)].owner_city, Some(city));
+    }
+}
+
+#[test]
+fn bomber_supply_does_not_mistake_a_stockpile_for_sustainable_income() {
+    for stock in [1.0, 10.0, 100.0] {
+        let (mut g, ai, plan, city) = air_resource_fixture();
+        g.players[0].strategic_resources.insert(crate::name!("aluminum"), stock);
+        assert!(ai.siege_resource_purchase(&mut g, 0, &plan), "stock={stock}");
+        assert_eq!(g.map.tiles[&(12, 10)].owner_city, Some(city));
+    }
+}
+
+#[test]
+fn an_existing_mine_does_not_hide_a_growing_wings_supply_deficit() {
+    let (mut g, ai, plan, city) = air_resource_fixture();
+    let source = g.map.tiles.get_mut(&(9, 10)).unwrap();
+    source.resource = Some(crate::name!("aluminum"));
+    source.improvement = Some(crate::name!("mine"));
+    assert_eq!(g.strategic_resource_rate(0, "aluminum"), 2.0);
+    g.spawn_test_unit("bomber", 0, (10, 10));
+    g.spawn_test_unit("bomber", 0, (10, 10));
+    g.spawn_test_unit("bomber", 0, (10, 10));
+    g.players[0].strategic_resources.insert(crate::name!("aluminum"), 10.0);
+    assert!(ai.siege_resource_purchase(&mut g, 0, &plan));
+    assert_eq!(g.map.tiles[&(12, 10)].owner_city, Some(city));
+}
+
+#[test]
+fn bomber_supply_uses_pending_aircraft_and_other_aluminum_consumers() {
+    for kind in ["bomber", "fighter", "helicopter"] {
+        let (mut g, ai, plan, city) = air_resource_fixture();
+        let source = g.map.tiles.get_mut(&(9, 10)).unwrap();
+        source.resource = Some(crate::name!("aluminum"));
+        source.improvement = Some(crate::name!("mine"));
+        g.spawn_test_unit("bomber", 0, (10, 10));
+        g.spawn_test_unit("bomber", 0, (10, 10));
+        g.cities.get_mut(&city).unwrap().queue = vec![crate::game::Item::Unit { unit: Name::new(kind) }];
+        assert!(ai.siege_resource_purchase(&mut g, 0, &plan), "{kind}");
+    }
+}
+
+#[test]
+fn bomber_supply_preserves_reveal_commitment_and_existing_connection_guards() {
+    for case in ["hidden", "no_air_plan", "no_field", "sufficient", "repair", "unmined"] {
+        let (mut g, mut ai, plan, city) = air_resource_fixture();
+        g.found_city_for(0, (5, 10), None);
+        g.players[0].techs.insert(crate::name!("industrialization"));
+        ai.enable_air_surge_2();
+        match case {
+            "hidden" => { g.players[0].techs.remove(&crate::name!("radio")); }
+            "no_air_plan" => {
+                g.players[0].techs.remove(&crate::name!("advanced_flight"));
+                ai.disable_air_surge_2();
+            }
+            "no_field" => {
+                g.players[0].techs.remove(&crate::name!("advanced_flight"));
+                g.cities.get_mut(&city).unwrap().districts.clear();
+            }
+            _ => {
+                let source = g.map.tiles.get_mut(&(9, 10)).unwrap();
+                source.resource = Some(crate::name!("aluminum"));
+                source.improvement = (case != "unmined").then_some(crate::name!("mine"));
+                source.pillaged = case == "repair";
+            }
+        }
+        assert!(!ai.siege_resource_purchase(&mut g, 0, &plan), "{case}");
+        assert_eq!(g.map.tiles[&(12, 10)].owner_city, None, "{case}");
     }
 }
 
