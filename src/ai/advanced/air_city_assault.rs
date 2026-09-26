@@ -152,6 +152,10 @@ impl AdvancedAi {
                 break;
             }
         }
+        // Capturing in a prepass opens the city's disposition prompt. Resolve
+        // it through the existing policy before the remaining units act;
+        // otherwise every later attack is rejected by the pending prompt.
+        self.resolve_city_dispositions(g, pid, plan.strategy);
         reserved.insert(uid);
         reserved.extend(report.aircraft.iter().copied());
         crate::think!(self.journal(), Military, Decision,

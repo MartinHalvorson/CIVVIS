@@ -91,6 +91,10 @@ fn a_weakened_city_is_captured_after_the_sorties() {
     assert!(reserved.contains(&cavalry));
     assert_eq!(g.cities[&cid].owner, 0);
     assert_eq!(g.units[&cavalry].pos, (20, 10));
+    assert!(
+        g.legal_city_disposition_actions(0).is_empty(),
+        "the prepass must not block the remaining army behind a capture prompt"
+    );
     assert!(!ai.planned_air_city_assault().unwrap().aircraft.is_empty());
 }
 
