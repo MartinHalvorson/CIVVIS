@@ -115,3 +115,36 @@ The full `cargo test --profile ci --locked` suite at `afa7f85fd` passed
 4,334 tests with 53 existing ignores. The source and harness freezes above
 precede integration of subsequent independent mainline fixes, so the recorded
 before/after comparison isolates the colony change.
+
+## Complete Prince comparison
+
+Baseline, initial candidate and charted-site candidate all completed both
+registered pairs. All four focal outcome records are identical across the
+three sources, including action counts and conquest telemetry. There were
+no crashes, substituted seeds or early stops.
+
+| Seed | Air-surge-2 arm | Turn | Score | Focal outcome | Major cities observed held | Capitals held at end |
+|---|---|---|---|---|---|---|
+| 37870000 | off | 243 | 1221 | Science win | 2 | 0 |
+| 37870000 | on | 250 | 1487 | Score win | 7 | 1 |
+| 37870001 | off | 250 | 806 | Score loss | 0 | 0 |
+| 37870001 | on | 167 | 668 | Culture loss | 0 | 0 |
+
+None is a Domination win. This comparison shows no outcome benefit from the
+colony change. The narrower native-board planning correction is established
+by the unchanged-prefix replay and its retained escort requirement; a native
+colony, Aluminum income and stronger conquest results still need observation.
+
+| Frozen evaluator | SHA-256 |
+|---|---|
+| Baseline | `230ed168cc7e25926b053645d1598ccfc4bdbc058885ca6d4f8a45c352f12ed3` |
+| Initial candidate | `eef1ac81faafbcfc09e7719993b001a870a08c40b78dcd4659fee0c32af259ab` |
+| Charted-site candidate | `7a0b297a317f54b30a4adda2b85e2bd34e68b47c5649c40be45711cc261eadf5` |
+
+Main was integrated afterward through `e58d4a7c4`, including the Bomber queue
+reservation and independent Builder-raider policy. No engine or Lua source,
+live deployment defaults, promotion ledger or active native runtime changed
+in this colony patch.
+
+After integration, the full suite passed 4,337 tests with 53 existing
+ignores. Changed-line Rust quality and whitespace checks passed.
