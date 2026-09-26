@@ -25,3 +25,7 @@ victory_eval --domination-pair air-surge-2 --games 4 --start-seed 37730000 --out
 ```
 
 The runner fixes Gran Colombia seat zero, King, four players, 60×38 Pangaea, six city-states, Online, barbarians, all victories, and the natural 250-turn horizon. Both sources carry the identical compiled live-force-on bundle. Primary checks are focal wins, major cities and original capitals held, and completion; score and turn are secondary diagnostics. Native replay proposals and actual native outcomes will be reported separately.
+
+The first immutable opening-frame replays (190901Z turns 166, 182, 183, 184) all select a combined volley. All four objectives are already visible; they do not prove native spotting. Three trial boards forecast capture, but exported orders contain the sorties plus an observation request and withhold capture. These are fresh-AI, one-frame proposals with `replan_frame_limit=2` explicitly assumed, not native executed outcomes or reconstructions of persistent agent state.
+
+Those replays exposed a prepass integration defect: after a simulated capture, the city-disposition prompt blocked later unit attacks. Candidate `38eb4b15f` invokes the existing disposition policy before returning to the ordinary unit loop; the capture regression now asserts no pending disposition remains. All eight policy tests pass after that correction. The initial frozen pilot at `b7a02984a` will finish unchanged, and the corrected candidate will run the same complete seed set against the same frozen baseline. No outcome-driven stopping or seed substitution is used.
