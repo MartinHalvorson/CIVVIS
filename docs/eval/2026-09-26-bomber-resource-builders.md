@@ -16,4 +16,12 @@ The candidate will reuse the existing bomber supply-shortfall calculation rather
 
 Artifacts live under `~/civvis-tactics-results/2026-09-26/bomber-resource-builders/`; the earlier compact source timeline is `../bomber-assault/upstream-aluminum-timeline.json`. Source-event SHA-256 is `2751e3a479dcc8e470bf347f4b1cd4721e3a0d741be55093155700816cdad94a`. These are disposable, read-only replay inputs. No active game tab, runtime or order database is touched.
 
-Implementation and validation remain in progress. No native gain or win-rate improvement is claimed.
+## Local results so far
+
+The original ordinary Builder regression compiled and failed at the missing Mine assertion (`None` versus `mine`). The corrected version connects the tile during the Radio-to-Advanced-Flight window and derives two Aluminum per turn from the engine. Five new tests pass, including thirteen no-action cases, client-mine repair, lost-suzerainty follow-up and visible hostile reach. The three existing resource-purchase tests selected by `cargo test --profile ci --locked --lib air_resource` also pass. The complete Rust suite is running. Changed-line Rust quality checks pass.
+
+Frozen candidate source is `58908497b98e317fd5929e941f3ee4877bd98ba9`. Its CLI SHA-256 is `fe659b1fdaeace5e926a46c1d3aa78ad0792f6800a3531dcdf375faf1b6f7c17`; evaluator SHA-256 is `61a39f6b0c46055742579d20a3d43ed65c84d727dbb8a13af0490d7cf7034152`.
+
+Both immutable native replay commands complete. At turn 135 the selected Builder's order is unchanged. At turn 137 the new policy records an approach to Aluminum `(40, 24)` and exports a legal modeled `MOVE_TO (39, 25)` for native Builder `5570585`; the baseline exports no order for that unit. These are fresh-agent proposals on an opening frame, not actual native movement or a mined deposit. The controlled fixture proves the eventual income; native acceptance and timing remain to be observed.
+
+No native gain or win-rate improvement is claimed.
