@@ -217,3 +217,54 @@ fn mirror_city_renumbering_preserves_progress_at_the_same_owned_location() {
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(!ai.peace_offers.contains(&1));
 }
+
+#[test]
+fn observed_damage_after_a_wall_upgrade_counts_toward_the_fixed_budget() {
+    let (mut g, mut ai, plan, city, _) = fixture();
+    // Native Kristiansand: 300 walls first observed, upgraded to400,
+    // then six consecutive turns of damage before a stalled-war peace offer.
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(city, 300);
+    g.cities.get_mut(&city).unwrap().wall_hp = 300;
+    ai.observe_campaign(&g, 0);
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(city, 400);
+    damage(&mut g, &mut ai, city, 121, 400);
+    for (turn, walls) in [
+        (122, 377),
+        (123, 352),
+        (124, 327),
+        (125, 304),
+        (126, 281),
+        (127, 256),
+    ] {
+        damage(&mut g, &mut ai, city, turn, walls);
+    }
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        !ai.peace_offers.contains(&1),
+        "144 real damage exceeds a quarter of the initial500HP budget"
+    );
+    // The same damage cannot hold this war open indefinitely.
+    g.turn = 139;
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1));
+}
+
+#[test]
+fn upgraded_defenses_do_not_expand_or_replenish_the_four_milestone_budget() {
+    let (mut g, mut ai, plan, city, _) = fixture();
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(city, 0);
+    g.cities.get_mut(&city).unwrap().wall_hp = 0;
+    ai.observe_campaign(&g, 0);
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(city, 400);
+    damage(&mut g, &mut ai, city, 121, 400);
+    damage(&mut g, &mut ai, city, 122, 300);
+    damage(&mut g, &mut ai, city, 123, 0);
+    let key = (1, g.cities[&city].pos);
+    assert_eq!(ai.domination_siege_milestones[&key].greatest_quarter, 4);
+    assert!(ai.domination_siege_is_progressing(&g, 0, 1, &plan));
+    damage(&mut g, &mut ai, city, 134, 400);
+    damage(&mut g, &mut ai, city, 135, 0);
+    assert_eq!(ai.domination_siege_milestones[&key].greatest_quarter, 4);
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1));
+}
