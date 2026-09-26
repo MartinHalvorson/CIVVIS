@@ -151,6 +151,20 @@ fn spent_bombers_allow_capture_from_the_next_observed_board() {
 }
 
 #[test]
+fn an_unused_bomber_does_not_delay_capture_of_an_already_breached_city() {
+    let (mut g, mut ai, plan, cavalry, _) = fixture();
+    g.relocate(cavalry, (18, 10));
+    let cid = plan.target_city.unwrap();
+    g.cities.get_mut(&cid).unwrap().hp = 1;
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 0);
+    assert!(ai
+        .plan_air_city_assault(&mut g, 0, &plan)
+        .contains(&cavalry));
+    assert_eq!(g.cities[&cid].owner, 0);
+    assert!(ai.planned_air_city_assault().unwrap().aircraft.is_empty());
+}
+
+#[test]
 fn an_observed_failed_breach_makes_the_cavalry_withdraw() {
     let (mut g, mut ai, plan, cavalry, bombers) = fixture();
     g.relocate(cavalry, (18, 10));

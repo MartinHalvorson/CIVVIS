@@ -83,13 +83,16 @@ impl AdvancedAi {
         if aircraft.is_empty() {
             return reserved;
         }
+        let visible = self.air_assault_target_visible(g, pid, target);
         let ready = aircraft.iter().any(|uid| {
             let unit = &g.units[uid];
-            unit.moves_left > 0.0 && !unit.acted && !g.strike_blocked(*uid, target)
+            unit.moves_left > 0.0
+                && !unit.acted
+                && !g.strike_blocked(*uid, target)
+                && (!visible || self.air_strike_value(g, pid, *uid, target, plan) > 0.0)
         });
         // After an observed volley, the aircraft may be spent but the cavalry
         // still has its capture/retreat decision. Never scout for spent planes.
-        let visible = self.air_assault_target_visible(g, pid, target);
         if !ready && !visible {
             return reserved;
         }
