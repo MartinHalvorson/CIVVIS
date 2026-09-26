@@ -16475,6 +16475,8 @@ mod tests {
             ap: None,
             np: false,
             vis: false,
+            flooded: None,
+            submerged: None,
         }
     }
 
