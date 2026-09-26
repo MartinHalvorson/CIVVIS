@@ -190,11 +190,15 @@ fn a_charted_resource_colony_can_be_planned_before_it_reenters_sight() {
 
 #[test]
 fn an_unrevealed_strategic_resource_cannot_change_a_founding_refusal() {
-    let (mut g, ai, deposit, _) = fixture();
-    g.players[0].techs.remove(&crate::name!("radio"));
-    assert!(!g.resource_visible_to(0, "aluminum"));
-    assert!(
-        !ai.air_resource_colony_refused(&g, 0, deposit),
-        "before Radio, a hidden deposit cannot activate the colony-specific refusal"
-    );
+    for before_radio in [true, false] {
+        let (mut g, ai, deposit, _) = fixture();
+        if before_radio {
+            g.players[0].techs.remove(&crate::name!("radio"));
+            assert!(!g.resource_visible_to(0, "aluminum"));
+        } else {
+            g.players[0].explored.remove(&deposit);
+        }
+        assert!(!ai.air_resource_colony_refused(&g, 0, deposit),
+            "an unrevealed resource cannot activate the colony-specific refusal: before_radio={before_radio}");
+    }
 }

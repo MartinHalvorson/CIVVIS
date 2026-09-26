@@ -103,9 +103,13 @@ impl AdvancedAi {
                 g.rules.units[bomber]
                     .requires_resource
                     .is_some_and(|resource| {
-                        g.map
-                            .get(site)
-                            .is_some_and(|tile| tile.resource == Some(resource))
+                        // Only a known resource can justify this special
+                        // refusal; ordinary settlement guards own other ground.
+                        g.resource_visible_to(pid, resource.as_str())
+                            && g.players[pid].explored.contains(&site)
+                            && g.map
+                                .get(site)
+                                .is_some_and(|tile| tile.resource == Some(resource))
                     })
             })
             || !g.cities.values().any(|city| {

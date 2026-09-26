@@ -148,3 +148,24 @@ in this colony patch.
 
 After integration, the full suite passed 4,337 tests with 53 existing
 ignores. Changed-line Rust quality and whitespace checks passed.
+
+## Knowledge check before integration
+
+Final review found that the arrival-only refusal inspected the underlying
+resource without first checking its revealing technology. An additional
+regression failed before Radio: the simulator knew a hidden Aluminum deposit
+and changed its founding refusal. The merge was held before landing. The
+correction requires both the revealing technology and charted terrain before
+that specialized refusal can apply. Ordinary founding safeguards continue to
+handle every other site. A second control covers uncharted terrain.
+
+The earlier frozen candidates and complete results remain above. Before
+running the corrected comparison, register a new two-seed block, 37870002–3,
+with the same external Prince harness and all other profile settings unchanged.
+Both the baseline and corrected candidate include main through `e58d4a7c4`;
+the baseline is a separate detached, read-only checkout with no source edits.
+This keeps the independent queue and Builder changes out of the difference.
+Both sources must complete both pairs, with all outcomes retained. The
+protocol is also frozen in `knowledge-guard-protocol.json` in the artifact
+directory. These small diagnostic runs remain insufficient for promotion or
+a claim of consistent Domination wins.
