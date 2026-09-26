@@ -764,6 +764,7 @@ local function survey()
 		-- strike) is exported again and the same turn re-planned, up to
 		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		replan_frame_limit = math.max(0, math.floor(tonumber(cfg.ReplanFrames) or 0)),
 		action_transitions = cfg.ActionTransitions == true,
 		isolated_action_probes = cfg.IsolatedActionProbes == true,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
@@ -9642,6 +9643,17 @@ end
 -- One bare global table (200-local ceiling).
 CivvisTiles = { known = {}, districtPillage = {} };
 
+-- PlotTooltip_Expansion2.lua:34-35 reads these TerrainManager accessors.
+-- Keep false distinct from unknown: a protected lowland can be dry even when
+-- the global climate phase would otherwise flood its band.
+function CivvisTiles.floodState(plot, accessor)
+    return try(function()
+        local value = TerrainManager[accessor](plot);
+        if type(value) == "boolean" then return value; end
+        return nil;
+    end, nil);
+end
+
 -- The existing plot `p` bit also describes a district. Rival city records
 -- do not carry districts, so without this observation every fresh board
 -- treats an already-bombed Campus as another profitable bombing mission.
@@ -9792,6 +9804,8 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 					-- chunk is at its ceiling.
 					mark = (owner * 1024 + feature) .. ":"
 						.. tostring(CivvisTiles.owningCity(plot, pid)) .. ":"
+						.. tostring(CivvisTiles.floodState(plot, "IsFlooded")) .. ":"
+						.. tostring(CivvisTiles.floodState(plot, "IsSubmerged")) .. ":"
 						.. (try(function() return plot:GetImprovementType(); end, -1) or -1) .. ":"
 						.. (CivvisTiles.pillageState(plot, pid, x, y) and 1 or 0) .. ":"
 						.. (try(function() return plot:GetRouteType(); end, -1) or -1) .. ":"
@@ -9891,6 +9905,8 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						flooded = CivvisTiles.floodState(plot, "IsFlooded"),
+						submerged = CivvisTiles.floodState(plot, "IsSubmerged"),
 						-- ★★★ APPEAL, AS THE HOST COUNTS IT. The board derived appeal
 						-- from its own six neighbours and could not see a wonder's
 						-- +2 in fog, a Governor's promotion or a rival's district;
@@ -17648,6 +17664,7 @@ CivvisFrames.reset = function()
 	CivvisFrames.revealed = 0;
 	CivvisFrames.movers = 0;
 	CivvisFrames.reason = nil;
+	CivvisFrames.requested = false;
 	-- True once the turn declined its next frame: `settleTurn` is called
 	-- again on every later tick of the turn (blockers, end-turn retries),
 	-- and the sweep must not run on each of them.
@@ -17700,6 +17717,9 @@ CivvisFrames.why = function()
 			and CivvisFrames.revealed > 0 and CivvisFrames.movers > 0 then
 		return "revealed";
 	end
+	if current < CivvisFrames.replanMax() and CivvisFrames.requested then
+		return "air_assault";
+	end
 	return nil;
 end;
 
@@ -17718,6 +17738,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 	CivvisFrames.strikes = 0;
 	CivvisFrames.revealed = 0;
 	awaiting.frame = CivvisFrames.current;
+	CivvisFrames.requested = false;
 	awaiting.done = false;
 	awaiting.polls = 0;
 	awaiting.ticks = 0;
@@ -17758,6 +17779,12 @@ local function applyOrders(player, pid, turn, rows)
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
 			survival = true;
+			table.remove(rows, i);
+		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
+			-- A failed spotting move or refused sortie changes no sight/damage,
+			-- but its cavalry still needs a decision from the settled board.
+			-- This spends the existing ReplanFrames budget, never another turn.
+			CivvisFrames.requested = true;
 			table.remove(rows, i);
 		end
 	end
