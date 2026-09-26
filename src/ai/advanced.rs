@@ -1667,6 +1667,22 @@ const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
 /// `AdvancedAi::settler_walk_costs_cached`.
 type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
 
+/// The read-only answers one settlement scan shares with the next scan of
+/// the same board for the same seat. `map_settlement_room` scans from every
+/// expansion origin in turn, and nothing here depends on the origin: the
+/// founding-exclusion disks around every city, the buffer around explored
+/// city-states, and each plot's prefilter score are functions of the board
+/// and the seat alone. Each was rebuilt per origin before this existed. The
+/// struct lives inside one shared `&Game` borrow, so nothing in it can go
+/// stale.
+#[derive(Default)]
+struct SettlementScanShared {
+    /// (`city_exclusion`, `city_state_exclusion`), built on first use.
+    exclusions: Option<(BTreeSet<Pos>, BTreeSet<Pos>)>,
+    /// Prefilter score per plot, for a scan that prefilters.
+    prefilter: BTreeMap<Pos, f64>,
+}
+
 /// `detour-keeps-the-site-worth`: the least of the deferred site's value a
 /// detour may settle for. The detour picks the best site whose approach is
 /// SAFE, which is not the same as a site worth going to. Measured over 53
@@ -31563,6 +31579,7 @@ impl AdvancedAi {
             score_cache,
             false,
             false,
+            None,
         )
     }
 
@@ -31571,6 +31588,7 @@ impl AdvancedAi {
     /// still ranks normal sites first and reaches these only after those sites
     /// have gone, so this raises the long-term plan without making a marginal
     /// site outrank a good nearby one.
+    #[allow(clippy::too_many_arguments)]
     fn settle_sites_for_room(
         &self,
         g: &Game,
@@ -31579,6 +31597,8 @@ impl AdvancedAi {
         radius: i32,
         prefilter_limit: Option<usize>,
         include_emergency: bool,
+        score_cache: &mut BTreeMap<Pos, f64>,
+        shared: &mut SettlementScanShared,
     ) -> Vec<(Pos, f64)> {
         self.settle_sites_scanning(
             g,
@@ -31586,9 +31606,10 @@ impl AdvancedAi {
             from,
             radius,
             prefilter_limit,
-            None,
+            Some(score_cache),
             false,
             include_emergency,
+            Some(shared),
         )
     }
 
@@ -31612,6 +31633,11 @@ impl AdvancedAi {
             10
         };
         let mut sites: Vec<(Pos, f64)> = Vec::new();
+        // Every origin scans the same board for the same seat: the exclusion
+        // disks, the prefilter scores and the site values are shared across
+        // the origins, and only the disk and the distance term differ.
+        let mut score_cache = BTreeMap::new();
+        let mut shared = SettlementScanShared::default();
         for origin in origins {
             sites.extend(self.settle_sites_for_room(
                 g,
@@ -31620,6 +31646,8 @@ impl AdvancedAi {
                 radius,
                 Some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
                 self.shared_city_target,
+                &mut score_cache,
+                &mut shared,
             ));
         }
         sites.sort_by(|a, b| {
@@ -31661,7 +31689,7 @@ impl AdvancedAi {
     /// place for "settleable" to drift.
     fn settle_site_exists(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> bool {
         !self
-            .settle_sites_scanning(g, pid, from, radius, None, None, true, false)
+            .settle_sites_scanning(g, pid, from, radius, None, None, true, false, None)
             .is_empty()
     }
 
@@ -31676,6 +31704,7 @@ impl AdvancedAi {
         mut score_cache: Option<&mut BTreeMap<Pos, f64>>,
         stop_at_first: bool,
         include_emergency: bool,
+        shared: Option<&mut SettlementScanShared>,
     ) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let mut emergency_sites = Vec::new();
@@ -31701,12 +31730,23 @@ impl AdvancedAi {
         // `wdist` scan per plot of the disk. `wdisk(pos, 3)` is exactly the
         // set of plots at `wdist <= 3`, so the union answers the same
         // question at every radius.
-        let city_exclusion = g
-            .cities
-            .values()
-            .flat_map(|city| g.wdisk(city.pos, 3))
-            .collect::<BTreeSet<_>>();
-        let city_state_exclusion = self.city_state_settlement_exclusion(g, pid);
+        // A caller scanning from several origins hands in the answers the
+        // previous origin already derived (`SettlementScanShared`); a lone
+        // scan derives its own, exactly as before.
+        let mut own_exclusions = None;
+        let (exclusions, mut prefilter_cache) = match shared {
+            Some(shared) => (&mut shared.exclusions, Some(&mut shared.prefilter)),
+            None => (&mut own_exclusions, None),
+        };
+        let (city_exclusion, city_state_exclusion) = exclusions.get_or_insert_with(|| {
+            (
+                g.cities
+                    .values()
+                    .flat_map(|city| g.wdisk(city.pos, 3))
+                    .collect::<BTreeSet<_>>(),
+                self.city_state_settlement_exclusion(g, pid),
+            )
+        });
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -31730,10 +31770,21 @@ impl AdvancedAi {
                 }
                 let prefilter_score = prefilter_limit
                     .map(|_| {
+                        if let Some(cached) = prefilter_cache
+                            .as_deref()
+                            .and_then(|cache| cache.get(&pos).copied())
+                        {
+                            return cached;
+                        }
                         // `contested_land_first`: a contested site is never
                         // cut before it is priced.
-                        self.settlement_prefilter_score_with_water_science_wonder(g, pid, pos)
-                            + self.contested_land_credit(g, pid, pos)
+                        let score = self
+                            .settlement_prefilter_score_with_water_science_wonder(g, pid, pos)
+                            + self.contested_land_credit(g, pid, pos);
+                        if let Some(cache) = prefilter_cache.as_deref_mut() {
+                            cache.insert(pos, score);
+                        }
+                        score
                     })
                     .unwrap_or(0.0);
                 Some((pos, prefilter_score))
