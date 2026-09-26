@@ -57,7 +57,9 @@ fn lightly_damaged_city_recalls_relief_from_a_valuable_siege() {
     let city = g.cities.get_mut(&home).unwrap();
     city.hp = 183;
     city.last_attacked = g.turn;
-    ai.objective_board_state.city_health.insert(home, (g.turn - 1, 192));
+    ai.objective_board_state
+        .city_health
+        .insert(home, (g.turn - 1, 192));
     ai.rebuild_force_groups(&g, 0, &conquest(&g, Some(target)));
     let row = ai
         .objective_board()
@@ -65,7 +67,10 @@ fn lightly_damaged_city_recalls_relief_from_a_valuable_siege() {
         .iter()
         .find(|row| row.key == ObjectiveKey::Defend(home))
         .unwrap();
-    assert!(row.urgent, "nearby attackers still need timely relief: {row:?}");
+    assert!(
+        row.urgent,
+        "nearby attackers still need timely relief: {row:?}"
+    );
     assert!(ai.objective_board().forces.iter().any(|force| {
         force.objective_key == ObjectiveKey::Defend(home) && force.units.contains(&relief)
     }));

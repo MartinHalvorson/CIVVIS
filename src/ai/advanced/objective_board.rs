@@ -913,28 +913,31 @@ impl AdvancedAi {
                 siege: 0,
                 bodies: 0,
             };
-            let deadline = match self.objective_board_state.damage_rate.get(cid) {
-                Some(rate) if *rate > 0.0 => {
-                    ((f64::from(health) / rate).ceil() as u32).max(DEFEND_DEADLINE_FLOOR)
-                }
-                _ => {
-                    // Not yet hit: the turns the nearest hostile needs to
-                    // reach the city, never under the floor.
-                    let nearest = g
-                        .units
-                        .values()
-                        .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
-                        .filter(|unit| g.rules.units[unit.kind].class == "military")
-                        .filter(|unit| self.observed(g, pid, visible, unit))
-                        .map(|unit| g.wdist(unit.pos, *pos))
-                        .filter(|distance| *distance <= THREAT_RELIEF_RADIUS)
-                        .min();
-                    nearest
-                        .map(|distance| {
-                            ((f64::from(distance) / 2.0).ceil() as u32).max(DEFEND_DEADLINE_FLOOR)
-                        })
-                        .unwrap_or(THREAT_RELIEF_RADIUS as u32)
-                }
+            // A small first hit must not postpone the relief already needed
+            // for nearby attackers. Keep their arrival bound after damage;
+            // without an observed attacker, retain the measured damage rate.
+            let approach_deadline = g
+                .units
+                .values()
+                .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+                .filter(|unit| g.rules.units[unit.kind].class == "military")
+                .filter(|unit| self.observed(g, pid, visible, unit))
+                .map(|unit| g.wdist(unit.pos, *pos))
+                .filter(|distance| *distance <= THREAT_RELIEF_RADIUS)
+                .min()
+                .map(|distance| {
+                    ((f64::from(distance) / 2.0).ceil() as u32).max(DEFEND_DEADLINE_FLOOR)
+                });
+            let damage_deadline = self
+                .objective_board_state
+                .damage_rate
+                .get(cid)
+                .filter(|rate| **rate > 0.0)
+                .map(|rate| ((f64::from(health) / rate).ceil() as u32).max(DEFEND_DEADLINE_FLOOR));
+            let deadline = match (damage_deadline, approach_deadline) {
+                (Some(damage), Some(approach)) => damage.min(approach),
+                (Some(deadline), None) | (None, Some(deadline)) => deadline,
+                (None, None) => THREAT_RELIEF_RADIUS as u32,
             };
             let value = city_value(g, *cid, lane).max(POP_VALUE);
             rows.push(Objective {
