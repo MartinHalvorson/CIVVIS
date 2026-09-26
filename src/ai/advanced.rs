@@ -24371,7 +24371,9 @@ impl AdvancedAi {
             .saturating_sub(counts.military_engineers + counts.air_defense + obsolete_breach);
         let desired_support = if land_military >= 8 {
             2
-        } else if land_military >= 3 {
+        } else if land_military >= 3 || is_breach {
+            // An eligible infantry group needs one usable breach element even
+            // before it reaches the ordinary three-unit field-support floor.
             1
         } else {
             0
@@ -24595,10 +24597,20 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether the strategic plan currently sends an army to take a foreign
+    /// city. The support scorer separately verifies that an eligible infantry
+    /// escort and a useful capability exist, so this only identifies the
+    /// front that may claim an otherwise-idle production queue.
+    fn has_foreign_city_assault(g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        plan.target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+    }
+
     /// The adaptive agent normally delegates routine city queues to the
     /// lightweight governor. Reserve at most one empty queue per turn for a
     /// support capability that the active campaign and army can actually use.
-    fn advanced_support_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    fn advanced_support_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
         let counts = self.counts(g, pid);
         if self.base.book_pos < 4
             || !g
@@ -24607,7 +24619,7 @@ impl AdvancedAi {
                 .any(|other| other.id != pid && g.is_at_war(pid, other.id))
             || self.live_war_economy_requires_recovery(g, pid, &counts)
         {
-            return;
+            return false;
         }
         let best: Option<(f64, u32, String)> = {
             let _memo = g.query_memo();
@@ -24639,10 +24651,10 @@ impl AdvancedAi {
             best
         };
         let Some((value, city, unit)) = best else {
-            return;
+            return false;
         };
         if value > 0.0 {
-            let _ = g.apply(
+            g.apply(
                 pid,
                 &Action::Produce {
                     city,
@@ -24650,8 +24662,26 @@ impl AdvancedAi {
                         unit: Name::new(&unit),
                     },
                 },
-            );
+            )
+            .is_ok()
+        } else {
+            false
         }
+    }
+
+    /// Let a live foreign-city assault reserve its Ram, Tower, or other
+    /// applicable support before broad strategic production consumes every
+    /// idle queue. Appointed timed wars own their exact breach package, so
+    /// this deliberately leaves that production route untouched.
+    fn reserve_foreign_city_assault_support(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.war_plan.is_none()
+            && Self::has_foreign_city_assault(g, pid, plan)
+            && self.advanced_support_production(g, pid, plan)
     }
 
     /// The live peacetime deterrence target is normally a small multiplier of
@@ -42040,6 +42070,10 @@ impl AdvancedAi {
             };
             let adaptive_expansion_dispatch =
                 self.adaptive_expansion_dispatches(&plan, dispatch_target);
+            // Reserve one useful support element before broad production
+            // consumes the idle queues of an active foreign-city assault.
+            let city_assault_support_reserved =
+                self.reserve_foreign_city_assault_support(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
@@ -42093,7 +42127,9 @@ impl AdvancedAi {
                 self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, false);
             }
             if dispatch_target.is_none() {
-                self.advanced_support_production(g, pid, &plan);
+                if !city_assault_support_reserved {
+                    self.advanced_support_production(g, pid, &plan);
+                }
                 // The adaptive empire's Settler gate lives in the baseline
                 // governor. Thread the larger, speed-aware plan through that
                 // call without leaking it to later consumers.
