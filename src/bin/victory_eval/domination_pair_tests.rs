@@ -129,3 +129,106 @@ fn an_existing_result_file_is_preserved_before_any_game_runs() {
     assert!(result.is_err());
     assert_eq!(contents, "previous evidence\n");
 }
+
+#[test]
+fn conquest_observer_separates_defense_major_attacks_and_minor_attacks() {
+    let mut game = Game::new_with(options(37140004));
+    let minor = game
+        .players
+        .iter()
+        .find(|p| p.is_minor && !p.is_barbarian)
+        .unwrap()
+        .id;
+    let mut progress = ConquestProgress::default();
+    progress.observe(&game);
+    assert_eq!(progress.first_major_war_observed_turn, None);
+    game.turn = 30;
+    game.at_war.insert((0, 1));
+    game.log.push(1, Action::DeclareWar { player: 0 });
+    progress.observe(&game);
+    assert_eq!(progress.first_major_war_observed_turn, Some(30));
+    assert_eq!(progress.first_focal_major_declaration_observed_turn, None);
+    game.turn = 40;
+    game.log.push(0, Action::DeclareWar { player: minor });
+    progress.observe(&game);
+    assert_eq!(progress.focal_minor_declarations, 1);
+    assert_eq!(progress.focal_major_declarations, 0);
+    game.turn = 50;
+    game.log.push(
+        0,
+        Action::DeclareWarWithCasusBelli {
+            player: 2,
+            casus_belli: "formal".to_string(),
+        },
+    );
+    // The log records a declaration even if its war has ended by this sample.
+    let before = serde_json::to_vec(&game).unwrap();
+    progress.observe(&game);
+    progress.observe(&game);
+    assert_eq!(serde_json::to_vec(&game).unwrap(), before);
+    assert_eq!(progress.focal_major_declarations, 1);
+    assert_eq!(progress.focal_minor_declarations, 1);
+    assert_eq!(
+        progress.first_focal_major_declaration_observed_turn,
+        Some(50)
+    );
+    assert_eq!(progress.first_major_war_observed_turn, Some(30));
+}
+
+#[test]
+fn conquest_observer_distinguishes_capitals_from_minors_and_tracks_losses() {
+    let mut game = Game::new_with(options(37140005));
+    let minor_city = game
+        .cities
+        .values()
+        .find(|c| game.players[c.owner].is_minor)
+        .unwrap()
+        .id;
+    let mut capitals = Vec::new();
+    for pid in 0..3 {
+        let unit = game
+            .units
+            .values()
+            .find(|u| u.owner == pid && u.kind.as_str() == "settler")
+            .unwrap()
+            .id;
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit }).unwrap();
+        capitals.push(
+            game.cities
+                .values()
+                .find(|c| c.owner == pid && c.is_capital)
+                .unwrap()
+                .id,
+        );
+    }
+    let mut progress = ConquestProgress::default();
+    game.cities.get_mut(&minor_city).unwrap().owner = 0;
+    progress.observe(&game);
+    assert_eq!(progress.first_major_city_held_observed_turn, None);
+    assert!(progress.own_original_capital_held_at_end);
+    game.turn = 60;
+    game.cities.get_mut(&capitals[1]).unwrap().owner = 0;
+    progress.observe(&game);
+    assert_eq!(progress.first_foreign_capital_held_observed_turn, Some(60));
+    assert_eq!(progress.foreign_capitals_held_at_end, 1);
+    game.turn = 70;
+    game.cities.get_mut(&capitals[0]).unwrap().owner = 2;
+    game.cities.get_mut(&capitals[1]).unwrap().owner = 1;
+    progress.observe(&game);
+    assert_eq!(progress.foreign_capitals_held_at_end, 0);
+    assert!(!progress.own_original_capital_held_at_end);
+    game.turn = 80;
+    game.cities.get_mut(&capitals[1]).unwrap().owner = 0;
+    progress.observe(&game);
+    assert_eq!(
+        progress.foreign_capitals_observed_held,
+        BTreeSet::from([capitals[1]])
+    );
+    assert_eq!(
+        progress.foreign_major_cities_observed_held,
+        BTreeSet::from([capitals[1]])
+    );
+    assert_eq!(progress.first_major_city_held_observed_turn, Some(60));
+    assert_eq!(progress.foreign_capitals_held_at_end, 1);
+}
