@@ -89,5 +89,5 @@ outcomes. Store the follow-up separately as
 The first pilot remains a distinct treatment and is not pooled with this one.
 All four focused tests pass for this variant. Follow-up executable SHA-256:
 `c0f160cccfc58f5141ae1a94ab308c3a563c88424b5ba6342e0125e5c18cf935`.
-The full-suite rerun and follow-up pilot are running; no deployment claim is
-made while their outcomes are pending.
+The full-suite rerun passed. Scoped policy source: `1dde0a446`. The follow-up
+pilot is running; no deployment claim is made while its outcomes are pending.
