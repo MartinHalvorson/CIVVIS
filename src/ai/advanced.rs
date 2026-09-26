@@ -7252,6 +7252,7 @@ mod surprise_defense;
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
 mod air_surge;
+mod air_resource_builders;
 mod siege_resource_purchase;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
