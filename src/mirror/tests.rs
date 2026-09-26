@@ -14349,3 +14349,6 @@ fn requested_state_readers_keep_latest_valid_frame_and_its_tiles() {
 }
 
 mod plot_city_ownership;
+
+#[path = "foreign_movement_tests.rs"]
+mod foreign_movement_tests;
