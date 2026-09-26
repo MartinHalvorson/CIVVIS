@@ -43,6 +43,10 @@ sorties, approach and capture after a sortie, older-host deferral, and ordinary
 travel around an independent rebase. The first three fail on the unchanged
 compressor; all four pass with the boundary. This is synthetic transport
 evidence, not a demonstrated native combined maneuver or a win-rate result.
-Full-suite and quality validation are pending. Native testing remains under the
+Validation: `cargo test --profile ci --locked` passed all 4,284 tests (53
+existing ignores), both before and after merging current main.
+`QUALITY_BASE=origin/main python3 tools/rust_quality.py` passed; the changed
+lines are formatted and warning-free. `git diff --check` passed. No engine
+rules changed, so an engine soak is not applicable. Native testing remains under the
 active game agent's ownership; this work does not interact with the game tab,
 order database or running controller.
