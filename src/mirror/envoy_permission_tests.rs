@@ -21,8 +21,10 @@ fn fixture() -> (Snapshot, StateSnapshot) {
         .collect();
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
         turn: state.turn,
-        width: 8,
-        height: 8,
+        // Room for the generated minor seat used by reconstruction; an 8x8
+        // map can exhaust placement space before allocating that actor.
+        width: 20,
+        height: 20,
         chunk: 1,
         plots,
     }]);
