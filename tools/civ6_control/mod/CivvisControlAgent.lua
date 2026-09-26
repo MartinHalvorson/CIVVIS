@@ -4857,6 +4857,21 @@ end
 -- `GetLevyMilitaryCost`, and one `GIVE_INFLUENCE_TOKEN` request PER TOKEN.
 local MIN_ENVOY_TOKENS_SUZERAIN = 3;
 
+-- Base/Assets/UI/PartialScreens/CityStates.lua:1429,1499 reads these
+-- permissions separately from IsAtWarWith (:1508). Do not guess legality
+-- from war status. Bare global: the native UI sandbox does not expose _G.
+function CivvisCanSendEnvoy(player, target)
+	local ok, allowed = pcall(function()
+		local influence = player:GetInfluence();
+		local canGive = influence:CanGiveInfluence();
+		local canTarget = influence:CanGiveTokensToPlayer(target);
+		if type(canGive) ~= "boolean" or type(canTarget) ~= "boolean" then return nil; end
+		return canGive and canTarget;
+	end);
+	if ok and type(allowed) == "boolean" then return allowed; end
+	return nil;
+end
+
 -- Carried onto every turn event. ⚠ A boolean "envoys handled" would read green
 -- both when a suzerainty was bought and when nothing was buyable and the flag
 -- was merely cleared -- the same trap that let a Settler request report
@@ -8121,6 +8136,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 				player = mid,
 				civ = civilization,
 				at_war = try(function() return diplomacy:IsAtWarWith(mid); end, false),
+				can_send_envoy = CivvisCanSendEnvoy(player, mid),
 				score = try(function() return minor:GetScore(); end, -1),
 				military = try(function() return minor:GetStats():GetMilitaryStrength(); end, -1),
 				envoys = influence ~= nil and try(function()
@@ -9626,6 +9642,17 @@ end
 -- One bare global table (200-local ceiling).
 CivvisTiles = { known = {}, districtPillage = {} };
 
+-- PlotTooltip_Expansion2.lua:34-35 reads these TerrainManager accessors.
+-- Keep false distinct from unknown: a protected lowland can be dry even when
+-- the global climate phase would otherwise flood its band.
+function CivvisTiles.floodState(plot, accessor)
+    return try(function()
+        local value = TerrainManager[accessor](plot);
+        if type(value) == "boolean" then return value; end
+        return nil;
+    end, nil);
+end
+
 -- The existing plot `p` bit also describes a district. Rival city records
 -- do not carry districts, so without this observation every fresh board
 -- treats an already-bombed Campus as another profitable bombing mission.
@@ -9776,6 +9803,8 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 					-- chunk is at its ceiling.
 					mark = (owner * 1024 + feature) .. ":"
 						.. tostring(CivvisTiles.owningCity(plot, pid)) .. ":"
+						.. tostring(CivvisTiles.floodState(plot, "IsFlooded")) .. ":"
+						.. tostring(CivvisTiles.floodState(plot, "IsSubmerged")) .. ":"
 						.. (try(function() return plot:GetImprovementType(); end, -1) or -1) .. ":"
 						.. (CivvisTiles.pillageState(plot, pid, x, y) and 1 or 0) .. ":"
 						.. (try(function() return plot:GetRouteType(); end, -1) or -1) .. ":"
@@ -9875,6 +9904,8 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						flooded = CivvisTiles.floodState(plot, "IsFlooded"),
+						submerged = CivvisTiles.floodState(plot, "IsSubmerged"),
 						-- ★★★ APPEAL, AS THE HOST COUNTS IT. The board derived appeal
 						-- from its own six neighbours and could not see a wonder's
 						-- +2 in fog, a Governor's promotion or a rival's district;

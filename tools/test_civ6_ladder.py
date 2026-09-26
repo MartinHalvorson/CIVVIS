@@ -546,6 +546,61 @@ class HowTheArmyFought(LedgerCase):
         self.assertEqual(totals["move_noop"], 1)
         self.assertEqual(totals["move_fallback"], 0)
 
+    def test_ladder_counts_the_capital_when_occupation_repeats_another_city(self):
+        # Native 20260926T190901Z acquired Swenett at 183 and Ra-Kedet at
+        # 185, but both occupation callbacks named Swenett. The full tactical
+        # report counted both; the ladder discarded the confirming rosters.
+        home = {"id": 1, "name": "Bogotá", "original_owner": 0, "x": 2, "y": 2}
+        town = {"id": 720906, "name": "Swenett", "original_owner": 1, "x": 38, "y": 8}
+        capital = {"id": 786443, "name": "Râ-Kedet", "original_owner": 1,
+                   "x": 34, "y": 8, "original_capital": True}
+        callback = {"kind": "city_occupation", "player": 0, "city": 720906,
+                    "name": "LOC_CITY_NAME_SWENETT", "original_owner": 1,
+                    "ours_now": True}
+        events = self._events([
+            {"kind": "seat", "local_player": 0},
+            {"kind": "combat", "attacker": {"player": 0}, "defender": {"player": 1}},
+            {"kind": "state", "turn": 182, "cities": [home]},
+            {**callback, "turn": 183},
+            {"kind": "state", "turn": 183, "cities": [home, town]},
+            {**callback, "turn": 185},
+            {"kind": "state", "turn": 185, "cities": [home, town, capital]},
+            {"kind": "state", "turn": 188, "cities": [home, town, capital]},
+        ])
+        totals = civ6_ladder.combat_totals(events)
+        self.assertEqual((totals["cities_taken"], totals["cities_lost"]), (2, 0))
+
+    def test_ladder_preserves_rival_identity_resume_baselines_and_partial_rosters(self):
+        held = {"id": 1, "name": "Already held", "original_owner": 1, "x": 2, "y": 2}
+        target = {"id": 2, "name": "Unknown founder", "x": 8, "y": 8}
+        captured = {**target, "id": 3, "name": "Renamed"}
+        events = self._events([
+            {"kind": "seat", "local_player": 0},
+            {"kind": "combat", "attacker": {"player": 0}, "defender": {"player": 1}},
+            {"kind": "state", "turn": 50, "cities": [held],
+             "rivals": [{"player": 1, "cities": [target]}]},
+            {"kind": "state", "turn": 51},
+            {"kind": "state", "turn": 51, "cities": [None]},
+            {"kind": "state", "turn": 52, "cities": [held, captured]},
+            {"kind": "state", "turn": 53, "cities": [held, captured]},
+        ])
+        totals = civ6_ladder.combat_totals(events)
+        self.assertEqual((totals["cities_taken"], totals["cities_lost"]), (1, 0))
+
+    def test_ladder_does_not_count_refounding_a_lost_site_as_a_recapture(self):
+        old = {"id": 1, "name": "Bogotá", "original_owner": 0, "x": 2, "y": 2}
+        new = {**old, "id": 2, "name": "Barinas"}
+        events = self._events([
+            {"kind": "seat", "local_player": 0},
+            {"kind": "combat", "attacker": {"player": 0}, "defender": {"player": 1}},
+            {"kind": "state", "turn": 1, "cities": [old]},
+            {"kind": "state", "turn": 2, "cities": []},
+            {"kind": "found", "turn": 3, "x": 2, "y": 2},
+            {"kind": "state", "turn": 3, "cities": [new]},
+        ])
+        totals = civ6_ladder.combat_totals(events)
+        self.assertEqual((totals["cities_taken"], totals["cities_lost"]), (0, 1))
+
     def test_slim_states_retain_treasury_and_threat_context_and_city_removals(self):
         events = self._events([
             {"kind": "seat", "local_player": 0},

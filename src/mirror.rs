@@ -221,6 +221,13 @@ pub struct Plot {
     /// sea-level rise cannot reach.
     #[serde(default = "minus_one")]
     pub cl: i32,
+    /// Exact Gathering Storm tile state (`TerrainManager.IsFlooded` /
+    /// `IsSubmerged`). Unknown on legacy exports or failed native reads.
+    /// Observations override phase-derived flooding after climate is applied.
+    #[serde(default)]
+    pub flooded: Option<bool>,
+    #[serde(default)]
+    pub submerged: Option<bool>,
     /// Appeal as the host counts it (`Plot:GetAppeal`, the shipped
     /// PlotToolTip's read). The board derives appeal from its own six
     /// neighbours and cannot see a wonder's +2 in fog, a Governor's promotion
@@ -857,10 +864,10 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             // The same defect as `apply_rivers`, `apply_landmass` and the
             // cliffs, one group of fields over: a field this pass does not
             // write keeps whatever `Game::new`'s generated world put there.
-            // These eight are the engine's own disaster bookkeeping, and the
-            // export carries none of them — the host has no accessor for the
-            // fertility on a plot, and its flood, drought and fallout state
-            // reach the board through `Plot:GetYield` instead (a flooded or
+            // These eight are the engine's own disaster bookkeeping. Exact
+            // flooding is restored after the climate phase in step_host_climate;
+            // the remaining weather reaches the board through `Plot:GetYield`
+            // instead (a flooded or
             // irradiated plot reads zero there, which is exactly what it pays).
             // So the honest value is nothing at all: a modelled eruption on a
             // mirrored board would be invented weather, and it would now be
@@ -2937,6 +2944,10 @@ pub struct StateMinor {
     pub military: f64,
     #[serde(default)]
     pub at_war: bool,
+    /// The host's CanGiveInfluence AND CanGiveTokensToPlayer result, not an
+    /// inference from war status. None is an older or unreadable export.
+    #[serde(default)]
+    pub can_send_envoy: Option<bool>,
     #[serde(default = "minus_one")]
     pub suzerain: i32,
     /// Whether this city-state holds Early Empire and so enforces its border
@@ -6031,6 +6042,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "score",
         "military",
         "at_war",
+        "can_send_envoy",
         "suzerain",
         "envoys",
         "most_envoys",
@@ -11629,6 +11641,18 @@ fn step_governor_state(ctx: &mut HostStepCtx<'_>) {
 
 fn step_host_envoys(ctx: &mut HostStepCtx<'_>) {
     reconcile_host_envoys(ctx.game, ctx.minor_assignments, ctx.seat_of_host);
+    // Refresh on BOTH reconstruction paths, including same-turn frames.
+    // An omitted city-state or unknown permission must not retain an older
+    // grant/refusal. Keys use mapped board seats, never raw host ids.
+    let permissions = Arc::make_mut(&mut ctx.game.host_envoy_permissions);
+    permissions.retain(|(actor, _), _| *actor != 0);
+    for &(minor, owner) in ctx.minor_assignments {
+        if minor.is_city_state() {
+            if let Some(allowed) = minor.can_send_envoy {
+                permissions.insert((0, owner), (ctx.game.turn, allowed));
+            }
+        }
+    }
 }
 
 fn step_great_person_points(ctx: &mut HostStepCtx<'_>) {
@@ -11674,6 +11698,24 @@ fn step_host_climate(ctx: &mut HostStepCtx<'_>) {
     // The host's climate needs the finished map (the lowland bands) and the
     // finished city roster (a Flood Barrier keeps its ground).
     apply_host_climate(ctx.game, ctx.state);
+    // Phase alone cannot describe protected tiles or the host's exact timing.
+    // Apply observations LAST, on both rebuild and sync, before yield calibration.
+    // Missing fields retain the legacy phase-derived fallback.
+    for plot in ctx.snapshot.revealed.values() {
+        if let Some(tile) = ctx
+            .game
+            .map
+            .tiles
+            .get_mut(&crate::hex::offset_to_axial(plot.x, plot.y))
+        {
+            if let Some(flooded) = plot.flooded {
+                tile.flooded = flooded;
+            }
+            if let Some(submerged) = plot.submerged {
+                tile.submerged = submerged;
+            }
+        }
+    }
 }
 
 fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
@@ -14690,3 +14732,9 @@ mod enemy_district_pillage_tests;
 #[cfg(test)]
 #[path = "mirror/city_ranged_strength/tests.rs"]
 mod city_ranged_strength_tests;
+
+#[cfg(test)]
+mod envoy_permission_tests;
+
+#[cfg(test)]
+mod flood_state_tests;

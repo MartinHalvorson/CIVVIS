@@ -387,8 +387,8 @@ def seat_autonomy(events_path: Path) -> dict | None:
 
 
 def combat_totals(events_path: Path) -> dict | None:
-    """What the army did, summed from the run's own `combat`, `unit_lost` and
-    `city_occupation` events: ``{kills, losses, kills_per_loss, damage_dealt,
+    """What the army did, summed from combat, unit losses and observed city
+    ownership transitions: ``{kills, losses, kills_per_loss, damage_dealt,
     damage_taken, cities_taken, cities_lost, military_units_gone}``.
 
     ⭐ THE LADDER HAS NEVER SAID HOW THE FIGHTING WENT. It has carried
@@ -410,6 +410,18 @@ def combat_totals(events_path: Path) -> dict | None:
             import civ6_tactics_ledger
         except ImportError:
             return None
+
+    def city_roster(value):
+        if not isinstance(value, list):
+            return None
+        # Preserve incomplete entries: dropping them would turn a partial
+        # roster into an apparently complete one and invent city losses.
+        return [
+            {key: city.get(key) for key in ("id", "name", "original_owner", "x", "y")}
+            if isinstance(city, dict) else city
+            for city in value
+        ]
+
     events = []
     local_player = None
     with open_events(events_path) as handle:
@@ -426,20 +438,30 @@ def combat_totals(events_path: Path) -> dict | None:
             kind = event.get("kind")
             if kind == "seat" and isinstance(event.get("local_player"), int):
                 local_player = event["local_player"]
-            if kind in ("combat", "unit_lost", "city_lost", "city_occupation", "order_verified",
+            if kind in ("combat", "unit_lost", "city_lost", "city_occupation", "found", "order_verified",
                         "order_failed", "host_move", "move_noop", "move_fallback"):
                 events.append(event)
             elif kind == "state":
                 # The first frame of each turn is the board a death turn began
                 # on. Preserve the treasury and visible threats used to
                 # classify roster disappearances as well as unit health.
+                # City rosters reconcile missing/repeated occupation callbacks;
+                # rivals link pre-capture identities, and `found` distinguishes
+                # a new settlement on a razed plot from a recapture.
                 units = event.get("units")
+                rivals = event.get("rivals")
                 events.append({
                     "kind": "state",
                     "turn": event.get("turn"),
                     "frame": event.get("frame"),
                     "gold": event.get("gold"),
                     "hostiles": event.get("hostiles"),
+                    "cities": city_roster(event.get("cities")),
+                    "rivals": [
+                        {"player": rival.get("player"), "cities": city_roster(rival.get("cities"))}
+                        for rival in (rivals if isinstance(rivals, list) else [])
+                        if isinstance(rival, dict)
+                    ],
                     "units": [
                         {key: unit.get(key) for key in ("id", "kind", "x", "y", "hp", "combat", "ranged")}
                         for unit in (units if isinstance(units, list) else [])
