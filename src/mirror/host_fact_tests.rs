@@ -27,6 +27,8 @@ fn host_grass(x: i32, y: i32) -> Plot {
         ap: None,
         np: false,
         vis: false,
+        flooded: None,
+        submerged: None,
     }
 }
 
