@@ -4982,6 +4982,10 @@ impl Game {
             .as_deref()
             .filter(|resource| self.resource_visible_to(pid, resource));
         let water = self.rules.is_water(t);
+        // Whether another Artifact has a slot anywhere in the empire — an
+        // empire-wide Great Work assignment, so it is asked once for this
+        // tile rather than once per excavation improvement on it.
+        let mut artifact_home: Option<bool> = None;
         let mut out = Vec::new();
         for (name, spec) in &self.rules.improvements {
             if name == "national_park" {
@@ -5010,12 +5014,83 @@ impl Game {
                 continue;
             }
             if matches!(name.as_str(), "archaeological_dig" | "shipwreck_excavation")
-                && !self.can_house_additional_great_work(pid, "artifact")
+                && !*artifact_home
+                    .get_or_insert_with(|| self.can_house_additional_great_work(pid, "artifact"))
             {
                 continue;
             }
+            // Every disqualifier below is a pure read of this tile, this
+            // improvement and the empire, so the order they are asked in
+            // cannot change the answer, only the work. The tile-local siting
+            // tests refuse most (tile, improvement) pairs outright and run
+            // first; the empire lookups (the unlock state, the city-state
+            // unique-bonus walk) and the six-neighbour scans run only for a
+            // pair that could stand here at all. Before this staging the
+            // neighbour scans ran for every improvement on every tile, and
+            // `grants_city_state_unique_bonus` for every unique improvement
+            // on every tile a Builder considered.
             let seaside_volcanic =
                 name == "seaside_resort" && t.feature.as_deref() == Some("volcanic_soil");
+            // Civ 6 sites an improvement through any one of three routes —
+            // a valid terrain, a valid feature, or a valid resource. Farms
+            // stand on grassland OR on desert floodplains OR on wheat;
+            // Lumber Mills list no terrain at all, so only their feature
+            // route exists. An improvement listing none of the three is
+            // unrestricted (governor and appeal specials gate elsewhere).
+            let feature_route = t.feature.as_ref().is_some_and(|feature| {
+                spec.feature.contains(feature)
+                    || spec
+                        .feature_after_civic
+                        .get(feature.as_str())
+                        .is_some_and(|civic| self.players[pid].civics.contains(&Name::new(civic)))
+            });
+            let resource_route = visible_resource.is_some_and(|resource| {
+                spec.resources.iter().any(|candidate| candidate == resource)
+                    || self.rules.resources[resource].improvement == *name
+            });
+            let unrestricted =
+                spec.terrain.is_empty() && spec.feature.is_empty() && spec.resources.is_empty();
+            let sited = unrestricted
+                || spec.terrain.contains(&t.terrain)
+                || feature_route
+                || resource_route;
+            // Firaxis evaluates a featured plot through Improvement_ValidFeatures
+            // (or a compatible resource), not through the terrain hidden below it.
+            // Treating the underlying Hills as sufficient offered Mines on Woods;
+            // the live engine refused both attempts in the turn-150 Poland trace.
+            let incompatible_feature = t.feature.is_some() && !feature_route && !resource_route;
+            if spec.unbuildable
+                || water != spec.water
+                || t.improvement.as_deref() == Some(name)
+                || (spec.requires_hills && !t.hills)
+                || (spec.hills_or_resource && !t.hills && visible_resource.is_none())
+                || (spec.hills_or_resource_or_feature
+                    && !t.hills
+                    && visible_resource.is_none()
+                    && !feature_route)
+                || (spec.hills_or_feature && !t.hills && !feature_route)
+                || incompatible_feature
+                || (!sited && !seaside_volcanic)
+            {
+                continue;
+            }
+            if !self.unlocked(pid, &spec.tech, &spec.civic)
+                || spec.unique_to.as_deref().is_some_and(|owner| {
+                    !self.owns_civ_unique(pid, owner)
+                        && !self.grants_city_state_unique_bonus(pid, owner)
+                })
+                || (spec.requires_flat
+                    && t.hills
+                    && !seaside_volcanic
+                    && !(name == "farm" && self.tree_effect(pid, "hill_farms") > 0.0))
+                || (spec.removes_feature
+                    && !feature_route
+                    && t.feature
+                        .as_deref()
+                        .is_some_and(|feature| !self.feature_removal_unlocked(pid, feature)))
+            {
+                continue;
+            }
             let seaside_invalid = name == "seaside_resort"
                 && (self.tile_appeal(pos) < 4
                     || !self.nbrs(pos).iter().any(|neighbor| {
@@ -5083,61 +5158,7 @@ impl Game {
             } else {
                 !self.builder_may_improve_territory(pid, territory_owner)
             };
-            // Civ 6 sites an improvement through any one of three routes —
-            // a valid terrain, a valid feature, or a valid resource. Farms
-            // stand on grassland OR on desert floodplains OR on wheat;
-            // Lumber Mills list no terrain at all, so only their feature
-            // route exists. An improvement listing none of the three is
-            // unrestricted (governor and appeal specials gate elsewhere).
-            let feature_route = t.feature.as_ref().is_some_and(|feature| {
-                spec.feature.contains(feature)
-                    || spec
-                        .feature_after_civic
-                        .get(feature.as_str())
-                        .is_some_and(|civic| self.players[pid].civics.contains(&Name::new(civic)))
-            });
-            let resource_route = visible_resource.is_some_and(|resource| {
-                spec.resources.iter().any(|candidate| candidate == resource)
-                    || self.rules.resources[resource].improvement == *name
-            });
-            let unrestricted =
-                spec.terrain.is_empty() && spec.feature.is_empty() && spec.resources.is_empty();
-            let sited = unrestricted
-                || spec.terrain.contains(&t.terrain)
-                || feature_route
-                || resource_route;
-            // Firaxis evaluates a featured plot through Improvement_ValidFeatures
-            // (or a compatible resource), not through the terrain hidden below it.
-            // Treating the underlying Hills as sufficient offered Mines on Woods;
-            // the live engine refused both attempts in the turn-150 Poland trace.
-            let incompatible_feature = t.feature.is_some() && !feature_route && !resource_route;
-            if spec.unbuildable
-                || !self.unlocked(pid, &spec.tech, &spec.civic)
-                || spec.unique_to.as_deref().is_some_and(|owner| {
-                    !self.owns_civ_unique(pid, owner)
-                        && !self.grants_city_state_unique_bonus(pid, owner)
-                })
-                || water != spec.water
-                || t.improvement.as_deref() == Some(name)
-                || (spec.requires_hills && !t.hills)
-                || (spec.hills_or_resource && !t.hills && visible_resource.is_none())
-                || (spec.hills_or_resource_or_feature
-                    && !t.hills
-                    && visible_resource.is_none()
-                    && !feature_route)
-                || (spec.hills_or_feature && !t.hills && !feature_route)
-                || (spec.requires_flat
-                    && t.hills
-                    && !seaside_volcanic
-                    && !(name == "farm" && self.tree_effect(pid, "hill_farms") > 0.0))
-                || (spec.removes_feature
-                    && !feature_route
-                    && t.feature
-                        .as_deref()
-                        .is_some_and(|feature| !self.feature_removal_unlocked(pid, feature)))
-                || incompatible_feature
-                || (!sited && !seaside_volcanic)
-                || seaside_invalid
+            if seaside_invalid
                 || same_adjacent_invalid
                 || adjacent_resource_class_invalid
                 || adjacent_passable_land_invalid
